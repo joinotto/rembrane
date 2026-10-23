@@ -59,6 +59,7 @@ The platform owns identity, workspaces, encryption orchestration, canonical even
 - [Roadmap](ROADMAP.md)
 - [Security Policy](SECURITY.md)
 - [Contributing](CONTRIBUTING.md)
+- [Changelog](CHANGELOG.md)
 
 ## Current key decisions
 
@@ -86,6 +87,23 @@ store a confirmed preference
 ```
 
 See the [roadmap](ROADMAP.md) for sequencing. Do not use Rembrane for production or sensitive data until the security model, cryptographic implementation, and tenant-isolation tests are complete.
+
+## Development
+
+Prerequisite: Rust 1.85 or newer with `rustfmt` and `clippy`.
+
+```text
+./scripts/check-architecture.sh
+./scripts/check-sensitive-files.sh
+cargo fmt --all --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+cargo run -p rembrane-cli -- demo
+```
+
+The demo stores a confirmed preference, resolves it for a second authorized assistant, and prints the context-pack and disclosure-receipt identifiers.
+
+Current implementation is dependency-light and uses volatile reference adapters. Persistent databases, network servers, cryptographic key management, and production authentication are not implemented yet.
 
 ## Contributing
 
