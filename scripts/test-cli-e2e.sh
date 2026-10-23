@@ -91,6 +91,21 @@ project_recall=$(
 printf '%s\n' "$project_recall" |
     rg -F "$project_memory_id: Use Rust for the Rembrane core" >/dev/null
 
+layered_identity_recall=$(
+    "$rembrane_binary" recall \
+        --database "$database" \
+        --principal principal_e2e \
+        --workspace workspace_e2e \
+        --client coding_agent_e2e \
+        --domain development \
+        --entity project_e2e \
+        --activity implementation_e2e \
+        --purpose personalize-project-assistant \
+        --query "What should I call the user?"
+)
+printf '%s\n' "$layered_identity_recall" |
+    rg -F "$memory_id: Call me Hippo" >/dev/null
+
 "$rembrane_binary" correct \
     --database "$database" \
     --principal principal_e2e \
@@ -204,7 +219,7 @@ plaintext_count=$(
         "SELECT count(*) FROM memories WHERE instr(content_ciphertext, CAST('Hippo' AS BLOB)) > 0;"
 )
 test "$event_count" = "6"
-test "$disclosure_count" = "6"
+test "$disclosure_count" = "7"
 test "$plaintext_count" = "0"
 
 if REMBRANE_WORKSPACE_KEY_HEX="ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff" \

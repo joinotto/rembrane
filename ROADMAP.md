@@ -60,6 +60,7 @@ This roadmap describes sequencing, not release dates.
 ## Phase 2 — Development continuity
 
 - [x] Project entities and scoped preferences.
+- [x] Layer global, domain, entity, and activity context in one request.
 - [x] Activity-scoped work-trace ingestion as proposed observation memory.
 - [x] Model activity checkpoints and resumable handoffs.
 - [ ] Git and coding-agent adapters.

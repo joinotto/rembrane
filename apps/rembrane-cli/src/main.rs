@@ -279,31 +279,8 @@ fn recall(arguments: &[String]) -> Result<(), String> {
     if maximum_bytes == 0 {
         return Err("--max-bytes must be a positive integer".to_owned());
     }
-    let scope = optional_requested_scope(arguments)?;
-    let (domain, entity_id, activity_id, read_scopes) = match scope {
-        None => (None, None, None, vec![ReadScope::Global]),
-        Some(MemoryScope::Global) => {
-            (None, None, None, vec![ReadScope::Global])
-        }
-        Some(MemoryScope::Domain { name }) => (
-            Some(name.clone()),
-            None,
-            None,
-            vec![ReadScope::Domain { name }],
-        ),
-        Some(MemoryScope::Entity { id }) => (
-            None,
-            Some(id.clone()),
-            None,
-            vec![ReadScope::Entity { id }],
-        ),
-        Some(MemoryScope::Activity { id }) => (
-            None,
-            None,
-            Some(id.clone()),
-            vec![ReadScope::Activity { id }],
-        ),
-    };
+    let (domain, entity_id, activity_id, read_scopes) =
+        recall_scope_context(arguments);
     let (mut store, principal_id, workspace_id) =
         encrypted_store(arguments)?;
     let grants = authorize_client(
@@ -340,6 +317,32 @@ fn recall(arguments: &[String]) -> Result<(), String> {
     println!("Context pack: {}", response.context_pack_id);
     println!("Disclosure receipt: {}", response.disclosure_id);
     Ok(())
+}
+
+fn recall_scope_context(
+    arguments: &[String],
+) -> (
+    Option<String>,
+    Option<rembrane_domain::EntityId>,
+    Option<rembrane_domain::ActivityId>,
+    Vec<ReadScope>,
+) {
+    let domain = optional_option(arguments, "--domain").map(str::to_owned);
+    let entity_id = optional_option(arguments, "--entity")
+        .map(rembrane_domain::EntityId::new);
+    let activity_id = optional_option(arguments, "--activity")
+        .map(rembrane_domain::ActivityId::new);
+    let mut scopes = vec![ReadScope::Global];
+    if let Some(name) = &domain {
+        scopes.push(ReadScope::Domain { name: name.clone() });
+    }
+    if let Some(id) = &entity_id {
+        scopes.push(ReadScope::Entity { id: id.clone() });
+    }
+    if let Some(id) = &activity_id {
+        scopes.push(ReadScope::Activity { id: id.clone() });
+    }
+    (domain, entity_id, activity_id, scopes)
 }
 
 fn requested_memory_scope(arguments: &[String]) -> Result<MemoryScope, String> {
@@ -606,7 +609,7 @@ fn print_help() {
            rembrane recall --database <path> --principal <id> \
              --workspace <id> --client <id> --purpose <purpose> --query <query> \
              [--limit <items>] [--max-bytes <bytes>] \
-             [--domain <name> | --entity <id> | --activity <id>]\n\
+             [--domain <name>] [--entity <id>] [--activity <id>]\n\
            rembrane correct --database <path> --principal <id> \
              --workspace <id> --memory <id> --version <n> --content <text> \
              [--domain <name> | --entity <id> | --activity <id>]\n\
@@ -620,7 +623,9 @@ fn print_help() {
 mod tests {
     use rembrane_domain::{EntityId, MemoryScope};
 
-    use super::{option, positive_u64, requested_memory_scope};
+    use super::{
+        option, positive_u64, recall_scope_context, requested_memory_scope,
+    };
 
     #[test]
     fn parses_named_option_independent_of_order() {
@@ -675,5 +680,22 @@ mod tests {
             "project_01".to_owned(),
         ];
         assert!(requested_memory_scope(&ambiguous).is_err());
+    }
+
+    #[test]
+    fn recall_combines_global_domain_entity_and_activity_scopes() {
+        let arguments = vec![
+            "--domain".to_owned(),
+            "development".to_owned(),
+            "--entity".to_owned(),
+            "project_01".to_owned(),
+            "--activity".to_owned(),
+            "task_01".to_owned(),
+        ];
+
+        let (_, _, _, scopes) = recall_scope_context(&arguments);
+
+        assert_eq!(scopes.len(), 4);
+        assert_eq!(scopes[0], rembrane_domain::ReadScope::Global);
     }
 }

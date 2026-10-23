@@ -77,6 +77,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   revision, deletion, and activity-checkpoint use cases.
 - CLI and MCP preference capture across global, domain, entity/project, and
   activity scopes with mutually exclusive scope selectors.
+- Layered CLI recall combining common global memory with requested domain,
+  entity/project, and activity context.
 - Scope-aware CLI and MCP correction/deletion flows that require callers to
   retain authority over the memory's exact scope.
 - End-to-end CLI lifecycle test covering encrypted capture, disclosure,
