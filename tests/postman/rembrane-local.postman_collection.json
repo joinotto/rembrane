@@ -1,0 +1,132 @@
+{
+  "info": {
+    "_postman_id": "ce2f71b5-f938-4ef5-91f8-c7747ab15ec1",
+    "name": "Rembrane Local API",
+    "description": "Pre-alpha authenticated local REST conformance checks.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Health",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/health"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('health is available', function () {",
+              "  pm.response.to.have.status(200);",
+              "  pm.expect(pm.response.json().status).to.eql('ok');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Reject missing bearer token",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"workspaceId\":\"{{workspaceId}}\",\"subjectId\":\"{{principalId}}\",\"purpose\":\"personalize-assistant\",\"query\":\"What should I call the user?\",\"maximumItems\":10}"
+        },
+        "url": "{{baseUrl}}/v1/context/resolve"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('missing token is rejected', function () {",
+              "  pm.response.to.have.status(401);",
+              "  pm.expect(pm.response.json().code).to.eql('unauthenticated');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Resolve authorized context",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{apiToken}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"workspaceId\":\"{{workspaceId}}\",\"subjectId\":\"{{principalId}}\",\"purpose\":\"personalize-assistant\",\"query\":\"What should I call the user?\",\"maximumItems\":10}"
+        },
+        "url": "{{baseUrl}}/v1/context/resolve"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('authorized context is returned', function () {",
+              "  pm.response.to.have.status(200);",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.contextPackId).to.be.a('string');",
+              "  pm.expect(body.disclosureId).to.be.a('string');",
+              "  pm.expect(body.items).to.have.lengthOf(1);",
+              "  pm.expect(body.items[0].content).to.eql('Call me Hippo');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Reject cross-workspace request",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{apiToken}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"workspaceId\":\"workspace_other\",\"subjectId\":\"{{principalId}}\",\"purpose\":\"personalize-assistant\",\"query\":\"What should I call the user?\",\"maximumItems\":10}"
+        },
+        "url": "{{baseUrl}}/v1/context/resolve"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('cross-workspace request is denied', function () {",
+              "  pm.response.to.have.status(403);",
+              "  pm.expect(pm.response.json().code).to.eql('access_denied');",
+              "});"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -25,3 +25,7 @@ jobs:
       - run: cargo test --workspace
       - run: cargo build --workspace
       - run: ./scripts/test-cli-e2e.sh
+      - uses: postmanlabs/postman-cli-action@v1
+        with:
+          command: --version
+      - run: ./scripts/test-rest-e2e.sh

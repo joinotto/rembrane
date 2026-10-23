@@ -53,6 +53,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   principal, and client profile.
 - End-to-end CLI lifecycle test covering encrypted capture, disclosure,
   correction, deletion, wrong-key rejection, and plaintext-at-rest checks.
+- Postman REST suite covering health, bearer authentication, encrypted context
+  retrieval, disclosure persistence, and cross-workspace denial.
 
 ### Changed
 

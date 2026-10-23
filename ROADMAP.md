@@ -36,6 +36,7 @@ This roadmap describes sequencing, not release dates.
 - [x] Add development-key encrypted CLI remember and recall commands.
 - [x] Add encrypted CLI correction and deletion commands.
 - [x] Add an executable encrypted CLI lifecycle smoke test.
+- [x] Add Postman REST authentication and tenant-isolation smoke tests.
 - [ ] Add production OS-keychain and customer-KMS key providers.
 - [x] Retrieve minimal context through local stdio MCP.
 - [x] Retrieve minimal context through authenticated local REST.
