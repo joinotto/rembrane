@@ -51,7 +51,7 @@ where
         items.truncate(command.request.maximum_items);
 
         let receipt = DisclosureReceipt {
-            id: command.disclosure_id,
+            id: command.disclosure_id.clone(),
             context_pack_id: command.context_pack_id.clone(),
             workspace_id: command.request.workspace_id,
             subject_id: command.request.principal_id,
@@ -71,6 +71,7 @@ where
         Ok(ResolveContextResponse {
             items,
             context_pack_id: command.context_pack_id,
+            disclosure_id: command.disclosure_id,
         })
     }
 }
