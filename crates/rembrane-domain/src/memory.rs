@@ -1,4 +1,6 @@
-use crate::{MemoryId, MemoryScope, PrincipalId, WorkspaceId};
+use crate::{
+    EvidenceReference, MemoryId, MemoryScope, PrincipalId, WorkspaceId,
+};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MemoryKind {
@@ -32,6 +34,7 @@ pub struct MemoryRecord {
     pub status: MemoryStatus,
     pub content: String,
     pub version: u64,
+    pub evidence: Vec<EvidenceReference>,
 }
 
 impl MemoryRecord {
@@ -42,6 +45,7 @@ impl MemoryRecord {
         subject_id: PrincipalId,
         scope: MemoryScope,
         content: impl Into<String>,
+        evidence: EvidenceReference,
     ) -> Self {
         Self {
             id,
@@ -52,6 +56,7 @@ impl MemoryRecord {
             status: MemoryStatus::Confirmed,
             content: content.into(),
             version: 1,
+            evidence: vec![evidence],
         }
     }
 }
@@ -59,7 +64,10 @@ impl MemoryRecord {
 #[cfg(test)]
 mod tests {
     use super::{MemoryKind, MemoryRecord, MemoryStatus};
-    use crate::{MemoryId, MemoryScope, PrincipalId, WorkspaceId};
+    use crate::{
+        EvidenceId, EvidenceReference, EvidenceSource, MemoryId, MemoryScope,
+        PrincipalId, WorkspaceId,
+    };
 
     #[test]
     fn creates_confirmed_global_preference() {
@@ -69,10 +77,15 @@ mod tests {
             PrincipalId::new("principal_01"),
             MemoryScope::Global,
             "Call me Hippo",
+            EvidenceReference::new(
+                EvidenceId::new("evidence_01"),
+                EvidenceSource::UserStatement,
+            ),
         );
 
         assert_eq!(memory.kind, MemoryKind::Preference);
         assert_eq!(memory.status, MemoryStatus::Confirmed);
         assert_eq!(memory.version, 1);
+        assert_eq!(memory.evidence.len(), 1);
     }
 }

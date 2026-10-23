@@ -9,7 +9,11 @@ mod memory;
 mod scope;
 
 pub use identifier::{
-    ActivityId, EntityId, MemoryId, PrincipalId, WorkspaceId,
+    ActivityId, DisclosureId, EntityId, EvidenceId, MemoryId, PrincipalId,
+    WorkspaceId,
 };
 pub use memory::{MemoryKind, MemoryRecord, MemoryStatus};
+pub use provenance::{EvidenceReference, EvidenceSource};
 pub use scope::MemoryScope;
+
+mod provenance;

@@ -38,7 +38,9 @@ macro_rules! identifier {
 }
 
 identifier!(ActivityId);
+identifier!(DisclosureId);
 identifier!(EntityId);
+identifier!(EvidenceId);
 identifier!(MemoryId);
 identifier!(PrincipalId);
 identifier!(WorkspaceId);

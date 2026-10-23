@@ -1,5 +1,6 @@
 use rembrane_domain::{
-    MemoryId, MemoryRecord, MemoryScope, PrincipalId, WorkspaceId,
+    EvidenceId, EvidenceReference, EvidenceSource, MemoryId, MemoryRecord,
+    MemoryScope, PrincipalId, WorkspaceId,
 };
 
 fn main() {
@@ -21,6 +22,10 @@ fn print_demo() {
         PrincipalId::new("principal_demo"),
         MemoryScope::Global,
         "Call me Hippo",
+        EvidenceReference::new(
+            EvidenceId::new("evidence_demo"),
+            EvidenceSource::UserStatement,
+        ),
     );
 
     println!("{}: {}", memory.id, memory.content);
