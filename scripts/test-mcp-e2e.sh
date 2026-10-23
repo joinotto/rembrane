@@ -23,6 +23,13 @@ export REMBRANE_WORKSPACE_KEY_HEX="000102030405060708090a0b0c0d0e0f1011121314151
     --principal "$REMBRANE_PRINCIPAL_ID" \
     --workspace "$REMBRANE_WORKSPACE_ID" >/dev/null
 
+if REMBRANE_READ_SCOPES="*" \
+    "$REMBRANE_MCP_BIN" </dev/null >/dev/null 2>&1
+then
+    echo "MCP unexpectedly accepted wildcard read scope" >&2
+    exit 1
+fi
+
 node "$repository_root/scripts/test-mcp-e2e.mjs"
 
 disclosure_count=$(

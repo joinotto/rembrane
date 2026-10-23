@@ -48,6 +48,13 @@ export REMBRANE_LISTEN="${REMBRANE_TEST_LISTEN:-127.0.0.1:18787}"
     --entity project_rest_e2e \
     --content "Use Rust for the REST project" >/dev/null
 
+if REMBRANE_READ_SCOPES="*" \
+    "$api_binary" >/dev/null 2>&1
+then
+    echo "REST unexpectedly accepted wildcard read scope" >&2
+    exit 1
+fi
+
 "$api_binary" >"$api_stdout" 2>"$api_stderr" &
 api_pid=$!
 

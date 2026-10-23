@@ -103,6 +103,7 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Exact `REMBRANE_READ_SCOPES` connection allowlists for global, domain,
   entity, and activity context across REST and MCP; request payloads cannot
   expand the administrator-owned grant.
+- REST and MCP startup denial tests for wildcard read-scope configuration.
 - Scope-bound write grants enforced by memory creation, proposal, confirmation,
   revision, deletion, and activity-checkpoint use cases.
 - CLI and MCP preference capture across global, domain, entity/project, and
