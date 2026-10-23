@@ -135,6 +135,50 @@ impl MemoryRecord {
         })
     }
 
+    pub fn proposed(
+        id: MemoryId,
+        workspace_id: WorkspaceId,
+        subject_id: PrincipalId,
+        scope: MemoryScope,
+        kind: MemoryKind,
+        content: impl Into<String>,
+        evidence: EvidenceReference,
+    ) -> Result<Self, MemoryLifecycleError> {
+        let content = content.into();
+        if content.trim().is_empty() {
+            return Err(MemoryLifecycleError::EmptyContent);
+        }
+
+        Ok(Self {
+            id,
+            workspace_id,
+            subject_id,
+            scope,
+            kind,
+            status: MemoryStatus::Proposed,
+            content,
+            version: 1,
+            evidence: vec![evidence],
+        })
+    }
+
+    pub fn confirm(
+        mut self,
+        evidence: EvidenceReference,
+    ) -> Result<Self, MemoryLifecycleError> {
+        if self.status != MemoryStatus::Proposed {
+            return Err(MemoryLifecycleError::InvalidStatus);
+        }
+
+        self.version = self
+            .version
+            .checked_add(1)
+            .ok_or(MemoryLifecycleError::VersionOverflow)?;
+        self.status = MemoryStatus::Confirmed;
+        self.evidence.push(evidence);
+        Ok(self)
+    }
+
     pub fn revise(
         mut self,
         content: impl Into<String>,
@@ -281,5 +325,35 @@ mod tests {
         .expect_err("empty confirmed memory should fail");
 
         assert_eq!(error, MemoryLifecycleError::EmptyContent);
+    }
+
+    #[test]
+    fn proposal_requires_explicit_confirmation() {
+        let proposal = MemoryRecord::proposed(
+            MemoryId::new("memory_01"),
+            WorkspaceId::new("workspace_01"),
+            PrincipalId::new("principal_01"),
+            MemoryScope::Global,
+            MemoryKind::Observation,
+            "The user may prefer aisle seats.",
+            EvidenceReference::new(
+                EvidenceId::new("evidence_observation"),
+                EvidenceSource::AgentObservation,
+            ),
+        )
+        .expect("non-empty proposal should be valid");
+
+        assert_eq!(proposal.status(), MemoryStatus::Proposed);
+
+        let confirmed = proposal
+            .confirm(EvidenceReference::new(
+                EvidenceId::new("evidence_confirmation"),
+                EvidenceSource::UserStatement,
+            ))
+            .expect("proposal should be confirmable");
+
+        assert_eq!(confirmed.status(), MemoryStatus::Confirmed);
+        assert_eq!(confirmed.version(), 2);
+        assert_eq!(confirmed.evidence().len(), 2);
     }
 }
