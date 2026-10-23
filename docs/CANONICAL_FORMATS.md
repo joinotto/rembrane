@@ -51,7 +51,9 @@ Format identifier: `rembrane.activity-checkpoint`
 
 The encrypted checkpoint carries its workspace, subject, activity and optional
 entity identifiers together with the current goal, summary, next steps,
-blockers, and record version.
+blockers, optional opaque external-state fingerprint, and record version.
+Decoders accept version-one records without a fingerprint; encoders omit the
+field when no fingerprint exists.
 
 See `crates/rembrane-codec/fixtures/checkpoint-v1-project-handoff.json` for the
 normative version-one fixture.

@@ -135,6 +135,8 @@ Retrieves the latest authorized checkpoint for an activity. It requires an activ
 Arguments:
 
 - `activityId`
+- `currentStateFingerprint` (optional; when both current and recorded values
+  exist, the response includes a `stale` comparison)
 
 Annotations:
 
@@ -161,6 +163,8 @@ Arguments:
 - `summary`
 - `nextSteps`
 - `blockers`
+- `stateFingerprint` (optional opaque digest of Git, filesystem, booking, or
+  other external state)
 
 The tool requires `activity:checkpoint`. Updates require the current expected version.
 

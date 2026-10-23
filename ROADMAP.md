@@ -64,7 +64,7 @@ This roadmap describes sequencing, not release dates.
 - [x] Model activity checkpoints and resumable handoffs.
 - [ ] Git and coding-agent adapters.
 - [x] Deterministic item and plaintext-byte context budgets.
-- [ ] Stale-state detection.
+- [x] Optional external-state fingerprints and stale handoff detection.
 
 ## Phase 3 — Travel continuity
 

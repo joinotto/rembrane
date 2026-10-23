@@ -103,12 +103,14 @@ struct CheckpointParameters {
     summary: String,
     next_steps: Option<Vec<String>>,
     blockers: Option<Vec<String>>,
+    state_fingerprint: Option<String>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct ResumeActivityParameters {
     activity_id: String,
+    current_state_fingerprint: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -121,6 +123,8 @@ struct CheckpointOutput {
     summary: String,
     next_steps: Vec<String>,
     blockers: Vec<String>,
+    state_fingerprint: Option<String>,
+    stale: Option<bool>,
     version: u64,
 }
 
@@ -471,6 +475,18 @@ impl RembraneMcp {
                 .map_err(|_| {
                     McpError::invalid_params("invalid checkpoint update", None)
                 })?;
+            let updated = if let Some(fingerprint) =
+                parameters.state_fingerprint
+            {
+                updated.with_state_fingerprint(fingerprint).map_err(|_| {
+                    McpError::invalid_params(
+                        "invalid state fingerprint",
+                        None,
+                    )
+                })?
+            } else {
+                updated
+            };
             CheckpointService::new(&mut state.store)
                 .update(UpdateCheckpointCommand {
                     grant: grants.write,
@@ -490,7 +506,7 @@ impl RembraneMcp {
                         None,
                     )
                 })?;
-            let checkpoint = ActivityCheckpoint::new(
+            let mut checkpoint = ActivityCheckpoint::new(
                 CheckpointId::new(format!("checkpoint_{suffix}")),
                 state.workspace_id.clone(),
                 state.principal_id.clone(),
@@ -504,6 +520,16 @@ impl RembraneMcp {
             .map_err(|_| {
                 McpError::invalid_params("invalid activity checkpoint", None)
             })?;
+            if let Some(fingerprint) = parameters.state_fingerprint {
+                checkpoint = checkpoint
+                    .with_state_fingerprint(fingerprint)
+                    .map_err(|_| {
+                        McpError::invalid_params(
+                            "invalid state fingerprint",
+                            None,
+                        )
+                    })?;
+            }
             CheckpointService::new(&mut state.store)
                 .create(CreateCheckpointCommand {
                     grant: grants.write,
@@ -514,7 +540,7 @@ impl RembraneMcp {
                 .map_err(application_error)?
         };
 
-        checkpoint_response(&checkpoint)
+        checkpoint_response(&checkpoint, None)
     }
 
     #[tool(
@@ -546,9 +572,15 @@ impl RembraneMcp {
                 activity_id,
             })
             .map_err(application_error)?;
-        checkpoint
-            .as_ref()
-            .map_or_else(|| Ok("null".to_owned()), checkpoint_response)
+        checkpoint.as_ref().map_or_else(
+            || Ok("null".to_owned()),
+            |checkpoint| {
+                checkpoint_response(
+                    checkpoint,
+                    parameters.current_state_fingerprint.as_deref(),
+                )
+            },
+        )
     }
 }
 
@@ -686,6 +718,7 @@ fn mutation_response(
 
 fn checkpoint_response(
     checkpoint: &ActivityCheckpoint,
+    current_state_fingerprint: Option<&str>,
 ) -> Result<String, McpError> {
     serde_json::to_string(&CheckpointOutput {
         checkpoint_id: checkpoint.id().to_string(),
@@ -695,6 +728,12 @@ fn checkpoint_response(
         summary: checkpoint.summary().to_owned(),
         next_steps: checkpoint.next_steps().to_vec(),
         blockers: checkpoint.blockers().to_vec(),
+        state_fingerprint: checkpoint.state_fingerprint().map(str::to_owned),
+        stale: current_state_fingerprint.and_then(|current| {
+            checkpoint
+                .state_fingerprint()
+                .map(|recorded| recorded != current)
+        }),
         version: checkpoint.version(),
     })
     .map_err(|_| McpError::internal_error("response serialization failed", None))

@@ -219,6 +219,7 @@ try {
       summary: "Encrypted persistence is implemented.",
       nextSteps: ["Run protocol tests"],
       blockers: [],
+      stateFingerprint: "git:abc123",
     },
   });
   if (createdCheckpointCall.isError) {
@@ -237,6 +238,7 @@ try {
     name: "rembrane_resume_activity",
     arguments: {
       activityId: "activity_e2e",
+      currentStateFingerprint: "git:abc123",
     },
   });
   const firstCheckpoint = JSON.parse(
@@ -244,6 +246,9 @@ try {
   );
   if (firstCheckpoint.summary !== "Encrypted persistence is implemented.") {
     throw new Error("MCP resume did not return the checkpoint");
+  }
+  if (firstCheckpoint.stale !== false) {
+    throw new Error("MCP marked matching external state as stale");
   }
 
   const updatedCheckpointCall = await request(11, "tools/call", {
@@ -254,6 +259,7 @@ try {
       summary: "Protocol smoke tests are implemented.",
       nextSteps: ["Run the full suite"],
       blockers: [],
+      stateFingerprint: "git:def456",
     },
   });
   const updatedCheckpoint = JSON.parse(
@@ -267,6 +273,7 @@ try {
     name: "rembrane_resume_activity",
     arguments: {
       activityId: "activity_e2e",
+      currentStateFingerprint: "git:abc123",
     },
   });
   const finalCheckpoint = JSON.parse(
@@ -274,6 +281,9 @@ try {
   );
   if (finalCheckpoint.summary !== "Protocol smoke tests are implemented.") {
     throw new Error("MCP resume did not return the updated checkpoint");
+  }
+  if (finalCheckpoint.stale !== true) {
+    throw new Error("MCP did not detect stale external state");
   }
 
   const deniedResumeCall = await request(13, "tools/call", {

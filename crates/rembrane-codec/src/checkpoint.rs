@@ -29,6 +29,8 @@ struct CheckpointDto {
     summary: String,
     next_steps: Vec<String>,
     blockers: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    state_fingerprint: Option<String>,
     record_version: u64,
 }
 
@@ -73,6 +75,9 @@ impl From<&ActivityCheckpoint> for CheckpointDto {
             summary: checkpoint.summary().to_owned(),
             next_steps: checkpoint.next_steps().to_vec(),
             blockers: checkpoint.blockers().to_vec(),
+            state_fingerprint: checkpoint
+                .state_fingerprint()
+                .map(str::to_owned),
             record_version: checkpoint.version(),
         }
     }
@@ -92,6 +97,7 @@ impl TryFrom<CheckpointDto> for ActivityCheckpoint {
             checkpoint.summary,
             checkpoint.next_steps,
             checkpoint.blockers,
+            checkpoint.state_fingerprint,
             checkpoint.record_version,
         )
         .map_err(|_| CodecError::InvalidDomainRecord)

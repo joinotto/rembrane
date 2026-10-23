@@ -9,6 +9,7 @@ use crate::{
 pub enum CheckpointError {
     EmptyGoal,
     EmptySummary,
+    EmptyStateFingerprint,
     InvalidVersion,
     VersionOverflow,
 }
@@ -19,6 +20,9 @@ impl Display for CheckpointError {
             Self::EmptyGoal => formatter.write_str("activity goal must not be empty"),
             Self::EmptySummary => {
                 formatter.write_str("activity summary must not be empty")
+            }
+            Self::EmptyStateFingerprint => {
+                formatter.write_str("state fingerprint must not be empty")
             }
             Self::InvalidVersion => {
                 formatter.write_str("checkpoint version must be greater than zero")
@@ -44,6 +48,7 @@ pub struct ActivityCheckpoint {
     summary: String,
     next_steps: Vec<String>,
     blockers: Vec<String>,
+    state_fingerprint: Option<String>,
     version: u64,
 }
 
@@ -58,6 +63,7 @@ impl ActivityCheckpoint {
         summary: impl Into<String>,
         next_steps: Vec<String>,
         blockers: Vec<String>,
+        state_fingerprint: Option<String>,
         version: u64,
     ) -> Result<Self, CheckpointError> {
         let goal = goal.into();
@@ -72,6 +78,7 @@ impl ActivityCheckpoint {
         if version == 0 {
             return Err(CheckpointError::InvalidVersion);
         }
+        validate_state_fingerprint(state_fingerprint.as_deref())?;
 
         Ok(Self {
             id,
@@ -83,6 +90,7 @@ impl ActivityCheckpoint {
             summary,
             next_steps,
             blockers,
+            state_fingerprint,
             version,
         })
     }
@@ -118,8 +126,19 @@ impl ActivityCheckpoint {
             summary,
             next_steps,
             blockers,
+            state_fingerprint: None,
             version: 1,
         })
+    }
+
+    pub fn with_state_fingerprint(
+        mut self,
+        state_fingerprint: impl Into<String>,
+    ) -> Result<Self, CheckpointError> {
+        let state_fingerprint = state_fingerprint.into();
+        validate_state_fingerprint(Some(&state_fingerprint))?;
+        self.state_fingerprint = Some(state_fingerprint);
+        Ok(self)
     }
 
     pub fn update(
@@ -189,8 +208,30 @@ impl ActivityCheckpoint {
     }
 
     #[must_use]
+    pub fn state_fingerprint(&self) -> Option<&str> {
+        self.state_fingerprint.as_deref()
+    }
+
+    #[must_use]
+    pub fn is_stale_against(&self, current_state_fingerprint: &str) -> bool {
+        self.state_fingerprint
+            .as_deref()
+            .is_some_and(|recorded| recorded != current_state_fingerprint)
+    }
+
+    #[must_use]
     pub const fn version(&self) -> u64 {
         self.version
+    }
+}
+
+fn validate_state_fingerprint(
+    state_fingerprint: Option<&str>,
+) -> Result<(), CheckpointError> {
+    if state_fingerprint.is_some_and(|value| value.trim().is_empty()) {
+        Err(CheckpointError::EmptyStateFingerprint)
+    } else {
+        Ok(())
     }
 }
 
@@ -228,5 +269,15 @@ mod tests {
 
         assert_eq!(updated.version(), 2);
         assert_eq!(updated.next_steps()[0], "Fix refresh locking");
+    }
+
+    #[test]
+    fn detects_external_state_changes() {
+        let checkpoint = checkpoint()
+            .with_state_fingerprint("git:abc123")
+            .expect("fingerprint should be valid");
+
+        assert!(!checkpoint.is_stale_against("git:abc123"));
+        assert!(checkpoint.is_stale_against("git:def456"));
     }
 }
