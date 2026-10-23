@@ -21,7 +21,7 @@ This roadmap describes sequencing, not release dates.
 - [x] Define and verify the tenant-isolated SQLite schema.
 - [x] Serialize canonical memory records with a versioned format.
 - [x] Serialize canonical event records with a versioned format.
-- [ ] Serialize canonical checkpoint records with a versioned format.
+- [x] Serialize canonical checkpoint records with a versioned format.
 - [ ] Implement the encrypted local SQLite adapter.
 - [ ] Retrieve minimal context through REST and MCP.
 - [ ] Persist a disclosure receipt for every context response.

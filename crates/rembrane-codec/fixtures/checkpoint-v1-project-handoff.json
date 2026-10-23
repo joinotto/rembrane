@@ -1,0 +1,1 @@
+{"format":"rembrane.activity-checkpoint","version":1,"record":{"id":"checkpoint_01","workspace_id":"workspace_01","subject_id":"principal_01","activity_id":"activity_01","entity_id":"project_01","goal":"Implement authentication","summary":"Callback implemented and unit tested.","next_steps":["Run integration tests"],"blockers":["Need staging credentials"],"record_version":1}}

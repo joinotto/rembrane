@@ -9,6 +9,7 @@ use crate::{
 pub enum CheckpointError {
     EmptyGoal,
     EmptySummary,
+    InvalidVersion,
     VersionOverflow,
 }
 
@@ -18,6 +19,9 @@ impl Display for CheckpointError {
             Self::EmptyGoal => formatter.write_str("activity goal must not be empty"),
             Self::EmptySummary => {
                 formatter.write_str("activity summary must not be empty")
+            }
+            Self::InvalidVersion => {
+                formatter.write_str("checkpoint version must be greater than zero")
             }
             Self::VersionOverflow => {
                 formatter.write_str("checkpoint version cannot be incremented")
@@ -44,6 +48,45 @@ pub struct ActivityCheckpoint {
 }
 
 impl ActivityCheckpoint {
+    pub fn restore(
+        id: CheckpointId,
+        workspace_id: WorkspaceId,
+        subject_id: PrincipalId,
+        activity_id: ActivityId,
+        entity_id: Option<EntityId>,
+        goal: impl Into<String>,
+        summary: impl Into<String>,
+        next_steps: Vec<String>,
+        blockers: Vec<String>,
+        version: u64,
+    ) -> Result<Self, CheckpointError> {
+        let goal = goal.into();
+        if goal.trim().is_empty() {
+            return Err(CheckpointError::EmptyGoal);
+        }
+
+        let summary = summary.into();
+        if summary.trim().is_empty() {
+            return Err(CheckpointError::EmptySummary);
+        }
+        if version == 0 {
+            return Err(CheckpointError::InvalidVersion);
+        }
+
+        Ok(Self {
+            id,
+            workspace_id,
+            subject_id,
+            activity_id,
+            entity_id,
+            goal,
+            summary,
+            next_steps,
+            blockers,
+            version,
+        })
+    }
+
     pub fn new(
         id: CheckpointId,
         workspace_id: WorkspaceId,

@@ -45,5 +45,13 @@ activity checkpoints; and disclosure receipts.
 See `crates/rembrane-codec/fixtures/event-v1-memory-created.json` for the
 normative version-one fixture.
 
-Checkpoint formats will follow the same envelope rules before their persistent
-adapter is implemented.
+## Activity checkpoint format version 1
+
+Format identifier: `rembrane.activity-checkpoint`
+
+The encrypted checkpoint carries its workspace, subject, activity and optional
+entity identifiers together with the current goal, summary, next steps,
+blockers, and record version.
+
+See `crates/rembrane-codec/fixtures/checkpoint-v1-project-handoff.json` for the
+normative version-one fixture.

@@ -1,5 +1,6 @@
 //! Versioned, provider-independent serialization for encrypted canonical data.
 
+mod checkpoint;
 mod event;
 
 use std::error::Error;
@@ -12,6 +13,7 @@ use rembrane_domain::{
 };
 use serde::{Deserialize, Serialize};
 
+pub use checkpoint::{decode_checkpoint, encode_checkpoint};
 pub use event::{decode_event, encode_event};
 
 const MEMORY_FORMAT: &str = "rembrane.memory";

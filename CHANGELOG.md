@@ -23,6 +23,7 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Versioned canonical memory codec with strict decoding and a stable wire
   fixture.
 - Versioned canonical event codec covering every lifecycle payload variant.
+- Versioned canonical activity-checkpoint codec for resumable handoffs.
 - Product architecture, threat model, integration support policy, Rust
   research, bot integration design, and architecture decision records.
 
