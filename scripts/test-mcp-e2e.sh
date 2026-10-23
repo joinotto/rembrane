@@ -29,5 +29,10 @@ disclosure_count=$(
         "SELECT count(*) FROM disclosure_receipts WHERE workspace_id = '$REMBRANE_WORKSPACE_ID';"
 )
 test "$disclosure_count" = "3"
+event_count=$(
+    sqlite3 "$REMBRANE_DATABASE" \
+        "SELECT count(*) FROM workspace_events WHERE workspace_id = '$REMBRANE_WORKSPACE_ID';"
+)
+test "$event_count" = "5"
 
 echo "MCP end-to-end checks passed"

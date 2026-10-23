@@ -95,6 +95,8 @@ try {
     "rembrane_remember_preference",
     "rembrane_request_correction",
     "rembrane_forget_memory",
+    "rembrane_checkpoint_activity",
+    "rembrane_resume_activity",
   ]) {
     if (!toolNames.has(expected)) {
       throw new Error(`MCP tool list omitted ${expected}`);
@@ -206,6 +208,72 @@ try {
   );
   if (finalContext.items?.length !== 0) {
     throw new Error("MCP resolve disclosed a deleted memory");
+  }
+
+  const createdCheckpointCall = await request(9, "tools/call", {
+    name: "rembrane_checkpoint_activity",
+    arguments: {
+      activityId: "activity_e2e",
+      entityId: "project_e2e",
+      goal: "Build central memory",
+      summary: "Encrypted persistence is implemented.",
+      nextSteps: ["Run protocol tests"],
+      blockers: [],
+    },
+  });
+  if (createdCheckpointCall.isError) {
+    throw new Error(
+      `MCP checkpoint returned an error: ${JSON.stringify(createdCheckpointCall)}`,
+    );
+  }
+  const createdCheckpoint = JSON.parse(
+    createdCheckpointCall.content?.find((item) => item.type === "text")?.text,
+  );
+  if (createdCheckpoint.version !== 1) {
+    throw new Error("MCP checkpoint did not create version 1");
+  }
+
+  const firstResumeCall = await request(10, "tools/call", {
+    name: "rembrane_resume_activity",
+    arguments: {
+      activityId: "activity_e2e",
+    },
+  });
+  const firstCheckpoint = JSON.parse(
+    firstResumeCall.content?.find((item) => item.type === "text")?.text,
+  );
+  if (firstCheckpoint.summary !== "Encrypted persistence is implemented.") {
+    throw new Error("MCP resume did not return the checkpoint");
+  }
+
+  const updatedCheckpointCall = await request(11, "tools/call", {
+    name: "rembrane_checkpoint_activity",
+    arguments: {
+      activityId: "activity_e2e",
+      expectedVersion: 1,
+      summary: "Protocol smoke tests are implemented.",
+      nextSteps: ["Run the full suite"],
+      blockers: [],
+    },
+  });
+  const updatedCheckpoint = JSON.parse(
+    updatedCheckpointCall.content?.find((item) => item.type === "text")?.text,
+  );
+  if (updatedCheckpoint.version !== 2) {
+    throw new Error("MCP checkpoint did not update to version 2");
+  }
+
+  const finalResumeCall = await request(12, "tools/call", {
+    name: "rembrane_resume_activity",
+    arguments: {
+      activityId: "activity_e2e",
+    },
+  });
+  const finalCheckpoint = JSON.parse(
+    finalResumeCall.content?.find((item) => item.type === "text")?.text,
+  );
+  if (finalCheckpoint.summary !== "Protocol smoke tests are implemented.") {
+    throw new Error("MCP resume did not return the updated checkpoint");
   }
 } finally {
   child.kill("SIGTERM");

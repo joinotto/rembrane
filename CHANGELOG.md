@@ -51,6 +51,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   encrypted context and record disclosure receipts.
 - MCP tools for authorized direct preference creation, correction, and
   encrypted deletion tombstones.
+- MCP tools for encrypted activity checkpoint creation, optimistic updates,
+  and scoped cross-agent resume.
 - Bearer-authenticated REST context resolution bound to a configured workspace,
   principal, and client profile.
 - End-to-end CLI lifecycle test covering encrypted capture, disclosure,

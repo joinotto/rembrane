@@ -4,16 +4,18 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use anyhow::{Context, Result};
 use rembrane_application::{
     AuthorizeClientCommand, AuthorizeClientService, ClientGrantBundle,
-    DeleteMemoryCommand, EventRepository, MemoryLifecycleService,
-    RememberPreferenceCommand, RememberPreferenceService,
-    ResolveContextCommand, ResolveContextService, ReviseMemoryCommand,
+    CheckpointService, CreateCheckpointCommand, DeleteMemoryCommand,
+    EventRepository, MemoryLifecycleService, RememberPreferenceCommand,
+    RememberPreferenceService, ResolveContextCommand, ResolveContextService,
+    ResumeActivityCommand, ReviseMemoryCommand, UpdateCheckpointCommand,
 };
 use rembrane_contracts::ResolveContextRequest;
 use rembrane_crypto_rustcrypto::RustCryptoRecordCipher;
 use rembrane_domain::{
-    ClientId, ContextPackId, DisclosureId, EventId, EvidenceId,
-    EvidenceReference, EvidenceSource, MemoryId, MemoryScope, PrincipalId,
-    ReadScope, WorkspaceId, WritePermission,
+    ActivityCheckpoint, ActivityId, CheckpointId, ClientId, ContextPackId,
+    DisclosureId, EntityId, EventId, EvidenceId, EvidenceReference,
+    EvidenceSource, MemoryId, MemoryScope, PrincipalId, ReadScope, WorkspaceId,
+    WritePermission,
 };
 use rembrane_store_sqlite::SqliteStore;
 use rmcp::handler::server::wrapper::Parameters;
@@ -75,6 +77,37 @@ struct MutationOutput {
     memory_id: String,
     version: u64,
     status: &'static str,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct CheckpointParameters {
+    activity_id: String,
+    entity_id: Option<String>,
+    expected_version: Option<u64>,
+    goal: Option<String>,
+    summary: String,
+    next_steps: Option<Vec<String>>,
+    blockers: Option<Vec<String>>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct ResumeActivityParameters {
+    activity_id: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CheckpointOutput {
+    checkpoint_id: String,
+    activity_id: String,
+    entity_id: Option<String>,
+    goal: String,
+    summary: String,
+    next_steps: Vec<String>,
+    blockers: Vec<String>,
+    version: u64,
 }
 
 struct State {
@@ -338,6 +371,139 @@ impl RembraneMcp {
             .map_err(application_error)?;
         mutation_response(memory.id().to_string(), memory.version(), "deleted")
     }
+
+    #[tool(
+        name = "rembrane_checkpoint_activity",
+        description = "Create or update an encrypted activity checkpoint for cross-agent continuation."
+    )]
+    fn checkpoint_activity(
+        &self,
+        Parameters(parameters): Parameters<CheckpointParameters>,
+    ) -> Result<String, McpError> {
+        if parameters.activity_id.trim().is_empty()
+            || parameters.summary.trim().is_empty()
+            || parameters.expected_version == Some(0)
+        {
+            return Err(McpError::invalid_params(
+                "activityId, summary, and a positive expectedVersion are required",
+                None,
+            ));
+        }
+        let mut state = lock_state(&self.state)?;
+        let activity_id = ActivityId::new(parameters.activity_id);
+        let grants = authorize(
+            &state,
+            vec![ReadScope::Activity {
+                id: activity_id.clone(),
+            }],
+            vec![WritePermission::WriteCheckpoint],
+        )?;
+        let previous_sequence = current_sequence(&state)?;
+        let suffix = next_id(&mut state);
+        let next_steps = parameters.next_steps.unwrap_or_default();
+        let blockers = parameters.blockers.unwrap_or_default();
+        let checkpoint = if let Some(expected_version) =
+            parameters.expected_version
+        {
+            let current = CheckpointService::new(&mut state.store)
+                .resume(&ResumeActivityCommand {
+                    grant: grants.read,
+                    activity_id,
+                })
+                .map_err(application_error)?
+                .ok_or_else(|| {
+                    McpError::invalid_params("activity checkpoint not found", None)
+                })?;
+            if current.version() != expected_version {
+                return Err(McpError::invalid_params(
+                    "checkpoint version conflict",
+                    None,
+                ));
+            }
+            let updated = current
+                .update(parameters.summary, next_steps, blockers)
+                .map_err(|_| {
+                    McpError::invalid_params("invalid checkpoint update", None)
+                })?;
+            CheckpointService::new(&mut state.store)
+                .update(UpdateCheckpointCommand {
+                    grant: grants.write,
+                    checkpoint: updated,
+                    expected_version,
+                    event_id: EventId::new(format!("event_{suffix}")),
+                    expected_previous_sequence: previous_sequence,
+                })
+                .map_err(application_error)?
+        } else {
+            let goal = parameters
+                .goal
+                .filter(|goal| !goal.trim().is_empty())
+                .ok_or_else(|| {
+                    McpError::invalid_params(
+                        "goal is required for a new checkpoint",
+                        None,
+                    )
+                })?;
+            let checkpoint = ActivityCheckpoint::new(
+                CheckpointId::new(format!("checkpoint_{suffix}")),
+                state.workspace_id.clone(),
+                state.principal_id.clone(),
+                activity_id,
+                parameters.entity_id.map(EntityId::new),
+                goal,
+                parameters.summary,
+                next_steps,
+                blockers,
+            )
+            .map_err(|_| {
+                McpError::invalid_params("invalid activity checkpoint", None)
+            })?;
+            CheckpointService::new(&mut state.store)
+                .create(CreateCheckpointCommand {
+                    grant: grants.write,
+                    checkpoint,
+                    event_id: EventId::new(format!("event_{suffix}")),
+                    expected_previous_sequence: previous_sequence,
+                })
+                .map_err(application_error)?
+        };
+
+        checkpoint_response(&checkpoint)
+    }
+
+    #[tool(
+        name = "rembrane_resume_activity",
+        description = "Retrieve the latest encrypted checkpoint for one authorized activity."
+    )]
+    fn resume_activity(
+        &self,
+        Parameters(parameters): Parameters<ResumeActivityParameters>,
+    ) -> Result<String, McpError> {
+        if parameters.activity_id.trim().is_empty() {
+            return Err(McpError::invalid_params(
+                "activityId must not be empty",
+                None,
+            ));
+        }
+        let mut state = lock_state(&self.state)?;
+        let activity_id = ActivityId::new(parameters.activity_id);
+        let grants = authorize(
+            &state,
+            vec![ReadScope::Activity {
+                id: activity_id.clone(),
+            }],
+            Vec::new(),
+        )?;
+        let checkpoint = CheckpointService::new(&mut state.store)
+            .resume(&ResumeActivityCommand {
+                grant: grants.read,
+                activity_id,
+            })
+            .map_err(application_error)?;
+        checkpoint
+            .as_ref()
+            .map_or_else(|| Ok("null".to_owned()), checkpoint_response)
+    }
 }
 
 fn lock_state(
@@ -386,6 +552,22 @@ fn mutation_response(
         memory_id,
         version,
         status,
+    })
+    .map_err(|_| McpError::internal_error("response serialization failed", None))
+}
+
+fn checkpoint_response(
+    checkpoint: &ActivityCheckpoint,
+) -> Result<String, McpError> {
+    serde_json::to_string(&CheckpointOutput {
+        checkpoint_id: checkpoint.id().to_string(),
+        activity_id: checkpoint.activity_id().to_string(),
+        entity_id: checkpoint.entity_id().map(ToString::to_string),
+        goal: checkpoint.goal().to_owned(),
+        summary: checkpoint.summary().to_owned(),
+        next_steps: checkpoint.next_steps().to_vec(),
+        blockers: checkpoint.blockers().to_vec(),
+        version: checkpoint.version(),
     })
     .map_err(|_| McpError::internal_error("response serialization failed", None))
 }

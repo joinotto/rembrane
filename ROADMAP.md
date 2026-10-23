@@ -42,6 +42,7 @@ This roadmap describes sequencing, not release dates.
 - [ ] Add production OS-keychain and customer-KMS key providers.
 - [x] Retrieve minimal context through local stdio MCP.
 - [x] Create, correct, and delete authorized preferences through local MCP.
+- [x] Create, update, and resume encrypted activity checkpoints through MCP.
 - [x] Retrieve minimal context through authenticated local REST.
 - [ ] Add remote Streamable HTTP MCP with OAuth.
 - [x] Persist a disclosure receipt for every SQLite context response.
