@@ -17,6 +17,9 @@ use rembrane_domain::{
 use rembrane_store_memory::InMemoryStore;
 use rembrane_store_sqlite::SqliteStore;
 
+const EXPORT_MAGIC: &[u8; 16] = b"REMBRANE-EXPORT\n";
+const EXPORT_VERSION: u32 = 1;
+
 fn main() {
     if let Err(error) = run(std::env::args().skip(1).collect()) {
         eprintln!("error: {error}");
@@ -54,11 +57,34 @@ fn backup(arguments: &[String]) -> Result<(), String> {
     create_parent_directory(destination)?;
     let (store, principal_id, workspace_id) = encrypted_store(arguments)?;
     verify_installation(&store, &workspace_id, &principal_id)?;
-    store
-        .backup_to(destination)
-        .map_err(|error| format!("cannot create backup: {error}"))?;
+    if destination.exists() {
+        return Err("backup destination already exists".to_owned());
+    }
+    let temporary = destination.with_extension(format!(
+        "encrypted-snapshot-{}",
+        unique_suffix()?
+    ));
+    let result = (|| {
+        store
+            .backup_to(&temporary)
+            .map_err(|error| format!("cannot create snapshot: {error}"))?;
+        write_export(&temporary, destination)
+    })();
+    let cleanup_result = if temporary.exists() {
+        std::fs::remove_file(&temporary)
+            .map_err(|error| format!("cannot remove temporary snapshot: {error}"))
+    } else {
+        Ok(())
+    };
+    if let Err(error) = result {
+        let _ = std::fs::remove_file(destination);
+        cleanup_result?;
+        return Err(error);
+    }
+    cleanup_result?;
 
     println!("Encrypted backup created");
+    println!("Format: rembrane-encrypted-export-v{EXPORT_VERSION}");
     println!("Output: {}", destination.display());
     Ok(())
 }
@@ -70,8 +96,7 @@ fn restore(arguments: &[String]) -> Result<(), String> {
         return Err("restore destination already exists".to_owned());
     }
     create_parent_directory(destination)?;
-    std::fs::copy(source, destination)
-        .map_err(|error| format!("cannot copy backup: {error}"))?;
+    read_export(source, destination)?;
 
     let result = (|| {
         let principal_id =
@@ -97,7 +122,115 @@ fn restore(arguments: &[String]) -> Result<(), String> {
     }
 
     println!("Encrypted backup restored");
+    println!("Format: rembrane-encrypted-export-v{EXPORT_VERSION}");
     println!("Database: {}", destination.display());
+    Ok(())
+}
+
+fn write_export(
+    snapshot: &std::path::Path,
+    destination: &std::path::Path,
+) -> Result<(), String> {
+    use std::io::Write;
+
+    let payload_length = snapshot
+        .metadata()
+        .map_err(|error| format!("cannot inspect snapshot: {error}"))?
+        .len();
+    let mut input = std::fs::File::open(snapshot)
+        .map_err(|error| format!("cannot open snapshot: {error}"))?;
+    let mut output = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(destination)
+        .map_err(|error| format!("cannot create export: {error}"))?;
+    output
+        .write_all(EXPORT_MAGIC)
+        .and_then(|()| output.write_all(&EXPORT_VERSION.to_be_bytes()))
+        .and_then(|()| output.write_all(&payload_length.to_be_bytes()))
+        .map_err(|error| format!("cannot write export header: {error}"))?;
+    let copied = std::io::copy(&mut input, &mut output)
+        .map_err(|error| format!("cannot write export payload: {error}"))?;
+    if copied != payload_length {
+        return Err("snapshot changed while export was created".to_owned());
+    }
+    output
+        .flush()
+        .map_err(|error| format!("cannot flush export: {error}"))
+}
+
+fn read_export(
+    source: &std::path::Path,
+    destination: &std::path::Path,
+) -> Result<(), String> {
+    use std::io::{Read, Write};
+
+    let mut input = std::fs::File::open(source)
+        .map_err(|error| format!("cannot open export: {error}"))?;
+    let mut magic = [0_u8; EXPORT_MAGIC.len()];
+    input
+        .read_exact(&mut magic)
+        .map_err(|_| "export header is truncated".to_owned())?;
+    if &magic != EXPORT_MAGIC {
+        return Err("input is not a Rembrane encrypted export".to_owned());
+    }
+    let mut version = [0_u8; 4];
+    input
+        .read_exact(&mut version)
+        .map_err(|_| "export version is truncated".to_owned())?;
+    let version = u32::from_be_bytes(version);
+    if version != EXPORT_VERSION {
+        return Err(format!("unsupported encrypted export version {version}"));
+    }
+    let mut payload_length = [0_u8; 8];
+    input
+        .read_exact(&mut payload_length)
+        .map_err(|_| "export payload length is truncated".to_owned())?;
+    let payload_length = u64::from_be_bytes(payload_length);
+    if payload_length == 0 {
+        return Err("export payload is empty".to_owned());
+    }
+    let expected_length = u64::try_from(EXPORT_MAGIC.len() + 4 + 8)
+        .ok()
+        .and_then(|header| header.checked_add(payload_length))
+        .ok_or_else(|| "export length exceeds supported range".to_owned())?;
+    let actual_length = input
+        .metadata()
+        .map_err(|error| format!("cannot inspect export: {error}"))?
+        .len();
+    if actual_length != expected_length {
+        return Err(if actual_length < expected_length {
+            "export payload is truncated".to_owned()
+        } else {
+            "export contains trailing data".to_owned()
+        });
+    }
+
+    let mut output = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(destination)
+        .map_err(|error| format!("cannot create restore destination: {error}"))?;
+    let copied = match std::io::copy(
+        &mut input.by_ref().take(payload_length),
+        &mut output,
+    ) {
+        Ok(copied) => copied,
+        Err(error) => {
+            drop(output);
+            let _ = std::fs::remove_file(destination);
+            return Err(format!("cannot restore export payload: {error}"));
+        }
+    };
+    if copied != payload_length {
+        let _ = std::fs::remove_file(destination);
+        return Err("export payload is truncated".to_owned());
+    }
+    if let Err(error) = output.flush() {
+        drop(output);
+        let _ = std::fs::remove_file(destination);
+        return Err(format!("cannot flush restored database: {error}"));
+    }
     Ok(())
 }
 
@@ -706,9 +839,21 @@ mod tests {
     use rembrane_domain::{EntityId, MemoryScope, ReadScope};
 
     use super::{
-        format_read_scopes, option, positive_u64, recall_scope_context,
-        requested_memory_scope,
+        EXPORT_MAGIC, format_read_scopes, option, positive_u64,
+        read_export, recall_scope_context, requested_memory_scope,
+        write_export,
     };
+
+    fn temporary_path(name: &str) -> std::path::PathBuf {
+        let suffix = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("test clock should be valid")
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "rembrane-cli-{name}-{}-{suffix}",
+            std::process::id()
+        ))
+    }
 
     #[test]
     fn parses_named_option_independent_of_order() {
@@ -798,5 +943,40 @@ mod tests {
             format_read_scopes(&scopes),
             "global,domain:development,entity:project_01"
         );
+    }
+
+    #[test]
+    fn encrypted_export_framing_round_trips_exact_payload() {
+        let snapshot = temporary_path("snapshot");
+        let export = temporary_path("export");
+        let restored = temporary_path("restored");
+        let payload = b"encrypted sqlite fixture";
+        std::fs::write(&snapshot, payload).expect("snapshot should be written");
+
+        write_export(&snapshot, &export).expect("export should be created");
+        read_export(&export, &restored).expect("export should restore");
+
+        assert_eq!(
+            std::fs::read(&restored).expect("restore should be readable"),
+            payload
+        );
+        std::fs::remove_file(snapshot).expect("snapshot should be removed");
+        std::fs::remove_file(export).expect("export should be removed");
+        std::fs::remove_file(restored).expect("restore should be removed");
+    }
+
+    #[test]
+    fn encrypted_export_rejects_unknown_version_without_destination() {
+        let export = temporary_path("unknown-version");
+        let restored = temporary_path("unknown-version-restored");
+        let mut bytes = EXPORT_MAGIC.to_vec();
+        bytes.extend_from_slice(&2_u32.to_be_bytes());
+        bytes.extend_from_slice(&1_u64.to_be_bytes());
+        bytes.push(1);
+        std::fs::write(&export, bytes).expect("fixture should be written");
+
+        assert!(read_export(&export, &restored).is_err());
+        assert!(!restored.exists());
+        std::fs::remove_file(export).expect("fixture should be removed");
     }
 }

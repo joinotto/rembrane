@@ -45,6 +45,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   administrator-owned scope allowlist.
 - Consistent encrypted SQLite backups and fail-closed restores that refuse
   overwrites, authenticate restored records, and remove invalid destinations.
+- `rembrane-encrypted-export-v1` single-file backup framing with strict magic,
+  format-version, payload-length, truncation, and trailing-data validation.
 - Type-state SQLite cipher attachment that prevents encrypted memory APIs from
   existing on an unconfigured store.
 - Tenant-scoped SQLite memory reads that authenticate encrypted payloads before

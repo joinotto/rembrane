@@ -8,8 +8,10 @@ test -x "$rembrane_binary"
 test_directory=$(mktemp -d "${TMPDIR:-/tmp}/rembrane-cli-e2e.XXXXXX")
 trap 'rm -rf "$test_directory"' EXIT
 database="$test_directory/rembrane.sqlite"
-backup="$test_directory/rembrane-backup.sqlite"
+backup="$test_directory/rembrane-backup.rembrane"
 restored_database="$test_directory/rembrane-restored.sqlite"
+invalid_export="$test_directory/rembrane-invalid.rembrane"
+invalid_restore="$test_directory/rembrane-invalid.sqlite"
 
 export REMBRANE_WORKSPACE_KEY_ID="e2e-key-v1"
 export REMBRANE_WORKSPACE_KEY_HEX="000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
@@ -44,6 +46,26 @@ test -n "$memory_id"
     --principal principal_e2e \
     --workspace workspace_e2e \
     --output "$backup" >/dev/null
+
+test "$(head -c 16 "$backup")" = "REMBRANE-EXPORT"
+
+cp "$backup" "$invalid_export"
+ruby -e '
+  path = ARGV.fetch(0)
+  data = File.binread(path)
+  data[16, 4] = [2].pack("N")
+  File.binwrite(path, data)
+' "$invalid_export"
+if "$rembrane_binary" restore \
+    --input "$invalid_export" \
+    --database "$invalid_restore" \
+    --principal principal_e2e \
+    --workspace workspace_e2e >/dev/null 2>&1
+then
+    echo "restore unexpectedly accepted an unknown export version" >&2
+    exit 1
+fi
+test ! -e "$invalid_restore"
 
 "$rembrane_binary" restore \
     --input "$backup" \

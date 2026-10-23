@@ -45,6 +45,12 @@ against device loss.
 - authenticates encrypted memory records with the supplied workspace key; and
 - removes the newly created destination if verification fails.
 
+Backups use the single-file `rembrane-encrypted-export-v1` framing format.
+The payload is a consistent SQLite snapshot whose sensitive canonical fields
+remain record-encrypted. Restore rejects unknown versions, truncated payloads,
+trailing bytes, overwrites, and records that cannot be authenticated with the
+configured workspace key.
+
 After restore, run `rembrane doctor` and a representative `rembrane recall`
 before reconnecting agents. Provider indexes are derived state; deployments
 must replay or rebuild projections when a provider is introduced.

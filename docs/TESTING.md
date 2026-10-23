@@ -74,10 +74,10 @@ target/debug/rembrane backup \
   --database "$REMBRANE_DATABASE" \
   --principal "$REMBRANE_PRINCIPAL_ID" \
   --workspace "$REMBRANE_WORKSPACE_ID" \
-  --output .rembrane/rembrane-backup.sqlite
+  --output .rembrane/rembrane-backup.rembrane
 
 target/debug/rembrane restore \
-  --input .rembrane/rembrane-backup.sqlite \
+  --input .rembrane/rembrane-backup.rembrane \
   --database .rembrane/rembrane-restored.sqlite \
   --principal "$REMBRANE_PRINCIPAL_ID" \
   --workspace "$REMBRANE_WORKSPACE_ID"
