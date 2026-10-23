@@ -54,6 +54,7 @@ The platform owns identity, workspaces, encryption orchestration, canonical even
 - [Rust Architecture Research](docs/RUST_ARCHITECTURE_RESEARCH.md)
 - [Bot and Platform Integration Architecture](docs/BOT_AND_PLATFORM_INTEGRATION_ARCHITECTURE.md)
 - [Support and Compatibility Policy](docs/SUPPORT_POLICY.md)
+- [Threat Model](docs/THREAT_MODEL.md)
 - [Roadmap](ROADMAP.md)
 - [Security Policy](SECURITY.md)
 - [Contributing](CONTRIBUTING.md)
