@@ -45,14 +45,7 @@ Changes affecting stored data or protocols require a migration and compatibility
 Run the architecture guard before submitting:
 
 ```text
-./scripts/check-architecture.sh
-./scripts/check-sensitive-files.sh
-./scripts/test-sqlite-schema.sh
-./scripts/test-sqlite-atomicity.sh
-cargo build --workspace
-./scripts/test-cli-e2e.sh
-./scripts/test-mcp-e2e.sh
-./scripts/test-rest-e2e.sh
+./scripts/test-all.sh
 ```
 
 ## Security-sensitive changes

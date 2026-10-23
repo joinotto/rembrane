@@ -57,6 +57,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   retrieval, disclosure persistence, and cross-workspace denial.
 - MCP stdio protocol smoke test covering initialization, tool discovery,
   context resolution, and disclosure persistence.
+- One-command full preflight suite, environment template, and manual testing
+  guide for CLI, MCP, and REST.
 
 ### Changed
 

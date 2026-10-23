@@ -38,6 +38,7 @@ This roadmap describes sequencing, not release dates.
 - [x] Add an executable encrypted CLI lifecycle smoke test.
 - [x] Add Postman REST authentication and tenant-isolation smoke tests.
 - [x] Add an MCP initialize/list/call protocol smoke test.
+- [x] Add a single full preflight test command and operator testing guide.
 - [ ] Add production OS-keychain and customer-KMS key providers.
 - [x] Retrieve minimal context through local stdio MCP.
 - [x] Retrieve minimal context through authenticated local REST.

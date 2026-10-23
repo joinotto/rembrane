@@ -60,6 +60,7 @@ The platform owns identity, workspaces, encryption orchestration, canonical even
 - [Security Policy](SECURITY.md)
 - [Contributing](CONTRIBUTING.md)
 - [Changelog](CHANGELOG.md)
+- [Testing](docs/TESTING.md)
 
 ## Current key decisions
 

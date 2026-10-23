@@ -13,20 +13,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: ./scripts/check-architecture.sh
-      - run: ./scripts/check-sensitive-files.sh
-      - run: ./scripts/test-sqlite-schema.sh
-      - run: ./scripts/test-sqlite-atomicity.sh
       - uses: dtolnay/rust-toolchain@1.88.0
         with:
           components: clippy,rustfmt
-      - run: cargo fmt --all --check
-      - run: cargo clippy --workspace --all-targets -- -D warnings
-      - run: cargo test --workspace
-      - run: cargo build --workspace
-      - run: ./scripts/test-cli-e2e.sh
-      - run: ./scripts/test-mcp-e2e.sh
       - uses: postmanlabs/postman-cli-action@v1
         with:
           command: --version
-      - run: ./scripts/test-rest-e2e.sh
+      - run: ./scripts/test-all.sh
