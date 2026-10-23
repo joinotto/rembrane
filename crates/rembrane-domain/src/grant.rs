@@ -20,6 +20,30 @@ pub struct ReadGrant {
     pub scopes: Vec<ReadScope>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WritePermission {
+    ProposeMemory,
+    ConfirmMemory,
+    ReviseMemory,
+    DeleteMemory,
+    WriteCheckpoint,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WriteGrant {
+    pub client_id: ClientId,
+    pub workspace_id: WorkspaceId,
+    pub subject_id: PrincipalId,
+    pub permissions: Vec<WritePermission>,
+}
+
+impl WriteGrant {
+    #[must_use]
+    pub fn allows(&self, permission: WritePermission) -> bool {
+        self.permissions.contains(&permission)
+    }
+}
+
 impl ReadGrant {
     #[must_use]
     pub fn allows(&self, memory_scope: &MemoryScope) -> bool {

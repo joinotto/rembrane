@@ -15,7 +15,7 @@ mod scope;
 pub use disclosure::{DisclosedMemory, DisclosureReceipt};
 pub use activity::{ActivityCheckpoint, CheckpointError};
 pub use event::{CanonicalEvent, EventError, EventPayload};
-pub use grant::{ReadGrant, ReadScope};
+pub use grant::{ReadGrant, ReadScope, WriteGrant, WritePermission};
 pub use identifier::{
     ActivityId, CheckpointId, ClientId, ContextPackId, DisclosureId, EntityId,
     EventId, EvidenceId, MemoryId, PrincipalId, WorkspaceId,
