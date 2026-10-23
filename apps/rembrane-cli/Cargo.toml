@@ -8,7 +8,10 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+rembrane-application = { path = "../../crates/rembrane-application" }
+rembrane-contracts = { path = "../../crates/rembrane-contracts" }
 rembrane-domain = { path = "../../crates/rembrane-domain" }
+rembrane-store-memory = { path = "../../adapters/rembrane-store-memory" }
 
 [lints]
 workspace = true

@@ -1,7 +1,13 @@
-use rembrane_domain::{
-    EvidenceId, EvidenceReference, EvidenceSource, MemoryId, MemoryRecord,
-    MemoryScope, PrincipalId, WorkspaceId,
+use rembrane_application::{
+    MemoryRepository, ResolveContextCommand, ResolveContextService,
 };
+use rembrane_contracts::ResolveContextRequest;
+use rembrane_domain::{
+    ClientId, ContextPackId, DisclosureId, EvidenceId, EvidenceReference,
+    EvidenceSource, MemoryId, MemoryRecord, MemoryScope, PrincipalId,
+    ReadGrant, ReadScope, WorkspaceId,
+};
+use rembrane_store_memory::InMemoryStore;
 
 fn main() {
     let command = std::env::args().nth(1);
@@ -16,10 +22,12 @@ fn main() {
 }
 
 fn print_demo() {
+    let workspace_id = WorkspaceId::new("workspace_demo");
+    let principal_id = PrincipalId::new("principal_demo");
     let memory = MemoryRecord::confirmed_preference(
         MemoryId::new("memory_demo"),
-        WorkspaceId::new("workspace_demo"),
-        PrincipalId::new("principal_demo"),
+        workspace_id.clone(),
+        principal_id.clone(),
         MemoryScope::Global,
         "Call me Hippo",
         EvidenceReference::new(
@@ -29,7 +37,40 @@ fn print_demo() {
     )
     .expect("built-in demo memory should be valid");
 
-    println!("{}: {}", memory.id(), memory.content());
+    let mut store = InMemoryStore::new();
+    store
+        .insert(memory)
+        .expect("built-in demo insert should succeed");
+
+    let response = ResolveContextService::new(&mut store)
+        .execute(ResolveContextCommand {
+            request: ResolveContextRequest {
+                workspace_id: workspace_id.clone(),
+                principal_id: principal_id.clone(),
+                domain: None,
+                entity_id: None,
+                activity_id: None,
+                purpose: "personalize_assistant".to_owned(),
+                query: "What should I call the user?".to_owned(),
+                maximum_items: 5,
+            },
+            grant: ReadGrant {
+                client_id: ClientId::new("second_assistant"),
+                workspace_id,
+                subject_id: principal_id,
+                scopes: vec![ReadScope::Global],
+            },
+            context_pack_id: ContextPackId::new("context_demo"),
+            disclosure_id: DisclosureId::new("disclosure_demo"),
+        })
+        .expect("built-in demo resolution should succeed");
+
+    println!("Second assistant received:");
+    for item in response.items {
+        println!("- {}: {}", item.id(), item.content());
+    }
+    println!("Context pack: {}", response.context_pack_id);
+    println!("Disclosure receipt: {}", response.disclosure_id);
 }
 
 fn print_help() {
