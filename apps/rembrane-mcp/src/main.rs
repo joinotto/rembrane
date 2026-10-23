@@ -19,7 +19,6 @@ use rmcp::{
     transport::stdio,
 };
 use serde::{Deserialize, Serialize};
-use zeroize::Zeroizing;
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
@@ -65,12 +64,8 @@ impl RembraneMcp {
             WorkspaceId::new(required_environment("REMBRANE_WORKSPACE_ID")?);
         let client_id =
             ClientId::new(required_environment("REMBRANE_CLIENT_ID")?);
-        let key_id = required_environment("REMBRANE_WORKSPACE_KEY_ID")?;
-        let encoded_key =
-            Zeroizing::new(required_environment("REMBRANE_WORKSPACE_KEY_HEX")?);
-        let key = decode_key(&encoded_key)?;
-        let cipher = RustCryptoRecordCipher::new(key_id, key)
-            .context("failed to initialize record cipher")?;
+        let cipher = RustCryptoRecordCipher::from_environment()
+            .context("failed to load workspace cipher")?;
         let store = SqliteStore::open(database)
             .context("failed to open Rembrane database")?
             .with_cipher(cipher);
@@ -182,20 +177,6 @@ impl RembraneMcp {
 
 fn required_environment(name: &str) -> Result<String> {
     std::env::var(name).with_context(|| format!("{name} is required"))
-}
-
-fn decode_key(encoded: &str) -> Result<[u8; 32]> {
-    anyhow::ensure!(
-        encoded.len() == 64 && encoded.is_ascii(),
-        "REMBRANE_WORKSPACE_KEY_HEX must contain 64 hexadecimal characters"
-    );
-    let mut key = [0_u8; 32];
-    for (index, output) in key.iter_mut().enumerate() {
-        let offset = index.saturating_mul(2);
-        *output = u8::from_str_radix(&encoded[offset..offset + 2], 16)
-            .context("REMBRANE_WORKSPACE_KEY_HEX contains invalid hexadecimal")?;
-    }
-    Ok(key)
 }
 
 #[tokio::main]

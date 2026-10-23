@@ -15,7 +15,6 @@ use rembrane_domain::{
 };
 use rembrane_store_memory::InMemoryStore;
 use rembrane_store_sqlite::SqliteStore;
-use zeroize::Zeroizing;
 
 fn main() {
     if let Err(error) = run(std::env::args().skip(1).collect()) {
@@ -215,15 +214,8 @@ fn encrypted_store(
     let database = option(arguments, "--database")?;
     let principal_id = PrincipalId::new(option(arguments, "--principal")?);
     let workspace_id = WorkspaceId::new(option(arguments, "--workspace")?);
-    let key_id = std::env::var("REMBRANE_WORKSPACE_KEY_ID")
-        .map_err(|_| "REMBRANE_WORKSPACE_KEY_ID is required".to_owned())?;
-    let encoded_key = Zeroizing::new(
-        std::env::var("REMBRANE_WORKSPACE_KEY_HEX")
-            .map_err(|_| "REMBRANE_WORKSPACE_KEY_HEX is required".to_owned())?,
-    );
-    let key = decode_key(&encoded_key)?;
-    let cipher = RustCryptoRecordCipher::new(key_id, key)
-        .map_err(|error| format!("cannot initialize cipher: {error}"))?;
+    let cipher = RustCryptoRecordCipher::from_environment()
+        .map_err(|error| format!("cannot load workspace cipher: {error}"))?;
     let store = SqliteStore::open(database)
         .map_err(|error| format!("cannot open database: {error}"))?
         .with_cipher(cipher);
@@ -271,25 +263,6 @@ fn positive_u64(arguments: &[String], name: &str) -> Result<u64, String> {
         return Err(format!("{name} must be a positive integer"));
     }
     Ok(value)
-}
-
-fn decode_key(encoded: &str) -> Result<[u8; 32], String> {
-    if encoded.len() != 64 || !encoded.is_ascii() {
-        return Err(
-            "REMBRANE_WORKSPACE_KEY_HEX must contain 64 hexadecimal characters"
-                .to_owned(),
-        );
-    }
-    let mut key = [0_u8; 32];
-    for (index, output) in key.iter_mut().enumerate() {
-        let offset = index.saturating_mul(2);
-        *output = u8::from_str_radix(&encoded[offset..offset + 2], 16)
-            .map_err(|_| {
-                "REMBRANE_WORKSPACE_KEY_HEX contains invalid hexadecimal"
-                    .to_owned()
-            })?;
-    }
-    Ok(key)
 }
 
 fn unique_suffix() -> Result<u128, String> {
@@ -439,7 +412,7 @@ fn print_help() {
 
 #[cfg(test)]
 mod tests {
-    use super::{decode_key, option, positive_u64};
+    use super::{option, positive_u64};
 
     #[test]
     fn parses_named_option_independent_of_order() {
@@ -465,21 +438,6 @@ mod tests {
         ];
 
         assert!(option(&arguments, "--database").is_err());
-    }
-
-    #[test]
-    fn decodes_exact_workspace_key() {
-        let encoded =
-            "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
-        let key = decode_key(encoded).expect("valid key decodes");
-
-        assert_eq!(key[0], 0);
-        assert_eq!(key[31], 31);
-    }
-
-    #[test]
-    fn rejects_workspace_key_with_wrong_length() {
-        assert!(decode_key("abcd").is_err());
     }
 
     #[test]

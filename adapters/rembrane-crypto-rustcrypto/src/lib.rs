@@ -33,6 +33,30 @@ impl RustCryptoRecordCipher {
             key: Zeroizing::new(key),
         })
     }
+
+    pub fn from_environment() -> Result<Self, CryptoError> {
+        let key_id = std::env::var("REMBRANE_WORKSPACE_KEY_ID")
+            .map_err(|_| CryptoError::KeyUnavailable)?;
+        let encoded_key = Zeroizing::new(
+            std::env::var("REMBRANE_WORKSPACE_KEY_HEX")
+                .map_err(|_| CryptoError::KeyUnavailable)?,
+        );
+        let key = decode_key(&encoded_key)?;
+        Self::new(key_id, key)
+    }
+}
+
+fn decode_key(encoded: &str) -> Result<[u8; 32], CryptoError> {
+    if encoded.len() != 64 || !encoded.is_ascii() {
+        return Err(CryptoError::KeyUnavailable);
+    }
+    let mut key = Zeroizing::new([0_u8; 32]);
+    for (index, output) in key.iter_mut().enumerate() {
+        let offset = index.saturating_mul(2);
+        *output = u8::from_str_radix(&encoded[offset..offset + 2], 16)
+            .map_err(|_| CryptoError::KeyUnavailable)?;
+    }
+    Ok(*key)
 }
 
 impl RecordCipher for RustCryptoRecordCipher {
@@ -138,5 +162,10 @@ mod tests {
             .expect_err("different associated data must fail");
 
         assert_eq!(error, CryptoError::AuthenticationFailed);
+    }
+
+    #[test]
+    fn rejects_invalid_encoded_key() {
+        assert_eq!(super::decode_key("abcd"), Err(CryptoError::KeyUnavailable));
     }
 }

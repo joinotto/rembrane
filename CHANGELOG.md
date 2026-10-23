@@ -70,6 +70,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Workspace identity is mandatory on canonical storage keys.
 - CLI, MCP, and REST grants are derived by the shared authorization service
   rather than constructed by transport adapters.
+- Development workspace key decoding is centralized in the crypto adapter and
+  zeroized before returning a cipher.
 - SQLite tests exercise real authenticated encryption and cross-workspace
   denial for memories, event streams, and activity checkpoints.
 - Deleted memories persist an encrypted tombstone envelope rather than an
