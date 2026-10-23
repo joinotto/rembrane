@@ -67,7 +67,8 @@ target/debug/rembrane init \
 target/debug/rembrane doctor \
   --database "$REMBRANE_DATABASE" \
   --principal "$REMBRANE_PRINCIPAL_ID" \
-  --workspace "$REMBRANE_WORKSPACE_ID"
+  --workspace "$REMBRANE_WORKSPACE_ID" \
+  --privacy
 
 target/debug/rembrane backup \
   --database "$REMBRANE_DATABASE" \

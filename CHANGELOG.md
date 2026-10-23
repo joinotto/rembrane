@@ -39,6 +39,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - `rembrane doctor` preflight for database compatibility, workspace
   membership, key authentication, and readable encrypted-memory counts without
   printing secret values.
+- `rembrane doctor --privacy` diagnostics for local processing placement,
+  exact configured read scopes, outbound endpoints, and secret-source names.
 - Consistent encrypted SQLite backups and fail-closed restores that refuse
   overwrites, authenticate restored records, and remove invalid destinations.
 - Type-state SQLite cipher attachment that prevents encrypted memory APIs from

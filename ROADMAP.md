@@ -42,6 +42,8 @@ This roadmap describes sequencing, not release dates.
 - [x] Add an MCP initialize/list/call protocol smoke test.
 - [x] Add a single full preflight test command and operator testing guide.
 - [x] Add a secret-safe local installation doctor command.
+- [x] Report local processing, connection scopes, endpoints, and secret sources
+  through `rembrane doctor --privacy`.
 - [x] Add encrypted SQLite backup and verified restore commands.
 - [ ] Add production OS-keychain and customer-KMS key providers.
 - [x] Retrieve minimal context through local stdio MCP.

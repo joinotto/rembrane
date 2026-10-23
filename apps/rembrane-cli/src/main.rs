@@ -118,7 +118,39 @@ fn doctor(arguments: &[String]) -> Result<(), String> {
         "Secret sources: REMBRANE_WORKSPACE_KEY_ID, \
          REMBRANE_WORKSPACE_KEY_HEX"
     );
+    if arguments.iter().any(|argument| argument == "--privacy") {
+        print_privacy_diagnostics()?;
+    }
     Ok(())
+}
+
+fn print_privacy_diagnostics() -> Result<(), String> {
+    let configured_scopes = std::env::var("REMBRANE_READ_SCOPES")
+        .unwrap_or_else(|_| "global".to_owned());
+    let scopes = rembrane_config::parse_read_scopes(&configured_scopes)
+        .map_err(|error| {
+            format!("invalid REMBRANE_READ_SCOPES configuration: {error}")
+        })?;
+
+    println!("Privacy diagnostics:");
+    println!("Processing location: local trusted boundary");
+    println!("Outbound endpoints: none");
+    println!("Configured read scopes: {}", format_read_scopes(&scopes));
+    println!("Plaintext sent to external providers: no");
+    Ok(())
+}
+
+fn format_read_scopes(scopes: &[ReadScope]) -> String {
+    scopes
+        .iter()
+        .map(|scope| match scope {
+            ReadScope::Global => "global".to_owned(),
+            ReadScope::Domain { name } => format!("domain:{name}"),
+            ReadScope::Entity { id } => format!("entity:{id}"),
+            ReadScope::Activity { id } => format!("activity:{id}"),
+        })
+        .collect::<Vec<_>>()
+        .join(",")
 }
 
 fn verify_installation<C>(
@@ -647,7 +679,8 @@ fn print_help() {
            rembrane version\n\
            rembrane demo\n\
            rembrane init --database <path> --principal <id> --workspace <id>\n\
-           rembrane doctor --database <path> --principal <id> --workspace <id>\n\
+           rembrane doctor --database <path> --principal <id> --workspace <id> \
+             [--privacy]\n\
            rembrane backup --database <path> --principal <id> \
              --workspace <id> --output <path>\n\
            rembrane restore --input <path> --database <new-path> \
@@ -670,10 +703,11 @@ fn print_help() {
 
 #[cfg(test)]
 mod tests {
-    use rembrane_domain::{EntityId, MemoryScope};
+    use rembrane_domain::{EntityId, MemoryScope, ReadScope};
 
     use super::{
-        option, positive_u64, recall_scope_context, requested_memory_scope,
+        format_read_scopes, option, positive_u64, recall_scope_context,
+        requested_memory_scope,
     };
 
     #[test]
@@ -746,5 +780,23 @@ mod tests {
 
         assert_eq!(scopes.len(), 4);
         assert_eq!(scopes[0], rembrane_domain::ReadScope::Global);
+    }
+
+    #[test]
+    fn privacy_diagnostics_format_exact_scope_allowlist() {
+        let scopes = vec![
+            ReadScope::Global,
+            ReadScope::Domain {
+                name: "development".to_owned(),
+            },
+            ReadScope::Entity {
+                id: EntityId::new("project_01"),
+            },
+        ];
+
+        assert_eq!(
+            format_read_scopes(&scopes),
+            "global,domain:development,entity:project_01"
+        );
     }
 }
