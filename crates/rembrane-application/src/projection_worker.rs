@@ -3,7 +3,7 @@ use rembrane_domain::{
     ProviderId,
 };
 use rembrane_provider_sdk::{
-    AuthorizedMemoryProjection, SemanticMemoryProvider,
+    AuthorizedMemoryProjection, Capability, SemanticMemoryProvider,
 };
 
 use crate::{
@@ -41,6 +41,24 @@ where
         if maximum_attempts == 0 {
             return Err(ApplicationError::Validation(
                 "maximum_attempts must be greater than zero".to_owned(),
+            ));
+        }
+        let manifest = provider.manifest();
+        if manifest.id != provider_id.as_str() {
+            return Err(ApplicationError::Validation(
+                "configured provider id does not match provider manifest"
+                    .to_owned(),
+            ));
+        }
+        let required = [
+            Capability::Index,
+            Capability::Delete,
+            Capability::WorkspaceFilter,
+            Capability::VersionedRecords,
+        ];
+        if !manifest.supports_all(&required) {
+            return Err(ApplicationError::Validation(
+                "provider lacks required projection capabilities".to_owned(),
             ));
         }
         Ok(Self {

@@ -51,7 +51,7 @@ fn job() -> ProjectionJob {
         WorkspaceId::new("workspace_01"),
         MemoryId::new("memory_01"),
         1,
-        ProviderId::new("semantic.primary"),
+        ProviderId::new("rembrane.native"),
         ProjectionOperation::Upsert,
     )
     .expect("test projection should be valid")
@@ -73,7 +73,7 @@ fn worker_indexes_canonical_memory_and_completes_job() {
         let mut worker = ProjectionWorker::new(
             &mut store,
             &mut provider,
-            ProviderId::new("semantic.primary"),
+            ProviderId::new("rembrane.native"),
             3,
         )
         .expect("worker configuration should be valid");
@@ -121,7 +121,7 @@ fn stale_projection_is_completed_without_overwriting_provider() {
     let outcome = ProjectionWorker::new(
         &mut store,
         &mut provider,
-        ProviderId::new("semantic.primary"),
+        ProviderId::new("rembrane.native"),
         3,
     )
     .expect("worker configuration should be valid")
@@ -147,12 +147,14 @@ struct FailingProvider;
 impl SemanticMemoryProvider for FailingProvider {
     fn manifest(&self) -> ProviderManifest {
         ProviderManifest {
-            id: "semantic.primary".to_owned(),
+            id: "rembrane.native".to_owned(),
             version: "test".to_owned(),
             capabilities: vec![
                 Capability::Index,
                 Capability::Search,
                 Capability::Delete,
+                Capability::WorkspaceFilter,
+                Capability::VersionedRecords,
             ],
             plaintext_processing: true,
         }
@@ -194,7 +196,7 @@ fn provider_failures_retry_then_quarantine() {
         let outcome = ProjectionWorker::new(
             &mut store,
             &mut provider,
-            ProviderId::new("semantic.primary"),
+            ProviderId::new("rembrane.native"),
             2,
         )
         .expect("worker configuration should be valid")
