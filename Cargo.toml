@@ -1,0 +1,21 @@
+[workspace]
+members = [
+    "apps/rembrane-cli",
+    "crates/rembrane-contracts",
+    "crates/rembrane-domain",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0-alpha.1"
+edition = "2024"
+license = "Apache-2.0"
+repository = "https://github.com/mesh-ai-labs/rembrane"
+rust-version = "1.85"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = "warn"
+pedantic = "warn"
