@@ -1,0 +1,15 @@
+[package]
+name = "rembrane-store-memory"
+description = "In-memory reference storage adapter for Rembrane"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+rembrane-application = { path = "../../crates/rembrane-application" }
+rembrane-domain = { path = "../../crates/rembrane-domain" }
+
+[lints]
+workspace = true

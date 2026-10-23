@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "adapters/rembrane-store-memory",
     "apps/rembrane-cli",
     "crates/rembrane-application",
     "crates/rembrane-contracts",
