@@ -49,6 +49,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Encrypted CLI correction and deletion flows with optimistic memory versions.
 - Local stdio MCP server using connection-scoped identity to resolve minimal
   encrypted context and record disclosure receipts.
+- MCP tools for authorized direct preference creation, correction, and
+  encrypted deletion tombstones.
 - Bearer-authenticated REST context resolution bound to a configured workspace,
   principal, and client profile.
 - End-to-end CLI lifecycle test covering encrypted capture, disclosure,

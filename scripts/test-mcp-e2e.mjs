@@ -89,13 +89,37 @@ try {
   });
 
   const tools = await request(2, "tools/list", {});
-  if (
-    !tools.tools?.some((tool) => tool.name === "rembrane_resolve_context")
-  ) {
-    throw new Error("MCP tool list omitted rembrane_resolve_context");
+  const toolNames = new Set(tools.tools?.map((tool) => tool.name));
+  for (const expected of [
+    "rembrane_resolve_context",
+    "rembrane_remember_preference",
+    "rembrane_request_correction",
+    "rembrane_forget_memory",
+  ]) {
+    if (!toolNames.has(expected)) {
+      throw new Error(`MCP tool list omitted ${expected}`);
+    }
   }
 
-  const call = await request(3, "tools/call", {
+  const rememberedCall = await request(3, "tools/call", {
+    name: "rembrane_remember_preference",
+    arguments: {
+      content: "Call me Hippo",
+    },
+  });
+  if (rememberedCall.isError) {
+    throw new Error(
+      `MCP remember returned an error: ${JSON.stringify(rememberedCall)}`,
+    );
+  }
+  const remembered = JSON.parse(
+    rememberedCall.content?.find((item) => item.type === "text")?.text,
+  );
+  if (!remembered.memoryId || remembered.version !== 1) {
+    throw new Error("MCP remember returned invalid memory metadata");
+  }
+
+  const firstResolve = await request(4, "tools/call", {
     name: "rembrane_resolve_context",
     arguments: {
       purpose: "personalize-assistant",
@@ -103,10 +127,12 @@ try {
       maximumItems: 10,
     },
   });
-  if (call.isError) {
-    throw new Error(`MCP tool returned an error: ${JSON.stringify(call)}`);
+  if (firstResolve.isError) {
+    throw new Error(
+      `MCP resolve returned an error: ${JSON.stringify(firstResolve)}`,
+    );
   }
-  const text = call.content?.find((item) => item.type === "text")?.text;
+  const text = firstResolve.content?.find((item) => item.type === "text")?.text;
   const context = JSON.parse(text);
   if (context.items?.length !== 1) {
     throw new Error("MCP context did not contain exactly one memory");
@@ -116,6 +142,70 @@ try {
   }
   if (!context.disclosureId) {
     throw new Error("MCP context omitted disclosureId");
+  }
+
+  const correctedCall = await request(5, "tools/call", {
+    name: "rembrane_request_correction",
+    arguments: {
+      memoryId: remembered.memoryId,
+      expectedVersion: 1,
+      replacement: "Call me Captain Hippo",
+    },
+  });
+  if (correctedCall.isError) {
+    throw new Error(
+      `MCP correction returned an error: ${JSON.stringify(correctedCall)}`,
+    );
+  }
+  const corrected = JSON.parse(
+    correctedCall.content?.find((item) => item.type === "text")?.text,
+  );
+  if (corrected.version !== 2) {
+    throw new Error("MCP correction did not create version 2");
+  }
+
+  const secondResolve = await request(6, "tools/call", {
+    name: "rembrane_resolve_context",
+    arguments: {
+      purpose: "personalize-assistant",
+      query: "What should I call the user?",
+      maximumItems: 10,
+    },
+  });
+  const secondContext = JSON.parse(
+    secondResolve.content?.find((item) => item.type === "text")?.text,
+  );
+  if (secondContext.items?.[0]?.content !== "Call me Captain Hippo") {
+    throw new Error("MCP resolve did not return corrected memory");
+  }
+
+  const forgottenCall = await request(7, "tools/call", {
+    name: "rembrane_forget_memory",
+    arguments: {
+      memoryId: remembered.memoryId,
+      expectedVersion: 2,
+      reason: "User requested deletion",
+    },
+  });
+  if (forgottenCall.isError) {
+    throw new Error(
+      `MCP forget returned an error: ${JSON.stringify(forgottenCall)}`,
+    );
+  }
+
+  const finalResolve = await request(8, "tools/call", {
+    name: "rembrane_resolve_context",
+    arguments: {
+      purpose: "personalize-assistant",
+      query: "What should I call the user?",
+      maximumItems: 10,
+    },
+  });
+  const finalContext = JSON.parse(
+    finalResolve.content?.find((item) => item.type === "text")?.text,
+  );
+  if (finalContext.items?.length !== 0) {
+    throw new Error("MCP resolve disclosed a deleted memory");
   }
 } finally {
   child.kill("SIGTERM");

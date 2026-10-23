@@ -21,11 +21,6 @@ export REMBRANE_WORKSPACE_KEY_HEX="000102030405060708090a0b0c0d0e0f1011121314151
     --database "$REMBRANE_DATABASE" \
     --principal "$REMBRANE_PRINCIPAL_ID" \
     --workspace "$REMBRANE_WORKSPACE_ID" >/dev/null
-"$rembrane_binary" remember \
-    --database "$REMBRANE_DATABASE" \
-    --principal "$REMBRANE_PRINCIPAL_ID" \
-    --workspace "$REMBRANE_WORKSPACE_ID" \
-    --content "Call me Hippo" >/dev/null
 
 node "$repository_root/scripts/test-mcp-e2e.mjs"
 
@@ -33,6 +28,6 @@ disclosure_count=$(
     sqlite3 "$REMBRANE_DATABASE" \
         "SELECT count(*) FROM disclosure_receipts WHERE workspace_id = '$REMBRANE_WORKSPACE_ID';"
 )
-test "$disclosure_count" = "1"
+test "$disclosure_count" = "3"
 
 echo "MCP end-to-end checks passed"

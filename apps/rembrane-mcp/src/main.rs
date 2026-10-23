@@ -3,14 +3,17 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
 use rembrane_application::{
-    AuthorizeClientCommand, AuthorizeClientService, ResolveContextCommand,
-    ResolveContextService,
+    AuthorizeClientCommand, AuthorizeClientService, ClientGrantBundle,
+    DeleteMemoryCommand, EventRepository, MemoryLifecycleService,
+    RememberPreferenceCommand, RememberPreferenceService,
+    ResolveContextCommand, ResolveContextService, ReviseMemoryCommand,
 };
 use rembrane_contracts::ResolveContextRequest;
 use rembrane_crypto_rustcrypto::RustCryptoRecordCipher;
 use rembrane_domain::{
-    ClientId, ContextPackId, DisclosureId, PrincipalId, ReadGrant, ReadScope,
-    WorkspaceId,
+    ClientId, ContextPackId, DisclosureId, EventId, EvidenceId,
+    EvidenceReference, EvidenceSource, MemoryId, MemoryScope, PrincipalId,
+    ReadScope, WorkspaceId, WritePermission,
 };
 use rembrane_store_sqlite::SqliteStore;
 use rmcp::handler::server::wrapper::Parameters;
@@ -44,9 +47,41 @@ struct ResolveContextOutput {
     items: Vec<ContextItem>,
 }
 
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct RememberPreferenceParameters {
+    content: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct CorrectMemoryParameters {
+    memory_id: String,
+    expected_version: u64,
+    replacement: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct ForgetMemoryParameters {
+    memory_id: String,
+    expected_version: u64,
+    reason: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MutationOutput {
+    memory_id: String,
+    version: u64,
+    status: &'static str,
+}
+
 struct State {
     store: SqliteStore<RustCryptoRecordCipher>,
-    read_grant: ReadGrant,
+    principal_id: PrincipalId,
+    workspace_id: WorkspaceId,
+    client_id: ClientId,
     next_id: u128,
 }
 
@@ -69,16 +104,15 @@ impl RembraneMcp {
         let store = SqliteStore::open(database)
             .context("failed to open Rembrane database")?
             .with_cipher(cipher);
-        let read_grant = AuthorizeClientService::new(&store)
+        AuthorizeClientService::new(&store)
             .execute(AuthorizeClientCommand {
-                client_id,
-                workspace_id,
-                principal_id,
-                requested_read_scopes: vec![ReadScope::Global],
+                client_id: client_id.clone(),
+                workspace_id: workspace_id.clone(),
+                principal_id: principal_id.clone(),
+                requested_read_scopes: Vec::new(),
                 requested_write_permissions: Vec::new(),
             })
-            .context("failed to authorize MCP connection")?
-            .read;
+            .context("failed to authorize MCP connection")?;
         let next_id = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .context("system clock is before the Unix epoch")?
@@ -87,7 +121,9 @@ impl RembraneMcp {
         Ok(Self {
             state: Arc::new(Mutex::new(State {
                 store,
-                read_grant,
+                principal_id,
+                workspace_id,
+                client_id,
                 next_id,
             })),
         })
@@ -126,9 +162,13 @@ impl RembraneMcp {
             .map_err(|_| McpError::internal_error("state lock failed", None))?;
         state.next_id = state.next_id.saturating_add(1);
         let suffix = state.next_id;
-        let read_grant = state.read_grant.clone();
-        let principal_id = read_grant.subject_id.clone();
-        let workspace_id = read_grant.workspace_id.clone();
+        let grants = authorize(
+            &state,
+            vec![ReadScope::Global],
+            Vec::new(),
+        )?;
+        let principal_id = grants.read.subject_id.clone();
+        let workspace_id = grants.read.workspace_id.clone();
         let response = ResolveContextService::new(&mut state.store)
             .execute(ResolveContextCommand {
                 request: ResolveContextRequest {
@@ -141,7 +181,7 @@ impl RembraneMcp {
                     query: parameters.query,
                     maximum_items,
                 },
-                grant: read_grant,
+                grant: grants.read,
                 context_pack_id: ContextPackId::new(format!(
                     "context_{suffix}"
                 )),
@@ -173,6 +213,185 @@ impl RembraneMcp {
             McpError::internal_error("response serialization failed", None)
         })
     }
+
+    #[tool(
+        name = "rembrane_remember_preference",
+        description = "Store a confirmed global preference when this connection has direct memory creation permission."
+    )]
+    fn remember_preference(
+        &self,
+        Parameters(parameters): Parameters<RememberPreferenceParameters>,
+    ) -> Result<String, McpError> {
+        if parameters.content.trim().is_empty() {
+            return Err(McpError::invalid_params(
+                "content must not be empty",
+                None,
+            ));
+        }
+        let mut state = lock_state(&self.state)?;
+        let grants = authorize(
+            &state,
+            Vec::new(),
+            vec![WritePermission::CreateMemory],
+        )?;
+        let previous_sequence = current_sequence(&state)?;
+        let suffix = next_id(&mut state);
+        let memory = RememberPreferenceService::new(&mut state.store)
+            .execute(RememberPreferenceCommand {
+                grant: grants.write,
+                memory_id: MemoryId::new(format!("memory_{suffix}")),
+                scope: MemoryScope::Global,
+                content: parameters.content,
+                evidence: EvidenceReference::new(
+                    EvidenceId::new(format!("evidence_{suffix}")),
+                    EvidenceSource::UserStatement,
+                ),
+                event_id: EventId::new(format!("event_{suffix}")),
+                expected_previous_sequence: previous_sequence,
+                projections: Vec::new(),
+            })
+            .map_err(application_error)?;
+        mutation_response(memory.id().to_string(), memory.version(), "confirmed")
+    }
+
+    #[tool(
+        name = "rembrane_request_correction",
+        description = "Directly correct a memory when this connection has revision permission."
+    )]
+    fn correct_memory(
+        &self,
+        Parameters(parameters): Parameters<CorrectMemoryParameters>,
+    ) -> Result<String, McpError> {
+        if parameters.memory_id.trim().is_empty()
+            || parameters.replacement.trim().is_empty()
+            || parameters.expected_version == 0
+        {
+            return Err(McpError::invalid_params(
+                "memoryId, replacement, and a positive expectedVersion are required",
+                None,
+            ));
+        }
+        let mut state = lock_state(&self.state)?;
+        let grants = authorize(
+            &state,
+            Vec::new(),
+            vec![WritePermission::ReviseMemory],
+        )?;
+        let previous_sequence = current_sequence(&state)?;
+        let suffix = next_id(&mut state);
+        let memory = MemoryLifecycleService::new(&mut state.store)
+            .revise(ReviseMemoryCommand {
+                grant: grants.write,
+                memory_id: MemoryId::new(parameters.memory_id),
+                expected_version: parameters.expected_version,
+                content: parameters.replacement,
+                evidence: EvidenceReference::new(
+                    EvidenceId::new(format!("evidence_{suffix}")),
+                    EvidenceSource::UserStatement,
+                ),
+                event_id: EventId::new(format!("event_{suffix}")),
+                expected_previous_sequence: previous_sequence,
+                projections: Vec::new(),
+            })
+            .map_err(application_error)?;
+        mutation_response(memory.id().to_string(), memory.version(), "confirmed")
+    }
+
+    #[tool(
+        name = "rembrane_forget_memory",
+        description = "Create an encrypted deletion tombstone when this connection has deletion permission."
+    )]
+    fn forget_memory(
+        &self,
+        Parameters(parameters): Parameters<ForgetMemoryParameters>,
+    ) -> Result<String, McpError> {
+        if parameters.memory_id.trim().is_empty()
+            || parameters.reason.trim().is_empty()
+            || parameters.expected_version == 0
+        {
+            return Err(McpError::invalid_params(
+                "memoryId, reason, and a positive expectedVersion are required",
+                None,
+            ));
+        }
+        let mut state = lock_state(&self.state)?;
+        let grants = authorize(
+            &state,
+            Vec::new(),
+            vec![WritePermission::DeleteMemory],
+        )?;
+        let previous_sequence = current_sequence(&state)?;
+        let suffix = next_id(&mut state);
+        let memory = MemoryLifecycleService::new(&mut state.store)
+            .delete(DeleteMemoryCommand {
+                grant: grants.write,
+                memory_id: MemoryId::new(parameters.memory_id),
+                expected_version: parameters.expected_version,
+                evidence: EvidenceReference::new(
+                    EvidenceId::new(format!("evidence_{suffix}")),
+                    EvidenceSource::UserStatement,
+                ),
+                event_id: EventId::new(format!("event_{suffix}")),
+                expected_previous_sequence: previous_sequence,
+                projections: Vec::new(),
+            })
+            .map_err(application_error)?;
+        mutation_response(memory.id().to_string(), memory.version(), "deleted")
+    }
+}
+
+fn lock_state(
+    state: &Arc<Mutex<State>>,
+) -> Result<std::sync::MutexGuard<'_, State>, McpError> {
+    state
+        .lock()
+        .map_err(|_| McpError::internal_error("state lock failed", None))
+}
+
+fn authorize(
+    state: &State,
+    read_scopes: Vec<ReadScope>,
+    write_permissions: Vec<WritePermission>,
+) -> Result<ClientGrantBundle, McpError> {
+    AuthorizeClientService::new(&state.store)
+        .execute(AuthorizeClientCommand {
+            client_id: state.client_id.clone(),
+            workspace_id: state.workspace_id.clone(),
+            principal_id: state.principal_id.clone(),
+            requested_read_scopes: read_scopes,
+            requested_write_permissions: write_permissions,
+        })
+        .map_err(application_error)
+}
+
+fn current_sequence(state: &State) -> Result<u64, McpError> {
+    state
+        .store
+        .list_events_since(&state.workspace_id, 0)
+        .map(|events| events.last().map_or(0, rembrane_domain::CanonicalEvent::sequence))
+        .map_err(application_error)
+}
+
+fn next_id(state: &mut State) -> u128 {
+    state.next_id = state.next_id.saturating_add(1);
+    state.next_id
+}
+
+fn mutation_response(
+    memory_id: String,
+    version: u64,
+    status: &'static str,
+) -> Result<String, McpError> {
+    serde_json::to_string(&MutationOutput {
+        memory_id,
+        version,
+        status,
+    })
+    .map_err(|_| McpError::internal_error("response serialization failed", None))
+}
+
+fn application_error(error: rembrane_application::ApplicationError) -> McpError {
+    McpError::internal_error(format!("memory operation failed: {error}"), None)
 }
 
 fn required_environment(name: &str) -> Result<String> {

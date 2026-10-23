@@ -41,6 +41,7 @@ This roadmap describes sequencing, not release dates.
 - [x] Add a single full preflight test command and operator testing guide.
 - [ ] Add production OS-keychain and customer-KMS key providers.
 - [x] Retrieve minimal context through local stdio MCP.
+- [x] Create, correct, and delete authorized preferences through local MCP.
 - [x] Retrieve minimal context through authenticated local REST.
 - [ ] Add remote Streamable HTTP MCP with OAuth.
 - [x] Persist a disclosure receipt for every SQLite context response.
