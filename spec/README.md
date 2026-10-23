@@ -20,6 +20,10 @@ The response must validate against `discovery.schema.json`. Discovery describes 
 
 `openapi.yaml` defines the versioned HTTP surface. The initial contract is deliberately narrow and grows only after the corresponding application use case and security invariants exist.
 
+## MCP
+
+`mcp.md` maps application use cases to tools, resources, prompts, connection identity, permissions, and safety annotations. MCP parameters deliberately exclude canonical workspace and subject identity.
+
 ## Design rules
 
 - Canonical identifiers are opaque strings.
