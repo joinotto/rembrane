@@ -178,11 +178,11 @@ impl<C: RecordCipher> EventRepository for SqliteStore<C> {
     }
 }
 
-struct SealedRecord {
-    ciphertext: Vec<u8>,
-    key_id: String,
-    algorithm: String,
-    nonce: Vec<u8>,
+pub(super) struct SealedRecord {
+    pub(super) ciphertext: Vec<u8>,
+    pub(super) key_id: String,
+    pub(super) algorithm: String,
+    pub(super) nonce: Vec<u8>,
 }
 
 fn seal_memory(
@@ -209,7 +209,7 @@ fn seal_memory(
     })
 }
 
-fn seal_event(
+pub(super) fn seal_event(
     cipher: &impl RecordCipher,
     event: &CanonicalEvent,
 ) -> Result<SealedRecord, ApplicationError> {
@@ -352,7 +352,7 @@ fn insert_evidence(
     Ok(())
 }
 
-fn insert_event(
+pub(super) fn insert_event(
     transaction: &Transaction<'_>,
     event: &CanonicalEvent,
     encrypted: &SealedRecord,
@@ -421,7 +421,7 @@ fn insert_projections(
     Ok(())
 }
 
-fn require_event_sequence(
+pub(super) fn require_event_sequence(
     transaction: &Transaction<'_>,
     workspace_id: &WorkspaceId,
     event_sequence: u64,
@@ -583,7 +583,7 @@ fn event_type(event: &CanonicalEvent) -> &'static str {
     }
 }
 
-fn to_i64(value: u64) -> Result<i64, ApplicationError> {
+pub(super) fn to_i64(value: u64) -> Result<i64, ApplicationError> {
     i64::try_from(value).map_err(|_| {
         ApplicationError::Validation("numeric value exceeds SQLite range".to_owned())
     })

@@ -1,15 +1,17 @@
 use rembrane_application::{
-    CanonicalMutationRepository, EventRepository, MemoryRepository,
+    CanonicalMutationRepository, CheckpointMutationRepository,
+    CheckpointRepository, EventRepository, MemoryRepository,
     ProjectionOutboxRepository, WorkspaceRepository,
 };
 use rembrane_crypto::{
     CryptoError, EncryptedPayload, EncryptionContext, RecordCipher,
 };
 use rembrane_domain::{
-    CanonicalEvent, EventId, EventPayload, EvidenceId, EvidenceReference,
-    EvidenceSource, Membership, MemoryId, MemoryRecord, MemoryScope, Principal,
-    PrincipalId, ProjectionJob, ProjectionJobId, ProjectionOperation,
-    ProjectionStatus, ProviderId, Workspace, WorkspaceId, WorkspaceRole,
+    ActivityCheckpoint, ActivityId, CanonicalEvent, CheckpointId, EntityId,
+    EventId, EventPayload, EvidenceId, EvidenceReference, EvidenceSource,
+    Membership, MemoryId, MemoryRecord, MemoryScope, Principal, PrincipalId,
+    ProjectionJob, ProjectionJobId, ProjectionOperation, ProjectionStatus,
+    ProviderId, Workspace, WorkspaceId, WorkspaceRole,
 };
 use rembrane_store_sqlite::SqliteStore;
 
@@ -110,6 +112,36 @@ fn projection() -> ProjectionJob {
     .expect("fixture is valid")
 }
 
+fn checkpoint() -> ActivityCheckpoint {
+    ActivityCheckpoint::new(
+        CheckpointId::new("checkpoint_01"),
+        WorkspaceId::new("workspace_01"),
+        PrincipalId::new("principal_01"),
+        ActivityId::new("activity_01"),
+        Some(EntityId::new("project_01")),
+        "Implement authentication",
+        "Callback implemented and unit tested.",
+        vec!["Run integration tests".to_owned()],
+        Vec::new(),
+    )
+    .expect("fixture is valid")
+}
+
+fn checkpoint_event(sequence: u64, version: u64) -> CanonicalEvent {
+    CanonicalEvent::new(
+        EventId::new(format!("checkpoint_event_{sequence}")),
+        WorkspaceId::new("workspace_01"),
+        PrincipalId::new("principal_01"),
+        Some(PrincipalId::new("principal_01")),
+        sequence,
+        EventPayload::ActivityCheckpointed {
+            activity_id: ActivityId::new("activity_01"),
+            version,
+        },
+    )
+    .expect("fixture is valid")
+}
+
 #[test]
 fn atomically_persists_and_decrypts_memory_and_event() {
     let mut store = initialized_store();
@@ -204,4 +236,43 @@ fn persists_and_optimistically_updates_projection() {
             .expect("projection lookup succeeds"),
         Some(processing)
     );
+}
+
+#[test]
+fn persists_and_resumes_latest_encrypted_checkpoint() {
+    let mut store = initialized_store();
+    let first = checkpoint();
+    store
+        .insert_checkpoint_with_event(
+            first.clone(),
+            checkpoint_event(1, 1),
+            0,
+        )
+        .expect("checkpoint insert succeeds");
+
+    let updated = first
+        .update(
+            "Integration test exposed a refresh race.",
+            vec!["Add refresh locking".to_owned()],
+            vec!["Need a concurrency fixture".to_owned()],
+        )
+        .expect("checkpoint update succeeds");
+    store
+        .replace_checkpoint_with_event(
+            updated.clone(),
+            1,
+            checkpoint_event(2, 2),
+            1,
+        )
+        .expect("checkpoint update persists");
+
+    let resumed = store
+        .latest_checkpoint(
+            &WorkspaceId::new("workspace_01"),
+            &PrincipalId::new("principal_01"),
+            &ActivityId::new("activity_01"),
+        )
+        .expect("checkpoint lookup succeeds");
+
+    assert_eq!(resumed, Some(updated));
 }

@@ -36,6 +36,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   and provider projection jobs.
 - Persistent SQLite projection outbox with idempotent enqueue, pending work
   reads, and optimistic status transitions.
+- Encrypted SQLite activity checkpoints with authenticated resume reads and
+  atomic audit events.
 - Product architecture, threat model, integration support policy, Rust
   research, bot integration design, and architecture decision records.
 
