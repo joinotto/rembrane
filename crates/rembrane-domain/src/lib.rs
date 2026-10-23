@@ -7,14 +7,16 @@
 mod identifier;
 mod memory;
 mod disclosure;
+mod event;
 mod grant;
 mod scope;
 
 pub use disclosure::{DisclosedMemory, DisclosureReceipt};
+pub use event::{CanonicalEvent, EventError, EventPayload};
 pub use grant::{ReadGrant, ReadScope};
 pub use identifier::{
-    ActivityId, ClientId, ContextPackId, DisclosureId, EntityId, EvidenceId,
-    MemoryId, PrincipalId, WorkspaceId,
+    ActivityId, ClientId, ContextPackId, DisclosureId, EntityId, EventId,
+    EvidenceId, MemoryId, PrincipalId, WorkspaceId,
 };
 pub use memory::{
     MemoryKind, MemoryLifecycleError, MemoryRecord, MemoryStatus,

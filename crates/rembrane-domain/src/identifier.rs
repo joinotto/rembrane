@@ -42,6 +42,7 @@ identifier!(ClientId);
 identifier!(ContextPackId);
 identifier!(DisclosureId);
 identifier!(EntityId);
+identifier!(EventId);
 identifier!(EvidenceId);
 identifier!(MemoryId);
 identifier!(PrincipalId);
