@@ -1,6 +1,7 @@
 use rembrane_domain::{
     ActivityCheckpoint, ActivityId, CanonicalEvent, DisclosureReceipt,
-    Membership, MemoryId, MemoryRecord, PrincipalId, WorkspaceId,
+    Membership, MemoryId, MemoryRecord, PrincipalId, ProjectionJob,
+    ProjectionJobId, ProjectionStatus, ProviderId, WorkspaceId,
 };
 
 use crate::ApplicationError;
@@ -118,4 +119,29 @@ pub trait MembershipRepository {
         &mut self,
         membership: Membership,
     ) -> Result<(), ApplicationError>;
+}
+
+pub trait ProjectionOutboxRepository {
+    fn enqueue_projection(
+        &mut self,
+        job: ProjectionJob,
+    ) -> Result<(), ApplicationError>;
+
+    fn pending_projections(
+        &self,
+        provider_id: &ProviderId,
+        limit: usize,
+    ) -> Result<Vec<ProjectionJob>, ApplicationError>;
+
+    fn replace_projection(
+        &mut self,
+        job: ProjectionJob,
+        expected_status: ProjectionStatus,
+        expected_attempts: u32,
+    ) -> Result<(), ApplicationError>;
+
+    fn find_projection(
+        &self,
+        job_id: &ProjectionJobId,
+    ) -> Result<Option<ProjectionJob>, ApplicationError>;
 }

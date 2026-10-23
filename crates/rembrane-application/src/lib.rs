@@ -23,7 +23,7 @@ pub use authorize_client::{
 pub use ports::{
     CanonicalMutationRepository, CheckpointMutationRepository,
     CheckpointRepository, DisclosureRepository, EventRepository,
-    MembershipRepository, MemoryRepository,
+    MembershipRepository, MemoryRepository, ProjectionOutboxRepository,
 };
 pub use propose_memory::{
     ConfirmMemoryCommand, MemoryProposalService, ProposeMemoryCommand,

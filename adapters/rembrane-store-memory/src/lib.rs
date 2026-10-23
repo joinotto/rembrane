@@ -4,10 +4,12 @@ use rembrane_application::{
     ApplicationError, CanonicalMutationRepository,
     CheckpointMutationRepository, CheckpointRepository, DisclosureRepository,
     EventRepository, MembershipRepository, MemoryRepository,
+    ProjectionOutboxRepository,
 };
 use rembrane_domain::{
     ActivityCheckpoint, ActivityId, CanonicalEvent, DisclosureReceipt,
-    Membership, MemoryId, MemoryRecord, PrincipalId, WorkspaceId,
+    Membership, MemoryId, MemoryRecord, PrincipalId, ProjectionJob,
+    ProjectionJobId, ProjectionStatus, ProviderId, WorkspaceId,
 };
 
 #[derive(Debug, Default)]
@@ -17,6 +19,7 @@ pub struct InMemoryStore {
     events: Vec<CanonicalEvent>,
     checkpoints: Vec<ActivityCheckpoint>,
     memberships: Vec<Membership>,
+    projections: Vec<ProjectionJob>,
 }
 
 impl InMemoryStore {
@@ -179,6 +182,88 @@ impl DisclosureRepository for InMemoryStore {
 
         self.disclosures.push(receipt);
         Ok(())
+    }
+}
+
+impl ProjectionOutboxRepository for InMemoryStore {
+    fn enqueue_projection(
+        &mut self,
+        job: ProjectionJob,
+    ) -> Result<(), ApplicationError> {
+        let duplicate = self.projections.iter().any(|stored| {
+            stored.id() == job.id()
+                || (stored.workspace_id() == job.workspace_id()
+                    && stored.memory_id() == job.memory_id()
+                    && stored.memory_version() == job.memory_version()
+                    && stored.provider_id() == job.provider_id()
+                    && stored.operation() == job.operation())
+        });
+        if duplicate {
+            return Err(ApplicationError::AlreadyExists);
+        }
+
+        self.projections.push(job);
+        Ok(())
+    }
+
+    fn pending_projections(
+        &self,
+        provider_id: &ProviderId,
+        limit: usize,
+    ) -> Result<Vec<ProjectionJob>, ApplicationError> {
+        Ok(self
+            .projections
+            .iter()
+            .filter(|job| {
+                job.provider_id() == provider_id
+                    && job.status() == ProjectionStatus::Pending
+            })
+            .take(limit)
+            .cloned()
+            .collect())
+    }
+
+    fn replace_projection(
+        &mut self,
+        job: ProjectionJob,
+        expected_status: ProjectionStatus,
+        expected_attempts: u32,
+    ) -> Result<(), ApplicationError> {
+        let stored = self
+            .projections
+            .iter_mut()
+            .find(|stored| stored.id() == job.id())
+            .ok_or(ApplicationError::NotFound)?;
+
+        if stored.status() != expected_status
+            || stored.attempts() != expected_attempts
+        {
+            return Err(ApplicationError::VersionConflict);
+        }
+        if stored.workspace_id() != job.workspace_id()
+            || stored.memory_id() != job.memory_id()
+            || stored.memory_version() != job.memory_version()
+            || stored.provider_id() != job.provider_id()
+            || stored.operation() != job.operation()
+        {
+            return Err(ApplicationError::Validation(
+                "projection identity fields are immutable".to_owned(),
+            ));
+        }
+
+        *stored = job;
+        Ok(())
+    }
+
+    fn find_projection(
+        &self,
+        job_id: &ProjectionJobId,
+    ) -> Result<Option<ProjectionJob>, ApplicationError> {
+        Ok(self
+            .projections
+            .iter()
+            .find(|job| job.id() == job_id)
+            .cloned())
     }
 }
 
