@@ -22,6 +22,7 @@ This roadmap describes sequencing, not release dates.
 - [x] Define atomic memory, event, and projection mutations.
 - [x] Define an opaque record-encryption boundary.
 - [x] Define and verify the tenant-isolated SQLite schema.
+- [x] Add versioned, idempotent SQLite schema initialization.
 - [x] Serialize canonical memory records with a versioned format.
 - [x] Serialize canonical event records with a versioned format.
 - [x] Serialize canonical checkpoint records with a versioned format.

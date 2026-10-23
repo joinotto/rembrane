@@ -7,6 +7,7 @@ trap 'rm -f "$database"' EXIT
 
 sqlite3 "$database" < \
     "$repository_root/migrations/sqlite/0001_canonical_schema.sql"
+sqlite3 "$database" "PRAGMA user_version = 1;"
 
 sqlite3 "$database" <<'SQL'
 PRAGMA foreign_keys = ON;
@@ -209,4 +210,5 @@ table_count=$(
 )
 
 test "$table_count" -ge 9
+test "$(sqlite3 "$database" "PRAGMA user_version;")" -eq 1
 echo "sqlite schema checks passed"

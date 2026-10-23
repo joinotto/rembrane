@@ -18,6 +18,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Provider capability verification and retry/quarantine projection worker.
 - Versioned discovery, OpenAPI, and MCP protocol specifications.
 - Tenant-isolated SQLite canonical schema with encrypted-payload metadata.
+- Versioned SQLite initialization with legacy-schema adoption, idempotent
+  reopen behavior, and rejection of unsupported future schema versions.
 - Executable SQLite schema and transaction-atomicity checks.
 - Opaque record-encryption boundary with tenant-bound associated data.
 - Versioned canonical memory codec with strict decoding and a stable wire

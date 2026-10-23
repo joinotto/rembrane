@@ -23,6 +23,19 @@ use rusqlite::{Connection, ErrorCode, OptionalExtension, params};
 
 const CANONICAL_SCHEMA: &str =
     include_str!("../../../migrations/sqlite/0001_canonical_schema.sql");
+const CURRENT_SCHEMA_VERSION: u32 = 1;
+const CANONICAL_TABLES: [&str; 10] = [
+    "activity_checkpoints",
+    "disclosed_memories",
+    "disclosure_receipts",
+    "memberships",
+    "memories",
+    "memory_evidence",
+    "principals",
+    "projection_outbox",
+    "workspace_events",
+    "workspaces",
+];
 
 pub struct MissingCipher;
 
@@ -44,14 +57,92 @@ impl SqliteStore<MissingCipher> {
         Self::initialize(connection)
     }
 
-    fn initialize(connection: Connection) -> Result<Self, ApplicationError> {
+    fn initialize(
+        mut connection: Connection,
+    ) -> Result<Self, ApplicationError> {
         connection
-            .execute_batch(CANONICAL_SCHEMA)
+            .execute_batch("PRAGMA foreign_keys = ON;")
             .map_err(|_| ApplicationError::StorageUnavailable)?;
+        migrate(&mut connection)?;
         Ok(Self {
             connection,
             cipher: MissingCipher,
         })
+    }
+}
+
+fn migrate(connection: &mut Connection) -> Result<(), ApplicationError> {
+    let version = schema_version(connection)?;
+    if version > CURRENT_SCHEMA_VERSION {
+        return Err(ApplicationError::StorageUnavailable);
+    }
+    if version == CURRENT_SCHEMA_VERSION {
+        return Ok(());
+    }
+
+    if version == 0 && has_user_tables(connection)? {
+        verify_legacy_schema(connection)?;
+        connection
+            .pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        return Ok(());
+    }
+
+    let transaction = connection
+        .transaction()
+        .map_err(|_| ApplicationError::StorageUnavailable)?;
+    transaction
+        .execute_batch(CANONICAL_SCHEMA)
+        .map_err(|_| ApplicationError::StorageUnavailable)?;
+    transaction
+        .pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
+        .map_err(|_| ApplicationError::StorageUnavailable)?;
+    transaction
+        .commit()
+        .map_err(|_| ApplicationError::StorageUnavailable)
+}
+
+fn schema_version(connection: &Connection) -> Result<u32, ApplicationError> {
+    connection
+        .pragma_query_value(None, "user_version", |row| row.get(0))
+        .map_err(|_| ApplicationError::StorageUnavailable)
+}
+
+fn has_user_tables(connection: &Connection) -> Result<bool, ApplicationError> {
+    connection
+        .query_row(
+            "SELECT EXISTS (
+                SELECT 1
+                FROM sqlite_schema
+                WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
+            )",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|_| ApplicationError::StorageUnavailable)
+}
+
+fn verify_legacy_schema(
+    connection: &Connection,
+) -> Result<(), ApplicationError> {
+    let mut statement = connection
+        .prepare(
+            "SELECT name
+             FROM sqlite_schema
+             WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
+             ORDER BY name",
+        )
+        .map_err(|_| ApplicationError::StorageUnavailable)?;
+    let names = statement
+        .query_map([], |row| row.get::<_, String>(0))
+        .map_err(|_| ApplicationError::StorageUnavailable)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| ApplicationError::StorageUnavailable)?;
+
+    if names == CANONICAL_TABLES {
+        Ok(())
+    } else {
+        Err(ApplicationError::StorageUnavailable)
     }
 }
 
@@ -62,6 +153,96 @@ impl<C> SqliteStore<C> {
             connection: self.connection,
             cipher,
         }
+    }
+}
+
+#[cfg(test)]
+mod migration_tests {
+    use std::fs;
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use rusqlite::Connection;
+
+    use super::{CURRENT_SCHEMA_VERSION, SqliteStore, schema_version};
+
+    fn database_path(test_name: &str) -> PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock should be after the Unix epoch")
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "rembrane-{test_name}-{}-{unique}.sqlite",
+            std::process::id()
+        ))
+    }
+
+    #[test]
+    fn initializes_and_reopens_the_current_schema() {
+        let database = database_path("schema-reopen");
+        SqliteStore::open(&database).expect("database should initialize");
+
+        let connection =
+            Connection::open(&database).expect("database should reopen");
+        assert_eq!(
+            schema_version(&connection).expect("schema version should read"),
+            CURRENT_SCHEMA_VERSION
+        );
+        drop(connection);
+
+        SqliteStore::open(&database)
+            .expect("current database should reopen idempotently");
+        fs::remove_file(database).expect("temporary database should be removed");
+    }
+
+    #[test]
+    fn rejects_a_database_from_a_newer_schema_version() {
+        let database = database_path("future-schema");
+        let connection =
+            Connection::open(&database).expect("database should open");
+        connection
+            .pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION + 1)
+            .expect("future version should be set");
+        drop(connection);
+
+        assert!(SqliteStore::open(&database).is_err());
+        fs::remove_file(database).expect("temporary database should be removed");
+    }
+
+    #[test]
+    fn adopts_the_complete_pre_versioned_schema() {
+        let database = database_path("legacy-schema");
+        let connection =
+            Connection::open(&database).expect("database should open");
+        connection
+            .execute_batch(super::CANONICAL_SCHEMA)
+            .expect("legacy schema should initialize");
+        drop(connection);
+
+        SqliteStore::open(&database)
+            .expect("complete legacy schema should be adopted");
+        let connection =
+            Connection::open(&database).expect("database should reopen");
+        assert_eq!(
+            schema_version(&connection).expect("schema version should read"),
+            CURRENT_SCHEMA_VERSION
+        );
+        drop(connection);
+        fs::remove_file(database).expect("temporary database should be removed");
+    }
+
+    #[test]
+    fn rejects_an_unknown_pre_versioned_schema() {
+        let database = database_path("unknown-schema");
+        let connection =
+            Connection::open(&database).expect("database should open");
+        connection
+            .execute("CREATE TABLE unrelated (id TEXT PRIMARY KEY) STRICT", [])
+            .expect("unknown table should initialize");
+        drop(connection);
+
+        assert!(SqliteStore::open(&database).is_err());
+        fs::remove_file(database).expect("temporary database should be removed");
     }
 }
 
