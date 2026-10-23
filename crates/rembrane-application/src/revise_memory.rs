@@ -51,6 +51,7 @@ where
             &command.grant.subject_id,
             &command.memory_id,
         )?;
+        authorize_scope(&command.grant, &current)?;
         ensure_version(&current, command.expected_version)?;
 
         let revised = current
@@ -86,6 +87,7 @@ where
             &command.grant.subject_id,
             &command.memory_id,
         )?;
+        authorize_scope(&command.grant, &current)?;
         ensure_version(&current, command.expected_version)?;
 
         let deleted = current
@@ -155,6 +157,17 @@ fn authorize(
     permission: WritePermission,
 ) -> Result<(), ApplicationError> {
     if grant.allows(permission) {
+        Ok(())
+    } else {
+        Err(ApplicationError::AccessDenied)
+    }
+}
+
+fn authorize_scope(
+    grant: &WriteGrant,
+    memory: &MemoryRecord,
+) -> Result<(), ApplicationError> {
+    if grant.allows_scope(memory.scope()) {
         Ok(())
     } else {
         Err(ApplicationError::AccessDenied)

@@ -126,6 +126,9 @@ fn authorize_write(
     checkpoint: &ActivityCheckpoint,
 ) -> Result<(), ApplicationError> {
     if !grant.allows(WritePermission::WriteCheckpoint)
+        || !grant.allows_scope(&MemoryScope::Activity {
+            id: checkpoint.activity_id().clone(),
+        })
         || &grant.workspace_id != checkpoint.workspace_id()
         || &grant.subject_id != checkpoint.subject_id()
     {

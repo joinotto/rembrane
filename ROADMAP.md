@@ -46,6 +46,7 @@ This roadmap describes sequencing, not release dates.
 - [x] Retrieve minimal context through local stdio MCP.
 - [x] Rank canonical context by deterministic local query relevance.
 - [x] Enforce administrator-configured connection read-scope allowlists.
+- [x] Bind write permissions to exact administrator-configured scopes.
 - [x] Create, correct, and delete authorized preferences through local MCP.
 - [x] Create, update, and resume encrypted activity checkpoints through MCP.
 - [x] Retrieve minimal context through authenticated local REST.

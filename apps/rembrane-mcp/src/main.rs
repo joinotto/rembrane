@@ -277,7 +277,7 @@ impl RembraneMcp {
         let mut state = lock_state(&self.state)?;
         let grants = authorize(
             &state,
-            Vec::new(),
+            vec![ReadScope::Global],
             vec![WritePermission::CreateMemory],
         )?;
         let previous_sequence = current_sequence(&state)?;
@@ -320,7 +320,7 @@ impl RembraneMcp {
         let mut state = lock_state(&self.state)?;
         let grants = authorize(
             &state,
-            Vec::new(),
+            vec![ReadScope::Global],
             vec![WritePermission::ReviseMemory],
         )?;
         let previous_sequence = current_sequence(&state)?;
@@ -363,7 +363,7 @@ impl RembraneMcp {
         let mut state = lock_state(&self.state)?;
         let grants = authorize(
             &state,
-            Vec::new(),
+            vec![ReadScope::Global],
             vec![WritePermission::DeleteMemory],
         )?;
         let previous_sequence = current_sequence(&state)?;

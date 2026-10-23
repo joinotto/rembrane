@@ -29,6 +29,9 @@ fn writer() -> WriteGrant {
         client_id: ClientId::new("coding_agent"),
         workspace_id: WorkspaceId::new("workspace_01"),
         subject_id: PrincipalId::new("principal_01"),
+        scopes: vec![ReadScope::Activity {
+            id: ActivityId::new("activity_01"),
+        }],
         permissions: vec![WritePermission::WriteCheckpoint],
     }
 }

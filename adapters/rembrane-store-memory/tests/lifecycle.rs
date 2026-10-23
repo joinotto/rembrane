@@ -5,7 +5,8 @@ use rembrane_application::{
 use rembrane_domain::{
     CanonicalEvent, ClientId, EventId, EventPayload, EvidenceId,
     EvidenceReference, EvidenceSource, MemoryId, MemoryRecord, MemoryScope,
-    MemoryStatus, PrincipalId, WorkspaceId, WriteGrant, WritePermission,
+    MemoryStatus, PrincipalId, ReadScope, WorkspaceId, WriteGrant,
+    WritePermission,
 };
 use rembrane_store_memory::InMemoryStore;
 
@@ -33,6 +34,7 @@ fn writer(subject_id: &str) -> WriteGrant {
         client_id: ClientId::new("client_01"),
         workspace_id: WorkspaceId::new("workspace_01"),
         subject_id: PrincipalId::new(subject_id),
+        scopes: vec![ReadScope::Global],
         permissions: vec![
             WritePermission::ReviseMemory,
             WritePermission::DeleteMemory,

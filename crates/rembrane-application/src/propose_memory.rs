@@ -47,6 +47,7 @@ where
         command: ProposeMemoryCommand,
     ) -> Result<MemoryRecord, ApplicationError> {
         require_permission(&command.grant, WritePermission::ProposeMemory)?;
+        require_scope(&command.grant, &command.scope)?;
 
         let proposal = MemoryRecord::proposed(
             command.memory_id,
@@ -90,6 +91,7 @@ where
         if current.subject_id() != &command.grant.subject_id {
             return Err(ApplicationError::NotFound);
         }
+        require_scope(&command.grant, current.scope())?;
         if current.version() != command.expected_version {
             return Err(ApplicationError::VersionConflict);
         }
@@ -142,6 +144,17 @@ fn require_permission(
     permission: WritePermission,
 ) -> Result<(), ApplicationError> {
     if grant.allows(permission) {
+        Ok(())
+    } else {
+        Err(ApplicationError::AccessDenied)
+    }
+}
+
+fn require_scope(
+    grant: &WriteGrant,
+    scope: &MemoryScope,
+) -> Result<(), ApplicationError> {
+    if grant.allows_scope(scope) {
         Ok(())
     } else {
         Err(ApplicationError::AccessDenied)

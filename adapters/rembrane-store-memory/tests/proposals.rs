@@ -4,7 +4,7 @@ use rembrane_application::{
 };
 use rembrane_domain::{
     ClientId, EventId, EvidenceId, EvidenceReference, EvidenceSource,
-    MemoryId, MemoryKind, MemoryScope, MemoryStatus, PrincipalId,
+    MemoryId, MemoryKind, MemoryScope, MemoryStatus, PrincipalId, ReadScope,
     WorkspaceId, WriteGrant, WritePermission,
 };
 use rembrane_store_memory::InMemoryStore;
@@ -14,6 +14,7 @@ fn grant(subject_id: &str, permissions: Vec<WritePermission>) -> WriteGrant {
         client_id: ClientId::new("assistant_01"),
         workspace_id: WorkspaceId::new("workspace_01"),
         subject_id: PrincipalId::new(subject_id),
+        scopes: vec![ReadScope::Global],
         permissions,
     }
 }

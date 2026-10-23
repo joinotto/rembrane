@@ -3,7 +3,8 @@ use rembrane_application::{
 };
 use rembrane_domain::{
     ClientId, EventId, EvidenceId, EvidenceReference, EvidenceSource, MemoryId,
-    MemoryScope, PrincipalId, WorkspaceId, WriteGrant, WritePermission,
+    MemoryScope, PrincipalId, ReadScope, WorkspaceId, WriteGrant,
+    WritePermission,
 };
 use rembrane_store_memory::InMemoryStore;
 
@@ -13,6 +14,7 @@ fn command(permissions: Vec<WritePermission>) -> RememberPreferenceCommand {
             client_id: ClientId::new("client_01"),
             workspace_id: WorkspaceId::new("workspace_01"),
             subject_id: PrincipalId::new("principal_01"),
+            scopes: vec![ReadScope::Global],
             permissions,
         },
         memory_id: MemoryId::new("memory_01"),
@@ -44,6 +46,21 @@ fn denies_direct_creation_without_permission() {
     let error = RememberPreferenceService::new(&mut store)
         .execute(command(Vec::new()))
         .expect_err("unauthorized write fails");
+
+    assert_eq!(error, ApplicationError::AccessDenied);
+}
+
+#[test]
+fn denies_creation_outside_the_write_scope() {
+    let mut scoped = command(vec![WritePermission::CreateMemory]);
+    scoped.scope = MemoryScope::Entity {
+        id: rembrane_domain::EntityId::new("project_01"),
+    };
+    let mut store = InMemoryStore::new();
+
+    let error = RememberPreferenceService::new(&mut store)
+        .execute(scoped)
+        .expect_err("out-of-scope write must fail");
 
     assert_eq!(error, ApplicationError::AccessDenied);
 }

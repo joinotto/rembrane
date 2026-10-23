@@ -32,7 +32,9 @@ where
         &mut self,
         command: RememberPreferenceCommand,
     ) -> Result<MemoryRecord, ApplicationError> {
-        if !command.grant.allows(WritePermission::CreateMemory) {
+        if !command.grant.allows(WritePermission::CreateMemory)
+            || !command.grant.allows_scope(&command.scope)
+        {
             return Err(ApplicationError::AccessDenied);
         }
 

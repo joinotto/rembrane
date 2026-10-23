@@ -35,6 +35,7 @@ pub struct WriteGrant {
     pub client_id: ClientId,
     pub workspace_id: WorkspaceId,
     pub subject_id: PrincipalId,
+    pub scopes: Vec<ReadScope>,
     pub permissions: Vec<WritePermission>,
 }
 
@@ -43,33 +44,45 @@ impl WriteGrant {
     pub fn allows(&self, permission: WritePermission) -> bool {
         self.permissions.contains(&permission)
     }
+
+    #[must_use]
+    pub fn allows_scope(&self, memory_scope: &MemoryScope) -> bool {
+        scope_is_allowed(&self.scopes, memory_scope)
+    }
 }
 
 impl ReadGrant {
     #[must_use]
     pub fn allows(&self, memory_scope: &MemoryScope) -> bool {
-        self.scopes.iter().any(|scope| match (scope, memory_scope) {
-            (ReadScope::Global, MemoryScope::Global) => true,
-            (
-                ReadScope::Domain { name: allowed },
-                MemoryScope::Domain { name: requested },
-            ) => allowed == requested,
-            (
-                ReadScope::Entity { id: allowed },
-                MemoryScope::Entity { id: requested },
-            ) => allowed == requested,
-            (
-                ReadScope::Activity { id: allowed },
-                MemoryScope::Activity { id: requested },
-            ) => allowed == requested,
-            _ => false,
-        })
+        scope_is_allowed(&self.scopes, memory_scope)
     }
+}
+
+fn scope_is_allowed(
+    scopes: &[ReadScope],
+    memory_scope: &MemoryScope,
+) -> bool {
+    scopes.iter().any(|scope| match (scope, memory_scope) {
+        (ReadScope::Global, MemoryScope::Global) => true,
+        (
+            ReadScope::Domain { name: allowed },
+            MemoryScope::Domain { name: requested },
+        ) => allowed == requested,
+        (
+            ReadScope::Entity { id: allowed },
+            MemoryScope::Entity { id: requested },
+        ) => allowed == requested,
+        (
+            ReadScope::Activity { id: allowed },
+            MemoryScope::Activity { id: requested },
+        ) => allowed == requested,
+        _ => false,
+    })
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{ReadGrant, ReadScope};
+    use super::{ReadGrant, ReadScope, WriteGrant, WritePermission};
     use crate::{
         ClientId, EntityId, MemoryScope, PrincipalId, WorkspaceId,
     };
@@ -85,6 +98,23 @@ mod tests {
 
         assert!(grant.allows(&MemoryScope::Global));
         assert!(!grant.allows(&MemoryScope::Entity {
+            id: EntityId::new("project_01"),
+        }));
+    }
+
+    #[test]
+    fn write_permission_does_not_expand_scope_authority() {
+        let grant = WriteGrant {
+            client_id: ClientId::new("client_01"),
+            workspace_id: WorkspaceId::new("workspace_01"),
+            subject_id: PrincipalId::new("principal_01"),
+            scopes: vec![ReadScope::Global],
+            permissions: vec![WritePermission::CreateMemory],
+        };
+
+        assert!(grant.allows(WritePermission::CreateMemory));
+        assert!(grant.allows_scope(&MemoryScope::Global));
+        assert!(!grant.allows_scope(&MemoryScope::Entity {
             id: EntityId::new("project_01"),
         }));
     }

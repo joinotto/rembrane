@@ -55,12 +55,13 @@ where
                 client_id: command.client_id.clone(),
                 workspace_id: command.workspace_id.clone(),
                 subject_id: command.principal_id.clone(),
-                scopes: command.requested_read_scopes,
+                scopes: command.requested_read_scopes.clone(),
             },
             write: WriteGrant {
                 client_id: command.client_id,
                 workspace_id: command.workspace_id,
                 subject_id: command.principal_id,
+                scopes: command.requested_read_scopes,
                 permissions: write_permissions,
             },
         })
