@@ -5,11 +5,14 @@ use crate::{
     ActivityId, CheckpointId, EntityId, PrincipalId, WorkspaceId,
 };
 
+pub const MAX_CHECKPOINT_PAYLOAD_BYTES: usize = 262_144;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CheckpointError {
     EmptyGoal,
     EmptySummary,
     EmptyStateFingerprint,
+    PayloadTooLarge,
     InvalidVersion,
     VersionOverflow,
 }
@@ -23,6 +26,9 @@ impl Display for CheckpointError {
             }
             Self::EmptyStateFingerprint => {
                 formatter.write_str("state fingerprint must not be empty")
+            }
+            Self::PayloadTooLarge => {
+                formatter.write_str("checkpoint exceeds the canonical byte limit")
             }
             Self::InvalidVersion => {
                 formatter.write_str("checkpoint version must be greater than zero")
@@ -79,6 +85,13 @@ impl ActivityCheckpoint {
             return Err(CheckpointError::InvalidVersion);
         }
         validate_state_fingerprint(state_fingerprint.as_deref())?;
+        validate_payload_size(
+            &goal,
+            &summary,
+            &next_steps,
+            &blockers,
+            state_fingerprint.as_deref(),
+        )?;
 
         Ok(Self {
             id,
@@ -115,6 +128,13 @@ impl ActivityCheckpoint {
         if summary.trim().is_empty() {
             return Err(CheckpointError::EmptySummary);
         }
+        validate_payload_size(
+            &goal,
+            &summary,
+            &next_steps,
+            &blockers,
+            None,
+        )?;
 
         Ok(Self {
             id,
@@ -137,6 +157,13 @@ impl ActivityCheckpoint {
     ) -> Result<Self, CheckpointError> {
         let state_fingerprint = state_fingerprint.into();
         validate_state_fingerprint(Some(&state_fingerprint))?;
+        validate_payload_size(
+            &self.goal,
+            &self.summary,
+            &self.next_steps,
+            &self.blockers,
+            Some(&state_fingerprint),
+        )?;
         self.state_fingerprint = Some(state_fingerprint);
         Ok(self)
     }
@@ -151,6 +178,13 @@ impl ActivityCheckpoint {
         if summary.trim().is_empty() {
             return Err(CheckpointError::EmptySummary);
         }
+        validate_payload_size(
+            &self.goal,
+            &summary,
+            &next_steps,
+            &blockers,
+            self.state_fingerprint.as_deref(),
+        )?;
 
         self.version = self
             .version
@@ -235,6 +269,29 @@ fn validate_state_fingerprint(
     }
 }
 
+fn validate_payload_size(
+    goal: &str,
+    summary: &str,
+    next_steps: &[String],
+    blockers: &[String],
+    state_fingerprint: Option<&str>,
+) -> Result<(), CheckpointError> {
+    let mut fields = next_steps
+        .iter()
+        .chain(blockers)
+        .map(String::len)
+        .chain([goal.len(), summary.len()])
+        .chain(state_fingerprint.map(str::len));
+    let total = fields
+        .try_fold(0_usize, usize::checked_add)
+        .ok_or(CheckpointError::PayloadTooLarge)?;
+    if total > MAX_CHECKPOINT_PAYLOAD_BYTES {
+        Err(CheckpointError::PayloadTooLarge)
+    } else {
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::ActivityCheckpoint;
@@ -279,5 +336,23 @@ mod tests {
 
         assert!(!checkpoint.is_stale_against("git:abc123"));
         assert!(checkpoint.is_stale_against("git:def456"));
+    }
+
+    #[test]
+    fn rejects_checkpoint_payload_over_the_canonical_limit() {
+        let error = ActivityCheckpoint::new(
+            CheckpointId::new("checkpoint_large"),
+            WorkspaceId::new("workspace_01"),
+            PrincipalId::new("principal_01"),
+            ActivityId::new("activity_01"),
+            None,
+            "Goal",
+            "x".repeat(super::MAX_CHECKPOINT_PAYLOAD_BYTES),
+            vec!["overflow".to_owned()],
+            Vec::new(),
+        )
+        .expect_err("oversized checkpoint should fail");
+
+        assert_eq!(error, super::CheckpointError::PayloadTooLarge);
     }
 }

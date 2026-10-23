@@ -15,7 +15,9 @@ mod projection;
 mod scope;
 mod workspace;
 
-pub use activity::{ActivityCheckpoint, CheckpointError};
+pub use activity::{
+    ActivityCheckpoint, CheckpointError, MAX_CHECKPOINT_PAYLOAD_BYTES,
+};
 pub use disclosure::{DisclosedMemory, DisclosureReceipt};
 pub use event::{CanonicalEvent, EventError, EventPayload};
 pub use grant::{ReadGrant, ReadScope, WriteGrant, WritePermission};
@@ -25,7 +27,8 @@ pub use identifier::{
     WorkspaceId,
 };
 pub use memory::{
-    MemoryKind, MemoryLifecycleError, MemoryRecord, MemoryStatus,
+    MAX_MEMORY_CONTENT_BYTES, MemoryKind, MemoryLifecycleError, MemoryRecord,
+    MemoryStatus,
 };
 pub use provenance::{EvidenceReference, EvidenceSource};
 pub use projection::{

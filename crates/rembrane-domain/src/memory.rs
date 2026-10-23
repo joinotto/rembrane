@@ -4,6 +4,8 @@ use crate::{
 use std::error::Error;
 use std::fmt::{self, Display};
 
+pub const MAX_MEMORY_CONTENT_BYTES: usize = 262_144;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MemoryKind {
     Preference,
@@ -25,6 +27,7 @@ pub enum MemoryStatus {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MemoryLifecycleError {
     EmptyContent,
+    ContentTooLarge,
     MissingEvidence,
     InvalidStatus,
     InvalidVersion,
@@ -35,6 +38,9 @@ impl Display for MemoryLifecycleError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::EmptyContent => formatter.write_str("content must not be empty"),
+            Self::ContentTooLarge => {
+                formatter.write_str("content exceeds the canonical byte limit")
+            }
             Self::MissingEvidence => {
                 formatter.write_str("memory must reference evidence")
             }
@@ -95,6 +101,8 @@ impl MemoryRecord {
             }
         } else if content.trim().is_empty() {
             return Err(MemoryLifecycleError::EmptyContent);
+        } else if content.len() > MAX_MEMORY_CONTENT_BYTES {
+            return Err(MemoryLifecycleError::ContentTooLarge);
         }
 
         Ok(Self {
@@ -168,6 +176,9 @@ impl MemoryRecord {
         if content.trim().is_empty() {
             return Err(MemoryLifecycleError::EmptyContent);
         }
+        if content.len() > MAX_MEMORY_CONTENT_BYTES {
+            return Err(MemoryLifecycleError::ContentTooLarge);
+        }
 
         Ok(Self {
             id,
@@ -194,6 +205,9 @@ impl MemoryRecord {
         let content = content.into();
         if content.trim().is_empty() {
             return Err(MemoryLifecycleError::EmptyContent);
+        }
+        if content.len() > MAX_MEMORY_CONTENT_BYTES {
+            return Err(MemoryLifecycleError::ContentTooLarge);
         }
 
         Ok(Self {
@@ -238,6 +252,9 @@ impl MemoryRecord {
         let content = content.into();
         if content.trim().is_empty() {
             return Err(MemoryLifecycleError::EmptyContent);
+        }
+        if content.len() > MAX_MEMORY_CONTENT_BYTES {
+            return Err(MemoryLifecycleError::ContentTooLarge);
         }
 
         self.version = self
@@ -402,5 +419,23 @@ mod tests {
         assert_eq!(confirmed.status(), MemoryStatus::Confirmed);
         assert_eq!(confirmed.version(), 2);
         assert_eq!(confirmed.evidence().len(), 2);
+    }
+
+    #[test]
+    fn rejects_memory_content_over_the_canonical_limit() {
+        let error = MemoryRecord::confirmed_preference(
+            MemoryId::new("memory_large"),
+            WorkspaceId::new("workspace_01"),
+            PrincipalId::new("principal_01"),
+            MemoryScope::Global,
+            "x".repeat(super::MAX_MEMORY_CONTENT_BYTES + 1),
+            EvidenceReference::new(
+                EvidenceId::new("evidence_large"),
+                EvidenceSource::UserStatement,
+            ),
+        )
+        .expect_err("oversized memory should fail");
+
+        assert_eq!(error, MemoryLifecycleError::ContentTooLarge);
     }
 }
