@@ -4,16 +4,18 @@
 //! dependencies. Adapters depend on the domain; the domain never depends on
 //! adapters.
 
-mod identifier;
 mod activity;
-mod memory;
 mod disclosure;
 mod event;
 mod grant;
+mod identifier;
+mod memory;
+mod provenance;
 mod scope;
+mod workspace;
 
-pub use disclosure::{DisclosedMemory, DisclosureReceipt};
 pub use activity::{ActivityCheckpoint, CheckpointError};
+pub use disclosure::{DisclosedMemory, DisclosureReceipt};
 pub use event::{CanonicalEvent, EventError, EventPayload};
 pub use grant::{ReadGrant, ReadScope, WriteGrant, WritePermission};
 pub use identifier::{
@@ -25,5 +27,6 @@ pub use memory::{
 };
 pub use provenance::{EvidenceReference, EvidenceSource};
 pub use scope::MemoryScope;
-
-mod provenance;
+pub use workspace::{
+    Membership, MembershipStatus, WorkspaceKind, WorkspaceRole,
+};
