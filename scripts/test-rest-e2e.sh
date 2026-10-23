@@ -28,7 +28,7 @@ export REMBRANE_DATABASE="$database"
 export REMBRANE_PRINCIPAL_ID="principal_rest_e2e"
 export REMBRANE_WORKSPACE_ID="workspace_rest_e2e"
 export REMBRANE_CLIENT_ID="client_rest_e2e"
-export REMBRANE_READ_SCOPES="global"
+export REMBRANE_READ_SCOPES="global,entity:project_rest_e2e"
 export REMBRANE_API_TOKEN="rest-e2e-token"
 export REMBRANE_LISTEN="${REMBRANE_TEST_LISTEN:-127.0.0.1:18787}"
 
@@ -41,6 +41,12 @@ export REMBRANE_LISTEN="${REMBRANE_TEST_LISTEN:-127.0.0.1:18787}"
     --principal "$REMBRANE_PRINCIPAL_ID" \
     --workspace "$REMBRANE_WORKSPACE_ID" \
     --content "Call me Hippo" >/dev/null
+"$rembrane_binary" remember \
+    --database "$database" \
+    --principal "$REMBRANE_PRINCIPAL_ID" \
+    --workspace "$REMBRANE_WORKSPACE_ID" \
+    --entity project_rest_e2e \
+    --content "Use Rust for the REST project" >/dev/null
 
 "$api_binary" >"$api_stdout" 2>"$api_stderr" &
 api_pid=$!
@@ -70,6 +76,21 @@ scoped_status=$(
 test "$scoped_status" = "403"
 test "$(jq -r '.code' "$scoped_response")" = "access_denied"
 
+authorized_scoped_response="$test_directory/authorized-scoped-response.json"
+authorized_scoped_status=$(
+    curl -sS \
+        -o "$authorized_scoped_response" \
+        -w '%{http_code}' \
+        -X POST "$base_url/v1/context/resolve" \
+        -H "Authorization: Bearer $REMBRANE_API_TOKEN" \
+        -H "Content-Type: application/json" \
+        --data "{\"workspaceId\":\"$REMBRANE_WORKSPACE_ID\",\"subjectId\":\"$REMBRANE_PRINCIPAL_ID\",\"entityId\":\"project_rest_e2e\",\"purpose\":\"continue-project\",\"query\":\"Which language should the REST project use?\",\"maximumItems\":10}"
+)
+test "$authorized_scoped_status" = "200"
+test "$(
+    jq -r '.items[0].content' "$authorized_scoped_response"
+)" = "Use Rust for the REST project"
+
 postman collection run \
     "$repository_root/tests/postman/rembrane-local.postman_collection.json" \
     --env-var "baseUrl=$base_url" \
@@ -81,6 +102,6 @@ disclosure_count=$(
     sqlite3 "$database" \
         "SELECT count(*) FROM disclosure_receipts WHERE workspace_id = '$REMBRANE_WORKSPACE_ID';"
 )
-test "$disclosure_count" = "1"
+test "$disclosure_count" = "2"
 
 echo "REST end-to-end checks passed"
