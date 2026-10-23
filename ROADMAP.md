@@ -72,7 +72,8 @@ This roadmap describes sequencing, not release dates.
 - [x] Activity-scoped work-trace ingestion as proposed observation memory.
 - [x] Model activity checkpoints and resumable handoffs.
 - [x] Deterministic local Git state fingerprints for coding-agent handoffs.
-- [ ] Native coding-agent configuration adapters.
+- [x] Secret-safe Codex and Claude Code stdio MCP configuration generators.
+- [ ] Additional native coding-agent configuration adapters.
 - [x] Deterministic item and plaintext-byte context budgets.
 - [x] Enforce canonical memory and checkpoint payload ceilings.
 - [x] Optional external-state fingerprints and stale handoff detection.

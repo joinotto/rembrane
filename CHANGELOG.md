@@ -49,6 +49,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   format-version, payload-length, truncation, and trailing-data validation.
 - Read-only `rembrane fingerprint-git` command producing stable
   `git:<commit>:<clean|dirty>` handoff fingerprints without repository locks.
+- Secret-safe `rembrane mcp-config` generators for Codex TOML and Claude Code
+  JSON, forwarding credential names from the local environment without
+  printing credential values.
 - Type-state SQLite cipher attachment that prevents encrypted memory APIs from
   existing on an unconfigured store.
 - Tenant-scoped SQLite memory reads that authenticate encrypted payloads before

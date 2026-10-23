@@ -153,6 +153,21 @@ The environment-key flow is for development testing only. Shell history must
 never contain the key value; production setup will use operating-system
 keychains, HSMs, or customer KMS providers.
 
+Generate a secret-safe stdio MCP configuration for a supported coding client:
+
+```text
+target/debug/rembrane mcp-config \
+  --client codex \
+  --server-binary "$PWD/target/debug/rembrane-mcp"
+
+target/debug/rembrane mcp-config \
+  --client claude-code \
+  --server-binary "$PWD/target/debug/rembrane-mcp"
+```
+
+The generated configuration references protected environment-variable names;
+it never prints their values.
+
 The local REST server additionally requires `REMBRANE_DATABASE`,
 `REMBRANE_PRINCIPAL_ID`, `REMBRANE_WORKSPACE_ID`, `REMBRANE_CLIENT_ID`, and
 `REMBRANE_API_TOKEN`. It listens on `127.0.0.1:8787` by default. Non-loopback

@@ -86,6 +86,24 @@ dirty_fingerprint=$(
 printf '%s\n' "$dirty_fingerprint" | rg '^git:[0-9a-f]+:dirty$' >/dev/null
 test "$clean_fingerprint" != "$dirty_fingerprint"
 
+codex_config=$(
+    "$rembrane_binary" mcp-config \
+        --client codex \
+        --server-binary "$repository_root/target/debug/rembrane-mcp"
+)
+printf '%s\n' "$codex_config" |
+    rg -F '[mcp_servers.rembrane]' >/dev/null
+printf '%s\n' "$codex_config" |
+    rg -F 'env_vars = [' >/dev/null
+claude_config=$(
+    "$rembrane_binary" mcp-config \
+        --client claude-code \
+        --server-binary "$repository_root/target/debug/rembrane-mcp"
+)
+printf '%s\n' "$claude_config" | jq -e \
+    '.mcpServers.rembrane.env.REMBRANE_WORKSPACE_KEY_HEX
+        == "${REMBRANE_WORKSPACE_KEY_HEX}"' >/dev/null
+
 "$rembrane_binary" restore \
     --input "$backup" \
     --database "$restored_database" \

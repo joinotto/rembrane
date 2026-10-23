@@ -42,6 +42,7 @@ fn run(arguments: Vec<String>) -> Result<(), String> {
         Some("backup") => backup(&arguments[1..]),
         Some("restore") => restore(&arguments[1..]),
         Some("fingerprint-git") => fingerprint_git(&arguments[1..]),
+        Some("mcp-config") => print_mcp_config(&arguments[1..]),
         Some("remember") => remember(&arguments[1..]),
         Some("recall") => recall(&arguments[1..]),
         Some("correct") => correct(&arguments[1..]),
@@ -51,6 +52,69 @@ fn run(arguments: Vec<String>) -> Result<(), String> {
             Ok(())
         }
     }
+}
+
+const MCP_ENVIRONMENT_VARIABLES: [&str; 7] = [
+    "REMBRANE_DATABASE",
+    "REMBRANE_PRINCIPAL_ID",
+    "REMBRANE_WORKSPACE_ID",
+    "REMBRANE_CLIENT_ID",
+    "REMBRANE_READ_SCOPES",
+    "REMBRANE_WORKSPACE_KEY_ID",
+    "REMBRANE_WORKSPACE_KEY_HEX",
+];
+
+fn print_mcp_config(arguments: &[String]) -> Result<(), String> {
+    let client = option(arguments, "--client")?;
+    let server_binary = option(arguments, "--server-binary")?;
+    let config = match client {
+        "codex" => codex_mcp_config(server_binary),
+        "claude-code" => claude_mcp_config(server_binary),
+        _ => {
+            return Err(
+                "--client must be codex or claude-code".to_owned(),
+            );
+        }
+    };
+    println!("{config}");
+    Ok(())
+}
+
+fn codex_mcp_config(server_binary: &str) -> String {
+    let variables = MCP_ENVIRONMENT_VARIABLES
+        .iter()
+        .map(|variable| format!("\"{variable}\""))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(
+        "[mcp_servers.rembrane]\ncommand = \"{}\"\n\
+         env_vars = [{variables}]\nrequired = true",
+        escape_config_string(server_binary)
+    )
+}
+
+fn claude_mcp_config(server_binary: &str) -> String {
+    let environment = MCP_ENVIRONMENT_VARIABLES
+        .iter()
+        .map(|variable| {
+            format!("\"{variable}\":\"${{{variable}}}\"")
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    format!(
+        "{{\"mcpServers\":{{\"rembrane\":{{\"type\":\"stdio\",\
+         \"command\":\"{}\",\"args\":[],\"env\":{{{environment}}}}}}}}}}",
+        escape_config_string(server_binary)
+    )
+}
+
+fn escape_config_string(value: &str) -> String {
+    value
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
+        .replace('\r', "\\r")
+        .replace('\t', "\\t")
 }
 
 fn fingerprint_git(arguments: &[String]) -> Result<(), String> {
@@ -854,6 +918,8 @@ fn print_help() {
            rembrane restore --input <path> --database <new-path> \
              --principal <id> --workspace <id>\n\
            rembrane fingerprint-git --repository <path>\n\
+           rembrane mcp-config --client <codex|claude-code> \
+             --server-binary <path>\n\
            rembrane remember --database <path> --principal <id> \
              --workspace <id> --content <preference> \
              [--domain <name> | --entity <id> | --activity <id>]\n\
@@ -875,9 +941,9 @@ mod tests {
     use rembrane_domain::{EntityId, MemoryScope, ReadScope};
 
     use super::{
-        EXPORT_MAGIC, format_read_scopes, option, positive_u64,
-        read_export, recall_scope_context, requested_memory_scope,
-        write_export,
+        EXPORT_MAGIC, claude_mcp_config, codex_mcp_config,
+        format_read_scopes, option, positive_u64, read_export,
+        recall_scope_context, requested_memory_scope, write_export,
     };
 
     fn temporary_path(name: &str) -> std::path::PathBuf {
@@ -1014,5 +1080,19 @@ mod tests {
         assert!(read_export(&export, &restored).is_err());
         assert!(!restored.exists());
         std::fs::remove_file(export).expect("fixture should be removed");
+    }
+
+    #[test]
+    fn mcp_configs_reference_secrets_without_embedding_values() {
+        let codex = codex_mcp_config("/opt/rembrane-mcp");
+        assert!(codex.contains("env_vars = ["));
+        assert!(codex.contains("\"REMBRANE_WORKSPACE_KEY_HEX\""));
+        assert!(!codex.contains("00010203"));
+
+        let claude = claude_mcp_config("/opt/rembrane-mcp");
+        assert!(claude.contains(
+            "\"REMBRANE_WORKSPACE_KEY_HEX\":\"${REMBRANE_WORKSPACE_KEY_HEX}\""
+        ));
+        assert!(!claude.contains("00010203"));
     }
 }
