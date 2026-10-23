@@ -1,5 +1,7 @@
 //! Versioned, provider-independent serialization for encrypted canonical data.
 
+mod event;
+
 use std::error::Error;
 use std::fmt::{self, Display};
 
@@ -9,6 +11,8 @@ use rembrane_domain::{
     WorkspaceId,
 };
 use serde::{Deserialize, Serialize};
+
+pub use event::{decode_event, encode_event};
 
 const MEMORY_FORMAT: &str = "rembrane.memory";
 const MEMORY_FORMAT_VERSION: u16 = 1;

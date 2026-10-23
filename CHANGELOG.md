@@ -22,6 +22,7 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Opaque record-encryption boundary with tenant-bound associated data.
 - Versioned canonical memory codec with strict decoding and a stable wire
   fixture.
+- Versioned canonical event codec covering every lifecycle payload variant.
 - Product architecture, threat model, integration support policy, Rust
   research, bot integration design, and architecture decision records.
 

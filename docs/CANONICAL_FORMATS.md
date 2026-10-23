@@ -33,5 +33,17 @@ See
 `crates/rembrane-codec/fixtures/memory-v1-confirmed-preference.json` for the
 normative version-one fixture.
 
-Checkpoint and event formats will follow the same envelope rules before their
-persistent adapters are implemented.
+## Event format version 1
+
+Format identifier: `rembrane.event`
+
+The encrypted record contains immutable workspace sequence metadata and one of
+the canonical lifecycle payload variants. The format supports memory
+proposals, confirmations, creation, revision and deletion; observations;
+activity checkpoints; and disclosure receipts.
+
+See `crates/rembrane-codec/fixtures/event-v1-memory-created.json` for the
+normative version-one fixture.
+
+Checkpoint formats will follow the same envelope rules before their persistent
+adapter is implemented.

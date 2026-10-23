@@ -1,0 +1,1 @@
+{"format":"rembrane.event","version":1,"record":{"id":"event_01","workspace_id":"workspace_01","actor_id":"principal_01","subject_id":"principal_01","sequence":1,"payload":{"type":"memory-created","memory_id":"memory_01","version":1}}}
