@@ -13,6 +13,7 @@ restored_database="$test_directory/rembrane-restored.sqlite"
 
 export REMBRANE_WORKSPACE_KEY_ID="e2e-key-v1"
 export REMBRANE_WORKSPACE_KEY_HEX="000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+export REMBRANE_READ_SCOPES="global,domain:development,entity:project_e2e"
 
 "$rembrane_binary" init \
     --database "$database" \
@@ -66,12 +67,21 @@ doctor_output=$(
     "$rembrane_binary" doctor \
         --database "$database" \
         --principal principal_e2e \
-        --workspace workspace_e2e
+        --workspace workspace_e2e \
+        --privacy
 )
 printf '%s\n' "$doctor_output" |
     rg -F "Rembrane doctor: ready" >/dev/null
 printf '%s\n' "$doctor_output" |
     rg -F "Authenticated encrypted records: 1" >/dev/null
+printf '%s\n' "$doctor_output" |
+    rg -F "Processing location: local trusted boundary" >/dev/null
+printf '%s\n' "$doctor_output" |
+    rg -F "Outbound endpoints: none" >/dev/null
+printf '%s\n' "$doctor_output" |
+    rg -F \
+        "Configured read scopes: global,domain:development,entity:project_e2e" \
+        >/dev/null
 
 project_remember_output=$(
     "$rembrane_binary" remember \

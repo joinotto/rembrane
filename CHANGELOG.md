@@ -41,6 +41,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   printing secret values.
 - `rembrane doctor --privacy` diagnostics for local processing placement,
   exact configured read scopes, outbound endpoints, and secret-source names.
+- CLI end-to-end assertions for privacy diagnostics and their exact
+  administrator-owned scope allowlist.
 - Consistent encrypted SQLite backups and fail-closed restores that refuse
   overwrites, authenticate restored records, and remove invalid destinations.
 - Type-state SQLite cipher attachment that prevents encrypted memory APIs from

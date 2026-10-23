@@ -142,10 +142,12 @@ cargo run -p rembrane-cli -- forget \
 
 The demo stores a confirmed preference, resolves it for a second authorized assistant, and prints the context-pack and disclosure-receipt identifiers.
 
-The SQLite adapter currently persists local identity, personal workspace, and
-owner membership. Persistent encrypted memories, network servers,
-cryptographic key management, and production authentication are not yet
-implemented.
+The current vertical slice persists local identities, workspaces, encrypted
+memories, activity checkpoints, audit events, and disclosure receipts in
+SQLite. It exposes a local stdio MCP server and bearer-authenticated REST
+context retrieval. Production key management, remote OAuth MCP, hosted
+PostgreSQL, shared-workspace lifecycle, and third-party agent adapters remain
+roadmap work.
 
 The environment-key flow is for development testing only. Shell history must
 never contain the key value; production setup will use operating-system
