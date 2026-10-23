@@ -1,0 +1,11 @@
+.git
+.github
+.rembrane
+target
+.env
+.env.*
+!.env.example
+Dockerfile*
+compose*.yaml
+docs
+tests

@@ -1,0 +1,27 @@
+services:
+  rembrane:
+    build:
+      context: .
+    restart: unless-stopped
+    environment:
+      REMBRANE_DATABASE: /var/lib/rembrane/rembrane.db
+      REMBRANE_PRINCIPAL_ID: ${REMBRANE_PRINCIPAL_ID:?required}
+      REMBRANE_WORKSPACE_ID: ${REMBRANE_WORKSPACE_ID:?required}
+      REMBRANE_CLIENT_ID: ${REMBRANE_CLIENT_ID:?required}
+      REMBRANE_READ_SCOPES: ${REMBRANE_READ_SCOPES:-global}
+      REMBRANE_WORKSPACE_KEY_ID: ${REMBRANE_WORKSPACE_KEY_ID:?required}
+      REMBRANE_WORKSPACE_KEY_HEX: ${REMBRANE_WORKSPACE_KEY_HEX:?required}
+      REMBRANE_API_TOKEN: ${REMBRANE_API_TOKEN:?required}
+      REMBRANE_LISTEN: 0.0.0.0:8787
+      REMBRANE_ALLOW_NON_LOOPBACK: "1"
+    ports:
+      - "127.0.0.1:8787:8787"
+    volumes:
+      - rembrane-data:/var/lib/rembrane
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+volumes:
+  rembrane-data:

@@ -45,6 +45,8 @@ This roadmap describes sequencing, not release dates.
 - [x] Report local processing, connection scopes, endpoints, and secret sources
   through `rembrane doctor --privacy`.
 - [x] Add encrypted SQLite backup and verified restore commands.
+- [x] Package the local REST service for loopback-only Docker Compose
+  self-hosting with persistent encrypted storage.
 - [ ] Add production OS-keychain and customer-KMS key providers.
 - [x] Retrieve minimal context through local stdio MCP.
 - [x] Rank canonical context by deterministic local query relevance.

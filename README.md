@@ -157,6 +157,22 @@ The local REST server additionally requires `REMBRANE_DATABASE`,
 HTTP is rejected unless explicitly enabled for operation behind a trusted TLS
 proxy.
 
+### Self-host with Docker
+
+Copy `.env.example` to `.env`, fill every required identifier, token, and
+development key, then start the loopback-only REST service:
+
+```text
+docker compose up --build
+```
+
+The container initializes the requested personal workspace idempotently and
+stores its encrypted SQLite database in the `rembrane-data` volume. The
+published API remains bound to `127.0.0.1`; place authenticated TLS
+termination in front of it before allowing remote access. The current
+environment key is for development only and must not be used for production
+or sensitive data.
+
 ## Contributing
 
 Rembrane is being built in public. Start with [CONTRIBUTING.md](CONTRIBUTING.md), read the [support policy](docs/SUPPORT_POLICY.md), and discuss substantial protocol or security changes before implementing them.
