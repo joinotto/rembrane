@@ -1,0 +1,18 @@
+[package]
+name = "rembrane-crypto-rustcrypto"
+description = "Experimental RustCrypto XChaCha20-Poly1305 adapter for Rembrane"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+chacha20poly1305 = "0.10"
+getrandom = "0.3"
+rembrane-crypto = { path = "../../crates/rembrane-crypto" }
+rembrane-domain = { path = "../../crates/rembrane-domain" }
+zeroize = "1"
+
+[lints]
+workspace = true

@@ -19,3 +19,4 @@ Changing an accepted decision requires a new ADR that links to and supersedes th
 - [0004: Publish honest integration tiers](0004-honest-integration-tiers.md)
 - [0005: Make canonical mutations atomic](0005-atomic-canonical-mutations.md)
 - [0006: Keep record encryption behind an opaque boundary](0006-opaque-record-encryption-boundary.md)
+- [0007: Prototype record AEAD with RustCrypto](0007-experimental-rustcrypto-record-aead.md)

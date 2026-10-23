@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "adapters/rembrane-crypto-rustcrypto",
     "adapters/rembrane-store-memory",
     "adapters/rembrane-store-sqlite",
     "adapters/rembrane-semantic-native",

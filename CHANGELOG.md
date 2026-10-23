@@ -40,6 +40,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   atomic audit events.
 - Atomic SQLite disclosure receipts that verify each disclosed memory belongs
   to the subject and is still at the recorded version.
+- Experimental RustCrypto XChaCha20-Poly1305 record cipher with randomized
+  nonces, zeroizing key storage, and tenant-bound associated data.
 - Product architecture, threat model, integration support policy, Rust
   research, bot integration design, and architecture decision records.
 

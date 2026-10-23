@@ -30,6 +30,7 @@ This roadmap describes sequencing, not release dates.
 - [x] Persist and optimistically update the SQLite provider projection outbox.
 - [x] Persist encrypted activity checkpoints with their audit events.
 - [x] Atomically persist exact-version disclosure receipts in SQLite.
+- [x] Prototype a portable XChaCha20-Poly1305 record-cipher adapter.
 - [ ] Implement the encrypted local SQLite adapter.
 - [ ] Retrieve minimal context through REST and MCP.
 - [x] Persist a disclosure receipt for every SQLite context response.

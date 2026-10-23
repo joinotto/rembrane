@@ -158,6 +158,7 @@ impl EncryptedPayload {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CryptoError {
     AuthenticationFailed,
+    EntropyUnavailable,
     InvalidContext,
     InvalidEnvelope,
     KeyUnavailable,
@@ -169,6 +170,9 @@ impl Display for CryptoError {
         match self {
             Self::AuthenticationFailed => {
                 formatter.write_str("payload authentication failed")
+            }
+            Self::EntropyUnavailable => {
+                formatter.write_str("secure randomness is unavailable")
             }
             Self::InvalidContext => {
                 formatter.write_str("encryption context is invalid")
