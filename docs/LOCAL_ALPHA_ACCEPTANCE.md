@@ -36,6 +36,11 @@ It must pass:
 6. MCP checkpoint, work-trace, scope-denial, and disclosure checks; and
 7. REST authentication, disclosure, and tenant-isolation checks.
 
+The repository includes executable coverage for backup, restore, v1-to-v2
+migration, membership revocation, memory deletion, wrong-key denial, encrypted
+payload tampering, and every read path implemented by the local SQLite,
+in-memory, MCP, and REST adapters.
+
 For an offline machine without Rust, run:
 
 ```text

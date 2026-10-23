@@ -140,6 +140,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   environments, reused by the complete compiler and end-to-end suite.
 - Executable local-alpha acceptance contract and independent CI jobs for
   static/schema checks, the complete Rust/E2E suite, and container builds.
+- Roadmap release gates reconciled with executable local-alpha lifecycle and
+  tenant-isolation coverage while future-adapter and independent-review gates
+  remain open.
 - Multi-stage Docker image and loopback-only Compose profile with idempotent
   workspace bootstrap, non-root application execution, encrypted persistent
   storage, and an authenticated-data health check.
