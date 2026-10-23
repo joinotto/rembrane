@@ -5,8 +5,12 @@
 
 mod error;
 mod ports;
+mod revise_memory;
 mod resolve_context;
 
 pub use error::ApplicationError;
 pub use ports::{DisclosureRepository, MemoryRepository};
+pub use revise_memory::{
+    DeleteMemoryCommand, MemoryLifecycleService, ReviseMemoryCommand,
+};
 pub use resolve_context::{ResolveContextCommand, ResolveContextService};
