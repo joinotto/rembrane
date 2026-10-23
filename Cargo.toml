@@ -5,6 +5,7 @@ members = [
     "crates/rembrane-application",
     "crates/rembrane-contracts",
     "crates/rembrane-domain",
+    "crates/rembrane-provider-sdk",
 ]
 resolver = "2"
 
