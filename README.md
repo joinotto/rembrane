@@ -55,6 +55,7 @@ The platform owns identity, workspaces, encryption orchestration, canonical even
 - [Bot and Platform Integration Architecture](docs/BOT_AND_PLATFORM_INTEGRATION_ARCHITECTURE.md)
 - [Support and Compatibility Policy](docs/SUPPORT_POLICY.md)
 - [Threat Model](docs/THREAT_MODEL.md)
+- [Recovery Model](docs/RECOVERY_MODEL.md)
 - [Architecture Decision Records](docs/adr/README.md)
 - [Roadmap](ROADMAP.md)
 - [Security Policy](SECURITY.md)

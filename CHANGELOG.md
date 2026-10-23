@@ -102,6 +102,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   permit configured activities while denying model-requested scope expansion.
 - Product architecture, threat model, integration support policy, Rust
   research, bot integration design, and architecture decision records.
+- Explicit strict-E2EE recovery model covering encrypted backups, key loss,
+  rollback risk, restore verification, and shared-workspace limitations.
 
 ### Security
 

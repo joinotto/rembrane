@@ -35,4 +35,13 @@ The intended security model includes:
 - Revocation and deletion propagation.
 - No plaintext memory or credentials in logs and telemetry.
 
-These properties are design goals until verified by implementation tests and independent review.
+The local SQLite vertical slice currently verifies encrypted canonical records,
+tenant-scoped reads, exact disclosure receipts, scope-bound grants, optimistic
+correction/deletion, and encrypted backup/restore through executable tests.
+
+They remain pre-alpha implementation claims, not independently audited
+production guarantees. Production KMS/keychain providers, remote OAuth,
+shared-workspace key rotation, rollback-resistant synchronization, and
+independent cryptographic review are still required.
+
+See `docs/THREAT_MODEL.md` and `docs/RECOVERY_MODEL.md`.

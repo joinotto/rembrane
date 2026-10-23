@@ -96,7 +96,7 @@ This roadmap describes sequencing, not release dates.
 No stable release until:
 
 - [ ] Tenant-isolation tests pass across every read path.
-- [ ] Threat model and recovery model are published.
+- [x] Threat model and recovery model are published.
 - [ ] Protocol and encrypted export formats are versioned.
 - [ ] Security-sensitive code has independent review.
 - [ ] Backup, restore, migration, revocation, and deletion are tested.
