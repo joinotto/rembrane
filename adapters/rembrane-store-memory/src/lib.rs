@@ -28,7 +28,8 @@ impl InMemoryStore {
 impl MemoryRepository for InMemoryStore {
     fn insert(&mut self, memory: MemoryRecord) -> Result<(), ApplicationError> {
         let duplicate = self.memories.iter().any(|stored| {
-            stored.workspace_id == memory.workspace_id && stored.id == memory.id
+            stored.workspace_id() == memory.workspace_id()
+                && stored.id() == memory.id()
         });
 
         if duplicate {
@@ -48,7 +49,8 @@ impl MemoryRepository for InMemoryStore {
             .memories
             .iter()
             .find(|memory| {
-                &memory.workspace_id == workspace_id && &memory.id == memory_id
+                memory.workspace_id() == workspace_id
+                    && memory.id() == memory_id
             })
             .cloned())
     }
@@ -62,8 +64,8 @@ impl MemoryRepository for InMemoryStore {
             .memories
             .iter()
             .filter(|memory| {
-                &memory.workspace_id == workspace_id
-                    && &memory.subject_id == subject_id
+                memory.workspace_id() == workspace_id
+                    && memory.subject_id() == subject_id
             })
             .cloned()
             .collect())
@@ -78,13 +80,13 @@ impl MemoryRepository for InMemoryStore {
             .memories
             .iter_mut()
             .find(|stored| {
-                stored.workspace_id == memory.workspace_id
-                    && stored.id == memory.id
+                stored.workspace_id() == memory.workspace_id()
+                    && stored.id() == memory.id()
             })
             .ok_or(ApplicationError::NotFound)?;
 
-        if stored.version != expected_version
-            || memory.version != expected_version.saturating_add(1)
+        if stored.version() != expected_version
+            || memory.version() != expected_version.saturating_add(1)
         {
             return Err(ApplicationError::VersionConflict);
         }

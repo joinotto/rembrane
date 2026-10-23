@@ -51,18 +51,63 @@ impl Error for MemoryLifecycleError {}
 /// explicit value objects before persistence is implemented.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MemoryRecord {
-    pub id: MemoryId,
-    pub workspace_id: WorkspaceId,
-    pub subject_id: PrincipalId,
-    pub scope: MemoryScope,
-    pub kind: MemoryKind,
-    pub status: MemoryStatus,
-    pub content: String,
-    pub version: u64,
-    pub evidence: Vec<EvidenceReference>,
+    id: MemoryId,
+    workspace_id: WorkspaceId,
+    subject_id: PrincipalId,
+    scope: MemoryScope,
+    kind: MemoryKind,
+    status: MemoryStatus,
+    content: String,
+    version: u64,
+    evidence: Vec<EvidenceReference>,
 }
 
 impl MemoryRecord {
+    #[must_use]
+    pub const fn id(&self) -> &MemoryId {
+        &self.id
+    }
+
+    #[must_use]
+    pub const fn workspace_id(&self) -> &WorkspaceId {
+        &self.workspace_id
+    }
+
+    #[must_use]
+    pub const fn subject_id(&self) -> &PrincipalId {
+        &self.subject_id
+    }
+
+    #[must_use]
+    pub const fn scope(&self) -> &MemoryScope {
+        &self.scope
+    }
+
+    #[must_use]
+    pub const fn kind(&self) -> MemoryKind {
+        self.kind
+    }
+
+    #[must_use]
+    pub const fn status(&self) -> MemoryStatus {
+        self.status
+    }
+
+    #[must_use]
+    pub fn content(&self) -> &str {
+        &self.content
+    }
+
+    #[must_use]
+    pub const fn version(&self) -> u64 {
+        self.version
+    }
+
+    #[must_use]
+    pub fn evidence(&self) -> &[EvidenceReference] {
+        &self.evidence
+    }
+
     #[must_use]
     pub fn confirmed_preference(
         id: MemoryId,

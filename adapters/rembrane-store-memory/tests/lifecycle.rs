@@ -45,7 +45,7 @@ fn revises_and_deletes_owned_memory() {
         })
         .expect("revision should succeed");
 
-    assert_eq!(revised.version, 2);
+    assert_eq!(revised.version(), 2);
 
     let deleted = service
         .delete(DeleteMemoryCommand {
@@ -57,9 +57,9 @@ fn revises_and_deletes_owned_memory() {
         })
         .expect("deletion should succeed");
 
-    assert_eq!(deleted.version, 3);
-    assert_eq!(deleted.status, MemoryStatus::Deleted);
-    assert!(deleted.content.is_empty());
+    assert_eq!(deleted.version(), 3);
+    assert_eq!(deleted.status(), MemoryStatus::Deleted);
+    assert!(deleted.content().is_empty());
 }
 
 #[test]

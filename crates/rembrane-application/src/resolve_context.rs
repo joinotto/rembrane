@@ -41,12 +41,12 @@ where
         )?;
 
         items.retain(|memory| {
-            memory.status == MemoryStatus::Confirmed
+            memory.status() == MemoryStatus::Confirmed
                 && scope_matches(memory, &command.request)
-                && command.grant.allows(&memory.scope)
+                && command.grant.allows(memory.scope())
         });
         items.sort_by_key(|memory| {
-            std::cmp::Reverse(memory.scope.specificity())
+            std::cmp::Reverse(memory.scope().specificity())
         });
         items.truncate(command.request.maximum_items);
 
@@ -60,8 +60,8 @@ where
             memories: items
                 .iter()
                 .map(|memory| DisclosedMemory {
-                    id: memory.id.clone(),
-                    version: memory.version,
+                    id: memory.id().clone(),
+                    version: memory.version(),
                 })
                 .collect(),
         };
@@ -105,7 +105,7 @@ fn scope_matches(
     memory: &MemoryRecord,
     request: &ResolveContextRequest,
 ) -> bool {
-    match &memory.scope {
+    match memory.scope() {
         MemoryScope::Global => true,
         MemoryScope::Domain { name } => request.domain.as_ref() == Some(name),
         MemoryScope::Entity { id } => request.entity_id.as_ref() == Some(id),
@@ -154,8 +154,8 @@ mod tests {
                 .memories
                 .iter()
                 .find(|memory| {
-                    &memory.workspace_id == workspace_id
-                        && &memory.id == memory_id
+                    memory.workspace_id() == workspace_id
+                        && memory.id() == memory_id
                 })
                 .cloned())
         }
@@ -169,8 +169,8 @@ mod tests {
                 .memories
                 .iter()
                 .filter(|memory| {
-                    &memory.workspace_id == workspace_id
-                        && &memory.subject_id == subject_id
+                    memory.workspace_id() == workspace_id
+                        && memory.subject_id() == subject_id
                 })
                 .cloned()
                 .collect())
@@ -185,12 +185,12 @@ mod tests {
                 .memories
                 .iter_mut()
                 .find(|stored| {
-                    stored.workspace_id == memory.workspace_id
-                        && stored.id == memory.id
+                    stored.workspace_id() == memory.workspace_id()
+                        && stored.id() == memory.id()
                 })
                 .ok_or(ApplicationError::NotFound)?;
 
-            if stored.version != expected_version {
+            if stored.version() != expected_version {
                 return Err(ApplicationError::VersionConflict);
             }
 
@@ -276,8 +276,8 @@ mod tests {
             .execute(command(10))
             .expect("resolution should succeed");
 
-        assert_eq!(response.items[0].id, MemoryId::new("entity"));
-        assert_eq!(response.items[1].id, MemoryId::new("global"));
+        assert_eq!(response.items[0].id(), &MemoryId::new("entity"));
+        assert_eq!(response.items[1].id(), &MemoryId::new("global"));
         assert_eq!(repository.disclosures.len(), 1);
         assert_eq!(repository.disclosures[0].memories.len(), 2);
     }
@@ -308,7 +308,7 @@ mod tests {
             .expect("resolution should succeed");
 
         assert_eq!(response.items.len(), 1);
-        assert_eq!(response.items[0].id, MemoryId::new("activity"));
+        assert_eq!(response.items[0].id(), &MemoryId::new("activity"));
         assert_eq!(repository.disclosures[0].memories.len(), 1);
     }
 
@@ -367,6 +367,6 @@ mod tests {
             .expect("authorized global resolution should succeed");
 
         assert_eq!(response.items.len(), 1);
-        assert_eq!(response.items[0].id, MemoryId::new("global"));
+        assert_eq!(response.items[0].id(), &MemoryId::new("global"));
     }
 }

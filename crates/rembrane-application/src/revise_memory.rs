@@ -86,7 +86,7 @@ where
             .find(workspace_id, memory_id)?
             .ok_or(ApplicationError::NotFound)?;
 
-        if &memory.subject_id != subject_id {
+        if memory.subject_id() != subject_id {
             return Err(ApplicationError::NotFound);
         }
 
@@ -98,7 +98,7 @@ fn ensure_version(
     memory: &MemoryRecord,
     expected_version: u64,
 ) -> Result<(), ApplicationError> {
-    if memory.version == expected_version {
+    if memory.version() == expected_version {
         Ok(())
     } else {
         Err(ApplicationError::VersionConflict)

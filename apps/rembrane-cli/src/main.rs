@@ -28,7 +28,7 @@ fn print_demo() {
         ),
     );
 
-    println!("{}: {}", memory.id, memory.content);
+    println!("{}: {}", memory.id(), memory.content());
 }
 
 fn print_help() {
