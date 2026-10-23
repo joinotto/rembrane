@@ -30,6 +30,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - `rembrane init` command for an explicitly located local SQLite installation.
 - Type-state SQLite cipher attachment that prevents encrypted memory APIs from
   existing on an unconfigured store.
+- Tenant-scoped SQLite memory reads that authenticate encrypted payloads before
+  canonical decoding.
 - Product architecture, threat model, integration support policy, Rust
   research, bot integration design, and architecture decision records.
 

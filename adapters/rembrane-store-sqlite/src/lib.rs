@@ -3,12 +3,16 @@
 use std::path::Path;
 
 use rembrane_application::{
-    ApplicationError, MembershipRepository, WorkspaceRepository,
+    ApplicationError, MembershipRepository, MemoryRepository,
+    WorkspaceRepository,
 };
-use rembrane_crypto::RecordCipher;
+use rembrane_codec::decode_memory;
+use rembrane_crypto::{
+    EncryptedPayload, EncryptionContext, PayloadPurpose, RecordCipher,
+};
 use rembrane_domain::{
-    Membership, MembershipStatus, Principal, PrincipalId, Workspace,
-    WorkspaceId, WorkspaceKind, WorkspaceRole,
+    Membership, MembershipStatus, MemoryId, MemoryRecord, Principal,
+    PrincipalId, Workspace, WorkspaceId, WorkspaceKind, WorkspaceRole,
 };
 use rusqlite::{Connection, ErrorCode, OptionalExtension, params};
 
@@ -19,7 +23,7 @@ pub struct MissingCipher;
 
 pub struct SqliteStore<C = MissingCipher> {
     connection: Connection,
-    _cipher: C,
+    cipher: C,
 }
 
 impl SqliteStore<MissingCipher> {
@@ -41,7 +45,7 @@ impl SqliteStore<MissingCipher> {
             .map_err(|_| ApplicationError::StorageUnavailable)?;
         Ok(Self {
             connection,
-            _cipher: MissingCipher,
+            cipher: MissingCipher,
         })
     }
 }
@@ -51,9 +55,145 @@ impl<C> SqliteStore<C> {
     pub fn with_cipher<D: RecordCipher>(self, cipher: D) -> SqliteStore<D> {
         SqliteStore {
             connection: self.connection,
-            _cipher: cipher,
+            cipher,
         }
     }
+}
+
+impl<C: RecordCipher> MemoryRepository for SqliteStore<C> {
+    fn find(
+        &self,
+        workspace_id: &WorkspaceId,
+        memory_id: &MemoryId,
+    ) -> Result<Option<MemoryRecord>, ApplicationError> {
+        let row = self
+            .connection
+            .query_row(
+                "SELECT
+                    version,
+                    content_ciphertext,
+                    encryption_key_id,
+                    encryption_algorithm,
+                    encryption_nonce
+                 FROM memories
+                 WHERE workspace_id = ?1 AND id = ?2",
+                params![workspace_id.as_str(), memory_id.as_str()],
+                encrypted_memory_row,
+            )
+            .optional()
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+
+        row.map(|encrypted| {
+            self.decrypt_memory(workspace_id, memory_id, encrypted)
+        })
+        .transpose()
+    }
+
+    fn list_for_subject(
+        &self,
+        workspace_id: &WorkspaceId,
+        subject_id: &PrincipalId,
+    ) -> Result<Vec<MemoryRecord>, ApplicationError> {
+        let mut statement = self
+            .connection
+            .prepare(
+                "SELECT
+                    id,
+                    version,
+                    content_ciphertext,
+                    encryption_key_id,
+                    encryption_algorithm,
+                    encryption_nonce
+                 FROM memories
+                 WHERE workspace_id = ?1 AND subject_id = ?2
+                 ORDER BY id",
+            )
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        let rows = statement
+            .query_map(
+                params![workspace_id.as_str(), subject_id.as_str()],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        EncryptedMemoryRow {
+                            version: row.get(1)?,
+                            ciphertext: row.get(2)?,
+                            key_id: row.get(3)?,
+                            algorithm: row.get(4)?,
+                            nonce: row.get(5)?,
+                        },
+                    ))
+                },
+            )
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        let mut memories = Vec::new();
+        for row in rows {
+            let (memory_id, encrypted) =
+                row.map_err(|_| ApplicationError::StorageUnavailable)?;
+            let memory_id = MemoryId::new(memory_id);
+            let memory =
+                self.decrypt_memory(workspace_id, &memory_id, encrypted)?;
+            if memory.subject_id() != subject_id {
+                return Err(ApplicationError::StorageUnavailable);
+            }
+            memories.push(memory);
+        }
+        Ok(memories)
+    }
+}
+
+impl<C: RecordCipher> SqliteStore<C> {
+    fn decrypt_memory(
+        &self,
+        workspace_id: &WorkspaceId,
+        memory_id: &MemoryId,
+        encrypted: EncryptedMemoryRow,
+    ) -> Result<MemoryRecord, ApplicationError> {
+        let context = EncryptionContext::new(
+            workspace_id.clone(),
+            memory_id.as_str(),
+            encrypted.version,
+            PayloadPurpose::MemoryContent,
+        )
+        .map_err(|_| ApplicationError::StorageUnavailable)?;
+        let payload = EncryptedPayload::new(
+            encrypted.ciphertext,
+            encrypted.key_id,
+            encrypted.algorithm,
+            encrypted.nonce,
+        )
+        .map_err(|_| ApplicationError::StorageUnavailable)?;
+        let plaintext = self
+            .cipher
+            .open(&context, &payload)
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        let memory = decode_memory(&plaintext)
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        if memory.workspace_id() != workspace_id || memory.id() != memory_id {
+            return Err(ApplicationError::StorageUnavailable);
+        }
+        Ok(memory)
+    }
+}
+
+struct EncryptedMemoryRow {
+    version: u64,
+    ciphertext: Vec<u8>,
+    key_id: String,
+    algorithm: String,
+    nonce: Vec<u8>,
+}
+
+fn encrypted_memory_row(
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<EncryptedMemoryRow> {
+    Ok(EncryptedMemoryRow {
+        version: row.get(0)?,
+        ciphertext: row.get(1)?,
+        key_id: row.get(2)?,
+        algorithm: row.get(3)?,
+        nonce: row.get(4)?,
+    })
 }
 
 impl<C> WorkspaceRepository for SqliteStore<C> {
