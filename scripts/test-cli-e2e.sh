@@ -19,6 +19,15 @@ export REMBRANE_WORKSPACE_KEY_HEX="000102030405060708090a0b0c0d0e0f1011121314151
     --principal principal_e2e \
     --workspace workspace_e2e >/dev/null
 
+second_init=$(
+    "$rembrane_binary" init \
+        --database "$database" \
+        --principal principal_e2e \
+        --workspace workspace_e2e
+)
+printf '%s\n' "$second_init" |
+    rg -F "Rembrane is already initialized" >/dev/null
+
 remember_output=$(
     "$rembrane_binary" remember \
         --database "$database" \

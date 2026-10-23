@@ -34,6 +34,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - SQLite adapter for atomic personal-workspace bootstrap and tenant-scoped
   identity and membership lookup.
 - `rembrane init` command for an explicitly located local SQLite installation.
+- Idempotent `rembrane init` reruns for the same healthy personal workspace,
+  while conflicting or partial existing state still fails closed.
 - `rembrane doctor` preflight for database compatibility, workspace
   membership, key authentication, and readable encrypted-memory counts without
   printing secret values.

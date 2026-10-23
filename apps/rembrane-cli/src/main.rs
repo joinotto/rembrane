@@ -1,9 +1,10 @@
 use rembrane_application::{
-    AuthorizeClientCommand, AuthorizeClientService, CanonicalMutationRepository,
-    ClientGrantBundle, DeleteMemoryCommand, EventRepository,
-    MembershipRepository, MemoryLifecycleService, MemoryRepository,
-    RememberPreferenceCommand, RememberPreferenceService, ResolveContextCommand,
-    ResolveContextService, ReviseMemoryCommand, WorkspaceRepository,
+    ApplicationError, AuthorizeClientCommand, AuthorizeClientService,
+    CanonicalMutationRepository, ClientGrantBundle, DeleteMemoryCommand,
+    EventRepository, MembershipRepository, MemoryLifecycleService,
+    MemoryRepository, RememberPreferenceCommand, RememberPreferenceService,
+    ResolveContextCommand, ResolveContextService, ReviseMemoryCommand,
+    WorkspaceRepository,
 };
 use rembrane_crypto_rustcrypto::RustCryptoRecordCipher;
 use rembrane_contracts::ResolveContextRequest;
@@ -477,7 +478,7 @@ fn initialize(arguments: &[String]) -> Result<(), String> {
     let workspace_id = WorkspaceId::new(workspace);
     let mut store = SqliteStore::open(database_path)
         .map_err(|error| format!("cannot open database: {error}"))?;
-    store
+    let initialization = store
         .initialize_personal_workspace(
             Principal::new(principal_id.clone()),
             Workspace::personal(workspace_id.clone()),
@@ -486,14 +487,62 @@ fn initialize(arguments: &[String]) -> Result<(), String> {
                 principal_id.clone(),
                 WorkspaceRole::Owner,
             ),
-        )
-        .map_err(|error| format!("cannot initialize workspace: {error}"))?;
+        );
+    let already_initialized = match initialization {
+        Ok(()) => false,
+        Err(ApplicationError::AlreadyExists) => {
+            if existing_personal_workspace_is_valid(
+                &store,
+                &principal_id,
+                &workspace_id,
+            )? {
+                true
+            } else {
+                return Err(
+                    "cannot initialize workspace: existing state conflicts"
+                        .to_owned(),
+                );
+            }
+        }
+        Err(error) => {
+            return Err(format!("cannot initialize workspace: {error}"));
+        }
+    };
 
-    println!("Initialized Rembrane");
+    if already_initialized {
+        println!("Rembrane is already initialized");
+    } else {
+        println!("Initialized Rembrane");
+    }
     println!("Database: {}", database_path.display());
     println!("Principal: {principal_id}");
     println!("Workspace: {workspace_id}");
     Ok(())
+}
+
+fn existing_personal_workspace_is_valid<C>(
+    store: &SqliteStore<C>,
+    principal_id: &PrincipalId,
+    workspace_id: &WorkspaceId,
+) -> Result<bool, String> {
+    let principal = store
+        .find_principal(principal_id)
+        .map_err(|error| format!("cannot inspect principal: {error}"))?;
+    let workspace = store
+        .find_workspace(workspace_id)
+        .map_err(|error| format!("cannot inspect workspace: {error}"))?;
+    let membership = store
+        .find_membership(workspace_id, principal_id)
+        .map_err(|error| format!("cannot inspect membership: {error}"))?;
+
+    Ok(principal.is_some()
+        && workspace.is_some_and(|workspace| {
+            workspace.kind() == rembrane_domain::WorkspaceKind::Personal
+        })
+        && membership.is_some_and(|membership| {
+            membership.role() == WorkspaceRole::Owner
+                && membership.is_active()
+        }))
 }
 
 fn create_parent_directory(path: &std::path::Path) -> Result<(), String> {
