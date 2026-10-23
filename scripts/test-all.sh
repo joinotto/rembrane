@@ -11,7 +11,7 @@ require_command() {
     fi
 }
 
-for command in cargo rustc rustfmt sqlite3 jq node postman; do
+for command in cargo rustc rustfmt postman; do
     require_command "$command"
 done
 
@@ -25,11 +25,7 @@ then
     exit 1
 fi
 
-./scripts/check-architecture.sh
-./scripts/check-sensitive-files.sh
-./scripts/check-protocols.sh
-./scripts/test-sqlite-schema.sh
-./scripts/test-sqlite-atomicity.sh
+./scripts/test-static.sh
 cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace

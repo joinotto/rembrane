@@ -105,6 +105,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   guide for CLI, MCP, and REST.
 - Protocol preflight covering OpenAPI YAML, discovery JSON, Postman, MCP smoke
   syntax, implemented-tool documentation, and REST route consistency.
+- Standalone non-Rust static suite for restricted or offline development
+  environments, reused by the complete compiler and end-to-end suite.
 
 ### Changed
 

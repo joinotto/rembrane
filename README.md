@@ -97,6 +97,7 @@ Prerequisite: Rust 1.88 or newer with `rustfmt` and `clippy`.
 ```text
 ./scripts/check-architecture.sh
 ./scripts/check-sensitive-files.sh
+./scripts/test-static.sh
 cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace

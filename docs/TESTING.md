@@ -16,6 +16,13 @@ Run every check:
 ./scripts/test-all.sh
 ```
 
+When Rust or network access is unavailable, run the complete non-Rust
+preflight:
+
+```text
+./scripts/test-static.sh
+```
+
 The suite performs:
 
 1. architecture, sensitive-file, and protocol conformance checks;
