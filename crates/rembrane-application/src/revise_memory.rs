@@ -1,13 +1,13 @@
 use rembrane_domain::{
     EvidenceReference, MemoryId, MemoryRecord, PrincipalId, WorkspaceId,
+    WriteGrant, WritePermission,
 };
 
 use crate::{ApplicationError, MemoryRepository};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ReviseMemoryCommand {
-    pub workspace_id: WorkspaceId,
-    pub subject_id: PrincipalId,
+    pub grant: WriteGrant,
     pub memory_id: MemoryId,
     pub expected_version: u64,
     pub content: String,
@@ -16,8 +16,7 @@ pub struct ReviseMemoryCommand {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DeleteMemoryCommand {
-    pub workspace_id: WorkspaceId,
-    pub subject_id: PrincipalId,
+    pub grant: WriteGrant,
     pub memory_id: MemoryId,
     pub expected_version: u64,
     pub evidence: EvidenceReference,
@@ -39,9 +38,10 @@ where
         &mut self,
         command: ReviseMemoryCommand,
     ) -> Result<MemoryRecord, ApplicationError> {
+        authorize(&command.grant, WritePermission::ReviseMemory)?;
         let current = self.load_owned(
-            &command.workspace_id,
-            &command.subject_id,
+            &command.grant.workspace_id,
+            &command.grant.subject_id,
             &command.memory_id,
         )?;
         ensure_version(&current, command.expected_version)?;
@@ -59,9 +59,10 @@ where
         &mut self,
         command: DeleteMemoryCommand,
     ) -> Result<MemoryRecord, ApplicationError> {
+        authorize(&command.grant, WritePermission::DeleteMemory)?;
         let current = self.load_owned(
-            &command.workspace_id,
-            &command.subject_id,
+            &command.grant.workspace_id,
+            &command.grant.subject_id,
             &command.memory_id,
         )?;
         ensure_version(&current, command.expected_version)?;
@@ -91,6 +92,17 @@ where
         }
 
         Ok(memory)
+    }
+}
+
+fn authorize(
+    grant: &WriteGrant,
+    permission: WritePermission,
+) -> Result<(), ApplicationError> {
+    if grant.allows(permission) {
+        Ok(())
+    } else {
+        Err(ApplicationError::AccessDenied)
     }
 }
 
