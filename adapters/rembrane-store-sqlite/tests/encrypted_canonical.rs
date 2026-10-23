@@ -165,6 +165,13 @@ fn encrypted_memory_lookup_is_workspace_scoped() {
         .expect("lookup succeeds");
 
     assert!(leaked.is_none());
+    assert!(store
+        .list_for_subject(
+            &WorkspaceId::new("workspace_01"),
+            &PrincipalId::new("principal_other"),
+        )
+        .expect("subject-scoped lookup succeeds")
+        .is_empty());
 }
 
 #[test]
@@ -189,6 +196,14 @@ fn event_and_checkpoint_reads_are_workspace_scoped() {
             &ActivityId::new("activity_01"),
         )
         .expect("checkpoint lookup succeeds")
+        .is_none());
+    assert!(store
+        .latest_checkpoint(
+            &WorkspaceId::new("workspace_01"),
+            &PrincipalId::new("principal_other"),
+            &ActivityId::new("activity_01"),
+        )
+        .expect("subject-scoped checkpoint lookup succeeds")
         .is_none());
 }
 
