@@ -1,0 +1,54 @@
+name: Integration proposal
+description: Propose a provider, AI tool, bot, channel, or application adapter
+title: "integration: "
+labels:
+  - integration
+body:
+  - type: input
+    id: product
+    attributes:
+      label: Product or provider
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Documented integration surface
+      options:
+        - MCP
+        - REST or SDK
+        - Plugin, skill, or extension
+        - Webhook
+        - User-controlled gateway
+        - Share or import/export
+        - No documented surface
+    validations:
+      required: true
+  - type: textarea
+    id: documentation
+    attributes:
+      label: Official documentation
+      description: Link to the supported API or extension documentation.
+    validations:
+      required: true
+  - type: textarea
+    id: permissions
+    attributes:
+      label: Required permissions and data flow
+      description: Explain what leaves Rembrane and where plaintext is processed.
+    validations:
+      required: true
+  - type: textarea
+    id: lifecycle
+    attributes:
+      label: Lifecycle support
+      description: Describe correction, deletion, revocation, and export support.
+  - type: checkboxes
+    id: policy
+    attributes:
+      label: Support policy
+      options:
+        - label: The proposal does not require bypassing platform security.
+          required: true
+        - label: The proposal can display an honest compatibility tier.
+          required: true

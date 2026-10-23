@@ -1,0 +1,63 @@
+name: Bug report
+description: Report a reproducible problem that is not security-sensitive
+title: "bug: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not include real memory, credentials, tokens, or private user data.
+        Report security issues through private vulnerability reporting.
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Observed behavior
+      description: What happened?
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Use synthetic data only.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+    validations:
+      required: true
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: Deployment mode
+      options:
+        - Local-only
+        - Customer-controlled gateway
+        - Self-hosted server
+        - Managed service
+        - Development or tests
+    validations:
+      required: true
+  - type: textarea
+    id: providers
+    attributes:
+      label: Configured providers
+      description: List provider names and versions without credentials.
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Data safety
+      options:
+        - label: I removed credentials, secrets, and real user memory.
+          required: true
+        - label: This report does not describe a security vulnerability.
+          required: true
