@@ -6,11 +6,13 @@
 
 mod identifier;
 mod memory;
+mod disclosure;
 mod scope;
 
+pub use disclosure::{DisclosedMemory, DisclosureReceipt};
 pub use identifier::{
-    ActivityId, DisclosureId, EntityId, EvidenceId, MemoryId, PrincipalId,
-    WorkspaceId,
+    ActivityId, ClientId, ContextPackId, DisclosureId, EntityId, EvidenceId,
+    MemoryId, PrincipalId, WorkspaceId,
 };
 pub use memory::{MemoryKind, MemoryRecord, MemoryStatus};
 pub use provenance::{EvidenceReference, EvidenceSource};

@@ -38,6 +38,8 @@ macro_rules! identifier {
 }
 
 identifier!(ActivityId);
+identifier!(ClientId);
+identifier!(ContextPackId);
 identifier!(DisclosureId);
 identifier!(EntityId);
 identifier!(EvidenceId);

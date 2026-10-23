@@ -1,7 +1,8 @@
 //! Transport-independent request and response contracts.
 
 use rembrane_domain::{
-    ActivityId, MemoryRecord, PrincipalId, WorkspaceId,
+    ActivityId, ContextPackId, DisclosureReceipt, MemoryRecord, PrincipalId,
+    WorkspaceId,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -17,5 +18,10 @@ pub struct ResolveContextRequest {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ResolveContextResponse {
     pub items: Vec<MemoryRecord>,
-    pub context_pack_id: String,
+    pub context_pack_id: ContextPackId,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RecordDisclosureRequest {
+    pub receipt: DisclosureReceipt,
 }
