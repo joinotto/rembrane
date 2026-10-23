@@ -5,6 +5,7 @@
 
 mod error;
 mod checkpoint;
+mod authorize_client;
 mod ports;
 mod propose_memory;
 mod revise_memory;
@@ -15,6 +16,9 @@ pub use error::ApplicationError;
 pub use checkpoint::{
     CheckpointService, CreateCheckpointCommand, ResumeActivityCommand,
     UpdateCheckpointCommand,
+};
+pub use authorize_client::{
+    AuthorizeClientCommand, AuthorizeClientService, ClientGrantBundle,
 };
 pub use ports::{
     CheckpointRepository, DisclosureRepository, EventRepository,
