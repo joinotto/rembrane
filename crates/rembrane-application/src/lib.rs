@@ -5,6 +5,8 @@
 
 mod error;
 mod ports;
+mod resolve_context;
 
 pub use error::ApplicationError;
 pub use ports::{DisclosureRepository, MemoryRepository};
+pub use resolve_context::{ResolveContextCommand, ResolveContextService};

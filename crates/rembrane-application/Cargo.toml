@@ -8,6 +8,7 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+rembrane-contracts = { path = "../rembrane-contracts" }
 rembrane-domain = { path = "../rembrane-domain" }
 
 [lints]

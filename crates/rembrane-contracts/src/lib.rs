@@ -1,14 +1,16 @@
 //! Transport-independent request and response contracts.
 
 use rembrane_domain::{
-    ActivityId, ContextPackId, DisclosureReceipt, MemoryRecord, PrincipalId,
-    WorkspaceId,
+    ActivityId, ContextPackId, DisclosureReceipt, EntityId, MemoryRecord,
+    PrincipalId, WorkspaceId,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ResolveContextRequest {
     pub workspace_id: WorkspaceId,
     pub principal_id: PrincipalId,
+    pub domain: Option<String>,
+    pub entity_id: Option<EntityId>,
     pub activity_id: Option<ActivityId>,
     pub purpose: String,
     pub query: String,
