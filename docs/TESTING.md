@@ -18,7 +18,7 @@ Run every check:
 
 The suite performs:
 
-1. architecture and sensitive-file checks;
+1. architecture, sensitive-file, and protocol conformance checks;
 2. SQLite schema and transaction tests;
 3. Rust formatting, Clippy, unit, and integration tests;
 4. complete encrypted CLI lifecycle testing;

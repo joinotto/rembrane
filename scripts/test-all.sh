@@ -27,6 +27,7 @@ fi
 
 ./scripts/check-architecture.sh
 ./scripts/check-sensitive-files.sh
+./scripts/check-protocols.sh
 ./scripts/test-sqlite-schema.sh
 ./scripts/test-sqlite-atomicity.sh
 cargo fmt --all --check

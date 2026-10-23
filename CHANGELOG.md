@@ -87,6 +87,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   context resolution, and disclosure persistence.
 - One-command full preflight suite, environment template, and manual testing
   guide for CLI, MCP, and REST.
+- Protocol preflight covering OpenAPI YAML, discovery JSON, Postman, MCP smoke
+  syntax, implemented-tool documentation, and REST route consistency.
 
 ### Changed
 
