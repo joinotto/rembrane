@@ -14,7 +14,9 @@ pub use identifier::{
     ActivityId, ClientId, ContextPackId, DisclosureId, EntityId, EvidenceId,
     MemoryId, PrincipalId, WorkspaceId,
 };
-pub use memory::{MemoryKind, MemoryRecord, MemoryStatus};
+pub use memory::{
+    MemoryKind, MemoryLifecycleError, MemoryRecord, MemoryStatus,
+};
 pub use provenance::{EvidenceReference, EvidenceSource};
 pub use scope::MemoryScope;
 

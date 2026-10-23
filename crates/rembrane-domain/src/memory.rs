@@ -1,6 +1,8 @@
 use crate::{
     EvidenceReference, MemoryId, MemoryScope, PrincipalId, WorkspaceId,
 };
+use std::error::Error;
+use std::fmt::{self, Display};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MemoryKind {
@@ -19,6 +21,29 @@ pub enum MemoryStatus {
     Superseded,
     Deleted,
 }
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MemoryLifecycleError {
+    EmptyContent,
+    InvalidStatus,
+    VersionOverflow,
+}
+
+impl Display for MemoryLifecycleError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::EmptyContent => formatter.write_str("content must not be empty"),
+            Self::InvalidStatus => {
+                formatter.write_str("memory status does not allow this transition")
+            }
+            Self::VersionOverflow => {
+                formatter.write_str("memory version cannot be incremented")
+            }
+        }
+    }
+}
+
+impl Error for MemoryLifecycleError {}
 
 /// Canonical memory metadata and content.
 ///
@@ -59,6 +84,47 @@ impl MemoryRecord {
             evidence: vec![evidence],
         }
     }
+
+    pub fn revise(
+        mut self,
+        content: impl Into<String>,
+        evidence: EvidenceReference,
+    ) -> Result<Self, MemoryLifecycleError> {
+        if self.status != MemoryStatus::Confirmed {
+            return Err(MemoryLifecycleError::InvalidStatus);
+        }
+
+        let content = content.into();
+        if content.trim().is_empty() {
+            return Err(MemoryLifecycleError::EmptyContent);
+        }
+
+        self.version = self
+            .version
+            .checked_add(1)
+            .ok_or(MemoryLifecycleError::VersionOverflow)?;
+        self.content = content;
+        self.evidence.push(evidence);
+        Ok(self)
+    }
+
+    pub fn delete(
+        mut self,
+        evidence: EvidenceReference,
+    ) -> Result<Self, MemoryLifecycleError> {
+        if self.status == MemoryStatus::Deleted {
+            return Err(MemoryLifecycleError::InvalidStatus);
+        }
+
+        self.version = self
+            .version
+            .checked_add(1)
+            .ok_or(MemoryLifecycleError::VersionOverflow)?;
+        self.status = MemoryStatus::Deleted;
+        self.content.clear();
+        self.evidence.push(evidence);
+        Ok(self)
+    }
 }
 
 #[cfg(test)]
@@ -87,5 +153,60 @@ mod tests {
         assert_eq!(memory.status, MemoryStatus::Confirmed);
         assert_eq!(memory.version, 1);
         assert_eq!(memory.evidence.len(), 1);
+    }
+
+    #[test]
+    fn revision_increments_version_and_preserves_evidence() {
+        let original = MemoryRecord::confirmed_preference(
+            MemoryId::new("memory_01"),
+            WorkspaceId::new("workspace_01"),
+            PrincipalId::new("principal_01"),
+            MemoryScope::Global,
+            "Call me Hippo",
+            EvidenceReference::new(
+                EvidenceId::new("evidence_01"),
+                EvidenceSource::UserStatement,
+            ),
+        );
+
+        let revised = original
+            .revise(
+                "Call me Captain Hippo",
+                EvidenceReference::new(
+                    EvidenceId::new("evidence_02"),
+                    EvidenceSource::UserStatement,
+                ),
+            )
+            .expect("confirmed memory should be revisable");
+
+        assert_eq!(revised.version, 2);
+        assert_eq!(revised.content, "Call me Captain Hippo");
+        assert_eq!(revised.evidence.len(), 2);
+    }
+
+    #[test]
+    fn deletion_creates_versioned_tombstone() {
+        let original = MemoryRecord::confirmed_preference(
+            MemoryId::new("memory_01"),
+            WorkspaceId::new("workspace_01"),
+            PrincipalId::new("principal_01"),
+            MemoryScope::Global,
+            "Call me Hippo",
+            EvidenceReference::new(
+                EvidenceId::new("evidence_01"),
+                EvidenceSource::UserStatement,
+            ),
+        );
+
+        let deleted = original
+            .delete(EvidenceReference::new(
+                EvidenceId::new("evidence_delete"),
+                EvidenceSource::UserStatement,
+            ))
+            .expect("active memory should be deletable");
+
+        assert_eq!(deleted.version, 2);
+        assert_eq!(deleted.status, MemoryStatus::Deleted);
+        assert!(deleted.content.is_empty());
     }
 }
