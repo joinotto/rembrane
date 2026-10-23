@@ -10,6 +10,7 @@ use rembrane_application::{
     ResumeActivityCommand, ReviseMemoryCommand, UpdateCheckpointCommand,
 };
 use rembrane_contracts::ResolveContextRequest;
+use rembrane_config::parse_read_scopes;
 use rembrane_crypto_rustcrypto::RustCryptoRecordCipher;
 use rembrane_domain::{
     ActivityCheckpoint, ActivityId, CheckpointId, ClientId, ContextPackId,
@@ -31,6 +32,9 @@ struct ResolveContextParameters {
     purpose: String,
     query: String,
     maximum_items: Option<usize>,
+    domain: Option<String>,
+    entity_id: Option<String>,
+    activity_id: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -115,6 +119,7 @@ struct State {
     principal_id: PrincipalId,
     workspace_id: WorkspaceId,
     client_id: ClientId,
+    read_scopes: Vec<ReadScope>,
     next_id: u128,
 }
 
@@ -134,6 +139,11 @@ impl RembraneMcp {
             ClientId::new(required_environment("REMBRANE_CLIENT_ID")?);
         let cipher = RustCryptoRecordCipher::from_environment()
             .context("failed to load workspace cipher")?;
+        let read_scopes = parse_read_scopes(
+            &std::env::var("REMBRANE_READ_SCOPES")
+                .unwrap_or_else(|_| "global".to_owned()),
+        )
+        .map_err(anyhow::Error::msg)?;
         let store = SqliteStore::open(database)
             .context("failed to open Rembrane database")?
             .with_cipher(cipher);
@@ -142,7 +152,7 @@ impl RembraneMcp {
                 client_id: client_id.clone(),
                 workspace_id: workspace_id.clone(),
                 principal_id: principal_id.clone(),
-                requested_read_scopes: Vec::new(),
+                requested_read_scopes: read_scopes.clone(),
                 requested_write_permissions: Vec::new(),
             })
             .context("failed to authorize MCP connection")?;
@@ -157,6 +167,7 @@ impl RembraneMcp {
                 principal_id,
                 workspace_id,
                 client_id,
+                read_scopes,
                 next_id,
             })),
         })
@@ -195,11 +206,13 @@ impl RembraneMcp {
             .map_err(|_| McpError::internal_error("state lock failed", None))?;
         state.next_id = state.next_id.saturating_add(1);
         let suffix = state.next_id;
-        let grants = authorize(
-            &state,
-            vec![ReadScope::Global],
-            Vec::new(),
-        )?;
+        let requested_scopes = request_scopes(
+            &state.read_scopes,
+            parameters.domain.as_deref(),
+            parameters.entity_id.as_deref(),
+            parameters.activity_id.as_deref(),
+        );
+        let grants = authorize(&state, requested_scopes, Vec::new())?;
         let principal_id = grants.read.subject_id.clone();
         let workspace_id = grants.read.workspace_id.clone();
         let response = ResolveContextService::new(&mut state.store)
@@ -207,9 +220,9 @@ impl RembraneMcp {
                 request: ResolveContextRequest {
                     workspace_id: workspace_id.clone(),
                     principal_id: principal_id.clone(),
-                    domain: None,
-                    entity_id: None,
-                    activity_id: None,
+                    domain: parameters.domain,
+                    entity_id: parameters.entity_id.map(EntityId::new),
+                    activity_id: parameters.activity_id.map(ActivityId::new),
                     purpose: parameters.purpose,
                     query: parameters.query,
                     maximum_items,
@@ -519,6 +532,15 @@ fn authorize(
     read_scopes: Vec<ReadScope>,
     write_permissions: Vec<WritePermission>,
 ) -> Result<ClientGrantBundle, McpError> {
+    if read_scopes
+        .iter()
+        .any(|scope| !state.read_scopes.contains(scope))
+    {
+        return Err(McpError::invalid_params(
+            "requested context is outside the connection read scopes",
+            None,
+        ));
+    }
     AuthorizeClientService::new(&state.store)
         .execute(AuthorizeClientCommand {
             client_id: state.client_id.clone(),
@@ -528,6 +550,34 @@ fn authorize(
             requested_write_permissions: write_permissions,
         })
         .map_err(application_error)
+}
+
+fn request_scopes(
+    allowed_scopes: &[ReadScope],
+    domain: Option<&str>,
+    entity_id: Option<&str>,
+    activity_id: Option<&str>,
+) -> Vec<ReadScope> {
+    let mut scopes = Vec::new();
+    if allowed_scopes.contains(&ReadScope::Global) {
+        scopes.push(ReadScope::Global);
+    }
+    if let Some(name) = domain {
+        scopes.push(ReadScope::Domain {
+            name: name.to_owned(),
+        });
+    }
+    if let Some(id) = entity_id {
+        scopes.push(ReadScope::Entity {
+            id: EntityId::new(id),
+        });
+    }
+    if let Some(id) = activity_id {
+        scopes.push(ReadScope::Activity {
+            id: ActivityId::new(id),
+        });
+    }
+    scopes
 }
 
 fn current_sequence(state: &State) -> Result<u64, McpError> {
@@ -578,6 +628,25 @@ fn application_error(error: rembrane_application::ApplicationError) -> McpError 
 
 fn required_environment(name: &str) -> Result<String> {
     std::env::var(name).with_context(|| format!("{name} is required"))
+}
+
+#[cfg(test)]
+mod tests {
+    use rembrane_domain::{EntityId, ReadScope};
+
+    use super::request_scopes;
+
+    #[test]
+    fn context_requests_do_not_gain_unconfigured_global_access() {
+        let allowed = vec![ReadScope::Entity {
+            id: EntityId::new("project_01"),
+        }];
+
+        assert_eq!(
+            request_scopes(&allowed, None, Some("project_01"), None),
+            allowed
+        );
+    }
 }
 
 #[tokio::main]

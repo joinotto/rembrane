@@ -62,6 +62,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   and scoped cross-agent resume.
 - Bearer-authenticated REST context resolution bound to a configured workspace,
   principal, and client profile.
+- Exact `REMBRANE_READ_SCOPES` connection allowlists for global, domain,
+  entity, and activity context across REST and MCP; request payloads cannot
+  expand the administrator-owned grant.
 - End-to-end CLI lifecycle test covering encrypted capture, disclosure,
   correction, deletion, wrong-key rejection, and plaintext-at-rest checks.
 - Postman REST suite covering health, bearer authentication, encrypted context

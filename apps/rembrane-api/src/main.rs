@@ -13,10 +13,11 @@ use rembrane_application::{
     ResolveContextService,
 };
 use rembrane_contracts::ResolveContextRequest;
+use rembrane_config::parse_read_scopes;
 use rembrane_crypto_rustcrypto::RustCryptoRecordCipher;
 use rembrane_domain::{
     ActivityId, ClientId, ContextPackId, DisclosureId, EntityId, MemoryKind,
-    MemoryScope, MemoryStatus, PrincipalId, ReadGrant, ReadScope, WorkspaceId,
+    MemoryScope, MemoryStatus, PrincipalId, ReadGrant, WorkspaceId,
 };
 use rembrane_store_sqlite::SqliteStore;
 use serde::{Deserialize, Serialize};
@@ -135,6 +136,11 @@ impl AppState {
         anyhow::ensure!(!bearer_token.is_empty(), "REMBRANE_API_TOKEN is empty");
         let cipher = RustCryptoRecordCipher::from_environment()
             .context("failed to load workspace cipher")?;
+        let read_scopes = parse_read_scopes(
+            &std::env::var("REMBRANE_READ_SCOPES")
+                .unwrap_or_else(|_| "global".to_owned()),
+        )
+        .map_err(anyhow::Error::msg)?;
         let store = SqliteStore::open(database)
             .context("failed to open Rembrane database")?
             .with_cipher(cipher);
@@ -143,7 +149,7 @@ impl AppState {
                 client_id,
                 workspace_id,
                 principal_id,
-                requested_read_scopes: vec![ReadScope::Global],
+                requested_read_scopes: read_scopes,
                 requested_write_permissions: Vec::new(),
             })
             .context("failed to authorize API connection")?
@@ -196,6 +202,9 @@ async fn resolve_context(
     runtime.next_id = runtime.next_id.saturating_add(1);
     let suffix = runtime.next_id;
     let read_grant = runtime.read_grant.clone();
+    if !request_is_within_grant(&request, &read_grant) {
+        return Err(ApiError::access_denied());
+    }
     let workspace_id = read_grant.workspace_id.clone();
     let principal_id = read_grant.subject_id.clone();
     let response = ResolveContextService::new(&mut runtime.store)
@@ -221,6 +230,23 @@ async fn resolve_context(
         disclosure_id: response.disclosure_id.to_string(),
         items: response.items.iter().map(MemoryOutput::from).collect(),
     }))
+}
+
+fn request_is_within_grant(
+    request: &ResolveRequest,
+    grant: &ReadGrant,
+) -> bool {
+    request.domain.as_ref().is_none_or(|name| {
+        grant.allows(&MemoryScope::Domain { name: name.clone() })
+    }) && request.entity_id.as_ref().is_none_or(|id| {
+        grant.allows(&MemoryScope::Entity {
+            id: EntityId::new(id),
+        })
+    }) && request.activity_id.as_ref().is_none_or(|id| {
+        grant.allows(&MemoryScope::Activity {
+            id: ActivityId::new(id),
+        })
+    })
 }
 
 fn authorize_bearer(state: &AppState, headers: &HeaderMap) -> Result<(), ApiError> {
@@ -383,12 +409,40 @@ async fn main() -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::token_matches;
+    use rembrane_domain::{
+        ClientId, EntityId, PrincipalId, ReadGrant, ReadScope, WorkspaceId,
+    };
+
+    use super::{ResolveRequest, request_is_within_grant, token_matches};
 
     #[test]
     fn accepts_only_exact_bearer_token() {
         assert!(token_matches("secret-token", "secret-token"));
         assert!(!token_matches("secret-token", "secret-other"));
         assert!(!token_matches("secret-token", "short"));
+    }
+
+    #[test]
+    fn rejects_request_scope_outside_connection_grant() {
+        let request = ResolveRequest {
+            workspace_id: "workspace_01".to_owned(),
+            subject_id: "principal_01".to_owned(),
+            domain: None,
+            entity_id: Some("project_other".to_owned()),
+            activity_id: None,
+            purpose: "continue-project".to_owned(),
+            query: "What is next?".to_owned(),
+            maximum_items: 10,
+        };
+        let grant = ReadGrant {
+            client_id: ClientId::new("client_01"),
+            workspace_id: WorkspaceId::new("workspace_01"),
+            subject_id: PrincipalId::new("principal_01"),
+            scopes: vec![ReadScope::Entity {
+                id: EntityId::new("project_01"),
+            }],
+        };
+
+        assert!(!request_is_within_grant(&request, &grant));
     }
 }

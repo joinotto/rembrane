@@ -11,6 +11,7 @@ rust-version.workspace = true
 anyhow = "1"
 axum = "0.8"
 rembrane-application = { path = "../../crates/rembrane-application" }
+rembrane-config = { path = "../../crates/rembrane-config" }
 rembrane-contracts = { path = "../../crates/rembrane-contracts" }
 rembrane-crypto-rustcrypto = { path = "../../adapters/rembrane-crypto-rustcrypto" }
 rembrane-domain = { path = "../../crates/rembrane-domain" }

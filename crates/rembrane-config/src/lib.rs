@@ -5,6 +5,7 @@
 //! serializable deployment policy.
 
 use rembrane_provider_sdk::{Capability, ProviderPolicy};
+use rembrane_domain::{ActivityId, EntityId, ReadScope};
 use std::error::Error;
 use std::fmt::{self, Display};
 
@@ -112,13 +113,58 @@ impl DeploymentPolicy {
     }
 }
 
+pub fn parse_read_scopes(value: &str) -> Result<Vec<ReadScope>, String> {
+    let mut scopes = Vec::new();
+    for entry in value
+        .split(',')
+        .map(str::trim)
+        .filter(|entry| !entry.is_empty())
+    {
+        let scope = if entry == "global" {
+            ReadScope::Global
+        } else if let Some(name) = entry.strip_prefix("domain:") {
+            nonempty_scope_value(name, entry)?;
+            ReadScope::Domain {
+                name: name.to_owned(),
+            }
+        } else if let Some(id) = entry.strip_prefix("entity:") {
+            nonempty_scope_value(id, entry)?;
+            ReadScope::Entity {
+                id: EntityId::new(id),
+            }
+        } else if let Some(id) = entry.strip_prefix("activity:") {
+            nonempty_scope_value(id, entry)?;
+            ReadScope::Activity {
+                id: ActivityId::new(id),
+            }
+        } else {
+            return Err(format!("invalid read scope {entry}"));
+        };
+        if !scopes.contains(&scope) {
+            scopes.push(scope);
+        }
+    }
+    if scopes.is_empty() {
+        return Err("at least one read scope is required".to_owned());
+    }
+    Ok(scopes)
+}
+
+fn nonempty_scope_value(value: &str, entry: &str) -> Result<(), String> {
+    if value.trim().is_empty() {
+        Err(format!("read scope {entry} has an empty value"))
+    } else {
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use rembrane_provider_sdk::Capability;
 
     use super::{
         DeploymentPolicy, ProcessingMode, ProviderPlacement, SecretReference,
-        SecretReferenceError,
+        SecretReferenceError, parse_read_scopes,
     };
 
     #[test]
@@ -175,5 +221,22 @@ mod tests {
                 variable: "REMBRANE_DATABASE_URL".to_owned()
             })
         );
+    }
+
+    #[test]
+    fn parses_and_deduplicates_connection_read_scopes() {
+        let scopes = parse_read_scopes(
+            "global,domain:development,entity:project_01,global",
+        )
+        .expect("scope configuration should parse");
+
+        assert_eq!(scopes.len(), 3);
+    }
+
+    #[test]
+    fn rejects_wildcards_and_empty_scope_values() {
+        assert!(parse_read_scopes("*").is_err());
+        assert!(parse_read_scopes("entity:").is_err());
+        assert!(parse_read_scopes(" ").is_err());
     }
 }
