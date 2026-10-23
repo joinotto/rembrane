@@ -17,6 +17,7 @@ This roadmap describes sequencing, not release dates.
 - [x] Persist local user, workspace, and owner membership in SQLite.
 - [x] Expose local user and personal workspace initialization through the CLI.
 - [x] Model confirmed preferences with provenance.
+- [x] Authorize confirmed preference creation through an application use case.
 - [x] Model correction and deletion lifecycle operations.
 - [x] Define atomic memory, event, and projection mutations.
 - [x] Define an opaque record-encryption boundary.

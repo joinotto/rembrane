@@ -25,6 +25,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Versioned canonical event codec covering every lifecycle payload variant.
 - Versioned canonical activity-checkpoint codec for resumable handoffs.
 - Atomic principal, personal-workspace, and owner-membership bootstrap contract.
+- Authorized confirmed-preference creation use case for CLI and protocol
+  adapters.
 - SQLite adapter for atomic personal-workspace bootstrap and tenant-scoped
   identity and membership lookup.
 - `rembrane init` command for an explicitly located local SQLite installation.
