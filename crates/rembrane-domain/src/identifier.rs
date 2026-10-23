@@ -38,6 +38,7 @@ macro_rules! identifier {
 }
 
 identifier!(ActivityId);
+identifier!(CheckpointId);
 identifier!(ClientId);
 identifier!(ContextPackId);
 identifier!(DisclosureId);

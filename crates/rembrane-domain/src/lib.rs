@@ -5,6 +5,7 @@
 //! adapters.
 
 mod identifier;
+mod activity;
 mod memory;
 mod disclosure;
 mod event;
@@ -12,11 +13,12 @@ mod grant;
 mod scope;
 
 pub use disclosure::{DisclosedMemory, DisclosureReceipt};
+pub use activity::{ActivityCheckpoint, CheckpointError};
 pub use event::{CanonicalEvent, EventError, EventPayload};
 pub use grant::{ReadGrant, ReadScope};
 pub use identifier::{
-    ActivityId, ClientId, ContextPackId, DisclosureId, EntityId, EventId,
-    EvidenceId, MemoryId, PrincipalId, WorkspaceId,
+    ActivityId, CheckpointId, ClientId, ContextPackId, DisclosureId, EntityId,
+    EventId, EvidenceId, MemoryId, PrincipalId, WorkspaceId,
 };
 pub use memory::{
     MemoryKind, MemoryLifecycleError, MemoryRecord, MemoryStatus,
