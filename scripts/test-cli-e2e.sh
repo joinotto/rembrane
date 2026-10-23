@@ -152,6 +152,16 @@ if printf '%s\n' "$doctor_output" | rg -F "secret" >/dev/null; then
     echo "privacy diagnostics disclosed endpoint credentials" >&2
     exit 1
 fi
+if MEM0_BASE_URL="http://memory.example" \
+    "$rembrane_binary" doctor \
+        --database "$database" \
+        --principal principal_e2e \
+        --workspace workspace_e2e \
+        --privacy >/dev/null 2>&1
+then
+    echo "privacy diagnostics accepted insecure Mem0 endpoint" >&2
+    exit 1
+fi
 printf '%s\n' "$doctor_output" |
     rg -F \
         "Configured read scopes: global,domain:development,entity:project_e2e" \

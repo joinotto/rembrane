@@ -8,6 +8,9 @@ use rembrane_application::{
 };
 use rembrane_crypto_rustcrypto::RustCryptoRecordCipher;
 use rembrane_contracts::ResolveContextRequest;
+use rembrane_config::{
+    ProviderConnection, ProviderKind, ProviderPlacement, SecretReference,
+};
 use rembrane_domain::{
     CanonicalEvent, ClientId, ContextPackId, DisclosureId, EventId,
     EventPayload, EvidenceId, EvidenceReference, EvidenceSource, MemoryId,
@@ -361,10 +364,7 @@ fn doctor(arguments: &[String]) -> Result<(), String> {
     println!("Workspace key: loaded");
     println!("Authenticated encrypted records: {memory_count}");
     println!("Readable memories: {memory_count}");
-    println!(
-        "Secret sources: REMBRANE_WORKSPACE_KEY_ID, \
-         REMBRANE_WORKSPACE_KEY_HEX"
-    );
+    println!("Secret sources: {}", configured_secret_sources().join(", "));
     if arguments.iter().any(|argument| argument == "--privacy") {
         print_privacy_diagnostics()?;
     }
@@ -378,6 +378,7 @@ fn print_privacy_diagnostics() -> Result<(), String> {
         .map_err(|error| {
             format!("invalid REMBRANE_READ_SCOPES configuration: {error}")
         })?;
+    validate_configured_provider_profiles()?;
 
     println!("Privacy diagnostics:");
     println!("Processing location: local trusted boundary");
@@ -396,6 +397,59 @@ fn print_privacy_diagnostics() -> Result<(), String> {
          adapter explicitly enters the trusted boundary"
     );
     Ok(())
+}
+
+fn validate_configured_provider_profiles() -> Result<(), String> {
+    for (endpoint_variable, credential_variable, kind) in [
+        ("MEM0_BASE_URL", "MEM0_API_KEY", ProviderKind::Mem0),
+        (
+            "GRAPHITI_BASE_URL",
+            "GRAPHITI_CREDENTIALS",
+            ProviderKind::Graphiti,
+        ),
+    ] {
+        let Ok(endpoint) = std::env::var(endpoint_variable) else {
+            continue;
+        };
+        if endpoint.trim().is_empty() {
+            continue;
+        }
+        let credentials = std::env::var(credential_variable)
+            .ok()
+            .filter(|value| !value.is_empty())
+            .map(|_| {
+                SecretReference::environment(credential_variable)
+                    .expect("built-in secret variable must be valid")
+            })
+            .into_iter()
+            .collect();
+        ProviderConnection::remote(
+            kind,
+            endpoint,
+            credentials,
+            ProviderPlacement::External,
+        )
+        .map_err(|error| {
+            format!("invalid {endpoint_variable} configuration: {error}")
+        })?;
+    }
+    Ok(())
+}
+
+fn configured_secret_sources() -> Vec<&'static str> {
+    let mut sources = vec![
+        "REMBRANE_WORKSPACE_KEY_ID",
+        "REMBRANE_WORKSPACE_KEY_HEX",
+    ];
+    for source in ["MEM0_API_KEY", "GRAPHITI_CREDENTIALS"] {
+        if std::env::var(source)
+            .ok()
+            .is_some_and(|value| !value.is_empty())
+        {
+            sources.push(source);
+        }
+    }
+    sources
 }
 
 fn configured_outbound_endpoints() -> Vec<(&'static str, String)> {
