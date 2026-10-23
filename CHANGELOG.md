@@ -36,6 +36,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 ### Security
 
 - Workspace identity is mandatory on canonical storage keys.
+- Deleted memories persist an encrypted tombstone envelope rather than an
+  ambiguous empty ciphertext.
 - Memory and checkpoint writes cannot bypass their corresponding audit event.
 - Derived provider projections are atomically enqueued and idempotent.
 - Strict E2EE is limited to local or customer-controlled plaintext processing.

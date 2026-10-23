@@ -81,6 +81,20 @@ INSERT INTO memories (
         'xchacha20poly1305',
         zeroblob(24),
         1
+    ),
+    (
+        'workspace_01',
+        'memory_deleted',
+        'principal_01',
+        'global',
+        NULL,
+        'preference',
+        'deleted',
+        X'03',
+        'key_01',
+        'xchacha20poly1305',
+        zeroblob(24),
+        2
     );
 INSERT INTO memory_evidence (
     workspace_id,

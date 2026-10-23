@@ -96,19 +96,10 @@ CREATE TABLE memories (
         (scope_type = 'global' AND scope_value IS NULL)
         OR (scope_type != 'global' AND length(scope_value) > 0)
     ),
-    CHECK (
-        status != 'deleted'
-        OR length(content_ciphertext) = 0
-    ),
-    CHECK (
-        status = 'deleted'
-        OR (
-            length(content_ciphertext) > 0
-            AND length(encryption_key_id) > 0
-            AND length(encryption_algorithm) > 0
-            AND length(encryption_nonce) >= 12
-        )
-    )
+    CHECK (length(content_ciphertext) > 0),
+    CHECK (length(encryption_key_id) > 0),
+    CHECK (length(encryption_algorithm) > 0),
+    CHECK (length(encryption_nonce) >= 12)
 ) STRICT;
 
 CREATE INDEX memories_subject_scope
