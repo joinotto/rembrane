@@ -321,17 +321,17 @@ Users must be warned that context sent to an external bot is then subject to tha
 ## 13. CLI and configuration
 
 ```text
-cmemory connect mcp
-cmemory connect bot --manifest ./bot.json
-cmemory connect whatsapp --business-account <id>
-cmemory connect imessage-extension
-cmemory connections list
-cmemory connections inspect <connection>
-cmemory connections permissions <connection>
-cmemory connections revoke <connection>
-cmemory bridge start --channel whatsapp --agent <adapter>
-cmemory context-card create --entity <entity>
-cmemory provider test
+rembrane connect mcp
+rembrane connect bot --manifest ./bot.json
+rembrane connect whatsapp --business-account <id>
+rembrane connect imessage-extension
+rembrane connections list
+rembrane connections inspect <connection>
+rembrane connections permissions <connection>
+rembrane connections revoke <connection>
+rembrane bridge start --channel whatsapp --agent <adapter>
+rembrane context-card create --entity <entity>
+rembrane provider test
 ```
 
 Example bot manifest:

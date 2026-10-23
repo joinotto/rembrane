@@ -1,6 +1,6 @@
 # Rust Architecture Research
 
-## Central Memory Framework
+## Rembrane
 
 **Status:** Architecture recommendation  
 **Research snapshot:** 23 October 2026  
@@ -220,7 +220,7 @@ Use Tauri for the non-technical local installation experience. Tauri combines a 
 
 The desktop shell should:
 
-- Install and supervise `memory-local`.
+- Install and supervise `rembrane-local`.
 - Manage onboarding, provider selection, connection cards, capture state, and recovery.
 - Open OS-native consent and file-selection flows.
 - Expose only narrow typed commands from the webview to Rust.
@@ -265,10 +265,10 @@ Adapters
 Avoid starting with microservices. Separate executables may share the same core crates:
 
 ```text
-memory-server
-memory-worker
-memory-cli
-memory-local
+rembrane-server
+rembrane-worker
+rembrane-cli
+rembrane-local
 ```
 
 They can be deployed independently without splitting domain ownership across repositories or protocols.
@@ -278,7 +278,7 @@ They can be deployed independently without splitting domain ownership across rep
 ## 5. Proposed Rust workspace
 
 ```text
-central-memory/
+rembrane/
 ├── Cargo.toml
 ├── crates/
 │   ├── memory-domain
@@ -301,10 +301,10 @@ central-memory/
 │   ├── adapter-r2
 │   └── adapter-s3
 ├── apps/
-│   ├── memory-server
-│   ├── memory-worker
-│   ├── memory-cli
-│   └── memory-local
+│   ├── rembrane-server
+│   ├── rembrane-worker
+│   ├── rembrane-cli
+│   └── rembrane-local
 ├── web/
 │   └── dashboard
 ├── integrations/
@@ -627,10 +627,10 @@ The desktop application invokes the same application services as the CLI rather 
 Build a native Rust modular monolith with multiple binaries:
 
 ```text
-memory-server  → Axum REST + official MCP SDK
-memory-worker  → event projections and consolidation
-memory-cli     → setup, providers, migration, connection
-memory-local   → E2EE local gateway and search
+rembrane-server  → Axum REST + official MCP SDK
+rembrane-worker  → event projections and consolidation
+rembrane-cli     → setup, providers, migration, connection
+rembrane-local   → E2EE local gateway and search
 ```
 
 Use:

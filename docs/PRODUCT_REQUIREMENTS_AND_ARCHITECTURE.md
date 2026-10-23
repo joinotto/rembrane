@@ -1,4 +1,4 @@
-# Central Memory Framework
+# Rembrane
 
 ## Product Requirements, Use Cases, Technology Evaluation, and Recommended Architecture
 
@@ -477,27 +477,27 @@ Detailed design: [Bot and Platform Integration Architecture](BOT_AND_PLATFORM_IN
 The primary setup experience must be both interactive and scriptable:
 
 ```text
-cmemory init
-cmemory configure
-cmemory doctor
-cmemory migrate
-cmemory server start
-cmemory worker start
-cmemory providers list
-cmemory providers test
-cmemory connect mcp
-cmemory connect codex
-cmemory connect claude-code
-cmemory connect cursor
-cmemory connect bot
-cmemory disconnect
-cmemory backup
-cmemory restore
-cmemory export
-cmemory import
+rembrane init
+rembrane configure
+rembrane doctor
+rembrane migrate
+rembrane server start
+rembrane worker start
+rembrane providers list
+rembrane providers test
+rembrane connect mcp
+rembrane connect codex
+rembrane connect claude-code
+rembrane connect cursor
+rembrane connect bot
+rembrane disconnect
+rembrane backup
+rembrane restore
+rembrane export
+rembrane import
 ```
 
-`cmemory init` should:
+`rembrane init` should:
 
 1. Select local, Docker, Cloudflare, Kubernetes, or custom deployment.
 2. Select database, graph, vector, artifact, model, embedding, and authentication providers.
@@ -1260,7 +1260,7 @@ Required guarantees:
 - Secret rotation does not require rebuilding the application.
 - Backups exclude credentials by default.
 - Exported memory archives never contain infrastructure credentials.
-- A `cmemory doctor --privacy` command reports every configured outbound endpoint and secret source.
+- A `rembrane doctor --privacy` command reports every configured outbound endpoint and secret source.
 - A `CMEMORY_OFFLINE=true` mode blocks non-local provider access except explicitly allow-listed endpoints.
 
 ### 13.9 Provider contract
@@ -1292,7 +1292,7 @@ If a provider lacks a required capability, startup must reject the configuration
 ### 13.10 Open-source repository structure
 
 ```text
-central-memory/
+rembrane/
 ├── apps/
 │   ├── api
 │   ├── worker
@@ -1527,8 +1527,8 @@ question_record_answer
 Supported installation entry points:
 
 ```text
-npx @central-memory/cli init
-pnpm dlx @central-memory/cli init
+npx @rembrane/cli init
+pnpm dlx @rembrane/cli init
 docker compose up
 helm install
 Cloudflare source deployment
@@ -1540,7 +1540,7 @@ The package name is provisional.
 Connecting a tool:
 
 ```text
-cmemory connect <tool>
+rembrane connect <tool>
 ├── detect the installed tool and configuration
 ├── display requested memory scopes
 ├── authenticate the user/workspace
