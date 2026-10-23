@@ -28,6 +28,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - SQLite adapter for atomic personal-workspace bootstrap and tenant-scoped
   identity and membership lookup.
 - `rembrane init` command for an explicitly located local SQLite installation.
+- Type-state SQLite cipher attachment that prevents encrypted memory APIs from
+  existing on an unconfigured store.
 - Product architecture, threat model, integration support policy, Rust
   research, bot integration design, and architecture decision records.
 

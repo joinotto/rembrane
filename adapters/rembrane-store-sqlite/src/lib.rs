@@ -5,6 +5,7 @@ use std::path::Path;
 use rembrane_application::{
     ApplicationError, MembershipRepository, WorkspaceRepository,
 };
+use rembrane_crypto::RecordCipher;
 use rembrane_domain::{
     Membership, MembershipStatus, Principal, PrincipalId, Workspace,
     WorkspaceId, WorkspaceKind, WorkspaceRole,
@@ -14,11 +15,14 @@ use rusqlite::{Connection, ErrorCode, OptionalExtension, params};
 const CANONICAL_SCHEMA: &str =
     include_str!("../../../migrations/sqlite/0001_canonical_schema.sql");
 
-pub struct SqliteStore {
+pub struct MissingCipher;
+
+pub struct SqliteStore<C = MissingCipher> {
     connection: Connection,
+    _cipher: C,
 }
 
-impl SqliteStore {
+impl SqliteStore<MissingCipher> {
     pub fn open(path: impl AsRef<Path>) -> Result<Self, ApplicationError> {
         let connection = Connection::open(path)
             .map_err(|_| ApplicationError::StorageUnavailable)?;
@@ -35,11 +39,24 @@ impl SqliteStore {
         connection
             .execute_batch(CANONICAL_SCHEMA)
             .map_err(|_| ApplicationError::StorageUnavailable)?;
-        Ok(Self { connection })
+        Ok(Self {
+            connection,
+            _cipher: MissingCipher,
+        })
     }
 }
 
-impl WorkspaceRepository for SqliteStore {
+impl<C> SqliteStore<C> {
+    #[must_use]
+    pub fn with_cipher<D: RecordCipher>(self, cipher: D) -> SqliteStore<D> {
+        SqliteStore {
+            connection: self.connection,
+            _cipher: cipher,
+        }
+    }
+}
+
+impl<C> WorkspaceRepository for SqliteStore<C> {
     fn initialize_personal_workspace(
         &mut self,
         principal: Principal,
@@ -117,7 +134,7 @@ impl WorkspaceRepository for SqliteStore {
     }
 }
 
-impl MembershipRepository for SqliteStore {
+impl<C> MembershipRepository for SqliteStore<C> {
     fn insert_membership(
         &mut self,
         membership: Membership,
