@@ -49,6 +49,8 @@ Run the architecture guard before submitting:
 ./scripts/check-sensitive-files.sh
 ./scripts/test-sqlite-schema.sh
 ./scripts/test-sqlite-atomicity.sh
+cargo build --workspace
+./scripts/test-cli-e2e.sh
 ```
 
 ## Security-sensitive changes

@@ -51,6 +51,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   encrypted context and record disclosure receipts.
 - Bearer-authenticated REST context resolution bound to a configured workspace,
   principal, and client profile.
+- End-to-end CLI lifecycle test covering encrypted capture, disclosure,
+  correction, deletion, wrong-key rejection, and plaintext-at-rest checks.
 - Product architecture, threat model, integration support policy, Rust
   research, bot integration design, and architecture decision records.
 
