@@ -1,8 +1,10 @@
 use rembrane_application::{
-    ApplicationError, MembershipRepository, WorkspaceRepository,
+    ApplicationError, AuthorizeClientCommand, AuthorizeClientService,
+    MembershipRepository, WorkspaceRepository,
 };
 use rembrane_domain::{
-    Membership, Principal, PrincipalId, Workspace, WorkspaceId, WorkspaceRole,
+    ClientId, Membership, Principal, PrincipalId, ReadScope, Workspace,
+    WorkspaceId, WorkspaceRole, WritePermission,
 };
 use rembrane_store_sqlite::SqliteStore;
 
@@ -98,4 +100,42 @@ fn membership_lookup_is_tenant_scoped() {
         .find_membership(&WorkspaceId::new("workspace_other"), &principal_id)
         .expect("lookup succeeds")
         .is_none());
+}
+
+#[test]
+fn persisted_membership_revocation_denies_new_client_grants() {
+    let principal_id = PrincipalId::new("principal_01");
+    let workspace_id = WorkspaceId::new("workspace_01");
+    let active = Membership::new(
+        workspace_id.clone(),
+        principal_id.clone(),
+        WorkspaceRole::Owner,
+    );
+    let mut store = SqliteStore::open_in_memory().expect("database opens");
+    store
+        .initialize_personal_workspace(
+            Principal::new(principal_id.clone()),
+            Workspace::personal(workspace_id.clone()),
+            active.clone(),
+        )
+        .expect("bootstrap succeeds");
+    let command = || AuthorizeClientCommand {
+        client_id: ClientId::new("assistant_01"),
+        workspace_id: workspace_id.clone(),
+        principal_id: principal_id.clone(),
+        requested_read_scopes: vec![ReadScope::Global],
+        requested_write_permissions: vec![WritePermission::CreateMemory],
+    };
+
+    AuthorizeClientService::new(&store)
+        .execute(command())
+        .expect("active owner should authorize");
+    store
+        .replace_membership(active.remove())
+        .expect("membership revocation should persist");
+
+    let error = AuthorizeClientService::new(&store)
+        .execute(command())
+        .expect_err("removed owner must not receive new grants");
+    assert_eq!(error, ApplicationError::AccessDenied);
 }
