@@ -26,7 +26,8 @@ fn print_demo() {
             EvidenceId::new("evidence_demo"),
             EvidenceSource::UserStatement,
         ),
-    );
+    )
+    .expect("built-in demo memory should be valid");
 
     println!("{}: {}", memory.id(), memory.content());
 }

@@ -221,6 +221,7 @@ mod tests {
                 EvidenceSource::UserStatement,
             ),
         )
+        .expect("test memory should be valid")
     }
 
     fn command(maximum_items: usize) -> ResolveContextCommand {

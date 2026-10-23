@@ -24,6 +24,7 @@ fn initial_memory() -> MemoryRecord {
         "Call me Hippo",
         evidence("evidence_create"),
     )
+    .expect("test memory should be valid")
 }
 
 #[test]

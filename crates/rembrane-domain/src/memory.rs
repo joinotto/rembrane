@@ -116,18 +116,23 @@ impl MemoryRecord {
         scope: MemoryScope,
         content: impl Into<String>,
         evidence: EvidenceReference,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, MemoryLifecycleError> {
+        let content = content.into();
+        if content.trim().is_empty() {
+            return Err(MemoryLifecycleError::EmptyContent);
+        }
+
+        Ok(Self {
             id,
             workspace_id,
             subject_id,
             scope,
             kind: MemoryKind::Preference,
             status: MemoryStatus::Confirmed,
-            content: content.into(),
+            content,
             version: 1,
             evidence: vec![evidence],
-        }
+        })
     }
 
     pub fn revise(
@@ -174,7 +179,9 @@ impl MemoryRecord {
 
 #[cfg(test)]
 mod tests {
-    use super::{MemoryKind, MemoryRecord, MemoryStatus};
+    use super::{
+        MemoryKind, MemoryLifecycleError, MemoryRecord, MemoryStatus,
+    };
     use crate::{
         EvidenceId, EvidenceReference, EvidenceSource, MemoryId, MemoryScope,
         PrincipalId, WorkspaceId,
@@ -192,7 +199,8 @@ mod tests {
                 EvidenceId::new("evidence_01"),
                 EvidenceSource::UserStatement,
             ),
-        );
+        )
+        .expect("non-empty preference should be valid");
 
         assert_eq!(memory.kind, MemoryKind::Preference);
         assert_eq!(memory.status, MemoryStatus::Confirmed);
@@ -212,7 +220,8 @@ mod tests {
                 EvidenceId::new("evidence_01"),
                 EvidenceSource::UserStatement,
             ),
-        );
+        )
+        .expect("non-empty preference should be valid");
 
         let revised = original
             .revise(
@@ -241,7 +250,8 @@ mod tests {
                 EvidenceId::new("evidence_01"),
                 EvidenceSource::UserStatement,
             ),
-        );
+        )
+        .expect("non-empty preference should be valid");
 
         let deleted = original
             .delete(EvidenceReference::new(
@@ -253,5 +263,23 @@ mod tests {
         assert_eq!(deleted.version, 2);
         assert_eq!(deleted.status, MemoryStatus::Deleted);
         assert!(deleted.content.is_empty());
+    }
+
+    #[test]
+    fn rejects_empty_confirmed_preference() {
+        let error = MemoryRecord::confirmed_preference(
+            MemoryId::new("memory_01"),
+            WorkspaceId::new("workspace_01"),
+            PrincipalId::new("principal_01"),
+            MemoryScope::Global,
+            " ",
+            EvidenceReference::new(
+                EvidenceId::new("evidence_01"),
+                EvidenceSource::UserStatement,
+            ),
+        )
+        .expect_err("empty confirmed memory should fail");
+
+        assert_eq!(error, MemoryLifecycleError::EmptyContent);
     }
 }

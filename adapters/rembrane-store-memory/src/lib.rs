@@ -142,6 +142,7 @@ mod tests {
                 EvidenceSource::UserStatement,
             ),
         )
+        .expect("test preference should be valid")
     }
 
     #[test]
