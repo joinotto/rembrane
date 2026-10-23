@@ -16,6 +16,10 @@ GET /.well-known/ai-memory
 
 The response must validate against `discovery.schema.json`. Discovery describes protocol endpoints and capabilities; it does not grant access. Clients still require an authorized connection and scoped credentials.
 
+## REST API
+
+`openapi.yaml` defines the versioned HTTP surface. The initial contract is deliberately narrow and grows only after the corresponding application use case and security invariants exist.
+
 ## Design rules
 
 - Canonical identifiers are opaque strings.
