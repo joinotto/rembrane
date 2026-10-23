@@ -42,6 +42,7 @@ fn agent_proposal_remains_unconfirmed_until_approved() {
             ),
             event_id: EventId::new("event_01"),
             expected_previous_sequence: 0,
+            projections: Vec::new(),
         })
         .expect("authorized proposal should succeed");
 
@@ -61,6 +62,7 @@ fn agent_proposal_remains_unconfirmed_until_approved() {
             ),
             event_id: EventId::new("event_02"),
             expected_previous_sequence: 1,
+            projections: Vec::new(),
         })
         .expect("authorized confirmation should succeed");
 
@@ -88,6 +90,7 @@ fn another_subject_cannot_confirm_proposal() {
             ),
             event_id: EventId::new("event_01"),
             expected_previous_sequence: 0,
+            projections: Vec::new(),
         })
         .expect("authorized proposal should succeed");
 
@@ -105,6 +108,7 @@ fn another_subject_cannot_confirm_proposal() {
             ),
             event_id: EventId::new("event_02"),
             expected_previous_sequence: 1,
+            projections: Vec::new(),
         })
         .expect_err("another subject must not confirm proposal");
 
@@ -127,6 +131,7 @@ fn client_without_proposal_permission_is_denied() {
             ),
             event_id: EventId::new("event_01"),
             expected_previous_sequence: 0,
+            projections: Vec::new(),
         })
         .expect_err("missing proposal permission should fail");
 

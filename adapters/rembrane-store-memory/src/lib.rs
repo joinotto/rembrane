@@ -9,7 +9,8 @@ use rembrane_application::{
 use rembrane_domain::{
     ActivityCheckpoint, ActivityId, CanonicalEvent, DisclosureReceipt,
     Membership, MemoryId, MemoryRecord, PrincipalId, ProjectionJob,
-    ProjectionJobId, ProjectionStatus, ProviderId, WorkspaceId,
+    ProjectionJobId, ProjectionOperation, ProjectionStatus, ProviderId,
+    WorkspaceId,
 };
 
 #[derive(Debug, Default)]
@@ -110,6 +111,7 @@ impl CanonicalMutationRepository for InMemoryStore {
         &mut self,
         memory: MemoryRecord,
         event: CanonicalEvent,
+        projections: Vec<ProjectionJob>,
         expected_previous_sequence: u64,
     ) -> Result<(), ApplicationError> {
         if memory.workspace_id() != event.workspace_id() {
@@ -124,9 +126,11 @@ impl CanonicalMutationRepository for InMemoryStore {
             return Err(ApplicationError::AlreadyExists);
         }
         self.validate_event(&event, expected_previous_sequence)?;
+        self.validate_projections(&memory, &projections)?;
 
         self.memories.push(memory);
         self.events.push(event);
+        self.projections.extend(projections);
         Ok(())
     }
 
@@ -135,6 +139,7 @@ impl CanonicalMutationRepository for InMemoryStore {
         memory: MemoryRecord,
         expected_memory_version: u64,
         event: CanonicalEvent,
+        projections: Vec<ProjectionJob>,
         expected_previous_sequence: u64,
     ) -> Result<(), ApplicationError> {
         if memory.workspace_id() != event.workspace_id() {
@@ -159,9 +164,11 @@ impl CanonicalMutationRepository for InMemoryStore {
             return Err(ApplicationError::VersionConflict);
         }
         self.validate_event(&event, expected_previous_sequence)?;
+        self.validate_projections(&memory, &projections)?;
 
         self.memories[position] = memory;
         self.events.push(event);
+        self.projections.extend(projections);
         Ok(())
     }
 }
@@ -513,6 +520,53 @@ impl InMemoryStore {
         {
             return Err(ApplicationError::AlreadyExists);
         }
+        Ok(())
+    }
+
+    fn validate_projections(
+        &self,
+        memory: &MemoryRecord,
+        projections: &[ProjectionJob],
+    ) -> Result<(), ApplicationError> {
+        let expected_operation = if memory.status()
+            == rembrane_domain::MemoryStatus::Deleted
+        {
+            ProjectionOperation::Delete
+        } else {
+            ProjectionOperation::Upsert
+        };
+
+        for (index, projection) in projections.iter().enumerate() {
+            if projection.workspace_id() != memory.workspace_id()
+                || projection.memory_id() != memory.id()
+                || projection.memory_version() != memory.version()
+                || projection.operation() != expected_operation
+            {
+                return Err(ApplicationError::Validation(
+                    "projection does not match canonical memory mutation"
+                        .to_owned(),
+                ));
+            }
+            if self.projections.iter().any(|stored| {
+                stored.id() == projection.id()
+                    || (stored.workspace_id() == projection.workspace_id()
+                        && stored.memory_id() == projection.memory_id()
+                        && stored.memory_version()
+                            == projection.memory_version()
+                        && stored.provider_id() == projection.provider_id()
+                        && stored.operation() == projection.operation())
+            }) {
+                return Err(ApplicationError::AlreadyExists);
+            }
+            if projections[..index].iter().any(|earlier| {
+                earlier.id() == projection.id()
+                    || (earlier.provider_id() == projection.provider_id()
+                        && earlier.operation() == projection.operation())
+            }) {
+                return Err(ApplicationError::AlreadyExists);
+            }
+        }
+
         Ok(())
     }
 }

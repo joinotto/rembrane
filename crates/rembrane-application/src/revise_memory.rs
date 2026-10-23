@@ -1,6 +1,7 @@
 use rembrane_domain::{
     CanonicalEvent, EventId, EventPayload, EvidenceReference, MemoryId,
-    MemoryRecord, PrincipalId, WorkspaceId, WriteGrant, WritePermission,
+    MemoryRecord, PrincipalId, ProjectionJob, WorkspaceId, WriteGrant,
+    WritePermission,
 };
 
 use crate::{ApplicationError, CanonicalMutationRepository};
@@ -14,6 +15,7 @@ pub struct ReviseMemoryCommand {
     pub evidence: EvidenceReference,
     pub event_id: EventId,
     pub expected_previous_sequence: u64,
+    pub projections: Vec<ProjectionJob>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -24,6 +26,7 @@ pub struct DeleteMemoryCommand {
     pub evidence: EvidenceReference,
     pub event_id: EventId,
     pub expected_previous_sequence: u64,
+    pub projections: Vec<ProjectionJob>,
 }
 
 pub struct MemoryLifecycleService<'repository, Repository> {
@@ -67,6 +70,7 @@ where
             revised.clone(),
             command.expected_version,
             event,
+            command.projections,
             command.expected_previous_sequence,
         )?;
         Ok(revised)
@@ -101,6 +105,7 @@ where
             deleted.clone(),
             command.expected_version,
             event,
+            command.projections,
             command.expected_previous_sequence,
         )?;
         Ok(deleted)

@@ -62,6 +62,7 @@ fn revises_and_deletes_owned_memory() {
         &mut store,
         initial_memory(),
         creation_event(),
+        Vec::new(),
         0,
     )
     .expect("initial insert should succeed");
@@ -76,6 +77,7 @@ fn revises_and_deletes_owned_memory() {
             evidence: evidence("evidence_revise"),
             event_id: EventId::new("event_revise"),
             expected_previous_sequence: 1,
+            projections: Vec::new(),
         })
         .expect("revision should succeed");
 
@@ -89,6 +91,7 @@ fn revises_and_deletes_owned_memory() {
             evidence: evidence("evidence_delete"),
             event_id: EventId::new("event_delete"),
             expected_previous_sequence: 2,
+            projections: Vec::new(),
         })
         .expect("deletion should succeed");
 
@@ -104,6 +107,7 @@ fn hides_memory_from_another_subject() {
         &mut store,
         initial_memory(),
         creation_event(),
+        Vec::new(),
         0,
     )
     .expect("initial insert should succeed");
@@ -117,6 +121,7 @@ fn hides_memory_from_another_subject() {
             evidence: evidence("evidence_other"),
             event_id: EventId::new("event_revise"),
             expected_previous_sequence: 1,
+            projections: Vec::new(),
         })
         .expect_err("another subject must not revise memory");
 
@@ -130,6 +135,7 @@ fn rejects_stale_expected_version() {
         &mut store,
         initial_memory(),
         creation_event(),
+        Vec::new(),
         0,
     )
     .expect("initial insert should succeed");
@@ -142,6 +148,7 @@ fn rejects_stale_expected_version() {
             evidence: evidence("evidence_delete"),
             event_id: EventId::new("event_delete"),
             expected_previous_sequence: 1,
+            projections: Vec::new(),
         })
         .expect_err("stale deletion must fail");
 
@@ -155,6 +162,7 @@ fn denies_revision_without_explicit_permission() {
         &mut store,
         initial_memory(),
         creation_event(),
+        Vec::new(),
         0,
     )
     .expect("initial insert should succeed");
@@ -170,6 +178,7 @@ fn denies_revision_without_explicit_permission() {
             evidence: evidence("evidence_unauthorized"),
             event_id: EventId::new("event_revise"),
             expected_previous_sequence: 1,
+            projections: Vec::new(),
         })
         .expect_err("missing revision permission should fail");
 

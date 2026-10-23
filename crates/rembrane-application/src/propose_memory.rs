@@ -1,6 +1,7 @@
 use rembrane_domain::{
     CanonicalEvent, EventId, EventPayload, EvidenceReference, MemoryId,
-    MemoryKind, MemoryRecord, MemoryScope, WriteGrant, WritePermission,
+    MemoryKind, MemoryRecord, MemoryScope, ProjectionJob, WriteGrant,
+    WritePermission,
 };
 
 use crate::{ApplicationError, CanonicalMutationRepository};
@@ -15,6 +16,7 @@ pub struct ProposeMemoryCommand {
     pub evidence: EvidenceReference,
     pub event_id: EventId,
     pub expected_previous_sequence: u64,
+    pub projections: Vec<ProjectionJob>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -25,6 +27,7 @@ pub struct ConfirmMemoryCommand {
     pub evidence: EvidenceReference,
     pub event_id: EventId,
     pub expected_previous_sequence: u64,
+    pub projections: Vec<ProjectionJob>,
 }
 
 pub struct MemoryProposalService<'repository, Repository> {
@@ -68,6 +71,7 @@ where
         self.repository.insert_memory_with_event(
             proposal.clone(),
             event,
+            command.projections,
             command.expected_previous_sequence,
         )?;
         Ok(proposal)
@@ -106,6 +110,7 @@ where
             confirmed.clone(),
             command.expected_version,
             event,
+            command.projections,
             command.expected_previous_sequence,
         )?;
         Ok(confirmed)

@@ -54,6 +54,7 @@ pub trait CanonicalMutationRepository: EventRepository + MemoryRepository {
         &mut self,
         memory: MemoryRecord,
         event: CanonicalEvent,
+        projections: Vec<ProjectionJob>,
         expected_previous_sequence: u64,
     ) -> Result<(), ApplicationError>;
 
@@ -62,6 +63,7 @@ pub trait CanonicalMutationRepository: EventRepository + MemoryRepository {
         memory: MemoryRecord,
         expected_memory_version: u64,
         event: CanonicalEvent,
+        projections: Vec<ProjectionJob>,
         expected_previous_sequence: u64,
     ) -> Result<(), ApplicationError>;
 }
