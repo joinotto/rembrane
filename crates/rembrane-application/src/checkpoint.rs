@@ -1,9 +1,13 @@
 use rembrane_domain::{
-    ActivityCheckpoint, ActivityId, CanonicalEvent, EventId, EventPayload,
+    ActivityCheckpoint, ActivityId, CanonicalEvent,
+    CheckpointDisclosureReceipt, DisclosureId, EventId, EventPayload,
     MemoryScope, ReadGrant, WriteGrant, WritePermission,
 };
 
-use crate::{ApplicationError, CheckpointMutationRepository};
+use crate::{
+    ApplicationError, CheckpointDisclosureRepository,
+    CheckpointMutationRepository,
+};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CreateCheckpointCommand {
@@ -26,6 +30,8 @@ pub struct UpdateCheckpointCommand {
 pub struct ResumeActivityCommand {
     pub grant: ReadGrant,
     pub activity_id: ActivityId,
+    pub disclosure_id: DisclosureId,
+    pub purpose: String,
 }
 
 pub struct CheckpointService<'repository, Repository> {
@@ -34,7 +40,7 @@ pub struct CheckpointService<'repository, Repository> {
 
 impl<'repository, Repository> CheckpointService<'repository, Repository>
 where
-    Repository: CheckpointMutationRepository,
+    Repository: CheckpointDisclosureRepository + CheckpointMutationRepository,
 {
     pub fn new(repository: &'repository mut Repository) -> Self {
         Self { repository }
@@ -80,20 +86,59 @@ where
     }
 
     pub fn resume(
-        &self,
+        &mut self,
         command: &ResumeActivityCommand,
     ) -> Result<Option<ActivityCheckpoint>, ApplicationError> {
+        if command.purpose.trim().is_empty() {
+            return Err(ApplicationError::Validation(
+                "checkpoint disclosure purpose must not be empty".to_owned(),
+            ));
+        }
+        let checkpoint = self.load_authorized(
+            &command.grant,
+            &command.activity_id,
+        )?;
+        if let Some(checkpoint) = &checkpoint {
+            self.repository.append_checkpoint_disclosure(
+                CheckpointDisclosureReceipt {
+                    id: command.disclosure_id.clone(),
+                    workspace_id: command.grant.workspace_id.clone(),
+                    subject_id: command.grant.subject_id.clone(),
+                    client_id: command.grant.client_id.clone(),
+                    purpose: command.purpose.clone(),
+                    checkpoint_id: checkpoint.id().clone(),
+                    checkpoint_version: checkpoint.version(),
+                    activity_id: checkpoint.activity_id().clone(),
+                },
+            )?;
+        }
+        Ok(checkpoint)
+    }
+
+    pub fn load_for_update(
+        &self,
+        grant: &ReadGrant,
+        activity_id: &ActivityId,
+    ) -> Result<Option<ActivityCheckpoint>, ApplicationError> {
+        self.load_authorized(grant, activity_id)
+    }
+
+    fn load_authorized(
+        &self,
+        grant: &ReadGrant,
+        activity_id: &ActivityId,
+    ) -> Result<Option<ActivityCheckpoint>, ApplicationError> {
         let activity_scope = MemoryScope::Activity {
-            id: command.activity_id.clone(),
+            id: activity_id.clone(),
         };
-        if !command.grant.allows(&activity_scope) {
+        if !grant.allows(&activity_scope) {
             return Err(ApplicationError::AccessDenied);
         }
 
         self.repository.latest_checkpoint(
-            &command.grant.workspace_id,
-            &command.grant.subject_id,
-            &command.activity_id,
+            &grant.workspace_id,
+            &grant.subject_id,
+            activity_id,
         )
     }
 }

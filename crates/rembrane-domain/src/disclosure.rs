@@ -1,5 +1,6 @@
 use crate::{
-    ClientId, ContextPackId, DisclosureId, MemoryId, PrincipalId, WorkspaceId,
+    ActivityId, CheckpointId, ClientId, ContextPackId, DisclosureId, MemoryId,
+    PrincipalId, WorkspaceId,
 };
 
 /// Identifies the exact memory revision disclosed to a client.
@@ -7,6 +8,19 @@ use crate::{
 pub struct DisclosedMemory {
     pub id: MemoryId,
     pub version: u64,
+}
+
+/// Append-only audit record for one activity-checkpoint revision disclosed.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckpointDisclosureReceipt {
+    pub id: DisclosureId,
+    pub workspace_id: WorkspaceId,
+    pub subject_id: PrincipalId,
+    pub client_id: ClientId,
+    pub purpose: String,
+    pub checkpoint_id: CheckpointId,
+    pub checkpoint_version: u64,
+    pub activity_id: ActivityId,
 }
 
 /// An append-only audit record created when memory crosses a trust boundary.

@@ -2,15 +2,17 @@
 
 use rembrane_application::{
     ApplicationError, CanonicalMutationRepository,
-    CheckpointMutationRepository, CheckpointRepository, DisclosureRepository,
-    EventRepository, MembershipRepository, MemoryRepository,
-    ProjectionOutboxRepository, WorkspaceRepository,
+    CheckpointDisclosureRepository, CheckpointMutationRepository,
+    CheckpointRepository, DisclosureRepository, EventRepository,
+    MembershipRepository, MemoryRepository, ProjectionOutboxRepository,
+    WorkspaceRepository,
 };
 use rembrane_domain::{
-    ActivityCheckpoint, ActivityId, CanonicalEvent, DisclosureReceipt,
-    Membership, MemoryId, MemoryRecord, Principal, PrincipalId, ProjectionJob,
-    ProjectionJobId, ProjectionOperation, ProjectionStatus, ProviderId,
-    Workspace, WorkspaceId, WorkspaceKind, WorkspaceRole,
+    ActivityCheckpoint, ActivityId, CanonicalEvent,
+    CheckpointDisclosureReceipt, DisclosureReceipt, Membership, MemoryId,
+    MemoryRecord, Principal, PrincipalId, ProjectionJob, ProjectionJobId,
+    ProjectionOperation, ProjectionStatus, ProviderId, Workspace, WorkspaceId,
+    WorkspaceKind, WorkspaceRole,
 };
 
 #[derive(Debug, Default)]
@@ -19,6 +21,7 @@ pub struct InMemoryStore {
     workspaces: Vec<Workspace>,
     memories: Vec<MemoryRecord>,
     disclosures: Vec<DisclosureReceipt>,
+    checkpoint_disclosures: Vec<CheckpointDisclosureReceipt>,
     events: Vec<CanonicalEvent>,
     checkpoints: Vec<ActivityCheckpoint>,
     memberships: Vec<Membership>,
@@ -96,6 +99,11 @@ impl InMemoryStore {
     #[must_use]
     pub fn disclosure_count(&self) -> usize {
         self.disclosures.len()
+    }
+
+    #[must_use]
+    pub fn checkpoint_disclosure_count(&self) -> usize {
+        self.checkpoint_disclosures.len()
     }
 }
 
@@ -215,6 +223,40 @@ impl DisclosureRepository for InMemoryStore {
         }
 
         self.disclosures.push(receipt);
+        Ok(())
+    }
+}
+
+impl CheckpointDisclosureRepository for InMemoryStore {
+    fn append_checkpoint_disclosure(
+        &mut self,
+        receipt: CheckpointDisclosureReceipt,
+    ) -> Result<(), ApplicationError> {
+        if receipt.purpose.trim().is_empty()
+            || receipt.checkpoint_version == 0
+        {
+            return Err(ApplicationError::Validation(
+                "invalid checkpoint disclosure".to_owned(),
+            ));
+        }
+        if self
+            .checkpoint_disclosures
+            .iter()
+            .any(|stored| stored.id == receipt.id)
+        {
+            return Err(ApplicationError::AlreadyExists);
+        }
+        let checkpoint_exists = self.checkpoints.iter().any(|checkpoint| {
+            checkpoint.workspace_id() == &receipt.workspace_id
+                && checkpoint.subject_id() == &receipt.subject_id
+                && checkpoint.id() == &receipt.checkpoint_id
+                && checkpoint.activity_id() == &receipt.activity_id
+                && checkpoint.version() == receipt.checkpoint_version
+        });
+        if !checkpoint_exists {
+            return Err(ApplicationError::VersionConflict);
+        }
+        self.checkpoint_disclosures.push(receipt);
         Ok(())
     }
 }

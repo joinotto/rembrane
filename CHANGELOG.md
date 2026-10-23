@@ -59,6 +59,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   checkpoint reads within the same workspace.
 - Encrypted SQLite activity checkpoints with authenticated resume reads and
   atomic audit events.
+- Versioned SQLite checkpoint-disclosure receipts recording the exact
+  checkpoint revision, activity, subject, client, and purpose returned during
+  MCP cross-agent resume.
 - Atomic SQLite disclosure receipts that verify each disclosed memory belongs
   to the subject and is still at the recorded version.
 - Experimental RustCrypto XChaCha20-Poly1305 record cipher with randomized

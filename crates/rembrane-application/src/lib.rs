@@ -24,9 +24,9 @@ pub use authorize_client::{
 };
 pub use ports::{
     CanonicalMutationRepository, CheckpointMutationRepository,
-    CheckpointRepository, DisclosureRepository, EventRepository,
-    MembershipRepository, MemoryRepository, ProjectionOutboxRepository,
-    WorkspaceRepository,
+    CheckpointDisclosureRepository, CheckpointRepository,
+    DisclosureRepository, EventRepository, MembershipRepository,
+    MemoryRepository, ProjectionOutboxRepository, WorkspaceRepository,
 };
 pub use propose_memory::{
     ConfirmMemoryCommand, MemoryProposalService, ProposeMemoryCommand,

@@ -130,7 +130,10 @@ should use `rembrane_propose_memory` instead.
 
 ### `rembrane_resume_activity`
 
-Retrieves the latest authorized checkpoint for an activity. It requires an activity-scoped read grant.
+Retrieves the latest authorized checkpoint for an activity. It requires an
+activity-scoped read grant. A successful result includes a unique
+`disclosureId`; the server persists the exact checkpoint ID and version
+disclosed before returning the response.
 
 Arguments:
 

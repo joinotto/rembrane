@@ -3,8 +3,8 @@ use rembrane_application::{
     ResumeActivityCommand,
 };
 use rembrane_domain::{
-    ActivityCheckpoint, ActivityId, CheckpointId, ClientId, EventId,
-    PrincipalId, ReadGrant, ReadScope, WorkspaceId, WriteGrant,
+    ActivityCheckpoint, ActivityId, CheckpointId, ClientId, DisclosureId,
+    EventId, PrincipalId, ReadGrant, ReadScope, WorkspaceId, WriteGrant,
     WritePermission,
 };
 use rembrane_store_memory::InMemoryStore;
@@ -64,22 +64,27 @@ fn authorized_agent_can_create_and_another_can_resume() {
         .resume(&ResumeActivityCommand {
             grant: reader("activity_01"),
             activity_id: ActivityId::new("activity_01"),
+            disclosure_id: DisclosureId::new("disclosure_01"),
+            purpose: "continue-project".to_owned(),
         })
         .expect("authorized resume should succeed")
         .expect("checkpoint should exist");
 
     assert_eq!(resumed.summary(), "Scoped read grants are implemented.");
+    assert_eq!(store.checkpoint_disclosure_count(), 1);
 }
 
 #[test]
 fn activity_grant_cannot_resume_another_activity() {
     let mut store = InMemoryStore::new();
-    let service = CheckpointService::new(&mut store);
+    let mut service = CheckpointService::new(&mut store);
 
     let error = service
         .resume(&ResumeActivityCommand {
             grant: reader("activity_other"),
             activity_id: ActivityId::new("activity_01"),
+            disclosure_id: DisclosureId::new("disclosure_denied"),
+            purpose: "continue-project".to_owned(),
         })
         .expect_err("mismatched activity grant should fail");
 

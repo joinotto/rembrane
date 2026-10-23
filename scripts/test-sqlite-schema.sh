@@ -7,7 +7,9 @@ trap 'rm -f "$database"' EXIT
 
 sqlite3 "$database" < \
     "$repository_root/migrations/sqlite/0001_canonical_schema.sql"
-sqlite3 "$database" "PRAGMA user_version = 1;"
+sqlite3 "$database" < \
+    "$repository_root/migrations/sqlite/0002_checkpoint_disclosures.sql"
+sqlite3 "$database" "PRAGMA user_version = 2;"
 
 sqlite3 "$database" <<'SQL'
 PRAGMA foreign_keys = ON;
@@ -127,6 +129,46 @@ INSERT INTO projection_outbox (
     'upsert',
     'pending'
 );
+INSERT INTO activity_checkpoints (
+    workspace_id,
+    id,
+    subject_id,
+    activity_id,
+    checkpoint_ciphertext,
+    encryption_key_id,
+    encryption_algorithm,
+    encryption_nonce,
+    version
+) VALUES (
+    'workspace_01',
+    'checkpoint_01',
+    'principal_01',
+    'activity_01',
+    X'01',
+    'key_01',
+    'xchacha20poly1305',
+    zeroblob(24),
+    1
+);
+INSERT INTO checkpoint_disclosures (
+    workspace_id,
+    id,
+    checkpoint_id,
+    checkpoint_version,
+    activity_id,
+    subject_id,
+    client_id,
+    purpose_code
+) VALUES (
+    'workspace_01',
+    'checkpoint_disclosure_01',
+    'checkpoint_01',
+    1,
+    'activity_01',
+    'principal_01',
+    'assistant_01',
+    'resume-activity'
+);
 SQL
 
 if sqlite3 "$database" <<'SQL'
@@ -210,5 +252,9 @@ table_count=$(
 )
 
 test "$table_count" -ge 9
-test "$(sqlite3 "$database" "PRAGMA user_version;")" -eq 1
+test "$(sqlite3 "$database" "PRAGMA user_version;")" -eq 2
+test "$(
+    sqlite3 "$database" \
+        "SELECT count(*) FROM checkpoint_disclosures;"
+)" -eq 1
 echo "sqlite schema checks passed"

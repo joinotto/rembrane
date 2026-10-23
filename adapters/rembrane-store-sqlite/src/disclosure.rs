@@ -1,5 +1,7 @@
-use rembrane_application::{ApplicationError, DisclosureRepository};
-use rembrane_domain::DisclosureReceipt;
+use rembrane_application::{
+    ApplicationError, CheckpointDisclosureRepository, DisclosureRepository,
+};
+use rembrane_domain::{CheckpointDisclosureReceipt, DisclosureReceipt};
 use rusqlite::{OptionalExtension, params};
 
 use crate::{SqliteStore, map_write_error};
@@ -96,5 +98,72 @@ impl<C> DisclosureRepository for SqliteStore<C> {
         }
 
         transaction.commit().map_err(map_write_error)
+    }
+}
+
+impl<C> CheckpointDisclosureRepository for SqliteStore<C> {
+    fn append_checkpoint_disclosure(
+        &mut self,
+        receipt: CheckpointDisclosureReceipt,
+    ) -> Result<(), ApplicationError> {
+        if receipt.purpose.trim().is_empty() || receipt.checkpoint_version == 0
+        {
+            return Err(ApplicationError::Validation(
+                "invalid checkpoint disclosure".to_owned(),
+            ));
+        }
+        let version = i64::try_from(receipt.checkpoint_version).map_err(|_| {
+            ApplicationError::Validation(
+                "checkpoint version exceeds SQLite range".to_owned(),
+            )
+        })?;
+        let stored_version: Option<i64> = self
+            .connection
+            .query_row(
+                "SELECT version
+                 FROM activity_checkpoints
+                 WHERE workspace_id = ?1
+                   AND id = ?2
+                   AND subject_id = ?3
+                   AND activity_id = ?4",
+                params![
+                    receipt.workspace_id.as_str(),
+                    receipt.checkpoint_id.as_str(),
+                    receipt.subject_id.as_str(),
+                    receipt.activity_id.as_str()
+                ],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        if stored_version != Some(version) {
+            return Err(ApplicationError::VersionConflict);
+        }
+
+        self.connection
+            .execute(
+                "INSERT INTO checkpoint_disclosures (
+                    workspace_id,
+                    id,
+                    checkpoint_id,
+                    checkpoint_version,
+                    activity_id,
+                    subject_id,
+                    client_id,
+                    purpose_code
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                params![
+                    receipt.workspace_id.as_str(),
+                    receipt.id.as_str(),
+                    receipt.checkpoint_id.as_str(),
+                    version,
+                    receipt.activity_id.as_str(),
+                    receipt.subject_id.as_str(),
+                    receipt.client_id.as_str(),
+                    receipt.purpose
+                ],
+            )
+            .map(|_| ())
+            .map_err(map_write_error)
     }
 }

@@ -23,7 +23,10 @@ use rusqlite::{Connection, ErrorCode, OptionalExtension, params};
 
 const CANONICAL_SCHEMA: &str =
     include_str!("../../../migrations/sqlite/0001_canonical_schema.sql");
-const CURRENT_SCHEMA_VERSION: u32 = 1;
+const CHECKPOINT_DISCLOSURE_MIGRATION: &str = include_str!(
+    "../../../migrations/sqlite/0002_checkpoint_disclosures.sql"
+);
+const CURRENT_SCHEMA_VERSION: u32 = 2;
 const CANONICAL_TABLES: [&str; 10] = [
     "activity_checkpoints",
     "disclosed_memories",
@@ -76,7 +79,7 @@ impl SqliteStore<MissingCipher> {
 }
 
 fn migrate(connection: &mut Connection) -> Result<(), ApplicationError> {
-    let version = schema_version(connection)?;
+    let mut version = schema_version(connection)?;
     if version > CURRENT_SCHEMA_VERSION {
         return Err(ApplicationError::StorageUnavailable);
     }
@@ -87,17 +90,25 @@ fn migrate(connection: &mut Connection) -> Result<(), ApplicationError> {
     if version == 0 && has_user_tables(connection)? {
         verify_legacy_schema(connection)?;
         connection
-            .pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
+            .pragma_update(None, "user_version", 1)
             .map_err(|_| ApplicationError::StorageUnavailable)?;
-        return Ok(());
+        version = 1;
     }
 
     let transaction = connection
         .transaction()
         .map_err(|_| ApplicationError::StorageUnavailable)?;
-    transaction
-        .execute_batch(CANONICAL_SCHEMA)
-        .map_err(|_| ApplicationError::StorageUnavailable)?;
+    if version == 0 {
+        transaction
+            .execute_batch(CANONICAL_SCHEMA)
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        version = 1;
+    }
+    if version == 1 {
+        transaction
+            .execute_batch(CHECKPOINT_DISCLOSURE_MIGRATION)
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+    }
     transaction
         .pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
         .map_err(|_| ApplicationError::StorageUnavailable)?;
@@ -273,6 +284,42 @@ mod migration_tests {
             schema_version(&connection).expect("schema version should read"),
             CURRENT_SCHEMA_VERSION
         );
+        drop(connection);
+        fs::remove_file(database).expect("temporary database should be removed");
+    }
+
+    #[test]
+    fn upgrades_version_one_with_checkpoint_disclosures() {
+        let database = database_path("schema-v1-upgrade");
+        let connection =
+            Connection::open(&database).expect("database should open");
+        connection
+            .execute_batch(super::CANONICAL_SCHEMA)
+            .expect("version one schema should initialize");
+        connection
+            .pragma_update(None, "user_version", 1)
+            .expect("version one should be recorded");
+        drop(connection);
+
+        SqliteStore::open(&database).expect("version one should upgrade");
+        let connection =
+            Connection::open(&database).expect("database should reopen");
+        assert_eq!(
+            schema_version(&connection).expect("schema version should read"),
+            CURRENT_SCHEMA_VERSION
+        );
+        let table_exists: bool = connection
+            .query_row(
+                "SELECT EXISTS (
+                    SELECT 1 FROM sqlite_schema
+                    WHERE type = 'table'
+                      AND name = 'checkpoint_disclosures'
+                )",
+                [],
+                |row| row.get(0),
+            )
+            .expect("migration table should be inspectable");
+        assert!(table_exists);
         drop(connection);
         fs::remove_file(database).expect("temporary database should be removed");
     }

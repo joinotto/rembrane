@@ -251,6 +251,9 @@ try {
   if (firstCheckpoint.stale !== false) {
     throw new Error("MCP marked matching external state as stale");
   }
+  if (!firstCheckpoint.disclosureId) {
+    throw new Error("MCP checkpoint resume omitted disclosureId");
+  }
 
   const updatedCheckpointCall = await request(11, "tools/call", {
     name: "rembrane_checkpoint_activity",
@@ -285,6 +288,12 @@ try {
   }
   if (finalCheckpoint.stale !== true) {
     throw new Error("MCP did not detect stale external state");
+  }
+  if (
+    !finalCheckpoint.disclosureId ||
+    finalCheckpoint.disclosureId === firstCheckpoint.disclosureId
+  ) {
+    throw new Error("MCP checkpoint resume reused its disclosure receipt");
   }
 
   const workTraceCall = await request(13, "tools/call", {

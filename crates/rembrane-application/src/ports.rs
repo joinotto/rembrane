@@ -1,7 +1,8 @@
 use rembrane_domain::{
-    ActivityCheckpoint, ActivityId, CanonicalEvent, DisclosureReceipt,
-    Membership, MemoryId, MemoryRecord, Principal, PrincipalId, ProjectionJob,
-    ProjectionJobId, ProjectionStatus, ProviderId, Workspace, WorkspaceId,
+    ActivityCheckpoint, ActivityId, CanonicalEvent,
+    CheckpointDisclosureReceipt, DisclosureReceipt, Membership, MemoryId,
+    MemoryRecord, Principal, PrincipalId, ProjectionJob, ProjectionJobId,
+    ProjectionStatus, ProviderId, Workspace, WorkspaceId,
 };
 
 use crate::ApplicationError;
@@ -25,6 +26,13 @@ pub trait DisclosureRepository {
     fn append(
         &mut self,
         receipt: DisclosureReceipt,
+    ) -> Result<(), ApplicationError>;
+}
+
+pub trait CheckpointDisclosureRepository {
+    fn append_checkpoint_disclosure(
+        &mut self,
+        receipt: CheckpointDisclosureReceipt,
     ) -> Result<(), ApplicationError>;
 }
 

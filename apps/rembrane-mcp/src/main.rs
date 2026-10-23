@@ -134,6 +134,7 @@ struct CheckpointOutput {
     blockers: Vec<String>,
     state_fingerprint: Option<String>,
     stale: Option<bool>,
+    disclosure_id: Option<String>,
     version: u64,
 }
 
@@ -517,10 +518,7 @@ impl RembraneMcp {
             parameters.expected_version
         {
             let current = CheckpointService::new(&mut state.store)
-                .resume(&ResumeActivityCommand {
-                    grant: grants.read,
-                    activity_id,
-                })
+                .load_for_update(&grants.read, &activity_id)
                 .map_err(application_error)?
                 .ok_or_else(|| {
                     McpError::invalid_params("activity checkpoint not found", None)
@@ -601,7 +599,7 @@ impl RembraneMcp {
                 .map_err(application_error)?
         };
 
-        checkpoint_response(&checkpoint, None)
+        checkpoint_response(&checkpoint, None, None)
     }
 
     #[tool(
@@ -627,10 +625,14 @@ impl RembraneMcp {
             }],
             Vec::new(),
         )?;
+        let disclosure_id =
+            DisclosureId::new(format!("disclosure_{}", next_id(&mut state)));
         let checkpoint = CheckpointService::new(&mut state.store)
             .resume(&ResumeActivityCommand {
                 grant: grants.read,
                 activity_id,
+                disclosure_id: disclosure_id.clone(),
+                purpose: "resume-activity".to_owned(),
             })
             .map_err(application_error)?;
         checkpoint.as_ref().map_or_else(
@@ -639,6 +641,7 @@ impl RembraneMcp {
                 checkpoint_response(
                     checkpoint,
                     parameters.current_state_fingerprint.as_deref(),
+                    Some(&disclosure_id),
                 )
             },
         )
@@ -780,6 +783,7 @@ fn mutation_response(
 fn checkpoint_response(
     checkpoint: &ActivityCheckpoint,
     current_state_fingerprint: Option<&str>,
+    disclosure_id: Option<&DisclosureId>,
 ) -> Result<String, McpError> {
     serde_json::to_string(&CheckpointOutput {
         checkpoint_id: checkpoint.id().to_string(),
@@ -795,6 +799,7 @@ fn checkpoint_response(
                 .state_fingerprint()
                 .map(|recorded| recorded != current)
         }),
+        disclosure_id: disclosure_id.map(ToString::to_string),
         version: checkpoint.version(),
     })
     .map_err(|_| McpError::internal_error("response serialization failed", None))

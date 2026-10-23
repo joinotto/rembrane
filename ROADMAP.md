@@ -32,6 +32,8 @@ This roadmap describes sequencing, not release dates.
 - [x] Atomically persist encrypted memories, events, evidence, and projections.
 - [x] Persist and optimistically update the SQLite provider projection outbox.
 - [x] Persist encrypted activity checkpoints with their audit events.
+- [x] Audit every externally resumed checkpoint revision with a tenant-scoped
+  disclosure receipt.
 - [x] Atomically persist exact-version disclosure receipts in SQLite.
 - [x] Prototype a portable XChaCha20-Poly1305 record-cipher adapter.
 - [x] Implement the encrypted local SQLite adapter.
