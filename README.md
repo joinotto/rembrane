@@ -1,6 +1,11 @@
-# Central Memory Framework
+# Rembrane
 
-An open-source, user-owned continuity and memory infrastructure for AI assistants, coding tools, applications, bots, and agents.
+**Your memory across every connected AI.**
+
+Rembrane is an open-source, user-owned continuity and memory infrastructure for AI assistants, coding tools, applications, bots, and agents.
+
+> [!IMPORTANT]
+> Rembrane is in pre-alpha. The architecture and protocol are being defined; no production release exists yet.
 
 ## Product promise
 
@@ -20,7 +25,7 @@ Deployment options:
 - Customer cloud or Kubernetes
 - Strict-E2EE local/customer-controlled gateway
 
-The framework supports personal and shared organizational workspaces, provider-independent configuration, bring-your-own credentials, and replaceable memory, graph, vector, database, model, and storage providers.
+Rembrane supports personal and shared organizational workspaces, provider-independent configuration, bring-your-own credentials, and replaceable memory, graph, vector, database, model, and storage providers.
 
 ## Architecture direction
 
@@ -49,6 +54,9 @@ The platform owns identity, workspaces, encryption orchestration, canonical even
 - [Rust Architecture Research](docs/RUST_ARCHITECTURE_RESEARCH.md)
 - [Bot and Platform Integration Architecture](docs/BOT_AND_PLATFORM_INTEGRATION_ARCHITECTURE.md)
 - [Support and Compatibility Policy](docs/SUPPORT_POLICY.md)
+- [Roadmap](ROADMAP.md)
+- [Security Policy](SECURITY.md)
+- [Contributing](CONTRIBUTING.md)
 
 ## Current key decisions
 
@@ -62,3 +70,25 @@ The platform owns identity, workspaces, encryption orchestration, canonical even
 - Non-technical users receive managed or desktop onboarding with plain-language permissions.
 - Bot compatibility uses verified tiers: native protocol, MCP/tool, user-controlled gateway, share extension, or import/export.
 - Existing closed iMessage or WhatsApp bot conversations require vendor cooperation or an explicit user-controlled fallback; channel access alone cannot inject memory.
+
+## Project status
+
+The first development milestone is a secure vertical slice:
+
+```text
+store a confirmed preference
+→ retrieve it from a second authorized agent
+→ record exactly what was disclosed
+→ correct or delete it
+→ prevent access from another tenant
+```
+
+See the [roadmap](ROADMAP.md) for sequencing. Do not use Rembrane for production or sensitive data until the security model, cryptographic implementation, and tenant-isolation tests are complete.
+
+## Contributing
+
+Rembrane is being built in public. Start with [CONTRIBUTING.md](CONTRIBUTING.md), read the [support policy](docs/SUPPORT_POLICY.md), and discuss substantial protocol or security changes before implementing them.
+
+## License
+
+Licensed under the Apache License, Version 2.0.

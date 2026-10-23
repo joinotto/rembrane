@@ -1,0 +1,15 @@
+/target/
+**/*.rs.bk
+.DS_Store
+.idea/
+.vscode/
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.sqlite
+*.sqlite3
+coverage/
+dist/
+node_modules/
