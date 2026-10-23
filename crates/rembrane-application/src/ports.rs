@@ -18,6 +18,12 @@ pub trait MemoryRepository {
         workspace_id: &WorkspaceId,
         subject_id: &PrincipalId,
     ) -> Result<Vec<MemoryRecord>, ApplicationError>;
+
+    fn replace(
+        &mut self,
+        memory: MemoryRecord,
+        expected_version: u64,
+    ) -> Result<(), ApplicationError>;
 }
 
 pub trait DisclosureRepository {

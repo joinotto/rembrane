@@ -7,6 +7,7 @@ pub enum ApplicationError {
     NotFound,
     StorageUnavailable,
     Validation(String),
+    VersionConflict,
 }
 
 impl Display for ApplicationError {
@@ -15,6 +16,7 @@ impl Display for ApplicationError {
             Self::AlreadyExists => formatter.write_str("record already exists"),
             Self::NotFound => formatter.write_str("record not found"),
             Self::StorageUnavailable => formatter.write_str("storage unavailable"),
+            Self::VersionConflict => formatter.write_str("version conflict"),
             Self::Validation(message) => {
                 write!(formatter, "validation failed: {message}")
             }

@@ -68,6 +68,30 @@ impl MemoryRepository for InMemoryStore {
             .cloned()
             .collect())
     }
+
+    fn replace(
+        &mut self,
+        memory: MemoryRecord,
+        expected_version: u64,
+    ) -> Result<(), ApplicationError> {
+        let stored = self
+            .memories
+            .iter_mut()
+            .find(|stored| {
+                stored.workspace_id == memory.workspace_id
+                    && stored.id == memory.id
+            })
+            .ok_or(ApplicationError::NotFound)?;
+
+        if stored.version != expected_version
+            || memory.version != expected_version.saturating_add(1)
+        {
+            return Err(ApplicationError::VersionConflict);
+        }
+
+        *stored = memory;
+        Ok(())
+    }
 }
 
 impl DisclosureRepository for InMemoryStore {
@@ -200,5 +224,35 @@ mod tests {
             .expect_err("duplicate insert should fail");
 
         assert_eq!(error, ApplicationError::AlreadyExists);
+    }
+
+    #[test]
+    fn rejects_stale_revision() {
+        let mut store = InMemoryStore::new();
+        let original = preference(
+            "memory_01",
+            "workspace_one",
+            "principal_01",
+            "Call me Hippo",
+        );
+        store
+            .insert(original.clone())
+            .expect("initial insert should succeed");
+
+        let revised = original
+            .revise(
+                "Call me Captain Hippo",
+                rembrane_domain::EvidenceReference::new(
+                    rembrane_domain::EvidenceId::new("evidence_revision"),
+                    rembrane_domain::EvidenceSource::UserStatement,
+                ),
+            )
+            .expect("revision should be valid");
+
+        let error = store
+            .replace(revised, 2)
+            .expect_err("stale expected version should fail");
+
+        assert_eq!(error, ApplicationError::VersionConflict);
     }
 }
