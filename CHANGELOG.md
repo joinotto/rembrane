@@ -78,6 +78,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 - Minimum Rust version is 1.88 and the MCP transport targets the official
   `rmcp` 3.4.1 SDK.
+- MCP and REST end-to-end fixtures now prove that connection scope allowlists
+  permit configured activities while denying model-requested scope expansion.
 - Product architecture, threat model, integration support policy, Rust
   research, bot integration design, and architecture decision records.
 

@@ -275,6 +275,16 @@ try {
   if (finalCheckpoint.summary !== "Protocol smoke tests are implemented.") {
     throw new Error("MCP resume did not return the updated checkpoint");
   }
+
+  const deniedResumeCall = await request(13, "tools/call", {
+    name: "rembrane_resume_activity",
+    arguments: {
+      activityId: "activity_outside_grant",
+    },
+  });
+  if (!deniedResumeCall.isError) {
+    throw new Error("MCP allowed activity access outside the connection grant");
+  }
 } finally {
   child.kill("SIGTERM");
   await new Promise((resolve) => {

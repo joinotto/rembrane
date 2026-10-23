@@ -28,6 +28,7 @@ export REMBRANE_DATABASE="$database"
 export REMBRANE_PRINCIPAL_ID="principal_rest_e2e"
 export REMBRANE_WORKSPACE_ID="workspace_rest_e2e"
 export REMBRANE_CLIENT_ID="client_rest_e2e"
+export REMBRANE_READ_SCOPES="global"
 export REMBRANE_API_TOKEN="rest-e2e-token"
 export REMBRANE_LISTEN="${REMBRANE_TEST_LISTEN:-127.0.0.1:18787}"
 
@@ -55,6 +56,19 @@ until curl -fsS "$base_url/health" >/dev/null 2>&1; do
     fi
     sleep 0.1
 done
+
+scoped_response="$test_directory/scoped-response.json"
+scoped_status=$(
+    curl -sS \
+        -o "$scoped_response" \
+        -w '%{http_code}' \
+        -X POST "$base_url/v1/context/resolve" \
+        -H "Authorization: Bearer $REMBRANE_API_TOKEN" \
+        -H "Content-Type: application/json" \
+        --data "{\"workspaceId\":\"$REMBRANE_WORKSPACE_ID\",\"subjectId\":\"$REMBRANE_PRINCIPAL_ID\",\"entityId\":\"project_outside_grant\",\"purpose\":\"continue-project\",\"query\":\"What is next?\",\"maximumItems\":10}"
+)
+test "$scoped_status" = "403"
+test "$(jq -r '.code' "$scoped_response")" = "access_denied"
 
 postman collection run \
     "$repository_root/tests/postman/rembrane-local.postman_collection.json" \
