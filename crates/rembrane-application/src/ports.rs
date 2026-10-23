@@ -48,6 +48,23 @@ pub trait EventRepository {
     ) -> Result<Vec<CanonicalEvent>, ApplicationError>;
 }
 
+pub trait CanonicalMutationRepository: EventRepository + MemoryRepository {
+    fn insert_memory_with_event(
+        &mut self,
+        memory: MemoryRecord,
+        event: CanonicalEvent,
+        expected_previous_sequence: u64,
+    ) -> Result<(), ApplicationError>;
+
+    fn replace_memory_with_event(
+        &mut self,
+        memory: MemoryRecord,
+        expected_memory_version: u64,
+        event: CanonicalEvent,
+        expected_previous_sequence: u64,
+    ) -> Result<(), ApplicationError>;
+}
+
 pub trait CheckpointRepository {
     fn insert_checkpoint(
         &mut self,

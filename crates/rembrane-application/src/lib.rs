@@ -21,8 +21,8 @@ pub use authorize_client::{
     AuthorizeClientCommand, AuthorizeClientService, ClientGrantBundle,
 };
 pub use ports::{
-    CheckpointRepository, DisclosureRepository, EventRepository,
-    MembershipRepository, MemoryRepository,
+    CanonicalMutationRepository, CheckpointRepository, DisclosureRepository,
+    EventRepository, MembershipRepository, MemoryRepository,
 };
 pub use propose_memory::{
     ConfirmMemoryCommand, MemoryProposalService, ProposeMemoryCommand,

@@ -1,8 +1,9 @@
 //! Volatile reference adapter used by tests, examples, and local prototypes.
 
 use rembrane_application::{
-    ApplicationError, CheckpointRepository, DisclosureRepository,
-    EventRepository, MembershipRepository, MemoryRepository,
+    ApplicationError, CanonicalMutationRepository, CheckpointRepository,
+    DisclosureRepository, EventRepository, MembershipRepository,
+    MemoryRepository,
 };
 use rembrane_domain::{
     ActivityCheckpoint, ActivityId, CanonicalEvent, DisclosureReceipt,
@@ -97,6 +98,67 @@ impl MemoryRepository for InMemoryStore {
         }
 
         *stored = memory;
+        Ok(())
+    }
+}
+
+impl CanonicalMutationRepository for InMemoryStore {
+    fn insert_memory_with_event(
+        &mut self,
+        memory: MemoryRecord,
+        event: CanonicalEvent,
+        expected_previous_sequence: u64,
+    ) -> Result<(), ApplicationError> {
+        if memory.workspace_id() != event.workspace_id() {
+            return Err(ApplicationError::Validation(
+                "memory and event workspace must match".to_owned(),
+            ));
+        }
+        if self.memories.iter().any(|stored| {
+            stored.workspace_id() == memory.workspace_id()
+                && stored.id() == memory.id()
+        }) {
+            return Err(ApplicationError::AlreadyExists);
+        }
+        self.validate_event(&event, expected_previous_sequence)?;
+
+        self.memories.push(memory);
+        self.events.push(event);
+        Ok(())
+    }
+
+    fn replace_memory_with_event(
+        &mut self,
+        memory: MemoryRecord,
+        expected_memory_version: u64,
+        event: CanonicalEvent,
+        expected_previous_sequence: u64,
+    ) -> Result<(), ApplicationError> {
+        if memory.workspace_id() != event.workspace_id() {
+            return Err(ApplicationError::Validation(
+                "memory and event workspace must match".to_owned(),
+            ));
+        }
+
+        let position = self
+            .memories
+            .iter()
+            .position(|stored| {
+                stored.workspace_id() == memory.workspace_id()
+                    && stored.id() == memory.id()
+            })
+            .ok_or(ApplicationError::NotFound)?;
+        let stored = &self.memories[position];
+        if stored.version() != expected_memory_version
+            || memory.version()
+                != expected_memory_version.saturating_add(1)
+        {
+            return Err(ApplicationError::VersionConflict);
+        }
+        self.validate_event(&event, expected_previous_sequence)?;
+
+        self.memories[position] = memory;
+        self.events.push(event);
         Ok(())
     }
 }
@@ -278,6 +340,35 @@ impl EventRepository for InMemoryStore {
             .collect();
         events.sort_by_key(CanonicalEvent::sequence);
         Ok(events)
+    }
+}
+
+impl InMemoryStore {
+    fn validate_event(
+        &self,
+        event: &CanonicalEvent,
+        expected_previous_sequence: u64,
+    ) -> Result<(), ApplicationError> {
+        let current_sequence = self
+            .events
+            .iter()
+            .filter(|stored| stored.workspace_id() == event.workspace_id())
+            .map(CanonicalEvent::sequence)
+            .max()
+            .unwrap_or(0);
+        if current_sequence != expected_previous_sequence
+            || event.sequence() != expected_previous_sequence.saturating_add(1)
+        {
+            return Err(ApplicationError::SequenceConflict);
+        }
+        if self
+            .events
+            .iter()
+            .any(|stored| stored.id() == event.id())
+        {
+            return Err(ApplicationError::AlreadyExists);
+        }
+        Ok(())
     }
 }
 
