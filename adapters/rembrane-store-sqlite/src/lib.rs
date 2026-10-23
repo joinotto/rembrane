@@ -154,6 +154,23 @@ impl<C> SqliteStore<C> {
             cipher,
         }
     }
+
+    pub fn backup_to(
+        &self,
+        destination: impl AsRef<Path>,
+    ) -> Result<(), ApplicationError> {
+        let destination = destination.as_ref();
+        if destination.exists() {
+            return Err(ApplicationError::AlreadyExists);
+        }
+        let destination = destination
+            .to_str()
+            .ok_or(ApplicationError::StorageUnavailable)?;
+        self.connection
+            .execute("VACUUM INTO ?1", [destination])
+            .map_err(map_write_error)?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]

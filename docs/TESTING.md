@@ -62,6 +62,18 @@ target/debug/rembrane doctor \
   --principal "$REMBRANE_PRINCIPAL_ID" \
   --workspace "$REMBRANE_WORKSPACE_ID"
 
+target/debug/rembrane backup \
+  --database "$REMBRANE_DATABASE" \
+  --principal "$REMBRANE_PRINCIPAL_ID" \
+  --workspace "$REMBRANE_WORKSPACE_ID" \
+  --output .rembrane/rembrane-backup.sqlite
+
+target/debug/rembrane restore \
+  --input .rembrane/rembrane-backup.sqlite \
+  --database .rembrane/rembrane-restored.sqlite \
+  --principal "$REMBRANE_PRINCIPAL_ID" \
+  --workspace "$REMBRANE_WORKSPACE_ID"
+
 target/debug/rembrane remember \
   --database "$REMBRANE_DATABASE" \
   --principal "$REMBRANE_PRINCIPAL_ID" \

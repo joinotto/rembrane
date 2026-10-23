@@ -8,6 +8,8 @@ test -x "$rembrane_binary"
 test_directory=$(mktemp -d "${TMPDIR:-/tmp}/rembrane-cli-e2e.XXXXXX")
 trap 'rm -rf "$test_directory"' EXIT
 database="$test_directory/rembrane.sqlite"
+backup="$test_directory/rembrane-backup.sqlite"
+restored_database="$test_directory/rembrane-restored.sqlite"
 
 export REMBRANE_WORKSPACE_KEY_ID="e2e-key-v1"
 export REMBRANE_WORKSPACE_KEY_HEX="000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
@@ -26,6 +28,30 @@ remember_output=$(
 )
 memory_id=$(printf '%s\n' "$remember_output" | awk '/^Remembered / { print $2 }')
 test -n "$memory_id"
+
+"$rembrane_binary" backup \
+    --database "$database" \
+    --principal principal_e2e \
+    --workspace workspace_e2e \
+    --output "$backup" >/dev/null
+
+"$rembrane_binary" restore \
+    --input "$backup" \
+    --database "$restored_database" \
+    --principal principal_e2e \
+    --workspace workspace_e2e >/dev/null
+
+restored_recall=$(
+    "$rembrane_binary" recall \
+        --database "$restored_database" \
+        --principal principal_e2e \
+        --workspace workspace_e2e \
+        --client assistant_e2e \
+        --purpose restore-verification \
+        --query "What should I call the user?"
+)
+printf '%s\n' "$restored_recall" |
+    rg -F "$memory_id: Call me Hippo" >/dev/null
 
 doctor_output=$(
     "$rembrane_binary" doctor \
@@ -128,5 +154,18 @@ then
     echo "doctor unexpectedly succeeded with the wrong key" >&2
     exit 1
 fi
+
+invalid_restore="$test_directory/invalid-restore.sqlite"
+if REMBRANE_WORKSPACE_KEY_HEX="ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff" \
+    "$rembrane_binary" restore \
+        --input "$backup" \
+        --database "$invalid_restore" \
+        --principal principal_e2e \
+        --workspace workspace_e2e >/dev/null 2>&1
+then
+    echo "restore unexpectedly succeeded with the wrong key" >&2
+    exit 1
+fi
+test ! -e "$invalid_restore"
 
 echo "CLI end-to-end checks passed"

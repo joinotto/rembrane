@@ -35,6 +35,8 @@ fn run(arguments: Vec<String>) -> Result<(), String> {
         }
         Some("init") => initialize(&arguments[1..]),
         Some("doctor") => doctor(&arguments[1..]),
+        Some("backup") => backup(&arguments[1..]),
+        Some("restore") => restore(&arguments[1..]),
         Some("remember") => remember(&arguments[1..]),
         Some("recall") => recall(&arguments[1..]),
         Some("correct") => correct(&arguments[1..]),
@@ -46,10 +48,88 @@ fn run(arguments: Vec<String>) -> Result<(), String> {
     }
 }
 
+fn backup(arguments: &[String]) -> Result<(), String> {
+    let destination = std::path::Path::new(option(arguments, "--output")?);
+    create_parent_directory(destination)?;
+    let (store, principal_id, workspace_id) = encrypted_store(arguments)?;
+    verify_installation(&store, &workspace_id, &principal_id)?;
+    store
+        .backup_to(destination)
+        .map_err(|error| format!("cannot create backup: {error}"))?;
+
+    println!("Encrypted backup created");
+    println!("Output: {}", destination.display());
+    Ok(())
+}
+
+fn restore(arguments: &[String]) -> Result<(), String> {
+    let source = std::path::Path::new(option(arguments, "--input")?);
+    let destination = std::path::Path::new(option(arguments, "--database")?);
+    if destination.exists() {
+        return Err("restore destination already exists".to_owned());
+    }
+    create_parent_directory(destination)?;
+    std::fs::copy(source, destination)
+        .map_err(|error| format!("cannot copy backup: {error}"))?;
+
+    let result = (|| {
+        let principal_id =
+            PrincipalId::new(option(arguments, "--principal")?);
+        let workspace_id =
+            WorkspaceId::new(option(arguments, "--workspace")?);
+        let cipher = RustCryptoRecordCipher::from_environment()
+            .map_err(|error| format!("cannot load workspace cipher: {error}"))?;
+        let store = SqliteStore::open(destination)
+            .map_err(|error| format!("cannot open restored database: {error}"))?
+            .with_cipher(cipher);
+        verify_installation(&store, &workspace_id, &principal_id)
+    })();
+
+    if let Err(error) = result {
+        std::fs::remove_file(destination).map_err(|cleanup_error| {
+            format!(
+                "{error}; additionally failed to remove invalid restore: \
+                 {cleanup_error}"
+            )
+        })?;
+        return Err(error);
+    }
+
+    println!("Encrypted backup restored");
+    println!("Database: {}", destination.display());
+    Ok(())
+}
+
 fn doctor(arguments: &[String]) -> Result<(), String> {
     let (store, principal_id, workspace_id) = encrypted_store(arguments)?;
+    let (role, memory_count) =
+        verify_installation(&store, &workspace_id, &principal_id)?;
+
+    println!("Rembrane doctor: ready");
+    println!("Database schema: compatible");
+    println!("Workspace: {workspace_id}");
+    println!("Principal: {principal_id}");
+    println!("Membership: active ({role:?})");
+    println!("Workspace key: loaded");
+    println!("Authenticated encrypted records: {memory_count}");
+    println!("Readable memories: {memory_count}");
+    println!(
+        "Secret sources: REMBRANE_WORKSPACE_KEY_ID, \
+         REMBRANE_WORKSPACE_KEY_HEX"
+    );
+    Ok(())
+}
+
+fn verify_installation<C>(
+    store: &SqliteStore<C>,
+    workspace_id: &WorkspaceId,
+    principal_id: &PrincipalId,
+) -> Result<(WorkspaceRole, usize), String>
+where
+    C: rembrane_crypto::RecordCipher,
+{
     let membership = store
-        .find_membership(&workspace_id, &principal_id)
+        .find_membership(workspace_id, principal_id)
         .map_err(|error| format!("cannot inspect membership: {error}"))?
         .ok_or_else(|| {
             "principal is not a member of the configured workspace".to_owned()
@@ -59,29 +139,13 @@ fn doctor(arguments: &[String]) -> Result<(), String> {
     }
 
     let memories = store
-        .list_for_subject(&workspace_id, &principal_id)
+        .list_for_subject(workspace_id, principal_id)
         .map_err(|error| {
             format!(
                 "cannot authenticate workspace memories with the configured key: {error}"
             )
         })?;
-
-    println!("Rembrane doctor: ready");
-    println!("Database schema: compatible");
-    println!("Workspace: {workspace_id}");
-    println!("Principal: {principal_id}");
-    println!("Membership: active ({:?})", membership.role());
-    println!("Workspace key: loaded");
-    println!(
-        "Authenticated encrypted records: {}",
-        memories.len()
-    );
-    println!("Readable memories: {}", memories.len());
-    println!(
-        "Secret sources: REMBRANE_WORKSPACE_KEY_ID, \
-         REMBRANE_WORKSPACE_KEY_HEX"
-    );
-    Ok(())
+    Ok((membership.role(), memories.len()))
 }
 
 fn remember(arguments: &[String]) -> Result<(), String> {
@@ -317,12 +381,7 @@ fn initialize(arguments: &[String]) -> Result<(), String> {
     let workspace = option(arguments, "--workspace")?;
     let database_path = std::path::Path::new(database);
 
-    if let Some(parent) = database_path.parent()
-        && !parent.as_os_str().is_empty()
-    {
-        std::fs::create_dir_all(parent)
-            .map_err(|error| format!("cannot create database directory: {error}"))?;
-    }
+    create_parent_directory(database_path)?;
 
     let principal_id = PrincipalId::new(principal);
     let workspace_id = WorkspaceId::new(workspace);
@@ -344,6 +403,16 @@ fn initialize(arguments: &[String]) -> Result<(), String> {
     println!("Database: {}", database_path.display());
     println!("Principal: {principal_id}");
     println!("Workspace: {workspace_id}");
+    Ok(())
+}
+
+fn create_parent_directory(path: &std::path::Path) -> Result<(), String> {
+    if let Some(parent) = path.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        std::fs::create_dir_all(parent)
+            .map_err(|error| format!("cannot create directory: {error}"))?;
+    }
     Ok(())
 }
 
@@ -439,6 +508,10 @@ fn print_help() {
            rembrane demo\n\
            rembrane init --database <path> --principal <id> --workspace <id>\n\
            rembrane doctor --database <path> --principal <id> --workspace <id>\n\
+           rembrane backup --database <path> --principal <id> \
+             --workspace <id> --output <path>\n\
+           rembrane restore --input <path> --database <new-path> \
+             --principal <id> --workspace <id>\n\
            rembrane remember --database <path> --principal <id> \
              --workspace <id> --content <preference>\n\
            rembrane recall --database <path> --principal <id> \
