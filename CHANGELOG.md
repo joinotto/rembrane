@@ -55,6 +55,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   correction, deletion, wrong-key rejection, and plaintext-at-rest checks.
 - Postman REST suite covering health, bearer authentication, encrypted context
   retrieval, disclosure persistence, and cross-workspace denial.
+- MCP stdio protocol smoke test covering initialization, tool discovery,
+  context resolution, and disclosure persistence.
 
 ### Changed
 

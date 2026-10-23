@@ -51,6 +51,7 @@ Run the architecture guard before submitting:
 ./scripts/test-sqlite-atomicity.sh
 cargo build --workspace
 ./scripts/test-cli-e2e.sh
+./scripts/test-mcp-e2e.sh
 ./scripts/test-rest-e2e.sh
 ```
 
