@@ -11,6 +11,7 @@ mod grant;
 mod identifier;
 mod memory;
 mod provenance;
+mod projection;
 mod scope;
 mod workspace;
 
@@ -20,12 +21,17 @@ pub use event::{CanonicalEvent, EventError, EventPayload};
 pub use grant::{ReadGrant, ReadScope, WriteGrant, WritePermission};
 pub use identifier::{
     ActivityId, CheckpointId, ClientId, ContextPackId, DisclosureId, EntityId,
-    EventId, EvidenceId, MemoryId, PrincipalId, WorkspaceId,
+    EventId, EvidenceId, MemoryId, PrincipalId, ProjectionJobId, ProviderId,
+    WorkspaceId,
 };
 pub use memory::{
     MemoryKind, MemoryLifecycleError, MemoryRecord, MemoryStatus,
 };
 pub use provenance::{EvidenceReference, EvidenceSource};
+pub use projection::{
+    ProjectionJob, ProjectionJobError, ProjectionOperation,
+    ProjectionStatus,
+};
 pub use scope::MemoryScope;
 pub use workspace::{
     Membership, MembershipStatus, WorkspaceKind, WorkspaceRole,

@@ -47,6 +47,8 @@ identifier!(EventId);
 identifier!(EvidenceId);
 identifier!(MemoryId);
 identifier!(PrincipalId);
+identifier!(ProjectionJobId);
+identifier!(ProviderId);
 identifier!(WorkspaceId);
 
 #[cfg(test)]
