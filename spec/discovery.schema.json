@@ -1,0 +1,175 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rembrane.dev/spec/discovery.schema.json",
+  "title": "Rembrane Memory Provider Discovery",
+  "description": "Capability document served from /.well-known/ai-memory.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "provider",
+    "protocolVersions",
+    "endpoints",
+    "capabilities",
+    "privacy"
+  ],
+  "properties": {
+    "provider": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "implementation": {
+          "type": "string",
+          "maxLength": 255
+        }
+      }
+    },
+    "protocolVersions": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[0-9]+\\.[0-9]+$"
+      }
+    },
+    "endpoints": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["api"],
+      "properties": {
+        "api": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https://"
+        },
+        "oauthAuthorization": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https://"
+        },
+        "oauthToken": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https://"
+        },
+        "mcp": {
+          "type": "string",
+          "format": "uri"
+        }
+      }
+    },
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contextResolution",
+        "memoryProposal",
+        "activityCheckpoint",
+        "disclosureReceipt",
+        "deletionPropagation"
+      ],
+      "properties": {
+        "contextResolution": {
+          "type": "boolean"
+        },
+        "questionResolution": {
+          "type": "boolean"
+        },
+        "memoryProposal": {
+          "type": "boolean"
+        },
+        "activityCheckpoint": {
+          "type": "boolean"
+        },
+        "disclosureReceipt": {
+          "type": "boolean"
+        },
+        "deletionPropagation": {
+          "type": "boolean"
+        },
+        "sync": {
+          "type": "boolean"
+        },
+        "imports": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string"
+          }
+        },
+        "exports": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "maximumContextItems": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "maximumContextBytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "maximumEventBytes": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "privacy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["processingModes", "disclosureReceipts"],
+      "properties": {
+        "processingModes": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "hosted",
+              "customer-gateway",
+              "local-only"
+            ]
+          }
+        },
+        "disclosureReceipts": {
+          "const": true
+        },
+        "plaintextProcessingLocation": {
+          "enum": [
+            "provider",
+            "customer-gateway",
+            "user-device",
+            "mode-dependent"
+          ]
+        }
+      }
+    },
+    "extensions": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[a-z0-9][a-z0-9.-]+/[a-zA-Z0-9._-]+$"
+      }
+    }
+  }
+}

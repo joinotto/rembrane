@@ -1,0 +1,45 @@
+{
+  "provider": {
+    "id": "local.rembrane",
+    "name": "Local Rembrane",
+    "implementation": "rembrane"
+  },
+  "protocolVersions": [
+    "0.1"
+  ],
+  "endpoints": {
+    "api": "https://memory.example.test/v1",
+    "oauthAuthorization": "https://memory.example.test/oauth/authorize",
+    "oauthToken": "https://memory.example.test/oauth/token",
+    "mcp": "https://memory.example.test/mcp"
+  },
+  "capabilities": {
+    "contextResolution": true,
+    "questionResolution": false,
+    "memoryProposal": true,
+    "activityCheckpoint": true,
+    "disclosureReceipt": true,
+    "deletionPropagation": true,
+    "sync": false,
+    "imports": [
+      "jsonl"
+    ],
+    "exports": [
+      "jsonl",
+      "encrypted-archive"
+    ]
+  },
+  "limits": {
+    "maximumContextItems": 50,
+    "maximumContextBytes": 65536,
+    "maximumEventBytes": 262144
+  },
+  "privacy": {
+    "processingModes": [
+      "local-only"
+    ],
+    "disclosureReceipts": true,
+    "plaintextProcessingLocation": "user-device"
+  },
+  "extensions": {}
+}
