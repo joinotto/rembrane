@@ -93,7 +93,10 @@ fn worker_indexes_canonical_memory_and_completes_job() {
     assert_eq!(results.len(), 1);
     assert_eq!(
         store
-            .find_projection(&ProjectionJobId::new("projection_01"))
+            .find_projection(
+                &WorkspaceId::new("workspace_01"),
+                &ProjectionJobId::new("projection_01"),
+            )
             .expect("job lookup should succeed")
             .expect("job should exist")
             .status(),
@@ -224,7 +227,10 @@ fn provider_failures_retry_then_quarantine() {
     }
 
     let stored = store
-        .find_projection(&ProjectionJobId::new("projection_01"))
+        .find_projection(
+            &WorkspaceId::new("workspace_01"),
+            &ProjectionJobId::new("projection_01"),
+        )
         .expect("job lookup should succeed")
         .expect("job should exist");
     assert_eq!(stored.status(), ProjectionStatus::Quarantined);

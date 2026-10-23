@@ -131,6 +131,7 @@ impl<C> ProjectionOutboxRepository for SqliteStore<C> {
 
     fn find_projection(
         &self,
+        workspace_id: &WorkspaceId,
         job_id: &ProjectionJobId,
     ) -> Result<Option<ProjectionJob>, ApplicationError> {
         self.connection
@@ -145,8 +146,8 @@ impl<C> ProjectionOutboxRepository for SqliteStore<C> {
                     status,
                     attempts
                  FROM projection_outbox
-                 WHERE id = ?1",
-                [job_id.as_str()],
+                 WHERE workspace_id = ?1 AND id = ?2",
+                params![workspace_id.as_str(), job_id.as_str()],
                 decode_projection_row,
             )
             .optional()

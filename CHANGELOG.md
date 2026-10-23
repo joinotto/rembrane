@@ -49,6 +49,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   and provider projection jobs.
 - Persistent SQLite projection outbox with idempotent enqueue, pending work
   reads, and optimistic status transitions.
+- Workspace-qualified projection-job lookup contracts and cross-workspace
+  denial tests; globally unique job IDs are no longer treated as authority.
 - Encrypted SQLite activity checkpoints with authenticated resume reads and
   atomic audit events.
 - Atomic SQLite disclosure receipts that verify each disclosed memory belongs

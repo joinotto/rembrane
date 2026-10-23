@@ -241,10 +241,20 @@ fn persists_and_optimistically_updates_projection() {
 
     assert_eq!(
         store
-            .find_projection(&ProjectionJobId::new("projection_01"))
+            .find_projection(
+                &WorkspaceId::new("workspace_01"),
+                &ProjectionJobId::new("projection_01"),
+            )
             .expect("projection lookup succeeds"),
         Some(processing)
     );
+    assert!(store
+        .find_projection(
+            &WorkspaceId::new("workspace_other"),
+            &ProjectionJobId::new("projection_01"),
+        )
+        .expect("cross-workspace lookup succeeds")
+        .is_none());
 }
 
 #[test]

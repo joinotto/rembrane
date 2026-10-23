@@ -291,12 +291,15 @@ impl ProjectionOutboxRepository for InMemoryStore {
 
     fn find_projection(
         &self,
+        workspace_id: &WorkspaceId,
         job_id: &ProjectionJobId,
     ) -> Result<Option<ProjectionJob>, ApplicationError> {
         Ok(self
             .projections
             .iter()
-            .find(|job| job.id() == job_id)
+            .find(|job| {
+                job.workspace_id() == workspace_id && job.id() == job_id
+            })
             .cloned())
     }
 }

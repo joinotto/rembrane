@@ -55,6 +55,7 @@ This roadmap describes sequencing, not release dates.
 - [x] Persist a disclosure receipt for every SQLite context response.
 - [ ] Persist disclosure receipts in every future storage adapter.
 - [x] Prove cross-tenant denial across SQLite user-facing read paths.
+- [x] Require workspace identity for internal projection-job lookups.
 - [ ] Prove cross-tenant denial across every future adapter read path.
 - [ ] Provide the hosted PostgreSQL adapter with row-level security.
 

@@ -146,6 +146,7 @@ pub trait ProjectionOutboxRepository {
 
     fn find_projection(
         &self,
+        workspace_id: &WorkspaceId,
         job_id: &ProjectionJobId,
     ) -> Result<Option<ProjectionJob>, ApplicationError>;
 }
