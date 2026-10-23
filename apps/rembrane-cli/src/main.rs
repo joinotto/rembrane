@@ -1,7 +1,8 @@
 use rembrane_application::{
     CanonicalMutationRepository, EventRepository, MembershipRepository,
-    RememberPreferenceCommand, RememberPreferenceService,
-    ResolveContextCommand, ResolveContextService, WorkspaceRepository,
+    DeleteMemoryCommand, MemoryLifecycleService, RememberPreferenceCommand,
+    RememberPreferenceService, ResolveContextCommand, ResolveContextService,
+    ReviseMemoryCommand, WorkspaceRepository,
 };
 use rembrane_crypto_rustcrypto::RustCryptoRecordCipher;
 use rembrane_contracts::ResolveContextRequest;
@@ -36,6 +37,8 @@ fn run(arguments: Vec<String>) -> Result<(), String> {
         Some("init") => initialize(&arguments[1..]),
         Some("remember") => remember(&arguments[1..]),
         Some("recall") => recall(&arguments[1..]),
+        Some("correct") => correct(&arguments[1..]),
+        Some("forget") => forget(&arguments[1..]),
         _ => {
             print_help();
             Ok(())
@@ -50,11 +53,7 @@ fn remember(arguments: &[String]) -> Result<(), String> {
     let (mut store, principal_id, workspace_id) =
         encrypted_store(arguments)?;
     require_active_membership(&store, &workspace_id, &principal_id)?;
-    let previous_sequence = store
-        .list_events_since(&workspace_id, 0)
-        .map_err(|error| format!("cannot inspect event stream: {error}"))?
-        .last()
-        .map_or(0, CanonicalEvent::sequence);
+    let previous_sequence = current_sequence(&store, &workspace_id)?;
     let suffix = unique_suffix()?;
     let memory = RememberPreferenceService::new(&mut store)
         .execute(RememberPreferenceCommand {
@@ -78,6 +77,76 @@ fn remember(arguments: &[String]) -> Result<(), String> {
         .map_err(|error| format!("cannot remember preference: {error}"))?;
 
     println!("Remembered {}", memory.id());
+    Ok(())
+}
+
+fn correct(arguments: &[String]) -> Result<(), String> {
+    let memory_id = MemoryId::new(option(arguments, "--memory")?);
+    let expected_version = positive_u64(arguments, "--version")?;
+    let content = option(arguments, "--content")?;
+    let client_id =
+        optional_option(arguments, "--client").unwrap_or("rembrane-cli");
+    let (mut store, principal_id, workspace_id) =
+        encrypted_store(arguments)?;
+    require_active_membership(&store, &workspace_id, &principal_id)?;
+    let previous_sequence = current_sequence(&store, &workspace_id)?;
+    let suffix = unique_suffix()?;
+    let memory = MemoryLifecycleService::new(&mut store)
+        .revise(ReviseMemoryCommand {
+            grant: WriteGrant {
+                client_id: ClientId::new(client_id),
+                workspace_id,
+                subject_id: principal_id,
+                permissions: vec![WritePermission::ReviseMemory],
+            },
+            memory_id,
+            expected_version,
+            content: content.to_owned(),
+            evidence: EvidenceReference::new(
+                EvidenceId::new(format!("evidence_{suffix}")),
+                EvidenceSource::UserStatement,
+            ),
+            event_id: EventId::new(format!("event_{suffix}")),
+            expected_previous_sequence: previous_sequence,
+            projections: Vec::new(),
+        })
+        .map_err(|error| format!("cannot correct memory: {error}"))?;
+
+    println!("Corrected {} to version {}", memory.id(), memory.version());
+    Ok(())
+}
+
+fn forget(arguments: &[String]) -> Result<(), String> {
+    let memory_id = MemoryId::new(option(arguments, "--memory")?);
+    let expected_version = positive_u64(arguments, "--version")?;
+    let client_id =
+        optional_option(arguments, "--client").unwrap_or("rembrane-cli");
+    let (mut store, principal_id, workspace_id) =
+        encrypted_store(arguments)?;
+    require_active_membership(&store, &workspace_id, &principal_id)?;
+    let previous_sequence = current_sequence(&store, &workspace_id)?;
+    let suffix = unique_suffix()?;
+    let memory = MemoryLifecycleService::new(&mut store)
+        .delete(DeleteMemoryCommand {
+            grant: WriteGrant {
+                client_id: ClientId::new(client_id),
+                workspace_id,
+                subject_id: principal_id,
+                permissions: vec![WritePermission::DeleteMemory],
+            },
+            memory_id,
+            expected_version,
+            evidence: EvidenceReference::new(
+                EvidenceId::new(format!("evidence_{suffix}")),
+                EvidenceSource::UserStatement,
+            ),
+            event_id: EventId::new(format!("event_{suffix}")),
+            expected_previous_sequence: previous_sequence,
+            projections: Vec::new(),
+        })
+        .map_err(|error| format!("cannot forget memory: {error}"))?;
+
+    println!("Deleted {} at version {}", memory.id(), memory.version());
     Ok(())
 }
 
@@ -167,6 +236,29 @@ fn require_active_membership<C>(
         return Err("workspace membership is not active".to_owned());
     }
     Ok(())
+}
+
+fn current_sequence<C>(
+    store: &SqliteStore<C>,
+    workspace_id: &WorkspaceId,
+) -> Result<u64, String>
+where
+    SqliteStore<C>: EventRepository,
+{
+    store
+        .list_events_since(workspace_id, 0)
+        .map_err(|error| format!("cannot inspect event stream: {error}"))
+        .map(|events| events.last().map_or(0, CanonicalEvent::sequence))
+}
+
+fn positive_u64(arguments: &[String], name: &str) -> Result<u64, String> {
+    let value = option(arguments, name)?
+        .parse::<u64>()
+        .map_err(|_| format!("{name} must be a positive integer"))?;
+    if value == 0 {
+        return Err(format!("{name} must be a positive integer"));
+    }
+    Ok(value)
 }
 
 fn decode_key(encoded: &str) -> Result<[u8; 32], String> {
@@ -325,13 +417,17 @@ fn print_help() {
            rembrane remember --database <path> --principal <id> \
              --workspace <id> --content <preference>\n\
            rembrane recall --database <path> --principal <id> \
-             --workspace <id> --client <id> --purpose <purpose> --query <query>"
+             --workspace <id> --client <id> --purpose <purpose> --query <query>\n\
+           rembrane correct --database <path> --principal <id> \
+             --workspace <id> --memory <id> --version <n> --content <text>\n\
+           rembrane forget --database <path> --principal <id> \
+             --workspace <id> --memory <id> --version <n>"
     );
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{decode_key, option};
+    use super::{decode_key, option, positive_u64};
 
     #[test]
     fn parses_named_option_independent_of_order() {
@@ -372,5 +468,12 @@ mod tests {
     #[test]
     fn rejects_workspace_key_with_wrong_length() {
         assert!(decode_key("abcd").is_err());
+    }
+
+    #[test]
+    fn rejects_zero_memory_version() {
+        let arguments = vec!["--version".to_owned(), "0".to_owned()];
+
+        assert!(positive_u64(&arguments, "--version").is_err());
     }
 }

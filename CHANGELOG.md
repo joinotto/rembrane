@@ -46,6 +46,7 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   nonces, zeroizing key storage, and tenant-bound associated data.
 - Development CLI flows for encrypted preference capture and minimal-context
   recall with automatic disclosure receipts.
+- Encrypted CLI correction and deletion flows with optimistic memory versions.
 - Product architecture, threat model, integration support policy, Rust
   research, bot integration design, and architecture decision records.
 

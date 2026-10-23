@@ -120,6 +120,21 @@ cargo run -p rembrane-cli -- recall \
   --client assistant_local \
   --purpose personalize-assistant \
   --query "What should I call the user?"
+
+cargo run -p rembrane-cli -- correct \
+  --database .rembrane/rembrane.db \
+  --principal principal_local \
+  --workspace workspace_personal \
+  --memory <memory-id> \
+  --version 1 \
+  --content "Call me Captain Hippo"
+
+cargo run -p rembrane-cli -- forget \
+  --database .rembrane/rembrane.db \
+  --principal principal_local \
+  --workspace workspace_personal \
+  --memory <memory-id> \
+  --version 2
 ```
 
 The demo stores a confirmed preference, resolves it for a second authorized assistant, and prints the context-pack and disclosure-receipt identifiers.
