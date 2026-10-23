@@ -1,6 +1,6 @@
 use rembrane_domain::{
     ActivityCheckpoint, ActivityId, CanonicalEvent, DisclosureReceipt,
-    MemoryId, MemoryRecord, PrincipalId, WorkspaceId,
+    Membership, MemoryId, MemoryRecord, PrincipalId, WorkspaceId,
 };
 
 use crate::ApplicationError;
@@ -65,5 +65,23 @@ pub trait CheckpointRepository {
         &mut self,
         checkpoint: ActivityCheckpoint,
         expected_version: u64,
+    ) -> Result<(), ApplicationError>;
+}
+
+pub trait MembershipRepository {
+    fn insert_membership(
+        &mut self,
+        membership: Membership,
+    ) -> Result<(), ApplicationError>;
+
+    fn find_membership(
+        &self,
+        workspace_id: &WorkspaceId,
+        principal_id: &PrincipalId,
+    ) -> Result<Option<Membership>, ApplicationError>;
+
+    fn replace_membership(
+        &mut self,
+        membership: Membership,
     ) -> Result<(), ApplicationError>;
 }

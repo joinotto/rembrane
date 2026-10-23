@@ -18,7 +18,7 @@ pub use checkpoint::{
 };
 pub use ports::{
     CheckpointRepository, DisclosureRepository, EventRepository,
-    MemoryRepository,
+    MembershipRepository, MemoryRepository,
 };
 pub use propose_memory::{
     ConfirmMemoryCommand, MemoryProposalService, ProposeMemoryCommand,

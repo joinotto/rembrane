@@ -2,11 +2,11 @@
 
 use rembrane_application::{
     ApplicationError, CheckpointRepository, DisclosureRepository,
-    EventRepository, MemoryRepository,
+    EventRepository, MembershipRepository, MemoryRepository,
 };
 use rembrane_domain::{
     ActivityCheckpoint, ActivityId, CanonicalEvent, DisclosureReceipt,
-    MemoryId, MemoryRecord, PrincipalId, WorkspaceId,
+    Membership, MemoryId, MemoryRecord, PrincipalId, WorkspaceId,
 };
 
 #[derive(Debug, Default)]
@@ -15,6 +15,7 @@ pub struct InMemoryStore {
     disclosures: Vec<DisclosureReceipt>,
     events: Vec<CanonicalEvent>,
     checkpoints: Vec<ActivityCheckpoint>,
+    memberships: Vec<Membership>,
 }
 
 impl InMemoryStore {
@@ -115,6 +116,56 @@ impl DisclosureRepository for InMemoryStore {
         }
 
         self.disclosures.push(receipt);
+        Ok(())
+    }
+}
+
+impl MembershipRepository for InMemoryStore {
+    fn insert_membership(
+        &mut self,
+        membership: Membership,
+    ) -> Result<(), ApplicationError> {
+        let duplicate = self.memberships.iter().any(|stored| {
+            stored.workspace_id() == membership.workspace_id()
+                && stored.principal_id() == membership.principal_id()
+        });
+        if duplicate {
+            return Err(ApplicationError::AlreadyExists);
+        }
+
+        self.memberships.push(membership);
+        Ok(())
+    }
+
+    fn find_membership(
+        &self,
+        workspace_id: &WorkspaceId,
+        principal_id: &PrincipalId,
+    ) -> Result<Option<Membership>, ApplicationError> {
+        Ok(self
+            .memberships
+            .iter()
+            .find(|membership| {
+                membership.workspace_id() == workspace_id
+                    && membership.principal_id() == principal_id
+            })
+            .cloned())
+    }
+
+    fn replace_membership(
+        &mut self,
+        membership: Membership,
+    ) -> Result<(), ApplicationError> {
+        let stored = self
+            .memberships
+            .iter_mut()
+            .find(|stored| {
+                stored.workspace_id() == membership.workspace_id()
+                    && stored.principal_id() == membership.principal_id()
+            })
+            .ok_or(ApplicationError::NotFound)?;
+
+        *stored = membership;
         Ok(())
     }
 }
