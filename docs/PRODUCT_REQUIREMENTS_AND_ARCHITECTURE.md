@@ -1260,7 +1260,9 @@ Required guarantees:
 - Secret rotation does not require rebuilding the application.
 - Backups exclude credentials by default.
 - Exported memory archives never contain infrastructure credentials.
-- A `rembrane doctor --privacy` command reports every configured outbound endpoint and secret source.
+- A `rembrane doctor --privacy` command reports every configured outbound
+  endpoint origin and secret source while redacting endpoint credentials,
+  paths, queries, fragments, and all secret values.
 - A `CMEMORY_OFFLINE=true` mode blocks non-local provider access except explicitly allow-listed endpoints.
 
 ### 13.9 Provider contract

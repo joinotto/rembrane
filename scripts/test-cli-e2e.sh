@@ -123,6 +123,7 @@ printf '%s\n' "$restored_recall" |
     rg -F "$memory_id: Call me Hippo" >/dev/null
 
 doctor_output=$(
+    MEM0_BASE_URL="https://operator:secret@memory.example/v1?token=hidden" \
     "$rembrane_binary" doctor \
         --database "$database" \
         --principal principal_e2e \
@@ -136,7 +137,11 @@ printf '%s\n' "$doctor_output" |
 printf '%s\n' "$doctor_output" |
     rg -F "Processing location: local trusted boundary" >/dev/null
 printf '%s\n' "$doctor_output" |
-    rg -F "Outbound endpoints: none" >/dev/null
+    rg -F -- "- MEM0_BASE_URL: https://memory.example" >/dev/null
+if printf '%s\n' "$doctor_output" | rg -F "secret" >/dev/null; then
+    echo "privacy diagnostics disclosed endpoint credentials" >&2
+    exit 1
+fi
 printf '%s\n' "$doctor_output" |
     rg -F \
         "Configured read scopes: global,domain:development,entity:project_e2e" \

@@ -41,6 +41,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   printing secret values.
 - `rembrane doctor --privacy` diagnostics for local processing placement,
   exact configured read scopes, outbound endpoints, and secret-source names.
+- Privacy diagnostics redact user information, paths, queries, and fragments
+  from configured Mem0, Graphiti, object-storage, and remote MCP endpoints.
 - CLI end-to-end assertions for privacy diagnostics and their exact
   administrator-owned scope allowlist.
 - Consistent encrypted SQLite backups and fail-closed restores that refuse

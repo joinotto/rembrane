@@ -366,10 +366,57 @@ fn print_privacy_diagnostics() -> Result<(), String> {
 
     println!("Privacy diagnostics:");
     println!("Processing location: local trusted boundary");
-    println!("Outbound endpoints: none");
+    let endpoints = configured_outbound_endpoints();
+    if endpoints.is_empty() {
+        println!("Outbound endpoints: none");
+    } else {
+        println!("Outbound endpoints:");
+        for (source, endpoint) in endpoints {
+            println!("- {source}: {endpoint}");
+        }
+    }
     println!("Configured read scopes: {}", format_read_scopes(&scopes));
-    println!("Plaintext sent to external providers: no");
+    println!(
+        "External provider plaintext policy: denied unless an authorized \
+         adapter explicitly enters the trusted boundary"
+    );
     Ok(())
+}
+
+fn configured_outbound_endpoints() -> Vec<(&'static str, String)> {
+    [
+        "MEM0_BASE_URL",
+        "GRAPHITI_BASE_URL",
+        "MEMORY_OBJECT_ENDPOINT",
+        "REMBRANE_REMOTE_MCP_URL",
+    ]
+    .into_iter()
+    .filter_map(|source| {
+        std::env::var(source)
+            .ok()
+            .filter(|value| !value.trim().is_empty())
+            .map(|value| (source, redact_endpoint(&value)))
+    })
+    .collect()
+}
+
+fn redact_endpoint(value: &str) -> String {
+    let value = value.trim();
+    let Some((scheme, remainder)) = value.split_once("://") else {
+        return "<configured; origin unavailable>".to_owned();
+    };
+    let authority_end = remainder
+        .find(|character| matches!(character, '/' | '?' | '#'))
+        .unwrap_or(remainder.len());
+    let authority = &remainder[..authority_end];
+    let authority = authority
+        .rsplit_once('@')
+        .map_or(authority, |(_, host)| host);
+    if scheme.is_empty() || authority.is_empty() {
+        "<configured; origin unavailable>".to_owned()
+    } else {
+        format!("{scheme}://{authority}")
+    }
 }
 
 fn format_read_scopes(scopes: &[ReadScope]) -> String {
@@ -943,7 +990,8 @@ mod tests {
     use super::{
         EXPORT_MAGIC, claude_mcp_config, codex_mcp_config,
         format_read_scopes, option, positive_u64, read_export,
-        recall_scope_context, requested_memory_scope, write_export,
+        recall_scope_context, redact_endpoint, requested_memory_scope,
+        write_export,
     };
 
     fn temporary_path(name: &str) -> std::path::PathBuf {
@@ -1044,6 +1092,20 @@ mod tests {
         assert_eq!(
             format_read_scopes(&scopes),
             "global,domain:development,entity:project_01"
+        );
+    }
+
+    #[test]
+    fn privacy_diagnostics_redact_endpoint_credentials_and_paths() {
+        assert_eq!(
+            redact_endpoint(
+                "https://operator:secret@graph.example/v1?token=hidden"
+            ),
+            "https://graph.example"
+        );
+        assert_eq!(
+            redact_endpoint("not-a-url-with-secret"),
+            "<configured; origin unavailable>"
         );
     }
 
