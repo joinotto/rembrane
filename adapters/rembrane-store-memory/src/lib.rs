@@ -415,6 +415,21 @@ impl CheckpointRepository for InMemoryStore {
             .cloned())
     }
 
+    fn list_checkpoints_for_subject(
+        &self,
+        workspace_id: &WorkspaceId,
+        subject_id: &PrincipalId,
+    ) -> Result<Vec<ActivityCheckpoint>, ApplicationError> {
+        Ok(self
+            .checkpoints
+            .iter()
+            .filter(|checkpoint| {
+                checkpoint.workspace_id() == workspace_id
+                    && checkpoint.subject_id() == subject_id
+            })
+            .cloned()
+            .collect())
+    }
 }
 
 impl CheckpointMutationRepository for InMemoryStore {

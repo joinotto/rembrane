@@ -15,6 +15,8 @@ use crate::canonical::{
 };
 use crate::{SqliteStore, map_write_error};
 
+type EncryptedCheckpointRow = (String, i64, Vec<u8>, String, String, Vec<u8>);
+
 impl<C: RecordCipher> CheckpointRepository for SqliteStore<C> {
     fn latest_checkpoint(
         &self,
@@ -43,53 +45,113 @@ impl<C: RecordCipher> CheckpointRepository for SqliteStore<C> {
                     subject_id.as_str(),
                     activity_id.as_str()
                 ],
-                |row| {
-                    Ok((
-                        row.get::<_, String>(0)?,
-                        row.get::<_, i64>(1)?,
-                        row.get::<_, Vec<u8>>(2)?,
-                        row.get::<_, String>(3)?,
-                        row.get::<_, String>(4)?,
-                        row.get::<_, Vec<u8>>(5)?,
-                    ))
-                },
+                encrypted_checkpoint_row,
             )
             .optional()
             .map_err(|_| ApplicationError::StorageUnavailable)?;
 
-        row.map(
-            |(checkpoint_id, version, ciphertext, key_id, algorithm, nonce)| {
-                let version = u64::try_from(version)
-                    .map_err(|_| ApplicationError::StorageUnavailable)?;
-                let context = EncryptionContext::new(
-                    workspace_id.clone(),
-                    &checkpoint_id,
-                    version,
-                    PayloadPurpose::ActivityCheckpoint,
-                )
-                .map_err(|_| ApplicationError::StorageUnavailable)?;
-                let payload =
-                    EncryptedPayload::new(ciphertext, key_id, algorithm, nonce)
-                        .map_err(|_| ApplicationError::StorageUnavailable)?;
-                let plaintext = self
-                    .cipher
-                    .open(&context, &payload)
-                    .map_err(|_| ApplicationError::StorageUnavailable)?;
-                let checkpoint = decode_checkpoint(&plaintext)
-                    .map_err(|_| ApplicationError::StorageUnavailable)?;
-                if checkpoint.workspace_id() != workspace_id
-                    || checkpoint.subject_id() != subject_id
-                    || checkpoint.activity_id() != activity_id
-                    || checkpoint.id().as_str() != checkpoint_id
-                    || checkpoint.version() != version
-                {
-                    return Err(ApplicationError::StorageUnavailable);
-                }
-                Ok(checkpoint)
-            },
-        )
+        row.map(|row| {
+            self.decrypt_checkpoint(
+                workspace_id,
+                subject_id,
+                Some(activity_id),
+                row,
+            )
+        })
         .transpose()
     }
+
+    fn list_checkpoints_for_subject(
+        &self,
+        workspace_id: &WorkspaceId,
+        subject_id: &PrincipalId,
+    ) -> Result<Vec<ActivityCheckpoint>, ApplicationError> {
+        let mut statement = self
+            .connection
+            .prepare(
+                "SELECT
+                    id,
+                    version,
+                    checkpoint_ciphertext,
+                    encryption_key_id,
+                    encryption_algorithm,
+                    encryption_nonce
+                 FROM activity_checkpoints
+                 WHERE workspace_id = ?1 AND subject_id = ?2
+                 ORDER BY id",
+            )
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        let rows = statement
+            .query_map(
+                params![workspace_id.as_str(), subject_id.as_str()],
+                encrypted_checkpoint_row,
+            )
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        let mut checkpoints = Vec::new();
+        for row in rows {
+            checkpoints.push(self.decrypt_checkpoint(
+                workspace_id,
+                subject_id,
+                None,
+                row.map_err(|_| ApplicationError::StorageUnavailable)?,
+            )?);
+        }
+        Ok(checkpoints)
+    }
+}
+
+impl<C: RecordCipher> SqliteStore<C> {
+    fn decrypt_checkpoint(
+        &self,
+        workspace_id: &WorkspaceId,
+        subject_id: &PrincipalId,
+        expected_activity_id: Option<&ActivityId>,
+        row: EncryptedCheckpointRow,
+    ) -> Result<ActivityCheckpoint, ApplicationError> {
+        let (checkpoint_id, version, ciphertext, key_id, algorithm, nonce) =
+            row;
+        let version = u64::try_from(version)
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        let context = EncryptionContext::new(
+            workspace_id.clone(),
+            &checkpoint_id,
+            version,
+            PayloadPurpose::ActivityCheckpoint,
+        )
+        .map_err(|_| ApplicationError::StorageUnavailable)?;
+        let payload =
+            EncryptedPayload::new(ciphertext, key_id, algorithm, nonce)
+                .map_err(|_| ApplicationError::StorageUnavailable)?;
+        let plaintext = self
+            .cipher
+            .open(&context, &payload)
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        let checkpoint = decode_checkpoint(&plaintext)
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        if checkpoint.workspace_id() != workspace_id
+            || checkpoint.subject_id() != subject_id
+            || checkpoint.id().as_str() != checkpoint_id
+            || checkpoint.version() != version
+            || expected_activity_id
+                .is_some_and(|expected| checkpoint.activity_id() != expected)
+        {
+            return Err(ApplicationError::StorageUnavailable);
+        }
+        Ok(checkpoint)
+    }
+}
+
+fn encrypted_checkpoint_row(
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<EncryptedCheckpointRow> {
+    Ok((
+        row.get(0)?,
+        row.get(1)?,
+        row.get(2)?,
+        row.get(3)?,
+        row.get(4)?,
+        row.get(5)?,
+    ))
 }
 
 impl<C: RecordCipher> CheckpointMutationRepository for SqliteStore<C> {

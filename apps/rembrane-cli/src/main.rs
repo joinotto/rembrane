@@ -1,10 +1,10 @@
 use rembrane_application::{
     ApplicationError, AuthorizeClientCommand, AuthorizeClientService,
-    CanonicalMutationRepository, ClientGrantBundle, DeleteMemoryCommand,
-    EventRepository, MembershipRepository, MemoryLifecycleService,
-    MemoryRepository, RememberPreferenceCommand, RememberPreferenceService,
-    ResolveContextCommand, ResolveContextService, ReviseMemoryCommand,
-    WorkspaceRepository,
+    CanonicalMutationRepository, CheckpointRepository, ClientGrantBundle,
+    DeleteMemoryCommand, EventRepository, MembershipRepository,
+    MemoryLifecycleService, MemoryRepository, RememberPreferenceCommand,
+    RememberPreferenceService, ResolveContextCommand, ResolveContextService,
+    ReviseMemoryCommand, WorkspaceRepository,
 };
 use rembrane_crypto_rustcrypto::RustCryptoRecordCipher;
 use rembrane_contracts::ResolveContextRequest;
@@ -353,7 +353,7 @@ fn read_export(
 
 fn doctor(arguments: &[String]) -> Result<(), String> {
     let (store, principal_id, workspace_id) = encrypted_store(arguments)?;
-    let (role, memory_count) =
+    let (role, memory_count, event_count, checkpoint_count) =
         verify_installation(&store, &workspace_id, &principal_id)?;
 
     println!("Rembrane doctor: ready");
@@ -364,6 +364,8 @@ fn doctor(arguments: &[String]) -> Result<(), String> {
     println!("Workspace key: loaded");
     println!("Authenticated encrypted records: {memory_count}");
     println!("Readable memories: {memory_count}");
+    println!("Authenticated events: {event_count}");
+    println!("Authenticated checkpoints: {checkpoint_count}");
     println!("Secret sources: {}", configured_secret_sources().join(", "));
     if arguments.iter().any(|argument| argument == "--privacy") {
         print_privacy_diagnostics()?;
@@ -505,7 +507,7 @@ fn verify_installation<C>(
     store: &SqliteStore<C>,
     workspace_id: &WorkspaceId,
     principal_id: &PrincipalId,
-) -> Result<(WorkspaceRole, usize), String>
+) -> Result<(WorkspaceRole, usize, usize, usize), String>
 where
     C: rembrane_crypto::RecordCipher,
 {
@@ -526,7 +528,26 @@ where
                 "cannot authenticate workspace memories with the configured key: {error}"
             )
         })?;
-    Ok((membership.role(), memories.len()))
+    let events = store
+        .list_events_since(workspace_id, 0)
+        .map_err(|error| {
+            format!(
+                "cannot authenticate workspace events with the configured key: {error}"
+            )
+        })?;
+    let checkpoints = store
+        .list_checkpoints_for_subject(workspace_id, principal_id)
+        .map_err(|error| {
+            format!(
+                "cannot authenticate workspace checkpoints with the configured key: {error}"
+            )
+        })?;
+    Ok((
+        membership.role(),
+        memories.len(),
+        events.len(),
+        checkpoints.len(),
+    ))
 }
 
 fn remember(arguments: &[String]) -> Result<(), String> {

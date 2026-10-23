@@ -52,6 +52,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   administrator-owned scope allowlist.
 - Consistent encrypted SQLite backups and fail-closed restores that refuse
   overwrites, authenticate restored records, and remove invalid destinations.
+- Backup, restore, and doctor verification now authenticate every encrypted
+  memory, event, and activity checkpoint, with explicit ciphertext-tamper
+  denial coverage.
 - `rembrane-encrypted-export-v1` single-file backup framing with strict magic,
   format-version, payload-length, truncation, and trailing-data validation.
 - Read-only `rembrane fingerprint-git` command producing stable

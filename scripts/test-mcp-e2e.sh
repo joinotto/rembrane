@@ -53,4 +53,15 @@ trace_count=$(
 )
 test "$trace_count" = "1"
 
+sqlite3 "$REMBRANE_DATABASE" \
+    "UPDATE activity_checkpoints SET checkpoint_ciphertext = X'00' WHERE workspace_id = '$REMBRANE_WORKSPACE_ID' AND activity_id = 'activity_e2e';"
+if "$rembrane_binary" doctor \
+    --database "$REMBRANE_DATABASE" \
+    --principal "$REMBRANE_PRINCIPAL_ID" \
+    --workspace "$REMBRANE_WORKSPACE_ID" >/dev/null 2>&1
+then
+    echo "doctor unexpectedly accepted a tampered checkpoint" >&2
+    exit 1
+fi
+
 echo "MCP end-to-end checks passed"

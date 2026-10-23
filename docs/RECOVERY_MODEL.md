@@ -42,7 +42,8 @@ against device loss.
 - restores only into a new destination;
 - validates the database schema version;
 - verifies the configured principal has active workspace membership;
-- authenticates encrypted memory records with the supplied workspace key; and
+- authenticates encrypted memory, event, and checkpoint records with the
+  supplied workspace key; and
 - removes the newly created destination if verification fails.
 
 Backups use the single-file `rembrane-encrypted-export-v1` framing format.

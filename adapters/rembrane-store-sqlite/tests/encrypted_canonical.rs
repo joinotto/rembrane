@@ -307,8 +307,15 @@ fn persists_and_resumes_latest_encrypted_checkpoint() {
             &ActivityId::new("activity_01"),
         )
         .expect("checkpoint lookup succeeds");
+    let all = store
+        .list_checkpoints_for_subject(
+            &WorkspaceId::new("workspace_01"),
+            &PrincipalId::new("principal_01"),
+        )
+        .expect("checkpoint list succeeds");
 
     assert_eq!(resumed, Some(updated));
+    assert_eq!(all, vec![updated]);
 }
 
 #[test]

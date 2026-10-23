@@ -404,4 +404,15 @@ then
 fi
 test ! -e "$invalid_restore"
 
+sqlite3 "$database" \
+    "UPDATE workspace_events SET payload_ciphertext = X'00' WHERE workspace_id = 'workspace_e2e' AND sequence = 1;"
+if "$rembrane_binary" doctor \
+    --database "$database" \
+    --principal principal_e2e \
+    --workspace workspace_e2e >/dev/null 2>&1
+then
+    echo "doctor unexpectedly accepted a tampered event" >&2
+    exit 1
+fi
+
 echo "CLI end-to-end checks passed"

@@ -77,6 +77,11 @@ pub trait CheckpointRepository {
         activity_id: &ActivityId,
     ) -> Result<Option<ActivityCheckpoint>, ApplicationError>;
 
+    fn list_checkpoints_for_subject(
+        &self,
+        workspace_id: &WorkspaceId,
+        subject_id: &PrincipalId,
+    ) -> Result<Vec<ActivityCheckpoint>, ApplicationError>;
 }
 
 pub trait CheckpointMutationRepository: CheckpointRepository + EventRepository {
