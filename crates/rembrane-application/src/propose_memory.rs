@@ -1,9 +1,9 @@
 use rembrane_domain::{
-    EvidenceReference, MemoryId, MemoryKind, MemoryRecord, MemoryScope,
-    WriteGrant, WritePermission,
+    CanonicalEvent, EventId, EventPayload, EvidenceReference, MemoryId,
+    MemoryKind, MemoryRecord, MemoryScope, WriteGrant, WritePermission,
 };
 
-use crate::{ApplicationError, MemoryRepository};
+use crate::{ApplicationError, CanonicalMutationRepository};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProposeMemoryCommand {
@@ -13,6 +13,8 @@ pub struct ProposeMemoryCommand {
     pub kind: MemoryKind,
     pub content: String,
     pub evidence: EvidenceReference,
+    pub event_id: EventId,
+    pub expected_previous_sequence: u64,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -21,6 +23,8 @@ pub struct ConfirmMemoryCommand {
     pub memory_id: MemoryId,
     pub expected_version: u64,
     pub evidence: EvidenceReference,
+    pub event_id: EventId,
+    pub expected_previous_sequence: u64,
 }
 
 pub struct MemoryProposalService<'repository, Repository> {
@@ -29,7 +33,7 @@ pub struct MemoryProposalService<'repository, Repository> {
 
 impl<'repository, Repository> MemoryProposalService<'repository, Repository>
 where
-    Repository: MemoryRepository,
+    Repository: CanonicalMutationRepository,
 {
     pub fn new(repository: &'repository mut Repository) -> Self {
         Self { repository }
@@ -52,7 +56,20 @@ where
         )
         .map_err(|error| ApplicationError::Validation(error.to_string()))?;
 
-        self.repository.insert(proposal.clone())?;
+        let event = event(
+            command.event_id,
+            &command.grant,
+            command.expected_previous_sequence,
+            EventPayload::MemoryProposed {
+                memory_id: proposal.id().clone(),
+                version: proposal.version(),
+            },
+        )?;
+        self.repository.insert_memory_with_event(
+            proposal.clone(),
+            event,
+            command.expected_previous_sequence,
+        )?;
         Ok(proposal)
     }
 
@@ -76,10 +93,43 @@ where
         let confirmed = current
             .confirm(command.evidence)
             .map_err(|error| ApplicationError::Validation(error.to_string()))?;
-        self.repository
-            .replace(confirmed.clone(), command.expected_version)?;
+        let event = event(
+            command.event_id,
+            &command.grant,
+            command.expected_previous_sequence,
+            EventPayload::MemoryConfirmed {
+                memory_id: confirmed.id().clone(),
+                version: confirmed.version(),
+            },
+        )?;
+        self.repository.replace_memory_with_event(
+            confirmed.clone(),
+            command.expected_version,
+            event,
+            command.expected_previous_sequence,
+        )?;
         Ok(confirmed)
     }
+}
+
+fn event(
+    event_id: EventId,
+    grant: &WriteGrant,
+    previous_sequence: u64,
+    payload: EventPayload,
+) -> Result<CanonicalEvent, ApplicationError> {
+    let sequence = previous_sequence
+        .checked_add(1)
+        .ok_or(ApplicationError::SequenceConflict)?;
+    CanonicalEvent::new(
+        event_id,
+        grant.workspace_id.clone(),
+        grant.subject_id.clone(),
+        Some(grant.subject_id.clone()),
+        sequence,
+        payload,
+    )
+    .map_err(|error| ApplicationError::Validation(error.to_string()))
 }
 
 fn require_permission(

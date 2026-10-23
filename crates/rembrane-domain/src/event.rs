@@ -8,6 +8,14 @@ use crate::{
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum EventPayload {
+    MemoryProposed {
+        memory_id: MemoryId,
+        version: u64,
+    },
+    MemoryConfirmed {
+        memory_id: MemoryId,
+        version: u64,
+    },
     MemoryCreated {
         memory_id: MemoryId,
         version: u64,

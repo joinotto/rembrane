@@ -3,9 +3,9 @@ use rembrane_application::{
     ProposeMemoryCommand,
 };
 use rembrane_domain::{
-    ClientId, EvidenceId, EvidenceReference, EvidenceSource, MemoryId,
-    MemoryKind, MemoryScope, MemoryStatus, PrincipalId, WorkspaceId,
-    WriteGrant, WritePermission,
+    ClientId, EventId, EvidenceId, EvidenceReference, EvidenceSource,
+    MemoryId, MemoryKind, MemoryScope, MemoryStatus, PrincipalId,
+    WorkspaceId, WriteGrant, WritePermission,
 };
 use rembrane_store_memory::InMemoryStore;
 
@@ -40,6 +40,8 @@ fn agent_proposal_remains_unconfirmed_until_approved() {
                 "evidence_agent",
                 EvidenceSource::AgentObservation,
             ),
+            event_id: EventId::new("event_01"),
+            expected_previous_sequence: 0,
         })
         .expect("authorized proposal should succeed");
 
@@ -57,6 +59,8 @@ fn agent_proposal_remains_unconfirmed_until_approved() {
                 "evidence_user",
                 EvidenceSource::UserStatement,
             ),
+            event_id: EventId::new("event_02"),
+            expected_previous_sequence: 1,
         })
         .expect("authorized confirmation should succeed");
 
@@ -82,6 +86,8 @@ fn another_subject_cannot_confirm_proposal() {
                 "evidence_agent",
                 EvidenceSource::AgentObservation,
             ),
+            event_id: EventId::new("event_01"),
+            expected_previous_sequence: 0,
         })
         .expect("authorized proposal should succeed");
 
@@ -97,6 +103,8 @@ fn another_subject_cannot_confirm_proposal() {
                 "evidence_other",
                 EvidenceSource::UserStatement,
             ),
+            event_id: EventId::new("event_02"),
+            expected_previous_sequence: 1,
         })
         .expect_err("another subject must not confirm proposal");
 
@@ -117,6 +125,8 @@ fn client_without_proposal_permission_is_denied() {
                 "evidence_agent",
                 EvidenceSource::AgentObservation,
             ),
+            event_id: EventId::new("event_01"),
+            expected_previous_sequence: 0,
         })
         .expect_err("missing proposal permission should fail");
 
