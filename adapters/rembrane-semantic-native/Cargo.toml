@@ -11,5 +11,10 @@ rust-version.workspace = true
 rembrane-domain = { path = "../../crates/rembrane-domain" }
 rembrane-provider-sdk = { path = "../../crates/rembrane-provider-sdk" }
 
+[dev-dependencies]
+rembrane-application = { path = "../../crates/rembrane-application" }
+rembrane-contracts = { path = "../../crates/rembrane-contracts" }
+rembrane-store-memory = { path = "../rembrane-store-memory" }
+
 [lints]
 workspace = true

@@ -9,6 +9,7 @@ mod ports;
 mod propose_memory;
 mod revise_memory;
 mod resolve_context;
+mod semantic_context;
 
 pub use error::ApplicationError;
 pub use checkpoint::{
@@ -26,3 +27,4 @@ pub use revise_memory::{
     DeleteMemoryCommand, MemoryLifecycleService, ReviseMemoryCommand,
 };
 pub use resolve_context::{ResolveContextCommand, ResolveContextService};
+pub use semantic_context::SemanticContextService;
