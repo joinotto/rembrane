@@ -46,6 +46,7 @@ Run the architecture guard before submitting:
 
 ```text
 ./scripts/check-architecture.sh
+./scripts/check-sensitive-files.sh
 ```
 
 ## Security-sensitive changes
