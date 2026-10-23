@@ -32,6 +32,7 @@ struct ResolveContextParameters {
     purpose: String,
     query: String,
     maximum_items: Option<usize>,
+    maximum_bytes: Option<usize>,
     domain: Option<String>,
     entity_id: Option<String>,
     activity_id: Option<String>,
@@ -202,9 +203,16 @@ impl RembraneMcp {
             ));
         }
         let maximum_items = parameters.maximum_items.unwrap_or(20);
+        let maximum_bytes = parameters.maximum_bytes.unwrap_or(65_536);
         if !(1..=100).contains(&maximum_items) {
             return Err(McpError::invalid_params(
                 "maximumItems must be between 1 and 100",
+                None,
+            ));
+        }
+        if !(1..=1_048_576).contains(&maximum_bytes) {
+            return Err(McpError::invalid_params(
+                "maximumBytes must be between 1 and 1048576",
                 None,
             ));
         }
@@ -235,6 +243,7 @@ impl RembraneMcp {
                     purpose: parameters.purpose,
                     query: parameters.query,
                     maximum_items,
+                    maximum_bytes,
                 },
                 grant: grants.read,
                 context_pack_id: ContextPackId::new(format!(

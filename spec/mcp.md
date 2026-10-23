@@ -71,6 +71,12 @@ Retrieves the minimum confirmed context authorized for the current client and pu
       "minimum": 1,
       "maximum": 100,
       "default": 20
+    },
+    "maximumBytes": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1048576,
+      "default": 65536
     }
   }
 }

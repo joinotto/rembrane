@@ -48,7 +48,11 @@ where
         });
 
         rank_by_relevance(&mut items, &command.request.query);
-        items.truncate(command.request.maximum_items);
+        apply_context_budget(
+            &mut items,
+            command.request.maximum_items,
+            command.request.maximum_bytes,
+        );
 
         let receipt = DisclosureReceipt {
             id: command.disclosure_id.clone(),
@@ -74,6 +78,29 @@ where
             disclosure_id: command.disclosure_id,
         })
     }
+}
+
+pub(crate) fn apply_context_budget(
+    items: &mut Vec<MemoryRecord>,
+    maximum_items: usize,
+    maximum_bytes: usize,
+) {
+    let mut used_bytes = 0_usize;
+    let mut selected = Vec::new();
+    for memory in items.drain(..) {
+        let Some(next_bytes) = used_bytes.checked_add(memory.content().len())
+        else {
+            continue;
+        };
+        if next_bytes <= maximum_bytes {
+            used_bytes = next_bytes;
+            selected.push(memory);
+            if selected.len() == maximum_items {
+                break;
+            }
+        }
+    }
+    items.extend(selected);
 }
 
 fn rank_by_relevance(items: &mut Vec<MemoryRecord>, query: &str) {
@@ -138,6 +165,11 @@ fn validate(request: &ResolveContextRequest) -> Result<(), ApplicationError> {
     if request.maximum_items == 0 {
         return Err(ApplicationError::Validation(
             "maximum_items must be greater than zero".to_owned(),
+        ));
+    }
+    if request.maximum_bytes == 0 {
+        return Err(ApplicationError::Validation(
+            "maximum_bytes must be greater than zero".to_owned(),
         ));
     }
 
@@ -257,6 +289,7 @@ mod tests {
                 purpose: "continue_project".to_owned(),
                 query: "What should I call the user?".to_owned(),
                 maximum_items,
+                maximum_bytes: 65_536,
             },
             grant: ReadGrant {
                 client_id: ClientId::new("client_01"),
@@ -461,5 +494,34 @@ mod tests {
             response.items[1].id(),
             &MemoryId::new("activity_match")
         );
+    }
+
+    #[test]
+    fn skips_memories_that_exceed_the_context_byte_budget() {
+        let mut repository = TestRepository {
+            memories: vec![
+                memory_with_content(
+                    "large",
+                    MemoryScope::Global,
+                    "Call the user a name that is much too long.",
+                ),
+                memory_with_content(
+                    "small",
+                    MemoryScope::Global,
+                    "Call Hippo.",
+                ),
+            ],
+            disclosures: Vec::new(),
+        };
+        let mut limited = command(10);
+        limited.request.maximum_bytes = 11;
+
+        let response = ResolveContextService::new(&mut repository)
+            .execute(limited)
+            .expect("resolution should succeed");
+
+        assert_eq!(response.items.len(), 1);
+        assert_eq!(response.items[0].id(), &MemoryId::new("small"));
+        assert_eq!(repository.disclosures[0].memories.len(), 1);
     }
 }

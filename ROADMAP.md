@@ -63,7 +63,8 @@ This roadmap describes sequencing, not release dates.
 - [ ] Work-trace event ingestion.
 - [x] Model activity checkpoints and resumable handoffs.
 - [ ] Git and coding-agent adapters.
-- [ ] Context budgets and stale-state detection.
+- [x] Deterministic item and plaintext-byte context budgets.
+- [ ] Stale-state detection.
 
 ## Phase 3 — Travel continuity
 

@@ -271,6 +271,14 @@ fn recall(arguments: &[String]) -> Result<(), String> {
         .transpose()
         .map_err(|_| "--limit must be a positive integer".to_owned())?
         .unwrap_or(10);
+    let maximum_bytes = optional_option(arguments, "--max-bytes")
+        .map(str::parse::<usize>)
+        .transpose()
+        .map_err(|_| "--max-bytes must be a positive integer".to_owned())?
+        .unwrap_or(65_536);
+    if maximum_bytes == 0 {
+        return Err("--max-bytes must be a positive integer".to_owned());
+    }
     let scope = optional_requested_scope(arguments)?;
     let (domain, entity_id, activity_id, read_scopes) = match scope {
         None => (None, None, None, vec![ReadScope::Global]),
@@ -318,6 +326,7 @@ fn recall(arguments: &[String]) -> Result<(), String> {
                 purpose: purpose.to_owned(),
                 query: query.to_owned(),
                 maximum_items,
+                maximum_bytes,
             },
             grant: grants.read,
             context_pack_id: ContextPackId::new(format!("context_{suffix}")),
@@ -558,6 +567,7 @@ fn print_demo() {
                 purpose: "personalize_assistant".to_owned(),
                 query: "What should I call the user?".to_owned(),
                 maximum_items: 5,
+                maximum_bytes: 65_536,
             },
             grant: ReadGrant {
                 client_id: ClientId::new("second_assistant"),
@@ -595,6 +605,7 @@ fn print_help() {
              [--domain <name> | --entity <id> | --activity <id>]\n\
            rembrane recall --database <path> --principal <id> \
              --workspace <id> --client <id> --purpose <purpose> --query <query> \
+             [--limit <items>] [--max-bytes <bytes>] \
              [--domain <name> | --entity <id> | --activity <id>]\n\
            rembrane correct --database <path> --principal <id> \
              --workspace <id> --memory <id> --version <n> --content <text> \

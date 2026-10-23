@@ -15,6 +15,7 @@ pub struct ResolveContextRequest {
     pub purpose: String,
     pub query: String,
     pub maximum_items: usize,
+    pub maximum_bytes: usize,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

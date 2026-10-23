@@ -55,6 +55,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   recall with automatic disclosure receipts.
 - Deterministic local relevance ranking that suppresses unrelated canonical
   memories when a query has matching context.
+- Deterministic plaintext-byte context budgets across canonical, semantic,
+  CLI, REST, and MCP resolution paths.
 - Encrypted CLI correction and deletion flows with optimistic memory versions.
 - Local stdio MCP server using connection-scoped identity to resolve minimal
   encrypted context and record disclosure receipts.

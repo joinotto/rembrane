@@ -74,6 +74,7 @@ fn command(scopes: Vec<ReadScope>) -> ResolveContextCommand {
             purpose: "continue_project".to_owned(),
             query: "Which package manager should I use?".to_owned(),
             maximum_items: 10,
+            maximum_bytes: 65_536,
         },
         grant: ReadGrant {
             client_id: ClientId::new("coding_agent"),

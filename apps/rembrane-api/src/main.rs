@@ -51,6 +51,7 @@ struct ResolveRequest {
     purpose: String,
     query: String,
     maximum_items: usize,
+    maximum_bytes: Option<usize>,
 }
 
 #[derive(Serialize)]
@@ -185,6 +186,9 @@ async fn resolve_context(
     if request.purpose.trim().is_empty()
         || request.query.trim().is_empty()
         || !(1..=100).contains(&request.maximum_items)
+        || request
+            .maximum_bytes
+            .is_some_and(|bytes| !(1..=1_048_576).contains(&bytes))
     {
         return Err(ApiError::invalid_request());
     }
@@ -218,6 +222,7 @@ async fn resolve_context(
                 purpose: request.purpose,
                 query: request.query,
                 maximum_items: request.maximum_items,
+                maximum_bytes: request.maximum_bytes.unwrap_or(65_536),
             },
             grant: read_grant,
             context_pack_id: ContextPackId::new(format!("context_{suffix}")),
@@ -433,6 +438,7 @@ mod tests {
             purpose: "continue-project".to_owned(),
             query: "What is next?".to_owned(),
             maximum_items: 10,
+            maximum_bytes: None,
         };
         let grant = ReadGrant {
             client_id: ClientId::new("client_01"),

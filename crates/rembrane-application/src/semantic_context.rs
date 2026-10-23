@@ -6,7 +6,7 @@ use rembrane_provider_sdk::{SemanticMemoryProvider, SemanticQuery};
 
 use crate::{
     ApplicationError, DisclosureRepository, MemoryRepository,
-    ResolveContextCommand,
+    ResolveContextCommand, resolve_context::apply_context_budget,
 };
 
 /// Resolves provider-ranked candidates only after canonical authorization.
@@ -38,9 +38,11 @@ where
         if command.request.purpose.trim().is_empty()
             || command.request.query.trim().is_empty()
             || command.request.maximum_items == 0
+            || command.request.maximum_bytes == 0
         {
             return Err(ApplicationError::Validation(
-                "purpose, query, and maximum_items are required".to_owned(),
+                "purpose, query, maximum_items, and maximum_bytes are required"
+                    .to_owned(),
             ));
         }
         if command.grant.workspace_id != command.request.workspace_id
@@ -61,10 +63,6 @@ where
 
         let mut items = Vec::new();
         for candidate in candidates {
-            if items.len() == command.request.maximum_items {
-                break;
-            }
-
             let Some(memory) = self.repository.find(
                 &command.request.workspace_id,
                 &candidate.memory_id,
@@ -83,6 +81,11 @@ where
 
             items.push(memory);
         }
+        apply_context_budget(
+            &mut items,
+            command.request.maximum_items,
+            command.request.maximum_bytes,
+        );
 
         let receipt = DisclosureReceipt {
             id: command.disclosure_id.clone(),
