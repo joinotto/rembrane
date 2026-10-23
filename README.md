@@ -90,7 +90,7 @@ See the [roadmap](ROADMAP.md) for sequencing. Do not use Rembrane for production
 
 ## Development
 
-Prerequisite: Rust 1.85 or newer with `rustfmt` and `clippy`.
+Prerequisite: Rust 1.88 or newer with `rustfmt` and `clippy`.
 
 ```text
 ./scripts/check-architecture.sh

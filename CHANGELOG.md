@@ -53,6 +53,11 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   principal, and client profile.
 - End-to-end CLI lifecycle test covering encrypted capture, disclosure,
   correction, deletion, wrong-key rejection, and plaintext-at-rest checks.
+
+### Changed
+
+- Minimum Rust version is 1.88 and the MCP transport targets the official
+  `rmcp` 3.4.1 SDK.
 - Product architecture, threat model, integration support policy, Rust
   research, bot integration design, and architecture decision records.
 
