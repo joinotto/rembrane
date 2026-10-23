@@ -267,7 +267,7 @@ Retrieved memory content must remain typed, attributed context. It must not be p
 ## Error behavior
 
 - Malformed tool input returns a tool execution error that permits model correction.
-- Missing authorization returns access denied without record enumeration.
+- Missing authorization and unavailable records share a non-enumerating error.
 - Version conflicts return the current safe metadata necessary to retry, but no newly unauthorized content.
 - Provider failures do not silently fall back to weaker privacy or isolation behavior.
 

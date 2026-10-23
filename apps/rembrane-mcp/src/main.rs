@@ -801,7 +801,34 @@ fn checkpoint_response(
 }
 
 fn application_error(error: rembrane_application::ApplicationError) -> McpError {
-    McpError::internal_error(format!("memory operation failed: {error}"), None)
+    use rembrane_application::ApplicationError;
+
+    match error {
+        ApplicationError::AccessDenied | ApplicationError::NotFound => {
+            McpError::invalid_params(
+                "operation is not authorized or available",
+                None,
+            )
+        }
+        ApplicationError::AlreadyExists => {
+            McpError::invalid_params("record already exists", None)
+        }
+        ApplicationError::SequenceConflict
+        | ApplicationError::VersionConflict => {
+            McpError::invalid_params(
+                "operation conflicts with newer state; refresh and retry",
+                None,
+            )
+        }
+        ApplicationError::Validation(message) => McpError::invalid_params(
+            format!("operation validation failed: {message}"),
+            None,
+        ),
+        ApplicationError::StorageUnavailable => McpError::internal_error(
+            "memory storage is temporarily unavailable",
+            None,
+        ),
+    }
 }
 
 fn required_environment(name: &str) -> Result<String> {
