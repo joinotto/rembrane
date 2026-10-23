@@ -49,6 +49,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Encrypted CLI correction and deletion flows with optimistic memory versions.
 - Local stdio MCP server using connection-scoped identity to resolve minimal
   encrypted context and record disclosure receipts.
+- Bearer-authenticated REST context resolution bound to a configured workspace,
+  principal, and client profile.
 - Product architecture, threat model, integration support policy, Rust
   research, bot integration design, and architecture decision records.
 

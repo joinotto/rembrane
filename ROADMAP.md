@@ -37,7 +37,7 @@ This roadmap describes sequencing, not release dates.
 - [x] Add encrypted CLI correction and deletion commands.
 - [ ] Add production OS-keychain and customer-KMS key providers.
 - [x] Retrieve minimal context through local stdio MCP.
-- [ ] Retrieve minimal context through REST.
+- [x] Retrieve minimal context through authenticated local REST.
 - [ ] Add remote Streamable HTTP MCP with OAuth.
 - [x] Persist a disclosure receipt for every SQLite context response.
 - [ ] Persist disclosure receipts in every future storage adapter.

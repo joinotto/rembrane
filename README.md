@@ -148,6 +148,12 @@ The environment-key flow is for development testing only. Shell history must
 never contain the key value; production setup will use operating-system
 keychains, HSMs, or customer KMS providers.
 
+The local REST server additionally requires `REMBRANE_DATABASE`,
+`REMBRANE_PRINCIPAL_ID`, `REMBRANE_WORKSPACE_ID`, `REMBRANE_CLIENT_ID`, and
+`REMBRANE_API_TOKEN`. It listens on `127.0.0.1:8787` by default. Non-loopback
+HTTP is rejected unless explicitly enabled for operation behind a trusted TLS
+proxy.
+
 ## Contributing
 
 Rembrane is being built in public. Start with [CONTRIBUTING.md](CONTRIBUTING.md), read the [support policy](docs/SUPPORT_POLICY.md), and discuss substantial protocol or security changes before implementing them.

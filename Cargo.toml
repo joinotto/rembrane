@@ -4,6 +4,7 @@ members = [
     "adapters/rembrane-store-memory",
     "adapters/rembrane-store-sqlite",
     "adapters/rembrane-semantic-native",
+    "apps/rembrane-api",
     "apps/rembrane-cli",
     "apps/rembrane-mcp",
     "crates/rembrane-application",

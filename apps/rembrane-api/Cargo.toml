@@ -1,0 +1,28 @@
+[package]
+name = "rembrane-api"
+description = "Authenticated HTTP API for Rembrane"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+anyhow = "1"
+axum = "0.8"
+rembrane-application = { path = "../../crates/rembrane-application" }
+rembrane-contracts = { path = "../../crates/rembrane-contracts" }
+rembrane-crypto-rustcrypto = { path = "../../adapters/rembrane-crypto-rustcrypto" }
+rembrane-domain = { path = "../../crates/rembrane-domain" }
+rembrane-store-sqlite = { path = "../../adapters/rembrane-store-sqlite" }
+serde = { version = "1", features = ["derive"] }
+subtle = "2"
+tokio = { version = "1", features = ["macros", "net", "rt-multi-thread"] }
+zeroize = "1"
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "rembrane-api"
+path = "src/main.rs"
