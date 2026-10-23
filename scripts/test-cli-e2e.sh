@@ -154,6 +154,49 @@ then
     exit 1
 fi
 
+travel_preference_output=$(
+    "$rembrane_binary" remember \
+        --database "$database" \
+        --principal principal_e2e \
+        --workspace workspace_e2e \
+        --domain travel \
+        --content "Prefer nonstop flights"
+)
+travel_preference_id=$(
+    printf '%s\n' "$travel_preference_output" |
+        awk '/^Remembered / { print $2 }'
+)
+trip_constraint_output=$(
+    "$rembrane_binary" remember \
+        --database "$database" \
+        --principal principal_e2e \
+        --workspace workspace_e2e \
+        --entity trip_berlin_e2e \
+        --content "Berlin trip budget is 2000 EUR"
+)
+trip_constraint_id=$(
+    printf '%s\n' "$trip_constraint_output" |
+        awk '/^Remembered / { print $2 }'
+)
+test -n "$travel_preference_id"
+test -n "$trip_constraint_id"
+
+travel_recall=$(
+    "$rembrane_binary" recall \
+        --database "$database" \
+        --principal principal_e2e \
+        --workspace workspace_e2e \
+        --client travel_assistant_e2e \
+        --domain travel \
+        --entity trip_berlin_e2e \
+        --purpose continue-trip-planning \
+        --query "Do I prefer nonstop flights and what is the trip budget?"
+)
+printf '%s\n' "$travel_recall" |
+    rg -F "$travel_preference_id: Prefer nonstop flights" >/dev/null
+printf '%s\n' "$travel_recall" |
+    rg -F "$trip_constraint_id: Berlin trip budget is 2000 EUR" >/dev/null
+
 first_recall=$(
     "$rembrane_binary" recall \
         --database "$database" \
@@ -218,8 +261,8 @@ plaintext_count=$(
     sqlite3 "$database" \
         "SELECT count(*) FROM memories WHERE instr(content_ciphertext, CAST('Hippo' AS BLOB)) > 0;"
 )
-test "$event_count" = "6"
-test "$disclosure_count" = "7"
+test "$event_count" = "8"
+test "$disclosure_count" = "8"
 test "$plaintext_count" = "0"
 
 if REMBRANE_WORKSPACE_KEY_HEX="ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff" \

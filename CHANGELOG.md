@@ -79,6 +79,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   activity scopes with mutually exclusive scope selectors.
 - Layered CLI recall combining common global memory with requested domain,
   entity/project, and activity context.
+- Encrypted travel-domain and trip-entity continuity coverage in the CLI
+  end-to-end lifecycle.
 - Scope-aware CLI and MCP correction/deletion flows that require callers to
   retain authority over the memory's exact scope.
 - End-to-end CLI lifecycle test covering encrypted capture, disclosure,

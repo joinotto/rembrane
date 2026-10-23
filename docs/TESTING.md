@@ -103,6 +103,23 @@ target/debug/rembrane recall \
   --entity project_local \
   --purpose continue-project \
   --query "Which language should power the Rembrane core?"
+
+target/debug/rembrane remember \
+  --database "$REMBRANE_DATABASE" \
+  --principal "$REMBRANE_PRINCIPAL_ID" \
+  --workspace "$REMBRANE_WORKSPACE_ID" \
+  --domain travel \
+  --content "Prefer nonstop flights"
+
+target/debug/rembrane recall \
+  --database "$REMBRANE_DATABASE" \
+  --principal "$REMBRANE_PRINCIPAL_ID" \
+  --workspace "$REMBRANE_WORKSPACE_ID" \
+  --client travel-assistant \
+  --domain travel \
+  --entity trip_berlin \
+  --purpose continue-trip-planning \
+  --query "What are my flight preferences and trip constraints?"
 ```
 
 ## MCP client profile

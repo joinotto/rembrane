@@ -69,6 +69,7 @@ This roadmap describes sequencing, not release dates.
 
 ## Phase 3 — Travel continuity
 
+- [x] Reuse layered domain/entity context for travel and trip constraints.
 - [ ] Trip entities, participants, constraints, and decisions.
 - [ ] Booking-research evidence and expiry.
 - [ ] Cross-agent activity continuation.
