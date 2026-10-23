@@ -64,6 +64,33 @@ printf '%s\n' "$doctor_output" |
 printf '%s\n' "$doctor_output" |
     rg -F "Authenticated encrypted records: 1" >/dev/null
 
+project_remember_output=$(
+    "$rembrane_binary" remember \
+        --database "$database" \
+        --principal principal_e2e \
+        --workspace workspace_e2e \
+        --entity project_e2e \
+        --content "Use Rust for the Rembrane core"
+)
+project_memory_id=$(
+    printf '%s\n' "$project_remember_output" |
+        awk '/^Remembered / { print $2 }'
+)
+test -n "$project_memory_id"
+
+project_recall=$(
+    "$rembrane_binary" recall \
+        --database "$database" \
+        --principal principal_e2e \
+        --workspace workspace_e2e \
+        --client coding_agent_e2e \
+        --entity project_e2e \
+        --purpose continue-project \
+        --query "Which language should power the Rembrane core?"
+)
+printf '%s\n' "$project_recall" |
+    rg -F "$project_memory_id: Use Rust for the Rembrane core" >/dev/null
+
 first_recall=$(
     "$rembrane_binary" recall \
         --database "$database" \
@@ -128,8 +155,8 @@ plaintext_count=$(
     sqlite3 "$database" \
         "SELECT count(*) FROM memories WHERE instr(content_ciphertext, CAST('Hippo' AS BLOB)) > 0;"
 )
-test "$event_count" = "3"
-test "$disclosure_count" = "3"
+test "$event_count" = "4"
+test "$disclosure_count" = "4"
 test "$plaintext_count" = "0"
 
 if REMBRANE_WORKSPACE_KEY_HEX="ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff" \

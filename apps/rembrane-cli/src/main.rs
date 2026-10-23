@@ -150,6 +150,8 @@ where
 
 fn remember(arguments: &[String]) -> Result<(), String> {
     let content = option(arguments, "--content")?;
+    let scope = requested_memory_scope(arguments)?;
+    let read_scope = read_scope(&scope);
     let client_id =
         optional_option(arguments, "--client").unwrap_or("rembrane-cli");
     let (mut store, principal_id, workspace_id) =
@@ -159,7 +161,7 @@ fn remember(arguments: &[String]) -> Result<(), String> {
         ClientId::new(client_id),
         &workspace_id,
         &principal_id,
-        vec![ReadScope::Global],
+        vec![read_scope],
         vec![WritePermission::CreateMemory],
     )?;
     let previous_sequence = current_sequence(&store, &workspace_id)?;
@@ -168,7 +170,7 @@ fn remember(arguments: &[String]) -> Result<(), String> {
         .execute(RememberPreferenceCommand {
             grant: grants.write,
             memory_id: MemoryId::new(format!("memory_{suffix}")),
-            scope: MemoryScope::Global,
+            scope,
             content: content.to_owned(),
             evidence: EvidenceReference::new(
                 EvidenceId::new(format!("evidence_{suffix}")),
@@ -267,6 +269,31 @@ fn recall(arguments: &[String]) -> Result<(), String> {
         .transpose()
         .map_err(|_| "--limit must be a positive integer".to_owned())?
         .unwrap_or(10);
+    let scope = optional_requested_scope(arguments)?;
+    let (domain, entity_id, activity_id, read_scopes) = match scope {
+        None => (None, None, None, vec![ReadScope::Global]),
+        Some(MemoryScope::Global) => {
+            (None, None, None, vec![ReadScope::Global])
+        }
+        Some(MemoryScope::Domain { name }) => (
+            Some(name.clone()),
+            None,
+            None,
+            vec![ReadScope::Domain { name }],
+        ),
+        Some(MemoryScope::Entity { id }) => (
+            None,
+            Some(id.clone()),
+            None,
+            vec![ReadScope::Entity { id }],
+        ),
+        Some(MemoryScope::Activity { id }) => (
+            None,
+            None,
+            Some(id.clone()),
+            vec![ReadScope::Activity { id }],
+        ),
+    };
     let (mut store, principal_id, workspace_id) =
         encrypted_store(arguments)?;
     let grants = authorize_client(
@@ -274,7 +301,7 @@ fn recall(arguments: &[String]) -> Result<(), String> {
         ClientId::new(client_id),
         &workspace_id,
         &principal_id,
-        vec![ReadScope::Global],
+        read_scopes,
         Vec::new(),
     )?;
     let suffix = unique_suffix()?;
@@ -283,9 +310,9 @@ fn recall(arguments: &[String]) -> Result<(), String> {
             request: ResolveContextRequest {
                 workspace_id: workspace_id.clone(),
                 principal_id: principal_id.clone(),
-                domain: None,
-                entity_id: None,
-                activity_id: None,
+                domain,
+                entity_id,
+                activity_id,
                 purpose: purpose.to_owned(),
                 query: query.to_owned(),
                 maximum_items,
@@ -302,6 +329,55 @@ fn recall(arguments: &[String]) -> Result<(), String> {
     println!("Context pack: {}", response.context_pack_id);
     println!("Disclosure receipt: {}", response.disclosure_id);
     Ok(())
+}
+
+fn requested_memory_scope(arguments: &[String]) -> Result<MemoryScope, String> {
+    Ok(optional_requested_scope(arguments)?.unwrap_or(MemoryScope::Global))
+}
+
+fn optional_requested_scope(
+    arguments: &[String],
+) -> Result<Option<MemoryScope>, String> {
+    let domain = optional_option(arguments, "--domain");
+    let entity = optional_option(arguments, "--entity");
+    let activity = optional_option(arguments, "--activity");
+    let count =
+        usize::from(domain.is_some())
+            + usize::from(entity.is_some())
+            + usize::from(activity.is_some());
+    if count > 1 {
+        return Err(
+            "--domain, --entity, and --activity are mutually exclusive"
+                .to_owned(),
+        );
+    }
+
+    Ok(if let Some(name) = domain {
+        Some(MemoryScope::Domain {
+            name: name.to_owned(),
+        })
+    } else if let Some(id) = entity {
+        Some(MemoryScope::Entity {
+            id: rembrane_domain::EntityId::new(id),
+        })
+    } else {
+        activity.map(|id| MemoryScope::Activity {
+            id: rembrane_domain::ActivityId::new(id),
+        })
+    })
+}
+
+fn read_scope(scope: &MemoryScope) -> ReadScope {
+    match scope {
+        MemoryScope::Global => ReadScope::Global,
+        MemoryScope::Domain { name } => ReadScope::Domain {
+            name: name.clone(),
+        },
+        MemoryScope::Entity { id } => ReadScope::Entity { id: id.clone() },
+        MemoryScope::Activity { id } => {
+            ReadScope::Activity { id: id.clone() }
+        }
+    }
 }
 
 fn encrypted_store(
@@ -513,9 +589,11 @@ fn print_help() {
            rembrane restore --input <path> --database <new-path> \
              --principal <id> --workspace <id>\n\
            rembrane remember --database <path> --principal <id> \
-             --workspace <id> --content <preference>\n\
+             --workspace <id> --content <preference> \
+             [--domain <name> | --entity <id> | --activity <id>]\n\
            rembrane recall --database <path> --principal <id> \
-             --workspace <id> --client <id> --purpose <purpose> --query <query>\n\
+             --workspace <id> --client <id> --purpose <purpose> --query <query> \
+             [--domain <name> | --entity <id> | --activity <id>]\n\
            rembrane correct --database <path> --principal <id> \
              --workspace <id> --memory <id> --version <n> --content <text>\n\
            rembrane forget --database <path> --principal <id> \
@@ -525,7 +603,9 @@ fn print_help() {
 
 #[cfg(test)]
 mod tests {
-    use super::{option, positive_u64};
+    use rembrane_domain::{EntityId, MemoryScope};
+
+    use super::{option, positive_u64, requested_memory_scope};
 
     #[test]
     fn parses_named_option_independent_of_order() {
@@ -558,5 +638,27 @@ mod tests {
         let arguments = vec!["--version".to_owned(), "0".to_owned()];
 
         assert!(positive_u64(&arguments, "--version").is_err());
+    }
+
+    #[test]
+    fn parses_one_entity_scope_and_rejects_ambiguous_scopes() {
+        let scoped = vec![
+            "--entity".to_owned(),
+            "project_01".to_owned(),
+        ];
+        assert_eq!(
+            requested_memory_scope(&scoped).expect("scope should parse"),
+            MemoryScope::Entity {
+                id: EntityId::new("project_01")
+            }
+        );
+
+        let ambiguous = vec![
+            "--domain".to_owned(),
+            "development".to_owned(),
+            "--entity".to_owned(),
+            "project_01".to_owned(),
+        ];
+        assert!(requested_memory_scope(&ambiguous).is_err());
     }
 }

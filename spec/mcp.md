@@ -115,9 +115,12 @@ Annotations:
 
 ### `rembrane_remember_preference`
 
-Creates a confirmed global preference only for connection profiles explicitly
-granted direct creation authority. General-purpose agent profiles should use
-`rembrane_propose_memory` instead.
+Creates a confirmed preference for connection profiles explicitly granted
+direct creation authority. An optional `domain`, `entityId`, or `activityId`
+selects one exact scope; omitting all three creates a global preference.
+Multiple scope selectors are invalid, and the selected scope must already
+belong to the authenticated connection profile. General-purpose agent profiles
+should use `rembrane_propose_memory` instead.
 
 ### `rembrane_resume_activity`
 

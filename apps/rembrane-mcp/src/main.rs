@@ -57,6 +57,9 @@ struct ResolveContextOutput {
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct RememberPreferenceParameters {
     content: String,
+    domain: Option<String>,
+    entity_id: Option<String>,
+    activity_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -275,9 +278,14 @@ impl RembraneMcp {
             ));
         }
         let mut state = lock_state(&self.state)?;
+        let scope = memory_scope(
+            parameters.domain.as_deref(),
+            parameters.entity_id.as_deref(),
+            parameters.activity_id.as_deref(),
+        )?;
         let grants = authorize(
             &state,
-            vec![ReadScope::Global],
+            vec![read_scope(&scope)],
             vec![WritePermission::CreateMemory],
         )?;
         let previous_sequence = current_sequence(&state)?;
@@ -286,7 +294,7 @@ impl RembraneMcp {
             .execute(RememberPreferenceCommand {
                 grant: grants.write,
                 memory_id: MemoryId::new(format!("memory_{suffix}")),
-                scope: MemoryScope::Global,
+                scope,
                 content: parameters.content,
                 evidence: EvidenceReference::new(
                     EvidenceId::new(format!("evidence_{suffix}")),
@@ -578,6 +586,51 @@ fn request_scopes(
         });
     }
     scopes
+}
+
+fn memory_scope(
+    domain: Option<&str>,
+    entity_id: Option<&str>,
+    activity_id: Option<&str>,
+) -> Result<MemoryScope, McpError> {
+    let count = usize::from(domain.is_some())
+        + usize::from(entity_id.is_some())
+        + usize::from(activity_id.is_some());
+    if count > 1 {
+        return Err(McpError::invalid_params(
+            "domain, entityId, and activityId are mutually exclusive",
+            None,
+        ));
+    }
+    if let Some(name) = domain {
+        return Ok(MemoryScope::Domain {
+            name: name.to_owned(),
+        });
+    }
+    if let Some(id) = entity_id {
+        return Ok(MemoryScope::Entity {
+            id: EntityId::new(id),
+        });
+    }
+    if let Some(id) = activity_id {
+        return Ok(MemoryScope::Activity {
+            id: ActivityId::new(id),
+        });
+    }
+    Ok(MemoryScope::Global)
+}
+
+fn read_scope(scope: &MemoryScope) -> ReadScope {
+    match scope {
+        MemoryScope::Global => ReadScope::Global,
+        MemoryScope::Domain { name } => ReadScope::Domain {
+            name: name.clone(),
+        },
+        MemoryScope::Entity { id } => ReadScope::Entity { id: id.clone() },
+        MemoryScope::Activity { id } => {
+            ReadScope::Activity { id: id.clone() }
+        }
+    }
 }
 
 fn current_sequence(state: &State) -> Result<u64, McpError> {

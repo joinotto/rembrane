@@ -80,6 +80,13 @@ target/debug/rembrane remember \
   --workspace "$REMBRANE_WORKSPACE_ID" \
   --content "Call me Hippo"
 
+target/debug/rembrane remember \
+  --database "$REMBRANE_DATABASE" \
+  --principal "$REMBRANE_PRINCIPAL_ID" \
+  --workspace "$REMBRANE_WORKSPACE_ID" \
+  --entity project_local \
+  --content "Use Rust for the Rembrane core"
+
 target/debug/rembrane recall \
   --database "$REMBRANE_DATABASE" \
   --principal "$REMBRANE_PRINCIPAL_ID" \
@@ -87,6 +94,15 @@ target/debug/rembrane recall \
   --client "$REMBRANE_CLIENT_ID" \
   --purpose personalize-assistant \
   --query "What should I call the user?"
+
+target/debug/rembrane recall \
+  --database "$REMBRANE_DATABASE" \
+  --principal "$REMBRANE_PRINCIPAL_ID" \
+  --workspace "$REMBRANE_WORKSPACE_ID" \
+  --client "$REMBRANE_CLIENT_ID" \
+  --entity project_local \
+  --purpose continue-project \
+  --query "Which language should power the Rembrane core?"
 ```
 
 ## MCP client profile

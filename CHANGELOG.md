@@ -69,6 +69,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   expand the administrator-owned grant.
 - Scope-bound write grants enforced by memory creation, proposal, confirmation,
   revision, deletion, and activity-checkpoint use cases.
+- CLI and MCP preference capture across global, domain, entity/project, and
+  activity scopes with mutually exclusive scope selectors.
 - End-to-end CLI lifecycle test covering encrypted capture, disclosure,
   correction, deletion, wrong-key rejection, and plaintext-at-rest checks.
 - Postman REST suite covering health, bearer authentication, encrypted context
