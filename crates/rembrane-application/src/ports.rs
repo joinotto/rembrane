@@ -62,11 +62,6 @@ pub trait CanonicalMutationRepository: EventRepository + MemoryRepository {
 }
 
 pub trait CheckpointRepository {
-    fn insert_checkpoint(
-        &mut self,
-        checkpoint: ActivityCheckpoint,
-    ) -> Result<(), ApplicationError>;
-
     fn latest_checkpoint(
         &self,
         workspace_id: &WorkspaceId,
@@ -74,11 +69,6 @@ pub trait CheckpointRepository {
         activity_id: &ActivityId,
     ) -> Result<Option<ActivityCheckpoint>, ApplicationError>;
 
-    fn replace_checkpoint(
-        &mut self,
-        checkpoint: ActivityCheckpoint,
-        expected_version: u64,
-    ) -> Result<(), ApplicationError>;
 }
 
 pub trait CheckpointMutationRepository: CheckpointRepository + EventRepository {

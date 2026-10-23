@@ -288,22 +288,6 @@ impl MembershipRepository for InMemoryStore {
 }
 
 impl CheckpointRepository for InMemoryStore {
-    fn insert_checkpoint(
-        &mut self,
-        checkpoint: ActivityCheckpoint,
-    ) -> Result<(), ApplicationError> {
-        let duplicate = self.checkpoints.iter().any(|stored| {
-            stored.workspace_id() == checkpoint.workspace_id()
-                && stored.id() == checkpoint.id()
-        });
-        if duplicate {
-            return Err(ApplicationError::AlreadyExists);
-        }
-
-        self.checkpoints.push(checkpoint);
-        Ok(())
-    }
-
     fn latest_checkpoint(
         &self,
         workspace_id: &WorkspaceId,
@@ -322,29 +306,6 @@ impl CheckpointRepository for InMemoryStore {
             .cloned())
     }
 
-    fn replace_checkpoint(
-        &mut self,
-        checkpoint: ActivityCheckpoint,
-        expected_version: u64,
-    ) -> Result<(), ApplicationError> {
-        let stored = self
-            .checkpoints
-            .iter_mut()
-            .find(|stored| {
-                stored.workspace_id() == checkpoint.workspace_id()
-                    && stored.id() == checkpoint.id()
-            })
-            .ok_or(ApplicationError::NotFound)?;
-
-        if stored.version() != expected_version
-            || checkpoint.version() != expected_version.saturating_add(1)
-        {
-            return Err(ApplicationError::VersionConflict);
-        }
-
-        *stored = checkpoint;
-        Ok(())
-    }
 }
 
 impl CheckpointMutationRepository for InMemoryStore {

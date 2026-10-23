@@ -1,9 +1,9 @@
 use rembrane_application::{
-    ApplicationError, CheckpointRepository,
+    ApplicationError, CheckpointMutationRepository, CheckpointRepository,
 };
 use rembrane_domain::{
-    ActivityCheckpoint, ActivityId, CheckpointId, EntityId, PrincipalId,
-    WorkspaceId,
+    ActivityCheckpoint, ActivityId, CanonicalEvent, CheckpointId, EntityId,
+    EventId, EventPayload, PrincipalId, WorkspaceId,
 };
 use rembrane_store_memory::InMemoryStore;
 
@@ -22,11 +22,28 @@ fn checkpoint(workspace_id: &str, subject_id: &str) -> ActivityCheckpoint {
     .expect("test checkpoint should be valid")
 }
 
+fn event(checkpoint: &ActivityCheckpoint, id: &str, sequence: u64) -> CanonicalEvent {
+    CanonicalEvent::new(
+        EventId::new(id),
+        checkpoint.workspace_id().clone(),
+        checkpoint.subject_id().clone(),
+        Some(checkpoint.subject_id().clone()),
+        sequence,
+        EventPayload::ActivityCheckpointed {
+            activity_id: checkpoint.activity_id().clone(),
+            version: checkpoint.version(),
+        },
+    )
+    .expect("test event should be valid")
+}
+
 #[test]
 fn does_not_return_checkpoint_across_workspace_boundary() {
     let mut store = InMemoryStore::new();
+    let checkpoint = checkpoint("workspace_private", "principal_01");
+    let creation_event = event(&checkpoint, "event_01", 1);
     store
-        .insert_checkpoint(checkpoint("workspace_private", "principal_01"))
+        .insert_checkpoint_with_event(checkpoint, creation_event, 0)
         .expect("checkpoint insert should succeed");
 
     let result = store
@@ -43,8 +60,10 @@ fn does_not_return_checkpoint_across_workspace_boundary() {
 #[test]
 fn does_not_return_checkpoint_to_another_subject() {
     let mut store = InMemoryStore::new();
+    let checkpoint = checkpoint("workspace_01", "principal_private");
+    let creation_event = event(&checkpoint, "event_01", 1);
     store
-        .insert_checkpoint(checkpoint("workspace_01", "principal_private"))
+        .insert_checkpoint_with_event(checkpoint, creation_event, 0)
         .expect("checkpoint insert should succeed");
 
     let result = store
@@ -62,8 +81,13 @@ fn does_not_return_checkpoint_to_another_subject() {
 fn rejects_stale_checkpoint_update() {
     let mut store = InMemoryStore::new();
     let original = checkpoint("workspace_01", "principal_01");
+    let creation_event = event(&original, "event_01", 1);
     store
-        .insert_checkpoint(original.clone())
+        .insert_checkpoint_with_event(
+            original.clone(),
+            creation_event,
+            0,
+        )
         .expect("checkpoint insert should succeed");
     let updated = original
         .update(
@@ -73,8 +97,9 @@ fn rejects_stale_checkpoint_update() {
         )
         .expect("checkpoint update should be valid");
 
+    let update_event = event(&updated, "event_02", 2);
     let error = store
-        .replace_checkpoint(updated, 2)
+        .replace_checkpoint_with_event(updated, 2, update_event, 1)
         .expect_err("stale checkpoint update should fail");
 
     assert_eq!(error, ApplicationError::VersionConflict);
