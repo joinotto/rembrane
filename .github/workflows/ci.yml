@@ -13,6 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - run: ./scripts/check-architecture.sh
       - uses: dtolnay/rust-toolchain@1.85.0
         with:
           components: clippy,rustfmt

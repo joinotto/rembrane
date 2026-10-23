@@ -42,6 +42,12 @@ Pull requests should include:
 
 Changes affecting stored data or protocols require a migration and compatibility plan.
 
+Run the architecture guard before submitting:
+
+```text
+./scripts/check-architecture.sh
+```
+
 ## Security-sensitive changes
 
 Do not publicly disclose a suspected vulnerability. Follow [SECURITY.md](SECURITY.md).
