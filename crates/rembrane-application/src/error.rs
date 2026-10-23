@@ -6,6 +6,7 @@ pub enum ApplicationError {
     AccessDenied,
     AlreadyExists,
     NotFound,
+    SequenceConflict,
     StorageUnavailable,
     Validation(String),
     VersionConflict,
@@ -17,6 +18,7 @@ impl Display for ApplicationError {
             Self::AccessDenied => formatter.write_str("access denied"),
             Self::AlreadyExists => formatter.write_str("record already exists"),
             Self::NotFound => formatter.write_str("record not found"),
+            Self::SequenceConflict => formatter.write_str("event sequence conflict"),
             Self::StorageUnavailable => formatter.write_str("storage unavailable"),
             Self::VersionConflict => formatter.write_str("version conflict"),
             Self::Validation(message) => {

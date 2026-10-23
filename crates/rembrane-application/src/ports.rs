@@ -1,5 +1,6 @@
 use rembrane_domain::{
-    DisclosureReceipt, MemoryId, MemoryRecord, PrincipalId, WorkspaceId,
+    CanonicalEvent, DisclosureReceipt, MemoryId, MemoryRecord, PrincipalId,
+    WorkspaceId,
 };
 
 use crate::ApplicationError;
@@ -31,4 +32,18 @@ pub trait DisclosureRepository {
         &mut self,
         receipt: DisclosureReceipt,
     ) -> Result<(), ApplicationError>;
+}
+
+pub trait EventRepository {
+    fn append_event(
+        &mut self,
+        event: CanonicalEvent,
+        expected_previous_sequence: u64,
+    ) -> Result<(), ApplicationError>;
+
+    fn list_events_since(
+        &self,
+        workspace_id: &WorkspaceId,
+        sequence: u64,
+    ) -> Result<Vec<CanonicalEvent>, ApplicationError>;
 }

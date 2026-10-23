@@ -9,7 +9,7 @@ mod revise_memory;
 mod resolve_context;
 
 pub use error::ApplicationError;
-pub use ports::{DisclosureRepository, MemoryRepository};
+pub use ports::{DisclosureRepository, EventRepository, MemoryRepository};
 pub use revise_memory::{
     DeleteMemoryCommand, MemoryLifecycleService, ReviseMemoryCommand,
 };

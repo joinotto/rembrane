@@ -1,16 +1,18 @@
 //! Volatile reference adapter used by tests, examples, and local prototypes.
 
 use rembrane_application::{
-    ApplicationError, DisclosureRepository, MemoryRepository,
+    ApplicationError, DisclosureRepository, EventRepository, MemoryRepository,
 };
 use rembrane_domain::{
-    DisclosureReceipt, MemoryId, MemoryRecord, PrincipalId, WorkspaceId,
+    CanonicalEvent, DisclosureReceipt, MemoryId, MemoryRecord, PrincipalId,
+    WorkspaceId,
 };
 
 #[derive(Debug, Default)]
 pub struct InMemoryStore {
     memories: Vec<MemoryRecord>,
     disclosures: Vec<DisclosureReceipt>,
+    events: Vec<CanonicalEvent>,
 }
 
 impl InMemoryStore {
@@ -115,12 +117,66 @@ impl DisclosureRepository for InMemoryStore {
     }
 }
 
+impl EventRepository for InMemoryStore {
+    fn append_event(
+        &mut self,
+        event: CanonicalEvent,
+        expected_previous_sequence: u64,
+    ) -> Result<(), ApplicationError> {
+        let current_sequence = self
+            .events
+            .iter()
+            .filter(|stored| stored.workspace_id() == event.workspace_id())
+            .map(CanonicalEvent::sequence)
+            .max()
+            .unwrap_or(0);
+
+        if current_sequence != expected_previous_sequence
+            || event.sequence() != expected_previous_sequence.saturating_add(1)
+        {
+            return Err(ApplicationError::SequenceConflict);
+        }
+
+        let duplicate_id = self
+            .events
+            .iter()
+            .any(|stored| stored.id() == event.id());
+        if duplicate_id {
+            return Err(ApplicationError::AlreadyExists);
+        }
+
+        self.events.push(event);
+        Ok(())
+    }
+
+    fn list_events_since(
+        &self,
+        workspace_id: &WorkspaceId,
+        sequence: u64,
+    ) -> Result<Vec<CanonicalEvent>, ApplicationError> {
+        let mut events: Vec<_> = self
+            .events
+            .iter()
+            .filter(|event| {
+                event.workspace_id() == workspace_id
+                    && event.sequence() > sequence
+            })
+            .cloned()
+            .collect();
+        events.sort_by_key(CanonicalEvent::sequence);
+        Ok(events)
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use rembrane_application::{ApplicationError, MemoryRepository};
+    use rembrane_application::{
+        ApplicationError, EventRepository, MemoryRepository,
+    };
     use rembrane_domain::{
-        EvidenceId, EvidenceReference, EvidenceSource, MemoryId, MemoryRecord,
-        MemoryScope, PrincipalId, WorkspaceId,
+        CanonicalEvent, EventId, EventPayload, EvidenceId, EvidenceReference,
+        EvidenceSource, MemoryId, MemoryRecord, MemoryScope, PrincipalId,
+        WorkspaceId,
     };
 
     use super::InMemoryStore;
@@ -257,5 +313,57 @@ mod tests {
             .expect_err("stale expected version should fail");
 
         assert_eq!(error, ApplicationError::VersionConflict);
+    }
+
+    fn event(
+        id: &str,
+        workspace_id: &str,
+        sequence: u64,
+    ) -> CanonicalEvent {
+        CanonicalEvent::new(
+            EventId::new(id),
+            WorkspaceId::new(workspace_id),
+            PrincipalId::new("principal_01"),
+            None,
+            sequence,
+            EventPayload::MemoryCreated {
+                memory_id: MemoryId::new("memory_01"),
+                version: 1,
+            },
+        )
+        .expect("test event should be valid")
+    }
+
+    #[test]
+    fn enforces_workspace_event_sequence() {
+        let mut store = InMemoryStore::new();
+        store
+            .append_event(event("event_01", "workspace_01", 1), 0)
+            .expect("first event should append");
+
+        let error = store
+            .append_event(event("event_03", "workspace_01", 3), 1)
+            .expect_err("sequence gap should fail");
+
+        assert_eq!(error, ApplicationError::SequenceConflict);
+    }
+
+    #[test]
+    fn keeps_event_sequences_independent_between_workspaces() {
+        let mut store = InMemoryStore::new();
+        store
+            .append_event(event("event_one", "workspace_one", 1), 0)
+            .expect("first workspace event should append");
+        store
+            .append_event(event("event_two", "workspace_two", 1), 0)
+            .expect("second workspace event should append");
+
+        assert_eq!(
+            store
+                .list_events_since(&WorkspaceId::new("workspace_one"), 0)
+                .expect("event listing should succeed")
+                .len(),
+            1
+        );
     }
 }
