@@ -23,6 +23,115 @@ pub enum ProviderPlacement {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ProviderKind {
+    Native,
+    Mem0,
+    Graphiti,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProviderConnection {
+    pub kind: ProviderKind,
+    pub endpoint: Option<String>,
+    pub credentials: Vec<SecretReference>,
+    pub placement: ProviderPlacement,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ProviderConnectionError {
+    NativeProviderMustBeLocal,
+    EmptyEndpoint,
+    InsecureRemoteEndpoint,
+    CredentialBearingEndpoint,
+}
+
+impl Display for ProviderConnectionError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NativeProviderMustBeLocal => formatter.write_str(
+                "native provider must not configure an endpoint or credentials",
+            ),
+            Self::EmptyEndpoint => {
+                formatter.write_str("provider endpoint must not be empty")
+            }
+            Self::InsecureRemoteEndpoint => formatter.write_str(
+                "provider endpoint must use HTTPS or loopback HTTP",
+            ),
+            Self::CredentialBearingEndpoint => formatter.write_str(
+                "provider endpoint must not contain credentials, query, or fragment",
+            ),
+        }
+    }
+}
+
+impl Error for ProviderConnectionError {}
+
+impl ProviderConnection {
+    #[must_use]
+    pub const fn native() -> Self {
+        Self {
+            kind: ProviderKind::Native,
+            endpoint: None,
+            credentials: Vec::new(),
+            placement: ProviderPlacement::TrustedBoundary,
+        }
+    }
+
+    pub fn remote(
+        kind: ProviderKind,
+        endpoint: impl Into<String>,
+        credentials: Vec<SecretReference>,
+        placement: ProviderPlacement,
+    ) -> Result<Self, ProviderConnectionError> {
+        if kind == ProviderKind::Native {
+            return Err(ProviderConnectionError::NativeProviderMustBeLocal);
+        }
+        let endpoint = endpoint.into();
+        validate_provider_endpoint(&endpoint)?;
+        Ok(Self {
+            kind,
+            endpoint: Some(endpoint),
+            credentials,
+            placement,
+        })
+    }
+}
+
+fn validate_provider_endpoint(
+    endpoint: &str,
+) -> Result<(), ProviderConnectionError> {
+    let endpoint = endpoint.trim();
+    if endpoint.is_empty() {
+        return Err(ProviderConnectionError::EmptyEndpoint);
+    }
+    if endpoint.contains('@')
+        || endpoint.contains('?')
+        || endpoint.contains('#')
+    {
+        return Err(ProviderConnectionError::CredentialBearingEndpoint);
+    }
+    let Some((scheme, remainder)) = endpoint.split_once("://") else {
+        return Err(ProviderConnectionError::InsecureRemoteEndpoint);
+    };
+    let authority = remainder.split('/').next().unwrap_or_default();
+    if authority.is_empty() {
+        return Err(ProviderConnectionError::InsecureRemoteEndpoint);
+    }
+    let secure = scheme == "https";
+    let loopback = scheme == "http"
+        && (authority == "localhost"
+            || authority.starts_with("localhost:")
+            || authority == "127.0.0.1"
+            || authority.starts_with("127.0.0.1:")
+            || authority == "[::1]"
+            || authority.starts_with("[::1]:"));
+    if !secure && !loopback {
+        return Err(ProviderConnectionError::InsecureRemoteEndpoint);
+    }
+    Ok(())
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct DeploymentPolicy {
     pub processing_mode: ProcessingMode,
 }
@@ -163,8 +272,9 @@ mod tests {
     use rembrane_provider_sdk::Capability;
 
     use super::{
-        DeploymentPolicy, ProcessingMode, ProviderPlacement, SecretReference,
-        SecretReferenceError, parse_read_scopes,
+        DeploymentPolicy, ProcessingMode, ProviderConnection,
+        ProviderConnectionError, ProviderKind, ProviderPlacement,
+        SecretReference, SecretReferenceError, parse_read_scopes,
     };
 
     #[test]
@@ -238,5 +348,63 @@ mod tests {
         assert!(parse_read_scopes("*").is_err());
         assert!(parse_read_scopes("entity:").is_err());
         assert!(parse_read_scopes(" ").is_err());
+    }
+
+    #[test]
+    fn byo_provider_profiles_keep_credentials_as_references() {
+        let profile = ProviderConnection::remote(
+            ProviderKind::Mem0,
+            "https://memory.example/v1",
+            vec![
+                SecretReference::environment("MEM0_API_KEY")
+                    .expect("secret reference should be valid"),
+            ],
+            ProviderPlacement::External,
+        )
+        .expect("secure provider profile should be valid");
+
+        assert_eq!(profile.kind, ProviderKind::Mem0);
+        assert_eq!(
+            profile.credentials,
+            vec![SecretReference::Environment {
+                variable: "MEM0_API_KEY".to_owned()
+            }]
+        );
+    }
+
+    #[test]
+    fn provider_profiles_reject_credential_urls_and_remote_http() {
+        assert_eq!(
+            ProviderConnection::remote(
+                ProviderKind::Graphiti,
+                "https://user:secret@graph.example",
+                Vec::new(),
+                ProviderPlacement::External,
+            ),
+            Err(ProviderConnectionError::CredentialBearingEndpoint)
+        );
+        assert_eq!(
+            ProviderConnection::remote(
+                ProviderKind::Mem0,
+                "http://memory.example",
+                Vec::new(),
+                ProviderPlacement::External,
+            ),
+            Err(ProviderConnectionError::InsecureRemoteEndpoint)
+        );
+        assert!(ProviderConnection::remote(
+            ProviderKind::Graphiti,
+            "http://127.0.0.1:8000",
+            Vec::new(),
+            ProviderPlacement::TrustedBoundary,
+        )
+        .is_ok());
+        assert!(ProviderConnection::remote(
+            ProviderKind::Graphiti,
+            "http://localhost.evil.example",
+            Vec::new(),
+            ProviderPlacement::TrustedBoundary,
+        )
+        .is_err());
     }
 }

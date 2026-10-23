@@ -24,6 +24,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   five-second lock wait, and WAL journaling for concurrent local agents.
 - Executable SQLite schema and transaction-atomicity checks.
 - Opaque record-encryption boundary with tenant-bound associated data.
+- Typed native, Mem0, and Graphiti provider connection profiles with
+  secret-reference-only credentials, HTTPS-or-loopback enforcement, and
+  credential-bearing URL rejection.
 - Versioned canonical memory codec with strict decoding and a stable wire
   fixture.
 - Versioned canonical event codec covering every lifecycle payload variant.

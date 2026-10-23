@@ -36,6 +36,8 @@ This roadmap describes sequencing, not release dates.
   disclosure receipt.
 - [x] Atomically persist exact-version disclosure receipts in SQLite.
 - [x] Prototype a portable XChaCha20-Poly1305 record-cipher adapter.
+- [x] Define validated native, Mem0, and Graphiti connection profiles using
+  secret references rather than stored credential values.
 - [x] Implement the encrypted local SQLite adapter.
 - [x] Add development-key encrypted CLI remember and recall commands.
 - [x] Add encrypted CLI correction and deletion commands.
