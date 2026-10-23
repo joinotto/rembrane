@@ -3,7 +3,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
 use rembrane_application::{
-    MembershipRepository, ResolveContextCommand, ResolveContextService,
+    AuthorizeClientCommand, AuthorizeClientService, ResolveContextCommand,
+    ResolveContextService,
 };
 use rembrane_contracts::ResolveContextRequest;
 use rembrane_crypto_rustcrypto::RustCryptoRecordCipher;
@@ -46,9 +47,7 @@ struct ResolveContextOutput {
 
 struct State {
     store: SqliteStore<RustCryptoRecordCipher>,
-    principal_id: PrincipalId,
-    workspace_id: WorkspaceId,
-    client_id: ClientId,
+    read_grant: ReadGrant,
     next_id: u128,
 }
 
@@ -75,14 +74,16 @@ impl RembraneMcp {
         let store = SqliteStore::open(database)
             .context("failed to open Rembrane database")?
             .with_cipher(cipher);
-        let membership = store
-            .find_membership(&workspace_id, &principal_id)
-            .context("failed to verify MCP connection membership")?
-            .context("MCP connection principal is not a workspace member")?;
-        anyhow::ensure!(
-            membership.is_active(),
-            "MCP connection membership is not active"
-        );
+        let read_grant = AuthorizeClientService::new(&store)
+            .execute(AuthorizeClientCommand {
+                client_id,
+                workspace_id,
+                principal_id,
+                requested_read_scopes: vec![ReadScope::Global],
+                requested_write_permissions: Vec::new(),
+            })
+            .context("failed to authorize MCP connection")?
+            .read;
         let next_id = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .context("system clock is before the Unix epoch")?
@@ -91,9 +92,7 @@ impl RembraneMcp {
         Ok(Self {
             state: Arc::new(Mutex::new(State {
                 store,
-                principal_id,
-                workspace_id,
-                client_id,
+                read_grant,
                 next_id,
             })),
         })
@@ -132,9 +131,9 @@ impl RembraneMcp {
             .map_err(|_| McpError::internal_error("state lock failed", None))?;
         state.next_id = state.next_id.saturating_add(1);
         let suffix = state.next_id;
-        let principal_id = state.principal_id.clone();
-        let workspace_id = state.workspace_id.clone();
-        let client_id = state.client_id.clone();
+        let read_grant = state.read_grant.clone();
+        let principal_id = read_grant.subject_id.clone();
+        let workspace_id = read_grant.workspace_id.clone();
         let response = ResolveContextService::new(&mut state.store)
             .execute(ResolveContextCommand {
                 request: ResolveContextRequest {
@@ -147,12 +146,7 @@ impl RembraneMcp {
                     query: parameters.query,
                     maximum_items,
                 },
-                grant: ReadGrant {
-                    client_id,
-                    workspace_id,
-                    subject_id: principal_id,
-                    scopes: vec![ReadScope::Global],
-                },
+                grant: read_grant,
                 context_pack_id: ContextPackId::new(format!(
                     "context_{suffix}"
                 )),

@@ -9,7 +9,8 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use rembrane_application::{
-    MembershipRepository, ResolveContextCommand, ResolveContextService,
+    AuthorizeClientCommand, AuthorizeClientService, ResolveContextCommand,
+    ResolveContextService,
 };
 use rembrane_contracts::ResolveContextRequest;
 use rembrane_crypto_rustcrypto::RustCryptoRecordCipher;
@@ -34,9 +35,7 @@ struct Inner {
 
 struct Runtime {
     store: SqliteStore<RustCryptoRecordCipher>,
-    principal_id: PrincipalId,
-    workspace_id: WorkspaceId,
-    client_id: ClientId,
+    read_grant: ReadGrant,
     next_id: u128,
 }
 
@@ -143,14 +142,16 @@ impl AppState {
         let store = SqliteStore::open(database)
             .context("failed to open Rembrane database")?
             .with_cipher(cipher);
-        let membership = store
-            .find_membership(&workspace_id, &principal_id)
-            .context("failed to verify API connection membership")?
-            .context("API connection principal is not a workspace member")?;
-        anyhow::ensure!(
-            membership.is_active(),
-            "API connection membership is not active"
-        );
+        let read_grant = AuthorizeClientService::new(&store)
+            .execute(AuthorizeClientCommand {
+                client_id,
+                workspace_id,
+                principal_id,
+                requested_read_scopes: vec![ReadScope::Global],
+                requested_write_permissions: Vec::new(),
+            })
+            .context("failed to authorize API connection")?
+            .read;
         let next_id = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .context("system clock is before the Unix epoch")?
@@ -160,9 +161,7 @@ impl AppState {
             inner: Arc::new(Inner {
                 runtime: Mutex::new(Runtime {
                     store,
-                    principal_id,
-                    workspace_id,
-                    client_id,
+                    read_grant,
                     next_id,
                 }),
                 bearer_token,
@@ -193,31 +192,16 @@ async fn resolve_context(
         .runtime
         .lock()
         .map_err(|_| ApiError::internal())?;
-    if request.workspace_id != runtime.workspace_id.as_str()
-        || request.subject_id != runtime.principal_id.as_str()
+    if request.workspace_id != runtime.read_grant.workspace_id.as_str()
+        || request.subject_id != runtime.read_grant.subject_id.as_str()
     {
         return Err(ApiError::access_denied());
     }
     runtime.next_id = runtime.next_id.saturating_add(1);
     let suffix = runtime.next_id;
-    let workspace_id = runtime.workspace_id.clone();
-    let principal_id = runtime.principal_id.clone();
-    let client_id = runtime.client_id.clone();
-    let domain_scope = request
-        .domain
-        .as_ref()
-        .map(|name| ReadScope::Domain { name: name.clone() });
-    let entity_scope = request.entity_id.as_ref().map(|id| ReadScope::Entity {
-        id: EntityId::new(id),
-    });
-    let activity_scope =
-        request.activity_id.as_ref().map(|id| ReadScope::Activity {
-            id: ActivityId::new(id),
-        });
-    let mut scopes = vec![ReadScope::Global];
-    scopes.extend(domain_scope);
-    scopes.extend(entity_scope);
-    scopes.extend(activity_scope);
+    let read_grant = runtime.read_grant.clone();
+    let workspace_id = read_grant.workspace_id.clone();
+    let principal_id = read_grant.subject_id.clone();
     let response = ResolveContextService::new(&mut runtime.store)
         .execute(ResolveContextCommand {
             request: ResolveContextRequest {
@@ -230,12 +214,7 @@ async fn resolve_context(
                 query: request.query,
                 maximum_items: request.maximum_items,
             },
-            grant: ReadGrant {
-                client_id,
-                workspace_id,
-                subject_id: principal_id,
-                scopes,
-            },
+            grant: read_grant,
             context_pack_id: ContextPackId::new(format!("context_{suffix}")),
             disclosure_id: DisclosureId::new(format!("disclosure_{suffix}")),
         })

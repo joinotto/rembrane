@@ -1,8 +1,9 @@
 use rembrane_application::{
-    CanonicalMutationRepository, EventRepository, MembershipRepository,
-    DeleteMemoryCommand, MemoryLifecycleService, RememberPreferenceCommand,
-    RememberPreferenceService, ResolveContextCommand, ResolveContextService,
-    ReviseMemoryCommand, WorkspaceRepository,
+    AuthorizeClientCommand, AuthorizeClientService, CanonicalMutationRepository,
+    ClientGrantBundle, DeleteMemoryCommand, EventRepository,
+    MemoryLifecycleService, RememberPreferenceCommand, RememberPreferenceService,
+    ResolveContextCommand, ResolveContextService, ReviseMemoryCommand,
+    WorkspaceRepository,
 };
 use rembrane_crypto_rustcrypto::RustCryptoRecordCipher;
 use rembrane_contracts::ResolveContextRequest;
@@ -10,8 +11,7 @@ use rembrane_domain::{
     CanonicalEvent, ClientId, ContextPackId, DisclosureId, EventId,
     EventPayload, EvidenceId, EvidenceReference, EvidenceSource, MemoryId,
     MemoryRecord, MemoryScope, Membership, Principal, PrincipalId, ReadGrant,
-    ReadScope, Workspace, WorkspaceId, WorkspaceRole, WriteGrant,
-    WritePermission,
+    ReadScope, Workspace, WorkspaceId, WorkspaceRole, WritePermission,
 };
 use rembrane_store_memory::InMemoryStore;
 use rembrane_store_sqlite::SqliteStore;
@@ -52,17 +52,19 @@ fn remember(arguments: &[String]) -> Result<(), String> {
         optional_option(arguments, "--client").unwrap_or("rembrane-cli");
     let (mut store, principal_id, workspace_id) =
         encrypted_store(arguments)?;
-    require_active_membership(&store, &workspace_id, &principal_id)?;
+    let grants = authorize_client(
+        &store,
+        ClientId::new(client_id),
+        &workspace_id,
+        &principal_id,
+        vec![ReadScope::Global],
+        vec![WritePermission::CreateMemory],
+    )?;
     let previous_sequence = current_sequence(&store, &workspace_id)?;
     let suffix = unique_suffix()?;
     let memory = RememberPreferenceService::new(&mut store)
         .execute(RememberPreferenceCommand {
-            grant: WriteGrant {
-                client_id: ClientId::new(client_id),
-                workspace_id,
-                subject_id: principal_id,
-                permissions: vec![WritePermission::CreateMemory],
-            },
+            grant: grants.write,
             memory_id: MemoryId::new(format!("memory_{suffix}")),
             scope: MemoryScope::Global,
             content: content.to_owned(),
@@ -88,17 +90,19 @@ fn correct(arguments: &[String]) -> Result<(), String> {
         optional_option(arguments, "--client").unwrap_or("rembrane-cli");
     let (mut store, principal_id, workspace_id) =
         encrypted_store(arguments)?;
-    require_active_membership(&store, &workspace_id, &principal_id)?;
+    let grants = authorize_client(
+        &store,
+        ClientId::new(client_id),
+        &workspace_id,
+        &principal_id,
+        vec![ReadScope::Global],
+        vec![WritePermission::ReviseMemory],
+    )?;
     let previous_sequence = current_sequence(&store, &workspace_id)?;
     let suffix = unique_suffix()?;
     let memory = MemoryLifecycleService::new(&mut store)
         .revise(ReviseMemoryCommand {
-            grant: WriteGrant {
-                client_id: ClientId::new(client_id),
-                workspace_id,
-                subject_id: principal_id,
-                permissions: vec![WritePermission::ReviseMemory],
-            },
+            grant: grants.write,
             memory_id,
             expected_version,
             content: content.to_owned(),
@@ -123,17 +127,19 @@ fn forget(arguments: &[String]) -> Result<(), String> {
         optional_option(arguments, "--client").unwrap_or("rembrane-cli");
     let (mut store, principal_id, workspace_id) =
         encrypted_store(arguments)?;
-    require_active_membership(&store, &workspace_id, &principal_id)?;
+    let grants = authorize_client(
+        &store,
+        ClientId::new(client_id),
+        &workspace_id,
+        &principal_id,
+        vec![ReadScope::Global],
+        vec![WritePermission::DeleteMemory],
+    )?;
     let previous_sequence = current_sequence(&store, &workspace_id)?;
     let suffix = unique_suffix()?;
     let memory = MemoryLifecycleService::new(&mut store)
         .delete(DeleteMemoryCommand {
-            grant: WriteGrant {
-                client_id: ClientId::new(client_id),
-                workspace_id,
-                subject_id: principal_id,
-                permissions: vec![WritePermission::DeleteMemory],
-            },
+            grant: grants.write,
             memory_id,
             expected_version,
             evidence: EvidenceReference::new(
@@ -161,7 +167,14 @@ fn recall(arguments: &[String]) -> Result<(), String> {
         .unwrap_or(10);
     let (mut store, principal_id, workspace_id) =
         encrypted_store(arguments)?;
-    require_active_membership(&store, &workspace_id, &principal_id)?;
+    let grants = authorize_client(
+        &store,
+        ClientId::new(client_id),
+        &workspace_id,
+        &principal_id,
+        vec![ReadScope::Global],
+        Vec::new(),
+    )?;
     let suffix = unique_suffix()?;
     let response = ResolveContextService::new(&mut store)
         .execute(ResolveContextCommand {
@@ -175,12 +188,7 @@ fn recall(arguments: &[String]) -> Result<(), String> {
                 query: query.to_owned(),
                 maximum_items,
             },
-            grant: ReadGrant {
-                client_id: ClientId::new(client_id),
-                workspace_id,
-                subject_id: principal_id,
-                scopes: vec![ReadScope::Global],
-            },
+            grant: grants.read,
             context_pack_id: ContextPackId::new(format!("context_{suffix}")),
             disclosure_id: DisclosureId::new(format!("disclosure_{suffix}")),
         })
@@ -223,19 +231,23 @@ fn encrypted_store(
     Ok((store, principal_id, workspace_id))
 }
 
-fn require_active_membership<C>(
+fn authorize_client<C>(
     store: &SqliteStore<C>,
+    client_id: ClientId,
     workspace_id: &WorkspaceId,
     principal_id: &PrincipalId,
-) -> Result<(), String> {
-    let membership = store
-        .find_membership(workspace_id, principal_id)
-        .map_err(|error| format!("cannot verify membership: {error}"))?
-        .ok_or_else(|| "principal is not a workspace member".to_owned())?;
-    if !membership.is_active() {
-        return Err("workspace membership is not active".to_owned());
-    }
-    Ok(())
+    read_scopes: Vec<ReadScope>,
+    write_permissions: Vec<WritePermission>,
+) -> Result<ClientGrantBundle, String> {
+    AuthorizeClientService::new(store)
+        .execute(AuthorizeClientCommand {
+            client_id,
+            workspace_id: workspace_id.clone(),
+            principal_id: principal_id.clone(),
+            requested_read_scopes: read_scopes,
+            requested_write_permissions: write_permissions,
+        })
+        .map_err(|error| format!("cannot authorize client: {error}"))
 }
 
 fn current_sequence<C>(

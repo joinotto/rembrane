@@ -137,8 +137,10 @@ mod tests {
             principal_id: PrincipalId::new("principal_01"),
             requested_read_scopes: vec![ReadScope::Global],
             requested_write_permissions: vec![
+                WritePermission::CreateMemory,
                 WritePermission::ProposeMemory,
                 WritePermission::ConfirmMemory,
+                WritePermission::ReviseMemory,
                 WritePermission::DeleteMemory,
                 WritePermission::WriteCheckpoint,
             ],
