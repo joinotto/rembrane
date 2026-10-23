@@ -40,6 +40,7 @@ This roadmap describes sequencing, not release dates.
 - [x] Add Postman REST authentication and tenant-isolation smoke tests.
 - [x] Add an MCP initialize/list/call protocol smoke test.
 - [x] Add a single full preflight test command and operator testing guide.
+- [x] Add a secret-safe local installation doctor command.
 - [ ] Add production OS-keychain and customer-KMS key providers.
 - [x] Retrieve minimal context through local stdio MCP.
 - [x] Rank canonical context by deterministic local query relevance.

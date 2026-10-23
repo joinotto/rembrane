@@ -27,6 +27,17 @@ remember_output=$(
 memory_id=$(printf '%s\n' "$remember_output" | awk '/^Remembered / { print $2 }')
 test -n "$memory_id"
 
+doctor_output=$(
+    "$rembrane_binary" doctor \
+        --database "$database" \
+        --principal principal_e2e \
+        --workspace workspace_e2e
+)
+printf '%s\n' "$doctor_output" |
+    rg -F "Rembrane doctor: ready" >/dev/null
+printf '%s\n' "$doctor_output" |
+    rg -F "Authenticated encrypted records: 1" >/dev/null
+
 first_recall=$(
     "$rembrane_binary" recall \
         --database "$database" \
@@ -105,6 +116,16 @@ if REMBRANE_WORKSPACE_KEY_HEX="fffffffffffffffffffffffffffffffffffffffffffffffff
         --query "What should I call the user?" >/dev/null 2>&1
 then
     echo "recall unexpectedly succeeded with the wrong key" >&2
+    exit 1
+fi
+
+if REMBRANE_WORKSPACE_KEY_HEX="ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff" \
+    "$rembrane_binary" doctor \
+        --database "$database" \
+        --principal principal_e2e \
+        --workspace workspace_e2e >/dev/null 2>&1
+then
+    echo "doctor unexpectedly succeeded with the wrong key" >&2
     exit 1
 fi
 

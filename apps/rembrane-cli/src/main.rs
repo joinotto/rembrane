@@ -1,9 +1,9 @@
 use rembrane_application::{
     AuthorizeClientCommand, AuthorizeClientService, CanonicalMutationRepository,
     ClientGrantBundle, DeleteMemoryCommand, EventRepository,
-    MemoryLifecycleService, RememberPreferenceCommand, RememberPreferenceService,
-    ResolveContextCommand, ResolveContextService, ReviseMemoryCommand,
-    WorkspaceRepository,
+    MembershipRepository, MemoryLifecycleService, MemoryRepository,
+    RememberPreferenceCommand, RememberPreferenceService, ResolveContextCommand,
+    ResolveContextService, ReviseMemoryCommand, WorkspaceRepository,
 };
 use rembrane_crypto_rustcrypto::RustCryptoRecordCipher;
 use rembrane_contracts::ResolveContextRequest;
@@ -34,6 +34,7 @@ fn run(arguments: Vec<String>) -> Result<(), String> {
             Ok(())
         }
         Some("init") => initialize(&arguments[1..]),
+        Some("doctor") => doctor(&arguments[1..]),
         Some("remember") => remember(&arguments[1..]),
         Some("recall") => recall(&arguments[1..]),
         Some("correct") => correct(&arguments[1..]),
@@ -43,6 +44,44 @@ fn run(arguments: Vec<String>) -> Result<(), String> {
             Ok(())
         }
     }
+}
+
+fn doctor(arguments: &[String]) -> Result<(), String> {
+    let (store, principal_id, workspace_id) = encrypted_store(arguments)?;
+    let membership = store
+        .find_membership(&workspace_id, &principal_id)
+        .map_err(|error| format!("cannot inspect membership: {error}"))?
+        .ok_or_else(|| {
+            "principal is not a member of the configured workspace".to_owned()
+        })?;
+    if !membership.is_active() {
+        return Err("configured workspace membership is not active".to_owned());
+    }
+
+    let memories = store
+        .list_for_subject(&workspace_id, &principal_id)
+        .map_err(|error| {
+            format!(
+                "cannot authenticate workspace memories with the configured key: {error}"
+            )
+        })?;
+
+    println!("Rembrane doctor: ready");
+    println!("Database schema: compatible");
+    println!("Workspace: {workspace_id}");
+    println!("Principal: {principal_id}");
+    println!("Membership: active ({:?})", membership.role());
+    println!("Workspace key: loaded");
+    println!(
+        "Authenticated encrypted records: {}",
+        memories.len()
+    );
+    println!("Readable memories: {}", memories.len());
+    println!(
+        "Secret sources: REMBRANE_WORKSPACE_KEY_ID, \
+         REMBRANE_WORKSPACE_KEY_HEX"
+    );
+    Ok(())
 }
 
 fn remember(arguments: &[String]) -> Result<(), String> {
@@ -399,6 +438,7 @@ fn print_help() {
            rembrane version\n\
            rembrane demo\n\
            rembrane init --database <path> --principal <id> --workspace <id>\n\
+           rembrane doctor --database <path> --principal <id> --workspace <id>\n\
            rembrane remember --database <path> --principal <id> \
              --workspace <id> --content <preference>\n\
            rembrane recall --database <path> --principal <id> \
