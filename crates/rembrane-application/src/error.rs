@@ -3,6 +3,7 @@ use std::fmt::{self, Display};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ApplicationError {
+    AccessDenied,
     AlreadyExists,
     NotFound,
     StorageUnavailable,
@@ -13,6 +14,7 @@ pub enum ApplicationError {
 impl Display for ApplicationError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::AccessDenied => formatter.write_str("access denied"),
             Self::AlreadyExists => formatter.write_str("record already exists"),
             Self::NotFound => formatter.write_str("record not found"),
             Self::StorageUnavailable => formatter.write_str("storage unavailable"),

@@ -2,8 +2,8 @@ use rembrane_contracts::{
     ResolveContextRequest, ResolveContextResponse,
 };
 use rembrane_domain::{
-    ClientId, ContextPackId, DisclosedMemory, DisclosureId, DisclosureReceipt,
-    MemoryRecord, MemoryScope, MemoryStatus,
+    ContextPackId, DisclosedMemory, DisclosureId, DisclosureReceipt,
+    MemoryRecord, MemoryScope, MemoryStatus, ReadGrant,
 };
 
 use crate::{ApplicationError, DisclosureRepository, MemoryRepository};
@@ -11,7 +11,7 @@ use crate::{ApplicationError, DisclosureRepository, MemoryRepository};
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ResolveContextCommand {
     pub request: ResolveContextRequest,
-    pub client_id: ClientId,
+    pub grant: ReadGrant,
     pub context_pack_id: ContextPackId,
     pub disclosure_id: DisclosureId,
 }
@@ -33,6 +33,7 @@ where
         command: ResolveContextCommand,
     ) -> Result<ResolveContextResponse, ApplicationError> {
         validate(&command.request)?;
+        authorize(&command)?;
 
         let mut items = self.repository.list_for_subject(
             &command.request.workspace_id,
@@ -42,6 +43,7 @@ where
         items.retain(|memory| {
             memory.status == MemoryStatus::Confirmed
                 && scope_matches(memory, &command.request)
+                && command.grant.allows(&memory.scope)
         });
         items.sort_by_key(|memory| {
             std::cmp::Reverse(memory.scope.specificity())
@@ -53,7 +55,7 @@ where
             context_pack_id: command.context_pack_id.clone(),
             workspace_id: command.request.workspace_id,
             subject_id: command.request.principal_id,
-            client_id: command.client_id,
+            client_id: command.grant.client_id,
             purpose: command.request.purpose,
             memories: items
                 .iter()
@@ -71,6 +73,16 @@ where
             context_pack_id: command.context_pack_id,
         })
     }
+}
+
+fn authorize(command: &ResolveContextCommand) -> Result<(), ApplicationError> {
+    if command.grant.workspace_id != command.request.workspace_id
+        || command.grant.subject_id != command.request.principal_id
+    {
+        return Err(ApplicationError::AccessDenied);
+    }
+
+    Ok(())
 }
 
 fn validate(request: &ResolveContextRequest) -> Result<(), ApplicationError> {
@@ -109,7 +121,8 @@ mod tests {
     use rembrane_domain::{
         ActivityId, ClientId, ContextPackId, DisclosureId, DisclosureReceipt,
         EntityId, EvidenceId, EvidenceReference, EvidenceSource, MemoryId,
-        MemoryRecord, MemoryScope, PrincipalId, WorkspaceId,
+        MemoryRecord, MemoryScope, PrincipalId, ReadGrant, ReadScope,
+        WorkspaceId,
     };
 
     use super::{ResolveContextCommand, ResolveContextService};
@@ -222,7 +235,23 @@ mod tests {
                 query: "What should I call the user?".to_owned(),
                 maximum_items,
             },
-            client_id: ClientId::new("client_01"),
+            grant: ReadGrant {
+                client_id: ClientId::new("client_01"),
+                workspace_id: WorkspaceId::new("workspace_01"),
+                subject_id: PrincipalId::new("principal_01"),
+                scopes: vec![
+                    ReadScope::Global,
+                    ReadScope::Domain {
+                        name: "development".to_owned(),
+                    },
+                    ReadScope::Entity {
+                        id: EntityId::new("project_01"),
+                    },
+                    ReadScope::Activity {
+                        id: ActivityId::new("activity_01"),
+                    },
+                ],
+            },
             context_pack_id: ContextPackId::new("context_01"),
             disclosure_id: DisclosureId::new("disclosure_01"),
         }
@@ -300,5 +329,44 @@ mod tests {
             )
         );
         assert!(repository.disclosures.is_empty());
+    }
+
+    #[test]
+    fn rejects_grant_for_another_workspace() {
+        let mut repository = TestRepository::default();
+        let mut unauthorized = command(5);
+        unauthorized.grant.workspace_id = WorkspaceId::new("workspace_other");
+
+        let error = ResolveContextService::new(&mut repository)
+            .execute(unauthorized)
+            .expect_err("cross-workspace grant should fail");
+
+        assert_eq!(error, ApplicationError::AccessDenied);
+        assert!(repository.disclosures.is_empty());
+    }
+
+    #[test]
+    fn excludes_memory_outside_client_grant() {
+        let mut repository = TestRepository {
+            memories: vec![
+                memory("global", MemoryScope::Global),
+                memory(
+                    "entity",
+                    MemoryScope::Entity {
+                        id: EntityId::new("project_01"),
+                    },
+                ),
+            ],
+            disclosures: Vec::new(),
+        };
+        let mut restricted = command(10);
+        restricted.grant.scopes = vec![ReadScope::Global];
+
+        let response = ResolveContextService::new(&mut repository)
+            .execute(restricted)
+            .expect("authorized global resolution should succeed");
+
+        assert_eq!(response.items.len(), 1);
+        assert_eq!(response.items[0].id, MemoryId::new("global"));
     }
 }

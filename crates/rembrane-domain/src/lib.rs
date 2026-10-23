@@ -7,9 +7,11 @@
 mod identifier;
 mod memory;
 mod disclosure;
+mod grant;
 mod scope;
 
 pub use disclosure::{DisclosedMemory, DisclosureReceipt};
+pub use grant::{ReadGrant, ReadScope};
 pub use identifier::{
     ActivityId, ClientId, ContextPackId, DisclosureId, EntityId, EvidenceId,
     MemoryId, PrincipalId, WorkspaceId,
