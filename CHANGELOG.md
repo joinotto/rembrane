@@ -47,6 +47,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Development CLI flows for encrypted preference capture and minimal-context
   recall with automatic disclosure receipts.
 - Encrypted CLI correction and deletion flows with optimistic memory versions.
+- Local stdio MCP server using connection-scoped identity to resolve minimal
+  encrypted context and record disclosure receipts.
 - Product architecture, threat model, integration support policy, Rust
   research, bot integration design, and architecture decision records.
 

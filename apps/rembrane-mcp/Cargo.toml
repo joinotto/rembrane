@@ -1,0 +1,28 @@
+[package]
+name = "rembrane-mcp"
+description = "Local stdio MCP server for Rembrane"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+anyhow = "1"
+rembrane-application = { path = "../../crates/rembrane-application" }
+rembrane-contracts = { path = "../../crates/rembrane-contracts" }
+rembrane-crypto-rustcrypto = { path = "../../adapters/rembrane-crypto-rustcrypto" }
+rembrane-domain = { path = "../../crates/rembrane-domain" }
+rembrane-store-sqlite = { path = "../../adapters/rembrane-store-sqlite" }
+rmcp = { version = "0.16.0", features = ["server"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+zeroize = "1"
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "rembrane-mcp"
+path = "src/main.rs"

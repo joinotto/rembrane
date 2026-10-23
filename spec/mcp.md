@@ -18,6 +18,17 @@ This prevents a model from changing `workspaceId` or `subjectId` in a tool call 
 
 Local stdio clients receive a narrowly scoped credential profile during `rembrane connect`. Remote clients use OAuth protected-resource discovery and purpose-appropriate grants.
 
+The pre-alpha stdio implementation reads its connection profile from:
+
+- `REMBRANE_DATABASE`
+- `REMBRANE_PRINCIPAL_ID`
+- `REMBRANE_WORKSPACE_ID`
+- `REMBRANE_CLIENT_ID`
+- `REMBRANE_WORKSPACE_KEY_ID`
+- `REMBRANE_WORKSPACE_KEY_HEX` (development only)
+
+Workspace and subject identifiers are intentionally absent from tool arguments.
+
 ## Tools
 
 ### `rembrane_resolve_context`
