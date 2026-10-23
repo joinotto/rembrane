@@ -6,6 +6,7 @@
 mod error;
 mod checkpoint;
 mod ports;
+mod propose_memory;
 mod revise_memory;
 mod resolve_context;
 
@@ -17,6 +18,9 @@ pub use checkpoint::{
 pub use ports::{
     CheckpointRepository, DisclosureRepository, EventRepository,
     MemoryRepository,
+};
+pub use propose_memory::{
+    ConfirmMemoryCommand, MemoryProposalService, ProposeMemoryCommand,
 };
 pub use revise_memory::{
     DeleteMemoryCommand, MemoryLifecycleService, ReviseMemoryCommand,
