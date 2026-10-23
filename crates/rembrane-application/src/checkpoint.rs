@@ -1,14 +1,16 @@
 use rembrane_domain::{
-    ActivityCheckpoint, ActivityId, MemoryScope, ReadGrant, WriteGrant,
-    WritePermission,
+    ActivityCheckpoint, ActivityId, CanonicalEvent, EventId, EventPayload,
+    MemoryScope, ReadGrant, WriteGrant, WritePermission,
 };
 
-use crate::{ApplicationError, CheckpointRepository};
+use crate::{ApplicationError, CheckpointMutationRepository};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CreateCheckpointCommand {
     pub grant: WriteGrant,
     pub checkpoint: ActivityCheckpoint,
+    pub event_id: EventId,
+    pub expected_previous_sequence: u64,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -16,6 +18,8 @@ pub struct UpdateCheckpointCommand {
     pub grant: WriteGrant,
     pub checkpoint: ActivityCheckpoint,
     pub expected_version: u64,
+    pub event_id: EventId,
+    pub expected_previous_sequence: u64,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -30,7 +34,7 @@ pub struct CheckpointService<'repository, Repository> {
 
 impl<'repository, Repository> CheckpointService<'repository, Repository>
 where
-    Repository: CheckpointRepository,
+    Repository: CheckpointMutationRepository,
 {
     pub fn new(repository: &'repository mut Repository) -> Self {
         Self { repository }
@@ -41,8 +45,17 @@ where
         command: CreateCheckpointCommand,
     ) -> Result<ActivityCheckpoint, ApplicationError> {
         authorize_write(&command.grant, &command.checkpoint)?;
-        self.repository
-            .insert_checkpoint(command.checkpoint.clone())?;
+        let event = checkpoint_event(
+            command.event_id,
+            &command.grant,
+            &command.checkpoint,
+            command.expected_previous_sequence,
+        )?;
+        self.repository.insert_checkpoint_with_event(
+            command.checkpoint.clone(),
+            event,
+            command.expected_previous_sequence,
+        )?;
         Ok(command.checkpoint)
     }
 
@@ -51,9 +64,17 @@ where
         command: UpdateCheckpointCommand,
     ) -> Result<ActivityCheckpoint, ApplicationError> {
         authorize_write(&command.grant, &command.checkpoint)?;
-        self.repository.replace_checkpoint(
+        let event = checkpoint_event(
+            command.event_id,
+            &command.grant,
+            &command.checkpoint,
+            command.expected_previous_sequence,
+        )?;
+        self.repository.replace_checkpoint_with_event(
             command.checkpoint.clone(),
             command.expected_version,
+            event,
+            command.expected_previous_sequence,
         )?;
         Ok(command.checkpoint)
     }
@@ -75,6 +96,29 @@ where
             &command.activity_id,
         )
     }
+}
+
+fn checkpoint_event(
+    event_id: EventId,
+    grant: &WriteGrant,
+    checkpoint: &ActivityCheckpoint,
+    previous_sequence: u64,
+) -> Result<CanonicalEvent, ApplicationError> {
+    let sequence = previous_sequence
+        .checked_add(1)
+        .ok_or(ApplicationError::SequenceConflict)?;
+    CanonicalEvent::new(
+        event_id,
+        grant.workspace_id.clone(),
+        grant.subject_id.clone(),
+        Some(grant.subject_id.clone()),
+        sequence,
+        EventPayload::ActivityCheckpointed {
+            activity_id: checkpoint.activity_id().clone(),
+            version: checkpoint.version(),
+        },
+    )
+    .map_err(|error| ApplicationError::Validation(error.to_string()))
 }
 
 fn authorize_write(

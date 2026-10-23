@@ -3,8 +3,9 @@ use rembrane_application::{
     ResumeActivityCommand,
 };
 use rembrane_domain::{
-    ActivityCheckpoint, ActivityId, CheckpointId, ClientId, PrincipalId,
-    ReadGrant, ReadScope, WorkspaceId, WriteGrant, WritePermission,
+    ActivityCheckpoint, ActivityId, CheckpointId, ClientId, EventId,
+    PrincipalId, ReadGrant, ReadScope, WorkspaceId, WriteGrant,
+    WritePermission,
 };
 use rembrane_store_memory::InMemoryStore;
 
@@ -51,6 +52,8 @@ fn authorized_agent_can_create_and_another_can_resume() {
         .create(CreateCheckpointCommand {
             grant: writer(),
             checkpoint: checkpoint(),
+            event_id: EventId::new("event_01"),
+            expected_previous_sequence: 0,
         })
         .expect("authorized checkpoint creation should succeed");
 
@@ -90,6 +93,8 @@ fn client_without_checkpoint_write_permission_is_denied() {
         .create(CreateCheckpointCommand {
             grant: denied,
             checkpoint: checkpoint(),
+            event_id: EventId::new("event_01"),
+            expected_previous_sequence: 0,
         })
         .expect_err("missing write permission should fail");
 

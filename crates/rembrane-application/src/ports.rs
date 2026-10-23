@@ -85,6 +85,23 @@ pub trait CheckpointRepository {
     ) -> Result<(), ApplicationError>;
 }
 
+pub trait CheckpointMutationRepository: CheckpointRepository + EventRepository {
+    fn insert_checkpoint_with_event(
+        &mut self,
+        checkpoint: ActivityCheckpoint,
+        event: CanonicalEvent,
+        expected_previous_sequence: u64,
+    ) -> Result<(), ApplicationError>;
+
+    fn replace_checkpoint_with_event(
+        &mut self,
+        checkpoint: ActivityCheckpoint,
+        expected_checkpoint_version: u64,
+        event: CanonicalEvent,
+        expected_previous_sequence: u64,
+    ) -> Result<(), ApplicationError>;
+}
+
 pub trait MembershipRepository {
     fn insert_membership(
         &mut self,

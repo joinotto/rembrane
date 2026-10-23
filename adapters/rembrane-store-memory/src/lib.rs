@@ -1,9 +1,9 @@
 //! Volatile reference adapter used by tests, examples, and local prototypes.
 
 use rembrane_application::{
-    ApplicationError, CanonicalMutationRepository, CheckpointRepository,
-    DisclosureRepository, EventRepository, MembershipRepository,
-    MemoryRepository,
+    ApplicationError, CanonicalMutationRepository,
+    CheckpointMutationRepository, CheckpointRepository, DisclosureRepository,
+    EventRepository, MembershipRepository, MemoryRepository,
 };
 use rembrane_domain::{
     ActivityCheckpoint, ActivityId, CanonicalEvent, DisclosureReceipt,
@@ -288,6 +288,66 @@ impl CheckpointRepository for InMemoryStore {
         }
 
         *stored = checkpoint;
+        Ok(())
+    }
+}
+
+impl CheckpointMutationRepository for InMemoryStore {
+    fn insert_checkpoint_with_event(
+        &mut self,
+        checkpoint: ActivityCheckpoint,
+        event: CanonicalEvent,
+        expected_previous_sequence: u64,
+    ) -> Result<(), ApplicationError> {
+        if checkpoint.workspace_id() != event.workspace_id() {
+            return Err(ApplicationError::Validation(
+                "checkpoint and event workspace must match".to_owned(),
+            ));
+        }
+        if self.checkpoints.iter().any(|stored| {
+            stored.workspace_id() == checkpoint.workspace_id()
+                && stored.id() == checkpoint.id()
+        }) {
+            return Err(ApplicationError::AlreadyExists);
+        }
+        self.validate_event(&event, expected_previous_sequence)?;
+
+        self.checkpoints.push(checkpoint);
+        self.events.push(event);
+        Ok(())
+    }
+
+    fn replace_checkpoint_with_event(
+        &mut self,
+        checkpoint: ActivityCheckpoint,
+        expected_checkpoint_version: u64,
+        event: CanonicalEvent,
+        expected_previous_sequence: u64,
+    ) -> Result<(), ApplicationError> {
+        if checkpoint.workspace_id() != event.workspace_id() {
+            return Err(ApplicationError::Validation(
+                "checkpoint and event workspace must match".to_owned(),
+            ));
+        }
+        let position = self
+            .checkpoints
+            .iter()
+            .position(|stored| {
+                stored.workspace_id() == checkpoint.workspace_id()
+                    && stored.id() == checkpoint.id()
+            })
+            .ok_or(ApplicationError::NotFound)?;
+        let stored = &self.checkpoints[position];
+        if stored.version() != expected_checkpoint_version
+            || checkpoint.version()
+                != expected_checkpoint_version.saturating_add(1)
+        {
+            return Err(ApplicationError::VersionConflict);
+        }
+        self.validate_event(&event, expected_previous_sequence)?;
+
+        self.checkpoints[position] = checkpoint;
+        self.events.push(event);
         Ok(())
     }
 }
