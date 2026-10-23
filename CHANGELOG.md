@@ -44,6 +44,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   to the subject and is still at the recorded version.
 - Experimental RustCrypto XChaCha20-Poly1305 record cipher with randomized
   nonces, zeroizing key storage, and tenant-bound associated data.
+- Development CLI flows for encrypted preference capture and minimal-context
+  recall with automatic disclosure receipts.
 - Product architecture, threat model, integration support policy, Rust
   research, bot integration design, and architecture decision records.
 

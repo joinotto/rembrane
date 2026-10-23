@@ -103,6 +103,23 @@ cargo run -p rembrane-cli -- init \
   --database .rembrane/rembrane.db \
   --principal principal_local \
   --workspace workspace_personal
+
+export REMBRANE_WORKSPACE_KEY_ID=local-key-v1
+export REMBRANE_WORKSPACE_KEY_HEX=<64-hex-character-development-key>
+
+cargo run -p rembrane-cli -- remember \
+  --database .rembrane/rembrane.db \
+  --principal principal_local \
+  --workspace workspace_personal \
+  --content "Call me Hippo"
+
+cargo run -p rembrane-cli -- recall \
+  --database .rembrane/rembrane.db \
+  --principal principal_local \
+  --workspace workspace_personal \
+  --client assistant_local \
+  --purpose personalize-assistant \
+  --query "What should I call the user?"
 ```
 
 The demo stores a confirmed preference, resolves it for a second authorized assistant, and prints the context-pack and disclosure-receipt identifiers.
@@ -111,6 +128,10 @@ The SQLite adapter currently persists local identity, personal workspace, and
 owner membership. Persistent encrypted memories, network servers,
 cryptographic key management, and production authentication are not yet
 implemented.
+
+The environment-key flow is for development testing only. Shell history must
+never contain the key value; production setup will use operating-system
+keychains, HSMs, or customer KMS providers.
 
 ## Contributing
 
