@@ -61,7 +61,11 @@ impl SqliteStore<MissingCipher> {
         mut connection: Connection,
     ) -> Result<Self, ApplicationError> {
         connection
-            .execute_batch("PRAGMA foreign_keys = ON;")
+            .execute_batch(
+                "PRAGMA foreign_keys = ON;
+                 PRAGMA busy_timeout = 5000;
+                 PRAGMA journal_mode = WAL;",
+            )
             .map_err(|_| ApplicationError::StorageUnavailable)?;
         migrate(&mut connection)?;
         Ok(Self {
@@ -209,6 +213,31 @@ mod migration_tests {
 
         SqliteStore::open(&database)
             .expect("current database should reopen idempotently");
+        fs::remove_file(database).expect("temporary database should be removed");
+    }
+
+    #[test]
+    fn configures_integrity_and_contention_pragmas() {
+        let database = database_path("connection-pragmas");
+        let store =
+            SqliteStore::open(&database).expect("database should initialize");
+        let foreign_keys: u32 = store
+            .connection
+            .pragma_query_value(None, "foreign_keys", |row| row.get(0))
+            .expect("foreign key pragma should read");
+        let busy_timeout: u32 = store
+            .connection
+            .pragma_query_value(None, "busy_timeout", |row| row.get(0))
+            .expect("busy timeout pragma should read");
+        let journal_mode: String = store
+            .connection
+            .pragma_query_value(None, "journal_mode", |row| row.get(0))
+            .expect("journal mode pragma should read");
+
+        assert_eq!(foreign_keys, 1);
+        assert_eq!(busy_timeout, 5_000);
+        assert_eq!(journal_mode, "wal");
+        drop(store);
         fs::remove_file(database).expect("temporary database should be removed");
     }
 

@@ -20,6 +20,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Tenant-isolated SQLite canonical schema with encrypted-payload metadata.
 - Versioned SQLite initialization with legacy-schema adoption, idempotent
   reopen behavior, and rejection of unsupported future schema versions.
+- SQLite connections configured with foreign-key enforcement, a bounded
+  five-second lock wait, and WAL journaling for concurrent local agents.
 - Executable SQLite schema and transaction-atomicity checks.
 - Opaque record-encryption boundary with tenant-bound associated data.
 - Versioned canonical memory codec with strict decoding and a stable wire
