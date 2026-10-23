@@ -8,7 +8,9 @@ mod capability;
 mod error;
 mod semantic;
 
-pub use capability::{Capability, ProviderManifest};
+pub use capability::{
+    Capability, ProviderManifest, ProviderPolicy,
+};
 pub use error::ProviderError;
 pub use semantic::{
     AuthorizedMemoryProjection, CandidateMemory, SemanticMemoryProvider,
