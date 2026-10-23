@@ -82,6 +82,8 @@ target/debug/rembrane restore \
   --principal "$REMBRANE_PRINCIPAL_ID" \
   --workspace "$REMBRANE_WORKSPACE_ID"
 
+target/debug/rembrane fingerprint-git --repository "$PWD"
+
 target/debug/rembrane remember \
   --database "$REMBRANE_DATABASE" \
   --principal "$REMBRANE_PRINCIPAL_ID" \

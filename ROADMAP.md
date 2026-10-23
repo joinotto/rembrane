@@ -71,7 +71,8 @@ This roadmap describes sequencing, not release dates.
 - [x] Layer global, domain, entity, and activity context in one request.
 - [x] Activity-scoped work-trace ingestion as proposed observation memory.
 - [x] Model activity checkpoints and resumable handoffs.
-- [ ] Git and coding-agent adapters.
+- [x] Deterministic local Git state fingerprints for coding-agent handoffs.
+- [ ] Native coding-agent configuration adapters.
 - [x] Deterministic item and plaintext-byte context budgets.
 - [x] Enforce canonical memory and checkpoint payload ceilings.
 - [x] Optional external-state fingerprints and stale handoff detection.

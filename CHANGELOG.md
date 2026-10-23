@@ -47,6 +47,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   overwrites, authenticate restored records, and remove invalid destinations.
 - `rembrane-encrypted-export-v1` single-file backup framing with strict magic,
   format-version, payload-length, truncation, and trailing-data validation.
+- Read-only `rembrane fingerprint-git` command producing stable
+  `git:<commit>:<clean|dirty>` handoff fingerprints without repository locks.
 - Type-state SQLite cipher attachment that prevents encrypted memory APIs from
   existing on an unconfigured store.
 - Tenant-scoped SQLite memory reads that authenticate encrypted payloads before

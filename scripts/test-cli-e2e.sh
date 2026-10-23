@@ -12,6 +12,7 @@ backup="$test_directory/rembrane-backup.rembrane"
 restored_database="$test_directory/rembrane-restored.sqlite"
 invalid_export="$test_directory/rembrane-invalid.rembrane"
 invalid_restore="$test_directory/rembrane-invalid.sqlite"
+git_repository="$test_directory/project"
 
 export REMBRANE_WORKSPACE_KEY_ID="e2e-key-v1"
 export REMBRANE_WORKSPACE_KEY_HEX="000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
@@ -66,6 +67,24 @@ then
     exit 1
 fi
 test ! -e "$invalid_restore"
+
+mkdir "$git_repository"
+git -C "$git_repository" init --quiet
+git -C "$git_repository" config user.name "Rembrane Test"
+git -C "$git_repository" config user.email "rembrane@example.invalid"
+printf 'initial\n' > "$git_repository/README.md"
+git -C "$git_repository" add README.md
+git -C "$git_repository" commit --quiet -m "initial"
+clean_fingerprint=$(
+    "$rembrane_binary" fingerprint-git --repository "$git_repository"
+)
+printf '%s\n' "$clean_fingerprint" | rg '^git:[0-9a-f]+:clean$' >/dev/null
+printf 'changed\n' >> "$git_repository/README.md"
+dirty_fingerprint=$(
+    "$rembrane_binary" fingerprint-git --repository "$git_repository"
+)
+printf '%s\n' "$dirty_fingerprint" | rg '^git:[0-9a-f]+:dirty$' >/dev/null
+test "$clean_fingerprint" != "$dirty_fingerprint"
 
 "$rembrane_binary" restore \
     --input "$backup" \

@@ -41,6 +41,7 @@ fn run(arguments: Vec<String>) -> Result<(), String> {
         Some("doctor") => doctor(&arguments[1..]),
         Some("backup") => backup(&arguments[1..]),
         Some("restore") => restore(&arguments[1..]),
+        Some("fingerprint-git") => fingerprint_git(&arguments[1..]),
         Some("remember") => remember(&arguments[1..]),
         Some("recall") => recall(&arguments[1..]),
         Some("correct") => correct(&arguments[1..]),
@@ -50,6 +51,40 @@ fn run(arguments: Vec<String>) -> Result<(), String> {
             Ok(())
         }
     }
+}
+
+fn fingerprint_git(arguments: &[String]) -> Result<(), String> {
+    let repository = std::path::Path::new(option(arguments, "--repository")?);
+    if !repository.is_dir() {
+        return Err("Git repository path is not a directory".to_owned());
+    }
+    let head = git_output(repository, &["rev-parse", "--verify", "HEAD"])?;
+    let status = git_output(
+        repository,
+        &["status", "--porcelain=v1", "--untracked-files=normal"],
+    )?;
+    let worktree = if status.is_empty() { "clean" } else { "dirty" };
+    println!("git:{head}:{worktree}");
+    Ok(())
+}
+
+fn git_output(
+    repository: &std::path::Path,
+    arguments: &[&str],
+) -> Result<String, String> {
+    let output = std::process::Command::new("git")
+        .args(["-C"])
+        .arg(repository)
+        .args(arguments)
+        .env("GIT_OPTIONAL_LOCKS", "0")
+        .output()
+        .map_err(|error| format!("cannot execute Git: {error}"))?;
+    if !output.status.success() {
+        return Err("cannot inspect Git repository".to_owned());
+    }
+    String::from_utf8(output.stdout)
+        .map(|value| value.trim().to_owned())
+        .map_err(|_| "Git returned non-UTF-8 output".to_owned())
 }
 
 fn backup(arguments: &[String]) -> Result<(), String> {
@@ -818,6 +853,7 @@ fn print_help() {
              --workspace <id> --output <path>\n\
            rembrane restore --input <path> --database <new-path> \
              --principal <id> --workspace <id>\n\
+           rembrane fingerprint-git --repository <path>\n\
            rembrane remember --database <path> --principal <id> \
              --workspace <id> --content <preference> \
              [--domain <name> | --entity <id> | --activity <id>]\n\
