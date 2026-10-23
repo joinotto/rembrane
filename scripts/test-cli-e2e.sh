@@ -103,6 +103,16 @@ claude_config=$(
 printf '%s\n' "$claude_config" | jq -e \
     '.mcpServers.rembrane.env.REMBRANE_WORKSPACE_KEY_HEX
         == "${REMBRANE_WORKSPACE_KEY_HEX}"' >/dev/null
+generic_config=$(
+    "$rembrane_binary" mcp-config \
+        --client generic \
+        --server-binary "$repository_root/target/debug/rembrane-mcp"
+)
+printf '%s\n' "$generic_config" | jq -e \
+    '.schemaVersion == 1
+        and .transport == "stdio"
+        and (.requiredEnvironment | index("REMBRANE_WORKSPACE_KEY_HEX"))' \
+    >/dev/null
 
 "$rembrane_binary" restore \
     --input "$backup" \

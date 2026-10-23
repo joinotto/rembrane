@@ -70,14 +70,29 @@ fn print_mcp_config(arguments: &[String]) -> Result<(), String> {
     let config = match client {
         "codex" => codex_mcp_config(server_binary),
         "claude-code" => claude_mcp_config(server_binary),
+        "generic" => generic_mcp_config(server_binary),
         _ => {
             return Err(
-                "--client must be codex or claude-code".to_owned(),
+                "--client must be codex, claude-code, or generic".to_owned(),
             );
         }
     };
     println!("{config}");
     Ok(())
+}
+
+fn generic_mcp_config(server_binary: &str) -> String {
+    let variables = MCP_ENVIRONMENT_VARIABLES
+        .iter()
+        .map(|variable| format!("\"{variable}\""))
+        .collect::<Vec<_>>()
+        .join(",");
+    format!(
+        "{{\"schemaVersion\":1,\"name\":\"rembrane\",\
+         \"transport\":\"stdio\",\"command\":\"{}\",\"args\":[],\
+         \"requiredEnvironment\":[{variables}]}}",
+        escape_config_string(server_binary)
+    )
 }
 
 fn codex_mcp_config(server_binary: &str) -> String {
@@ -965,7 +980,7 @@ fn print_help() {
            rembrane restore --input <path> --database <new-path> \
              --principal <id> --workspace <id>\n\
            rembrane fingerprint-git --repository <path>\n\
-           rembrane mcp-config --client <codex|claude-code> \
+           rembrane mcp-config --client <codex|claude-code|generic> \
              --server-binary <path>\n\
            rembrane remember --database <path> --principal <id> \
              --workspace <id> --content <preference> \
@@ -989,9 +1004,9 @@ mod tests {
 
     use super::{
         EXPORT_MAGIC, claude_mcp_config, codex_mcp_config,
-        format_read_scopes, option, positive_u64, read_export,
-        recall_scope_context, redact_endpoint, requested_memory_scope,
-        write_export,
+        format_read_scopes, generic_mcp_config, option, positive_u64,
+        read_export, recall_scope_context, redact_endpoint,
+        requested_memory_scope, write_export,
     };
 
     fn temporary_path(name: &str) -> std::path::PathBuf {
@@ -1156,5 +1171,11 @@ mod tests {
             "\"REMBRANE_WORKSPACE_KEY_HEX\":\"${REMBRANE_WORKSPACE_KEY_HEX}\""
         ));
         assert!(!claude.contains("00010203"));
+
+        let generic = generic_mcp_config("/opt/rembrane-mcp");
+        assert!(generic.contains("\"schemaVersion\":1"));
+        assert!(generic.contains("\"transport\":\"stdio\""));
+        assert!(generic.contains("\"requiredEnvironment\""));
+        assert!(!generic.contains("00010203"));
     }
 }

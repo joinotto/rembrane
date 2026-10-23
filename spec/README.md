@@ -24,6 +24,13 @@ The response must validate against `discovery.schema.json`. Discovery describes 
 
 `mcp.md` maps application use cases to tools, resources, prompts, connection identity, permissions, and safety annotations. MCP parameters deliberately exclude canonical workspace and subject identity.
 
+## Local stdio connection manifest
+
+`stdio-connection-manifest.schema.json` defines the secret-free local process
+manifest emitted by `rembrane mcp-config --client generic`. Launchers resolve
+the listed environment variables inside the operator-controlled environment;
+the manifest never contains their values.
+
 ## Design rules
 
 - Canonical identifiers are opaque strings.

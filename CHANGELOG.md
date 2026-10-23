@@ -54,6 +54,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Secret-safe `rembrane mcp-config` generators for Codex TOML and Claude Code
   JSON, forwarding credential names from the local environment without
   printing credential values.
+- Versioned vendor-neutral stdio connection manifest and JSON Schema for
+  credential-free integration with other MCP-capable apps, bots, and agents.
 - Type-state SQLite cipher attachment that prevents encrypted memory APIs from
   existing on an unconfigured store.
 - Tenant-scoped SQLite memory reads that authenticate encrypted payloads before

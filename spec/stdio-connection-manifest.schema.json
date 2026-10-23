@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rembrane.dev/schemas/stdio-connection-manifest-v1.json",
+  "title": "Rembrane stdio connection manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "name",
+    "transport",
+    "command",
+    "args",
+    "requiredEnvironment"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "name": {
+      "const": "rembrane"
+    },
+    "transport": {
+      "const": "stdio"
+    },
+    "command": {
+      "type": "string",
+      "minLength": 1
+    },
+    "args": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "requiredEnvironment": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^REMBRANE_[A-Z0-9_]+$"
+      }
+    }
+  }
+}

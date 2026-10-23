@@ -165,10 +165,16 @@ target/debug/rembrane mcp-config \
 target/debug/rembrane mcp-config \
   --client claude-code \
   --server-binary "$PWD/target/debug/rembrane-mcp"
+
+target/debug/rembrane mcp-config \
+  --client generic \
+  --server-binary "$PWD/target/debug/rembrane-mcp"
 ```
 
 The generated configuration references protected environment-variable names;
-it never prints their values.
+it never prints their values. The generic output follows the versioned
+`spec/stdio-connection-manifest.schema.json` contract for other apps, bots,
+launchers, and agent platforms.
 
 The local REST server additionally requires `REMBRANE_DATABASE`,
 `REMBRANE_PRINCIPAL_ID`, `REMBRANE_WORKSPACE_ID`, `REMBRANE_CLIENT_ID`, and

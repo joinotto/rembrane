@@ -75,6 +75,8 @@ This roadmap describes sequencing, not release dates.
 - [x] Model activity checkpoints and resumable handoffs.
 - [x] Deterministic local Git state fingerprints for coding-agent handoffs.
 - [x] Secret-safe Codex and Claude Code stdio MCP configuration generators.
+- [x] Versioned vendor-neutral stdio connection manifest for apps, bots, and
+  agent launchers.
 - [ ] Additional native coding-agent configuration adapters.
 - [x] Deterministic item and plaintext-byte context budgets.
 - [x] Enforce canonical memory and checkpoint payload ceilings.
