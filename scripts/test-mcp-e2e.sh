@@ -34,6 +34,11 @@ event_count=$(
     sqlite3 "$REMBRANE_DATABASE" \
         "SELECT count(*) FROM workspace_events WHERE workspace_id = '$REMBRANE_WORKSPACE_ID';"
 )
-test "$event_count" = "5"
+test "$event_count" = "6"
+trace_count=$(
+    sqlite3 "$REMBRANE_DATABASE" \
+        "SELECT count(*) FROM memories WHERE workspace_id = '$REMBRANE_WORKSPACE_ID' AND kind = 'observation' AND status = 'proposed' AND scope_type = 'activity' AND scope_value = 'activity_e2e';"
+)
+test "$trace_count" = "1"
 
 echo "MCP end-to-end checks passed"

@@ -179,6 +179,21 @@ Annotations:
 }
 ```
 
+### `rembrane_record_work_trace`
+
+Records an agent observation under one authorized activity. Work traces enter
+canonical storage as proposed observation memory and therefore cannot be
+returned as confirmed user truth until a stronger confirmation workflow
+approves them.
+
+Arguments:
+
+- `activityId`
+- `entityId` (optional attribution)
+- `summary`
+
+The tool requires `memory:propose` plus exact activity scope authority.
+
 ### `rembrane_explain_context`
 
 Explains the sources, scopes, versions, and disclosure policy associated with a context pack.

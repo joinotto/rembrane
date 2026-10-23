@@ -95,6 +95,7 @@ try {
     "rembrane_remember_preference",
     "rembrane_request_correction",
     "rembrane_forget_memory",
+    "rembrane_record_work_trace",
     "rembrane_checkpoint_activity",
     "rembrane_resume_activity",
   ]) {
@@ -286,7 +287,27 @@ try {
     throw new Error("MCP did not detect stale external state");
   }
 
-  const deniedResumeCall = await request(13, "tools/call", {
+  const workTraceCall = await request(13, "tools/call", {
+    name: "rembrane_record_work_trace",
+    arguments: {
+      activityId: "activity_e2e",
+      entityId: "project_e2e",
+      summary: "Ran the MCP lifecycle and stale-state checks.",
+    },
+  });
+  if (workTraceCall.isError) {
+    throw new Error(
+      `MCP work trace returned an error: ${JSON.stringify(workTraceCall)}`,
+    );
+  }
+  const workTrace = JSON.parse(
+    workTraceCall.content?.find((item) => item.type === "text")?.text,
+  );
+  if (workTrace.status !== "proposed" || !workTrace.memoryId) {
+    throw new Error("MCP work trace was not recorded as proposed memory");
+  }
+
+  const deniedResumeCall = await request(14, "tools/call", {
     name: "rembrane_resume_activity",
     arguments: {
       activityId: "activity_outside_grant",

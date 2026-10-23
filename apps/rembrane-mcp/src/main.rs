@@ -6,8 +6,9 @@ use rembrane_application::{
     AuthorizeClientCommand, AuthorizeClientService, ClientGrantBundle,
     CheckpointService, CreateCheckpointCommand, DeleteMemoryCommand,
     EventRepository, MemoryLifecycleService, RememberPreferenceCommand,
-    RememberPreferenceService, ResolveContextCommand, ResolveContextService,
-    ResumeActivityCommand, ReviseMemoryCommand, UpdateCheckpointCommand,
+    MemoryProposalService, ProposeMemoryCommand, RememberPreferenceService,
+    ResolveContextCommand, ResolveContextService, ResumeActivityCommand,
+    ReviseMemoryCommand, UpdateCheckpointCommand,
 };
 use rembrane_contracts::ResolveContextRequest;
 use rembrane_config::parse_read_scopes;
@@ -15,8 +16,8 @@ use rembrane_crypto_rustcrypto::RustCryptoRecordCipher;
 use rembrane_domain::{
     ActivityCheckpoint, ActivityId, CheckpointId, ClientId, ContextPackId,
     DisclosureId, EntityId, EventId, EvidenceId, EvidenceReference,
-    EvidenceSource, MemoryId, MemoryScope, PrincipalId, ReadScope, WorkspaceId,
-    WritePermission,
+    EvidenceSource, MemoryId, MemoryKind, MemoryScope, PrincipalId, ReadScope,
+    WorkspaceId, WritePermission,
 };
 use rembrane_store_sqlite::SqliteStore;
 use rmcp::handler::server::wrapper::Parameters;
@@ -83,6 +84,14 @@ struct ForgetMemoryParameters {
     domain: Option<String>,
     entity_id: Option<String>,
     activity_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct WorkTraceParameters {
+    activity_id: String,
+    entity_id: Option<String>,
+    summary: String,
 }
 
 #[derive(Serialize)]
@@ -420,6 +429,58 @@ impl RembraneMcp {
             })
             .map_err(application_error)?;
         mutation_response(memory.id().to_string(), memory.version(), "deleted")
+    }
+
+    #[tool(
+        name = "rembrane_record_work_trace",
+        description = "Record an activity-scoped agent observation as proposed memory. It is not promoted to confirmed user truth."
+    )]
+    fn record_work_trace(
+        &self,
+        Parameters(parameters): Parameters<WorkTraceParameters>,
+    ) -> Result<String, McpError> {
+        if parameters.activity_id.trim().is_empty()
+            || parameters.summary.trim().is_empty()
+        {
+            return Err(McpError::invalid_params(
+                "activityId and summary must not be empty",
+                None,
+            ));
+        }
+        let mut state = lock_state(&self.state)?;
+        let activity_id = ActivityId::new(parameters.activity_id);
+        let scope = MemoryScope::Activity {
+            id: activity_id.clone(),
+        };
+        let grants = authorize(
+            &state,
+            vec![ReadScope::Activity { id: activity_id }],
+            vec![WritePermission::ProposeMemory],
+        )?;
+        let previous_sequence = current_sequence(&state)?;
+        let suffix = next_id(&mut state);
+        let content = if let Some(entity_id) = parameters.entity_id {
+            format!("[entity:{entity_id}] {}", parameters.summary)
+        } else {
+            parameters.summary
+        };
+        let memory = MemoryProposalService::new(&mut state.store)
+            .propose(ProposeMemoryCommand {
+                grant: grants.write,
+                memory_id: MemoryId::new(format!("trace_{suffix}")),
+                scope,
+                kind: MemoryKind::Observation,
+                content,
+                evidence: EvidenceReference::new(
+                    EvidenceId::new(format!("evidence_{suffix}")),
+                    EvidenceSource::AgentObservation,
+                ),
+                event_id: EventId::new(format!("event_{suffix}")),
+                expected_previous_sequence: previous_sequence,
+                projections: Vec::new(),
+            })
+            .map_err(application_error)?;
+        mutation_response(memory.id().to_string(), memory.version(), "proposed")
     }
 
     #[tool(

@@ -66,6 +66,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   and scoped cross-agent resume.
 - Backward-compatible encrypted checkpoint state fingerprints with MCP stale
   handoff detection for changed Git, filesystem, booking, or other state.
+- MCP work-trace ingestion as encrypted, activity-scoped proposed observation
+  memory, preserving the boundary between agent evidence and confirmed truth.
 - Bearer-authenticated REST context resolution bound to a configured workspace,
   principal, and client profile.
 - Exact `REMBRANE_READ_SCOPES` connection allowlists for global, domain,
