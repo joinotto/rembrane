@@ -41,7 +41,8 @@ This roadmap describes sequencing, not release dates.
 - [ ] Add remote Streamable HTTP MCP with OAuth.
 - [x] Persist a disclosure receipt for every SQLite context response.
 - [ ] Persist disclosure receipts in every future storage adapter.
-- [ ] Prove cross-tenant denial across every adapter read path.
+- [x] Prove cross-tenant denial across SQLite user-facing read paths.
+- [ ] Prove cross-tenant denial across every future adapter read path.
 - [ ] Provide the hosted PostgreSQL adapter with row-level security.
 
 ## Phase 2 — Development continuity

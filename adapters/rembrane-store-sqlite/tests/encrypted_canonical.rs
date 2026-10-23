@@ -3,9 +3,7 @@ use rembrane_application::{
     CheckpointRepository, DisclosureRepository, EventRepository,
     MemoryRepository, ProjectionOutboxRepository, WorkspaceRepository,
 };
-use rembrane_crypto::{
-    CryptoError, EncryptedPayload, EncryptionContext, RecordCipher,
-};
+use rembrane_crypto_rustcrypto::RustCryptoRecordCipher;
 use rembrane_domain::{
     ActivityCheckpoint, ActivityId, CanonicalEvent, CheckpointId, ClientId,
     ContextPackId, DisclosedMemory, DisclosureId, DisclosureReceipt, EntityId,
@@ -16,48 +14,33 @@ use rembrane_domain::{
 };
 use rembrane_store_sqlite::SqliteStore;
 
-struct TestAuthenticatedCipher;
+struct TemporaryDatabase(std::path::PathBuf);
 
-impl RecordCipher for TestAuthenticatedCipher {
-    fn seal(
-        &self,
-        context: &EncryptionContext,
-        plaintext: &[u8],
-    ) -> Result<EncryptedPayload, CryptoError> {
-        let associated_data = context.associated_data();
-        let mut ciphertext = Vec::with_capacity(
-            associated_data.len().saturating_add(plaintext.len()),
-        );
-        ciphertext.extend_from_slice(&associated_data);
-        ciphertext.extend_from_slice(plaintext);
-        EncryptedPayload::new(
-            ciphertext,
-            "test-key",
-            "test-authenticated",
-            vec![0; 24],
-        )
-    }
-
-    fn open(
-        &self,
-        context: &EncryptionContext,
-        payload: &EncryptedPayload,
-    ) -> Result<Vec<u8>, CryptoError> {
-        if payload.key_id() != "test-key"
-            || payload.algorithm() != "test-authenticated"
-        {
-            return Err(CryptoError::AuthenticationFailed);
-        }
-        let associated_data = context.associated_data();
-        payload
-            .ciphertext()
-            .strip_prefix(&associated_data)
-            .map(|plaintext| plaintext.to_vec())
-            .ok_or(CryptoError::AuthenticationFailed)
+impl TemporaryDatabase {
+    fn new() -> Self {
+        let suffix = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("test clock is valid")
+            .as_nanos();
+        Self(std::env::temp_dir().join(format!(
+            "rembrane-{suffix}-{}.sqlite",
+            std::process::id()
+        )))
     }
 }
 
-fn initialized_store() -> SqliteStore<TestAuthenticatedCipher> {
+impl Drop for TemporaryDatabase {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
+
+fn test_cipher() -> RustCryptoRecordCipher {
+    RustCryptoRecordCipher::new("test-key", [7; 32])
+        .expect("test key is valid")
+}
+
+fn initialized_store() -> SqliteStore<RustCryptoRecordCipher> {
     let principal_id = PrincipalId::new("principal_01");
     let workspace_id = WorkspaceId::new("workspace_01");
     let mut store = SqliteStore::open_in_memory().expect("database opens");
@@ -68,7 +51,7 @@ fn initialized_store() -> SqliteStore<TestAuthenticatedCipher> {
             Membership::new(workspace_id, principal_id, WorkspaceRole::Owner),
         )
         .expect("workspace initializes");
-    store.with_cipher(TestAuthenticatedCipher)
+    store.with_cipher(test_cipher())
 }
 
 fn memory() -> MemoryRecord {
@@ -182,6 +165,31 @@ fn encrypted_memory_lookup_is_workspace_scoped() {
         .expect("lookup succeeds");
 
     assert!(leaked.is_none());
+}
+
+#[test]
+fn event_and_checkpoint_reads_are_workspace_scoped() {
+    let mut store = initialized_store();
+    store
+        .insert_checkpoint_with_event(
+            checkpoint(),
+            checkpoint_event(1, 1),
+            0,
+        )
+        .expect("checkpoint insert succeeds");
+
+    assert!(store
+        .list_events_since(&WorkspaceId::new("workspace_other"), 0)
+        .expect("event lookup succeeds")
+        .is_empty());
+    assert!(store
+        .latest_checkpoint(
+            &WorkspaceId::new("workspace_other"),
+            &PrincipalId::new("principal_01"),
+            &ActivityId::new("activity_01"),
+        )
+        .expect("checkpoint lookup succeeds")
+        .is_none());
 }
 
 #[test]
@@ -307,5 +315,122 @@ fn persists_exact_disclosure_once() {
     assert_eq!(
         duplicate,
         rembrane_application::ApplicationError::AlreadyExists
+    );
+}
+
+#[test]
+fn rejects_ciphertext_substituted_between_workspaces() {
+    let database = TemporaryDatabase::new();
+    let mut store = SqliteStore::open(&database.0).expect("database opens");
+    for (workspace, principal) in [
+        ("workspace_01", "principal_01"),
+        ("workspace_02", "principal_02"),
+    ] {
+        store
+            .initialize_personal_workspace(
+                Principal::new(PrincipalId::new(principal)),
+                Workspace::personal(WorkspaceId::new(workspace)),
+                Membership::new(
+                    WorkspaceId::new(workspace),
+                    PrincipalId::new(principal),
+                    WorkspaceRole::Owner,
+                ),
+            )
+            .expect("workspace initializes");
+    }
+    let mut store = store.with_cipher(test_cipher());
+    for (workspace, principal, event_id, content) in [
+        (
+            "workspace_01",
+            "principal_01",
+            "event_01",
+            "Call me Hippo",
+        ),
+        (
+            "workspace_02",
+            "principal_02",
+            "event_02",
+            "Call me Rhino",
+        ),
+    ] {
+        let memory = MemoryRecord::confirmed_preference(
+            MemoryId::new("memory_shared"),
+            WorkspaceId::new(workspace),
+            PrincipalId::new(principal),
+            MemoryScope::Global,
+            content,
+            EvidenceReference::new(
+                EvidenceId::new("evidence_01"),
+                EvidenceSource::UserStatement,
+            ),
+        )
+        .expect("memory is valid");
+        let event = CanonicalEvent::new(
+            EventId::new(event_id),
+            WorkspaceId::new(workspace),
+            PrincipalId::new(principal),
+            Some(PrincipalId::new(principal)),
+            1,
+            EventPayload::MemoryCreated {
+                memory_id: MemoryId::new("memory_shared"),
+                version: 1,
+            },
+        )
+        .expect("event is valid");
+        store
+            .insert_memory_with_event(memory, event, Vec::new(), 0)
+            .expect("memory persists");
+    }
+    drop(store);
+
+    let connection = rusqlite::Connection::open(&database.0)
+        .expect("tamper connection opens");
+    connection
+        .execute(
+            "UPDATE memories
+             SET content_ciphertext = (
+                    SELECT content_ciphertext
+                    FROM memories
+                    WHERE workspace_id = 'workspace_01'
+                      AND id = 'memory_shared'
+                 ),
+                 encryption_key_id = (
+                    SELECT encryption_key_id
+                    FROM memories
+                    WHERE workspace_id = 'workspace_01'
+                      AND id = 'memory_shared'
+                 ),
+                 encryption_algorithm = (
+                    SELECT encryption_algorithm
+                    FROM memories
+                    WHERE workspace_id = 'workspace_01'
+                      AND id = 'memory_shared'
+                 ),
+                 encryption_nonce = (
+                    SELECT encryption_nonce
+                    FROM memories
+                    WHERE workspace_id = 'workspace_01'
+                      AND id = 'memory_shared'
+                 )
+             WHERE workspace_id = 'workspace_02'
+               AND id = 'memory_shared'",
+            [],
+        )
+        .expect("test substitution succeeds");
+    drop(connection);
+
+    let store = SqliteStore::open(&database.0)
+        .expect("database reopens")
+        .with_cipher(test_cipher());
+    let error = store
+        .find(
+            &WorkspaceId::new("workspace_02"),
+            &MemoryId::new("memory_shared"),
+        )
+        .expect_err("workspace-bound authentication must fail");
+
+    assert_eq!(
+        error,
+        rembrane_application::ApplicationError::StorageUnavailable
     );
 }

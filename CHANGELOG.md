@@ -57,6 +57,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 ### Security
 
 - Workspace identity is mandatory on canonical storage keys.
+- SQLite tests exercise real authenticated encryption and cross-workspace
+  denial for memories, event streams, and activity checkpoints.
 - Deleted memories persist an encrypted tombstone envelope rather than an
   ambiguous empty ciphertext.
 - Memory and checkpoint writes cannot bypass their corresponding audit event.
