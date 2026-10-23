@@ -1,11 +1,12 @@
 //! Volatile reference adapter used by tests, examples, and local prototypes.
 
 use rembrane_application::{
-    ApplicationError, DisclosureRepository, EventRepository, MemoryRepository,
+    ApplicationError, CheckpointRepository, DisclosureRepository,
+    EventRepository, MemoryRepository,
 };
 use rembrane_domain::{
-    CanonicalEvent, DisclosureReceipt, MemoryId, MemoryRecord, PrincipalId,
-    WorkspaceId,
+    ActivityCheckpoint, ActivityId, CanonicalEvent, DisclosureReceipt,
+    MemoryId, MemoryRecord, PrincipalId, WorkspaceId,
 };
 
 #[derive(Debug, Default)]
@@ -13,6 +14,7 @@ pub struct InMemoryStore {
     memories: Vec<MemoryRecord>,
     disclosures: Vec<DisclosureReceipt>,
     events: Vec<CanonicalEvent>,
+    checkpoints: Vec<ActivityCheckpoint>,
 }
 
 impl InMemoryStore {
@@ -113,6 +115,66 @@ impl DisclosureRepository for InMemoryStore {
         }
 
         self.disclosures.push(receipt);
+        Ok(())
+    }
+}
+
+impl CheckpointRepository for InMemoryStore {
+    fn insert_checkpoint(
+        &mut self,
+        checkpoint: ActivityCheckpoint,
+    ) -> Result<(), ApplicationError> {
+        let duplicate = self.checkpoints.iter().any(|stored| {
+            stored.workspace_id() == checkpoint.workspace_id()
+                && stored.id() == checkpoint.id()
+        });
+        if duplicate {
+            return Err(ApplicationError::AlreadyExists);
+        }
+
+        self.checkpoints.push(checkpoint);
+        Ok(())
+    }
+
+    fn latest_checkpoint(
+        &self,
+        workspace_id: &WorkspaceId,
+        subject_id: &PrincipalId,
+        activity_id: &ActivityId,
+    ) -> Result<Option<ActivityCheckpoint>, ApplicationError> {
+        Ok(self
+            .checkpoints
+            .iter()
+            .filter(|checkpoint| {
+                checkpoint.workspace_id() == workspace_id
+                    && checkpoint.subject_id() == subject_id
+                    && checkpoint.activity_id() == activity_id
+            })
+            .max_by_key(|checkpoint| checkpoint.version())
+            .cloned())
+    }
+
+    fn replace_checkpoint(
+        &mut self,
+        checkpoint: ActivityCheckpoint,
+        expected_version: u64,
+    ) -> Result<(), ApplicationError> {
+        let stored = self
+            .checkpoints
+            .iter_mut()
+            .find(|stored| {
+                stored.workspace_id() == checkpoint.workspace_id()
+                    && stored.id() == checkpoint.id()
+            })
+            .ok_or(ApplicationError::NotFound)?;
+
+        if stored.version() != expected_version
+            || checkpoint.version() != expected_version.saturating_add(1)
+        {
+            return Err(ApplicationError::VersionConflict);
+        }
+
+        *stored = checkpoint;
         Ok(())
     }
 }

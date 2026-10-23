@@ -1,6 +1,6 @@
 use rembrane_domain::{
-    CanonicalEvent, DisclosureReceipt, MemoryId, MemoryRecord, PrincipalId,
-    WorkspaceId,
+    ActivityCheckpoint, ActivityId, CanonicalEvent, DisclosureReceipt,
+    MemoryId, MemoryRecord, PrincipalId, WorkspaceId,
 };
 
 use crate::ApplicationError;
@@ -46,4 +46,24 @@ pub trait EventRepository {
         workspace_id: &WorkspaceId,
         sequence: u64,
     ) -> Result<Vec<CanonicalEvent>, ApplicationError>;
+}
+
+pub trait CheckpointRepository {
+    fn insert_checkpoint(
+        &mut self,
+        checkpoint: ActivityCheckpoint,
+    ) -> Result<(), ApplicationError>;
+
+    fn latest_checkpoint(
+        &self,
+        workspace_id: &WorkspaceId,
+        subject_id: &PrincipalId,
+        activity_id: &ActivityId,
+    ) -> Result<Option<ActivityCheckpoint>, ApplicationError>;
+
+    fn replace_checkpoint(
+        &mut self,
+        checkpoint: ActivityCheckpoint,
+        expected_version: u64,
+    ) -> Result<(), ApplicationError>;
 }
