@@ -29,9 +29,11 @@ This roadmap describes sequencing, not release dates.
 - [x] Atomically persist encrypted memories, events, evidence, and projections.
 - [x] Persist and optimistically update the SQLite provider projection outbox.
 - [x] Persist encrypted activity checkpoints with their audit events.
+- [x] Atomically persist exact-version disclosure receipts in SQLite.
 - [ ] Implement the encrypted local SQLite adapter.
 - [ ] Retrieve minimal context through REST and MCP.
-- [ ] Persist a disclosure receipt for every context response.
+- [x] Persist a disclosure receipt for every SQLite context response.
+- [ ] Persist disclosure receipts in every future storage adapter.
 - [ ] Prove cross-tenant denial across every adapter read path.
 - [ ] Provide the hosted PostgreSQL adapter with row-level security.
 

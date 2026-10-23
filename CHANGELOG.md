@@ -38,6 +38,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   reads, and optimistic status transitions.
 - Encrypted SQLite activity checkpoints with authenticated resume reads and
   atomic audit events.
+- Atomic SQLite disclosure receipts that verify each disclosed memory belongs
+  to the subject and is still at the recorded version.
 - Product architecture, threat model, integration support policy, Rust
   research, bot integration design, and architecture decision records.
 

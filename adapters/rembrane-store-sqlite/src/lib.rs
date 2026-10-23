@@ -2,6 +2,7 @@
 
 mod canonical;
 mod checkpoint;
+mod disclosure;
 mod projection;
 
 use std::path::Path;

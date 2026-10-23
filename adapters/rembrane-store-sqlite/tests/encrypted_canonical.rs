@@ -1,13 +1,14 @@
 use rembrane_application::{
     CanonicalMutationRepository, CheckpointMutationRepository,
-    CheckpointRepository, EventRepository, MemoryRepository,
-    ProjectionOutboxRepository, WorkspaceRepository,
+    CheckpointRepository, DisclosureRepository, EventRepository,
+    MemoryRepository, ProjectionOutboxRepository, WorkspaceRepository,
 };
 use rembrane_crypto::{
     CryptoError, EncryptedPayload, EncryptionContext, RecordCipher,
 };
 use rembrane_domain::{
-    ActivityCheckpoint, ActivityId, CanonicalEvent, CheckpointId, EntityId,
+    ActivityCheckpoint, ActivityId, CanonicalEvent, CheckpointId, ClientId,
+    ContextPackId, DisclosedMemory, DisclosureId, DisclosureReceipt, EntityId,
     EventId, EventPayload, EvidenceId, EvidenceReference, EvidenceSource,
     Membership, MemoryId, MemoryRecord, MemoryScope, Principal, PrincipalId,
     ProjectionJob, ProjectionJobId, ProjectionOperation, ProjectionStatus,
@@ -275,4 +276,36 @@ fn persists_and_resumes_latest_encrypted_checkpoint() {
         .expect("checkpoint lookup succeeds");
 
     assert_eq!(resumed, Some(updated));
+}
+
+#[test]
+fn persists_exact_disclosure_once() {
+    let mut store = initialized_store();
+    store
+        .insert_memory_with_event(memory(), event(), Vec::new(), 0)
+        .expect("canonical mutation succeeds");
+    let receipt = DisclosureReceipt {
+        id: DisclosureId::new("disclosure_01"),
+        context_pack_id: ContextPackId::new("context_01"),
+        workspace_id: WorkspaceId::new("workspace_01"),
+        subject_id: PrincipalId::new("principal_01"),
+        client_id: ClientId::new("assistant_01"),
+        purpose: "personalize-assistant".to_owned(),
+        memories: vec![DisclosedMemory {
+            id: MemoryId::new("memory_01"),
+            version: 1,
+        }],
+    };
+
+    store
+        .append(receipt.clone())
+        .expect("first disclosure persists");
+    let duplicate = store
+        .append(receipt)
+        .expect_err("same disclosure cannot be recorded twice");
+
+    assert_eq!(
+        duplicate,
+        rembrane_application::ApplicationError::AlreadyExists
+    );
 }
