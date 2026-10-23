@@ -1,6 +1,6 @@
 use rembrane_application::{
     CanonicalMutationRepository, EventRepository, MemoryRepository,
-    WorkspaceRepository,
+    ProjectionOutboxRepository, WorkspaceRepository,
 };
 use rembrane_crypto::{
     CryptoError, EncryptedPayload, EncryptionContext, RecordCipher,
@@ -8,7 +8,8 @@ use rembrane_crypto::{
 use rembrane_domain::{
     CanonicalEvent, EventId, EventPayload, EvidenceId, EvidenceReference,
     EvidenceSource, Membership, MemoryId, MemoryRecord, MemoryScope, Principal,
-    PrincipalId, Workspace, WorkspaceId, WorkspaceRole,
+    PrincipalId, ProjectionJob, ProjectionJobId, ProjectionOperation,
+    ProjectionStatus, ProviderId, Workspace, WorkspaceId, WorkspaceRole,
 };
 use rembrane_store_sqlite::SqliteStore;
 
@@ -97,6 +98,18 @@ fn event() -> CanonicalEvent {
     .expect("fixture is valid")
 }
 
+fn projection() -> ProjectionJob {
+    ProjectionJob::new(
+        ProjectionJobId::new("projection_01"),
+        WorkspaceId::new("workspace_01"),
+        MemoryId::new("memory_01"),
+        1,
+        ProviderId::new("semantic.primary"),
+        ProjectionOperation::Upsert,
+    )
+    .expect("fixture is valid")
+}
+
 #[test]
 fn atomically_persists_and_decrypts_memory_and_event() {
     let mut store = initialized_store();
@@ -157,4 +170,38 @@ fn sequence_conflict_rolls_back_memory() {
         )
         .expect("lookup succeeds")
         .is_none());
+}
+
+#[test]
+fn persists_and_optimistically_updates_projection() {
+    let mut store = initialized_store();
+    store
+        .insert_memory_with_event(
+            memory(),
+            event(),
+            vec![projection()],
+            0,
+        )
+        .expect("canonical mutation succeeds");
+
+    let pending = store
+        .pending_projections(&ProviderId::new("semantic.primary"), 10)
+        .expect("pending lookup succeeds");
+    assert_eq!(pending, vec![projection()]);
+
+    let processing = pending[0].clone().begin().expect("job begins");
+    store
+        .replace_projection(
+            processing.clone(),
+            ProjectionStatus::Pending,
+            0,
+        )
+        .expect("optimistic update succeeds");
+
+    assert_eq!(
+        store
+            .find_projection(&ProjectionJobId::new("projection_01"))
+            .expect("projection lookup succeeds"),
+        Some(processing)
+    );
 }

@@ -34,6 +34,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   canonical decoding.
 - Atomic encrypted SQLite memory mutations covering canonical events, evidence,
   and provider projection jobs.
+- Persistent SQLite projection outbox with idempotent enqueue, pending work
+  reads, and optimistic status transitions.
 - Product architecture, threat model, integration support policy, Rust
   research, bot integration design, and architecture decision records.
 

@@ -58,6 +58,35 @@ pub struct ProjectionJob {
 }
 
 impl ProjectionJob {
+    pub fn restore(
+        id: ProjectionJobId,
+        workspace_id: WorkspaceId,
+        memory_id: MemoryId,
+        memory_version: u64,
+        provider_id: ProviderId,
+        operation: ProjectionOperation,
+        status: ProjectionStatus,
+        attempts: u32,
+    ) -> Result<Self, ProjectionJobError> {
+        if memory_version == 0 {
+            return Err(ProjectionJobError::InvalidVersion);
+        }
+        if status != ProjectionStatus::Pending && attempts == 0 {
+            return Err(ProjectionJobError::InvalidTransition);
+        }
+
+        Ok(Self {
+            id,
+            workspace_id,
+            memory_id,
+            memory_version,
+            provider_id,
+            operation,
+            status,
+            attempts,
+        })
+    }
+
     pub fn new(
         id: ProjectionJobId,
         workspace_id: WorkspaceId,

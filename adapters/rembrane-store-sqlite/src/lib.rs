@@ -1,6 +1,7 @@
 //! Persistent tenant-isolated SQLite adapter.
 
 mod canonical;
+mod projection;
 
 use std::path::Path;
 
