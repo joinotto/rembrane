@@ -25,6 +25,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Versioned canonical event codec covering every lifecycle payload variant.
 - Versioned canonical activity-checkpoint codec for resumable handoffs.
 - Atomic principal, personal-workspace, and owner-membership bootstrap contract.
+- SQLite adapter for atomic personal-workspace bootstrap and tenant-scoped
+  identity and membership lookup.
 - Product architecture, threat model, integration support policy, Rust
   research, bot integration design, and architecture decision records.
 

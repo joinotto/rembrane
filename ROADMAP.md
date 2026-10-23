@@ -14,7 +14,8 @@ This roadmap describes sequencing, not release dates.
 ## Phase 1 — Secure personal-memory vertical slice
 
 - [x] Model atomic personal workspace and owner initialization.
-- [ ] Persist and expose local user and personal workspace initialization.
+- [x] Persist local user, workspace, and owner membership in SQLite.
+- [ ] Expose local user and personal workspace initialization through the CLI.
 - [x] Model confirmed preferences with provenance.
 - [x] Model correction and deletion lifecycle operations.
 - [x] Define atomic memory, event, and projection mutations.
