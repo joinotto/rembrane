@@ -89,6 +89,7 @@ fn activity_grant_cannot_resume_another_activity() {
         .expect_err("mismatched activity grant should fail");
 
     assert_eq!(error, ApplicationError::AccessDenied);
+    assert_eq!(store.checkpoint_disclosure_count(), 0);
 }
 
 #[test]

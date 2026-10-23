@@ -75,6 +75,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Versioned SQLite checkpoint-disclosure receipts recording the exact
   checkpoint revision, activity, subject, client, and purpose returned during
   MCP cross-agent resume.
+- Explicit denial coverage proving unauthorized checkpoint resume creates no
+  disclosure receipt.
 - Atomic SQLite disclosure receipts that verify each disclosed memory belongs
   to the subject and is still at the recorded version.
 - Experimental RustCrypto XChaCha20-Poly1305 record cipher with randomized
