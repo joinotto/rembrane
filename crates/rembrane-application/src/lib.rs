@@ -8,6 +8,7 @@ mod checkpoint;
 mod authorize_client;
 mod ports;
 mod propose_memory;
+mod projection_worker;
 mod revise_memory;
 mod resolve_context;
 mod semantic_context;
@@ -28,6 +29,7 @@ pub use ports::{
 pub use propose_memory::{
     ConfirmMemoryCommand, MemoryProposalService, ProposeMemoryCommand,
 };
+pub use projection_worker::{ProjectionOutcome, ProjectionWorker};
 pub use revise_memory::{
     DeleteMemoryCommand, MemoryLifecycleService, ReviseMemoryCommand,
 };
