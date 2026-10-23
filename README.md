@@ -99,11 +99,18 @@ cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 cargo run -p rembrane-cli -- demo
+cargo run -p rembrane-cli -- init \
+  --database .rembrane/rembrane.db \
+  --principal principal_local \
+  --workspace workspace_personal
 ```
 
 The demo stores a confirmed preference, resolves it for a second authorized assistant, and prints the context-pack and disclosure-receipt identifiers.
 
-Current implementation is dependency-light and uses volatile reference adapters. Persistent databases, network servers, cryptographic key management, and production authentication are not implemented yet.
+The SQLite adapter currently persists local identity, personal workspace, and
+owner membership. Persistent encrypted memories, network servers,
+cryptographic key management, and production authentication are not yet
+implemented.
 
 ## Contributing
 

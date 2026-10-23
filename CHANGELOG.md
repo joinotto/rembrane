@@ -27,6 +27,7 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Atomic principal, personal-workspace, and owner-membership bootstrap contract.
 - SQLite adapter for atomic personal-workspace bootstrap and tenant-scoped
   identity and membership lookup.
+- `rembrane init` command for an explicitly located local SQLite installation.
 - Product architecture, threat model, integration support policy, Rust
   research, bot integration design, and architecture decision records.
 

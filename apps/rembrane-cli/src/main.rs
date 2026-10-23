@@ -1,25 +1,88 @@
 use rembrane_application::{
     CanonicalMutationRepository, ResolveContextCommand,
-    ResolveContextService,
+    ResolveContextService, WorkspaceRepository,
 };
 use rembrane_contracts::ResolveContextRequest;
 use rembrane_domain::{
     CanonicalEvent, ClientId, ContextPackId, DisclosureId, EventId,
     EventPayload, EvidenceId, EvidenceReference, EvidenceSource, MemoryId,
-    MemoryRecord, MemoryScope, PrincipalId, ReadGrant, ReadScope, WorkspaceId,
+    MemoryRecord, MemoryScope, Membership, Principal, PrincipalId, ReadGrant,
+    ReadScope, Workspace, WorkspaceId, WorkspaceRole,
 };
 use rembrane_store_memory::InMemoryStore;
+use rembrane_store_sqlite::SqliteStore;
 
 fn main() {
-    let command = std::env::args().nth(1);
+    if let Err(error) = run(std::env::args().skip(1).collect()) {
+        eprintln!("error: {error}");
+        std::process::exit(1);
+    }
+}
 
-    match command.as_deref() {
+fn run(arguments: Vec<String>) -> Result<(), String> {
+    match arguments.first().map(String::as_str) {
         Some("version" | "--version" | "-V") => {
             println!("rembrane {}", env!("CARGO_PKG_VERSION"));
+            Ok(())
         }
-        Some("demo") => print_demo(),
-        _ => print_help(),
+        Some("demo") => {
+            print_demo();
+            Ok(())
+        }
+        Some("init") => initialize(&arguments[1..]),
+        _ => {
+            print_help();
+            Ok(())
+        }
     }
+}
+
+fn initialize(arguments: &[String]) -> Result<(), String> {
+    let database = option(arguments, "--database")?;
+    let principal = option(arguments, "--principal")?;
+    let workspace = option(arguments, "--workspace")?;
+    let database_path = std::path::Path::new(database);
+
+    if let Some(parent) = database_path.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        std::fs::create_dir_all(parent)
+            .map_err(|error| format!("cannot create database directory: {error}"))?;
+    }
+
+    let principal_id = PrincipalId::new(principal);
+    let workspace_id = WorkspaceId::new(workspace);
+    let mut store = SqliteStore::open(database_path)
+        .map_err(|error| format!("cannot open database: {error}"))?;
+    store
+        .initialize_personal_workspace(
+            Principal::new(principal_id.clone()),
+            Workspace::personal(workspace_id.clone()),
+            Membership::new(
+                workspace_id.clone(),
+                principal_id.clone(),
+                WorkspaceRole::Owner,
+            ),
+        )
+        .map_err(|error| format!("cannot initialize workspace: {error}"))?;
+
+    println!("Initialized Rembrane");
+    println!("Database: {}", database_path.display());
+    println!("Principal: {principal_id}");
+    println!("Workspace: {workspace_id}");
+    Ok(())
+}
+
+fn option<'a>(arguments: &'a [String], name: &str) -> Result<&'a str, String> {
+    let position = arguments
+        .iter()
+        .position(|argument| argument == name)
+        .ok_or_else(|| format!("missing required option {name}"))?;
+    arguments
+        .get(position.saturating_add(1))
+        .map(String::as_str)
+        .filter(|value| !value.trim().is_empty() && !value.starts_with("--"))
+        .ok_or_else(|| format!("missing value for {name}"))
 }
 
 fn print_demo() {
@@ -89,6 +152,40 @@ fn print_demo() {
 fn print_help() {
     println!(
         "Rembrane — your memory across every connected AI\n\n\
-         Usage:\n  rembrane version\n  rembrane demo"
+         Usage:\n\
+           rembrane version\n\
+           rembrane demo\n\
+           rembrane init --database <path> --principal <id> --workspace <id>"
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::option;
+
+    #[test]
+    fn parses_named_option_independent_of_order() {
+        let arguments = vec![
+            "--workspace".to_owned(),
+            "workspace_01".to_owned(),
+            "--database".to_owned(),
+            "memory.db".to_owned(),
+        ];
+
+        assert_eq!(
+            option(&arguments, "--database").expect("option exists"),
+            "memory.db"
+        );
+    }
+
+    #[test]
+    fn rejects_option_without_value() {
+        let arguments = vec![
+            "--database".to_owned(),
+            "--workspace".to_owned(),
+            "workspace_01".to_owned(),
+        ];
+
+        assert!(option(&arguments, "--database").is_err());
+    }
 }
