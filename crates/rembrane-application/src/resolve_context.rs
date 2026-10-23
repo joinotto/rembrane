@@ -5,6 +5,7 @@ use rembrane_domain::{
     ContextPackId, DisclosedMemory, DisclosureId, DisclosureReceipt,
     MemoryRecord, MemoryScope, MemoryStatus, ReadGrant,
 };
+use std::collections::BTreeSet;
 
 use crate::{ApplicationError, DisclosureRepository, MemoryRepository};
 
@@ -45,9 +46,8 @@ where
                 && scope_matches(memory, &command.request)
                 && command.grant.allows(memory.scope())
         });
-        items.sort_by_key(|memory| {
-            std::cmp::Reverse(memory.scope().specificity())
-        });
+
+        rank_by_relevance(&mut items, &command.request.query);
         items.truncate(command.request.maximum_items);
 
         let receipt = DisclosureReceipt {
@@ -74,6 +74,48 @@ where
             disclosure_id: command.disclosure_id,
         })
     }
+}
+
+fn rank_by_relevance(items: &mut Vec<MemoryRecord>, query: &str) {
+    let query_tokens = tokens(query);
+    let mut ranked = items
+        .drain(..)
+        .map(|memory| {
+            let relevance = token_overlap(&query_tokens, memory.content());
+            (memory, relevance)
+        })
+        .collect::<Vec<_>>();
+
+    if ranked.iter().any(|(_, relevance)| *relevance > 0) {
+        ranked.retain(|(_, relevance)| *relevance > 0);
+    }
+
+    ranked.sort_by(|(left, left_relevance), (right, right_relevance)| {
+        right_relevance
+            .cmp(left_relevance)
+            .then_with(|| {
+                right
+                    .scope()
+                    .specificity()
+                    .cmp(&left.scope().specificity())
+            })
+            .then_with(|| left.id().as_str().cmp(right.id().as_str()))
+    });
+
+    items.extend(ranked.into_iter().map(|(memory, _)| memory));
+}
+
+fn token_overlap(query_tokens: &BTreeSet<String>, content: &str) -> usize {
+    let content_tokens = tokens(content);
+    query_tokens.intersection(&content_tokens).count()
+}
+
+fn tokens(value: &str) -> BTreeSet<String> {
+    value
+        .split(|character: char| !character.is_alphanumeric())
+        .filter(|token| !token.is_empty())
+        .map(str::to_lowercase)
+        .collect()
 }
 
 fn authorize(command: &ResolveContextCommand) -> Result<(), ApplicationError> {
@@ -181,19 +223,27 @@ mod tests {
         }
     }
 
-    fn memory(id: &str, scope: MemoryScope) -> MemoryRecord {
+    fn memory_with_content(
+        id: &str,
+        scope: MemoryScope,
+        content: &str,
+    ) -> MemoryRecord {
         MemoryRecord::confirmed_preference(
             MemoryId::new(id),
             WorkspaceId::new("workspace_01"),
             PrincipalId::new("principal_01"),
             scope,
-            id,
+            content,
             EvidenceReference::new(
                 EvidenceId::new(format!("evidence_{id}")),
                 EvidenceSource::UserStatement,
             ),
         )
         .expect("test memory should be valid")
+    }
+
+    fn memory(id: &str, scope: MemoryScope) -> MemoryRecord {
+        memory_with_content(id, scope, id)
     }
 
     fn command(maximum_items: usize) -> ResolveContextCommand {
@@ -341,5 +391,75 @@ mod tests {
 
         assert_eq!(response.items.len(), 1);
         assert_eq!(response.items[0].id(), &MemoryId::new("global"));
+    }
+
+    #[test]
+    fn returns_only_query_relevant_memories_when_matches_exist() {
+        let mut repository = TestRepository {
+            memories: vec![
+                memory_with_content(
+                    "irrelevant",
+                    MemoryScope::Global,
+                    "The user prefers window seats.",
+                ),
+                memory_with_content(
+                    "preferred_name",
+                    MemoryScope::Global,
+                    "Call the user Hippo.",
+                ),
+            ],
+            disclosures: Vec::new(),
+        };
+
+        let response = ResolveContextService::new(&mut repository)
+            .execute(command(10))
+            .expect("resolution should succeed");
+
+        assert_eq!(response.items.len(), 1);
+        assert_eq!(
+            response.items[0].id(),
+            &MemoryId::new("preferred_name")
+        );
+        assert_eq!(
+            repository.disclosures[0].memories,
+            vec![DisclosedMemory {
+                id: MemoryId::new("preferred_name"),
+                version: 1,
+            }]
+        );
+    }
+
+    #[test]
+    fn ranks_relevance_before_scope_specificity() {
+        let mut repository = TestRepository {
+            memories: vec![
+                memory_with_content(
+                    "activity_match",
+                    MemoryScope::Activity {
+                        id: ActivityId::new("activity_01"),
+                    },
+                    "Call Hippo.",
+                ),
+                memory_with_content(
+                    "global_match",
+                    MemoryScope::Global,
+                    "Always call the user Hippo.",
+                ),
+            ],
+            disclosures: Vec::new(),
+        };
+
+        let response = ResolveContextService::new(&mut repository)
+            .execute(command(10))
+            .expect("resolution should succeed");
+
+        assert_eq!(
+            response.items[0].id(),
+            &MemoryId::new("global_match")
+        );
+        assert_eq!(
+            response.items[1].id(),
+            &MemoryId::new("activity_match")
+        );
     }
 }

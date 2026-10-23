@@ -41,6 +41,7 @@ This roadmap describes sequencing, not release dates.
 - [x] Add a single full preflight test command and operator testing guide.
 - [ ] Add production OS-keychain and customer-KMS key providers.
 - [x] Retrieve minimal context through local stdio MCP.
+- [x] Rank canonical context by deterministic local query relevance.
 - [x] Create, correct, and delete authorized preferences through local MCP.
 - [x] Create, update, and resume encrypted activity checkpoints through MCP.
 - [x] Retrieve minimal context through authenticated local REST.
