@@ -1,5 +1,7 @@
 //! Persistent tenant-isolated SQLite adapter.
 
+mod canonical;
+
 use std::path::Path;
 
 use rembrane_application::{
@@ -421,6 +423,11 @@ const fn encode_status(status: MembershipStatus) -> &'static str {
 
 fn map_write_error(error: rusqlite::Error) -> ApplicationError {
     match error {
+        rusqlite::Error::SqliteFailure(_, Some(message))
+            if message == "workspace event sequence conflict" =>
+        {
+            ApplicationError::SequenceConflict
+        }
         rusqlite::Error::SqliteFailure(failure, _)
             if failure.code == ErrorCode::ConstraintViolation =>
         {

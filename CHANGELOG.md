@@ -32,6 +32,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   existing on an unconfigured store.
 - Tenant-scoped SQLite memory reads that authenticate encrypted payloads before
   canonical decoding.
+- Atomic encrypted SQLite memory mutations covering canonical events, evidence,
+  and provider projection jobs.
 - Product architecture, threat model, integration support policy, Rust
   research, bot integration design, and architecture decision records.
 

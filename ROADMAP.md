@@ -26,6 +26,7 @@ This roadmap describes sequencing, not release dates.
 - [x] Serialize canonical checkpoint records with a versioned format.
 - [x] Require an explicit cipher capability for encrypted SQLite memory APIs.
 - [x] Implement authenticated, tenant-scoped SQLite memory reads.
+- [x] Atomically persist encrypted memories, events, evidence, and projections.
 - [ ] Implement the encrypted local SQLite adapter.
 - [ ] Retrieve minimal context through REST and MCP.
 - [ ] Persist a disclosure receipt for every context response.
