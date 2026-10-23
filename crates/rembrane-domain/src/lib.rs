@@ -34,5 +34,6 @@ pub use projection::{
 };
 pub use scope::MemoryScope;
 pub use workspace::{
-    Membership, MembershipStatus, WorkspaceKind, WorkspaceRole,
+    Membership, MembershipStatus, Principal, Workspace, WorkspaceKind,
+    WorkspaceRole,
 };

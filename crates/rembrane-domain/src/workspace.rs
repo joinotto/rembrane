@@ -1,9 +1,60 @@
 use crate::{PrincipalId, WorkspaceId};
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Principal {
+    id: PrincipalId,
+}
+
+impl Principal {
+    #[must_use]
+    pub fn new(id: PrincipalId) -> Self {
+        Self { id }
+    }
+
+    #[must_use]
+    pub const fn id(&self) -> &PrincipalId {
+        &self.id
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum WorkspaceKind {
     Personal,
     Shared,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Workspace {
+    id: WorkspaceId,
+    kind: WorkspaceKind,
+}
+
+impl Workspace {
+    #[must_use]
+    pub fn personal(id: WorkspaceId) -> Self {
+        Self {
+            id,
+            kind: WorkspaceKind::Personal,
+        }
+    }
+
+    #[must_use]
+    pub fn shared(id: WorkspaceId) -> Self {
+        Self {
+            id,
+            kind: WorkspaceKind::Shared,
+        }
+    }
+
+    #[must_use]
+    pub const fn id(&self) -> &WorkspaceId {
+        &self.id
+    }
+
+    #[must_use]
+    pub const fn kind(&self) -> WorkspaceKind {
+        self.kind
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -101,7 +152,9 @@ impl Membership {
 
 #[cfg(test)]
 mod tests {
-    use super::{Membership, WorkspaceRole};
+    use super::{
+        Membership, Principal, Workspace, WorkspaceKind, WorkspaceRole,
+    };
     use crate::{PrincipalId, WorkspaceId};
 
     fn member(role: WorkspaceRole) -> Membership {
@@ -127,5 +180,14 @@ mod tests {
         assert!(!membership.is_active());
         assert!(!membership.can_manage_members());
         assert!(!membership.can_write_shared_memory());
+    }
+
+    #[test]
+    fn creates_personal_workspace_identity() {
+        let principal = Principal::new(PrincipalId::new("principal_01"));
+        let workspace = Workspace::personal(WorkspaceId::new("workspace_01"));
+
+        assert_eq!(principal.id().as_str(), "principal_01");
+        assert_eq!(workspace.kind(), WorkspaceKind::Personal);
     }
 }

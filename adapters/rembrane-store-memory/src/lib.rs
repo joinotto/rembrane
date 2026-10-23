@@ -4,23 +4,87 @@ use rembrane_application::{
     ApplicationError, CanonicalMutationRepository,
     CheckpointMutationRepository, CheckpointRepository, DisclosureRepository,
     EventRepository, MembershipRepository, MemoryRepository,
-    ProjectionOutboxRepository,
+    ProjectionOutboxRepository, WorkspaceRepository,
 };
 use rembrane_domain::{
     ActivityCheckpoint, ActivityId, CanonicalEvent, DisclosureReceipt,
-    Membership, MemoryId, MemoryRecord, PrincipalId, ProjectionJob,
+    Membership, MemoryId, MemoryRecord, Principal, PrincipalId, ProjectionJob,
     ProjectionJobId, ProjectionOperation, ProjectionStatus, ProviderId,
-    WorkspaceId,
+    Workspace, WorkspaceId, WorkspaceKind, WorkspaceRole,
 };
 
 #[derive(Debug, Default)]
 pub struct InMemoryStore {
+    principals: Vec<Principal>,
+    workspaces: Vec<Workspace>,
     memories: Vec<MemoryRecord>,
     disclosures: Vec<DisclosureReceipt>,
     events: Vec<CanonicalEvent>,
     checkpoints: Vec<ActivityCheckpoint>,
     memberships: Vec<Membership>,
     projections: Vec<ProjectionJob>,
+}
+
+impl WorkspaceRepository for InMemoryStore {
+    fn initialize_personal_workspace(
+        &mut self,
+        principal: Principal,
+        workspace: Workspace,
+        owner_membership: Membership,
+    ) -> Result<(), ApplicationError> {
+        if workspace.kind() != WorkspaceKind::Personal
+            || owner_membership.workspace_id() != workspace.id()
+            || owner_membership.principal_id() != principal.id()
+            || owner_membership.role() != WorkspaceRole::Owner
+            || !owner_membership.is_active()
+        {
+            return Err(ApplicationError::Validation(
+                "personal workspace bootstrap records must agree".to_owned(),
+            ));
+        }
+        if self
+            .principals
+            .iter()
+            .any(|stored| stored.id() == principal.id())
+            || self
+                .workspaces
+                .iter()
+                .any(|stored| stored.id() == workspace.id())
+            || self.memberships.iter().any(|stored| {
+                stored.workspace_id() == workspace.id()
+                    && stored.principal_id() == principal.id()
+            })
+        {
+            return Err(ApplicationError::AlreadyExists);
+        }
+
+        self.principals.push(principal);
+        self.workspaces.push(workspace);
+        self.memberships.push(owner_membership);
+        Ok(())
+    }
+
+    fn find_principal(
+        &self,
+        principal_id: &PrincipalId,
+    ) -> Result<Option<Principal>, ApplicationError> {
+        Ok(self
+            .principals
+            .iter()
+            .find(|principal| principal.id() == principal_id)
+            .cloned())
+    }
+
+    fn find_workspace(
+        &self,
+        workspace_id: &WorkspaceId,
+    ) -> Result<Option<Workspace>, ApplicationError> {
+        Ok(self
+            .workspaces
+            .iter()
+            .find(|workspace| workspace.id() == workspace_id)
+            .cloned())
+    }
 }
 
 impl InMemoryStore {

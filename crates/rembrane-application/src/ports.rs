@@ -1,7 +1,7 @@
 use rembrane_domain::{
     ActivityCheckpoint, ActivityId, CanonicalEvent, DisclosureReceipt,
-    Membership, MemoryId, MemoryRecord, PrincipalId, ProjectionJob,
-    ProjectionJobId, ProjectionStatus, ProviderId, WorkspaceId,
+    Membership, MemoryId, MemoryRecord, Principal, PrincipalId, ProjectionJob,
+    ProjectionJobId, ProjectionStatus, ProviderId, Workspace, WorkspaceId,
 };
 
 use crate::ApplicationError;
@@ -104,6 +104,25 @@ pub trait MembershipRepository {
         &mut self,
         membership: Membership,
     ) -> Result<(), ApplicationError>;
+}
+
+pub trait WorkspaceRepository {
+    fn initialize_personal_workspace(
+        &mut self,
+        principal: Principal,
+        workspace: Workspace,
+        owner_membership: Membership,
+    ) -> Result<(), ApplicationError>;
+
+    fn find_principal(
+        &self,
+        principal_id: &PrincipalId,
+    ) -> Result<Option<Principal>, ApplicationError>;
+
+    fn find_workspace(
+        &self,
+        workspace_id: &WorkspaceId,
+    ) -> Result<Option<Workspace>, ApplicationError>;
 }
 
 pub trait ProjectionOutboxRepository {
