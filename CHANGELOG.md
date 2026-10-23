@@ -1,38 +1,33 @@
 # Changelog
 
-All notable changes will be documented here.
+All notable changes to Rembrane will be documented in this file.
 
-The project follows Keep a Changelog conventions. Versioning begins at `0.1.0-alpha.1`; compatibility guarantees will be defined before the first stable release.
+The project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
+and intends to use semantic versioning after the initial protocol stabilizes.
 
-## Unreleased
+## [Unreleased]
 
 ### Added
 
-- Rust modular workspace and dependency-boundary checks.
-- Canonical memory scopes, kinds, statuses, evidence, and versions.
-- Explicit proposal and confirmation lifecycle.
-- Versioned correction and deletion tombstones.
-- Purpose-bound context resolution with disclosure receipts.
-- Client read/write grants and active-membership authorization.
-- Personal/shared workspace membership model.
-- Resumable activity checkpoints for cross-agent handoff.
-- Append-only workspace event records and sequence checks.
-- Replaceable semantic-provider SDK and capability admission policy.
-- Deterministic native retrieval baseline.
-- Canonical re-authorization of semantic-provider candidates.
-- Deployment privacy modes and credential references.
-- Provider discovery JSON Schema.
-- Initial OpenAPI and MCP contracts.
-- Threat model, architecture decisions, support policy, and contribution workflows.
+- Rust modular-monolith workspace with provider-independent domain and
+  application layers.
+- Canonical memory, provenance, event, disclosure, membership, grant,
+  checkpoint, and projection-outbox models.
+- Atomic canonical mutation ports and an in-memory reference adapter.
+- Native semantic baseline with authorization revalidation.
+- Provider capability verification and retry/quarantine projection worker.
+- Versioned discovery, OpenAPI, and MCP protocol specifications.
+- Tenant-isolated SQLite canonical schema with encrypted-payload metadata.
+- Executable SQLite schema and transaction-atomicity checks.
+- Opaque record-encryption boundary with tenant-bound associated data.
+- Product architecture, threat model, integration support policy, Rust
+  research, bot integration design, and architecture decision records.
 
 ### Security
 
-- Workspace and subject isolation tests.
-- Stale memory and checkpoint update protection.
-- Provider candidate version validation.
-- Explicit denial of inline provider secrets.
-- Repository checks for common credential leaks.
-
-## 0.1.0-alpha.1
-
-Not released.
+- Workspace identity is mandatory on canonical storage keys.
+- Memory and checkpoint writes cannot bypass their corresponding audit event.
+- Derived provider projections are atomically enqueued and idempotent.
+- Strict E2EE is limited to local or customer-controlled plaintext processing.
+- Raw workspace key material is excluded from core storage and provider
+  contracts.
