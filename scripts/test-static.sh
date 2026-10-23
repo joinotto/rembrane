@@ -21,12 +21,18 @@ done
 ./scripts/test-sqlite-schema.sh
 ./scripts/test-sqlite-atomicity.sh
 
-for deployment_file in Dockerfile compose.yaml docker/entrypoint.sh; do
+for deployment_file in \
+    Dockerfile \
+    compose.yaml \
+    docker/entrypoint.sh \
+    scripts/check-local-alpha.sh
+do
     test -s "$deployment_file" || {
         echo "missing deployment artifact: $deployment_file" >&2
         exit 1
     }
 done
+sh -n scripts/check-local-alpha.sh
 rg -q '127\.0\.0\.1:8787:8787' compose.yaml
 rg -q 'no-new-privileges:true' compose.yaml
 rg -q 'cap_drop:' compose.yaml

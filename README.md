@@ -62,6 +62,7 @@ The platform owns identity, workspaces, encryption orchestration, canonical even
 - [Contributing](CONTRIBUTING.md)
 - [Changelog](CHANGELOG.md)
 - [Testing](docs/TESTING.md)
+- [Local Alpha Acceptance Contract](docs/LOCAL_ALPHA_ACCEPTANCE.md)
 
 ## Current key decisions
 
@@ -95,6 +96,7 @@ See the [roadmap](ROADMAP.md) for sequencing. Do not use Rembrane for production
 Prerequisite: Rust 1.88 or newer with `rustfmt` and `clippy`.
 
 ```text
+./scripts/check-local-alpha.sh
 ./scripts/check-architecture.sh
 ./scripts/check-sensitive-files.sh
 ./scripts/test-static.sh

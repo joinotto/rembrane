@@ -9,6 +9,12 @@ permissions:
   contents: read
 
 jobs:
+  static:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: ./scripts/check-local-alpha.sh --static
+
   rust:
     runs-on: ubuntu-latest
     steps:
@@ -19,4 +25,10 @@ jobs:
       - uses: postmanlabs/postman-cli-action@v1
         with:
           command: --version
-      - run: ./scripts/test-all.sh
+      - run: ./scripts/check-local-alpha.sh
+
+  container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build --tag rembrane:ci .

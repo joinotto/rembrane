@@ -123,6 +123,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   syntax, implemented-tool documentation, and REST route consistency.
 - Standalone non-Rust static suite for restricted or offline development
   environments, reused by the complete compiler and end-to-end suite.
+- Executable local-alpha acceptance contract and independent CI jobs for
+  static/schema checks, the complete Rust/E2E suite, and container builds.
 - Multi-stage Docker image and loopback-only Compose profile with idempotent
   workspace bootstrap, non-root application execution, encrypted persistent
   storage, and an authenticated-data health check.

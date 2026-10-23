@@ -43,6 +43,8 @@ This roadmap describes sequencing, not release dates.
 - [x] Add Postman REST authentication and tenant-isolation smoke tests.
 - [x] Add an MCP initialize/list/call protocol smoke test.
 - [x] Add a single full preflight test command and operator testing guide.
+- [x] Publish an executable local-alpha acceptance contract with independent
+  static, Rust/E2E, and container CI gates.
 - [x] Add a secret-safe local installation doctor command.
 - [x] Report local processing, connection scopes, endpoints, and secret sources
   through `rembrane doctor --privacy`.
