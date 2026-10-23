@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "apps/rembrane-cli",
+    "crates/rembrane-application",
     "crates/rembrane-contracts",
     "crates/rembrane-domain",
 ]
