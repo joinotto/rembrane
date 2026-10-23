@@ -7,8 +7,6 @@ use rembrane_domain::{
 use crate::ApplicationError;
 
 pub trait MemoryRepository {
-    fn insert(&mut self, memory: MemoryRecord) -> Result<(), ApplicationError>;
-
     fn find(
         &self,
         workspace_id: &WorkspaceId,
@@ -21,11 +19,6 @@ pub trait MemoryRepository {
         subject_id: &PrincipalId,
     ) -> Result<Vec<MemoryRecord>, ApplicationError>;
 
-    fn replace(
-        &mut self,
-        memory: MemoryRecord,
-        expected_version: u64,
-    ) -> Result<(), ApplicationError>;
 }
 
 pub trait DisclosureRepository {

@@ -36,20 +36,6 @@ impl InMemoryStore {
 }
 
 impl MemoryRepository for InMemoryStore {
-    fn insert(&mut self, memory: MemoryRecord) -> Result<(), ApplicationError> {
-        let duplicate = self.memories.iter().any(|stored| {
-            stored.workspace_id() == memory.workspace_id()
-                && stored.id() == memory.id()
-        });
-
-        if duplicate {
-            return Err(ApplicationError::AlreadyExists);
-        }
-
-        self.memories.push(memory);
-        Ok(())
-    }
-
     fn find(
         &self,
         workspace_id: &WorkspaceId,
@@ -81,29 +67,6 @@ impl MemoryRepository for InMemoryStore {
             .collect())
     }
 
-    fn replace(
-        &mut self,
-        memory: MemoryRecord,
-        expected_version: u64,
-    ) -> Result<(), ApplicationError> {
-        let stored = self
-            .memories
-            .iter_mut()
-            .find(|stored| {
-                stored.workspace_id() == memory.workspace_id()
-                    && stored.id() == memory.id()
-            })
-            .ok_or(ApplicationError::NotFound)?;
-
-        if stored.version() != expected_version
-            || memory.version() != expected_version.saturating_add(1)
-        {
-            return Err(ApplicationError::VersionConflict);
-        }
-
-        *stored = memory;
-        Ok(())
-    }
 }
 
 impl CanonicalMutationRepository for InMemoryStore {
@@ -574,7 +537,8 @@ impl InMemoryStore {
 #[cfg(test)]
 mod tests {
     use rembrane_application::{
-        ApplicationError, EventRepository, MemoryRepository,
+        ApplicationError, CanonicalMutationRepository, EventRepository,
+        MemoryRepository,
     };
     use rembrane_domain::{
         CanonicalEvent, EventId, EventPayload, EvidenceId, EvidenceReference,
@@ -604,17 +568,40 @@ mod tests {
         .expect("test preference should be valid")
     }
 
+    fn insert(
+        store: &mut InMemoryStore,
+        memory: MemoryRecord,
+        event_id: &str,
+    ) -> Result<(), ApplicationError> {
+        let event = CanonicalEvent::new(
+            EventId::new(event_id),
+            memory.workspace_id().clone(),
+            memory.subject_id().clone(),
+            Some(memory.subject_id().clone()),
+            1,
+            EventPayload::MemoryCreated {
+                memory_id: memory.id().clone(),
+                version: memory.version(),
+            },
+        )
+        .expect("test event should be valid");
+        store.insert_memory_with_event(memory, event, Vec::new(), 0)
+    }
+
     #[test]
     fn does_not_find_memory_across_workspace_boundary() {
         let mut store = InMemoryStore::new();
-        store
-            .insert(preference(
+        insert(
+            &mut store,
+            preference(
                 "memory_01",
                 "workspace_private",
                 "principal_01",
                 "Call me Hippo",
-            ))
-            .expect("insert should succeed");
+            ),
+            "event_private",
+        )
+        .expect("insert should succeed");
 
         let result = store
             .find(
@@ -629,22 +616,28 @@ mod tests {
     #[test]
     fn permits_same_memory_id_in_different_workspaces() {
         let mut store = InMemoryStore::new();
-        store
-            .insert(preference(
+        insert(
+            &mut store,
+            preference(
                 "memory_01",
                 "workspace_one",
                 "principal_01",
                 "Preference one",
-            ))
-            .expect("first insert should succeed");
-        store
-            .insert(preference(
+            ),
+            "event_one",
+        )
+        .expect("first insert should succeed");
+        insert(
+            &mut store,
+            preference(
                 "memory_01",
                 "workspace_two",
                 "principal_02",
                 "Preference two",
-            ))
-            .expect("second workspace insert should succeed");
+            ),
+            "event_two",
+        )
+        .expect("second workspace insert should succeed");
 
         assert_eq!(
             store
@@ -678,11 +671,9 @@ mod tests {
             "Call me Hippo",
         );
 
-        store
-            .insert(memory.clone())
+        insert(&mut store, memory.clone(), "event_01")
             .expect("first insert should succeed");
-        let error = store
-            .insert(memory)
+        let error = insert(&mut store, memory, "event_02")
             .expect_err("duplicate insert should fail");
 
         assert_eq!(error, ApplicationError::AlreadyExists);
@@ -697,8 +688,7 @@ mod tests {
             "principal_01",
             "Call me Hippo",
         );
-        store
-            .insert(original.clone())
+        insert(&mut store, original.clone(), "event_01")
             .expect("initial insert should succeed");
 
         let revised = original
@@ -711,8 +701,26 @@ mod tests {
             )
             .expect("revision should be valid");
 
+        let revision_event = CanonicalEvent::new(
+            EventId::new("event_02"),
+            WorkspaceId::new("workspace_one"),
+            PrincipalId::new("principal_01"),
+            Some(PrincipalId::new("principal_01")),
+            2,
+            EventPayload::MemoryRevised {
+                memory_id: MemoryId::new("memory_01"),
+                version: 2,
+            },
+        )
+        .expect("test event should be valid");
         let error = store
-            .replace(revised, 2)
+            .replace_memory_with_event(
+                revised,
+                2,
+                revision_event,
+                Vec::new(),
+                1,
+            )
             .expect_err("stale expected version should fail");
 
         assert_eq!(error, ApplicationError::VersionConflict);

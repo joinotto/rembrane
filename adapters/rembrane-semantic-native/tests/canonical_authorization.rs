@@ -1,11 +1,13 @@
 use rembrane_application::{
-    MemoryRepository, ResolveContextCommand, SemanticContextService,
+    CanonicalMutationRepository, ResolveContextCommand,
+    SemanticContextService,
 };
 use rembrane_contracts::ResolveContextRequest;
 use rembrane_domain::{
-    ClientId, ContextPackId, DisclosureId, EntityId, EvidenceId,
-    EvidenceReference, EvidenceSource, MemoryId, MemoryKind, MemoryRecord,
-    MemoryScope, PrincipalId, ReadGrant, ReadScope, WorkspaceId,
+    CanonicalEvent, ClientId, ContextPackId, DisclosureId, EntityId, EventId,
+    EventPayload, EvidenceId, EvidenceReference, EvidenceSource, MemoryId,
+    MemoryKind, MemoryRecord, MemoryScope, PrincipalId, ReadGrant, ReadScope,
+    WorkspaceId,
 };
 use rembrane_provider_sdk::{
     AuthorizedMemoryProjection, SemanticMemoryProvider,
@@ -43,6 +45,24 @@ fn projection(memory: &MemoryRecord) -> AuthorizedMemoryProjection {
     }
 }
 
+fn insert(store: &mut InMemoryStore, memory: MemoryRecord, event_id: &str) {
+    let event = CanonicalEvent::new(
+        EventId::new(event_id),
+        memory.workspace_id().clone(),
+        memory.subject_id().clone(),
+        Some(memory.subject_id().clone()),
+        1,
+        EventPayload::MemoryCreated {
+            memory_id: memory.id().clone(),
+            version: memory.version(),
+        },
+    )
+    .expect("test event should be valid");
+    store
+        .insert_memory_with_event(memory, event, Vec::new(), 0)
+        .expect("memory insert should succeed");
+}
+
 fn command(scopes: Vec<ReadScope>) -> ResolveContextCommand {
     ResolveContextCommand {
         request: ResolveContextRequest {
@@ -76,9 +96,7 @@ fn provider_candidate_is_rejected_without_canonical_grant() {
         },
     );
     let mut store = InMemoryStore::new();
-    store
-        .insert(entity_memory.clone())
-        .expect("memory insert should succeed");
+    insert(&mut store, entity_memory.clone(), "event_01");
     let mut provider = NativeSemanticProvider::new();
     provider
         .index(projection(&entity_memory))
@@ -100,9 +118,7 @@ fn provider_candidate_for_another_subject_is_rejected() {
         MemoryScope::Global,
     );
     let mut store = InMemoryStore::new();
-    store
-        .insert(private_memory.clone())
-        .expect("memory insert should succeed");
+    insert(&mut store, private_memory.clone(), "event_01");
     let mut provider = NativeSemanticProvider::new();
     provider
         .index(projection(&private_memory))
@@ -125,9 +141,7 @@ fn authorized_current_candidate_is_returned() {
         },
     );
     let mut store = InMemoryStore::new();
-    store
-        .insert(entity_memory.clone())
-        .expect("memory insert should succeed");
+    insert(&mut store, entity_memory.clone(), "event_01");
     let mut provider = NativeSemanticProvider::new();
     provider
         .index(projection(&entity_memory))

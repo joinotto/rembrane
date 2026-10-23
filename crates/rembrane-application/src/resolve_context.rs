@@ -138,14 +138,6 @@ mod tests {
     }
 
     impl MemoryRepository for TestRepository {
-        fn insert(
-            &mut self,
-            memory: MemoryRecord,
-        ) -> Result<(), ApplicationError> {
-            self.memories.push(memory);
-            Ok(())
-        }
-
         fn find(
             &self,
             workspace_id: &WorkspaceId,
@@ -177,27 +169,6 @@ mod tests {
                 .collect())
         }
 
-        fn replace(
-            &mut self,
-            memory: MemoryRecord,
-            expected_version: u64,
-        ) -> Result<(), ApplicationError> {
-            let stored = self
-                .memories
-                .iter_mut()
-                .find(|stored| {
-                    stored.workspace_id() == memory.workspace_id()
-                        && stored.id() == memory.id()
-                })
-                .ok_or(ApplicationError::NotFound)?;
-
-            if stored.version() != expected_version {
-                return Err(ApplicationError::VersionConflict);
-            }
-
-            *stored = memory;
-            Ok(())
-        }
     }
 
     impl DisclosureRepository for TestRepository {

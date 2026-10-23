@@ -1,11 +1,12 @@
 use rembrane_application::{
-    MemoryRepository, ResolveContextCommand, ResolveContextService,
+    CanonicalMutationRepository, ResolveContextCommand,
+    ResolveContextService,
 };
 use rembrane_contracts::ResolveContextRequest;
 use rembrane_domain::{
-    ClientId, ContextPackId, DisclosureId, EvidenceId, EvidenceReference,
-    EvidenceSource, MemoryId, MemoryRecord, MemoryScope, PrincipalId,
-    ReadGrant, ReadScope, WorkspaceId,
+    CanonicalEvent, ClientId, ContextPackId, DisclosureId, EventId,
+    EventPayload, EvidenceId, EvidenceReference, EvidenceSource, MemoryId,
+    MemoryRecord, MemoryScope, PrincipalId, ReadGrant, ReadScope, WorkspaceId,
 };
 use rembrane_store_memory::InMemoryStore;
 
@@ -38,8 +39,20 @@ fn print_demo() {
     .expect("built-in demo memory should be valid");
 
     let mut store = InMemoryStore::new();
+    let event = CanonicalEvent::new(
+        EventId::new("event_demo"),
+        workspace_id.clone(),
+        principal_id.clone(),
+        Some(principal_id.clone()),
+        1,
+        EventPayload::MemoryCreated {
+            memory_id: memory.id().clone(),
+            version: memory.version(),
+        },
+    )
+    .expect("built-in demo event should be valid");
     store
-        .insert(memory)
+        .insert_memory_with_event(memory, event, Vec::new(), 0)
         .expect("built-in demo insert should succeed");
 
     let response = ResolveContextService::new(&mut store)

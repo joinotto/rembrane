@@ -1,5 +1,5 @@
 use rembrane_application::{
-    CanonicalMutationRepository, MemoryRepository, ProjectionOutboxRepository,
+    CanonicalMutationRepository, ProjectionOutboxRepository,
     ProjectionOutcome, ProjectionWorker,
 };
 use rembrane_domain::{
@@ -113,8 +113,26 @@ fn stale_projection_is_completed_without_overwriting_provider() {
             ),
         )
         .expect("revision should be valid");
+    let revision_event = CanonicalEvent::new(
+        EventId::new("event_02"),
+        WorkspaceId::new("workspace_01"),
+        PrincipalId::new("principal_01"),
+        Some(PrincipalId::new("principal_01")),
+        2,
+        EventPayload::MemoryRevised {
+            memory_id: MemoryId::new("memory_01"),
+            version: 2,
+        },
+    )
+    .expect("revision event should be valid");
     store
-        .replace(revised, 1)
+        .replace_memory_with_event(
+            revised,
+            1,
+            revision_event,
+            Vec::new(),
+            1,
+        )
         .expect("test replacement should succeed");
     let mut provider = NativeSemanticProvider::new();
 
