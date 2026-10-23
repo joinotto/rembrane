@@ -190,6 +190,7 @@ fn correct(arguments: &[String]) -> Result<(), String> {
     let memory_id = MemoryId::new(option(arguments, "--memory")?);
     let expected_version = positive_u64(arguments, "--version")?;
     let content = option(arguments, "--content")?;
+    let scope = requested_memory_scope(arguments)?;
     let client_id =
         optional_option(arguments, "--client").unwrap_or("rembrane-cli");
     let (mut store, principal_id, workspace_id) =
@@ -199,7 +200,7 @@ fn correct(arguments: &[String]) -> Result<(), String> {
         ClientId::new(client_id),
         &workspace_id,
         &principal_id,
-        vec![ReadScope::Global],
+        vec![read_scope(&scope)],
         vec![WritePermission::ReviseMemory],
     )?;
     let previous_sequence = current_sequence(&store, &workspace_id)?;
@@ -227,6 +228,7 @@ fn correct(arguments: &[String]) -> Result<(), String> {
 fn forget(arguments: &[String]) -> Result<(), String> {
     let memory_id = MemoryId::new(option(arguments, "--memory")?);
     let expected_version = positive_u64(arguments, "--version")?;
+    let scope = requested_memory_scope(arguments)?;
     let client_id =
         optional_option(arguments, "--client").unwrap_or("rembrane-cli");
     let (mut store, principal_id, workspace_id) =
@@ -236,7 +238,7 @@ fn forget(arguments: &[String]) -> Result<(), String> {
         ClientId::new(client_id),
         &workspace_id,
         &principal_id,
-        vec![ReadScope::Global],
+        vec![read_scope(&scope)],
         vec![WritePermission::DeleteMemory],
     )?;
     let previous_sequence = current_sequence(&store, &workspace_id)?;
@@ -595,9 +597,11 @@ fn print_help() {
              --workspace <id> --client <id> --purpose <purpose> --query <query> \
              [--domain <name> | --entity <id> | --activity <id>]\n\
            rembrane correct --database <path> --principal <id> \
-             --workspace <id> --memory <id> --version <n> --content <text>\n\
+             --workspace <id> --memory <id> --version <n> --content <text> \
+             [--domain <name> | --entity <id> | --activity <id>]\n\
            rembrane forget --database <path> --principal <id> \
-             --workspace <id> --memory <id> --version <n>"
+             --workspace <id> --memory <id> --version <n> \
+             [--domain <name> | --entity <id> | --activity <id>]"
     );
 }
 

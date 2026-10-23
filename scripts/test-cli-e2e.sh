@@ -91,6 +91,54 @@ project_recall=$(
 printf '%s\n' "$project_recall" |
     rg -F "$project_memory_id: Use Rust for the Rembrane core" >/dev/null
 
+"$rembrane_binary" correct \
+    --database "$database" \
+    --principal principal_e2e \
+    --workspace workspace_e2e \
+    --entity project_e2e \
+    --memory "$project_memory_id" \
+    --version 1 \
+    --content "Use Rust and SQLite for the Rembrane core" >/dev/null
+
+corrected_project_recall=$(
+    "$rembrane_binary" recall \
+        --database "$database" \
+        --principal principal_e2e \
+        --workspace workspace_e2e \
+        --client coding_agent_e2e \
+        --entity project_e2e \
+        --purpose continue-project \
+        --query "Which technology should power the Rembrane core?"
+)
+printf '%s\n' "$corrected_project_recall" |
+    rg -F "$project_memory_id: Use Rust and SQLite for the Rembrane core" \
+        >/dev/null
+
+"$rembrane_binary" forget \
+    --database "$database" \
+    --principal principal_e2e \
+    --workspace workspace_e2e \
+    --entity project_e2e \
+    --memory "$project_memory_id" \
+    --version 2 >/dev/null
+
+deleted_project_recall=$(
+    "$rembrane_binary" recall \
+        --database "$database" \
+        --principal principal_e2e \
+        --workspace workspace_e2e \
+        --client coding_agent_e2e \
+        --entity project_e2e \
+        --purpose continue-project \
+        --query "Which technology should power the Rembrane core?"
+)
+if printf '%s\n' "$deleted_project_recall" |
+    rg -F "Rust and SQLite" >/dev/null
+then
+    echo "deleted project memory was disclosed" >&2
+    exit 1
+fi
+
 first_recall=$(
     "$rembrane_binary" recall \
         --database "$database" \
@@ -155,8 +203,8 @@ plaintext_count=$(
     sqlite3 "$database" \
         "SELECT count(*) FROM memories WHERE instr(content_ciphertext, CAST('Hippo' AS BLOB)) > 0;"
 )
-test "$event_count" = "4"
-test "$disclosure_count" = "4"
+test "$event_count" = "6"
+test "$disclosure_count" = "6"
 test "$plaintext_count" = "0"
 
 if REMBRANE_WORKSPACE_KEY_HEX="ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff" \

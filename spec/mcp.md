@@ -189,6 +189,8 @@ Arguments:
 - `expectedVersion`
 - `replacement`
 - `rationale`
+- Optional one-of `domain`, `entityId`, or `activityId`; omission selects
+  global scope.
 
 ### `rembrane_forget_memory`
 
@@ -199,6 +201,8 @@ Arguments:
 - `memoryId`
 - `expectedVersion`
 - `reason`
+- Optional one-of `domain`, `entityId`, or `activityId`; omission selects
+  global scope.
 
 Annotations:
 

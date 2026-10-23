@@ -68,6 +68,9 @@ struct CorrectMemoryParameters {
     memory_id: String,
     expected_version: u64,
     replacement: String,
+    domain: Option<String>,
+    entity_id: Option<String>,
+    activity_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -76,6 +79,9 @@ struct ForgetMemoryParameters {
     memory_id: String,
     expected_version: u64,
     reason: String,
+    domain: Option<String>,
+    entity_id: Option<String>,
+    activity_id: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -326,9 +332,14 @@ impl RembraneMcp {
             ));
         }
         let mut state = lock_state(&self.state)?;
+        let scope = memory_scope(
+            parameters.domain.as_deref(),
+            parameters.entity_id.as_deref(),
+            parameters.activity_id.as_deref(),
+        )?;
         let grants = authorize(
             &state,
-            vec![ReadScope::Global],
+            vec![read_scope(&scope)],
             vec![WritePermission::ReviseMemory],
         )?;
         let previous_sequence = current_sequence(&state)?;
@@ -369,9 +380,14 @@ impl RembraneMcp {
             ));
         }
         let mut state = lock_state(&self.state)?;
+        let scope = memory_scope(
+            parameters.domain.as_deref(),
+            parameters.entity_id.as_deref(),
+            parameters.activity_id.as_deref(),
+        )?;
         let grants = authorize(
             &state,
-            vec![ReadScope::Global],
+            vec![read_scope(&scope)],
             vec![WritePermission::DeleteMemory],
         )?;
         let previous_sequence = current_sequence(&state)?;
