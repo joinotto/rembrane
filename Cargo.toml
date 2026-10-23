@@ -5,6 +5,7 @@ members = [
     "apps/rembrane-cli",
     "crates/rembrane-application",
     "crates/rembrane-contracts",
+    "crates/rembrane-config",
     "crates/rembrane-domain",
     "crates/rembrane-provider-sdk",
 ]
