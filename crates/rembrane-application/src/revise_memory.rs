@@ -1,9 +1,9 @@
 use rembrane_domain::{
-    EvidenceReference, MemoryId, MemoryRecord, PrincipalId, WorkspaceId,
-    WriteGrant, WritePermission,
+    CanonicalEvent, EventId, EventPayload, EvidenceReference, MemoryId,
+    MemoryRecord, PrincipalId, WorkspaceId, WriteGrant, WritePermission,
 };
 
-use crate::{ApplicationError, MemoryRepository};
+use crate::{ApplicationError, CanonicalMutationRepository};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ReviseMemoryCommand {
@@ -12,6 +12,8 @@ pub struct ReviseMemoryCommand {
     pub expected_version: u64,
     pub content: String,
     pub evidence: EvidenceReference,
+    pub event_id: EventId,
+    pub expected_previous_sequence: u64,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -20,6 +22,8 @@ pub struct DeleteMemoryCommand {
     pub memory_id: MemoryId,
     pub expected_version: u64,
     pub evidence: EvidenceReference,
+    pub event_id: EventId,
+    pub expected_previous_sequence: u64,
 }
 
 pub struct MemoryLifecycleService<'repository, Repository> {
@@ -28,7 +32,7 @@ pub struct MemoryLifecycleService<'repository, Repository> {
 
 impl<'repository, Repository> MemoryLifecycleService<'repository, Repository>
 where
-    Repository: MemoryRepository,
+    Repository: CanonicalMutationRepository,
 {
     pub fn new(repository: &'repository mut Repository) -> Self {
         Self { repository }
@@ -50,8 +54,21 @@ where
             .revise(command.content, command.evidence)
             .map_err(|error| ApplicationError::Validation(error.to_string()))?;
 
-        self.repository
-            .replace(revised.clone(), command.expected_version)?;
+        let event = event(
+            command.event_id,
+            &command.grant,
+            command.expected_previous_sequence,
+            EventPayload::MemoryRevised {
+                memory_id: revised.id().clone(),
+                version: revised.version(),
+            },
+        )?;
+        self.repository.replace_memory_with_event(
+            revised.clone(),
+            command.expected_version,
+            event,
+            command.expected_previous_sequence,
+        )?;
         Ok(revised)
     }
 
@@ -71,8 +88,21 @@ where
             .delete(command.evidence)
             .map_err(|error| ApplicationError::Validation(error.to_string()))?;
 
-        self.repository
-            .replace(deleted.clone(), command.expected_version)?;
+        let event = event(
+            command.event_id,
+            &command.grant,
+            command.expected_previous_sequence,
+            EventPayload::MemoryDeleted {
+                memory_id: deleted.id().clone(),
+                version: deleted.version(),
+            },
+        )?;
+        self.repository.replace_memory_with_event(
+            deleted.clone(),
+            command.expected_version,
+            event,
+            command.expected_previous_sequence,
+        )?;
         Ok(deleted)
     }
 
@@ -93,6 +123,26 @@ where
 
         Ok(memory)
     }
+}
+
+fn event(
+    event_id: EventId,
+    grant: &WriteGrant,
+    previous_sequence: u64,
+    payload: EventPayload,
+) -> Result<CanonicalEvent, ApplicationError> {
+    let sequence = previous_sequence
+        .checked_add(1)
+        .ok_or(ApplicationError::SequenceConflict)?;
+    CanonicalEvent::new(
+        event_id,
+        grant.workspace_id.clone(),
+        grant.subject_id.clone(),
+        Some(grant.subject_id.clone()),
+        sequence,
+        payload,
+    )
+    .map_err(|error| ApplicationError::Validation(error.to_string()))
 }
 
 fn authorize(

@@ -1,11 +1,11 @@
 use rembrane_application::{
     ApplicationError, DeleteMemoryCommand, MemoryLifecycleService,
-    MemoryRepository, ReviseMemoryCommand,
+    ReviseMemoryCommand,
 };
 use rembrane_domain::{
-    ClientId, EvidenceId, EvidenceReference, EvidenceSource, MemoryId,
-    MemoryRecord, MemoryScope, MemoryStatus, PrincipalId, WorkspaceId,
-    WriteGrant, WritePermission,
+    CanonicalEvent, ClientId, EventId, EventPayload, EvidenceId,
+    EvidenceReference, EvidenceSource, MemoryId, MemoryRecord, MemoryScope,
+    MemoryStatus, PrincipalId, WorkspaceId, WriteGrant, WritePermission,
 };
 use rembrane_store_memory::InMemoryStore;
 
@@ -40,12 +40,31 @@ fn writer(subject_id: &str) -> WriteGrant {
     }
 }
 
+fn creation_event() -> CanonicalEvent {
+    CanonicalEvent::new(
+        EventId::new("event_create"),
+        WorkspaceId::new("workspace_01"),
+        PrincipalId::new("principal_01"),
+        Some(PrincipalId::new("principal_01")),
+        1,
+        EventPayload::MemoryCreated {
+            memory_id: MemoryId::new("memory_01"),
+            version: 1,
+        },
+    )
+    .expect("test event should be valid")
+}
+
 #[test]
 fn revises_and_deletes_owned_memory() {
     let mut store = InMemoryStore::new();
-    store
-        .insert(initial_memory())
-        .expect("initial insert should succeed");
+    rembrane_application::CanonicalMutationRepository::insert_memory_with_event(
+        &mut store,
+        initial_memory(),
+        creation_event(),
+        0,
+    )
+    .expect("initial insert should succeed");
 
     let mut service = MemoryLifecycleService::new(&mut store);
     let revised = service
@@ -55,6 +74,8 @@ fn revises_and_deletes_owned_memory() {
             expected_version: 1,
             content: "Call me Captain Hippo".to_owned(),
             evidence: evidence("evidence_revise"),
+            event_id: EventId::new("event_revise"),
+            expected_previous_sequence: 1,
         })
         .expect("revision should succeed");
 
@@ -66,6 +87,8 @@ fn revises_and_deletes_owned_memory() {
             memory_id: MemoryId::new("memory_01"),
             expected_version: 2,
             evidence: evidence("evidence_delete"),
+            event_id: EventId::new("event_delete"),
+            expected_previous_sequence: 2,
         })
         .expect("deletion should succeed");
 
@@ -77,9 +100,13 @@ fn revises_and_deletes_owned_memory() {
 #[test]
 fn hides_memory_from_another_subject() {
     let mut store = InMemoryStore::new();
-    store
-        .insert(initial_memory())
-        .expect("initial insert should succeed");
+    rembrane_application::CanonicalMutationRepository::insert_memory_with_event(
+        &mut store,
+        initial_memory(),
+        creation_event(),
+        0,
+    )
+    .expect("initial insert should succeed");
 
     let error = MemoryLifecycleService::new(&mut store)
         .revise(ReviseMemoryCommand {
@@ -88,6 +115,8 @@ fn hides_memory_from_another_subject() {
             expected_version: 1,
             content: "Malicious overwrite".to_owned(),
             evidence: evidence("evidence_other"),
+            event_id: EventId::new("event_revise"),
+            expected_previous_sequence: 1,
         })
         .expect_err("another subject must not revise memory");
 
@@ -97,9 +126,13 @@ fn hides_memory_from_another_subject() {
 #[test]
 fn rejects_stale_expected_version() {
     let mut store = InMemoryStore::new();
-    store
-        .insert(initial_memory())
-        .expect("initial insert should succeed");
+    rembrane_application::CanonicalMutationRepository::insert_memory_with_event(
+        &mut store,
+        initial_memory(),
+        creation_event(),
+        0,
+    )
+    .expect("initial insert should succeed");
 
     let error = MemoryLifecycleService::new(&mut store)
         .delete(DeleteMemoryCommand {
@@ -107,6 +140,8 @@ fn rejects_stale_expected_version() {
             memory_id: MemoryId::new("memory_01"),
             expected_version: 2,
             evidence: evidence("evidence_delete"),
+            event_id: EventId::new("event_delete"),
+            expected_previous_sequence: 1,
         })
         .expect_err("stale deletion must fail");
 
@@ -116,9 +151,13 @@ fn rejects_stale_expected_version() {
 #[test]
 fn denies_revision_without_explicit_permission() {
     let mut store = InMemoryStore::new();
-    store
-        .insert(initial_memory())
-        .expect("initial insert should succeed");
+    rembrane_application::CanonicalMutationRepository::insert_memory_with_event(
+        &mut store,
+        initial_memory(),
+        creation_event(),
+        0,
+    )
+    .expect("initial insert should succeed");
     let mut denied = writer("principal_01");
     denied.permissions.clear();
 
@@ -129,6 +168,8 @@ fn denies_revision_without_explicit_permission() {
             expected_version: 1,
             content: "Unauthorized change".to_owned(),
             evidence: evidence("evidence_unauthorized"),
+            event_id: EventId::new("event_revise"),
+            expected_previous_sequence: 1,
         })
         .expect_err("missing revision permission should fail");
 
