@@ -4,6 +4,7 @@ members = [
     "adapters/rembrane-semantic-native",
     "apps/rembrane-cli",
     "crates/rembrane-application",
+    "crates/rembrane-codec",
     "crates/rembrane-contracts",
     "crates/rembrane-config",
     "crates/rembrane-crypto",

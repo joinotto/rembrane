@@ -19,7 +19,8 @@ This roadmap describes sequencing, not release dates.
 - [x] Define atomic memory, event, and projection mutations.
 - [x] Define an opaque record-encryption boundary.
 - [x] Define and verify the tenant-isolated SQLite schema.
-- [ ] Serialize canonical records with a versioned format.
+- [x] Serialize canonical memory records with a versioned format.
+- [ ] Serialize canonical event and checkpoint records.
 - [ ] Implement the encrypted local SQLite adapter.
 - [ ] Retrieve minimal context through REST and MCP.
 - [ ] Persist a disclosure receipt for every context response.

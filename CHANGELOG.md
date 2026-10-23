@@ -20,6 +20,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Tenant-isolated SQLite canonical schema with encrypted-payload metadata.
 - Executable SQLite schema and transaction-atomicity checks.
 - Opaque record-encryption boundary with tenant-bound associated data.
+- Versioned canonical memory codec with strict decoding and a stable wire
+  fixture.
 - Product architecture, threat model, integration support policy, Rust
   research, bot integration design, and architecture decision records.
 

@@ -25,7 +25,9 @@ pub enum MemoryStatus {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MemoryLifecycleError {
     EmptyContent,
+    MissingEvidence,
     InvalidStatus,
+    InvalidVersion,
     VersionOverflow,
 }
 
@@ -33,8 +35,14 @@ impl Display for MemoryLifecycleError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::EmptyContent => formatter.write_str("content must not be empty"),
+            Self::MissingEvidence => {
+                formatter.write_str("memory must reference evidence")
+            }
             Self::InvalidStatus => {
                 formatter.write_str("memory status does not allow this transition")
+            }
+            Self::InvalidVersion => {
+                formatter.write_str("memory version must be greater than zero")
             }
             Self::VersionOverflow => {
                 formatter.write_str("memory version cannot be incremented")
@@ -63,6 +71,45 @@ pub struct MemoryRecord {
 }
 
 impl MemoryRecord {
+    pub fn restore(
+        id: MemoryId,
+        workspace_id: WorkspaceId,
+        subject_id: PrincipalId,
+        scope: MemoryScope,
+        kind: MemoryKind,
+        status: MemoryStatus,
+        content: impl Into<String>,
+        version: u64,
+        evidence: Vec<EvidenceReference>,
+    ) -> Result<Self, MemoryLifecycleError> {
+        let content = content.into();
+        if version == 0 {
+            return Err(MemoryLifecycleError::InvalidVersion);
+        }
+        if evidence.is_empty() {
+            return Err(MemoryLifecycleError::MissingEvidence);
+        }
+        if status == MemoryStatus::Deleted {
+            if !content.is_empty() {
+                return Err(MemoryLifecycleError::InvalidStatus);
+            }
+        } else if content.trim().is_empty() {
+            return Err(MemoryLifecycleError::EmptyContent);
+        }
+
+        Ok(Self {
+            id,
+            workspace_id,
+            subject_id,
+            scope,
+            kind,
+            status,
+            content,
+            version,
+            evidence,
+        })
+    }
+
     #[must_use]
     pub const fn id(&self) -> &MemoryId {
         &self.id
