@@ -28,7 +28,7 @@ export REMBRANE_DATABASE="$database"
 export REMBRANE_PRINCIPAL_ID="principal_rest_e2e"
 export REMBRANE_WORKSPACE_ID="workspace_rest_e2e"
 export REMBRANE_CLIENT_ID="client_rest_e2e"
-export REMBRANE_READ_SCOPES="global,entity:project_rest_e2e"
+export REMBRANE_READ_SCOPES="global,entity:project_rest_e2e,entity:trip_missing"
 export REMBRANE_API_TOKEN="rest-e2e-token"
 export REMBRANE_LISTEN="${REMBRANE_TEST_LISTEN:-127.0.0.1:18787}"
 
@@ -103,7 +103,8 @@ postman collection run \
     --env-var "baseUrl=$base_url" \
     --env-var "apiToken=$REMBRANE_API_TOKEN" \
     --env-var "workspaceId=$REMBRANE_WORKSPACE_ID" \
-    --env-var "principalId=$REMBRANE_PRINCIPAL_ID"
+    --env-var "principalId=$REMBRANE_PRINCIPAL_ID" \
+    --env-var "tripId=trip_missing"
 
 disclosure_count=$(
     sqlite3 "$database" \

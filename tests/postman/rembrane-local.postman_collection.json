@@ -127,6 +127,40 @@
           }
         }
       ]
+    },
+    {
+      "name": "Reject research for missing canonical trip",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{apiToken}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"workspaceId\":\"{{workspaceId}}\",\"subjectId\":\"{{principalId}}\",\"tripId\":\"{{tripId}}\",\"kind\":\"flight\",\"provider\":\"postman-search\",\"summary\":\"Nonstop morning option\",\"sourceReference\":\"opaque-result-postman\",\"evidenceSource\":\"tool-result\",\"observedAt\":\"2026-10-24T10:00:00Z\",\"expiresAt\":\"2026-10-24T10:30:00Z\",\"expectedPreviousSequence\":2}"
+        },
+        "url": "{{baseUrl}}/v1/travel/booking-research"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('missing canonical trip is rejected', function () {",
+              "  pm.response.to.have.status(404);",
+              "  pm.expect(pm.response.json().code).to.eql('not_found');",
+              "});"
+            ]
+          }
+        }
+      ]
     }
   ]
 }

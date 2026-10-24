@@ -14,7 +14,7 @@ export REMBRANE_DATABASE="$test_directory/rembrane.sqlite"
 export REMBRANE_PRINCIPAL_ID="principal_mcp_e2e"
 export REMBRANE_WORKSPACE_ID="workspace_mcp_e2e"
 export REMBRANE_CLIENT_ID="client_mcp_e2e"
-export REMBRANE_READ_SCOPES="global,entity:project_e2e,activity:activity_e2e"
+export REMBRANE_READ_SCOPES="global,entity:project_e2e,entity:trip_missing,activity:activity_e2e"
 export REMBRANE_WORKSPACE_KEY_ID="mcp-e2e-key-v1"
 export REMBRANE_WORKSPACE_KEY_HEX="000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
 

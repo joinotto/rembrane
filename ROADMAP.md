@@ -118,7 +118,9 @@ This roadmap describes sequencing, not release dates.
   - [x] Workspace-bound encrypted SQLite repository with atomic audit events.
   - [x] Authenticated REST capture contract and server route.
   - [x] MCP capture tool using connection-bound identity and exact trip scope.
-  - [ ] REST and MCP end-to-end protocol tests.
+  - [x] REST/Postman and MCP protocol tests reject capture without a canonical
+    trip.
+  - [ ] Successful REST and MCP capture lifecycle after public trip creation.
 - [ ] Cross-agent activity continuation.
 - [ ] Sensitive travel-data permissions.
 

@@ -39,6 +39,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   conflict-aware responses.
 - `rembrane_capture_booking_research` MCP tool with server-assigned canonical
   identifiers, exact trip grants, evidence attribution, and expiry validation.
+- REST/Postman and MCP end-to-end assertions that discover the capture surface
+  and reject research for a missing canonical trip without appending an event.
 - Rust modular-monolith workspace with provider-independent domain and
   application layers.
 - Canonical memory, provenance, event, disclosure, membership, grant,

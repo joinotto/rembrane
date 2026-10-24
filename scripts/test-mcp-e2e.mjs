@@ -98,6 +98,7 @@ try {
     "rembrane_record_work_trace",
     "rembrane_checkpoint_activity",
     "rembrane_resume_activity",
+    "rembrane_capture_booking_research",
   ]) {
     if (!toolNames.has(expected)) {
       throw new Error(`MCP tool list omitted ${expected}`);
@@ -324,6 +325,23 @@ try {
   });
   if (!deniedResumeCall.isError) {
     throw new Error("MCP allowed activity access outside the connection grant");
+  }
+
+  const missingTripResearchCall = await request(15, "tools/call", {
+    name: "rembrane_capture_booking_research",
+    arguments: {
+      tripId: "trip_missing",
+      kind: "flight",
+      provider: "e2e-search",
+      summary: "Nonstop morning option",
+      sourceReference: "opaque-result-e2e",
+      evidenceSource: "tool-result",
+      observedAt: "2026-10-24T10:00:00Z",
+      expiresAt: "2026-10-24T10:30:00Z",
+    },
+  });
+  if (!missingTripResearchCall.isError) {
+    throw new Error("MCP captured booking research for a missing canonical trip");
   }
 } finally {
   child.kill("SIGTERM");
