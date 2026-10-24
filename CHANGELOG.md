@@ -56,6 +56,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Transport-neutral remote-token claim limits shared by every verifier,
   including duplicate-audience rejection and bounded issuer, resource, subject,
   client, and workspace identities before verified access is constructed.
+- An 8 KiB transport-neutral bearer-token ceiling enforced before signature
+  verification or authenticated introspection.
 - A transport-injectable Mem0 OSS semantic adapter mapping authorized
   projections into HMAC-pseudonymous workspace partitions while preserving
   canonical memory IDs, versions, replacement, bounded ranking, and

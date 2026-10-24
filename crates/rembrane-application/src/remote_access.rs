@@ -7,6 +7,8 @@ use rembrane_contracts::{
 
 use crate::ApplicationError;
 
+pub const MAX_REMOTE_BEARER_TOKEN_BYTES: usize = 8_192;
+
 pub trait RemoteTokenVerifier {
     /// Verifies token integrity and returns trusted decoded claims.
     ///
@@ -250,6 +252,7 @@ fn parse_bearer_token(header: &str) -> Option<&str> {
     let (scheme, token) = header.split_once(' ')?;
     if !scheme.eq_ignore_ascii_case("Bearer")
         || token.is_empty()
+        || token.len() > MAX_REMOTE_BEARER_TOKEN_BYTES
         || token
             .bytes()
             .any(|byte| byte.is_ascii_whitespace() || byte.is_ascii_control())
@@ -267,8 +270,9 @@ mod tests {
     use rembrane_domain::{ClientId, PrincipalId, WorkspaceId};
 
     use super::{
-        RemoteAccessAuthenticator, RemoteHttpAuthorization, RemoteHttpAuthorizationError,
-        RemoteTokenVerificationError, RemoteTokenVerifier, parse_bearer_token,
+        MAX_REMOTE_BEARER_TOKEN_BYTES, RemoteAccessAuthenticator, RemoteHttpAuthorization,
+        RemoteHttpAuthorizationError, RemoteTokenVerificationError, RemoteTokenVerifier,
+        parse_bearer_token,
     };
     use crate::ApplicationError;
 
@@ -355,6 +359,13 @@ mod tests {
         assert_eq!(parse_bearer_token("Bearer "), None);
         assert_eq!(parse_bearer_token("Bearer signed token"), None);
         assert_eq!(parse_bearer_token("Bearer signed-token\n"), None);
+        assert_eq!(
+            parse_bearer_token(&format!(
+                "Bearer {}",
+                "x".repeat(MAX_REMOTE_BEARER_TOKEN_BYTES + 1)
+            )),
+            None
+        );
     }
 
     #[test]
