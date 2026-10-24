@@ -12,6 +12,7 @@ mod grant;
 mod graph_projection;
 mod identifier;
 mod invitation;
+mod key_rotation;
 mod knowledge_graph;
 mod member_scope;
 mod memory;
@@ -35,11 +36,12 @@ pub use grant::{ReadGrant, ReadPermission, ReadScope, WriteGrant, WritePermissio
 pub use graph_projection::{GraphProjectionJob, GraphProjectionJobError, GraphProjectionResource};
 pub use identifier::{
     ActivityId, BookingResearchId, CheckpointId, ClientId, ContextPackId, DisclosureId, EntityId,
-    EventId, EvidenceId, InvitationId, KnowledgeEdgeId, KnowledgeNodeId, MemoryId, PrincipalId,
-    ProjectionJobId, ProviderId, ShareProposalId, TripConstraintId, TripDecisionId,
+    EventId, EvidenceId, InvitationId, KeyRotationId, KnowledgeEdgeId, KnowledgeNodeId, MemoryId,
+    PrincipalId, ProjectionJobId, ProviderId, ShareProposalId, TripConstraintId, TripDecisionId,
     TripParticipantId, WorkspaceId,
 };
 pub use invitation::{Invitation, InvitationError, InvitationStatus};
+pub use key_rotation::{KeyRotationError, KeyRotationStatus, WorkspaceKeyRotation};
 pub use knowledge_graph::{
     KnowledgeEdge, KnowledgeGraphError, KnowledgeNode, KnowledgeNodeKind, KnowledgeRelationType,
     MAX_KNOWLEDGE_ALIASES, MAX_KNOWLEDGE_EVIDENCE, MAX_KNOWLEDGE_LABEL_BYTES, TemporalValidity,

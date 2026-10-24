@@ -53,6 +53,7 @@ identifier!(MemoryId);
 identifier!(PrincipalId);
 identifier!(ProjectionJobId);
 identifier!(ProviderId);
+identifier!(KeyRotationId);
 identifier!(TripConstraintId);
 identifier!(TripDecisionId);
 identifier!(TripParticipantId);

@@ -9,6 +9,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- A provider-independent, content-free shared-workspace key-rotation
+  aggregate with monotonic generations, removal provenance, explicit pending
+  state, and opaque key-provider completion identity.
 - Consumed customer key-provider HTTP configuration for application-owned
   vault, keychain, cloud-secret, and deployment integrations without fixed
   Rembrane environment-variable names.

@@ -280,6 +280,12 @@ This roadmap describes sequencing, not release dates.
   - [ ] Verify the dependency-enabled SQLite integration suite in CI.
 - [x] Authorized member removal with atomic scope-grant cleanup.
 - [ ] Group key rotation after membership changes.
+  - [x] Define a content-free canonical rotation requirement with monotonic
+    workspace generation and opaque completed-key identity.
+  - [ ] Create the requirement atomically with membership removal.
+  - [ ] Deny new shared-workspace access while rotation is required.
+  - [ ] Complete rotation only after a key provider confirms the new
+    generation and authorized recipients.
 - [ ] Organizational audit and retention controls.
 
 ## Phase 5 — Integration ecosystem
