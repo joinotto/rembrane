@@ -250,8 +250,8 @@ fn default_request_prefix() -> Result<String, ProviderError> {
 #[cfg(test)]
 mod tests {
     use rembrane_provider_sdk::{
-        CURRENT_MEMORY_PROVIDER_PROTOCOL, MemoryProviderLimits, MemoryProviderPolicy,
-        MemoryProviderPrivacyMode, MemoryProviderTransport,
+        CURRENT_MEMORY_PROVIDER_PROTOCOL, MemoryProviderCapability, MemoryProviderLimits,
+        MemoryProviderPolicy, MemoryProviderPrivacyMode, MemoryProviderTransport,
     };
 
     use super::{
@@ -263,7 +263,7 @@ mod tests {
         MemoryProviderPolicy::new(
             CURRENT_MEMORY_PROVIDER_PROTOCOL,
             MemoryProviderTransport::Https,
-            Vec::new(),
+            vec![MemoryProviderCapability::ResolveContext],
             vec![MemoryProviderPrivacyMode::EndToEndEncrypted],
             MemoryProviderLimits {
                 maximum_context_items: 1,

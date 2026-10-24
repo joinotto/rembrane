@@ -5,7 +5,7 @@ use rembrane_domain::{
     CanonicalEvent, EventPayload, EvidenceSource, MemoryKind, MemoryRecord, MemoryScope,
     MemoryStatus, ProjectionJob, ProjectionOperation, ProjectionStatus, WorkspaceId,
 };
-use rusqlite::{OptionalExtension, Transaction, params};
+use rusqlite::{Transaction, params};
 
 use crate::{SqliteStore, map_write_error};
 

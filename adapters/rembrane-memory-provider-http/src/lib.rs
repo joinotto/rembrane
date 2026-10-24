@@ -401,6 +401,7 @@ fn memory_endpoint(base_url: &Url, memory_id: &str) -> Result<Url, ProviderError
         .map_err(|_| {
             ProviderError::InvalidConfiguration("memory provider URL cannot be a base".to_owned())
         })?
+        .pop_if_empty()
         .push(memory_id);
     Ok(endpoint)
 }
@@ -460,6 +461,7 @@ fn activity_subresource_endpoint(
         .map_err(|_| {
             ProviderError::InvalidConfiguration("memory provider URL cannot be a base".to_owned())
         })?
+        .pop_if_empty()
         .push(activity_id)
         .push(subresource);
     Ok(endpoint)
@@ -824,7 +826,11 @@ impl<'request> From<&'request ResolveContextPayload> for ResolveContextBody<'req
 }
 
 #[derive(Serialize)]
-#[serde(tag = "scope", rename_all = "lowercase")]
+#[serde(
+    tag = "scope",
+    rename_all = "lowercase",
+    rename_all_fields = "camelCase"
+)]
 enum SelectorBody<'request> {
     Global,
     Domain { domain: &'request str },

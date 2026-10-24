@@ -1101,7 +1101,7 @@ impl<C: RecordCipher> MemoryRepository for SqliteStore<C> {
     }
 }
 
-pub(super) fn decrypt_memory_record(
+pub(crate) fn decrypt_memory_record(
     cipher: &impl RecordCipher,
     workspace_id: &WorkspaceId,
     memory_id: &MemoryId,
@@ -1131,7 +1131,7 @@ pub(super) fn decrypt_memory_record(
     Ok(memory)
 }
 
-pub(super) struct EncryptedMemoryRow {
+pub(crate) struct EncryptedMemoryRow {
     version: u64,
     ciphertext: Vec<u8>,
     key_id: String,
@@ -1139,7 +1139,7 @@ pub(super) struct EncryptedMemoryRow {
     nonce: Vec<u8>,
 }
 
-pub(super) fn encrypted_memory_row(
+pub(crate) fn encrypted_memory_row(
     row: &rusqlite::Row<'_>,
 ) -> rusqlite::Result<EncryptedMemoryRow> {
     Ok(EncryptedMemoryRow {

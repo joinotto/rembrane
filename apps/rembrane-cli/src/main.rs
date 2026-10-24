@@ -512,14 +512,24 @@ fn codex_mcp_config(server_binary: &str, environment: &[&str]) -> String {
 fn claude_mcp_config(server_binary: &str, variables: &[&str]) -> String {
     let environment = variables
         .iter()
-        .map(|variable| format!("\"{variable}\":\"${{{variable}}}\""))
-        .collect::<Vec<_>>()
-        .join(",");
-    format!(
-        "{{\"mcpServers\":{{\"rembrane\":{{\"type\":\"stdio\",\
-         \"command\":\"{}\",\"args\":[],\"env\":{{{environment}}}}}}}}}}",
-        escape_config_string(server_binary)
-    )
+        .map(|variable| {
+            (
+                (*variable).to_owned(),
+                serde_json::Value::String(format!("${{{variable}}}")),
+            )
+        })
+        .collect::<serde_json::Map<_, _>>();
+    serde_json::json!({
+        "mcpServers": {
+            "rembrane": {
+                "type": "stdio",
+                "command": server_binary,
+                "args": [],
+                "env": environment
+            }
+        }
+    })
+    .to_string()
 }
 
 fn gemini_mcp_config(server_binary: &str, variables: &[&str]) -> String {
@@ -539,27 +549,47 @@ fn gemini_mcp_config(server_binary: &str, variables: &[&str]) -> String {
 fn cursor_mcp_config(server_binary: &str, variables: &[&str]) -> String {
     let environment = variables
         .iter()
-        .map(|variable| format!("\"{variable}\":\"${{env:{variable}}}\""))
-        .collect::<Vec<_>>()
-        .join(",");
-    format!(
-        "{{\"mcpServers\":{{\"rembrane\":{{\"type\":\"stdio\",\
-         \"command\":\"{}\",\"args\":[],\"env\":{{{environment}}}}}}}}}}",
-        escape_config_string(server_binary)
-    )
+        .map(|variable| {
+            (
+                (*variable).to_owned(),
+                serde_json::Value::String(format!("${{env:{variable}}}")),
+            )
+        })
+        .collect::<serde_json::Map<_, _>>();
+    serde_json::json!({
+        "mcpServers": {
+            "rembrane": {
+                "type": "stdio",
+                "command": server_binary,
+                "args": [],
+                "env": environment
+            }
+        }
+    })
+    .to_string()
 }
 
 fn vscode_mcp_config(server_binary: &str, variables: &[&str]) -> String {
     let environment = variables
         .iter()
-        .map(|variable| format!("\"{variable}\":\"${{env:{variable}}}\""))
-        .collect::<Vec<_>>()
-        .join(",");
-    format!(
-        "{{\"servers\":{{\"rembrane\":{{\"type\":\"stdio\",\
-         \"command\":\"{}\",\"args\":[],\"env\":{{{environment}}}}}}}}}}",
-        escape_config_string(server_binary)
-    )
+        .map(|variable| {
+            (
+                (*variable).to_owned(),
+                serde_json::Value::String(format!("${{env:{variable}}}")),
+            )
+        })
+        .collect::<serde_json::Map<_, _>>();
+    serde_json::json!({
+        "servers": {
+            "rembrane": {
+                "type": "stdio",
+                "command": server_binary,
+                "args": [],
+                "env": environment
+            }
+        }
+    })
+    .to_string()
 }
 
 fn zed_mcp_config(server_binary: &str) -> String {
@@ -758,7 +788,10 @@ fn read_export(source: &std::path::Path, destination: &std::path::Path) -> Resul
         .create_new(true)
         .open(destination)
         .map_err(|error| format!("cannot create restore destination: {error}"))?;
-    let copied = match std::io::copy(&mut input.by_ref().take(payload_length), &mut output) {
+    let copied = match std::io::copy(
+        &mut std::io::Read::by_ref(&mut input).take(payload_length),
+        &mut output,
+    ) {
         Ok(copied) => copied,
         Err(error) => {
             drop(output);
@@ -1498,7 +1531,7 @@ mod tests {
 
     use super::{
         EXPORT_MAGIC, claude_mcp_config, codex_mcp_config, cursor_mcp_config, format_read_scopes,
-        gemini_mcp_config, generic_mcp_config, memory_privacy_mode_name,
+        gemini_mcp_config, generic_mcp_config, mcp_environment_variables, memory_privacy_mode_name,
         memory_provider_check_policy, option, positive_u64, providers, read_export,
         recall_scope_context, redact_endpoint, requested_memory_privacy, requested_memory_scope,
         test_provider, vscode_mcp_config, write_export, zed_mcp_config,

@@ -26,7 +26,7 @@ pub use trip::{decode_trip, encode_trip};
 const MEMORY_FORMAT: &str = "rembrane.memory";
 const MEMORY_FORMAT_VERSION: u16 = 1;
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum CodecError {
     InvalidDomainRecord,
     MalformedPayload,

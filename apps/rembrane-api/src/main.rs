@@ -1218,14 +1218,6 @@ impl ApiError {
         }
     }
 
-    const fn not_found() -> Self {
-        Self {
-            status: StatusCode::NOT_FOUND,
-            code: "not_found",
-            message: "resource is not available",
-        }
-    }
-
     const fn access_denied() -> Self {
         Self {
             status: StatusCode::FORBIDDEN,

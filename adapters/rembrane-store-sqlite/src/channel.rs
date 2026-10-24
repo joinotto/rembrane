@@ -152,7 +152,9 @@ const fn encode_channel(channel: ChannelKind) -> &'static str {
 mod tests {
     use rembrane_application::{ApplicationError, ChannelReplayRepository, WorkspaceRepository};
     use rembrane_contracts::{ChannelKind, VerifiedChannelMessage};
-    use rembrane_domain::{ClientId, PrincipalId, Workspace, WorkspaceId};
+    use rembrane_domain::{
+        ClientId, Membership, Principal, PrincipalId, Workspace, WorkspaceId, WorkspaceRole,
+    };
 
     use crate::SqliteStore;
 
@@ -176,9 +178,18 @@ mod tests {
 
     fn store() -> SqliteStore {
         let mut store = SqliteStore::open_in_memory().expect("store should initialize");
-        for id in ["workspace_01", "workspace_02"] {
+        for (workspace, principal) in [
+            ("workspace_01", "principal_01"),
+            ("workspace_02", "principal_02"),
+        ] {
+            let workspace_id = WorkspaceId::new(workspace);
+            let principal_id = PrincipalId::new(principal);
             store
-                .insert_workspace(Workspace::personal(WorkspaceId::new(id)))
+                .initialize_personal_workspace(
+                    Principal::new(principal_id.clone()),
+                    Workspace::personal(workspace_id.clone()),
+                    Membership::new(workspace_id, principal_id, WorkspaceRole::Owner),
+                )
                 .expect("workspace should persist");
         }
         store

@@ -299,7 +299,7 @@ fn persists_and_resumes_latest_encrypted_checkpoint() {
         )
         .expect("checkpoint list succeeds");
 
-    assert_eq!(resumed, Some(updated));
+    assert_eq!(resumed, Some(updated.clone()));
     assert_eq!(all, vec![updated]);
 }
 

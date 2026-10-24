@@ -15,6 +15,17 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Tenant-owned channel sender bindings that resolve keyed pseudonymous account
   and sender identifiers to canonical workspace, principal, and client IDs
   without persisting raw phone numbers.
+
+### Fixed
+
+- Restored the complete dependency-enabled workspace build by declaring
+  previously implicit crate dependencies and enabling rmcp's stdio transport.
+- Corrected Memory Provider selector field casing and URL path construction so
+  opaque memory and activity identifiers remain one percent-encoded segment.
+- Replaced fragile hand-escaped MCP client JSON with structured serialization,
+  removed a duplicate API error constructor, and fixed stale test fixtures.
+- Added a reproducible application workspace lockfile and pinned `uuid` to a
+  Rust-1.88-compatible release.
 - An immutable, bounded, content-free administrative audit event contract with
   tenant, actor, closed action, opaque target, request correlation, and
   occurrence time while excluding memory content, secrets, and key material.
