@@ -66,7 +66,9 @@ const CHANNEL_EVENT_RECEIPTS_MIGRATION: &str =
     include_str!("../../../migrations/sqlite/0017_channel_event_receipts.sql");
 const CHANNEL_SENDER_BINDINGS_MIGRATION: &str =
     include_str!("../../../migrations/sqlite/0018_channel_sender_bindings.sql");
-const CURRENT_SCHEMA_VERSION: u32 = 18;
+const CHANNEL_BINDING_LIFECYCLE_MIGRATION: &str =
+    include_str!("../../../migrations/sqlite/0019_channel_binding_lifecycle.sql");
+const CURRENT_SCHEMA_VERSION: u32 = 19;
 const CANONICAL_TABLES: [&str; 10] = [
     "activity_checkpoints",
     "disclosed_memories",
@@ -774,6 +776,12 @@ fn migrate(connection: &mut Connection) -> Result<(), ApplicationError> {
     if version == 17 {
         transaction
             .execute_batch(CHANNEL_SENDER_BINDINGS_MIGRATION)
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        version = 18;
+    }
+    if version == 18 {
+        transaction
+            .execute_batch(CHANNEL_BINDING_LIFECYCLE_MIGRATION)
             .map_err(|_| ApplicationError::StorageUnavailable)?;
     }
     transaction

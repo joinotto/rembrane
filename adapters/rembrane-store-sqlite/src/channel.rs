@@ -83,10 +83,17 @@ impl<C> ChannelSenderBindingRepository for SqliteStore<C> {
         self.connection
             .query_row(
                 "SELECT workspace_id, principal_id, client_id
-                 FROM channel_sender_bindings
-                 WHERE channel = ?1
-                   AND account_lookup_key = ?2
-                   AND sender_lookup_key = ?3",
+                 FROM channel_sender_bindings AS binding
+                 WHERE binding.channel = ?1
+                   AND binding.account_lookup_key = ?2
+                   AND binding.sender_lookup_key = ?3
+                   AND EXISTS (
+                       SELECT 1
+                       FROM memberships AS membership
+                       WHERE membership.workspace_id = binding.workspace_id
+                         AND membership.principal_id = binding.principal_id
+                         AND membership.status = 'active'
+                   )",
                 params![
                     encode_channel(channel),
                     account_lookup_key,
@@ -150,8 +157,11 @@ const fn encode_channel(channel: ChannelKind) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use rembrane_application::{ApplicationError, ChannelReplayRepository, WorkspaceRepository};
-    use rembrane_contracts::{ChannelKind, VerifiedChannelMessage};
+    use rembrane_application::{
+        ApplicationError, ChannelReplayRepository, ChannelSenderBindingRepository,
+        MembershipRepository, WorkspaceRepository,
+    };
+    use rembrane_contracts::{ChannelKind, ChannelSenderBinding, VerifiedChannelMessage};
     use rembrane_domain::{
         ClientId, Membership, Principal, PrincipalId, Workspace, WorkspaceId, WorkspaceRole,
     };
@@ -288,5 +298,89 @@ mod tests {
                 1,
             )
             .expect("expired receipt should be purged and channel namespace accepted");
+    }
+
+    #[test]
+    fn sender_binding_is_tenant_scoped_and_revoked_with_membership() {
+        let mut store = store();
+        let binding = ChannelSenderBinding::new(
+            ChannelKind::WhatsAppBusiness,
+            "hmac-account-01",
+            "hmac-sender-01",
+            WorkspaceId::new("workspace_01"),
+            PrincipalId::new("principal_01"),
+            ClientId::new("client_whatsapp_01"),
+        )
+        .expect("binding should be valid");
+        store
+            .insert_channel_sender_binding(binding.clone())
+            .expect("active member binding should persist");
+        assert_eq!(
+            store
+                .find_channel_sender_binding(
+                    ChannelKind::WhatsAppBusiness,
+                    "hmac-account-01",
+                    "hmac-sender-01",
+                )
+                .expect("binding lookup should succeed"),
+            Some(binding)
+        );
+        assert!(
+            store
+                .find_channel_sender_binding(
+                    ChannelKind::WhatsAppBusiness,
+                    "hmac-account-02",
+                    "hmac-sender-01",
+                )
+                .expect("other account lookup should succeed")
+                .is_none()
+        );
+
+        let removed = Membership::new(
+            WorkspaceId::new("workspace_01"),
+            PrincipalId::new("principal_01"),
+            WorkspaceRole::Owner,
+        )
+        .remove();
+        store
+            .replace_membership(removed)
+            .expect("membership removal should persist");
+        assert!(
+            store
+                .find_channel_sender_binding(
+                    ChannelKind::WhatsAppBusiness,
+                    "hmac-account-01",
+                    "hmac-sender-01",
+                )
+                .expect("revoked binding lookup should succeed")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn sender_binding_rejects_inactive_or_cross_tenant_membership() {
+        let mut store = store();
+        let removed = Membership::new(
+            WorkspaceId::new("workspace_02"),
+            PrincipalId::new("principal_02"),
+            WorkspaceRole::Owner,
+        )
+        .remove();
+        store
+            .replace_membership(removed)
+            .expect("membership removal should persist");
+        let binding = ChannelSenderBinding::new(
+            ChannelKind::WhatsAppBusiness,
+            "hmac-account-02",
+            "hmac-sender-02",
+            WorkspaceId::new("workspace_02"),
+            PrincipalId::new("principal_02"),
+            ClientId::new("client_whatsapp_02"),
+        )
+        .expect("binding should be valid");
+        assert!(matches!(
+            store.insert_channel_sender_binding(binding),
+            Err(ApplicationError::Validation(_))
+        ));
     }
 }

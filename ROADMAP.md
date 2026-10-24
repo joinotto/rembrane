@@ -555,6 +555,8 @@ This roadmap describes sequencing, not release dates.
     multi-process capacity enforcement and cross-workspace replay denial.
   - [x] Add privacy-safe sender bindings using keyed opaque account and sender
     lookup identifiers instead of storing WhatsApp phone numbers.
+  - [x] Require an active canonical membership for every sender binding and
+    revoke bindings automatically when that membership becomes inactive.
 - [ ] Mobile share flows and iMessage extension.
   - [x] Reuse the authenticated-channel contract for explicit iMessage
     extension and mobile-share ingestion without claiming conversation

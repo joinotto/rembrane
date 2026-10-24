@@ -15,6 +15,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Tenant-owned channel sender bindings that resolve keyed pseudonymous account
   and sender identifiers to canonical workspace, principal, and client IDs
   without persisting raw phone numbers.
+- Active-membership enforcement and automatic revocation for channel sender
+  bindings, preventing suspended or removed principals from retaining gateway
+  identity.
 
 ### Fixed
 
