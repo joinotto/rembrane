@@ -66,6 +66,11 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   sidecars, including manifest negotiation, idempotent projection upserts,
   workspace-bound search, version-bounded deletion, bounded scores, and
   deployment-resolved bearer authentication.
+- Secret-safe black-box HTTP provider conformance runner covering manifest
+  negotiation, workspace isolation, exact replacement, version-bounded
+  deletion, and cleanup through an isolated disposable namespace.
+- Authenticated loopback mock-sidecar test for the HTTP conformance runner,
+  including final fixture cleanup and bearer-token output leakage assertions.
 - Versioned discovery, OpenAPI, and MCP protocol specifications.
 - Tenant-isolated SQLite canonical schema with encrypted-payload metadata.
 - Versioned SQLite initialization with legacy-schema adoption, idempotent

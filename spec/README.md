@@ -46,7 +46,8 @@ the JSON Schema.
 same semantics. It covers manifest negotiation, idempotent projection upserts,
 version-bounded deletion, and workspace-bound candidate search. Provider
 responses remain untrusted; the canonical core reauthorizes every candidate
-before disclosure.
+before disclosure. `scripts/test-provider-http.sh` exercises this contract
+against a disposable external-provider namespace.
 
 Rust adapters can run `verify_semantic_provider` from
 `rembrane-provider-sdk` against a disposable provider instance or tenant. The

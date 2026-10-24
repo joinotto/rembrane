@@ -58,6 +58,26 @@ The harness writes two versions of one fixture and deletes it while checking
 protocol compatibility, exact replacement semantics, workspace isolation,
 result limits, version-bounded deletion, and deletion propagation.
 
+External HTTP sidecars can run the equivalent black-box suite. The bearer
+token is read from the environment and written only to a mode-0600 temporary
+header file, so it does not appear in the `curl` process arguments:
+
+```sh
+REMBRANE_PROVIDER_BASE_URL=https://provider.example \
+REMBRANE_PROVIDER_TOKEN='replace-from-secret-store' \
+./scripts/test-provider-http.sh unique-disposable-namespace
+```
+
+The runner accepts loopback HTTP for local development and requires HTTPS
+elsewhere. It mutates and deletes its conformance fixture; never point it at a
+namespace that contains production records.
+
+CI sets `REMBRANE_RUN_LOOPBACK_TESTS=1` so `scripts/check-protocols.sh` runs the
+HTTP runner against an authenticated loopback mock sidecar, verifies final
+fixture cleanup, and asserts that captured output does not contain the bearer
+token. Restricted sandboxes still syntax-check both scripts and verify that
+remote plaintext HTTP is rejected.
+
 ## Manual local setup
 
 Build binaries:

@@ -30,6 +30,18 @@ jq empty \
     spec/stdio-connection-manifest.schema.json \
     tests/postman/rembrane-local.postman_collection.json
 node --check scripts/test-mcp-e2e.mjs
+sh -n scripts/test-provider-http.sh
+node --check scripts/test-provider-http-runner.mjs
+if [ "${REMBRANE_RUN_LOOPBACK_TESTS:-0}" = "1" ]; then
+    node scripts/test-provider-http-runner.mjs
+fi
+if REMBRANE_PROVIDER_BASE_URL=http://provider.example \
+    REMBRANE_PROVIDER_TOKEN=test-token \
+    ./scripts/test-provider-http.sh static-check >/dev/null 2>&1
+then
+    echo "provider runner unexpectedly accepted remote plaintext HTTP" >&2
+    exit 1
+fi
 
 for provider_route in \
     '/v0.1/manifest:' \

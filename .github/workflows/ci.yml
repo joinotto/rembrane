@@ -26,6 +26,8 @@ jobs:
         with:
           command: --version
       - run: ./scripts/check-local-alpha.sh
+        env:
+          REMBRANE_RUN_LOOPBACK_TESTS: "1"
 
   container:
     runs-on: ubuntu-latest
