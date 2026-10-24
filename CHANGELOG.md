@@ -93,6 +93,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Administrator-only single-event quarantine recovery through the CLI, with
   atomic retry reset and append-only content-free audit evidence while leaving
   encrypted message bytes unchanged.
+- Domain-separated SHA-256 channel audit target fingerprints that preserve
+  content-free evidence while supporting the complete bounded opaque event-ID
+  space, including maximum-length identifiers.
 - Durable, content-free SQLite channel replay receipts with atomic cleanup,
   fail-closed capacity enforcement, per-platform namespaces, and
   cross-workspace duplicate denial for multi-process gateways.

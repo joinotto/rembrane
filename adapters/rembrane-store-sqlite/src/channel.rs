@@ -5,6 +5,7 @@ use rembrane_application::{
 };
 use rembrane_contracts::{
     ChannelInboxSummary, ChannelKind, ChannelSenderBinding, VerifiedChannelMessage,
+    channel_event_audit_target,
 };
 use rembrane_crypto::{EncryptedPayload, EncryptionContext, PayloadPurpose, RecordCipher};
 use rembrane_domain::{
@@ -875,7 +876,8 @@ fn validate_requeue_audit(
     event_id: &str,
     event: &AdministrativeAuditEvent,
 ) -> Result<(), ApplicationError> {
-    let expected_target = format!("{}:{event_id}", channel.label());
+    let expected_target = channel_event_audit_target(channel, event_id)
+        .map_err(|error| ApplicationError::Validation(error.to_string()))?;
     if event.workspace_id() != workspace_id
         || event.action() != AdministrativeAction::ChannelMessageRequeued
         || event.target_kind() != AdministrativeTargetKind::ChannelMessage
@@ -1269,12 +1271,13 @@ mod tests {
             .expect("binding should persist");
         let cipher = RustCryptoRecordCipher::new("channel-retry-key", [29; 32]).expect("valid key");
         let mut store = store.with_cipher(cipher);
+        let opaque_event_id = "!".repeat(256);
         let admitted = store
             .accept_bound_channel_event_to_inbox(
                 ChannelKind::WhatsAppBusiness,
                 "hmac-account-retry",
                 "hmac-sender-retry",
-                "event-retry-01",
+                &opaque_event_id,
                 "retry me",
                 1_000,
                 1_000,

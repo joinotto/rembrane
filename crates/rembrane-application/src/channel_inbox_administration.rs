@@ -1,6 +1,6 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use rembrane_contracts::{ChannelInboxSummary, ChannelKind};
+use rembrane_contracts::{ChannelInboxSummary, ChannelKind, channel_event_audit_target};
 use rembrane_domain::{
     AdministrativeAction, AdministrativeAuditEvent, AdministrativeAuditEventId,
     AdministrativeTargetKind, PrincipalId, WorkspaceId,
@@ -49,7 +49,8 @@ where
         command: RequeueChannelMessageCommand,
     ) -> Result<(), ApplicationError> {
         authorize_administrator(self.repository, &command.workspace_id, &command.actor_id)?;
-        let target_id = format!("{}:{}", command.channel.label(), command.event_id);
+        let target_id = channel_event_audit_target(command.channel, &command.event_id)
+            .map_err(|error| ApplicationError::Validation(error.to_string()))?;
         let audit = AdministrativeAuditEvent::new(
             AdministrativeAuditEventId::new(format!(
                 "audit:{}:{}",

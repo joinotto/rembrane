@@ -595,6 +595,8 @@ This roadmap describes sequencing, not release dates.
     the CLI without granting message-content access.
   - [x] Allow an administrator to requeue one quarantined event by opaque
     channel/event identity with an atomic append-only audit record.
+  - [x] Fingerprint opaque channel event identities into bounded,
+    domain-separated content-free audit targets.
   - [x] Define a bounded authenticated-channel message contract whose
     canonical workspace, principal, and client identity must come from a
     deployment-owned sender binding rather than webhook payload claims.
