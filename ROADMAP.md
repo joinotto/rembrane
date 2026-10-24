@@ -162,6 +162,8 @@ This roadmap describes sequencing, not release dates.
         access, operation classification, and the exact zeroizing body buffer.
     - [x] Adapt Axum header maps and HTTP rejection responses at the outer
       boundary, rejecting duplicate security headers before SDK dispatch.
+      - [x] Bound every security and MCP negotiation header before parsing or
+        authentication work.
       - [x] Reject ambiguous duplicate content negotiation and MCP protocol
         version headers before authorizing the request body.
       - [x] Require JSON request content and explicit JSON plus event-stream

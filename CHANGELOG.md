@@ -58,6 +58,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   client, and workspace identities before verified access is constructed.
 - An 8 KiB transport-neutral bearer-token ceiling enforced before signature
   verification or authenticated introspection.
+- An 8 KiB outer remote-MCP header ceiling applied uniformly to credential,
+  Host, Origin, session, content-negotiation, and protocol-version headers
+  before parsing or authentication.
 - A transport-injectable Mem0 OSS semantic adapter mapping authorized
   projections into HMAC-pseudonymous workspace partitions while preserving
   canonical memory IDs, versions, replacement, bounded ranking, and

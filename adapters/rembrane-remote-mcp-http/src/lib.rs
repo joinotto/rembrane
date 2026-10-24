@@ -27,6 +27,7 @@ use zeroize::Zeroizing;
 
 pub const MCP_SESSION_HEADER: &str = "Mcp-Session-Id";
 pub const MAX_REMOTE_MCP_REQUEST_BYTES: usize = 1_048_576;
+pub const MAX_REMOTE_MCP_HEADER_BYTES: usize = 8_192;
 const MCP_SESSION_HEADER_NAME: HeaderName = HeaderName::from_static("mcp-session-id");
 const MCP_PROTOCOL_VERSION_HEADER_NAME: HeaderName =
     HeaderName::from_static("mcp-protocol-version");
@@ -504,7 +505,12 @@ fn unique_header<'headers>(
         return Err(RemoteMcpHttpGate::forbidden());
     }
     first
-        .map(|value| value.to_str().map_err(|_| RemoteMcpHttpGate::forbidden()))
+        .map(|value| {
+            if value.as_bytes().len() > MAX_REMOTE_MCP_HEADER_BYTES {
+                return Err(RemoteMcpHttpGate::forbidden());
+            }
+            value.to_str().map_err(|_| RemoteMcpHttpGate::forbidden())
+        })
         .transpose()
 }
 
@@ -1035,10 +1041,10 @@ mod tests {
 
     use super::{
         AuthorizedRemoteMcpDispatcher, AuthorizedRemoteMcpEventStreamDispatcher,
-        MCP_PROTOCOL_VERSION_HEADER_NAME, MCP_SESSION_HEADER_NAME, RemoteMcpAxumAuthorization,
-        RemoteMcpDispatchError, RemoteMcpHttpGate, RemoteMcpHttpRejection, RemoteMcpHttpRequest,
-        RemoteMcpInvocation, authorize_axum_stateless_body, classify_remote_mcp_request,
-        request_from_axum_headers,
+        MAX_REMOTE_MCP_HEADER_BYTES, MCP_PROTOCOL_VERSION_HEADER_NAME, MCP_SESSION_HEADER_NAME,
+        RemoteMcpAxumAuthorization, RemoteMcpDispatchError, RemoteMcpHttpGate,
+        RemoteMcpHttpRejection, RemoteMcpHttpRequest, RemoteMcpInvocation,
+        authorize_axum_stateless_body, classify_remote_mcp_request, request_from_axum_headers,
     };
 
     struct Verifier;
@@ -1431,7 +1437,7 @@ mod tests {
     }
 
     #[test]
-    fn axum_boundary_rejects_duplicate_security_headers() {
+    fn axum_boundary_rejects_duplicate_or_oversized_security_headers() {
         let mut headers = HeaderMap::new();
         headers.insert(HOST, HeaderValue::from_static("memory.example.test"));
         headers.append(
@@ -1473,6 +1479,27 @@ mod tests {
             assert!(
                 request_from_axum_headers(&headers).is_err(),
                 "ambiguous protocol header must fail closed"
+            );
+            headers.clear();
+        }
+
+        for name in [
+            &AUTHORIZATION,
+            &HOST,
+            &ORIGIN,
+            &CONTENT_TYPE,
+            &ACCEPT,
+            &MCP_SESSION_HEADER_NAME,
+            &MCP_PROTOCOL_VERSION_HEADER_NAME,
+        ] {
+            headers.insert(
+                name,
+                HeaderValue::from_bytes(&vec![b'x'; MAX_REMOTE_MCP_HEADER_BYTES + 1])
+                    .expect("large visible ASCII header"),
+            );
+            assert!(
+                request_from_axum_headers(&headers).is_err(),
+                "oversized security header must fail at the outer boundary"
             );
             headers.clear();
         }
