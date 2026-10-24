@@ -13,6 +13,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   with raw-payload HMAC authentication, bounded strict envelopes,
   pseudonymous device binding, freshness enforcement, replay idempotency, and
   optional encrypted durable admission.
+- Audited mobile-device binding and revocation through the CLI, deriving
+  pseudonymous account/device keys from environment-only raw identifiers and
+  deployment secrets.
 - A Ring-backed WhatsApp Business webhook boundary that authenticates the raw
   bounded payload before parsing, extracts bounded text events, and derives
   domain-separated keyed account/sender lookup fingerprints.

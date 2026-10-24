@@ -605,6 +605,9 @@ This roadmap describes sequencing, not release dates.
   - [x] Add a strict signed-envelope adapter for explicit mobile shares with
     bounded content, pseudonymous device binding, freshness checks, and
     durable encrypted-inbox admission.
+  - [x] Add administrator-authorized CLI enrollment and revocation for mobile
+    devices without persisting raw account identifiers, device identifiers, or
+    lookup secrets.
   - [ ] Expose the signed mobile-share boundary through a narrowly scoped
     companion HTTP service.
 - [ ] Community provider and agent adapters.

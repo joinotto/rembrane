@@ -8,6 +8,7 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+rembrane-channel-mobile-share = { path = "../../adapters/rembrane-channel-mobile-share" }
 rembrane-channel-whatsapp = { path = "../../adapters/rembrane-channel-whatsapp" }
 rembrane-application = { path = "../../crates/rembrane-application" }
 rembrane-crypto-configured = { path = "../../adapters/rembrane-crypto-configured" }

@@ -17,6 +17,11 @@ pub struct MobileShareVerifier {
     lookup_key: hmac::Key,
 }
 
+pub struct MobileShareBindingLookupKeys {
+    account_lookup_key: String,
+    device_lookup_key: String,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum MobileShareError {
     InvalidConfiguration,
@@ -162,6 +167,51 @@ impl MobileShareVerifier {
     }
 }
 
+/// Derives the pseudonymous identifiers used to enroll a mobile-share device
+/// without retaining its raw account or device identifiers.
+pub fn derive_binding_lookup_keys(
+    mut binding_lookup_secret: Vec<u8>,
+    account_identifier: &str,
+    device_identifier: &str,
+) -> Result<MobileShareBindingLookupKeys, MobileShareError> {
+    if binding_lookup_secret.len() < 32 {
+        binding_lookup_secret.zeroize();
+        return Err(MobileShareError::InvalidConfiguration);
+    }
+    let account_identifier = match bounded_identifier(account_identifier) {
+        Ok(identifier) => identifier,
+        Err(error) => {
+            binding_lookup_secret.zeroize();
+            return Err(error);
+        }
+    };
+    let device_identifier = match bounded_identifier(device_identifier) {
+        Ok(identifier) => identifier,
+        Err(error) => {
+            binding_lookup_secret.zeroize();
+            return Err(error);
+        }
+    };
+    let key = hmac::Key::new(hmac::HMAC_SHA256, &binding_lookup_secret);
+    binding_lookup_secret.zeroize();
+    Ok(MobileShareBindingLookupKeys {
+        account_lookup_key: lookup_fingerprint(&key, b"account", account_identifier),
+        device_lookup_key: lookup_fingerprint(&key, b"device", device_identifier),
+    })
+}
+
+impl MobileShareBindingLookupKeys {
+    #[must_use]
+    pub fn account_lookup_key(&self) -> &str {
+        &self.account_lookup_key
+    }
+
+    #[must_use]
+    pub fn device_lookup_key(&self) -> &str {
+        &self.device_lookup_key
+    }
+}
+
 struct BoundMobileShare {
     account_lookup_key: String,
     sender_lookup_key: String,
@@ -233,7 +283,7 @@ mod tests {
     use rembrane_domain::{ClientId, PrincipalId, WorkspaceId};
     use ring::hmac;
 
-    use super::{MobileShareError, MobileShareVerifier, encode_hex};
+    use super::{MobileShareError, MobileShareVerifier, derive_binding_lookup_keys, encode_hex};
 
     #[derive(Default)]
     struct Repository {
@@ -350,5 +400,15 @@ mod tests {
                 .expect_err("stale share must fail"),
             MobileShareError::StaleEvent
         );
+    }
+
+    #[test]
+    fn enrollment_derives_the_same_pseudonyms_as_ingestion() {
+        let lookup =
+            derive_binding_lookup_keys(vec![9; 32], "account_01", "device_01").expect("valid");
+        assert_eq!(lookup.account_lookup_key().len(), 64);
+        assert_eq!(lookup.device_lookup_key().len(), 64);
+        assert!(!lookup.account_lookup_key().contains("account_01"));
+        assert!(!lookup.device_lookup_key().contains("device_01"));
     }
 }
