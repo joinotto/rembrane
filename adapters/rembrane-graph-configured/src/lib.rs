@@ -15,7 +15,7 @@ use rembrane_provider_sdk::{
 
 pub enum ConfiguredGraphProvider {
     Native(NativeGraphProvider),
-    Graphiti(GraphitiProvider<HttpGraphitiTransport>),
+    Graphiti(Box<GraphitiProvider<HttpGraphitiTransport>>),
 }
 
 impl ConfiguredGraphProvider {
@@ -35,11 +35,11 @@ impl ConfiguredGraphProvider {
                 let endpoint = required_environment("REMBRANE_GRAPHITI_BASE_URL")?;
                 let token = required_environment("REMBRANE_GRAPHITI_BEARER_TOKEN")?;
                 let transport = HttpGraphitiTransport::new(&endpoint, token)?;
-                Ok(Self::Graphiti(GraphitiProvider::connect(
+                Ok(Self::Graphiti(Box::new(GraphitiProvider::connect(
                     transport,
                     request_prefix()?,
                     true,
-                )?))
+                )?)))
             }
             _ => Err(ProviderError::InvalidConfiguration(
                 "REMBRANE_GRAPH_PROVIDER must be native or graphiti".to_owned(),

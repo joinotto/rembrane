@@ -186,11 +186,11 @@ impl RustCryptoKeyringCipher {
     }
 
     pub fn from_macos_keychain(
-        active: MacosKeychainKeyReference,
-        historical: Vec<MacosKeychainKeyReference>,
+        active: &MacosKeychainKeyReference,
+        historical: &[MacosKeychainKeyReference],
     ) -> Result<Self, CryptoError> {
-        validate_key_references(&active, &historical)?;
-        let active = RustCryptoRecordCipher::from_macos_keychain_reference(&active)?;
+        validate_key_references(active, historical)?;
+        let active = RustCryptoRecordCipher::from_macos_keychain_reference(active)?;
         let historical = historical
             .iter()
             .map(RustCryptoRecordCipher::from_macos_keychain_reference)
@@ -218,7 +218,7 @@ impl RustCryptoKeyringCipher {
                     .map(|value| parse_keychain_history(&service, &value))
                     .transpose()?
                     .unwrap_or_default();
-                Self::from_macos_keychain(active, historical)
+                Self::from_macos_keychain(&active, &historical)
             }
             _ => Err(CryptoError::KeyUnavailable),
         }

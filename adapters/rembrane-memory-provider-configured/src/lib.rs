@@ -77,7 +77,7 @@ impl ConfiguredMemoryProvider {
                 let mut config = MemoryProviderHttpConfig::new(endpoint, token);
                 if let Ok(prefix) = std::env::var("REMBRANE_MEMORY_PROVIDER_REQUEST_PREFIX") {
                     config = config.with_request_prefix(prefix);
-                };
+                }
                 Self::from_http_config(config, policy)
             }
             _ => Err(ProviderError::InvalidConfiguration(

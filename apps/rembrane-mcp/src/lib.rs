@@ -1453,6 +1453,13 @@ fn required_environment(name: &str) -> Result<String> {
     std::env::var(name).with_context(|| format!("{name} is required"))
 }
 
+pub async fn run_stdio() -> Result<()> {
+    let server = RembraneMcp::from_environment()?;
+    let service = server.serve(stdio()).await?;
+    service.waiting().await?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use rembrane_domain::{EntityId, ReadScope};
@@ -1470,11 +1477,4 @@ mod tests {
             allowed
         );
     }
-}
-
-pub async fn run_stdio() -> Result<()> {
-    let server = RembraneMcp::from_environment()?;
-    let service = server.serve(stdio()).await?;
-    service.waiting().await?;
-    Ok(())
 }

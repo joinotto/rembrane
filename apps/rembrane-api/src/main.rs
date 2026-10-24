@@ -99,6 +99,7 @@ struct SetRetentionPolicyRequest {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[allow(clippy::struct_field_names)]
 struct LegalHoldRequest {
     workspace_id: String,
     hold_id: String,
@@ -1250,6 +1251,7 @@ impl ApiError {
         }
     }
 
+    #[allow(clippy::needless_pass_by_value)]
     fn from_application(error: ApplicationError) -> Self {
         match error {
             ApplicationError::AccessDenied => Self::access_denied(),

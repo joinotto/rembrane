@@ -60,9 +60,12 @@ enum NodeKindDto {
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct ValidityDto {
-    valid_from_epoch_seconds: u64,
-    valid_until_epoch_seconds: Option<u64>,
-    recorded_at_epoch_seconds: u64,
+    #[serde(rename = "valid_from_epoch_seconds")]
+    valid_from: u64,
+    #[serde(rename = "valid_until_epoch_seconds")]
+    valid_until: Option<u64>,
+    #[serde(rename = "recorded_at_epoch_seconds")]
+    recorded_at: u64,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -232,9 +235,9 @@ impl From<NodeKindDto> for KnowledgeNodeKind {
 impl From<TemporalValidity> for ValidityDto {
     fn from(validity: TemporalValidity) -> Self {
         Self {
-            valid_from_epoch_seconds: validity.valid_from_epoch_seconds(),
-            valid_until_epoch_seconds: validity.valid_until_epoch_seconds(),
-            recorded_at_epoch_seconds: validity.recorded_at_epoch_seconds(),
+            valid_from: validity.valid_from_epoch_seconds(),
+            valid_until: validity.valid_until_epoch_seconds(),
+            recorded_at: validity.recorded_at_epoch_seconds(),
         }
     }
 }
@@ -244,9 +247,9 @@ impl TryFrom<ValidityDto> for TemporalValidity {
 
     fn try_from(validity: ValidityDto) -> Result<Self, Self::Error> {
         Self::new(
-            validity.valid_from_epoch_seconds,
-            validity.valid_until_epoch_seconds,
-            validity.recorded_at_epoch_seconds,
+            validity.valid_from,
+            validity.valid_until,
+            validity.recorded_at,
         )
         .map_err(|_| CodecError::InvalidDomainRecord)
     }

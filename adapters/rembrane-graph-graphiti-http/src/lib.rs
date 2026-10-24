@@ -285,7 +285,9 @@ impl<'request, Payload> Envelope<'request, Payload> {
             protocol_version: "0.1",
             operation: operation_name(request.operation()),
             namespace: request.namespace().as_str(),
-            idempotency_key: request.idempotency_key().map(|key| key.as_str()),
+            idempotency_key: request
+                .idempotency_key()
+                .map(rembrane_provider_sdk::GraphitiIdempotencyKey::as_str),
             payload,
         }
     }
@@ -430,9 +432,12 @@ struct ManifestBody {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct ManifestLimits {
-    maximum_batch_items: usize,
-    maximum_content_bytes: usize,
-    maximum_candidates: usize,
+    #[serde(rename = "maximumBatchItems")]
+    batch_items: usize,
+    #[serde(rename = "maximumContentBytes")]
+    content_bytes: usize,
+    #[serde(rename = "maximumCandidates")]
+    candidates: usize,
 }
 
 impl TryFrom<ManifestBody> for ProviderManifest {
@@ -469,9 +474,9 @@ impl TryFrom<ManifestBody> for ProviderManifest {
             capabilities,
             plaintext_processing: wire.plaintext_processing,
             limits: ProviderLimits {
-                maximum_batch_items: wire.limits.maximum_batch_items,
-                maximum_content_bytes: wire.limits.maximum_content_bytes,
-                maximum_candidates: wire.limits.maximum_candidates,
+                maximum_batch_items: wire.limits.batch_items,
+                maximum_content_bytes: wire.limits.content_bytes,
+                maximum_candidates: wire.limits.candidates,
             },
         };
         manifest.validate_structure()?;

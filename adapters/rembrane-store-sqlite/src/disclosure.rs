@@ -162,6 +162,7 @@ impl<C> CheckpointDisclosureRepository for SqliteStore<C> {
 }
 
 impl<C> TravelDisclosureRepository for SqliteStore<C> {
+    #[allow(clippy::too_many_lines)]
     fn append_travel_disclosure(
         &mut self,
         receipt: TravelDisclosureReceipt,

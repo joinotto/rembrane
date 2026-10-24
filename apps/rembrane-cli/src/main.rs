@@ -30,13 +30,14 @@ const EXPORT_MAGIC: &[u8; 16] = b"REMBRANE-EXPORT\n";
 const EXPORT_VERSION: u32 = 1;
 
 fn main() {
-    if let Err(error) = run(std::env::args().skip(1).collect()) {
+    let arguments = std::env::args().skip(1).collect::<Vec<_>>();
+    if let Err(error) = run(&arguments) {
         eprintln!("error: {error}");
         std::process::exit(1);
     }
 }
 
-fn run(arguments: Vec<String>) -> Result<(), String> {
+fn run(arguments: &[String]) -> Result<(), String> {
     match arguments.first().map(String::as_str) {
         Some("version" | "--version" | "-V") => {
             println!("rembrane {}", env!("CARGO_PKG_VERSION"));
@@ -459,7 +460,7 @@ fn mcp_environment_variables(key_provider: &str) -> Result<Vec<&'static str>, St
     let mut variables = MCP_BASE_ENVIRONMENT_VARIABLES.to_vec();
     match key_provider {
         "environment" => {
-            variables.extend(["REMBRANE_WORKSPACE_KEY_ID", "REMBRANE_WORKSPACE_KEY_HEX"])
+            variables.extend(["REMBRANE_WORKSPACE_KEY_ID", "REMBRANE_WORKSPACE_KEY_HEX"]);
         }
         "macos-keychain" => variables.extend([
             "REMBRANE_KEY_PROVIDER",
@@ -947,9 +948,7 @@ fn redact_endpoint(value: &str) -> String {
     let Some((scheme, remainder)) = value.split_once("://") else {
         return "<configured; origin unavailable>".to_owned();
     };
-    let authority_end = remainder
-        .find(|character| matches!(character, '/' | '?' | '#'))
-        .unwrap_or(remainder.len());
+    let authority_end = remainder.find(['/', '?', '#']).unwrap_or(remainder.len());
     let authority = &remainder[..authority_end];
     let authority = authority
         .rsplit_once('@')

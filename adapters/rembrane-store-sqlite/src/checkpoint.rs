@@ -240,7 +240,9 @@ fn insert_checkpoint(
                 checkpoint.id().as_str(),
                 checkpoint.subject_id().as_str(),
                 checkpoint.activity_id().as_str(),
-                checkpoint.entity_id().map(|entity| entity.as_str()),
+                checkpoint
+                    .entity_id()
+                    .map(rembrane_domain::EntityId::as_str),
                 encrypted.ciphertext,
                 encrypted.key_id,
                 encrypted.algorithm,
@@ -276,7 +278,9 @@ fn replace_checkpoint(
                 checkpoint.id().as_str(),
                 checkpoint.subject_id().as_str(),
                 checkpoint.activity_id().as_str(),
-                checkpoint.entity_id().map(|entity| entity.as_str()),
+                checkpoint
+                    .entity_id()
+                    .map(rembrane_domain::EntityId::as_str),
                 encrypted.ciphertext,
                 encrypted.key_id,
                 encrypted.algorithm,

@@ -363,7 +363,7 @@ pub(super) fn insert_event(
                 to_i64(event.sequence())?,
                 event.id().as_str(),
                 event.actor_id().as_str(),
-                event.subject_id().map(|subject| subject.as_str()),
+                event.subject_id().map(rembrane_domain::PrincipalId::as_str),
                 event_type(event),
                 encrypted.ciphertext,
                 encrypted.key_id,

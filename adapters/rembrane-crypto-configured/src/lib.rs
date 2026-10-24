@@ -16,7 +16,7 @@ const DEFAULT_MINIMUM_PLAINTEXT_BYTES: usize = 262_144;
 
 pub enum ConfiguredRecordCipher {
     Local(RustCryptoKeyringCipher),
-    Http(KeyProviderCipher<HttpKeyProviderTransport>),
+    Http(Box<KeyProviderCipher<HttpKeyProviderTransport>>),
 }
 
 /// Deployment-owned values for a customer-controlled HTTP key provider.
@@ -128,10 +128,7 @@ impl ConfiguredRecordCipher {
                 "false" => false,
                 _ => return Err(CryptoError::KeyUnavailable),
             };
-        let request_prefix = match std::env::var("REMBRANE_KEY_PROVIDER_REQUEST_PREFIX") {
-            Ok(value) => Some(value),
-            Err(_) => None,
-        };
+        let request_prefix = std::env::var("REMBRANE_KEY_PROVIDER_REQUEST_PREFIX").ok();
         let config = KeyProviderHttpConfig::new(endpoint, token)
             .with_algorithm(algorithm)
             .with_minimum_plaintext_bytes(minimum_plaintext_bytes)
@@ -174,7 +171,7 @@ impl ConfiguredRecordCipher {
             },
             request_prefix,
         )?;
-        Ok(Self::Http(cipher))
+        Ok(Self::Http(Box::new(cipher)))
     }
 
     /// Requests a shared-workspace key rotation from the configured

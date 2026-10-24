@@ -26,6 +26,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   removed a duplicate API error constructor, and fixed stale test fixtures.
 - Added a reproducible application workspace lockfile and pinned `uuid` to a
   Rust-1.88-compatible release.
+- Cleared warnings-as-errors Clippy findings across every workspace target,
+  including boxed configured-provider variants, explicit wire-field mappings,
+  borrowed keychain configuration, and smaller command/API cleanups.
 - An immutable, bounded, content-free administrative audit event contract with
   tenant, actor, closed action, opaque target, request correlation, and
   occurrence time while excluding memory content, secrets, and key material.

@@ -44,8 +44,9 @@ fn run() -> Result<()> {
 
         match outcome {
             ProjectionOutcome::NoWork if config.run_once => return Ok(()),
-            ProjectionOutcome::NoWork => std::thread::sleep(config.poll_interval),
-            ProjectionOutcome::Retried => std::thread::sleep(config.poll_interval),
+            ProjectionOutcome::NoWork | ProjectionOutcome::Retried => {
+                std::thread::sleep(config.poll_interval);
+            }
             ProjectionOutcome::Completed => eprintln!("graph projection completed"),
             ProjectionOutcome::Superseded => eprintln!("graph projection superseded"),
             ProjectionOutcome::Quarantined => eprintln!("graph projection quarantined"),

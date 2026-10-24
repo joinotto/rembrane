@@ -1,4 +1,4 @@
-//! Persistent tenant-isolated SQLite adapter.
+//! Persistent tenant-isolated `SQLite` adapter.
 
 mod booking_research;
 mod canonical;
@@ -648,6 +648,7 @@ impl SqliteStore<MissingCipher> {
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn migrate(connection: &mut Connection) -> Result<(), ApplicationError> {
     let mut version = schema_version(connection)?;
     if version > CURRENT_SCHEMA_VERSION {
@@ -850,6 +851,7 @@ impl<C> SqliteStore<C> {
 }
 
 #[cfg(test)]
+#[allow(clippy::items_after_test_module)]
 mod migration_tests {
     use std::fs;
     use std::path::PathBuf;

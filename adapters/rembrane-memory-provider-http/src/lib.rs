@@ -398,7 +398,7 @@ fn memory_endpoint(base_url: &Url, memory_id: &str) -> Result<Url, ProviderError
         .map_err(|_| ProviderError::Unavailable)?;
     endpoint
         .path_segments_mut()
-        .map_err(|_| {
+        .map_err(|()| {
             ProviderError::InvalidConfiguration("memory provider URL cannot be a base".to_owned())
         })?
         .pop_if_empty()
@@ -414,7 +414,7 @@ fn memory_subresource_endpoint(
     let mut endpoint = memory_endpoint(base_url, memory_id)?;
     endpoint
         .path_segments_mut()
-        .map_err(|_| {
+        .map_err(|()| {
             ProviderError::InvalidConfiguration("memory provider URL cannot be a base".to_owned())
         })?
         .push(subresource);
@@ -458,7 +458,7 @@ fn activity_subresource_endpoint(
         .map_err(|_| ProviderError::Unavailable)?;
     endpoint
         .path_segments_mut()
-        .map_err(|_| {
+        .map_err(|()| {
             ProviderError::InvalidConfiguration("memory provider URL cannot be a base".to_owned())
         })?
         .pop_if_empty()
@@ -1365,10 +1365,14 @@ struct DiscoveryBody {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct DiscoveryLimits {
-    maximum_context_items: usize,
-    maximum_context_bytes: usize,
-    maximum_event_batch_items: usize,
-    maximum_sync_batch_items: usize,
+    #[serde(rename = "maximumContextItems")]
+    context_items: usize,
+    #[serde(rename = "maximumContextBytes")]
+    context_bytes: usize,
+    #[serde(rename = "maximumEventBatchItems")]
+    event_batch_items: usize,
+    #[serde(rename = "maximumSyncBatchItems")]
+    sync_batch_items: usize,
 }
 
 #[derive(Deserialize)]
@@ -1416,10 +1420,10 @@ impl TryFrom<DiscoveryBody> for MemoryProviderManifest {
             privacy_mode,
             wire.supported_domains,
             MemoryProviderLimits {
-                maximum_context_items: wire.limits.maximum_context_items,
-                maximum_context_bytes: wire.limits.maximum_context_bytes,
-                maximum_event_batch_items: wire.limits.maximum_event_batch_items,
-                maximum_sync_batch_items: wire.limits.maximum_sync_batch_items,
+                maximum_context_items: wire.limits.context_items,
+                maximum_context_bytes: wire.limits.context_bytes,
+                maximum_event_batch_items: wire.limits.event_batch_items,
+                maximum_sync_batch_items: wire.limits.sync_batch_items,
             },
         )
     }
