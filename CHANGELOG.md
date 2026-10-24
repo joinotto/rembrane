@@ -114,6 +114,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - An object-safe transport-neutral Memory Provider client trait spanning all
   typed operations, implemented by the authenticated HTTP adapter and exposed
   by configured composition for future MCP, local, and community transports.
+- Provider-agnostic configured composition that negotiates discovery and
+  policy through the common client boundary and owns any boxed transport
+  implementation without application changes.
 - Canonical engine-neutral temporal knowledge graph aggregates with typed
   nodes, validated relationship types, strict workspace namespaces, separate
   validity and ingestion time, evidence provenance, bounded aliases, versions,

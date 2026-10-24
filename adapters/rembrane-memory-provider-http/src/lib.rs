@@ -302,6 +302,10 @@ impl HttpMemoryProviderClient {
 }
 
 impl MemoryProviderClient for HttpMemoryProviderClient {
+    fn discover(&self) -> Result<MemoryProviderManifest, ProviderError> {
+        Self::discover(self)
+    }
+
     fn resolve_context(
         &self,
         request: &MemoryProviderRequest<ResolveContextPayload>,

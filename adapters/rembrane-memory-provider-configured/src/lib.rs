@@ -13,7 +13,7 @@ use rembrane_provider_sdk::{
 };
 
 pub struct ConfiguredMemoryProvider {
-    client: HttpMemoryProviderClient,
+    client: Box<dyn MemoryProviderClient>,
     connection: MemoryProviderConnection,
 }
 
@@ -44,8 +44,7 @@ impl ConfiguredMemoryProvider {
                     Err(_) => default_request_prefix()?,
                 };
                 let client = HttpMemoryProviderClient::new(&endpoint, token)?;
-                let connection = client.connect(policy, prefix)?;
-                Ok(Self { client, connection })
+                Self::from_client(Box::new(client), policy, prefix)
             }
             _ => Err(ProviderError::InvalidConfiguration(
                 "REMBRANE_MEMORY_PROVIDER must be http".to_owned(),
@@ -53,9 +52,25 @@ impl ConfiguredMemoryProvider {
         }
     }
 
+    /// Negotiates and installs any transport implementing the portable client
+    /// boundary.
+    ///
+    /// # Errors
+    ///
+    /// Returns a provider error when discovery fails or the transport's
+    /// manifest does not satisfy the supplied policy.
+    pub fn from_client(
+        client: Box<dyn MemoryProviderClient>,
+        policy: &MemoryProviderPolicy,
+        request_prefix: String,
+    ) -> Result<Self, ProviderError> {
+        let connection = client.connect(policy, request_prefix)?;
+        Ok(Self { client, connection })
+    }
+
     #[must_use]
     pub fn client(&self) -> &dyn MemoryProviderClient {
-        &self.client
+        self.client.as_ref()
     }
 
     #[must_use]

@@ -1,10 +1,11 @@
 use crate::{
     CheckpointActivityPayload, CheckpointActivityResult, DeleteMemoryPayload, DeleteMemoryResult,
-    ExplainMemoryPayload, ExplainMemoryResult, MemoryProviderRequest, MemoryProviderResponse,
-    ProposeMemoryPayload, ProposeMemoryResult, ProviderError, RecordDisclosurePayload,
-    RecordDisclosureResult, RecordEventPayload, RecordEventResult, ResolveContextPayload,
-    ResolveContextResult, ResolveQuestionPayload, ResolveQuestionResult, SyncPullPayload,
-    SyncPullResult, SyncPushPayload, SyncPushResult,
+    ExplainMemoryPayload, ExplainMemoryResult, MemoryProviderConnection, MemoryProviderManifest,
+    MemoryProviderPolicy, MemoryProviderRequest, MemoryProviderResponse, ProposeMemoryPayload,
+    ProposeMemoryResult, ProviderError, RecordDisclosurePayload, RecordDisclosureResult,
+    RecordEventPayload, RecordEventResult, ResolveContextPayload, ResolveContextResult,
+    ResolveQuestionPayload, ResolveQuestionResult, SyncPullPayload, SyncPullResult,
+    SyncPushPayload, SyncPushResult,
 };
 
 /// Transport-neutral execution boundary for Memory Provider Protocol.
@@ -14,6 +15,16 @@ use crate::{
 /// pairings. Implementations remain responsible for authenticated transport,
 /// correlation validation, response bounds, and canonical result decoding.
 pub trait MemoryProviderClient: Send + Sync {
+    fn discover(&self) -> Result<MemoryProviderManifest, ProviderError>;
+
+    fn connect(
+        &self,
+        policy: &MemoryProviderPolicy,
+        request_prefix: String,
+    ) -> Result<MemoryProviderConnection, ProviderError> {
+        MemoryProviderConnection::connect(self.discover()?, policy, request_prefix)
+    }
+
     fn resolve_context(
         &self,
         request: &MemoryProviderRequest<ResolveContextPayload>,
@@ -63,4 +74,15 @@ pub trait MemoryProviderClient: Send + Sync {
         &self,
         request: &MemoryProviderRequest<SyncPushPayload>,
     ) -> Result<MemoryProviderResponse<SyncPushResult>, ProviderError>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::MemoryProviderClient;
+
+    #[test]
+    fn client_boundary_remains_object_safe() {
+        fn accepts_object_safe_client(_: Option<&dyn MemoryProviderClient>) {}
+        accepts_object_safe_client(None);
+    }
 }

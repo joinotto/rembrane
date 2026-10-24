@@ -403,6 +403,8 @@ This roadmap describes sequencing, not release dates.
   - [x] Define an object-safe transport-neutral Rust client boundary covering
     every portable operation and implement it for the authenticated HTTP
     transport.
+    - [x] Include discovery and policy negotiation, and let configured
+      composition own any boxed client implementation.
 - [x] Versioned key-provider sidecar protocol for OS, HSM, and customer-KMS
   adapters.
   - [x] Add transport-independent Rust manifest, negotiation, request, context,
