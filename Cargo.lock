@@ -1372,6 +1372,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "rembrane-secret-local"
+version = "0.1.0-alpha.1"
+dependencies = [
+ "rembrane-config",
+ "zeroize",
+]
+
+[[package]]
 name = "rembrane-semantic-mem0"
 version = "0.1.0-alpha.1"
 dependencies = [

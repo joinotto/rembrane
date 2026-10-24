@@ -57,6 +57,7 @@ The platform owns identity, workspaces, encryption orchestration, canonical even
 - [Support and Compatibility Policy](docs/SUPPORT_POLICY.md)
 - [Threat Model](docs/THREAT_MODEL.md)
 - [Recovery Model](docs/RECOVERY_MODEL.md)
+- [Secret Resolution](docs/SECRET_RESOLUTION.md)
 - [Architecture Decision Records](docs/adr/README.md)
 - [Roadmap](ROADMAP.md)
 - [Security Policy](SECURITY.md)

@@ -1,0 +1,15 @@
+[package]
+name = "rembrane-secret-local"
+description = "Zeroizing environment and protected-file secret resolution for Rembrane"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+rembrane-config = { path = "../../crates/rembrane-config" }
+zeroize = "1"
+
+[lints]
+workspace = true

@@ -42,6 +42,8 @@ This roadmap describes sequencing, not release dates.
     secret-manager references before storing configuration.
     - [x] Make secret references opaque with source-specific read-only
       accessors so integrations cannot construct unvalidated variants.
+    - [x] Add a pluggable zeroizing resolver port plus a protected local
+      environment and secret-file implementation.
   - [x] Bound and deduplicate each provider profile's credential-reference
     list before any secret-manager resolution.
   - [x] Make validated provider profiles opaque so callers cannot bypass

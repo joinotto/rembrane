@@ -79,6 +79,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Opaque validated secret references with source-specific read-only accessors,
   preventing direct construction of unvalidated environment, file, or external
   secret-manager variants.
+- A pluggable zeroizing secret-resolver port with a local environment and
+  protected-file adapter that bounds values, rejects nulls, unsafe permissions,
+  non-regular files, and symlinks, and leaves external managers replaceable.
 - A transport-injectable Mem0 OSS semantic adapter mapping authorized
   projections into HMAC-pseudonymous workspace partitions while preserving
   canonical memory IDs, versions, replacement, bounded ranking, and
