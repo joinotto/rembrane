@@ -610,8 +610,8 @@ impl MemoryProviderPolicy {
         allowed_privacy_modes: Vec<MemoryProviderPrivacyMode>,
         minimum_limits: MemoryProviderLimits,
     ) -> Result<Self, ProviderError> {
-        validate_unique_nonempty("required capability", &required_capabilities)?;
-        validate_unique_nonempty("allowed privacy mode", &allowed_privacy_modes)?;
+        validate_unique_nonempty("required capabilities", &required_capabilities)?;
+        validate_unique_nonempty("allowed privacy modes", &allowed_privacy_modes)?;
         if minimum_limits.maximum_context_items == 0
             || minimum_limits.maximum_context_bytes == 0
             || minimum_limits.maximum_event_batch_items == 0
@@ -736,8 +736,8 @@ impl MemoryProviderManifest {
                 "memory provider version must contain 1 to 100 safe ASCII characters".to_owned(),
             ));
         }
-        validate_unique_nonempty("transport", &transports)?;
-        validate_unique_nonempty("capability", &capabilities)?;
+        validate_unique_nonempty("transports", &transports)?;
+        validate_unique_nonempty("capabilities", &capabilities)?;
         if limits.maximum_context_items == 0
             || limits.maximum_context_bytes == 0
             || limits.maximum_event_batch_items == 0
@@ -822,13 +822,13 @@ impl MemoryProviderManifest {
     }
 }
 
-fn validate_unique_nonempty<T>(label: &str, values: &[T]) -> Result<(), ProviderError>
+fn validate_unique_nonempty<T>(plural_label: &str, values: &[T]) -> Result<(), ProviderError>
 where
     T: Eq,
 {
     if values.is_empty() {
         return Err(ProviderError::InvalidConfiguration(format!(
-            "memory provider must declare at least one {label}"
+            "memory provider must declare at least one of: {plural_label}"
         )));
     }
     if values
@@ -837,7 +837,7 @@ where
         .any(|(index, value)| values[..index].contains(value))
     {
         return Err(ProviderError::InvalidConfiguration(format!(
-            "memory provider {label}s must be unique"
+            "memory provider {plural_label} must be unique"
         )));
     }
     Ok(())
@@ -978,32 +978,84 @@ mod tests {
 
     #[test]
     fn provider_policy_fails_closed_for_missing_features_and_small_limits() {
-        let insufficient = MemoryProviderManifest::new(
-            "rembrane.insufficient".to_owned(),
+        let missing_transport = MemoryProviderManifest::new(
+            "rembrane.missing-transport".to_owned(),
             "0.1.0".to_owned(),
             CURRENT_MEMORY_PROVIDER_PROTOCOL,
             vec![MemoryProviderTransport::Mcp],
-            vec![MemoryProviderCapability::ResolveContext],
+            vec![
+                MemoryProviderCapability::ResolveContext,
+                MemoryProviderCapability::ProposeMemory,
+            ],
             MemoryProviderPrivacyMode::EndToEndEncrypted,
             Vec::new(),
             MemoryProviderLimits {
-                maximum_context_items: 1,
-                maximum_context_bytes: 1,
-                maximum_event_batch_items: 1,
-                maximum_sync_batch_items: 1,
+                maximum_context_items: 20,
+                maximum_context_bytes: 65_536,
+                maximum_event_batch_items: 50,
+                maximum_sync_batch_items: 100,
             },
         )
         .expect("fixture manifest should validate");
         let policy = policy();
 
         assert_eq!(
-            policy.validate(&insufficient),
+            policy.validate(&missing_transport),
             Err(ProviderError::InvalidConfiguration(
                 "memory provider does not support the required transport".to_owned()
             ))
         );
 
-        assert!(
+        let missing_capability = MemoryProviderManifest::new(
+            "rembrane.missing-capability".to_owned(),
+            "0.1.0".to_owned(),
+            CURRENT_MEMORY_PROVIDER_PROTOCOL,
+            vec![MemoryProviderTransport::Https],
+            vec![MemoryProviderCapability::ResolveContext],
+            MemoryProviderPrivacyMode::EndToEndEncrypted,
+            Vec::new(),
+            MemoryProviderLimits {
+                maximum_context_items: 20,
+                maximum_context_bytes: 65_536,
+                maximum_event_batch_items: 50,
+                maximum_sync_batch_items: 100,
+            },
+        )
+        .expect("fixture manifest should validate");
+        assert_eq!(
+            policy.validate(&missing_capability),
+            Err(ProviderError::InvalidConfiguration(
+                "memory provider does not support every required capability".to_owned()
+            ))
+        );
+
+        let small_limits = MemoryProviderManifest::new(
+            "rembrane.small-limits".to_owned(),
+            "0.1.0".to_owned(),
+            CURRENT_MEMORY_PROVIDER_PROTOCOL,
+            vec![MemoryProviderTransport::Https],
+            vec![
+                MemoryProviderCapability::ResolveContext,
+                MemoryProviderCapability::ProposeMemory,
+            ],
+            MemoryProviderPrivacyMode::EndToEndEncrypted,
+            Vec::new(),
+            MemoryProviderLimits {
+                maximum_context_items: 19,
+                maximum_context_bytes: 65_536,
+                maximum_event_batch_items: 50,
+                maximum_sync_batch_items: 100,
+            },
+        )
+        .expect("fixture manifest should validate");
+        assert_eq!(
+            policy.validate(&small_limits),
+            Err(ProviderError::InvalidConfiguration(
+                "memory provider limits are below policy minimums".to_owned()
+            ))
+        );
+
+        assert_eq!(
             MemoryProviderPolicy::new(
                 CURRENT_MEMORY_PROVIDER_PROTOCOL,
                 MemoryProviderTransport::Https,
@@ -1015,8 +1067,10 @@ mod tests {
                     maximum_event_batch_items: 1,
                     maximum_sync_batch_items: 1,
                 },
-            )
-            .is_err()
+            ),
+            Err(ProviderError::InvalidConfiguration(
+                "memory provider must declare at least one of: required capabilities".to_owned()
+            ))
         );
     }
 

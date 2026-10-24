@@ -16,6 +16,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   envelopes and reject operations absent from the accepted discovery manifest.
 - Memory Provider response-correlation validation that rejects mismatched
   request IDs or protocol versions before a typed response body is consumed.
+- Complete fail-closed policy rejection coverage for missing transports,
+  capabilities, insufficient limits, and malformed policy requirements.
 - Sealed Rust Memory Provider payload-to-operation mappings and an
   operation-derived request constructor, preventing downstream callers from
   pairing valid payload types with unrelated privileged operations.
