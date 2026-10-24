@@ -15,6 +15,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Append-only tenant-scoped administrative audit repositories for volatile and
   SQLite storage, including bounded chronological reads and database triggers
   that reject update or deletion.
+- Atomic content-free administrative audit evidence for member removal,
+  key-rotation requirement, and key-rotation completion in both in-memory and
+  SQLite repository transactions.
 - A versioned per-workspace retention policy contract with separate periods
   for memory, checkpoints, travel research, disclosures, canonical events, and
   administrative audit, including bounded expiry and legal-hold overrides.

@@ -1,6 +1,9 @@
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use rembrane_domain::{
-    KeyRotationId, KeyRotationReceipt, KeyRotationStatus, Membership, PrincipalId, WorkspaceId,
-    WorkspaceKeyRotation, WorkspaceRole,
+    AdministrativeAction, AdministrativeAuditEvent, AdministrativeAuditEventId,
+    AdministrativeTargetKind, KeyRotationId, KeyRotationReceipt, KeyRotationStatus, Membership,
+    PrincipalId, WorkspaceId, WorkspaceKeyRotation, WorkspaceRole,
 };
 
 use crate::{
@@ -57,11 +60,31 @@ where
 
         let expected_status = target.status();
         let removed = target.remove();
+        let occurred_at = now_epoch_seconds()?;
+        let member_audit = audit_event(
+            &workspace_id,
+            &removed_by,
+            AdministrativeAction::MemberRemoved,
+            AdministrativeTargetKind::Principal,
+            principal_id.as_str(),
+            rotation_id.as_str(),
+            occurred_at,
+        )?;
+        let rotation_audit = audit_event(
+            &workspace_id,
+            &removed_by,
+            AdministrativeAction::KeyRotationRequired,
+            AdministrativeTargetKind::KeyRotation,
+            rotation_id.as_str(),
+            rotation_id.as_str(),
+            occurred_at,
+        )?;
         self.repository.remove_member_and_scope_grants(
             removed.clone(),
             expected_status,
             rotation_id,
             removed_by,
+            vec![member_audit, rotation_audit],
         )?;
         Ok(removed)
     }
@@ -101,6 +124,15 @@ where
             return Err(ApplicationError::AccessDenied);
         }
         let receipt = command.receipt;
+        let audit = audit_event(
+            &workspace_id,
+            &command.completed_by,
+            AdministrativeAction::KeyRotationCompleted,
+            AdministrativeTargetKind::KeyRotation,
+            rotation.id().as_str(),
+            receipt.request_id(),
+            now_epoch_seconds()?,
+        )?;
         let completed = rotation
             .complete(receipt.key_id(), command.completed_by)
             .map_err(|error| ApplicationError::Validation(error.to_string()))?;
@@ -108,6 +140,7 @@ where
             completed.clone(),
             receipt.clone(),
             receipt.generation(),
+            audit,
         )?;
         Ok(completed)
     }
@@ -154,6 +187,38 @@ where
             completed_by,
         })
     }
+}
+
+fn now_epoch_seconds() -> Result<u64, ApplicationError> {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .ok()
+        .filter(|value| *value > 0)
+        .ok_or(ApplicationError::StorageUnavailable)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn audit_event(
+    workspace_id: &WorkspaceId,
+    actor_id: &PrincipalId,
+    action: AdministrativeAction,
+    target_kind: AdministrativeTargetKind,
+    target_id: &str,
+    request_id: &str,
+    occurred_at: u64,
+) -> Result<AdministrativeAuditEvent, ApplicationError> {
+    AdministrativeAuditEvent::new(
+        AdministrativeAuditEventId::new(format!("audit:{}:{request_id}", action.label())),
+        workspace_id.clone(),
+        actor_id.clone(),
+        action,
+        target_kind,
+        target_id,
+        request_id,
+        occurred_at,
+    )
+    .map_err(|error| ApplicationError::Validation(error.to_string()))
 }
 
 const fn can_remove(actor: WorkspaceRole, target: WorkspaceRole) -> bool {

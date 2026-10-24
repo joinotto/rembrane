@@ -1578,6 +1578,7 @@ impl<C> MemberLifecycleRepository for SqliteStore<C> {
         expected_status: MembershipStatus,
         rotation_id: KeyRotationId,
         requested_by: PrincipalId,
+        audit_events: Vec<AdministrativeAuditEvent>,
     ) -> Result<(), ApplicationError> {
         if membership.status() != MembershipStatus::Removed {
             return Err(ApplicationError::Validation(
@@ -1605,6 +1606,16 @@ impl<C> MemberLifecycleRepository for SqliteStore<C> {
             requested_by.clone(),
         )
         .map_err(|error| ApplicationError::Validation(error.to_string()))?;
+        if audit_events.len() != 2
+            || audit_events.iter().any(|event| {
+                event.workspace_id() != membership.workspace_id()
+                    || event.actor_id() != &requested_by
+            })
+        {
+            return Err(ApplicationError::Validation(
+                "member removal audit evidence is invalid".to_owned(),
+            ));
+        }
         let changed = transaction
             .execute(
                 "UPDATE memberships
@@ -1632,6 +1643,9 @@ impl<C> MemberLifecycleRepository for SqliteStore<C> {
                 ],
             )
             .map_err(map_write_error)?;
+        for audit_event in &audit_events {
+            insert_administrative_audit(&transaction, audit_event)?;
+        }
         transaction
             .execute(
                 "INSERT INTO workspace_key_rotations (
@@ -1751,12 +1765,17 @@ impl<C> KeyRotationRepository for SqliteStore<C> {
         rotation: WorkspaceKeyRotation,
         receipt: KeyRotationReceipt,
         expected_generation: u64,
+        audit_event: AdministrativeAuditEvent,
     ) -> Result<(), ApplicationError> {
         if rotation.status() != KeyRotationStatus::Completed
             || rotation.generation() != expected_generation
             || receipt.workspace_id() != rotation.workspace_id()
             || receipt.generation() != expected_generation
             || receipt.key_id() != rotation.completed_key_id().unwrap_or_default()
+            || audit_event.workspace_id() != rotation.workspace_id()
+            || audit_event.actor_id() != rotation.completed_by().unwrap_or(audit_event.actor_id())
+            || audit_event.action() != AdministrativeAction::KeyRotationCompleted
+            || audit_event.target_id() != rotation.id().as_str()
         {
             return Err(ApplicationError::Validation(
                 "completed rotation must match the expected generation".to_owned(),
@@ -1825,10 +1844,36 @@ impl<C> KeyRotationRepository for SqliteStore<C> {
                 )
                 .map_err(map_write_error)?;
         }
+        insert_administrative_audit(&transaction, &audit_event)?;
         transaction
             .commit()
             .map_err(|_| ApplicationError::StorageUnavailable)
     }
+}
+
+fn insert_administrative_audit(
+    connection: &Connection,
+    event: &AdministrativeAuditEvent,
+) -> Result<(), ApplicationError> {
+    connection
+        .execute(
+            "INSERT INTO administrative_audit_events (
+                workspace_id, id, actor_id, action, target_kind, target_id,
+                request_id, occurred_at_epoch_seconds
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![
+                event.workspace_id().as_str(),
+                event.id().as_str(),
+                event.actor_id().as_str(),
+                event.action().label(),
+                event.target_kind().label(),
+                event.target_id(),
+                event.request_id(),
+                event.occurred_at_epoch_seconds()
+            ],
+        )
+        .map_err(map_write_error)?;
+    Ok(())
 }
 
 fn validate_personal_bootstrap(

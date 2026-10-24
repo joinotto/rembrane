@@ -402,6 +402,7 @@ pub trait MemberLifecycleRepository {
         expected_status: MembershipStatus,
         rotation_id: KeyRotationId,
         requested_by: PrincipalId,
+        audit_events: Vec<AdministrativeAuditEvent>,
     ) -> Result<(), ApplicationError>;
 }
 
@@ -422,6 +423,7 @@ pub trait KeyRotationRepository {
         rotation: WorkspaceKeyRotation,
         receipt: KeyRotationReceipt,
         expected_generation: u64,
+        audit_event: AdministrativeAuditEvent,
     ) -> Result<(), ApplicationError>;
 }
 

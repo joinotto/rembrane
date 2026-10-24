@@ -1,12 +1,14 @@
 use rembrane_application::{
-    ApplicationError, AuthorizeClientCommand, AuthorizeClientService, CompleteKeyRotationCommand,
-    GrantMemberScopeCommand, KeyRotationRepository, MemberLifecycleService,
-    MemberScopeGrantRepository, MemberScopeGrantService, MembershipRepository, RemoveMemberCommand,
-    RevokeMemberScopeCommand, WorkspaceRepository,
+    AdministrativeAuditRepository, ApplicationError, AuthorizeClientCommand,
+    AuthorizeClientService, CompleteKeyRotationCommand, GrantMemberScopeCommand,
+    KeyRotationRepository, MemberLifecycleService, MemberScopeGrantRepository,
+    MemberScopeGrantService, MembershipRepository, RemoveMemberCommand, RevokeMemberScopeCommand,
+    WorkspaceRepository,
 };
 use rembrane_domain::{
-    ClientId, EntityId, KeyRotationReceipt, KeyRotationStatus, Membership, Principal, PrincipalId,
-    ProviderId, ReadScope, Workspace, WorkspaceId, WorkspaceRole, WritePermission,
+    AdministrativeAction, ClientId, EntityId, KeyRotationReceipt, KeyRotationStatus, Membership,
+    Principal, PrincipalId, ProviderId, ReadScope, Workspace, WorkspaceId, WorkspaceRole,
+    WritePermission,
 };
 use rembrane_store_memory::InMemoryStore;
 
@@ -142,6 +144,20 @@ fn owner_removal_revokes_membership_and_all_scope_grants() {
     assert_eq!(rotation.generation(), 1);
     assert_eq!(rotation.removed_principal_id().as_str(), "member");
     assert_eq!(rotation.requested_by().as_str(), "owner");
+    let removal_audit = store
+        .list_administrative_audit(&WorkspaceId::new("team"), 0, 10)
+        .expect("removal audit lookup should succeed");
+    assert_eq!(removal_audit.len(), 2);
+    assert_eq!(
+        removal_audit
+            .iter()
+            .map(rembrane_domain::AdministrativeAuditEvent::action)
+            .collect::<Vec<_>>(),
+        vec![
+            AdministrativeAction::MemberRemoved,
+            AdministrativeAction::KeyRotationRequired,
+        ]
+    );
     let pending_error = AuthorizeClientService::new(&store)
         .execute(AuthorizeClientCommand {
             client_id: ClientId::new("assistant"),
@@ -192,6 +208,16 @@ fn owner_removal_revokes_membership_and_all_scope_grants() {
         .expect("validated receipt remains auditable");
     assert_eq!(receipt.provider_id().as_str(), "customer.kms");
     assert_eq!(receipt.recipient_ids(), &[PrincipalId::new("owner")]);
+    let completed_audit = store
+        .list_administrative_audit(&WorkspaceId::new("team"), 0, 10)
+        .expect("completion audit lookup should succeed");
+    assert_eq!(completed_audit.len(), 3);
+    assert_eq!(
+        completed_audit
+            .last()
+            .map(rembrane_domain::AdministrativeAuditEvent::action),
+        Some(AdministrativeAction::KeyRotationCompleted)
+    );
     AuthorizeClientService::new(&store)
         .execute(AuthorizeClientCommand {
             client_id: ClientId::new("assistant"),

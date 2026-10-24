@@ -320,6 +320,10 @@ This roadmap describes sequencing, not release dates.
   - [x] Persist administrative audit events append-only and tenant-scoped.
   - [ ] Record membership, scope, key-rotation, retention, and legal-hold
     mutations atomically with their administrative audit evidence.
+    - [x] Commit member removal, rotation requirement, and rotation completion
+      with their audit evidence in the same repository transaction.
+    - [ ] Commit scope, retention-policy, and legal-hold mutations with their
+      audit evidence in the same repository transaction.
   - [ ] Define enforceable per-workspace retention policies and legal holds.
     - [x] Define versioned resource-specific retention periods, bounded expiry
       calculation, minimum audit/disclosure relationship, and legal-hold purge

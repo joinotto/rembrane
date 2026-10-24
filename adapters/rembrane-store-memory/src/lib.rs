@@ -13,16 +13,16 @@ use rembrane_application::{
     WorkspaceRepository,
 };
 use rembrane_domain::{
-    ActivityCheckpoint, ActivityId, AdministrativeAuditEvent, BookingResearch, BookingResearchId,
-    CanonicalEvent, CheckpointDisclosureReceipt, DisclosureReceipt, EntityId, EventPayload,
-    GraphProjectionJob, GraphProjectionResource, Invitation, InvitationId, InvitationStatus,
-    KeyRotationId, KeyRotationReceipt, KeyRotationStatus, KnowledgeEdge, KnowledgeEdgeId,
-    KnowledgeNode, KnowledgeNodeId, LegalHoldId, LegalHoldStatus, MemberScopeGrant, Membership,
-    MemoryId, MemoryRecord, MemoryShareProposal, MemoryStatus, Principal, PrincipalId,
-    ProjectionJob, ProjectionJobId, ProjectionOperation, ProjectionStatus, ProviderId,
-    ShareProposalId, ShareProposalStatus, TravelDisclosureReceipt, Trip, Workspace, WorkspaceId,
-    WorkspaceKeyRotation, WorkspaceKind, WorkspaceLegalHold, WorkspaceRetentionPolicy,
-    WorkspaceRole,
+    ActivityCheckpoint, ActivityId, AdministrativeAction, AdministrativeAuditEvent,
+    BookingResearch, BookingResearchId, CanonicalEvent, CheckpointDisclosureReceipt,
+    DisclosureReceipt, EntityId, EventPayload, GraphProjectionJob, GraphProjectionResource,
+    Invitation, InvitationId, InvitationStatus, KeyRotationId, KeyRotationReceipt,
+    KeyRotationStatus, KnowledgeEdge, KnowledgeEdgeId, KnowledgeNode, KnowledgeNodeId, LegalHoldId,
+    LegalHoldStatus, MemberScopeGrant, Membership, MemoryId, MemoryRecord, MemoryShareProposal,
+    MemoryStatus, Principal, PrincipalId, ProjectionJob, ProjectionJobId, ProjectionOperation,
+    ProjectionStatus, ProviderId, ShareProposalId, ShareProposalStatus, TravelDisclosureReceipt,
+    Trip, Workspace, WorkspaceId, WorkspaceKeyRotation, WorkspaceKind, WorkspaceLegalHold,
+    WorkspaceRetentionPolicy, WorkspaceRole,
 };
 
 #[derive(Debug, Default)]
@@ -1450,6 +1450,7 @@ impl MemberLifecycleRepository for InMemoryStore {
         expected_status: rembrane_domain::MembershipStatus,
         rotation_id: KeyRotationId,
         requested_by: PrincipalId,
+        audit_events: Vec<AdministrativeAuditEvent>,
     ) -> Result<(), ApplicationError> {
         if membership.status() != rembrane_domain::MembershipStatus::Removed {
             return Err(ApplicationError::Validation(
@@ -1476,9 +1477,26 @@ impl MemberLifecycleRepository for InMemoryStore {
             membership.workspace_id().clone(),
             generation,
             membership.principal_id().clone(),
-            requested_by,
+            requested_by.clone(),
         )
         .map_err(|error| ApplicationError::Validation(error.to_string()))?;
+        if audit_events.len() != 2
+            || audit_events.iter().any(|event| {
+                event.workspace_id() != membership.workspace_id()
+                    || event.actor_id() != &requested_by
+                    || self.administrative_audit.iter().any(|stored| {
+                        stored.id() == event.id()
+                            || (stored.workspace_id() == event.workspace_id()
+                                && stored.request_id() == event.request_id()
+                                && stored.action() == event.action()
+                                && stored.target_id() == event.target_id())
+                    })
+            })
+        {
+            return Err(ApplicationError::Validation(
+                "member removal audit evidence is invalid".to_owned(),
+            ));
+        }
         let stored = self
             .memberships
             .iter_mut()
@@ -1496,6 +1514,7 @@ impl MemberLifecycleRepository for InMemoryStore {
                 || grant.principal_id() != membership.principal_id()
         });
         self.key_rotations.push(rotation);
+        self.administrative_audit.extend(audit_events);
         Ok(())
     }
 }
@@ -1532,12 +1551,17 @@ impl KeyRotationRepository for InMemoryStore {
         rotation: WorkspaceKeyRotation,
         receipt: KeyRotationReceipt,
         expected_generation: u64,
+        audit_event: AdministrativeAuditEvent,
     ) -> Result<(), ApplicationError> {
         if rotation.status() != KeyRotationStatus::Completed
             || rotation.generation() != expected_generation
             || receipt.workspace_id() != rotation.workspace_id()
             || receipt.generation() != expected_generation
             || receipt.key_id() != rotation.completed_key_id().unwrap_or_default()
+            || audit_event.workspace_id() != rotation.workspace_id()
+            || audit_event.actor_id() != rotation.completed_by().unwrap_or(audit_event.actor_id())
+            || audit_event.action() != AdministrativeAction::KeyRotationCompleted
+            || audit_event.target_id() != rotation.id().as_str()
         {
             return Err(ApplicationError::Validation(
                 "completed rotation must match the expected generation".to_owned(),
@@ -1549,6 +1573,15 @@ impl KeyRotationRepository for InMemoryStore {
             .any(|(stored_id, _)| stored_id == rotation.id())
         {
             return Err(ApplicationError::VersionConflict);
+        }
+        if self.administrative_audit.iter().any(|stored| {
+            stored.id() == audit_event.id()
+                || (stored.workspace_id() == audit_event.workspace_id()
+                    && stored.request_id() == audit_event.request_id()
+                    && stored.action() == audit_event.action()
+                    && stored.target_id() == audit_event.target_id())
+        }) {
+            return Err(ApplicationError::AlreadyExists);
         }
         let position = self
             .key_rotations
@@ -1566,6 +1599,7 @@ impl KeyRotationRepository for InMemoryStore {
         let rotation_id = rotation.id().clone();
         self.key_rotations[position] = rotation;
         self.key_rotation_receipts.push((rotation_id, receipt));
+        self.administrative_audit.push(audit_event);
         Ok(())
     }
 }

@@ -230,6 +230,7 @@ mod tests {
             _rotation: WorkspaceKeyRotation,
             _receipt: rembrane_domain::KeyRotationReceipt,
             _expected_generation: u64,
+            _audit_event: rembrane_domain::AdministrativeAuditEvent,
         ) -> Result<(), ApplicationError> {
             unreachable!("not used by authorization tests")
         }
