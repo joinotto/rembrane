@@ -9,6 +9,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- A transport-neutral mobile-share verifier for explicit user-selected text,
+  with raw-payload HMAC authentication, bounded strict envelopes,
+  pseudonymous device binding, freshness enforcement, replay idempotency, and
+  optional encrypted durable admission.
 - A Ring-backed WhatsApp Business webhook boundary that authenticates the raw
   bounded payload before parsing, extracts bounded text events, and derives
   domain-separated keyed account/sender lookup fingerprints.

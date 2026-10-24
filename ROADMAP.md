@@ -602,6 +602,11 @@ This roadmap describes sequencing, not release dates.
   - [x] Reuse the authenticated-channel contract for explicit iMessage
     extension and mobile-share ingestion without claiming conversation
     interception.
+  - [x] Add a strict signed-envelope adapter for explicit mobile shares with
+    bounded content, pseudonymous device binding, freshness checks, and
+    durable encrypted-inbox admission.
+  - [ ] Expose the signed mobile-share boundary through a narrowly scoped
+    companion HTTP service.
 - [ ] Community provider and agent adapters.
 
 ## Release gates
