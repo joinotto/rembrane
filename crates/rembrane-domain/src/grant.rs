@@ -25,6 +25,7 @@ pub enum WritePermission {
     ConfirmMemory,
     ReviseMemory,
     DeleteMemory,
+    ShareMemory,
     WriteCheckpoint,
 }
 

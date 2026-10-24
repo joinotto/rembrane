@@ -171,6 +171,7 @@ mod tests {
                 WritePermission::ConfirmMemory,
                 WritePermission::ReviseMemory,
                 WritePermission::DeleteMemory,
+                WritePermission::ShareMemory,
                 WritePermission::WriteCheckpoint,
             ],
         }

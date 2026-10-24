@@ -80,6 +80,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - SQLite schema version 5 and repository persistence for content-free memory
   share proposals, with personal-to-shared workspace constraints, exact
   confirmed-source validation, scoped indexes, and optimistic status updates.
+- Canonical approved-share copy construction that preserves the private
+  source record, subject attribution, kind, content, and evidence while adding
+  a unique approval reference, plus a distinct `ShareMemory` permission.
 - Versioned discovery, OpenAPI, and MCP protocol specifications.
 - Tenant-isolated SQLite canonical schema with encrypted-payload metadata.
 - Versioned SQLite initialization with legacy-schema adoption, idempotent

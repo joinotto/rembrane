@@ -27,8 +27,10 @@ pub enum MemoryLifecycleError {
     EmptyContent,
     ContentTooLarge,
     MissingEvidence,
+    DuplicateEvidence,
     InvalidStatus,
     InvalidVersion,
+    SameWorkspace,
     VersionOverflow,
 }
 
@@ -40,10 +42,16 @@ impl Display for MemoryLifecycleError {
                 formatter.write_str("content exceeds the canonical byte limit")
             }
             Self::MissingEvidence => formatter.write_str("memory must reference evidence"),
+            Self::DuplicateEvidence => {
+                formatter.write_str("memory evidence references must be unique")
+            }
             Self::InvalidStatus => {
                 formatter.write_str("memory status does not allow this transition")
             }
             Self::InvalidVersion => formatter.write_str("memory version must be greater than zero"),
+            Self::SameWorkspace => {
+                formatter.write_str("shared copy requires a different target workspace")
+            }
             Self::VersionOverflow => formatter.write_str("memory version cannot be incremented"),
         }
     }
@@ -211,6 +219,41 @@ impl MemoryRecord {
             content,
             version: 1,
             evidence: vec![evidence],
+        })
+    }
+
+    pub fn approved_share_copy(
+        source: &Self,
+        id: MemoryId,
+        target_workspace_id: WorkspaceId,
+        target_scope: MemoryScope,
+        approval_evidence: EvidenceReference,
+    ) -> Result<Self, MemoryLifecycleError> {
+        if source.status != MemoryStatus::Confirmed {
+            return Err(MemoryLifecycleError::InvalidStatus);
+        }
+        if source.workspace_id == target_workspace_id {
+            return Err(MemoryLifecycleError::SameWorkspace);
+        }
+        if source
+            .evidence
+            .iter()
+            .any(|evidence| evidence.id == approval_evidence.id)
+        {
+            return Err(MemoryLifecycleError::DuplicateEvidence);
+        }
+        let mut evidence = source.evidence.clone();
+        evidence.push(approval_evidence);
+        Ok(Self {
+            id,
+            workspace_id: target_workspace_id,
+            subject_id: source.subject_id.clone(),
+            scope: target_scope,
+            kind: source.kind,
+            status: MemoryStatus::Confirmed,
+            content: source.content.clone(),
+            version: 1,
+            evidence,
         })
     }
 
@@ -420,5 +463,79 @@ mod tests {
         .expect_err("oversized memory should fail");
 
         assert_eq!(error, MemoryLifecycleError::ContentTooLarge);
+    }
+
+    #[test]
+    fn approved_share_copy_preserves_source_and_adds_approval() {
+        let source = MemoryRecord::confirmed_preference(
+            MemoryId::new("private_memory"),
+            WorkspaceId::new("personal_01"),
+            PrincipalId::new("principal_01"),
+            MemoryScope::Global,
+            "Call me Hippo",
+            EvidenceReference::new(
+                EvidenceId::new("evidence_source"),
+                EvidenceSource::UserStatement,
+            ),
+        )
+        .expect("source should be valid");
+
+        let shared = MemoryRecord::approved_share_copy(
+            &source,
+            MemoryId::new("shared_memory"),
+            WorkspaceId::new("team_01"),
+            MemoryScope::Global,
+            EvidenceReference::new(
+                EvidenceId::new("evidence_approval"),
+                EvidenceSource::UserStatement,
+            ),
+        )
+        .expect("approved cross-workspace copy should be valid");
+
+        assert_eq!(shared.subject_id(), source.subject_id());
+        assert_eq!(shared.kind(), source.kind());
+        assert_eq!(shared.content(), source.content());
+        assert_eq!(shared.status(), MemoryStatus::Confirmed);
+        assert_eq!(shared.version(), 1);
+        assert_eq!(shared.evidence().len(), 2);
+        assert_eq!(source.evidence().len(), 1);
+    }
+
+    #[test]
+    fn shared_copy_rejects_same_workspace_and_duplicate_approval() {
+        let source_evidence = EvidenceReference::new(
+            EvidenceId::new("evidence_source"),
+            EvidenceSource::UserStatement,
+        );
+        let source = MemoryRecord::confirmed_preference(
+            MemoryId::new("private_memory"),
+            WorkspaceId::new("personal_01"),
+            PrincipalId::new("principal_01"),
+            MemoryScope::Global,
+            "Call me Hippo",
+            source_evidence.clone(),
+        )
+        .expect("source should be valid");
+
+        assert_eq!(
+            MemoryRecord::approved_share_copy(
+                &source,
+                MemoryId::new("shared_memory"),
+                WorkspaceId::new("personal_01"),
+                MemoryScope::Global,
+                EvidenceReference::new(EvidenceId::new("approval"), EvidenceSource::UserStatement,),
+            ),
+            Err(MemoryLifecycleError::SameWorkspace)
+        );
+        assert_eq!(
+            MemoryRecord::approved_share_copy(
+                &source,
+                MemoryId::new("shared_memory"),
+                WorkspaceId::new("team_01"),
+                MemoryScope::Global,
+                source_evidence,
+            ),
+            Err(MemoryLifecycleError::DuplicateEvidence)
+        );
     }
 }
