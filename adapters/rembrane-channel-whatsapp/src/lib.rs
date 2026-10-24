@@ -199,8 +199,20 @@ pub fn derive_binding_lookup_keys(
         binding_lookup_secret.zeroize();
         return Err(WhatsAppWebhookError::InvalidConfiguration);
     }
-    let account_identifier = bounded_identifier(account_identifier)?;
-    let sender_identifier = bounded_identifier(sender_identifier)?;
+    let account_identifier = match bounded_identifier(account_identifier) {
+        Ok(identifier) => identifier,
+        Err(error) => {
+            binding_lookup_secret.zeroize();
+            return Err(error);
+        }
+    };
+    let sender_identifier = match bounded_identifier(sender_identifier) {
+        Ok(identifier) => identifier,
+        Err(error) => {
+            binding_lookup_secret.zeroize();
+            return Err(error);
+        }
+    };
     let key = hmac::Key::new(hmac::HMAC_SHA256, &binding_lookup_secret);
     binding_lookup_secret.zeroize();
     Ok(WhatsAppBindingLookupKeys {

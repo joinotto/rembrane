@@ -77,7 +77,7 @@ fn run(arguments: &[String]) -> Result<(), String> {
 fn channel(arguments: &[String]) -> Result<(), String> {
     if arguments.first().map(String::as_str) != Some("bind-whatsapp") {
         return Err(
-            "usage: rembrane channel bind-whatsapp --database <path> --principal <owner-or-admin-id> --workspace <id> --client <id>"
+            "usage: rembrane channel bind-whatsapp --database <path> --principal <owner-or-admin-id> --workspace <id> --subject <member-id> --client <id>"
                 .to_owned(),
         );
     }
@@ -85,6 +85,7 @@ fn channel(arguments: &[String]) -> Result<(), String> {
     let database = option(arguments, "--database")?;
     let principal_id = PrincipalId::new(option(arguments, "--principal")?);
     let workspace_id = WorkspaceId::new(option(arguments, "--workspace")?);
+    let subject_id = PrincipalId::new(option(arguments, "--subject")?);
     let client_id = ClientId::new(option(arguments, "--client")?);
     let account_identifier = secret_environment("REMBRANE_WHATSAPP_ACCOUNT_ID")?;
     let sender_identifier = secret_environment("REMBRANE_WHATSAPP_SENDER_ID")?;
@@ -103,7 +104,7 @@ fn channel(arguments: &[String]) -> Result<(), String> {
         lookup.account_lookup_key(),
         lookup.sender_lookup_key(),
         workspace_id.clone(),
-        principal_id.clone(),
+        subject_id.clone(),
         client_id.clone(),
     )
     .map_err(|_| "cannot create WhatsApp sender binding".to_owned())?;
@@ -115,7 +116,7 @@ fn channel(arguments: &[String]) -> Result<(), String> {
         serde_json::json!({
             "channel": "whatsapp-business",
             "workspaceId": workspace_id.as_str(),
-            "principalId": principal_id.as_str(),
+            "principalId": subject_id.as_str(),
             "clientId": client_id.as_str(),
             "status": "bound"
         })
@@ -1568,7 +1569,8 @@ fn print_help() {
              --principal <owner-or-admin-id> --workspace <id> \
              --hold <id> --request <id>\n\
            rembrane channel bind-whatsapp --database <path> \
-             --principal <owner-or-admin-id> --workspace <id> --client <id>\n\
+             --principal <owner-or-admin-id> --workspace <id> \
+             --subject <active-member-id> --client <id>\n\
            rembrane mcp-config \
              --client <codex|claude-code|gemini-cli|cursor|vscode|zed|generic> \
              --server-binary <path> \

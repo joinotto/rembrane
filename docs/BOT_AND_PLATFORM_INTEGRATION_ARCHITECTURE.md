@@ -265,6 +265,26 @@ The three secrets must be distinct, at least 32 bytes each, and supplied by a
 deployment secret manager. Never store them in canonical memory, sender
 bindings, committed Compose files, or URLs.
 
+An owner or administrator can bind an active member without placing raw phone
+identifiers in process arguments:
+
+```sh
+export REMBRANE_WHATSAPP_ACCOUNT_ID='<business phone-number ID>'
+export REMBRANE_WHATSAPP_SENDER_ID='<member WhatsApp sender ID>'
+export REMBRANE_WHATSAPP_BINDING_LOOKUP_SECRET='<same stable gateway secret>'
+
+rembrane channel bind-whatsapp \
+  --database "$REMBRANE_DATABASE" \
+  --principal principal_admin \
+  --workspace workspace_team \
+  --subject principal_member \
+  --client client_whatsapp
+```
+
+The command emits canonical IDs and status only. Shell history, logs, and the
+database never receive the raw identifiers as command-line arguments or
+stored binding values.
+
 ## 8. iMessage
 
 Apple's published Messages framework is centered on app extensions and interactive content inside Messages. It is not documented as a general server-side webhook API for arbitrary iMessage conversations. This means the supported integration should be explicit and user-controlled.
