@@ -27,6 +27,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - RFC 7662 OAuth introspection adapter with an infrastructure-neutral
   authenticated transport port, strict active/identity/audience/expiry
   requirements, and narrow Rembrane scope conversion.
+- Hardened Cloudflare Tunnel Compose overlay and operator guide for
+  outbound-only self-hosted access without mounting the memory database or
+  workspace encryption credentials into the tunnel container.
 - Secret-safe Gemini CLI `settings.json` MCP configuration generation alongside
   the existing Codex, Claude Code, and vendor-neutral connection manifests.
 - Dedicated `travel` domain authorization for creating new trip entities,

@@ -87,6 +87,8 @@ This roadmap describes sequencing, not release dates.
   - [ ] Integrate the authorization middleware with the HTTP server adapter.
   - [ ] Serve Streamable HTTP through the official Rust MCP SDK.
   - [ ] Add OAuth and cross-tenant transport integration tests.
+  - [x] Add a hardened Cloudflare Tunnel Compose overlay that keeps persistent
+    memory and encryption credentials on the operator-controlled origin.
 - [x] Persist a disclosure receipt for every SQLite context response.
 - [ ] Persist disclosure receipts in every future storage adapter.
 - [x] Prove cross-tenant denial across SQLite user-facing read paths.
