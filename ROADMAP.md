@@ -706,6 +706,8 @@ This roadmap describes sequencing, not release dates.
       - [x] Domain-separate workspace and document HMAC pseudonyms.
       - [x] Require bounded readiness confirmation after ingestion before an
         adapter may report projection success.
+      - [x] Require exact provider-identity confirmation before replacement or
+        deletion can complete.
   - [x] Generate a secret-reference-only local MCP configuration for OpenCode
     using its command-array and environment-substitution contract.
   - [x] Enforce one bounded control-free executable-command contract before

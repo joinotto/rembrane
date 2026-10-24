@@ -76,6 +76,10 @@ The Rust `SupermemoryTransport` contract therefore requires a separate
 `await_ready` operation after ingestion. A transport cannot represent HTTP
 acceptance as completed indexing.
 
+Deletion similarly returns explicit confirmation for the requested provider
+identity. A partial-success response that omits or fails that identity is a
+retryable failure.
+
 ## Privacy
 
 Hosted Supermemory processes plaintext and is incompatible with strict E2EE.

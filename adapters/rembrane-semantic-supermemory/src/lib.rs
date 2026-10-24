@@ -74,7 +74,7 @@ pub trait SupermemoryTransport {
         query: &str,
         maximum_candidates: usize,
     ) -> Result<Vec<SupermemoryRecord>, ProviderError>;
-    fn delete(&mut self, namespace: &str, provider_id: &str) -> Result<(), ProviderError>;
+    fn delete(&mut self, namespace: &str, provider_id: &str) -> Result<bool, ProviderError>;
 }
 
 pub struct SupermemorySemanticProvider<Transport> {
@@ -168,8 +168,10 @@ impl<Transport: SupermemoryTransport> SemanticMemoryProvider
         let namespace = self.namespace(&projection.workspace_id);
         let document_id = self.document_id(&projection.memory_id);
         for record in self.transport.list(&namespace)? {
-            if record.canonical_memory_id == projection.memory_id {
-                self.transport.delete(&namespace, record.provider_id())?;
+            if record.canonical_memory_id == projection.memory_id
+                && !self.transport.delete(&namespace, record.provider_id())?
+            {
+                return Err(ProviderError::Unavailable);
             }
         }
         self.transport
@@ -227,8 +229,9 @@ impl<Transport: SupermemoryTransport> SemanticMemoryProvider
         for record in self.transport.list(&namespace)? {
             if &record.canonical_memory_id == memory_id
                 && record.canonical_version <= through_version
+                && !self.transport.delete(&namespace, record.provider_id())?
             {
-                self.transport.delete(&namespace, record.provider_id())?;
+                return Err(ProviderError::Unavailable);
             }
         }
         Ok(())
@@ -250,6 +253,7 @@ mod tests {
         records: BTreeMap<String, Vec<(SupermemoryRecord, String)>>,
         next_id: u64,
         fail_readiness: bool,
+        fail_deletion_confirmation: bool,
     }
 
     impl SupermemoryTransport for FakeSupermemory {
@@ -312,11 +316,14 @@ mod tests {
             }
         }
 
-        fn delete(&mut self, namespace: &str, provider_id: &str) -> Result<(), ProviderError> {
+        fn delete(&mut self, namespace: &str, provider_id: &str) -> Result<bool, ProviderError> {
+            if self.fail_deletion_confirmation {
+                return Ok(false);
+            }
             if let Some(records) = self.records.get_mut(namespace) {
                 records.retain(|(record, _)| record.provider_id() != provider_id);
             }
-            Ok(())
+            Ok(true)
         }
     }
 
@@ -351,5 +358,29 @@ mod tests {
             content: "Call me Hippo".to_owned(),
         });
         assert_eq!(result, Err(ProviderError::Unavailable));
+    }
+
+    #[test]
+    fn unconfirmed_deletion_never_reports_success() {
+        use rembrane_domain::{MemoryId, MemoryKind, MemoryScope, WorkspaceId};
+        use rembrane_provider_sdk::{AuthorizedMemoryProjection, SemanticMemoryProvider};
+
+        let mut provider =
+            SupermemorySemanticProvider::new(FakeSupermemory::default(), vec![9; 32])
+                .expect("valid lookup secret");
+        let projection = AuthorizedMemoryProjection {
+            workspace_id: WorkspaceId::new("workspace"),
+            memory_id: MemoryId::new("memory"),
+            version: 1,
+            scope: MemoryScope::Global,
+            kind: MemoryKind::Semantic,
+            content: "Call me Hippo".to_owned(),
+        };
+        provider.index(projection).expect("initial projection");
+        provider.transport.fail_deletion_confirmation = true;
+        assert_eq!(
+            provider.delete(&WorkspaceId::new("workspace"), &MemoryId::new("memory"), 1),
+            Err(ProviderError::Unavailable)
+        );
     }
 }
