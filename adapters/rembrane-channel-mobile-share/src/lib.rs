@@ -3,7 +3,9 @@
 use rembrane_application::{
     ApplicationError, ChannelIngressRepository, DurableChannelIngressRepository,
 };
+use rembrane_config::SecretReference;
 use rembrane_contracts::{ChannelKind, VerifiedChannelMessage};
+use rembrane_secret_local::SecretResolver;
 use ring::hmac;
 use serde::Deserialize;
 use zeroize::Zeroize;
@@ -11,10 +13,17 @@ use zeroize::Zeroize;
 const MAXIMUM_ENVELOPE_BYTES: usize = 64 * 1024;
 const MAXIMUM_IDENTIFIER_BYTES: usize = 256;
 const MAXIMUM_TEXT_BYTES: usize = 16_384;
+const MINIMUM_SECRET_BYTES: usize = 32;
+const MAXIMUM_SECRET_BYTES: usize = 4_096;
 
 pub struct MobileShareVerifier {
     signature_key: hmac::Key,
     lookup_key: hmac::Key,
+}
+
+pub struct MobileShareCredentialReferences {
+    signing_secret: SecretReference,
+    binding_lookup_secret: SecretReference,
 }
 
 pub struct MobileShareBindingLookupKeys {
@@ -57,7 +66,9 @@ impl MobileShareVerifier {
         mut signing_secret: Vec<u8>,
         mut binding_lookup_secret: Vec<u8>,
     ) -> Result<Self, MobileShareError> {
-        if signing_secret.len() < 32 || binding_lookup_secret.len() < 32 {
+        if !valid_secret_length(signing_secret.len())
+            || !valid_secret_length(binding_lookup_secret.len())
+        {
             signing_secret.zeroize();
             binding_lookup_secret.zeroize();
             return Err(MobileShareError::InvalidConfiguration);
@@ -177,6 +188,53 @@ impl MobileShareVerifier {
     }
 }
 
+impl MobileShareCredentialReferences {
+    /// Creates purpose-separated reference-only mobile-share credentials.
+    ///
+    /// # Errors
+    ///
+    /// Returns invalid-configuration when one reference is reused for both
+    /// signing and pseudonymous binding derivation.
+    pub fn new(
+        signing_secret: SecretReference,
+        binding_lookup_secret: SecretReference,
+    ) -> Result<Self, MobileShareError> {
+        if signing_secret == binding_lookup_secret {
+            return Err(MobileShareError::InvalidConfiguration);
+        }
+        Ok(Self {
+            signing_secret,
+            binding_lookup_secret,
+        })
+    }
+
+    /// Resolves both credentials and derives verifier keys without retaining
+    /// the resolved strings.
+    ///
+    /// # Errors
+    ///
+    /// Returns invalid-configuration when resolution or verifier
+    /// initialization fails.
+    pub fn resolve<Resolver>(
+        &self,
+        resolver: &Resolver,
+    ) -> Result<MobileShareVerifier, MobileShareError>
+    where
+        Resolver: SecretResolver + ?Sized,
+    {
+        let mut signing_secret = resolver
+            .resolve(&self.signing_secret)
+            .map_err(|_| MobileShareError::InvalidConfiguration)?;
+        let mut binding_lookup_secret = resolver
+            .resolve(&self.binding_lookup_secret)
+            .map_err(|_| MobileShareError::InvalidConfiguration)?;
+        MobileShareVerifier::new(
+            std::mem::take(&mut *signing_secret).into_bytes(),
+            std::mem::take(&mut *binding_lookup_secret).into_bytes(),
+        )
+    }
+}
+
 /// Derives the pseudonymous identifiers used to enroll a mobile-share device
 /// without retaining its raw account or device identifiers.
 pub fn derive_binding_lookup_keys(
@@ -184,7 +242,7 @@ pub fn derive_binding_lookup_keys(
     account_identifier: &str,
     device_identifier: &str,
 ) -> Result<MobileShareBindingLookupKeys, MobileShareError> {
-    if binding_lookup_secret.len() < 32 {
+    if !valid_secret_length(binding_lookup_secret.len()) {
         binding_lookup_secret.zeroize();
         return Err(MobileShareError::InvalidConfiguration);
     }
@@ -208,6 +266,10 @@ pub fn derive_binding_lookup_keys(
         account_lookup_key: lookup_fingerprint(&key, b"account", account_identifier),
         device_lookup_key: lookup_fingerprint(&key, b"device", device_identifier),
     })
+}
+
+const fn valid_secret_length(length: usize) -> bool {
+    length >= MINIMUM_SECRET_BYTES && length <= MAXIMUM_SECRET_BYTES
 }
 
 impl MobileShareBindingLookupKeys {
@@ -316,13 +378,17 @@ fn encode_hex(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use rembrane_application::{ApplicationError, ChannelIngressRepository};
+    use rembrane_config::SecretReference;
     use rembrane_contracts::{ChannelKind, VerifiedChannelMessage};
     use rembrane_domain::{ClientId, PrincipalId, WorkspaceId};
+    use rembrane_secret_local::{SecretResolutionError, SecretResolver};
     use ring::hmac;
+    use zeroize::Zeroizing;
 
     use super::{
-        MobileShareError, MobileShareHttpStatus, MobileShareVerifier, derive_binding_lookup_keys,
-        encode_hex, mobile_share_http_status,
+        MAXIMUM_SECRET_BYTES, MobileShareCredentialReferences, MobileShareError,
+        MobileShareHttpStatus, MobileShareVerifier, derive_binding_lookup_keys, encode_hex,
+        mobile_share_http_status,
     };
 
     #[derive(Default)]
@@ -373,6 +439,48 @@ mod tests {
             payload,
             signature,
         )
+    }
+
+    struct FixtureResolver;
+
+    impl SecretResolver for FixtureResolver {
+        fn resolve(
+            &self,
+            reference: &SecretReference,
+        ) -> Result<Zeroizing<String>, SecretResolutionError> {
+            let byte = match reference.environment_variable() {
+                Some("MOBILE_SIGNING_SECRET") => 's',
+                Some("MOBILE_LOOKUP_SECRET") => 'l',
+                _ => return Err(SecretResolutionError::Unavailable),
+            };
+            Ok(Zeroizing::new(byte.to_string().repeat(32)))
+        }
+    }
+
+    #[test]
+    fn resolves_distinct_reference_only_credentials() {
+        let signing = SecretReference::environment("MOBILE_SIGNING_SECRET").expect("reference");
+        let lookup = SecretReference::environment("MOBILE_LOOKUP_SECRET").expect("reference");
+        assert!(MobileShareCredentialReferences::new(signing.clone(), signing.clone()).is_err());
+        assert!(
+            MobileShareCredentialReferences::new(signing, lookup)
+                .expect("distinct references")
+                .resolve(&FixtureResolver)
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn rejects_unbounded_mobile_share_secrets() {
+        assert!(MobileShareVerifier::new(vec![7; MAXIMUM_SECRET_BYTES + 1], vec![9; 32]).is_err());
+        assert!(
+            derive_binding_lookup_keys(
+                vec![9; MAXIMUM_SECRET_BYTES + 1],
+                "account_01",
+                "device_01",
+            )
+            .is_err()
+        );
     }
 
     #[test]

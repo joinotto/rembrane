@@ -347,6 +347,19 @@ The signing and lookup secrets must be distinct and at least 32 bytes. The
 gateway has no memory-read token or default identity. It maps the authenticated
 account/device pseudonyms through an active membership and acknowledges only
 after replay reservation and encrypted durable admission commit atomically.
+Self-hosted deployments can keep either credential in another environment
+variable or protected regular file by setting reference metadata:
+
+```sh
+export REMBRANE_MOBILE_SHARE_SIGNING_SECRET_REFERENCE='file:/run/secrets/mobile-signing'
+export REMBRANE_MOBILE_SHARE_BINDING_LOOKUP_SECRET_REFERENCE='env:MOBILE_LOOKUP_KEY'
+```
+
+The shipped resolver accepts `env:` and protected `file:` locators and fails
+closed for unsupported external providers. Resolved values are zeroized after
+the gateway derives its purpose-specific HMAC keys. Both credentials are
+bounded to 32–4096 bytes and reference reuse is rejected.
+
 The Swift package includes `CryptoKitMobileShareSigner`; load its secret from
 an app-group-accessible Keychain item shared with the extension, never from
 source code, `UserDefaults`, the shared envelope, or canonical memory.

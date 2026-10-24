@@ -8,12 +8,14 @@ use axum::extract::{DefaultBodyLimit, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::routing::{get, post};
 use rembrane_channel_mobile_share::{
-    MobileShareHttpStatus, MobileShareVerifier, mobile_share_http_status,
+    MobileShareCredentialReferences, MobileShareHttpStatus, MobileShareVerifier,
+    mobile_share_http_status,
 };
+use rembrane_config::SecretReference;
 use rembrane_crypto::RecordCipher;
 use rembrane_crypto_configured::ConfiguredRecordCipher;
+use rembrane_secret_local::LocalSecretResolver;
 use rembrane_store_sqlite::SqliteStore;
-use zeroize::Zeroizing;
 
 const MAXIMUM_ENVELOPE_BYTES: usize = 64 * 1024;
 const DEFAULT_MAXIMUM_EVENT_AGE_SECONDS: u64 = 300;
@@ -43,18 +45,23 @@ struct Inner<C> {
 impl AppState<ConfiguredRecordCipher> {
     fn from_environment() -> Result<Self> {
         let database = required_environment("REMBRANE_DATABASE")?;
-        let signing_secret = required_secret("REMBRANE_MOBILE_SHARE_SIGNING_SECRET")?;
-        let lookup_secret = required_secret("REMBRANE_MOBILE_SHARE_BINDING_LOOKUP_SECRET")?;
+        let verifier = MobileShareCredentialReferences::new(
+            configured_secret_reference(
+                "REMBRANE_MOBILE_SHARE_SIGNING_SECRET_REFERENCE",
+                "REMBRANE_MOBILE_SHARE_SIGNING_SECRET",
+            )?,
+            configured_secret_reference(
+                "REMBRANE_MOBILE_SHARE_BINDING_LOOKUP_SECRET_REFERENCE",
+                "REMBRANE_MOBILE_SHARE_BINDING_LOOKUP_SECRET",
+            )?,
+        )
+        .and_then(|references| references.resolve(&LocalSecretResolver))
+        .map_err(|_| anyhow::anyhow!("invalid or unavailable mobile-share credentials"))?;
         let cipher = ConfiguredRecordCipher::from_environment()
             .context("failed to load the channel inbox cipher")?;
         let store = SqliteStore::open(database)
             .context("failed to open the Rembrane channel store")?
             .with_cipher(cipher);
-        let verifier = MobileShareVerifier::new(
-            signing_secret.as_bytes().to_vec(),
-            lookup_secret.as_bytes().to_vec(),
-        )
-        .map_err(|_| anyhow::anyhow!("invalid mobile-share secrets"))?;
         Ok(Self {
             inner: Arc::new(Inner {
                 store: Mutex::new(store),
@@ -125,10 +132,27 @@ fn required_environment(name: &str) -> Result<String> {
     std::env::var(name).with_context(|| format!("{name} is required"))
 }
 
-fn required_secret(name: &str) -> Result<Zeroizing<String>> {
-    let value = Zeroizing::new(required_environment(name)?);
-    anyhow::ensure!(!value.is_empty(), "{name} is empty");
-    Ok(value)
+fn configured_secret_reference(
+    locator_name: &str,
+    default_variable: &str,
+) -> Result<SecretReference> {
+    match std::env::var(locator_name) {
+        Ok(locator) => selected_secret_reference(&locator, default_variable)
+            .with_context(|| format!("invalid secret reference in {locator_name}")),
+        Err(std::env::VarError::NotPresent) => selected_secret_reference("", default_variable),
+        Err(error) => Err(error).with_context(|| format!("failed to read {locator_name}")),
+    }
+}
+
+fn selected_secret_reference(locator: &str, default_variable: &str) -> Result<SecretReference> {
+    if locator.is_empty() {
+        SecretReference::environment(default_variable)
+            .map_err(|_| anyhow::anyhow!("invalid default secret reference"))
+    } else {
+        locator
+            .parse()
+            .map_err(|_| anyhow::anyhow!("invalid secret reference"))
+    }
 }
 
 fn positive_environment_u64(name: &str, default: u64) -> Result<u64> {
@@ -200,7 +224,7 @@ mod tests {
     use rembrane_store_sqlite::SqliteStore;
     use ring::hmac;
 
-    use super::{AppState, Inner, receive_share, status_code};
+    use super::{AppState, Inner, receive_share, selected_secret_reference, status_code};
 
     fn encode_hex(bytes: &[u8]) -> String {
         const HEX: &[u8; 16] = b"0123456789abcdef";
@@ -234,6 +258,26 @@ mod tests {
         assert_eq!(
             status_code(MobileShareHttpStatus::ServiceUnavailable),
             StatusCode::SERVICE_UNAVAILABLE
+        );
+    }
+
+    #[test]
+    fn secret_locator_defaults_without_accepting_inline_values() {
+        let default = selected_secret_reference("", "REMBRANE_MOBILE_SHARE_SIGNING_SECRET")
+            .expect("default environment reference");
+        assert_eq!(
+            default.environment_variable(),
+            Some("REMBRANE_MOBILE_SHARE_SIGNING_SECRET")
+        );
+        let file = selected_secret_reference(
+            "file:/run/secrets/mobile-signing",
+            "REMBRANE_MOBILE_SHARE_SIGNING_SECRET",
+        )
+        .expect("file reference");
+        assert_eq!(file.file_path(), Some("/run/secrets/mobile-signing"));
+        assert!(
+            selected_secret_reference("inline-secret", "REMBRANE_MOBILE_SHARE_SIGNING_SECRET")
+                .is_err()
         );
     }
 

@@ -719,6 +719,8 @@ This roadmap describes sequencing, not release dates.
     lookup secrets.
   - [x] Expose the signed mobile-share boundary through a narrowly scoped
     companion HTTP service.
+    - [x] Resolve distinct signing and pseudonymous-binding credentials from
+      validated environment or protected-file references.
   - [x] Package the mobile-share gateway in a loopback-only hardened Compose
     overlay with no broad memory API credential or default principal.
   - [x] Extend the Swift package with an injectable device-held signer and

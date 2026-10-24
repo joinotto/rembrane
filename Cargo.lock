@@ -1072,8 +1072,10 @@ name = "rembrane-channel-mobile-share"
 version = "0.1.0-alpha.1"
 dependencies = [
  "rembrane-application",
+ "rembrane-config",
  "rembrane-contracts",
  "rembrane-domain",
+ "rembrane-secret-local",
  "ring",
  "serde",
  "serde_json",
@@ -1328,15 +1330,16 @@ dependencies = [
  "axum",
  "rembrane-application",
  "rembrane-channel-mobile-share",
+ "rembrane-config",
  "rembrane-contracts",
  "rembrane-crypto",
  "rembrane-crypto-configured",
  "rembrane-crypto-rustcrypto",
  "rembrane-domain",
+ "rembrane-secret-local",
  "rembrane-store-sqlite",
  "ring",
  "tokio",
- "zeroize",
 ]
 
 [[package]]

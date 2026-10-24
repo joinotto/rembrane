@@ -255,6 +255,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - A least-privileged loopback-default mobile-share gateway and hardened
   Compose overlay that acknowledge signed explicit shares only after atomic
   encrypted-inbox admission, with a socket-free real-SQLite lifecycle test.
+- Reference-only mobile-share gateway credentials with distinct-purpose
+  enforcement, protected local resolution, and bounded secret lengths.
 - A Swift mobile-share client with an injectable signer boundary so iOS apps
   and share extensions can keep signing keys in platform-controlled storage
   while sending only explicit user-selected content.
