@@ -1,7 +1,7 @@
 use rembrane_domain::{
     ActivityCheckpoint, ActivityId, BookingResearch, BookingResearchId, CanonicalEvent,
-    CheckpointDisclosureReceipt, DisclosureReceipt, EntityId, Invitation, InvitationId,
-    InvitationStatus, KnowledgeEdge, KnowledgeEdgeId, KnowledgeNode, KnowledgeNodeId,
+    CheckpointDisclosureReceipt, DisclosureReceipt, EntityId, GraphProjectionJob, Invitation,
+    InvitationId, InvitationStatus, KnowledgeEdge, KnowledgeEdgeId, KnowledgeNode, KnowledgeNodeId,
     MemberScopeGrant, Membership, MembershipStatus, MemoryId, MemoryRecord, MemoryShareProposal,
     Principal, PrincipalId, ProjectionJob, ProjectionJobId, ProjectionStatus, ProviderId,
     ShareProposalId, ShareProposalStatus, TravelDisclosureReceipt, Trip, Workspace, WorkspaceId,
@@ -364,4 +364,28 @@ pub trait ProjectionOutboxRepository {
         workspace_id: &WorkspaceId,
         job_id: &ProjectionJobId,
     ) -> Result<Option<ProjectionJob>, ApplicationError>;
+}
+
+pub trait GraphProjectionOutboxRepository {
+    fn enqueue_graph_projection(&mut self, job: GraphProjectionJob)
+    -> Result<(), ApplicationError>;
+
+    fn pending_graph_projections(
+        &self,
+        provider_id: &ProviderId,
+        limit: usize,
+    ) -> Result<Vec<GraphProjectionJob>, ApplicationError>;
+
+    fn replace_graph_projection(
+        &mut self,
+        job: GraphProjectionJob,
+        expected_status: ProjectionStatus,
+        expected_attempts: u32,
+    ) -> Result<(), ApplicationError>;
+
+    fn find_graph_projection(
+        &self,
+        workspace_id: &WorkspaceId,
+        job_id: &ProjectionJobId,
+    ) -> Result<Option<GraphProjectionJob>, ApplicationError>;
 }

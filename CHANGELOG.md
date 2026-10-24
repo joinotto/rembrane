@@ -33,6 +33,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Durable graph projection job aggregate with node/edge resource identity,
   provider routing, version bounds, retry accounting, completion, and
   quarantine transitions.
+- Graph projection outbox port and tenant-scoped in-memory reference adapter
+  with idempotency tuples and optimistic state transitions.
 - Authenticated key-provider HTTP adapter using Rustls, bounded response reads,
   disabled redirects and environment proxies, zeroized bearer credentials,
   strict JSON/base64 decoding, and HTTPS except for exact loopback origins.

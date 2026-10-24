@@ -3,21 +3,21 @@
 use rembrane_application::{
     ApplicationError, BookingResearchMutationRepository, BookingResearchRepository,
     CanonicalMutationRepository, CheckpointDisclosureRepository, CheckpointMutationRepository,
-    CheckpointRepository, DisclosureRepository, EventRepository, InvitationRepository,
-    KnowledgeDirection, KnowledgeGraphMutationRepository, KnowledgeGraphRepository,
-    MAX_KNOWLEDGE_NEIGHBOURS, MemberLifecycleRepository, MemberScopeGrantRepository,
-    MembershipRepository, MemoryRepository, ProjectionOutboxRepository,
+    CheckpointRepository, DisclosureRepository, EventRepository, GraphProjectionOutboxRepository,
+    InvitationRepository, KnowledgeDirection, KnowledgeGraphMutationRepository,
+    KnowledgeGraphRepository, MAX_KNOWLEDGE_NEIGHBOURS, MemberLifecycleRepository,
+    MemberScopeGrantRepository, MembershipRepository, MemoryRepository, ProjectionOutboxRepository,
     ShareProposalMutationRepository, ShareProposalRepository, TravelDisclosureRepository,
     TripMutationRepository, TripRepository, WorkspaceRepository,
 };
 use rembrane_domain::{
     ActivityCheckpoint, ActivityId, BookingResearch, BookingResearchId, CanonicalEvent,
-    CheckpointDisclosureReceipt, DisclosureReceipt, EntityId, EventPayload, Invitation,
-    InvitationId, InvitationStatus, KnowledgeEdge, KnowledgeEdgeId, KnowledgeNode, KnowledgeNodeId,
-    MemberScopeGrant, Membership, MemoryId, MemoryRecord, MemoryShareProposal, MemoryStatus,
-    Principal, PrincipalId, ProjectionJob, ProjectionJobId, ProjectionOperation, ProjectionStatus,
-    ProviderId, ShareProposalId, ShareProposalStatus, TravelDisclosureReceipt, Trip, Workspace,
-    WorkspaceId, WorkspaceKind, WorkspaceRole,
+    CheckpointDisclosureReceipt, DisclosureReceipt, EntityId, EventPayload, GraphProjectionJob,
+    Invitation, InvitationId, InvitationStatus, KnowledgeEdge, KnowledgeEdgeId, KnowledgeNode,
+    KnowledgeNodeId, MemberScopeGrant, Membership, MemoryId, MemoryRecord, MemoryShareProposal,
+    MemoryStatus, Principal, PrincipalId, ProjectionJob, ProjectionJobId, ProjectionOperation,
+    ProjectionStatus, ProviderId, ShareProposalId, ShareProposalStatus, TravelDisclosureReceipt,
+    Trip, Workspace, WorkspaceId, WorkspaceKind, WorkspaceRole,
 };
 
 #[derive(Debug, Default)]
@@ -35,10 +35,88 @@ pub struct InMemoryStore {
     share_proposals: Vec<MemoryShareProposal>,
     memberships: Vec<Membership>,
     projections: Vec<ProjectionJob>,
+    graph_projections: Vec<GraphProjectionJob>,
     trips: Vec<Trip>,
     booking_research: Vec<BookingResearch>,
     knowledge_nodes: Vec<KnowledgeNode>,
     knowledge_edges: Vec<KnowledgeEdge>,
+}
+
+impl GraphProjectionOutboxRepository for InMemoryStore {
+    fn enqueue_graph_projection(
+        &mut self,
+        job: GraphProjectionJob,
+    ) -> Result<(), ApplicationError> {
+        let duplicate = self.graph_projections.iter().any(|stored| {
+            stored.id() == job.id()
+                || (stored.workspace_id() == job.workspace_id()
+                    && stored.resource() == job.resource()
+                    && stored.resource_version() == job.resource_version()
+                    && stored.provider_id() == job.provider_id()
+                    && stored.operation() == job.operation())
+        });
+        if duplicate {
+            return Err(ApplicationError::AlreadyExists);
+        }
+        self.graph_projections.push(job);
+        Ok(())
+    }
+
+    fn pending_graph_projections(
+        &self,
+        provider_id: &ProviderId,
+        limit: usize,
+    ) -> Result<Vec<GraphProjectionJob>, ApplicationError> {
+        Ok(self
+            .graph_projections
+            .iter()
+            .filter(|job| {
+                job.provider_id() == provider_id && job.status() == ProjectionStatus::Pending
+            })
+            .take(limit)
+            .cloned()
+            .collect())
+    }
+
+    fn replace_graph_projection(
+        &mut self,
+        job: GraphProjectionJob,
+        expected_status: ProjectionStatus,
+        expected_attempts: u32,
+    ) -> Result<(), ApplicationError> {
+        let stored = self
+            .graph_projections
+            .iter_mut()
+            .find(|stored| stored.id() == job.id())
+            .ok_or(ApplicationError::NotFound)?;
+        if stored.status() != expected_status || stored.attempts() != expected_attempts {
+            return Err(ApplicationError::VersionConflict);
+        }
+        if stored.workspace_id() != job.workspace_id()
+            || stored.resource() != job.resource()
+            || stored.resource_version() != job.resource_version()
+            || stored.provider_id() != job.provider_id()
+            || stored.operation() != job.operation()
+        {
+            return Err(ApplicationError::Validation(
+                "graph projection identity fields are immutable".to_owned(),
+            ));
+        }
+        *stored = job;
+        Ok(())
+    }
+
+    fn find_graph_projection(
+        &self,
+        workspace_id: &WorkspaceId,
+        job_id: &ProjectionJobId,
+    ) -> Result<Option<GraphProjectionJob>, ApplicationError> {
+        Ok(self
+            .graph_projections
+            .iter()
+            .find(|job| job.workspace_id() == workspace_id && job.id() == job_id)
+            .cloned())
+    }
 }
 
 impl KnowledgeGraphRepository for InMemoryStore {
