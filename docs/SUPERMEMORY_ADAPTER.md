@@ -41,6 +41,9 @@ derived namespace must match Supermemory's documented 100-character safe
 pattern and must not reveal the canonical workspace ID. Namespace and document
 pseudonyms use distinct HMAC domain labels.
 
+The adapter validates generated namespaces against the documented ASCII
+letters, digits, underscore, colon, and hyphen alphabet before transport use.
+
 ## Required behavior
 
 The provider adapter must:

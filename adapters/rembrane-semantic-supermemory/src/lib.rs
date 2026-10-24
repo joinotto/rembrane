@@ -108,6 +108,7 @@ impl<Transport> SupermemorySemanticProvider<Transport> {
             use std::fmt::Write;
             let _ = write!(namespace, "{byte:02x}");
         }
+        debug_assert!(valid_namespace(&namespace));
         namespace
     }
 
@@ -129,6 +130,14 @@ impl<Transport> SupermemorySemanticProvider<Transport> {
         output.copy_from_slice(context.sign().as_ref());
         output
     }
+}
+
+fn valid_namespace(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 100
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b':' | b'-'))
 }
 
 impl<Transport: SupermemoryTransport> SemanticMemoryProvider
@@ -246,7 +255,9 @@ mod tests {
         AuthorizedMemoryProjection, ProviderError, verify_semantic_provider,
     };
 
-    use super::{SupermemoryRecord, SupermemorySemanticProvider, SupermemoryTransport};
+    use super::{
+        SupermemoryRecord, SupermemorySemanticProvider, SupermemoryTransport, valid_namespace,
+    };
 
     #[derive(Default)]
     struct FakeSupermemory {
@@ -334,6 +345,18 @@ mod tests {
                 .expect("valid lookup secret");
         verify_semantic_provider(&mut provider, "supermemory-mapping")
             .expect("mapping should preserve canonical semantics");
+    }
+
+    #[test]
+    fn generated_namespace_obeys_provider_contract() {
+        let provider = SupermemorySemanticProvider::new(FakeSupermemory::default(), vec![6; 32])
+            .expect("valid lookup secret");
+        let namespace = provider.namespace(&rembrane_domain::WorkspaceId::new(
+            "workspace with provider-unsafe characters/?#",
+        ));
+        assert!(valid_namespace(&namespace));
+        assert!(!namespace.contains("workspace"));
+        assert_eq!(namespace.len(), 73);
     }
 
     #[test]

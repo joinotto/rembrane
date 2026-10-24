@@ -704,6 +704,8 @@ This roadmap describes sequencing, not release dates.
       - [x] Derive deterministic provider document IDs inside the trusted
         adapter so transports never choose or expose canonical identity.
       - [x] Domain-separate workspace and document HMAC pseudonyms.
+      - [x] Validate generated namespaces against Supermemory's documented
+        length and character contract.
       - [x] Require bounded readiness confirmation after ingestion before an
         adapter may report projection success.
       - [x] Require exact provider-identity confirmation before replacement or

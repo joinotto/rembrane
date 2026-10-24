@@ -45,6 +45,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   projection completion.
 - Exact Supermemory deletion confirmation, treating partial or omitted
   provider identities as retryable failures.
+- Local validation proving generated Supermemory namespace pseudonyms satisfy
+  the provider's bounded safe-character contract.
 - A public-API-only iMessage app extension reference with explicit text entry,
   review, confirmation, Keychain-held enrollment material, narrow signed
   gateway submission, and an iPhone Simulator type-check gate.
