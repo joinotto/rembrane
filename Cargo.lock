@@ -1051,6 +1051,7 @@ dependencies = [
  "rembrane-contracts",
  "rembrane-crypto-configured",
  "rembrane-domain",
+ "rembrane-secret-local",
  "rembrane-store-sqlite",
  "serde",
  "subtle",

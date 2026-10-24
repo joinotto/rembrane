@@ -58,3 +58,10 @@ requires provider discovery to satisfy the caller's explicit privacy policy.
 profile with one credential reference. The resolved value remains zeroizing
 through transport validation, protocol negotiation, record encryption and
 decryption operations, and teardown.
+
+The shipped REST API, WhatsApp gateway, mobile-share gateway, and channel
+worker also accept locator variables for their bearer or HMAC credentials.
+An empty locator preserves the documented environment-variable default;
+otherwise use `env:VARIABLE` or `file:path` with the local resolver.
+Unsupported `external:provider:key` references fail closed unless the
+embedding deployment supplies that provider's resolver.

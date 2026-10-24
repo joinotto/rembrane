@@ -65,6 +65,8 @@ This roadmap describes sequencing, not release dates.
 - [x] Add encrypted SQLite backup and verified restore commands.
 - [x] Package the local REST service for loopback-only Docker Compose
   self-hosting with persistent encrypted storage.
+  - [x] Resolve the REST bearer credential from validated environment or
+    protected-file references and enforce bounded RFC bearer-token grammar.
 - [ ] Add production OS-keychain and customer-KMS key providers.
   - [x] Honor environment or macOS Keychain selection uniformly in the CLI,
     REST API, and MCP server, including historical-key reads.

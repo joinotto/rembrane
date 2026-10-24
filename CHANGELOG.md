@@ -9,6 +9,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- Reference-only REST API bearer-token configuration with protected local
+  resolution and bounded RFC-compatible token validation.
 - A consuming remote-MCP dispatch handoff that transfers verified tenant
   identity, classified invocation, and the exact OAuth-authorized zeroizing
   request body together to the eventual official SDK transport.

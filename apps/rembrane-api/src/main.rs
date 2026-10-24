@@ -19,7 +19,7 @@ use rembrane_application::{
     TravelContextResearch, TravelContextService, TravelContextTrip, TravelSensitiveProfile,
     TripService,
 };
-use rembrane_config::{parse_read_permissions, parse_read_scopes};
+use rembrane_config::{SecretReference, parse_read_permissions, parse_read_scopes};
 use rembrane_contracts::ResolveContextRequest;
 use rembrane_crypto_configured::ConfiguredRecordCipher;
 use rembrane_domain::{
@@ -31,10 +31,13 @@ use rembrane_domain::{
     TripParticipantId, WorkspaceId, WorkspaceRetentionPolicy, WorkspaceRole, WriteGrant,
     WritePermission,
 };
+use rembrane_secret_local::{LocalSecretResolver, SecretResolver};
 use rembrane_store_sqlite::SqliteStore;
 use serde::{Deserialize, Serialize};
 use subtle::ConstantTimeEq;
 use zeroize::Zeroizing;
+
+const MAXIMUM_API_TOKEN_BYTES: usize = 8_192;
 
 #[derive(Clone)]
 struct AppState {
@@ -443,8 +446,7 @@ impl AppState {
         let principal_id = PrincipalId::new(required_environment("REMBRANE_PRINCIPAL_ID")?);
         let workspace_id = WorkspaceId::new(required_environment("REMBRANE_WORKSPACE_ID")?);
         let client_id = ClientId::new(required_environment("REMBRANE_CLIENT_ID")?);
-        let bearer_token = Zeroizing::new(required_environment("REMBRANE_API_TOKEN")?);
-        anyhow::ensure!(!bearer_token.is_empty(), "REMBRANE_API_TOKEN is empty");
+        let bearer_token = resolve_api_token()?;
         let oauth_resource_metadata = oauth_resource_metadata_from_environment()?;
         let cipher = ConfiguredRecordCipher::from_environment()
             .context("failed to load workspace cipher")?;
@@ -499,6 +501,39 @@ impl AppState {
                 oauth_resource_metadata,
             }),
         })
+    }
+}
+
+fn resolve_api_token() -> Result<Zeroizing<String>> {
+    let reference = match std::env::var("REMBRANE_API_TOKEN_REFERENCE") {
+        Ok(locator) => selected_api_token_reference(&locator)?,
+        Err(std::env::VarError::NotPresent) => selected_api_token_reference("")?,
+        Err(error) => return Err(error).context("failed to read REMBRANE_API_TOKEN_REFERENCE"),
+    };
+    let token = LocalSecretResolver
+        .resolve(&reference)
+        .map_err(|_| anyhow::anyhow!("API bearer token is unavailable or invalid"))?;
+    anyhow::ensure!(valid_api_token(&token), "API bearer token is invalid");
+    Ok(token)
+}
+
+fn valid_api_token(token: &str) -> bool {
+    !token.is_empty()
+        && token.len() <= MAXIMUM_API_TOKEN_BYTES
+        && token.bytes().all(|byte| {
+            byte.is_ascii_alphanumeric()
+                || matches!(byte, b'-' | b'.' | b'_' | b'~' | b'+' | b'/' | b'=')
+        })
+}
+
+fn selected_api_token_reference(locator: &str) -> Result<SecretReference> {
+    if locator.is_empty() {
+        SecretReference::environment("REMBRANE_API_TOKEN")
+            .map_err(|_| anyhow::anyhow!("invalid default API token reference"))
+    } else {
+        locator
+            .parse()
+            .map_err(|_| anyhow::anyhow!("invalid API token reference"))
     }
 }
 
@@ -1588,13 +1623,34 @@ async fn main() -> Result<()> {
 mod tests {
     use rembrane_domain::{ClientId, EntityId, PrincipalId, ReadGrant, ReadScope, WorkspaceId};
 
-    use super::{ResolveRequest, request_is_within_grant, token_matches};
+    use super::{
+        ResolveRequest, request_is_within_grant, selected_api_token_reference, token_matches,
+        valid_api_token,
+    };
 
     #[test]
     fn accepts_only_exact_bearer_token() {
         assert!(token_matches("secret-token", "secret-token"));
         assert!(!token_matches("secret-token", "secret-other"));
         assert!(!token_matches("secret-token", "short"));
+    }
+
+    #[test]
+    fn api_token_reference_defaults_and_token_grammar_is_bounded() {
+        let default = selected_api_token_reference("").expect("default environment reference");
+        assert_eq!(default.environment_variable(), Some("REMBRANE_API_TOKEN"));
+        let file = selected_api_token_reference("file:/run/secrets/rembrane-api-token")
+            .expect("file reference");
+        assert_eq!(file.file_path(), Some("/run/secrets/rembrane-api-token"));
+        assert!(selected_api_token_reference("inline-token").is_err());
+
+        assert!(valid_api_token("opaque-token_01.~+/="));
+        for invalid in ["", "token with space", "token\nvalue", "token:value"] {
+            assert!(!valid_api_token(invalid));
+        }
+        assert!(!valid_api_token(
+            &"a".repeat(super::MAXIMUM_API_TOKEN_BYTES + 1)
+        ));
     }
 
     #[test]
