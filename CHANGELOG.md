@@ -12,6 +12,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Sealed Rust Memory Provider payload-to-operation mappings and an
   operation-derived request constructor, preventing downstream callers from
   pairing valid payload types with unrelated privileged operations.
+- Compile-time Memory Provider payload-to-result associations with
+  request-owned success and error constructors, preventing valid but unrelated
+  result objects from being returned for the wrong operation.
 - Initial Memory Provider Protocol JSON Schema with strict discovery,
   operation/capability/scope enums, portable and opaque identifiers, sealed
   context selectors, provider limits, and closed request, success, and error

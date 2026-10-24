@@ -234,6 +234,8 @@ This roadmap describes sequencing, not release dates.
     portable error codes.
     - [x] Seal Rust payload-to-operation mappings so callers cannot pair a
       valid payload with a different privileged operation.
+    - [x] Associate every Rust request payload with its canonical result type
+      so unrelated success bodies cannot be attached to an operation.
   - [x] Define canonical operation payloads and validation.
     - [x] Add bounded context-resolution requests with global, domain, entity,
       and activity selectors constrained by provider-advertised limits.

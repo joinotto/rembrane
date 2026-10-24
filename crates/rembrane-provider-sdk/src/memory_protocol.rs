@@ -13,6 +13,8 @@ pub(crate) mod sealed {
 /// The trait is sealed so downstream crates cannot bind arbitrary payloads to
 /// privileged operations.
 pub trait MemoryProviderPayload: sealed::Sealed {
+    type Result;
+
     const OPERATION: MemoryProviderOperation;
 }
 
@@ -186,6 +188,27 @@ impl<Payload: MemoryProviderPayload> MemoryProviderRequest<Payload> {
             payload,
         })
     }
+
+    /// Creates a success response containing only this operation's canonical
+    /// result type.
+    #[must_use]
+    pub fn success(&self, result: Payload::Result) -> MemoryProviderResponse<Payload::Result> {
+        MemoryProviderResponse {
+            request_id: self.request_id.clone(),
+            protocol_version: self.protocol_version,
+            body: MemoryProviderResponseBody::Success(result),
+        }
+    }
+
+    /// Creates a correlated portable error response for this operation.
+    #[must_use]
+    pub fn error(&self, error: MemoryProviderErrorCode) -> MemoryProviderResponse<Payload::Result> {
+        MemoryProviderResponse {
+            request_id: self.request_id.clone(),
+            protocol_version: self.protocol_version,
+            body: MemoryProviderResponseBody::Error(error),
+        }
+    }
 }
 
 impl<Payload> MemoryProviderRequest<Payload> {
@@ -216,10 +239,12 @@ impl<Payload> MemoryProviderRequest<Payload> {
 }
 
 macro_rules! bind_payload {
-    ($payload:path, $operation:expr) => {
+    ($payload:path, $result:path, $operation:expr) => {
         impl sealed::Sealed for $payload {}
 
         impl MemoryProviderPayload for $payload {
+            type Result = $result;
+
             const OPERATION: MemoryProviderOperation = $operation;
         }
     };
@@ -227,42 +252,52 @@ macro_rules! bind_payload {
 
 bind_payload!(
     crate::memory_context::ResolveContextPayload,
+    crate::memory_context::ResolveContextResult,
     MemoryProviderOperation::ResolveContext
 );
 bind_payload!(
     crate::memory_question::ResolveQuestionPayload,
+    crate::memory_question::ResolveQuestionResult,
     MemoryProviderOperation::ResolveQuestion
 );
 bind_payload!(
     crate::memory_event::RecordEventPayload,
+    crate::memory_event::RecordEventResult,
     MemoryProviderOperation::RecordEvent
 );
 bind_payload!(
     crate::memory_mutation::ProposeMemoryPayload,
+    crate::memory_mutation::ProposeMemoryResult,
     MemoryProviderOperation::ProposeMemory
 );
 bind_payload!(
     crate::memory_checkpoint::CheckpointActivityPayload,
+    crate::memory_checkpoint::CheckpointActivityResult,
     MemoryProviderOperation::CheckpointActivity
 );
 bind_payload!(
     crate::memory_disclosure::RecordDisclosurePayload,
+    crate::memory_disclosure::RecordDisclosureResult,
     MemoryProviderOperation::RecordDisclosure
 );
 bind_payload!(
     crate::memory_lifecycle::DeleteMemoryPayload,
+    crate::memory_lifecycle::DeleteMemoryResult,
     MemoryProviderOperation::DeleteMemory
 );
 bind_payload!(
     crate::memory_lifecycle::ExplainMemoryPayload,
+    crate::memory_lifecycle::ExplainMemoryResult,
     MemoryProviderOperation::ExplainMemory
 );
 bind_payload!(
     crate::memory_sync::SyncPullPayload,
+    crate::memory_sync::SyncPullResult,
     MemoryProviderOperation::SyncPull
 );
 bind_payload!(
     crate::memory_sync::SyncPushPayload,
+    crate::memory_sync::SyncPushResult,
     MemoryProviderOperation::SyncPush
 );
 
@@ -291,27 +326,6 @@ pub struct MemoryProviderResponse<Payload> {
 }
 
 impl<Payload> MemoryProviderResponse<Payload> {
-    #[must_use]
-    pub fn success(request: &MemoryProviderRequest<impl Sized>, payload: Payload) -> Self {
-        Self {
-            request_id: request.request_id.clone(),
-            protocol_version: request.protocol_version,
-            body: MemoryProviderResponseBody::Success(payload),
-        }
-    }
-
-    #[must_use]
-    pub fn error(
-        request: &MemoryProviderRequest<impl Sized>,
-        error: MemoryProviderErrorCode,
-    ) -> Self {
-        Self {
-            request_id: request.request_id.clone(),
-            protocol_version: request.protocol_version,
-            body: MemoryProviderResponseBody::Error(error),
-        }
-    }
-
     #[must_use]
     pub const fn request_id(&self) -> &MemoryProviderRequestId {
         &self.request_id
@@ -582,8 +596,8 @@ mod tests {
         CURRENT_MEMORY_PROVIDER_PROTOCOL, MEMORY_PROVIDER_DISCOVERY_PATH, MemoryProviderCapability,
         MemoryProviderErrorCode, MemoryProviderHttpMethod, MemoryProviderLimits,
         MemoryProviderManifest, MemoryProviderOperation, MemoryProviderPrivacyMode,
-        MemoryProviderRequest, MemoryProviderRequestId, MemoryProviderResponse,
-        MemoryProviderResponseBody, MemoryProviderScope, MemoryProviderTransport,
+        MemoryProviderRequest, MemoryProviderRequestId, MemoryProviderResponseBody,
+        MemoryProviderScope, MemoryProviderTransport,
     };
     use crate::{ProviderError, ProviderProtocolVersion};
 
@@ -593,6 +607,8 @@ mod tests {
     impl super::sealed::Sealed for TestPayload {}
 
     impl super::MemoryProviderPayload for TestPayload {
+        type Result = &'static str;
+
         const OPERATION: MemoryProviderOperation = MemoryProviderOperation::ResolveContext;
     }
 
@@ -781,14 +797,13 @@ mod tests {
         assert_eq!(request.request_id(), &request_id);
         assert_eq!(request.operation(), MemoryProviderOperation::ResolveContext);
 
-        let success = MemoryProviderResponse::success(&request, "context");
+        let success = request.success("context");
         assert_eq!(success.request_id(), &request_id);
         assert_eq!(
             success.body(),
             &MemoryProviderResponseBody::Success("context")
         );
-        let denied: MemoryProviderResponse<()> =
-            MemoryProviderResponse::error(&request, MemoryProviderErrorCode::AccessDenied);
+        let denied = request.error(MemoryProviderErrorCode::AccessDenied);
         assert_eq!(
             denied.body(),
             &MemoryProviderResponseBody::Error(MemoryProviderErrorCode::AccessDenied)
