@@ -38,6 +38,11 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - A Swift explicit-share coordinator for companion apps and public extension
   surfaces, with bounded preflight validation, generated idempotency IDs, and
   submission exclusively through the signed narrow gateway client.
+- A reference iOS Share Extension controller that accepts one user-selected
+  text item, loads device enrollment material from a shared Keychain group,
+  and documents strict public-API and secret-storage boundaries.
+- An iPhone Simulator SDK type-check gate for the reference Share Extension,
+  with all Swift and Clang compiler caches confined to ephemeral storage.
 - A Ring-backed WhatsApp Business webhook boundary that authenticates the raw
   bounded payload before parsing, extracts bounded text events, and derives
   domain-separated keyed account/sender lookup fingerprints.

@@ -643,6 +643,9 @@ This roadmap describes sequencing, not release dates.
   - [x] Provide a reusable Swift explicit-share coordinator that preflights
     selected text and opaque identifiers, generates event IDs, and submits only
     user-confirmed envelopes through the narrow signed gateway client.
+  - [x] Publish a public-API-only iOS Share Extension reference controller with
+    single-text selection, Keychain-held enrollment material, and explicit
+    limitations against Messages database or background access.
 - [ ] Community provider and agent adapters.
 
 ## Release gates
