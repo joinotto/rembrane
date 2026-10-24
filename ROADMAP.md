@@ -722,6 +722,8 @@ This roadmap describes sequencing, not release dates.
         adapter may report projection success.
         - [x] Bind readiness verification to the exact authorized projection
           for scoped search convergence.
+        - [x] Serialize the current v5 `query` field for readiness and recall
+          rather than the legacy `q` spelling.
       - [x] Strictly decode bounded search records and exact partial-
         deletion outcomes before connecting the HTTP client.
         - [x] Decode internal and caller-defined document identities

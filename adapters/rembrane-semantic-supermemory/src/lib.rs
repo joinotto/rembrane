@@ -423,7 +423,6 @@ impl SupermemoryTransport for HttpSupermemoryTransport {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct SearchBody<'value> {
-    #[serde(rename = "q")]
     query: &'value str,
     search_mode: &'static str,
     limit: usize,
@@ -856,6 +855,20 @@ mod tests {
         .expect("serializable ingestion body");
         assert_eq!(body["id"], "doc-01");
         assert!(body.get("customId").is_none());
+    }
+
+    #[test]
+    fn search_serializes_the_v5_query_field() {
+        let body = serde_json::to_value(super::SearchBody {
+            query: "preferred name",
+            search_mode: "memories",
+            limit: 10,
+        })
+        .expect("serializable search body");
+        assert_eq!(body["query"], "preferred name");
+        assert_eq!(body["searchMode"], "memories");
+        assert_eq!(body["limit"], 10);
+        assert!(body.get("q").is_none());
     }
 
     #[test]

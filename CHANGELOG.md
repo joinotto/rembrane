@@ -73,6 +73,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   lifecycle uses exact document identity and retrieval remains bounded search.
 - Current Supermemory v5 ingestion compatibility using the caller-defined
   `id` field, with strict bounded response status and identity confirmation.
+- Current Supermemory v5 search compatibility using the `query` request field
+  for both readiness convergence and semantic recall.
 - A public-API-only iMessage app extension reference with explicit text entry,
   review, confirmation, Keychain-held enrollment material, narrow signed
   gateway submission, and an iPhone Simulator type-check gate.

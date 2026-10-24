@@ -78,8 +78,8 @@ that the new version is searchable or that the old version disappeared.
 The adapter must model indexing as retryable derived work:
 
 1. upsert the deterministic document ID;
-2. poll a bounded status endpoint until processing reaches a terminal state;
-3. verify the new canonical version through scoped search;
+2. issue bounded scoped search requests using the v5 `query` field;
+3. wait until the exact canonical ID and version become visible;
 4. only then allow the projection job to complete.
 
 Timeout, rate limiting, partial deletion, or non-terminal processing leave the
