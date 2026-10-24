@@ -19,6 +19,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Validated mobile enrollment upsert and idempotent revocation APIs using
   `WhenUnlockedThisDeviceOnly` Keychain accessibility, enabling companion-app
   setup without credentials in shell commands or extension bundles.
+- Bounded on-device mobile-share signing-key generation through
+  `SecRandomCopyBytes`, preventing companion setup flows from requiring secret
+  creation or transfer through a shell or pasteboard.
 - An Axum-facing remote MCP authorization boundary that rejects duplicate
   credential, host, origin, and session headers, authorizes the exact bounded
   JSON-RPC body, and maps 401/403/503 outcomes into safe HTTP responses before

@@ -141,6 +141,17 @@ private struct RembraneSmoke {
         } catch let error as RembraneAPIError {
             precondition(error.code == "invalid_keychain_configuration")
         }
+        let generatedSecret = try KeychainMobileShareEnrollmentStore
+            .generateSigningSecret()
+        precondition(generatedSecret.count == 32)
+        do {
+            _ = try KeychainMobileShareEnrollmentStore.generateSigningSecret(
+                byteCount: 16
+            )
+            preconditionFailure("short generated signing keys must be rejected")
+        } catch let error as RembraneAPIError {
+            precondition(error.code == "invalid_signing_key_size")
+        }
         #endif
     }
 }

@@ -246,6 +246,27 @@ public struct KeychainMobileShareEnrollmentStore: Sendable {
         self.accessGroup = accessGroup
     }
 
+    /// Generates a new device-local signing secret with the operating
+    /// system's cryptographically secure random source.
+    public static func generateSigningSecret(byteCount: Int = 32) throws -> Data {
+        guard (32...64).contains(byteCount) else {
+            throw RembraneAPIError(
+                status: 0,
+                code: "invalid_signing_key_size",
+                message: "Mobile-share signing keys must contain 32 to 64 bytes"
+            )
+        }
+        var bytes = [UInt8](repeating: 0, count: byteCount)
+        guard SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) == errSecSuccess else {
+            throw RembraneAPIError(
+                status: 0,
+                code: "secure_random_unavailable",
+                message: "A device signing key could not be generated"
+            )
+        }
+        return Data(bytes)
+    }
+
     public func load() throws -> RembraneMobileShareEnrollment {
         let accountID = try readUTF8(account: "rembrane.account-id")
         let deviceID = try readUTF8(account: "rembrane.device-id")

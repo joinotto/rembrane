@@ -36,7 +36,9 @@ provisioned to the device Keychain. Never store either secret in source,
 The containing companion app can call
 `KeychainMobileShareEnrollmentStore.save(_:)` during an explicit enrollment
 flow and `remove()` during device revocation. Stored items use
-`WhenUnlockedThisDeviceOnly` accessibility.
+`WhenUnlockedThisDeviceOnly` accessibility. Generate a new secret on the
+device with `KeychainMobileShareEnrollmentStore.generateSigningSecret()`
+rather than transporting one through logs, pasteboards, or shell commands.
 
 The controller deliberately cancels when more than one text provider is
 present. Product UI may show a confirmation screen before submission, but

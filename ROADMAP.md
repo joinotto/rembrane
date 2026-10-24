@@ -664,6 +664,8 @@ This roadmap describes sequencing, not release dates.
     targets.
     - [x] Support validated device-only upsert and idempotent local revocation
       for companion-app enrollment flows.
+    - [x] Generate bounded signing secrets from the operating system secure
+      random source directly on the enrolled Apple device.
   - [x] Provide a reusable Swift explicit-share coordinator that preflights
     selected text and opaque identifiers, generates event IDs, and submits only
     user-confirmed envelopes through the narrow signed gateway client.
