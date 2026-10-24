@@ -102,6 +102,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - macOS Keychain workspace-key resolver selected through
   `REMBRANE_KEY_PROVIDER=macos-keychain`, plus provider-aware CLI, privacy
   diagnostics, MCP configuration generation, and secret-safe setup guidance.
+- Typed macOS Keychain key references and CLI keyring resolution for one active
+  key plus metadata-only historical `key_id=account` entries, allowing old
+  ciphertext reads after rotation without exporting key material.
 - Versioned discovery, OpenAPI, and MCP protocol specifications.
 - Tenant-isolated SQLite canonical schema with encrypted-payload metadata.
 - Versioned SQLite initialization with legacy-schema adoption, idempotent

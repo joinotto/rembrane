@@ -7,7 +7,7 @@ use rembrane_application::{
 };
 use rembrane_config::{ProviderConnection, ProviderKind, ProviderPlacement, SecretReference};
 use rembrane_contracts::ResolveContextRequest;
-use rembrane_crypto_rustcrypto::RustCryptoRecordCipher;
+use rembrane_crypto_rustcrypto::RustCryptoKeyringCipher;
 use rembrane_domain::{
     CanonicalEvent, ClientId, ContextPackId, DisclosureId, EventId, EventPayload, EvidenceId,
     EvidenceReference, EvidenceSource, Membership, MemoryId, MemoryRecord, MemoryScope, Principal,
@@ -134,6 +134,7 @@ fn mcp_environment_variables(key_provider: &str) -> Result<Vec<&'static str>, St
             "REMBRANE_WORKSPACE_KEY_ID",
             "REMBRANE_KEYCHAIN_SERVICE",
             "REMBRANE_KEYCHAIN_ACCOUNT",
+            "REMBRANE_KEYCHAIN_HISTORICAL_KEYS",
         ]),
         provider => {
             return Err(format!(
@@ -270,7 +271,7 @@ fn restore(arguments: &[String]) -> Result<(), String> {
     let result = (|| {
         let principal_id = PrincipalId::new(option(arguments, "--principal")?);
         let workspace_id = WorkspaceId::new(option(arguments, "--workspace")?);
-        let cipher = RustCryptoRecordCipher::from_configured_provider()
+        let cipher = RustCryptoKeyringCipher::from_configured_provider()
             .map_err(|error| format!("cannot load workspace cipher: {error}"))?;
         let store = SqliteStore::open(destination)
             .map_err(|error| format!("cannot open restored database: {error}"))?
@@ -820,7 +821,7 @@ fn encrypted_store(
     arguments: &[String],
 ) -> Result<
     (
-        SqliteStore<RustCryptoRecordCipher>,
+        SqliteStore<RustCryptoKeyringCipher>,
         PrincipalId,
         WorkspaceId,
     ),
@@ -829,7 +830,7 @@ fn encrypted_store(
     let database = option(arguments, "--database")?;
     let principal_id = PrincipalId::new(option(arguments, "--principal")?);
     let workspace_id = WorkspaceId::new(option(arguments, "--workspace")?);
-    let cipher = RustCryptoRecordCipher::from_configured_provider()
+    let cipher = RustCryptoKeyringCipher::from_configured_provider()
         .map_err(|error| format!("cannot load workspace cipher: {error}"))?;
     let store = SqliteStore::open(database)
         .map_err(|error| format!("cannot open database: {error}"))?
@@ -1304,6 +1305,7 @@ mod tests {
 
         assert!(config.contains("\"REMBRANE_KEYCHAIN_SERVICE\""));
         assert!(config.contains("\"REMBRANE_KEYCHAIN_ACCOUNT\""));
+        assert!(config.contains("\"REMBRANE_KEYCHAIN_HISTORICAL_KEYS\""));
         assert!(!config.contains("REMBRANE_WORKSPACE_KEY_HEX"));
     }
 }

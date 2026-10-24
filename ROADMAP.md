@@ -58,7 +58,8 @@ This roadmap describes sequencing, not release dates.
     duplicate-safe versioned record-cipher keyring.
   - [x] Resolve a single active key from macOS Keychain without environment
     key material.
-  - [ ] Resolve rotating keyrings from macOS Keychain.
+  - [x] Resolve active and historical rotating keyrings from macOS Keychain
+    using metadata-only references.
   - [ ] Add Windows DPAPI and Linux Secret Service adapters.
   - [ ] Resolve or unwrap keyring material through customer KMS adapters.
 - [x] Retrieve minimal context through local stdio MCP.

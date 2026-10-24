@@ -109,6 +109,7 @@ export REMBRANE_KEY_PROVIDER=macos-keychain
 export REMBRANE_WORKSPACE_KEY_ID=local-key-v1
 export REMBRANE_KEYCHAIN_SERVICE=org.rembrane.workspace.test
 export REMBRANE_KEYCHAIN_ACCOUNT="$REMBRANE_WORKSPACE_ID"
+export REMBRANE_KEYCHAIN_HISTORICAL_KEYS=
 openssl rand -hex 32 | /usr/bin/security add-generic-password \
   -U -s "$REMBRANE_KEYCHAIN_SERVICE" -a "$REMBRANE_KEYCHAIN_ACCOUNT" -w
 unset REMBRANE_WORKSPACE_KEY_HEX

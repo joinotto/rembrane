@@ -19,10 +19,48 @@ pub struct RustCryptoRecordCipher {
     key: Zeroizing<[u8; 32]>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MacosKeychainKeyReference {
+    key_id: String,
+    service: String,
+    account: String,
+}
+
+impl MacosKeychainKeyReference {
+    pub fn new(
+        key_id: impl Into<String>,
+        service: impl Into<String>,
+        account: impl Into<String>,
+    ) -> Result<Self, CryptoError> {
+        let key_id = key_id.into();
+        let service = service.into();
+        let account = account.into();
+        if key_id.trim().is_empty()
+            || service.trim().is_empty()
+            || account.trim().is_empty()
+            || key_id.trim() != key_id
+            || service.trim() != service
+            || account.trim() != account
+        {
+            return Err(CryptoError::KeyUnavailable);
+        }
+        Ok(Self {
+            key_id,
+            service,
+            account,
+        })
+    }
+
+    #[must_use]
+    pub fn key_id(&self) -> &str {
+        &self.key_id
+    }
+}
+
 impl RustCryptoRecordCipher {
     pub fn new(key_id: impl Into<String>, key: [u8; 32]) -> Result<Self, CryptoError> {
         let key_id = key_id.into();
-        if key_id.trim().is_empty() {
+        if key_id.trim().is_empty() || key_id.trim() != key_id {
             return Err(CryptoError::KeyUnavailable);
         }
         Ok(Self {
@@ -63,6 +101,16 @@ impl RustCryptoRecordCipher {
         let encoded = Zeroizing::new(encoded);
         let key = decode_key(encoded.trim())?;
         Self::new(key_id, key)
+    }
+
+    pub fn from_macos_keychain_reference(
+        reference: &MacosKeychainKeyReference,
+    ) -> Result<Self, CryptoError> {
+        Self::from_macos_keychain(
+            reference.key_id.clone(),
+            &reference.service,
+            &reference.account,
+        )
     }
 
     #[cfg(not(target_os = "macos"))]
@@ -137,6 +185,45 @@ impl RustCryptoKeyringCipher {
         Ok(Self { active, historical })
     }
 
+    pub fn from_macos_keychain(
+        active: MacosKeychainKeyReference,
+        historical: Vec<MacosKeychainKeyReference>,
+    ) -> Result<Self, CryptoError> {
+        validate_key_references(&active, &historical)?;
+        let active = RustCryptoRecordCipher::from_macos_keychain_reference(&active)?;
+        let historical = historical
+            .iter()
+            .map(RustCryptoRecordCipher::from_macos_keychain_reference)
+            .collect::<Result<Vec<_>, _>>()?;
+        Self::new(active, historical)
+    }
+
+    pub fn from_configured_provider() -> Result<Self, CryptoError> {
+        match std::env::var("REMBRANE_KEY_PROVIDER")
+            .unwrap_or_else(|_| "environment".to_owned())
+            .as_str()
+        {
+            "environment" => Self::new(RustCryptoRecordCipher::from_environment()?, Vec::new()),
+            "macos-keychain" => {
+                let key_id = std::env::var("REMBRANE_WORKSPACE_KEY_ID")
+                    .map_err(|_| CryptoError::KeyUnavailable)?;
+                let service = std::env::var("REMBRANE_KEYCHAIN_SERVICE")
+                    .map_err(|_| CryptoError::KeyUnavailable)?;
+                let account = std::env::var("REMBRANE_KEYCHAIN_ACCOUNT")
+                    .map_err(|_| CryptoError::KeyUnavailable)?;
+                let active = MacosKeychainKeyReference::new(key_id, &service, account)?;
+                let historical = std::env::var("REMBRANE_KEYCHAIN_HISTORICAL_KEYS")
+                    .ok()
+                    .filter(|value| !value.trim().is_empty())
+                    .map(|value| parse_keychain_history(&service, &value))
+                    .transpose()?
+                    .unwrap_or_default();
+                Self::from_macos_keychain(active, historical)
+            }
+            _ => Err(CryptoError::KeyUnavailable),
+        }
+    }
+
     #[must_use]
     pub fn active_key_id(&self) -> &str {
         self.active.key_id()
@@ -150,6 +237,44 @@ impl RustCryptoKeyringCipher {
             .iter()
             .find(|candidate| candidate.key_id() == key_id)
     }
+}
+
+fn parse_keychain_history(
+    service: &str,
+    value: &str,
+) -> Result<Vec<MacosKeychainKeyReference>, CryptoError> {
+    value
+        .split(',')
+        .map(str::trim)
+        .map(|entry| {
+            let (key_id, account) = entry.split_once('=').ok_or(CryptoError::KeyUnavailable)?;
+            if account.contains('=') {
+                return Err(CryptoError::KeyUnavailable);
+            }
+            MacosKeychainKeyReference::new(key_id, service, account)
+        })
+        .collect()
+}
+
+fn validate_key_references(
+    active: &MacosKeychainKeyReference,
+    historical: &[MacosKeychainKeyReference],
+) -> Result<(), CryptoError> {
+    if historical
+        .iter()
+        .any(|candidate| candidate.key_id() == active.key_id())
+    {
+        return Err(CryptoError::KeyUnavailable);
+    }
+    for (index, candidate) in historical.iter().enumerate() {
+        if historical[..index]
+            .iter()
+            .any(|earlier| earlier.key_id() == candidate.key_id())
+        {
+            return Err(CryptoError::KeyUnavailable);
+        }
+    }
+    Ok(())
 }
 
 fn decode_key(encoded: &str) -> Result<[u8; 32], CryptoError> {
@@ -242,7 +367,10 @@ mod tests {
     use rembrane_crypto::{CryptoError, EncryptionContext, PayloadPurpose, RecordCipher};
     use rembrane_domain::WorkspaceId;
 
-    use super::{RustCryptoKeyringCipher, RustCryptoRecordCipher};
+    use super::{
+        MacosKeychainKeyReference, RustCryptoKeyringCipher, RustCryptoRecordCipher,
+        parse_keychain_history, validate_key_references,
+    };
 
     fn context(workspace: &str) -> EncryptionContext {
         EncryptionContext::new(
@@ -334,5 +462,38 @@ mod tests {
             keyring.open(&context("workspace_01"), &foreign),
             Err(CryptoError::KeyUnavailable)
         );
+    }
+
+    #[test]
+    fn keychain_references_are_nonempty_and_duplicate_safe() {
+        assert_eq!(
+            MacosKeychainKeyReference::new("", "org.rembrane", "workspace"),
+            Err(CryptoError::KeyUnavailable)
+        );
+        let active =
+            MacosKeychainKeyReference::new("key_v2", "org.rembrane.workspace", "workspace:key_v2")
+                .expect("active reference should be valid");
+        let old =
+            MacosKeychainKeyReference::new("key_v1", "org.rembrane.workspace", "workspace:key_v1")
+                .expect("historical reference should be valid");
+        assert_eq!(validate_key_references(&active, &[old]), Ok(()));
+        assert_eq!(
+            validate_key_references(&active, &[active.clone()]),
+            Err(CryptoError::KeyUnavailable)
+        );
+    }
+
+    #[test]
+    fn parses_metadata_only_keychain_history() {
+        let references = parse_keychain_history(
+            "org.rembrane.workspace",
+            "key_v1=workspace:key_v1,key_v0=workspace:key_v0",
+        )
+        .expect("history should parse");
+
+        assert_eq!(references.len(), 2);
+        assert_eq!(references[0].key_id(), "key_v1");
+        assert!(parse_keychain_history("org.rembrane.workspace", "invalid").is_err());
+        assert!(parse_keychain_history("org.rembrane.workspace", "key=account=extra").is_err());
     }
 }

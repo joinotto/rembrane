@@ -160,6 +160,7 @@ export REMBRANE_KEY_PROVIDER=macos-keychain
 export REMBRANE_WORKSPACE_KEY_ID=local-key-v1
 export REMBRANE_KEYCHAIN_SERVICE=org.rembrane.workspace
 export REMBRANE_KEYCHAIN_ACCOUNT="$REMBRANE_WORKSPACE_ID"
+export REMBRANE_KEYCHAIN_HISTORICAL_KEYS=
 
 openssl rand -hex 32 | /usr/bin/security add-generic-password \
   -U -s "$REMBRANE_KEYCHAIN_SERVICE" -a "$REMBRANE_KEYCHAIN_ACCOUNT" -w
@@ -168,6 +169,19 @@ openssl rand -hex 32 | /usr/bin/security add-generic-password \
 The final `-w` prompts through standard input, so key material is not placed in
 the process arguments. Do not use `-A`; retain Keychain access control. Windows,
 Linux, HSM, and customer-KMS resolvers remain roadmap work.
+
+After rotating to a new active item, retain old items only while historical
+ciphertext still references them and list their metadata as comma-separated
+`key_id=account` entries:
+
+```text
+export REMBRANE_WORKSPACE_KEY_ID=local-key-v2
+export REMBRANE_KEYCHAIN_ACCOUNT="$REMBRANE_WORKSPACE_ID:key_v2"
+export REMBRANE_KEYCHAIN_HISTORICAL_KEYS="local-key-v1=$REMBRANE_WORKSPACE_ID"
+```
+
+New records use `local-key-v2`; records whose envelope names `local-key-v1`
+are resolved through the historical account. Key bytes remain in Keychain.
 
 Generate a secret-safe stdio MCP configuration for a supported coding client:
 
