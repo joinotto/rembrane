@@ -91,6 +91,38 @@ private struct RembraneSmoke {
                 .contains(#""device_id":"device_01""#) == true
         )
 
+        let coordinatedTransport = MockTransport()
+        let coordinatedClient = try RembraneMobileShareClient(
+            baseURL: URL(string: "http://127.0.0.1:8791")!,
+            transport: coordinatedTransport,
+            signer: MockShareSigner()
+        )
+        let coordinator = try RembraneExplicitShareCoordinator(
+            accountID: "account_01",
+            deviceID: "device_01",
+            submitter: coordinatedClient
+        )
+        try await coordinator.shareSelectedText(
+            "User-selected iMessage text",
+            eventID: "share_coordinated_01",
+            sharedAtEpochSeconds: 1_792_867_200
+        )
+        let coordinatedRequest = await coordinatedTransport.request
+        precondition(
+            String(data: coordinatedRequest?.httpBody ?? Data(), encoding: .utf8)?
+                .contains(#""event_id":"share_coordinated_01""#) == true
+        )
+        do {
+            try await coordinator.shareSelectedText(
+                " ",
+                eventID: "invalid",
+                sharedAtEpochSeconds: 1_792_867_200
+            )
+            preconditionFailure("empty selected text must be rejected")
+        } catch let error as RembraneAPIError {
+            precondition(error.code == "invalid_share_text")
+        }
+
         #if canImport(CryptoKit)
         let cryptoSigner = try CryptoKitMobileShareSigner(
             secret: Data(repeating: 7, count: 32)

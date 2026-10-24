@@ -353,3 +353,85 @@ public struct RembraneMobileShareClient<
         }
     }
 }
+
+public protocol RembraneMobileShareSubmitting: Sendable {
+    func share(_ envelope: RembraneMobileShareEnvelope) async throws
+}
+
+extension RembraneMobileShareClient: RembraneMobileShareSubmitting {}
+
+public struct RembraneExplicitShareCoordinator<
+    Submitter: RembraneMobileShareSubmitting
+>: Sendable {
+    private let accountID: String
+    private let deviceID: String
+    private let submitter: Submitter
+
+    public init(
+        accountID: String,
+        deviceID: String,
+        submitter: Submitter
+    ) throws {
+        guard Self.validIdentifier(accountID),
+              Self.validIdentifier(deviceID) else {
+            throw RembraneAPIError(
+                status: 0,
+                code: "invalid_share_identity",
+                message: "Account and device identifiers must be safe and bounded"
+            )
+        }
+        self.accountID = accountID
+        self.deviceID = deviceID
+        self.submitter = submitter
+    }
+
+    @discardableResult
+    public func shareSelectedText(_ text: String) async throws -> String {
+        let eventID = UUID().uuidString.lowercased()
+        let timestamp = UInt64(Date().timeIntervalSince1970)
+        try await shareSelectedText(
+            text,
+            eventID: eventID,
+            sharedAtEpochSeconds: timestamp
+        )
+        return eventID
+    }
+
+    public func shareSelectedText(
+        _ text: String,
+        eventID: String,
+        sharedAtEpochSeconds: UInt64
+    ) async throws {
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              text.utf8.count <= 16_384 else {
+            throw RembraneAPIError(
+                status: 0,
+                code: "invalid_share_text",
+                message: "Selected text must be non-empty and at most 16384 UTF-8 bytes"
+            )
+        }
+        guard Self.validIdentifier(eventID), sharedAtEpochSeconds > 0 else {
+            throw RembraneAPIError(
+                status: 0,
+                code: "invalid_share_event",
+                message: "Share event identity and timestamp must be valid"
+            )
+        }
+        try await submitter.share(
+            RembraneMobileShareEnvelope(
+                accountID: accountID,
+                deviceID: deviceID,
+                eventID: eventID,
+                text: text,
+                sharedAtEpochSeconds: sharedAtEpochSeconds
+            )
+        )
+    }
+
+    private static func validIdentifier(_ value: String) -> Bool {
+        !value.isEmpty && value.utf8.count <= 256
+            && !value.utf8.contains {
+                $0 <= 0x20 || $0 == 0x7f
+            }
+    }
+}
