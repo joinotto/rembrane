@@ -125,6 +125,8 @@ This roadmap describes sequencing, not release dates.
     replaceable bounded HTTP transport.
     - [x] Provide a concrete HTTPS transport with authenticated client
       credentials, strict timeouts, no redirects, and bounded responses.
+    - [x] Resolve client credentials through the deployment-selected secret
+      resolver without fixed environment-variable names.
   - [x] Map every current MCP tool to one narrow OAuth scope and fail closed
     for unknown tools.
   - [x] Add transport-neutral HTTP authorization middleware with strict bearer

@@ -36,3 +36,8 @@ the next application-owned resolution without rebuilding Rembrane.
 duplicate-free ordered reference list through any `SecretResolver`. If one
 lookup fails, previously resolved values from that attempt are dropped through
 their zeroization guards and no partial credential set is returned.
+
+`HttpIntrospectionTransport::from_config` resolves the OAuth client-secret
+reference from a validated remote MCP profile through the same boundary. The
+resolved value remains zeroizing through validation, HTTP-client construction,
+use, and teardown; resolver failures are mapped to an opaque transport error.

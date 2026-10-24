@@ -8,7 +8,9 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+rembrane-config = { path = "../../crates/rembrane-config" }
 rembrane-oauth-introspection = { path = "../rembrane-oauth-introspection" }
+rembrane-secret-local = { path = "../rembrane-secret-local" }
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

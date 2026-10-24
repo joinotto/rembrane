@@ -50,6 +50,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Hardened OAuth introspection HTTP transport validation with parsed HTTPS
   endpoints, bounded control-free credentials and bearer tokens, disabled
   environment proxies, and socket-free exact RFC 7662 request tests.
+- OAuth introspection transport construction from validated remote MCP
+  profiles through any deployment-selected secret resolver, retaining the
+  resolved client secret in zeroizing storage across every failure path.
 - Fail-closed OAuth introspection claim bounds covering audience cardinality,
   issuer and identity sizes, scope size, and control-character rejection
   before claims become canonical tenant identity.

@@ -3,9 +3,11 @@
 use std::io::Read;
 use std::time::Duration;
 
+use rembrane_config::RemoteMcpConfig;
 use rembrane_oauth_introspection::{
     IntrospectionResponse, IntrospectionTransport, IntrospectionTransportError,
 };
+use rembrane_secret_local::SecretResolver;
 use reqwest::Url;
 use reqwest::blocking::{Client, Request};
 use serde::Deserialize;
@@ -35,7 +37,38 @@ impl HttpIntrospectionTransport {
         client_id: String,
         client_secret: String,
     ) -> Result<Self, IntrospectionTransportError> {
-        let endpoint = validate_endpoint(endpoint.as_ref())?;
+        Self::new_with_secret(endpoint.as_ref(), client_id, Zeroizing::new(client_secret))
+    }
+
+    /// Resolves the client secret referenced by a validated remote MCP profile.
+    ///
+    /// # Errors
+    ///
+    /// Returns an opaque error when secret resolution or transport
+    /// construction fails.
+    pub fn from_config<Resolver>(
+        config: &RemoteMcpConfig,
+        resolver: &Resolver,
+    ) -> Result<Self, IntrospectionTransportError>
+    where
+        Resolver: SecretResolver + ?Sized,
+    {
+        let client_secret = resolver
+            .resolve(config.introspection_client_secret())
+            .map_err(|_| IntrospectionTransportError)?;
+        Self::new_with_secret(
+            config.introspection_endpoint(),
+            config.introspection_client_id().to_owned(),
+            client_secret,
+        )
+    }
+
+    fn new_with_secret(
+        endpoint: &str,
+        client_id: String,
+        client_secret: Zeroizing<String>,
+    ) -> Result<Self, IntrospectionTransportError> {
+        let endpoint = validate_endpoint(endpoint)?;
         validate_client_id(&client_id)?;
         validate_secret(&client_secret)?;
         let client = Client::builder()
@@ -50,7 +83,7 @@ impl HttpIntrospectionTransport {
             client,
             endpoint,
             client_id,
-            client_secret: Zeroizing::new(client_secret),
+            client_secret,
         })
     }
 
@@ -199,7 +232,10 @@ impl Audience {
 
 #[cfg(test)]
 mod tests {
+    use rembrane_config::{RemoteMcpConfig, SecretReference};
+    use rembrane_secret_local::{SecretResolutionError, SecretResolver};
     use reqwest::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE};
+    use zeroize::Zeroizing;
 
     use super::{
         HttpIntrospectionTransport, MAXIMUM_CLIENT_ID_BYTES, MAXIMUM_CLIENT_SECRET_BYTES,
@@ -296,6 +332,49 @@ mod tests {
                 .and_then(reqwest::blocking::Body::as_bytes)
                 .expect("form body"),
             b"token=opaque-access-token&token_type_hint=access_token"
+        );
+    }
+
+    #[test]
+    fn resolves_configured_client_secret_without_a_fixed_environment_name() {
+        struct FixtureResolver;
+
+        impl SecretResolver for FixtureResolver {
+            fn resolve(
+                &self,
+                reference: &SecretReference,
+            ) -> Result<Zeroizing<String>, SecretResolutionError> {
+                assert_eq!(
+                    reference.environment_variable(),
+                    Some("REMBrane_TEST_OAUTH_SECRET")
+                );
+                Ok(Zeroizing::new("client-secret".to_owned()))
+            }
+        }
+
+        let config = RemoteMcpConfig::new(
+            "https://memory.example.test/mcp".to_owned(),
+            "https://identity.example.test".to_owned(),
+            "https://identity.example.test/oauth/introspect".to_owned(),
+            "rembrane".to_owned(),
+            SecretReference::environment("REMBrane_TEST_OAUTH_SECRET")
+                .expect("valid secret reference"),
+            vec!["https://agent.example.test".to_owned()],
+        )
+        .expect("valid remote MCP config");
+        let transport = HttpIntrospectionTransport::from_config(&config, &FixtureResolver)
+            .expect("resolved transport");
+        let request = transport
+            .build_request("opaque-access-token")
+            .expect("request");
+
+        assert_eq!(
+            request.url().as_str(),
+            "https://identity.example.test/oauth/introspect"
+        );
+        assert_eq!(
+            request.headers()[AUTHORIZATION],
+            "Basic cmVtYnJhbmU6Y2xpZW50LXNlY3JldA=="
         );
     }
 
