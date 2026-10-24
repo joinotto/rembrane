@@ -16,6 +16,7 @@ mod projection;
 mod provenance;
 mod scope;
 mod share_proposal;
+mod trip;
 mod workspace;
 
 pub use activity::{ActivityCheckpoint, CheckpointError, MAX_CHECKPOINT_PAYLOAD_BYTES};
@@ -24,7 +25,8 @@ pub use event::{CanonicalEvent, EventError, EventPayload};
 pub use grant::{ReadGrant, ReadScope, WriteGrant, WritePermission};
 pub use identifier::{
     ActivityId, CheckpointId, ClientId, ContextPackId, DisclosureId, EntityId, EventId, EvidenceId,
-    InvitationId, MemoryId, PrincipalId, ProjectionJobId, ProviderId, ShareProposalId, WorkspaceId,
+    InvitationId, MemoryId, PrincipalId, ProjectionJobId, ProviderId, ShareProposalId,
+    TripConstraintId, TripDecisionId, TripParticipantId, WorkspaceId,
 };
 pub use invitation::{Invitation, InvitationError, InvitationStatus};
 pub use member_scope::MemberScopeGrant;
@@ -35,6 +37,10 @@ pub use projection::{ProjectionJob, ProjectionJobError, ProjectionOperation, Pro
 pub use provenance::{EvidenceReference, EvidenceSource};
 pub use scope::MemoryScope;
 pub use share_proposal::{MemoryShareProposal, ShareProposalError, ShareProposalStatus};
+pub use trip::{
+    DecisionStatus, TravelDateWindow, Trip, TripConstraint, TripConstraintKind, TripDecision,
+    TripError, TripParticipant,
+};
 pub use workspace::{
     Membership, MembershipStatus, Principal, Workspace, WorkspaceKind, WorkspaceRole,
 };

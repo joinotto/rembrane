@@ -98,6 +98,10 @@ This roadmap describes sequencing, not release dates.
 
 - [x] Reuse layered domain/entity context for travel and trip constraints.
 - [ ] Trip entities, participants, constraints, and decisions.
+  - [x] Canonical versioned trip aggregate with opaque participants, validated
+    date windows, evidence-backed constraints, and attributed decisions.
+  - [ ] Encrypted trip repository, audit events, and authorized application
+    services.
 - [ ] Booking-research evidence and expiry.
 - [ ] Cross-agent activity continuation.
 - [ ] Sensitive travel-data permissions.

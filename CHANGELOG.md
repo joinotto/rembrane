@@ -120,6 +120,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   manifest, generates bounded monotonic request IDs, rejects oversized
   plaintext before transport, enforces the selected algorithm, and rejects
   oversized open responses.
+- Canonical versioned trip aggregate with real-calendar date validation,
+  destinations, opaque participant identities, participant-scoped
+  evidence-backed constraints, attributed proposed/selected/rejected
+  decisions, duplicate denial, and aggregate payload ceilings.
 - Versioned discovery, OpenAPI, and MCP protocol specifications.
 - Tenant-isolated SQLite canonical schema with encrypted-payload metadata.
 - Versioned SQLite initialization with legacy-schema adoption, idempotent

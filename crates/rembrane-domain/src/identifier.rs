@@ -50,6 +50,9 @@ identifier!(MemoryId);
 identifier!(PrincipalId);
 identifier!(ProjectionJobId);
 identifier!(ProviderId);
+identifier!(TripConstraintId);
+identifier!(TripDecisionId);
+identifier!(TripParticipantId);
 identifier!(ShareProposalId);
 identifier!(WorkspaceId);
 
