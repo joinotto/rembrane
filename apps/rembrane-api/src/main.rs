@@ -38,6 +38,7 @@ struct AppState {
 struct Inner {
     runtime: Mutex<Runtime>,
     bearer_token: Zeroizing<String>,
+    oauth_resource_metadata: Option<OAuthProtectedResourceMetadata>,
 }
 
 struct Runtime {
@@ -302,6 +303,15 @@ struct Problem {
     message: &'static str,
 }
 
+#[derive(Clone, Serialize)]
+struct OAuthProtectedResourceMetadata {
+    resource: String,
+    authorization_servers: Vec<String>,
+    scopes_supported: Vec<&'static str>,
+    bearer_methods_supported: Vec<&'static str>,
+    resource_name: &'static str,
+}
+
 struct ApiError {
     status: StatusCode,
     code: &'static str,
@@ -329,6 +339,7 @@ impl AppState {
         let client_id = ClientId::new(required_environment("REMBRANE_CLIENT_ID")?);
         let bearer_token = Zeroizing::new(required_environment("REMBRANE_API_TOKEN")?);
         anyhow::ensure!(!bearer_token.is_empty(), "REMBRANE_API_TOKEN is empty");
+        let oauth_resource_metadata = oauth_resource_metadata_from_environment()?;
         let cipher = RustCryptoRecordCipher::from_environment()
             .context("failed to load workspace cipher")?;
         let read_scopes = parse_read_scopes(
@@ -369,9 +380,21 @@ impl AppState {
                     next_id,
                 }),
                 bearer_token,
+                oauth_resource_metadata,
             }),
         })
     }
+}
+
+async fn oauth_protected_resource(
+    State(state): State<AppState>,
+) -> Result<Json<OAuthProtectedResourceMetadata>, ApiError> {
+    state
+        .inner
+        .oauth_resource_metadata
+        .clone()
+        .map(Json)
+        .ok_or_else(ApiError::not_found)
 }
 
 async fn create_trip(
@@ -820,6 +843,14 @@ impl ApiError {
         }
     }
 
+    const fn not_found() -> Self {
+        Self {
+            status: StatusCode::NOT_FOUND,
+            code: "not_found",
+            message: "resource is not available",
+        }
+    }
+
     const fn access_denied() -> Self {
         Self {
             status: StatusCode::FORBIDDEN,
@@ -1077,6 +1108,37 @@ fn required_environment(name: &str) -> Result<String> {
     std::env::var(name).with_context(|| format!("{name} is required"))
 }
 
+fn oauth_resource_metadata_from_environment() -> Result<Option<OAuthProtectedResourceMetadata>> {
+    let resource = std::env::var("REMBRANE_MCP_RESOURCE").ok();
+    let issuer = std::env::var("REMBRANE_OAUTH_ISSUER").ok();
+    match (resource, issuer) {
+        (None, None) => Ok(None),
+        (Some(resource), Some(issuer)) => {
+            anyhow::ensure!(
+                resource.starts_with("https://") && issuer.starts_with("https://"),
+                "remote MCP resource and OAuth issuer must use HTTPS"
+            );
+            Ok(Some(OAuthProtectedResourceMetadata {
+                resource,
+                authorization_servers: vec![issuer],
+                scopes_supported: vec![
+                    "rembrane:context:read",
+                    "rembrane:memory:write",
+                    "rembrane:checkpoint:read",
+                    "rembrane:checkpoint:write",
+                    "rembrane:travel:read",
+                    "rembrane:travel:write",
+                ],
+                bearer_methods_supported: vec!["header"],
+                resource_name: "Rembrane remote MCP",
+            }))
+        }
+        _ => anyhow::bail!(
+            "REMBRANE_MCP_RESOURCE and REMBRANE_OAUTH_ISSUER must be configured together"
+        ),
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let state = AppState::from_environment()?;
@@ -1095,6 +1157,10 @@ async fn main() -> Result<()> {
         .with_context(|| format!("failed to bind {address}"))?;
     let app = Router::new()
         .route("/health", get(health))
+        .route(
+            "/.well-known/oauth-protected-resource/mcp",
+            get(oauth_protected_resource),
+        )
         .route("/v1/context/resolve", post(resolve_context))
         .route("/v1/travel/trips", post(create_trip))
         .route("/v1/travel/trip-participants", post(add_trip_participant))

@@ -74,6 +74,8 @@ This roadmap describes sequencing, not release dates.
 - [ ] Add remote Streamable HTTP MCP with OAuth.
   - [x] Define HTTPS endpoints, RFC 9728 discovery metadata, bearer challenges,
     verified connection identity, scope ceilings, and session security rules.
+  - [x] Serve opt-in RFC 9728 protected-resource metadata from the HTTP
+    service, requiring an exact HTTPS resource and authorization-server pair.
   - [x] Add a fail-closed verified-token claims contract.
   - [x] Add a transport-independent authentication boundary backed by a
     signature-verifying or authenticated-introspection adapter.
