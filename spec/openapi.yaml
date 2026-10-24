@@ -358,6 +358,12 @@ components:
           description: |
             Requires the connection-level travel-source-references permission.
             Requests without that permission fail closed.
+        includeSensitiveProfile:
+          type: boolean
+          default: false
+          description: |
+            Requires the connection-level travel-sensitive-profile permission.
+            Controls participant labels, constraints, and decisions.
     AddTripParticipantRequest:
       type: object
       additionalProperties: false
@@ -553,6 +559,78 @@ components:
         version:
           type: integer
           minimum: 1
+        sensitiveProfile:
+          $ref: "#/components/schemas/TravelSensitiveProfile"
+    TravelSensitiveProfile:
+      type: object
+      additionalProperties: false
+      required: [participants, constraints, decisions]
+      properties:
+        participants:
+          type: array
+          items:
+            $ref: "#/components/schemas/TravelParticipant"
+        constraints:
+          type: array
+          items:
+            $ref: "#/components/schemas/TravelConstraint"
+        decisions:
+          type: array
+          items:
+            $ref: "#/components/schemas/TravelDecision"
+    TravelParticipant:
+      type: object
+      additionalProperties: false
+      required: [participantId, label]
+      properties:
+        participantId:
+          $ref: "#/components/schemas/OpaqueId"
+        label:
+          type: string
+    TravelConstraint:
+      type: object
+      additionalProperties: false
+      required: [constraintId, kind, statement, evidenceId]
+      properties:
+        constraintId:
+          $ref: "#/components/schemas/OpaqueId"
+        participantId:
+          oneOf:
+            - $ref: "#/components/schemas/OpaqueId"
+            - type: "null"
+        kind:
+          enum:
+            - accessibility
+            - accommodation
+            - budget
+            - dietary
+            - documentation
+            - schedule
+            - transport
+            - other
+        statement:
+          type: string
+        evidenceId:
+          $ref: "#/components/schemas/OpaqueId"
+    TravelDecision:
+      type: object
+      additionalProperties: false
+      required: [decisionId, status, summary, decidedBy, evidenceId]
+      properties:
+        decisionId:
+          $ref: "#/components/schemas/OpaqueId"
+        status:
+          enum: [proposed, selected, rejected]
+        summary:
+          type: string
+        rationale:
+          type:
+            - string
+            - "null"
+        decidedBy:
+          $ref: "#/components/schemas/OpaqueId"
+        evidenceId:
+          $ref: "#/components/schemas/OpaqueId"
     TravelResearch:
       type: object
       additionalProperties: false

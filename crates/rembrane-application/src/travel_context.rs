@@ -1,7 +1,8 @@
 use rembrane_domain::{
     BookingResearch, BookingResearchId, BookingResearchKind, DisclosedBookingResearch,
-    DisclosureId, EntityId, EvidenceId, MemoryScope, ReadGrant, ReadPermission, ResearchFreshness,
-    TravelDisclosureReceipt, Trip,
+    DisclosureId, EntityId, EvidenceId, MemoryScope, PrincipalId, ReadGrant, ReadPermission,
+    ResearchFreshness, TravelDisclosureReceipt, Trip, TripConstraint, TripDecision,
+    TripParticipant,
 };
 
 use crate::{
@@ -16,13 +17,34 @@ pub struct ResolveTravelContextCommand {
     pub purpose: String,
     pub as_of: String,
     pub include_source_references: bool,
+    pub include_sensitive_profile: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TravelContext {
-    pub trip: Trip,
+    pub trip: TravelContextTrip,
     pub fresh_research: Vec<TravelContextResearch>,
     pub expired_research: Vec<TravelContextResearch>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TravelContextTrip {
+    pub id: EntityId,
+    pub owner_subject_id: PrincipalId,
+    pub title: String,
+    pub origin: String,
+    pub destinations: Vec<String>,
+    pub depart_not_before: String,
+    pub return_not_after: String,
+    pub version: u64,
+    pub sensitive_profile: Option<TravelSensitiveProfile>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TravelSensitiveProfile {
+    pub participants: Vec<TripParticipant>,
+    pub constraints: Vec<TripConstraint>,
+    pub decisions: Vec<TripDecision>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -63,6 +85,13 @@ where
             && !command
                 .grant
                 .allows_permission(ReadPermission::RevealTravelSourceReferences)
+        {
+            return Err(ApplicationError::AccessDenied);
+        }
+        if command.include_sensitive_profile
+            && !command
+                .grant
+                .allows_permission(ReadPermission::RevealTravelSensitiveProfile)
         {
             return Err(ApplicationError::AccessDenied);
         }
@@ -118,11 +147,12 @@ where
                 trip_version: trip.version(),
                 as_of: command.as_of.clone(),
                 source_references_included: command.include_source_references,
+                sensitive_profile_included: command.include_sensitive_profile,
                 research: disclosed_research,
             })?;
         let include_source_references = command.include_source_references;
         Ok(TravelContext {
-            trip,
+            trip: TravelContextTrip::new(&trip, command.include_sensitive_profile),
             fresh_research: fresh_research
                 .iter()
                 .map(|research| TravelContextResearch::new(research, include_source_references))
@@ -132,6 +162,26 @@ where
                 .map(|research| TravelContextResearch::new(research, include_source_references))
                 .collect(),
         })
+    }
+}
+
+impl TravelContextTrip {
+    fn new(trip: &Trip, include_sensitive_profile: bool) -> Self {
+        Self {
+            id: trip.id().clone(),
+            owner_subject_id: trip.owner_subject_id().clone(),
+            title: trip.title().to_owned(),
+            origin: trip.origin().to_owned(),
+            destinations: trip.destinations().to_vec(),
+            depart_not_before: trip.date_window().depart_not_before().to_owned(),
+            return_not_after: trip.date_window().return_not_after().to_owned(),
+            version: trip.version(),
+            sensitive_profile: include_sensitive_profile.then(|| TravelSensitiveProfile {
+                participants: trip.participants().to_vec(),
+                constraints: trip.constraints().to_vec(),
+                decisions: trip.decisions().to_vec(),
+            }),
+        }
     }
 }
 

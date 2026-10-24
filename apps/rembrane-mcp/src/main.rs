@@ -10,7 +10,8 @@ use rembrane_application::{
     ProposeMemoryCommand, RecordTripDecisionCommand, RememberPreferenceCommand,
     RememberPreferenceService, ResolveContextCommand, ResolveContextService,
     ResolveTravelContextCommand, ResumeActivityCommand, ReviseMemoryCommand, TravelContextResearch,
-    TravelContextService, TripService, UpdateCheckpointCommand,
+    TravelContextService, TravelContextTrip, TravelSensitiveProfile, TripService,
+    UpdateCheckpointCommand,
 };
 use rembrane_config::{parse_read_permissions, parse_read_scopes};
 use rembrane_contracts::ResolveContextRequest;
@@ -183,6 +184,7 @@ struct ResolveTravelContextParameters {
     purpose: String,
     as_of: String,
     include_source_references: Option<bool>,
+    include_sensitive_profile: Option<bool>,
 }
 
 #[derive(Serialize)]
@@ -237,6 +239,44 @@ struct TravelTripOutput {
     depart_not_before: String,
     return_not_after: String,
     version: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sensitive_profile: Option<TravelSensitiveProfileOutput>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TravelSensitiveProfileOutput {
+    participants: Vec<TravelParticipantOutput>,
+    constraints: Vec<TravelConstraintOutput>,
+    decisions: Vec<TravelDecisionOutput>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TravelParticipantOutput {
+    participant_id: String,
+    label: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TravelConstraintOutput {
+    constraint_id: String,
+    participant_id: Option<String>,
+    kind: &'static str,
+    statement: String,
+    evidence_id: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TravelDecisionOutput {
+    decision_id: String,
+    status: &'static str,
+    summary: String,
+    rationale: Option<String>,
+    decided_by: String,
+    evidence_id: String,
 }
 
 #[derive(Serialize)]
@@ -992,6 +1032,7 @@ impl RembraneMcp {
                 purpose: parameters.purpose,
                 as_of: parameters.as_of,
                 include_source_references: parameters.include_source_references.unwrap_or(false),
+                include_sensitive_profile: parameters.include_sensitive_profile.unwrap_or(false),
             })
             .map_err(application_error)?;
         serde_json::to_string(&TravelContextOutput {
@@ -1090,6 +1131,27 @@ fn parse_decision_status(value: &str) -> Option<DecisionStatus> {
     }
 }
 
+const fn constraint_kind_name(kind: TripConstraintKind) -> &'static str {
+    match kind {
+        TripConstraintKind::Accessibility => "accessibility",
+        TripConstraintKind::Accommodation => "accommodation",
+        TripConstraintKind::Budget => "budget",
+        TripConstraintKind::Dietary => "dietary",
+        TripConstraintKind::Documentation => "documentation",
+        TripConstraintKind::Schedule => "schedule",
+        TripConstraintKind::Transport => "transport",
+        TripConstraintKind::Other => "other",
+    }
+}
+
+const fn decision_status_name(status: DecisionStatus) -> &'static str {
+    match status {
+        DecisionStatus::Proposed => "proposed",
+        DecisionStatus::Selected => "selected",
+        DecisionStatus::Rejected => "rejected",
+    }
+}
+
 fn research_kind_name(kind: BookingResearchKind) -> &'static str {
     match kind {
         BookingResearchKind::Flight => "flight",
@@ -1100,16 +1162,58 @@ fn research_kind_name(kind: BookingResearchKind) -> &'static str {
     }
 }
 
-impl From<&Trip> for TravelTripOutput {
-    fn from(trip: &Trip) -> Self {
+impl From<&TravelContextTrip> for TravelTripOutput {
+    fn from(trip: &TravelContextTrip) -> Self {
         Self {
-            trip_id: trip.id().to_string(),
-            title: trip.title().to_owned(),
-            origin: trip.origin().to_owned(),
-            destinations: trip.destinations().to_vec(),
-            depart_not_before: trip.date_window().depart_not_before().to_owned(),
-            return_not_after: trip.date_window().return_not_after().to_owned(),
-            version: trip.version(),
+            trip_id: trip.id.to_string(),
+            title: trip.title.clone(),
+            origin: trip.origin.clone(),
+            destinations: trip.destinations.clone(),
+            depart_not_before: trip.depart_not_before.clone(),
+            return_not_after: trip.return_not_after.clone(),
+            version: trip.version,
+            sensitive_profile: trip
+                .sensitive_profile
+                .as_ref()
+                .map(TravelSensitiveProfileOutput::from),
+        }
+    }
+}
+
+impl From<&TravelSensitiveProfile> for TravelSensitiveProfileOutput {
+    fn from(profile: &TravelSensitiveProfile) -> Self {
+        Self {
+            participants: profile
+                .participants
+                .iter()
+                .map(|participant| TravelParticipantOutput {
+                    participant_id: participant.id().to_string(),
+                    label: participant.label().to_owned(),
+                })
+                .collect(),
+            constraints: profile
+                .constraints
+                .iter()
+                .map(|constraint| TravelConstraintOutput {
+                    constraint_id: constraint.id().to_string(),
+                    participant_id: constraint.participant_id().map(ToString::to_string),
+                    kind: constraint_kind_name(constraint.kind()),
+                    statement: constraint.statement().to_owned(),
+                    evidence_id: constraint.evidence().id.to_string(),
+                })
+                .collect(),
+            decisions: profile
+                .decisions
+                .iter()
+                .map(|decision| TravelDecisionOutput {
+                    decision_id: decision.id().to_string(),
+                    status: decision_status_name(decision.status()),
+                    summary: decision.summary().to_owned(),
+                    rationale: decision.rationale().map(str::to_owned),
+                    decided_by: decision.decided_by().to_string(),
+                    evidence_id: decision.evidence().id.to_string(),
+                })
+                .collect(),
         }
     }
 }

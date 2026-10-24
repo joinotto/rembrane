@@ -489,6 +489,9 @@ try {
   if ("sourceReference" in travelContext.freshResearch[0]) {
     throw new Error("MCP travel context exposed an opaque source reference");
   }
+  if ("sensitiveProfile" in travelContext.trip) {
+    throw new Error("MCP travel context exposed a sensitive trip profile");
+  }
 
   const deniedSensitiveContextCall = await request(22, "tools/call", {
     name: "rembrane_resolve_travel_context",
@@ -502,6 +505,21 @@ try {
   if (!deniedSensitiveContextCall.isError) {
     throw new Error(
       "MCP revealed a source reference without connection-level permission",
+    );
+  }
+
+  const deniedSensitiveProfileCall = await request(23, "tools/call", {
+    name: "rembrane_resolve_travel_context",
+    arguments: {
+      tripId: createdTrip.tripId,
+      purpose: "coordinate traveller requirements",
+      asOf: "2026-10-25T10:15:00Z",
+      includeSensitiveProfile: true,
+    },
+  });
+  if (!deniedSensitiveProfileCall.isError) {
+    throw new Error(
+      "MCP revealed a sensitive trip profile without connection permission",
     );
   }
 } finally {

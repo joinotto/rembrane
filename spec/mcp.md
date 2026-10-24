@@ -88,11 +88,15 @@ Arguments:
 - `purpose`
 - `asOf`
 - `includeSourceReferences` (optional, defaults to `false`)
+- `includeSensitiveProfile` (optional, defaults to `false`)
 
 The response omits opaque `sourceReference` values by default. Revealing them
 requires both `includeSourceReferences: true` and the connection-level
 `travel-source-references` read permission. A client must also hold the exact
 trip entity scope; a travel-domain grant alone cannot read an existing trip.
+Participant labels, constraints, and decisions are returned only when
+`includeSensitiveProfile: true` is combined with the connection-level
+`travel-sensitive-profile` permission.
 
 ### `rembrane_add_trip_participant`
 

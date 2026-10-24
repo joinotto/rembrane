@@ -23,7 +23,9 @@ sqlite3 "$database" < \
     "$repository_root/migrations/sqlite/0008_travel_disclosures.sql"
 sqlite3 "$database" < \
     "$repository_root/migrations/sqlite/0009_travel_sensitive_disclosures.sql"
-sqlite3 "$database" "PRAGMA user_version = 9;"
+sqlite3 "$database" < \
+    "$repository_root/migrations/sqlite/0010_travel_sensitive_profiles.sql"
+sqlite3 "$database" "PRAGMA user_version = 10;"
 
 sqlite3 "$database" <<'SQL'
 PRAGMA foreign_keys = ON;
@@ -458,7 +460,7 @@ table_count=$(
 )
 
 test "$table_count" -ge 9
-test "$(sqlite3 "$database" "PRAGMA user_version;")" -eq 9
+test "$(sqlite3 "$database" "PRAGMA user_version;")" -eq 10
 test "$(
     sqlite3 "$database" \
         "SELECT count(*) FROM checkpoint_disclosures;"
@@ -473,7 +475,7 @@ test "$(
 )" -eq 2
 test "$(
     sqlite3 "$database" \
-        "SELECT count(*) FROM travel_disclosure_receipts WHERE workspace_id = 'workspace_01' AND trip_id = 'trip_01' AND trip_version = 1 AND source_references_included = 0;"
+        "SELECT count(*) FROM travel_disclosure_receipts WHERE workspace_id = 'workspace_01' AND trip_id = 'trip_01' AND trip_version = 1 AND source_references_included = 0 AND sensitive_profile_included = 0;"
 )" -eq 1
 test "$(
     sqlite3 "$database" \

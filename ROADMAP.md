@@ -143,9 +143,12 @@ This roadmap describes sequencing, not release dates.
     bypassing source-reference redaction.
   - [x] Disclosure receipts distinguish redacted responses from privileged
     source-reference disclosures.
-  - [ ] Participant labels and sensitive constraint details require a distinct
+  - [x] Participant labels and sensitive constraint details require a distinct
     `travel-sensitive-profile` connection permission and per-request intent.
     - [x] Define and owner/admin-gate the distinct read permission.
+    - [x] Return an application-level safe trip projection that omits the
+      sensitive profile unless both permission and request intent are present.
+    - [x] Record sensitive-profile inclusion in version 10 disclosure receipts.
 
 ## Phase 4 — Shared workspaces
 

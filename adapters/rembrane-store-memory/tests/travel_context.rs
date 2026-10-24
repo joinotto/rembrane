@@ -6,7 +6,7 @@ use rembrane_domain::{
     BookingResearch, BookingResearchId, BookingResearchKind, CanonicalEvent, ClientId,
     DisclosureId, EntityId, EventId, EventPayload, EvidenceId, EvidenceReference, EvidenceSource,
     PrincipalId, ReadGrant, ReadPermission, ReadScope, ResearchFreshness, TravelDateWindow, Trip,
-    WorkspaceId,
+    TripParticipant, TripParticipantId, WorkspaceId,
 };
 use rembrane_store_memory::InMemoryStore;
 
@@ -70,9 +70,29 @@ fn seeded_store() -> InMemoryStore {
             0,
         )
         .expect("trip should persist");
+    let revised = trip()
+        .add_participant(
+            TripParticipant::new(TripParticipantId::new("participant_01"), "Hippo")
+                .expect("participant should be valid"),
+        )
+        .expect("trip should revise");
+    store
+        .replace_trip_with_event(
+            revised,
+            1,
+            event(
+                2,
+                EventPayload::TripRevised {
+                    trip_id: EntityId::new("trip_01"),
+                    version: 2,
+                },
+            ),
+            1,
+        )
+        .expect("trip revision should persist");
     for (sequence, item) in [
-        (2, research("expired", "2026-10-24T09:30:00Z")),
-        (3, research("fresh", "2026-10-24T11:00:00Z")),
+        (3, research("expired", "2026-10-24T09:30:00Z")),
+        (4, research("fresh", "2026-10-24T11:00:00Z")),
     ] {
         store
             .insert_booking_research_with_event(
@@ -119,10 +139,11 @@ fn exact_scope_allows_a_shared_workspace_reader_without_changing_trip_ownership(
             purpose: "continue shared trip planning".to_owned(),
             as_of: "2026-10-24T10:00:00Z".to_owned(),
             include_source_references: false,
+            include_sensitive_profile: false,
         })
         .expect("an exact entity grant should authorize the shared reader");
 
-    assert_eq!(context.trip.owner_subject_id().as_str(), "principal_01");
+    assert_eq!(context.trip.owner_subject_id.as_str(), "principal_01");
     assert_eq!(
         store.travel_disclosures()[0].subject_id.as_str(),
         "principal_02"
@@ -140,16 +161,18 @@ fn separates_fresh_and_expired_research_for_handoff() {
             purpose: "continue flight planning".to_owned(),
             as_of: "2026-10-24T10:00:00Z".to_owned(),
             include_source_references: false,
+            include_sensitive_profile: false,
         })
         .expect("authorized context should resolve");
 
-    assert_eq!(context.trip.id().as_str(), "trip_01");
+    assert_eq!(context.trip.id.as_str(), "trip_01");
     assert_eq!(context.fresh_research[0].id.as_str(), "fresh");
     assert_eq!(context.expired_research[0].id.as_str(), "expired");
     assert_eq!(context.fresh_research[0].source_reference, None);
     let receipt = &store.travel_disclosures()[0];
-    assert_eq!(receipt.trip_version, 1);
+    assert_eq!(receipt.trip_version, 2);
     assert!(!receipt.source_references_included);
+    assert!(!receipt.sensitive_profile_included);
     assert_eq!(receipt.research.len(), 2);
     assert!(
         receipt.research.iter().any(|item| {
@@ -169,6 +192,7 @@ fn rejects_another_trip_scope_and_invalid_clock() {
             purpose: "continue planning".to_owned(),
             as_of: "2026-10-24T10:00:00Z".to_owned(),
             include_source_references: false,
+            include_sensitive_profile: false,
         }),
         Err(rembrane_application::ApplicationError::AccessDenied)
     );
@@ -180,6 +204,7 @@ fn rejects_another_trip_scope_and_invalid_clock() {
             purpose: "continue planning".to_owned(),
             as_of: "not-a-timestamp".to_owned(),
             include_source_references: false,
+            include_sensitive_profile: false,
         }),
         Err(rembrane_application::ApplicationError::Validation(_))
     ));
@@ -201,6 +226,7 @@ fn sensitive_source_reference_requires_explicit_request_and_permission() {
             purpose: "reopen selected flight result".to_owned(),
             as_of: "2026-10-24T10:00:00Z".to_owned(),
             include_source_references: true,
+            include_sensitive_profile: false,
         })
         .expect("explicitly authorized source reference should resolve");
     assert_eq!(
@@ -217,7 +243,65 @@ fn sensitive_source_reference_requires_explicit_request_and_permission() {
             purpose: "reopen selected flight result".to_owned(),
             as_of: "2026-10-24T10:00:00Z".to_owned(),
             include_source_references: true,
+            include_sensitive_profile: false,
         })
         .expect_err("scope alone must not reveal a source reference");
     assert_eq!(error, rembrane_application::ApplicationError::AccessDenied);
+}
+
+#[test]
+fn sensitive_trip_profile_requires_explicit_request_and_permission() {
+    let mut store = seeded_store();
+    let redacted = TravelContextService::new(&mut store)
+        .resolve(&ResolveTravelContextCommand {
+            grant: grant("trip_01"),
+            disclosure_id: DisclosureId::new("disclosure_profile_redacted"),
+            trip_id: EntityId::new("trip_01"),
+            purpose: "continue general trip planning".to_owned(),
+            as_of: "2026-10-24T10:00:00Z".to_owned(),
+            include_source_references: false,
+            include_sensitive_profile: false,
+        })
+        .expect("redacted trip context should resolve");
+    assert_eq!(redacted.trip.sensitive_profile, None);
+
+    let mut authorized_grant = grant("trip_01");
+    authorized_grant
+        .permissions
+        .push(ReadPermission::RevealTravelSensitiveProfile);
+    let disclosed = TravelContextService::new(&mut store)
+        .resolve(&ResolveTravelContextCommand {
+            grant: authorized_grant,
+            disclosure_id: DisclosureId::new("disclosure_profile"),
+            trip_id: EntityId::new("trip_01"),
+            purpose: "coordinate traveller requirements".to_owned(),
+            as_of: "2026-10-24T10:00:00Z".to_owned(),
+            include_source_references: false,
+            include_sensitive_profile: true,
+        })
+        .expect("authorized profile should resolve");
+    assert_eq!(
+        disclosed
+            .trip
+            .sensitive_profile
+            .expect("profile should be disclosed")
+            .participants[0]
+            .label(),
+        "Hippo"
+    );
+    assert!(store.travel_disclosures()[1].sensitive_profile_included);
+
+    let denied = TravelContextService::new(&mut store).resolve(&ResolveTravelContextCommand {
+        grant: grant("trip_01"),
+        disclosure_id: DisclosureId::new("disclosure_profile_denied"),
+        trip_id: EntityId::new("trip_01"),
+        purpose: "coordinate traveller requirements".to_owned(),
+        as_of: "2026-10-24T10:00:00Z".to_owned(),
+        include_source_references: false,
+        include_sensitive_profile: true,
+    });
+    assert_eq!(
+        denied,
+        Err(rembrane_application::ApplicationError::AccessDenied)
+    );
 }

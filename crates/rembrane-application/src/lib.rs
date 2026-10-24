@@ -51,6 +51,7 @@ pub use share_memory::{
 };
 pub use travel_context::{
     ResolveTravelContextCommand, TravelContext, TravelContextResearch, TravelContextService,
+    TravelContextTrip, TravelSensitiveProfile,
 };
 pub use trip::{
     AddTripConstraintCommand, AddTripParticipantCommand, CreateTripCommand,

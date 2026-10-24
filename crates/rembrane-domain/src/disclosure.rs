@@ -43,6 +43,7 @@ pub struct TravelDisclosureReceipt {
     pub trip_version: u64,
     pub as_of: String,
     pub source_references_included: bool,
+    pub sensitive_profile_included: bool,
     pub research: Vec<DisclosedBookingResearch>,
 }
 

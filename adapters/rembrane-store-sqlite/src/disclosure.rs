@@ -208,8 +208,9 @@ impl<C> TravelDisclosureRepository for SqliteStore<C> {
                     trip_id,
                     trip_version,
                     as_of,
-                    source_references_included
-                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                    source_references_included,
+                    sensitive_profile_included
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
                 params![
                     receipt.workspace_id.as_str(),
                     receipt.id.as_str(),
@@ -219,7 +220,8 @@ impl<C> TravelDisclosureRepository for SqliteStore<C> {
                     receipt.trip_id.as_str(),
                     trip_version,
                     receipt.as_of,
-                    receipt.source_references_included
+                    receipt.source_references_included,
+                    receipt.sensitive_profile_included
                 ],
             )
             .map_err(map_write_error)?;
