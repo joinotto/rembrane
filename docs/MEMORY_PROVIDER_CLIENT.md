@@ -65,11 +65,19 @@ First, perform a content-free discovery and negotiation check:
 rembrane memory-provider check
 ```
 
+The check requires an `end_to_end_encrypted` provider by default. Operators
+must explicitly acknowledge a weaker deployment model:
+
+```sh
+rembrane memory-provider check --privacy trusted-boundary
+rembrane memory-provider check --privacy provider-plaintext
+```
+
 The command prints provider identity, version, privacy mode, capabilities,
-domains, and limits as JSON. It never prints the bearer token or memory
-content. Because discovery is intentionally public, this check validates token
-format but does not prove that the provider will authorize that token; the
-black-box conformance test below verifies authenticated operations.
+required privacy mode, domains, and limits as JSON. It never prints the bearer
+token or memory content. Because discovery is intentionally public, this check
+validates token format but does not prove that the provider will authorize that
+token; the black-box conformance test below verifies authenticated operations.
 
 Before production use, run the black-box conformance client:
 

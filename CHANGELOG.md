@@ -9,6 +9,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- Fail-closed Memory Provider CLI privacy negotiation that requires
+  end-to-end encryption by default and accepts weaker provider modes only
+  through an explicit operator flag.
 - A versioned Graphiti sidecar protocol that derives opaque provider
   namespaces exclusively from canonical workspace identity, requires
   idempotency keys for mutations, bounds transport payloads, and rejects

@@ -403,6 +403,8 @@ This roadmap describes sequencing, not release dates.
     - [x] Add a content-free CLI check that reports negotiated provider
       identity, privacy mode, capabilities, domains, and limits without
       exposing credentials.
+    - [x] Require end-to-end encryption by default and explicit operator
+      selection before accepting trusted-boundary or plaintext providers.
   - [x] Define an object-safe transport-neutral Rust client boundary covering
     every portable operation and implement it for the authenticated HTTP
     transport.

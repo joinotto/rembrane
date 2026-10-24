@@ -63,11 +63,11 @@ fn run(arguments: Vec<String>) -> Result<(), String> {
 }
 
 fn memory_provider(arguments: &[String]) -> Result<(), String> {
-    if arguments.len() != 1 || arguments[0] != "check" {
-        return Err("usage: rembrane memory-provider check".to_owned());
-    }
-    let provider = ConfiguredMemoryProvider::from_environment(&memory_provider_check_policy()?)
-        .map_err(|error| format!("memory provider check failed: {error}"))?;
+    let required_privacy_mode = requested_memory_privacy(arguments)?;
+    let provider = ConfiguredMemoryProvider::from_environment(&memory_provider_check_policy(
+        required_privacy_mode,
+    )?)
+    .map_err(|error| format!("memory provider check failed: {error}"))?;
     let manifest = provider.connection().manifest();
     let limits = manifest.limits();
     println!(
@@ -81,6 +81,7 @@ fn memory_provider(arguments: &[String]) -> Result<(), String> {
                 manifest.protocol_version().minor
             ),
             "privacyMode": memory_privacy_mode_name(manifest.privacy_mode()),
+            "requiredPrivacyMode": memory_privacy_mode_name(required_privacy_mode),
             "capabilities": manifest
                 .capabilities()
                 .iter()
@@ -99,7 +100,30 @@ fn memory_provider(arguments: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-fn memory_provider_check_policy() -> Result<MemoryProviderPolicy, String> {
+fn requested_memory_privacy(arguments: &[String]) -> Result<MemoryProviderPrivacyMode, String> {
+    match arguments {
+        [command] if command == "check" => Ok(MemoryProviderPrivacyMode::EndToEndEncrypted),
+        [command, flag, value] if command == "check" && flag == "--privacy" => {
+            match value.as_str() {
+                "end-to-end-encrypted" => Ok(MemoryProviderPrivacyMode::EndToEndEncrypted),
+                "trusted-boundary" => Ok(MemoryProviderPrivacyMode::TrustedBoundary),
+                "provider-plaintext" => Ok(MemoryProviderPrivacyMode::ProviderPlaintext),
+                _ => Err(memory_provider_usage()),
+            }
+        }
+        _ => Err(memory_provider_usage()),
+    }
+}
+
+fn memory_provider_usage() -> String {
+    "usage: rembrane memory-provider check \
+     [--privacy <end-to-end-encrypted|trusted-boundary|provider-plaintext>]"
+        .to_owned()
+}
+
+fn memory_provider_check_policy(
+    required_privacy_mode: MemoryProviderPrivacyMode,
+) -> Result<MemoryProviderPolicy, String> {
     MemoryProviderPolicy::new(
         CURRENT_MEMORY_PROVIDER_PROTOCOL,
         MemoryProviderTransport::Https,
@@ -115,11 +139,7 @@ fn memory_provider_check_policy() -> Result<MemoryProviderPolicy, String> {
             MemoryProviderCapability::SyncPull,
             MemoryProviderCapability::SyncPush,
         ],
-        vec![
-            MemoryProviderPrivacyMode::EndToEndEncrypted,
-            MemoryProviderPrivacyMode::TrustedBoundary,
-            MemoryProviderPrivacyMode::ProviderPlaintext,
-        ],
+        vec![required_privacy_mode],
         MemoryProviderLimits {
             maximum_context_items: 1,
             maximum_context_bytes: 1,
@@ -1173,7 +1193,8 @@ fn print_help() {
            rembrane fingerprint-git --repository <path>\n\
            rembrane providers list\n\
            rembrane providers test --provider <id> --namespace <unique-name>\n\
-           rembrane memory-provider check\n\
+           rembrane memory-provider check \
+             [--privacy <end-to-end-encrypted|trusted-boundary|provider-plaintext>]\n\
            rembrane mcp-config --client <codex|claude-code|gemini-cli|generic> \
              --server-binary <path> \
              [--key-provider <environment|macos-keychain|http>]\n\
@@ -1201,7 +1222,7 @@ mod tests {
         EXPORT_MAGIC, claude_mcp_config, codex_mcp_config, format_read_scopes, gemini_mcp_config,
         generic_mcp_config, memory_privacy_mode_name, memory_provider_check_policy, option,
         positive_u64, providers, read_export, recall_scope_context, redact_endpoint,
-        requested_memory_scope, test_provider, write_export,
+        requested_memory_privacy, requested_memory_scope, test_provider, write_export,
     };
 
     fn temporary_path(name: &str) -> std::path::PathBuf {
@@ -1239,7 +1260,10 @@ mod tests {
 
     #[test]
     fn memory_provider_check_requires_the_complete_portable_surface() {
-        let policy = memory_provider_check_policy().expect("policy");
+        let policy = memory_provider_check_policy(
+            rembrane_provider_sdk::MemoryProviderPrivacyMode::EndToEndEncrypted,
+        )
+        .expect("policy");
         let manifest = rembrane_provider_sdk::MemoryProviderManifest::new(
             "incomplete.provider".to_owned(),
             "test".to_owned(),
@@ -1266,6 +1290,79 @@ mod tests {
             ),
             "trusted_boundary"
         );
+    }
+
+    #[test]
+    fn memory_provider_check_defaults_to_end_to_end_encryption() {
+        assert_eq!(
+            requested_memory_privacy(&["check".to_owned()]).expect("default privacy"),
+            rembrane_provider_sdk::MemoryProviderPrivacyMode::EndToEndEncrypted
+        );
+    }
+
+    #[test]
+    fn memory_provider_check_requires_explicit_weaker_privacy() {
+        assert_eq!(
+            requested_memory_privacy(&[
+                "check".to_owned(),
+                "--privacy".to_owned(),
+                "trusted-boundary".to_owned(),
+            ])
+            .expect("explicit trusted boundary"),
+            rembrane_provider_sdk::MemoryProviderPrivacyMode::TrustedBoundary
+        );
+        assert!(
+            requested_memory_privacy(&[
+                "check".to_owned(),
+                "--privacy".to_owned(),
+                "unknown".to_owned(),
+            ])
+            .is_err()
+        );
+        assert!(
+            requested_memory_privacy(&["check".to_owned(), "trusted-boundary".to_owned(),])
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn memory_provider_policy_rejects_an_unrequested_privacy_mode() {
+        let policy = memory_provider_check_policy(
+            rembrane_provider_sdk::MemoryProviderPrivacyMode::EndToEndEncrypted,
+        )
+        .expect("policy");
+        let manifest = rembrane_provider_sdk::MemoryProviderManifest::new(
+            "trusted.provider".to_owned(),
+            "test".to_owned(),
+            rembrane_provider_sdk::CURRENT_MEMORY_PROVIDER_PROTOCOL,
+            vec![rembrane_provider_sdk::MemoryProviderTransport::Https],
+            vec![
+                rembrane_provider_sdk::MemoryProviderCapability::ResolveContext,
+                rembrane_provider_sdk::MemoryProviderCapability::ResolveQuestion,
+                rembrane_provider_sdk::MemoryProviderCapability::RecordEvent,
+                rembrane_provider_sdk::MemoryProviderCapability::ProposeMemory,
+                rembrane_provider_sdk::MemoryProviderCapability::CheckpointActivity,
+                rembrane_provider_sdk::MemoryProviderCapability::RecordDisclosure,
+                rembrane_provider_sdk::MemoryProviderCapability::DeleteMemory,
+                rembrane_provider_sdk::MemoryProviderCapability::ExplainMemory,
+                rembrane_provider_sdk::MemoryProviderCapability::SyncPull,
+                rembrane_provider_sdk::MemoryProviderCapability::SyncPush,
+            ],
+            rembrane_provider_sdk::MemoryProviderPrivacyMode::TrustedBoundary,
+            Vec::new(),
+            rembrane_provider_sdk::MemoryProviderLimits {
+                maximum_context_items: 1,
+                maximum_context_bytes: 1,
+                maximum_event_batch_items: 1,
+                maximum_sync_batch_items: 1,
+            },
+        )
+        .expect("manifest");
+
+        let error = policy
+            .validate(&manifest)
+            .expect_err("weaker unrequested privacy must fail");
+        assert!(error.to_string().contains("privacy mode"));
     }
 
     #[test]
