@@ -258,6 +258,10 @@ This roadmap describes sequencing, not release dates.
       ordering, optimistic atomic mutations, ciphertext-compatible content
       digests, and no caller-controlled tenant identity.
   - [ ] Publish a serialization schema and HTTP binding.
+    - [x] Publish strict canonical JSON primitives, discovery manifest, closed
+      enums, selectors, and transport-neutral envelope schemas.
+    - [ ] Bind every operation payload and result to its canonical JSON schema.
+    - [ ] Publish and verify the complete HTTPS OpenAPI surface.
   - [ ] Add cross-implementation conformance fixtures.
 - [x] Versioned key-provider sidecar protocol for OS, HSM, and customer-KMS
   adapters.

@@ -9,6 +9,11 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- Initial Memory Provider Protocol JSON Schema with strict discovery,
+  operation/capability/scope enums, portable and opaque identifiers, sealed
+  context selectors, provider limits, and closed request, success, and error
+  envelopes, plus a complete ten-operation discovery example enforced by the
+  offline protocol gate.
 - Initial full Memory Provider Protocol discovery contract with a versioned
   well-known manifest, HTTPS/MCP transports, portable memory capabilities,
   explicit privacy modes, supported domains, and bounded operation limits.

@@ -20,7 +20,9 @@ ruby -e 'require "yaml"; YAML.load_file(ARGV.fetch(0))' spec/provider-openapi.ya
 ruby -e 'require "yaml"; YAML.load_file(ARGV.fetch(0))' spec/key-provider-openapi.yaml
 jq empty \
     spec/discovery.schema.json \
+    spec/memory-provider.schema.json \
     spec/examples/discovery.json \
+    spec/examples/memory-provider-discovery.json \
     spec/examples/oauth-protected-resource.json \
     spec/examples/provider-manifest.json \
     spec/examples/provider-projection.json \
@@ -33,6 +35,30 @@ jq empty \
     spec/oauth-protected-resource.schema.json \
     spec/stdio-connection-manifest.schema.json \
     tests/postman/rembrane-local.postman_collection.json
+
+jq -e '
+    ."$defs".protocolVersion.const == "0.1"
+    and (."$defs".operation.enum | length == 10)
+    and (."$defs".oauthScope.enum | length == 10)
+    and (."$defs".errorCode.enum | length == 7)
+    and ."$defs".requestEnvelope.additionalProperties == false
+    and ."$defs".successEnvelope.additionalProperties == false
+    and ."$defs".errorEnvelope.additionalProperties == false
+' spec/memory-provider.schema.json >/dev/null
+
+jq -e '
+    .protocolVersion == "0.1"
+    and .privacyMode == "end_to_end_encrypted"
+    and (.capabilities | length == 10 and length == (unique | length))
+    and (.operations | length == 10)
+    and ([.operations[].operation] | length == (unique | length))
+    and all(
+        .operations[];
+        .operation == .capability
+        and (.oauthScope | startswith("memory:"))
+        and (.pathTemplate | startswith("/v1/"))
+    )
+' spec/examples/memory-provider-discovery.json >/dev/null
 
 jq -e '
     (.resource | startswith("https://"))

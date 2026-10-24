@@ -1,0 +1,370 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spec.rembrane.dev/memory-provider/0.1/schema.json",
+  "title": "Rembrane Memory Provider Protocol 0.1",
+  "description": "Canonical JSON wire primitives, discovery document, and transport-neutral envelopes for portable memory providers.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/manifest"
+    },
+    {
+      "$ref": "#/$defs/requestEnvelope"
+    },
+    {
+      "$ref": "#/$defs/successEnvelope"
+    },
+    {
+      "$ref": "#/$defs/errorEnvelope"
+    }
+  ],
+  "$defs": {
+    "safeOpaqueId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255,
+      "pattern": "^[\\x21-\\x7E]+$"
+    },
+    "portableId": {
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 255,
+      "pattern": "^[a-z0-9][a-z0-9._-]+$"
+    },
+    "requestId": {
+      "type": "string",
+      "minLength": 16,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9_-]+$"
+    },
+    "protocolVersion": {
+      "const": "0.1"
+    },
+    "operation": {
+      "type": "string",
+      "enum": [
+        "resolve_context",
+        "resolve_question",
+        "record_event",
+        "propose_memory",
+        "checkpoint_activity",
+        "record_disclosure",
+        "delete_memory",
+        "explain_memory",
+        "sync_pull",
+        "sync_push"
+      ]
+    },
+    "capability": {
+      "$ref": "#/$defs/operation"
+    },
+    "oauthScope": {
+      "type": "string",
+      "enum": [
+        "memory:context:read",
+        "memory:question:read",
+        "memory:event:write",
+        "memory:proposal:write",
+        "memory:checkpoint:write",
+        "memory:disclosure:write",
+        "memory:memory:delete",
+        "memory:memory:explain",
+        "memory:sync:read",
+        "memory:sync:write"
+      ]
+    },
+    "transport": {
+      "type": "string",
+      "enum": [
+        "https",
+        "mcp"
+      ]
+    },
+    "privacyMode": {
+      "type": "string",
+      "enum": [
+        "end_to_end_encrypted",
+        "trusted_boundary",
+        "provider_plaintext"
+      ]
+    },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "maximumContextItems",
+        "maximumContextBytes",
+        "maximumEventBatchItems",
+        "maximumSyncBatchItems"
+      ],
+      "properties": {
+        "maximumContextItems": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "maximumContextBytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "maximumEventBatchItems": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "maximumSyncBatchItems": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "selector": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "scope"
+          ],
+          "properties": {
+            "scope": {
+              "const": "global"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "scope",
+            "domain"
+          ],
+          "properties": {
+            "scope": {
+              "const": "domain"
+            },
+            "domain": {
+              "$ref": "#/$defs/portableId"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "scope",
+            "entityId"
+          ],
+          "properties": {
+            "scope": {
+              "const": "entity"
+            },
+            "entityId": {
+              "$ref": "#/$defs/safeOpaqueId"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "scope",
+            "activityId"
+          ],
+          "properties": {
+            "scope": {
+              "const": "activity"
+            },
+            "activityId": {
+              "$ref": "#/$defs/safeOpaqueId"
+            }
+          }
+        }
+      ]
+    },
+    "operationBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operation",
+        "capability",
+        "oauthScope",
+        "httpMethod",
+        "pathTemplate"
+      ],
+      "properties": {
+        "operation": {
+          "$ref": "#/$defs/operation"
+        },
+        "capability": {
+          "$ref": "#/$defs/capability"
+        },
+        "oauthScope": {
+          "$ref": "#/$defs/oauthScope"
+        },
+        "httpMethod": {
+          "type": "string",
+          "enum": [
+            "GET",
+            "POST",
+            "DELETE"
+          ]
+        },
+        "pathTemplate": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255,
+          "pattern": "^/v1/"
+        }
+      }
+    },
+    "manifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "providerId",
+        "providerVersion",
+        "protocolVersion",
+        "transports",
+        "capabilities",
+        "privacyMode",
+        "supportedDomains",
+        "limits",
+        "operations"
+      ],
+      "properties": {
+        "providerId": {
+          "$ref": "#/$defs/portableId"
+        },
+        "providerVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "pattern": "^[\\x20-\\x7E]+$"
+        },
+        "protocolVersion": {
+          "$ref": "#/$defs/protocolVersion"
+        },
+        "transports": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/transport"
+          }
+        },
+        "capabilities": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/capability"
+          }
+        },
+        "privacyMode": {
+          "$ref": "#/$defs/privacyMode"
+        },
+        "supportedDomains": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/portableId"
+          }
+        },
+        "limits": {
+          "$ref": "#/$defs/limits"
+        },
+        "operations": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/operationBinding"
+          }
+        }
+      }
+    },
+    "requestEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requestId",
+        "protocolVersion",
+        "operation",
+        "payload"
+      ],
+      "properties": {
+        "requestId": {
+          "$ref": "#/$defs/requestId"
+        },
+        "protocolVersion": {
+          "$ref": "#/$defs/protocolVersion"
+        },
+        "operation": {
+          "$ref": "#/$defs/operation"
+        },
+        "payload": {
+          "type": "object"
+        }
+      }
+    },
+    "successEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requestId",
+        "protocolVersion",
+        "result"
+      ],
+      "properties": {
+        "requestId": {
+          "$ref": "#/$defs/requestId"
+        },
+        "protocolVersion": {
+          "$ref": "#/$defs/protocolVersion"
+        },
+        "result": {
+          "type": "object"
+        }
+      }
+    },
+    "errorCode": {
+      "type": "string",
+      "enum": [
+        "invalid_request",
+        "access_denied",
+        "not_found",
+        "conflict",
+        "rate_limited",
+        "unsupported",
+        "unavailable"
+      ]
+    },
+    "errorEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requestId",
+        "protocolVersion",
+        "error"
+      ],
+      "properties": {
+        "requestId": {
+          "$ref": "#/$defs/requestId"
+        },
+        "protocolVersion": {
+          "$ref": "#/$defs/protocolVersion"
+        },
+        "error": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "code"
+          ],
+          "properties": {
+            "code": {
+              "$ref": "#/$defs/errorCode"
+            }
+          }
+        }
+      }
+    }
+  }
+}

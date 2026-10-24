@@ -1,0 +1,105 @@
+{
+  "providerId": "rembrane.local",
+  "providerVersion": "0.1.0-alpha.1",
+  "protocolVersion": "0.1",
+  "transports": [
+    "https",
+    "mcp"
+  ],
+  "capabilities": [
+    "resolve_context",
+    "resolve_question",
+    "record_event",
+    "propose_memory",
+    "checkpoint_activity",
+    "record_disclosure",
+    "delete_memory",
+    "explain_memory",
+    "sync_pull",
+    "sync_push"
+  ],
+  "privacyMode": "end_to_end_encrypted",
+  "supportedDomains": [
+    "personal",
+    "development",
+    "travel"
+  ],
+  "limits": {
+    "maximumContextItems": 100,
+    "maximumContextBytes": 1048576,
+    "maximumEventBatchItems": 100,
+    "maximumSyncBatchItems": 100
+  },
+  "operations": [
+    {
+      "operation": "resolve_context",
+      "capability": "resolve_context",
+      "oauthScope": "memory:context:read",
+      "httpMethod": "POST",
+      "pathTemplate": "/v1/context/resolve"
+    },
+    {
+      "operation": "resolve_question",
+      "capability": "resolve_question",
+      "oauthScope": "memory:question:read",
+      "httpMethod": "POST",
+      "pathTemplate": "/v1/questions/resolve"
+    },
+    {
+      "operation": "record_event",
+      "capability": "record_event",
+      "oauthScope": "memory:event:write",
+      "httpMethod": "POST",
+      "pathTemplate": "/v1/events"
+    },
+    {
+      "operation": "propose_memory",
+      "capability": "propose_memory",
+      "oauthScope": "memory:proposal:write",
+      "httpMethod": "POST",
+      "pathTemplate": "/v1/memory/proposals"
+    },
+    {
+      "operation": "checkpoint_activity",
+      "capability": "checkpoint_activity",
+      "oauthScope": "memory:checkpoint:write",
+      "httpMethod": "POST",
+      "pathTemplate": "/v1/activities/{activity_id}/checkpoint"
+    },
+    {
+      "operation": "record_disclosure",
+      "capability": "record_disclosure",
+      "oauthScope": "memory:disclosure:write",
+      "httpMethod": "POST",
+      "pathTemplate": "/v1/disclosures/receipt"
+    },
+    {
+      "operation": "delete_memory",
+      "capability": "delete_memory",
+      "oauthScope": "memory:memory:delete",
+      "httpMethod": "DELETE",
+      "pathTemplate": "/v1/memories/{memory_id}"
+    },
+    {
+      "operation": "explain_memory",
+      "capability": "explain_memory",
+      "oauthScope": "memory:memory:explain",
+      "httpMethod": "GET",
+      "pathTemplate": "/v1/memories/{memory_id}/explain"
+    },
+    {
+      "operation": "sync_pull",
+      "capability": "sync_pull",
+      "oauthScope": "memory:sync:read",
+      "httpMethod": "GET",
+      "pathTemplate": "/v1/sync/pull"
+    },
+    {
+      "operation": "sync_push",
+      "capability": "sync_push",
+      "oauthScope": "memory:sync:write",
+      "httpMethod": "POST",
+      "pathTemplate": "/v1/sync/push"
+    }
+  ]
+}
