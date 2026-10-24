@@ -32,7 +32,9 @@ pub use checkpoint::{
 pub use error::ApplicationError;
 pub use graph_projection_worker::GraphProjectionWorker;
 pub use invitation::{CreateInvitationCommand, InvitationService, RevokeInvitationCommand};
-pub use member_lifecycle::{MemberLifecycleService, RemoveMemberCommand};
+pub use member_lifecycle::{
+    CompleteKeyRotationCommand, MemberLifecycleService, RemoveMemberCommand,
+};
 pub use member_scope::{
     GrantMemberScopeCommand, MemberScopeGrantService, RevokeMemberScopeCommand,
 };

@@ -356,6 +356,12 @@ pub trait KeyRotationRepository {
         &self,
         workspace_id: &WorkspaceId,
     ) -> Result<Option<WorkspaceKeyRotation>, ApplicationError>;
+
+    fn complete_key_rotation(
+        &mut self,
+        rotation: WorkspaceKeyRotation,
+        expected_generation: u64,
+    ) -> Result<(), ApplicationError>;
 }
 
 pub trait WorkspaceRepository {

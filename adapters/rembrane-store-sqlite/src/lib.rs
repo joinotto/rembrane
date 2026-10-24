@@ -1280,6 +1280,51 @@ impl<C> KeyRotationRepository for SqliteStore<C> {
             .optional()
             .map_err(|_| ApplicationError::StorageUnavailable)
     }
+
+    fn complete_key_rotation(
+        &mut self,
+        rotation: WorkspaceKeyRotation,
+        expected_generation: u64,
+    ) -> Result<(), ApplicationError> {
+        if rotation.status() != KeyRotationStatus::Completed
+            || rotation.generation() != expected_generation
+        {
+            return Err(ApplicationError::Validation(
+                "completed rotation must match the expected generation".to_owned(),
+            ));
+        }
+        let completed_key_id = rotation.completed_key_id().ok_or_else(|| {
+            ApplicationError::Validation(
+                "completed rotation must contain an opaque key identifier".to_owned(),
+            )
+        })?;
+        let completed_by = rotation.completed_by().ok_or_else(|| {
+            ApplicationError::Validation(
+                "completed rotation must identify the completing principal".to_owned(),
+            )
+        })?;
+        let changed = self
+            .connection
+            .execute(
+                "UPDATE workspace_key_rotations
+                 SET status = 'completed', completed_key_id = ?1,
+                     completed_by = ?2, completed_at = CURRENT_TIMESTAMP
+                 WHERE workspace_id = ?3 AND id = ?4
+                   AND generation = ?5 AND status = 'required'",
+                params![
+                    completed_key_id,
+                    completed_by.as_str(),
+                    rotation.workspace_id().as_str(),
+                    rotation.id().as_str(),
+                    expected_generation
+                ],
+            )
+            .map_err(map_write_error)?;
+        if changed != 1 {
+            return Err(ApplicationError::VersionConflict);
+        }
+        Ok(())
+    }
 }
 
 fn validate_personal_bootstrap(

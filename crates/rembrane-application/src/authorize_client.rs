@@ -204,6 +204,14 @@ mod tests {
                 .filter(|rotation| rotation.workspace_id() == workspace_id)
                 .cloned())
         }
+
+        fn complete_key_rotation(
+            &mut self,
+            _rotation: WorkspaceKeyRotation,
+            _expected_generation: u64,
+        ) -> Result<(), ApplicationError> {
+            unreachable!("not used by authorization tests")
+        }
     }
 
     fn command() -> AuthorizeClientCommand {

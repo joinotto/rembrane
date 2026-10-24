@@ -1,12 +1,12 @@
 use rembrane_application::{
-    ApplicationError, AuthorizeClientCommand, AuthorizeClientService, GrantMemberScopeCommand,
-    KeyRotationRepository, MemberLifecycleService, MemberScopeGrantRepository,
-    MemberScopeGrantService, MembershipRepository, RemoveMemberCommand, RevokeMemberScopeCommand,
-    WorkspaceRepository,
+    ApplicationError, AuthorizeClientCommand, AuthorizeClientService, CompleteKeyRotationCommand,
+    GrantMemberScopeCommand, KeyRotationRepository, MemberLifecycleService,
+    MemberScopeGrantRepository, MemberScopeGrantService, MembershipRepository, RemoveMemberCommand,
+    RevokeMemberScopeCommand, WorkspaceRepository,
 };
 use rembrane_domain::{
-    ClientId, EntityId, Membership, Principal, PrincipalId, ReadScope, Workspace, WorkspaceId,
-    WorkspaceRole, WritePermission,
+    ClientId, EntityId, KeyRotationStatus, Membership, Principal, PrincipalId, ReadScope,
+    Workspace, WorkspaceId, WorkspaceRole, WritePermission,
 };
 use rembrane_store_memory::InMemoryStore;
 
@@ -141,6 +141,36 @@ fn owner_removal_revokes_membership_and_all_scope_grants() {
     assert_eq!(rotation.generation(), 1);
     assert_eq!(rotation.removed_principal_id().as_str(), "member");
     assert_eq!(rotation.requested_by().as_str(), "owner");
+    let pending_error = AuthorizeClientService::new(&store)
+        .execute(AuthorizeClientCommand {
+            client_id: ClientId::new("assistant"),
+            workspace_id: WorkspaceId::new("team"),
+            principal_id: PrincipalId::new("owner"),
+            requested_read_scopes: vec![ReadScope::Global],
+            requested_read_permissions: Vec::new(),
+            requested_write_permissions: Vec::new(),
+        })
+        .expect_err("pending rotation must deny the remaining owner");
+    assert_eq!(pending_error, ApplicationError::AccessDenied);
+    let completed = MemberLifecycleService::new(&mut store)
+        .complete_key_rotation(CompleteKeyRotationCommand {
+            workspace_id: WorkspaceId::new("team"),
+            expected_generation: 1,
+            completed_key_id: "workspace-key:v2".to_owned(),
+            completed_by: PrincipalId::new("owner"),
+        })
+        .expect("owner should complete exact pending generation");
+    assert_eq!(completed.status(), KeyRotationStatus::Completed);
+    AuthorizeClientService::new(&store)
+        .execute(AuthorizeClientCommand {
+            client_id: ClientId::new("assistant"),
+            workspace_id: WorkspaceId::new("team"),
+            principal_id: PrincipalId::new("owner"),
+            requested_read_scopes: vec![ReadScope::Global],
+            requested_read_permissions: Vec::new(),
+            requested_write_permissions: Vec::new(),
+        })
+        .expect("completed rotation should restore owner authorization");
     let error = AuthorizeClientService::new(&store)
         .execute(AuthorizeClientCommand {
             client_id: ClientId::new("assistant"),

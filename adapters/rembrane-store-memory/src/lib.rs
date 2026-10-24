@@ -1348,6 +1348,34 @@ impl KeyRotationRepository for InMemoryStore {
             .max_by_key(|rotation| rotation.generation())
             .cloned())
     }
+
+    fn complete_key_rotation(
+        &mut self,
+        rotation: WorkspaceKeyRotation,
+        expected_generation: u64,
+    ) -> Result<(), ApplicationError> {
+        if rotation.status() != KeyRotationStatus::Completed
+            || rotation.generation() != expected_generation
+        {
+            return Err(ApplicationError::Validation(
+                "completed rotation must match the expected generation".to_owned(),
+            ));
+        }
+        let stored = self
+            .key_rotations
+            .iter_mut()
+            .find(|stored| {
+                stored.workspace_id() == rotation.workspace_id() && stored.id() == rotation.id()
+            })
+            .ok_or(ApplicationError::NotFound)?;
+        if stored.status() != KeyRotationStatus::Required
+            || stored.generation() != expected_generation
+        {
+            return Err(ApplicationError::VersionConflict);
+        }
+        *stored = rotation;
+        Ok(())
+    }
 }
 
 impl CheckpointRepository for InMemoryStore {

@@ -285,8 +285,11 @@ This roadmap describes sequencing, not release dates.
   - [x] Create the requirement atomically with membership removal and scope
     revocation in in-memory and SQLite repositories.
   - [x] Deny new shared-workspace client grants while rotation is required.
-  - [ ] Complete rotation only after a key provider confirms the new
-    generation and authorized recipients.
+  - [x] Complete exactly one pending generation through an owner/admin command
+    after deployment-owned key-provider orchestration returns an opaque key
+    identity.
+  - [ ] Extend the key-provider protocol with a verifiable rotation receipt
+    binding generation and authorized recipients.
 - [ ] Organizational audit and retention controls.
 
 ## Phase 5 — Integration ecosystem

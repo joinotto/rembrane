@@ -1,6 +1,11 @@
-use rembrane_domain::{KeyRotationId, Membership, PrincipalId, WorkspaceId, WorkspaceRole};
+use rembrane_domain::{
+    KeyRotationId, KeyRotationStatus, Membership, PrincipalId, WorkspaceId, WorkspaceKeyRotation,
+    WorkspaceRole,
+};
 
-use crate::{ApplicationError, MemberLifecycleRepository, MembershipRepository};
+use crate::{
+    ApplicationError, KeyRotationRepository, MemberLifecycleRepository, MembershipRepository,
+};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RemoveMemberCommand {
@@ -10,13 +15,21 @@ pub struct RemoveMemberCommand {
     pub rotation_id: KeyRotationId,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CompleteKeyRotationCommand {
+    pub workspace_id: WorkspaceId,
+    pub expected_generation: u64,
+    pub completed_key_id: String,
+    pub completed_by: PrincipalId,
+}
+
 pub struct MemberLifecycleService<'repository, Repository> {
     repository: &'repository mut Repository,
 }
 
 impl<'repository, Repository> MemberLifecycleService<'repository, Repository>
 where
-    Repository: MemberLifecycleRepository + MembershipRepository,
+    Repository: KeyRotationRepository + MemberLifecycleRepository + MembershipRepository,
 {
     pub fn new(repository: &'repository mut Repository) -> Self {
         Self { repository }
@@ -53,6 +66,41 @@ where
             removed_by,
         )?;
         Ok(removed)
+    }
+
+    pub fn complete_key_rotation(
+        &mut self,
+        command: CompleteKeyRotationCommand,
+    ) -> Result<WorkspaceKeyRotation, ApplicationError> {
+        if command.expected_generation == 0 {
+            return Err(ApplicationError::Validation(
+                "expected key generation must be greater than zero".to_owned(),
+            ));
+        }
+        let actor = self
+            .repository
+            .find_membership(&command.workspace_id, &command.completed_by)?
+            .ok_or(ApplicationError::AccessDenied)?;
+        if !actor.is_active()
+            || !matches!(actor.role(), WorkspaceRole::Owner | WorkspaceRole::Admin)
+        {
+            return Err(ApplicationError::AccessDenied);
+        }
+        let rotation = self
+            .repository
+            .latest_key_rotation(&command.workspace_id)?
+            .ok_or(ApplicationError::NotFound)?;
+        if rotation.status() != KeyRotationStatus::Required
+            || rotation.generation() != command.expected_generation
+        {
+            return Err(ApplicationError::VersionConflict);
+        }
+        let completed = rotation
+            .complete(command.completed_key_id, command.completed_by)
+            .map_err(|error| ApplicationError::Validation(error.to_string()))?;
+        self.repository
+            .complete_key_rotation(completed.clone(), command.expected_generation)?;
+        Ok(completed)
     }
 }
 

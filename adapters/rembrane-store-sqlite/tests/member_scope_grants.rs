@@ -1,11 +1,12 @@
 use rembrane_application::{
-    AuthorizeClientCommand, AuthorizeClientService, GrantMemberScopeCommand, KeyRotationRepository,
-    MemberLifecycleService, MemberScopeGrantRepository, MemberScopeGrantService,
-    MembershipRepository, RemoveMemberCommand, RevokeMemberScopeCommand, WorkspaceRepository,
+    AuthorizeClientCommand, AuthorizeClientService, CompleteKeyRotationCommand,
+    GrantMemberScopeCommand, KeyRotationRepository, MemberLifecycleService,
+    MemberScopeGrantRepository, MemberScopeGrantService, MembershipRepository, RemoveMemberCommand,
+    RevokeMemberScopeCommand, WorkspaceRepository,
 };
 use rembrane_domain::{
-    ClientId, EntityId, Membership, Principal, PrincipalId, ReadScope, Workspace, WorkspaceId,
-    WorkspaceRole, WritePermission,
+    ClientId, EntityId, KeyRotationStatus, Membership, Principal, PrincipalId, ReadScope,
+    Workspace, WorkspaceId, WorkspaceRole, WritePermission,
 };
 use rembrane_store_sqlite::SqliteStore;
 
@@ -143,6 +144,21 @@ fn persisted_member_removal_deletes_grants_and_denies_authorization() {
     assert_eq!(rotation.generation(), 1);
     assert_eq!(rotation.removed_principal_id().as_str(), "member");
     assert_eq!(rotation.requested_by().as_str(), "owner");
+    let completed = MemberLifecycleService::new(&mut store)
+        .complete_key_rotation(CompleteKeyRotationCommand {
+            workspace_id: WorkspaceId::new("team"),
+            expected_generation: 1,
+            completed_key_id: "workspace-key:v2".to_owned(),
+            completed_by: PrincipalId::new("owner"),
+        })
+        .expect("owner should complete exact pending generation");
+    assert_eq!(completed.status(), KeyRotationStatus::Completed);
+    let persisted = store
+        .latest_key_rotation(&WorkspaceId::new("team"))
+        .expect("rotation lookup should succeed")
+        .expect("completed rotation remains auditable");
+    assert_eq!(persisted.status(), KeyRotationStatus::Completed);
+    assert_eq!(persisted.completed_key_id(), Some("workspace-key:v2"));
     let error = AuthorizeClientService::new(&store)
         .execute(AuthorizeClientCommand {
             client_id: ClientId::new("assistant"),
