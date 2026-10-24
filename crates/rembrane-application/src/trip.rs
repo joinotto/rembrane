@@ -1,6 +1,6 @@
 use rembrane_domain::{
-    CanonicalEvent, EntityId, EventId, EventPayload, MemoryScope, Trip, TripParticipant,
-    WriteGrant, WritePermission,
+    CanonicalEvent, EntityId, EventId, EventPayload, MemoryScope, Trip, TripConstraint,
+    TripDecision, TripParticipant, WriteGrant, WritePermission,
 };
 
 use crate::{ApplicationError, TripMutationRepository};
@@ -27,6 +27,26 @@ pub struct AddTripParticipantCommand {
     pub grant: WriteGrant,
     pub trip_id: EntityId,
     pub participant: TripParticipant,
+    pub expected_trip_version: u64,
+    pub event_id: EventId,
+    pub expected_previous_sequence: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AddTripConstraintCommand {
+    pub grant: WriteGrant,
+    pub trip_id: EntityId,
+    pub constraint: TripConstraint,
+    pub expected_trip_version: u64,
+    pub event_id: EventId,
+    pub expected_previous_sequence: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RecordTripDecisionCommand {
+    pub grant: WriteGrant,
+    pub trip_id: EntityId,
+    pub decision: TripDecision,
     pub expected_trip_version: u64,
     pub event_id: EventId,
     pub expected_previous_sequence: u64,
@@ -124,6 +144,68 @@ where
             event_id: command.event_id,
             expected_previous_sequence: command.expected_previous_sequence,
         })
+    }
+
+    pub fn add_constraint(
+        &mut self,
+        command: AddTripConstraintCommand,
+    ) -> Result<Trip, ApplicationError> {
+        let stored = self.load_for_narrow_revision(
+            &command.grant,
+            &command.trip_id,
+            command.expected_trip_version,
+        )?;
+        let revised = stored
+            .add_constraint(command.constraint)
+            .map_err(|_| ApplicationError::Validation("invalid trip constraint".to_owned()))?;
+        self.replace(ReplaceTripCommand {
+            grant: command.grant,
+            trip: revised,
+            expected_trip_version: command.expected_trip_version,
+            event_id: command.event_id,
+            expected_previous_sequence: command.expected_previous_sequence,
+        })
+    }
+
+    pub fn record_decision(
+        &mut self,
+        command: RecordTripDecisionCommand,
+    ) -> Result<Trip, ApplicationError> {
+        if command.decision.decided_by() != &command.grant.subject_id {
+            return Err(ApplicationError::AccessDenied);
+        }
+        let stored = self.load_for_narrow_revision(
+            &command.grant,
+            &command.trip_id,
+            command.expected_trip_version,
+        )?;
+        let revised = stored
+            .record_decision(command.decision)
+            .map_err(|_| ApplicationError::Validation("invalid trip decision".to_owned()))?;
+        self.replace(ReplaceTripCommand {
+            grant: command.grant,
+            trip: revised,
+            expected_trip_version: command.expected_trip_version,
+            event_id: command.event_id,
+            expected_previous_sequence: command.expected_previous_sequence,
+        })
+    }
+
+    fn load_for_narrow_revision(
+        &self,
+        grant: &WriteGrant,
+        trip_id: &EntityId,
+        expected_trip_version: u64,
+    ) -> Result<Trip, ApplicationError> {
+        let stored = self
+            .repository
+            .find_trip(&grant.workspace_id, trip_id)?
+            .ok_or(ApplicationError::NotFound)?;
+        validate_grant(grant, &stored, WritePermission::ReviseTrip)?;
+        if stored.version() != expected_trip_version {
+            return Err(ApplicationError::VersionConflict);
+        }
+        Ok(stored)
     }
 }
 

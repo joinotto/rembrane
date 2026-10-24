@@ -1,11 +1,13 @@
 use rembrane_application::{
-    AddTripParticipantCommand, ApplicationError, CreateTripCommand, EventRepository,
-    ReplaceTripCommand, TripRepository, TripService, WorkspaceRepository,
+    AddTripConstraintCommand, AddTripParticipantCommand, ApplicationError, CreateTripCommand,
+    EventRepository, RecordTripDecisionCommand, ReplaceTripCommand, TripRepository, TripService,
+    WorkspaceRepository,
 };
 use rembrane_domain::{
-    ClientId, EntityId, EventId, Membership, Principal, PrincipalId, ReadScope, TravelDateWindow,
-    Trip, TripParticipant, TripParticipantId, Workspace, WorkspaceId, WorkspaceRole, WriteGrant,
-    WritePermission,
+    ClientId, DecisionStatus, EntityId, EventId, EvidenceId, EvidenceReference, EvidenceSource,
+    Membership, Principal, PrincipalId, ReadScope, TravelDateWindow, Trip, TripConstraint,
+    TripConstraintId, TripConstraintKind, TripDecision, TripDecisionId, TripParticipant,
+    TripParticipantId, Workspace, WorkspaceId, WorkspaceRole, WriteGrant, WritePermission,
 };
 use rembrane_store_memory::InMemoryStore;
 
@@ -62,6 +64,86 @@ fn narrow_participant_mutation_preserves_existing_trip_state() {
         expected_previous_sequence: 2,
     });
     assert_eq!(stale, Err(ApplicationError::VersionConflict));
+}
+
+#[test]
+fn narrow_constraint_and_decision_mutations_preserve_attribution() {
+    let mut store = store();
+    TripService::new(&mut store)
+        .create(CreateTripCommand {
+            grant: grant(WritePermission::CreateTrip),
+            trip: trip(),
+            event_id: EventId::new("event_trip_created"),
+            expected_previous_sequence: 0,
+        })
+        .expect("trip should persist");
+    let constrained = TripService::new(&mut store)
+        .add_constraint(AddTripConstraintCommand {
+            grant: grant(WritePermission::ReviseTrip),
+            trip_id: EntityId::new("trip_tokyo"),
+            constraint: TripConstraint::new(
+                TripConstraintId::new("constraint_01"),
+                None,
+                TripConstraintKind::Budget,
+                "Keep lodging below the approved nightly budget",
+                EvidenceReference::new(
+                    EvidenceId::new("evidence_constraint_01"),
+                    EvidenceSource::UserStatement,
+                ),
+            )
+            .expect("constraint should be valid"),
+            expected_trip_version: 1,
+            event_id: EventId::new("event_constraint_added"),
+            expected_previous_sequence: 1,
+        })
+        .expect("constraint should persist");
+    assert_eq!(constrained.version(), 2);
+
+    let decided = TripService::new(&mut store)
+        .record_decision(RecordTripDecisionCommand {
+            grant: grant(WritePermission::ReviseTrip),
+            trip_id: EntityId::new("trip_tokyo"),
+            decision: TripDecision::new(
+                TripDecisionId::new("decision_01"),
+                DecisionStatus::Selected,
+                "Stay near Tokyo Station",
+                Some("Simplifies rail transfers".to_owned()),
+                PrincipalId::new("principal_01"),
+                EvidenceReference::new(
+                    EvidenceId::new("evidence_decision_01"),
+                    EvidenceSource::WorkspaceDecision,
+                ),
+            )
+            .expect("decision should be valid"),
+            expected_trip_version: 2,
+            event_id: EventId::new("event_decision_recorded"),
+            expected_previous_sequence: 2,
+        })
+        .expect("decision should persist");
+    assert_eq!(decided.constraints().len(), 1);
+    assert_eq!(decided.decisions()[0].decided_by().as_str(), "principal_01");
+    assert_eq!(decided.version(), 3);
+
+    let spoofed = TripService::new(&mut store).record_decision(RecordTripDecisionCommand {
+        grant: grant(WritePermission::ReviseTrip),
+        trip_id: EntityId::new("trip_tokyo"),
+        decision: TripDecision::new(
+            TripDecisionId::new("decision_spoofed"),
+            DecisionStatus::Proposed,
+            "Spoofed decision",
+            None,
+            PrincipalId::new("principal_other"),
+            EvidenceReference::new(
+                EvidenceId::new("evidence_spoofed"),
+                EvidenceSource::AgentObservation,
+            ),
+        )
+        .expect("decision shape should be valid"),
+        expected_trip_version: 3,
+        event_id: EventId::new("event_spoofed"),
+        expected_previous_sequence: 3,
+    });
+    assert_eq!(spoofed, Err(ApplicationError::AccessDenied));
 }
 
 fn trip() -> Trip {

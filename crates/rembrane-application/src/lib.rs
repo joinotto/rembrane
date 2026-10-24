@@ -52,4 +52,7 @@ pub use share_memory::{
 pub use travel_context::{
     ResolveTravelContextCommand, TravelContext, TravelContextResearch, TravelContextService,
 };
-pub use trip::{AddTripParticipantCommand, CreateTripCommand, ReplaceTripCommand, TripService};
+pub use trip::{
+    AddTripConstraintCommand, AddTripParticipantCommand, CreateTripCommand,
+    RecordTripDecisionCommand, ReplaceTripCommand, TripService,
+};
