@@ -379,7 +379,10 @@ This roadmap describes sequencing, not release dates.
       - [x] Append purpose-bound disclosure receipts for exact memory
         revisions without caller-controlled workspace, subject, or client
         identity.
-      - [ ] Add sync pull and push operations.
+      - [x] Pull bounded, strictly ordered sync pages from opaque
+        connection-bound cursors while validating resource, operation,
+        payload, digest, and continuation invariants.
+      - [ ] Add atomic optimistic sync push.
 - [x] Versioned key-provider sidecar protocol for OS, HSM, and customer-KMS
   adapters.
   - [x] Add transport-independent Rust manifest, negotiation, request, context,

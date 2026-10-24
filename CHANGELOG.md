@@ -85,6 +85,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Typed Memory Provider disclosure receipt writes with idempotency,
   purpose-bound exact revisions, caller-independent authenticated identity,
   bounded timestamps, and canonical append-only receipt IDs.
+- Typed Memory Provider sync pull with opaque cursors, caller-selected page
+  bounds, strict resource and operation codecs, payload/digest consistency,
+  ordered unique changes, and validated continuation state.
 - Canonical engine-neutral temporal knowledge graph aggregates with typed
   nodes, validated relationship types, strict workspace namespaces, separate
   validity and ingestion time, evidence provenance, bounded aliases, versions,

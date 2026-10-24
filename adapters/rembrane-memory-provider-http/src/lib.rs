@@ -13,11 +13,13 @@ use rembrane_provider_sdk::{
     MEMORY_PROVIDER_DISCOVERY_PATH, MemoryProviderCapability, MemoryProviderConnection,
     MemoryProviderContextItem, MemoryProviderDisclosedMemory, MemoryProviderDisclosureConstraint,
     MemoryProviderEvent, MemoryProviderLimits, MemoryProviderManifest, MemoryProviderPolicy,
-    MemoryProviderPrivacyMode, MemoryProviderRecordedEvent, MemoryProviderRequest,
-    MemoryProviderResponse, MemoryProviderSensitivity, MemoryProviderTransport,
-    ProposeMemoryPayload, ProposeMemoryResult, ProviderError, ProviderProtocolVersion,
-    RecordDisclosurePayload, RecordDisclosureResult, RecordEventPayload, RecordEventResult,
-    ResolveContextPayload, ResolveContextResult, ResolveQuestionPayload, ResolveQuestionResult,
+    MemoryProviderPrivacyMode, MemoryProviderPulledChange, MemoryProviderRecordedEvent,
+    MemoryProviderRequest, MemoryProviderResponse, MemoryProviderSensitivity,
+    MemoryProviderSyncCursor, MemoryProviderSyncOperation, MemoryProviderSyncResource,
+    MemoryProviderTransport, ProposeMemoryPayload, ProposeMemoryResult, ProviderError,
+    ProviderProtocolVersion, RecordDisclosurePayload, RecordDisclosureResult, RecordEventPayload,
+    RecordEventResult, ResolveContextPayload, ResolveContextResult, ResolveQuestionPayload,
+    ResolveQuestionResult, SyncPullPayload, SyncPullResult,
 };
 use reqwest::Url;
 use reqwest::blocking::{Client, Response};
@@ -263,6 +265,38 @@ impl HttpMemoryProviderClient {
             (Some(result), None) if (200..300).contains(&status) => Ok(request.success(
                 RecordDisclosureResult::new(DisclosureId::new(result.disclosure_id))?,
             )),
+            (None, Some(error)) if !(200..300).contains(&status) => {
+                Ok(request.error(parse_error_code(&error.code)?))
+            }
+            _ => Err(ProviderError::Rejected(
+                "memory provider response status and envelope disagree".to_owned(),
+            )),
+        }
+    }
+
+    pub fn sync_pull(
+        &self,
+        request: &MemoryProviderRequest<SyncPullPayload>,
+    ) -> Result<MemoryProviderResponse<SyncPullResult>, ProviderError> {
+        let endpoint = self
+            .base_url
+            .join("v1/sync/pull")
+            .map_err(|_| ProviderError::Unavailable)?;
+        let body = RequestEnvelope {
+            request_id: request.request_id().as_str(),
+            protocol_version: "0.1",
+            operation: "sync_pull",
+            payload: SyncPullBody::from(request.payload()),
+        };
+        let response = self.get_json(endpoint, &body)?;
+        let status = response.status().as_u16();
+        let wire: ResponseEnvelope<SyncPullResultBody> =
+            decode_json(response, MAXIMUM_OPERATION_BYTES)?;
+        validate_response_identity(request, &wire.request_id, &wire.protocol_version)?;
+        match (wire.result, wire.error) {
+            (Some(result), None) if (200..300).contains(&status) => {
+                Ok(request.success(result.into_domain(request.payload())?))
+            }
             (None, Some(error)) if !(200..300).contains(&status) => {
                 Ok(request.error(parse_error_code(&error.code)?))
             }
@@ -612,6 +646,22 @@ struct RecordDisclosureBody<'request> {
     disclosed_at_epoch_seconds: u64,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SyncPullBody<'request> {
+    cursor: Option<&'request str>,
+    maximum_items: usize,
+}
+
+impl<'request> From<&'request SyncPullPayload> for SyncPullBody<'request> {
+    fn from(payload: &'request SyncPullPayload) -> Self {
+        Self {
+            cursor: payload.cursor().map(MemoryProviderSyncCursor::as_str),
+            maximum_items: payload.maximum_items(),
+        }
+    }
+}
+
 impl<'request> From<&'request RecordDisclosurePayload> for RecordDisclosureBody<'request> {
     fn from(payload: &'request RecordDisclosurePayload) -> Self {
         Self {
@@ -868,6 +918,56 @@ struct CheckpointActivityResultBody {
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct RecordDisclosureResultBody {
     disclosure_id: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct SyncPullResultBody {
+    changes: Vec<PulledSyncChangeBody>,
+    next_cursor: String,
+    has_more: bool,
+}
+
+impl SyncPullResultBody {
+    fn into_domain(self, request: &SyncPullPayload) -> Result<SyncPullResult, ProviderError> {
+        SyncPullResult::new(
+            self.changes
+                .into_iter()
+                .map(PulledSyncChangeBody::into_domain)
+                .collect::<Result<Vec<_>, _>>()?,
+            MemoryProviderSyncCursor::new(self.next_cursor)?,
+            self.has_more,
+            request,
+        )
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct PulledSyncChangeBody {
+    change_id: String,
+    sequence: u64,
+    resource: String,
+    resource_id: String,
+    version: u64,
+    operation: String,
+    payload: Option<String>,
+    payload_sha256: Option<String>,
+}
+
+impl PulledSyncChangeBody {
+    fn into_domain(self) -> Result<MemoryProviderPulledChange, ProviderError> {
+        MemoryProviderPulledChange::new(
+            self.change_id,
+            self.sequence,
+            parse_sync_resource(&self.resource)?,
+            self.resource_id,
+            self.version,
+            parse_sync_operation(&self.operation)?,
+            self.payload,
+            self.payload_sha256,
+        )
+    }
 }
 
 impl CheckpointActivityResultBody {
@@ -1155,6 +1255,26 @@ fn parse_sensitivity(value: &str) -> Result<MemoryProviderSensitivity, ProviderE
     }
 }
 
+fn parse_sync_resource(value: &str) -> Result<MemoryProviderSyncResource, ProviderError> {
+    match value {
+        "memory" => Ok(MemoryProviderSyncResource::Memory),
+        "evidence" => Ok(MemoryProviderSyncResource::Evidence),
+        "activity_checkpoint" => Ok(MemoryProviderSyncResource::ActivityCheckpoint),
+        "disclosure_receipt" => Ok(MemoryProviderSyncResource::DisclosureReceipt),
+        "entity" => Ok(MemoryProviderSyncResource::Entity),
+        "event" => Ok(MemoryProviderSyncResource::Event),
+        _ => Err(invalid_operation_response()),
+    }
+}
+
+fn parse_sync_operation(value: &str) -> Result<MemoryProviderSyncOperation, ProviderError> {
+    match value {
+        "upsert" => Ok(MemoryProviderSyncOperation::Upsert),
+        "delete" => Ok(MemoryProviderSyncOperation::Delete),
+        _ => Err(invalid_operation_response()),
+    }
+}
+
 fn parse_error_code(
     value: &str,
 ) -> Result<rembrane_provider_sdk::MemoryProviderErrorCode, ProviderError> {
@@ -1367,8 +1487,9 @@ mod tests {
         MemoryProviderCapability, MemoryProviderConnection, MemoryProviderContextSelector,
         MemoryProviderDisclosedMemory, MemoryProviderEvent, MemoryProviderIdempotencyKey,
         MemoryProviderLimits, MemoryProviderManifest, MemoryProviderPolicy,
-        MemoryProviderPrivacyMode, MemoryProviderTransport, ProposeMemoryPayload,
-        RecordDisclosurePayload, RecordEventPayload, ResolveContextPayload, ResolveQuestionPayload,
+        MemoryProviderPrivacyMode, MemoryProviderSyncCursor, MemoryProviderTransport,
+        ProposeMemoryPayload, RecordDisclosurePayload, RecordEventPayload, ResolveContextPayload,
+        ResolveQuestionPayload, SyncPullPayload,
     };
 
     use super::{
@@ -1376,8 +1497,8 @@ mod tests {
         ExplainMemoryResultBody, ProposeMemoryBody, RecordDisclosureBody,
         RecordDisclosureResultBody, RecordEventBody, RecordEventResultBody, RequestEnvelope,
         ResolveContextBody, ResolveContextResultBody, ResolveQuestionBody,
-        ResolveQuestionResultBody, activity_subresource_endpoint, memory_endpoint,
-        memory_subresource_endpoint, validate_base_url, validate_bearer_token,
+        ResolveQuestionResultBody, SyncPullBody, SyncPullResultBody, activity_subresource_endpoint,
+        memory_endpoint, memory_subresource_endpoint, validate_base_url, validate_bearer_token,
     };
 
     const DISCOVERY: &str = r#"{
@@ -1778,6 +1899,87 @@ mod tests {
         )
         .expect("canonical result");
         assert_eq!(canonical.disclosure_id().as_str(), "disclosure_01");
+    }
+
+    #[test]
+    fn serializes_and_validates_ordered_sync_pull_pages() {
+        let limits = MemoryProviderLimits {
+            maximum_context_items: 1,
+            maximum_context_bytes: 1,
+            maximum_event_batch_items: 1,
+            maximum_sync_batch_items: 2,
+        };
+        let request = SyncPullPayload::new(
+            Some(MemoryProviderSyncCursor::new("cursor_0123456789_start").expect("cursor")),
+            2,
+            limits,
+        )
+        .expect("request");
+        let encoded = serde_json::to_value(SyncPullBody::from(&request)).expect("request JSON");
+        assert_eq!(encoded["cursor"], "cursor_0123456789_start");
+        assert_eq!(encoded["maximumItems"], 2);
+        assert!(encoded.get("workspaceId").is_none());
+        assert!(encoded.get("clientId").is_none());
+
+        let wire: SyncPullResultBody = serde_json::from_str(
+            r#"{
+              "changes":[
+                {
+                  "changeId":"change_01",
+                  "sequence":7,
+                  "resource":"memory",
+                  "resourceId":"memory_01",
+                  "version":3,
+                  "operation":"upsert",
+                  "payload":"ciphertext",
+                  "payloadSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                },
+                {
+                  "changeId":"change_02",
+                  "sequence":8,
+                  "resource":"memory",
+                  "resourceId":"memory_02",
+                  "version":4,
+                  "operation":"delete"
+                }
+              ],
+              "nextCursor":"cursor_0123456789_next",
+              "hasMore":false
+            }"#,
+        )
+        .expect("result JSON");
+        let result = wire.into_domain(&request).expect("canonical result");
+        assert_eq!(result.changes().len(), 2);
+        assert_eq!(result.changes()[1].sequence(), 8);
+        assert!(result.changes()[1].payload().is_none());
+        assert_eq!(result.next_cursor().as_str(), "cursor_0123456789_next");
+
+        let unordered: SyncPullResultBody = serde_json::from_str(
+            r#"{
+              "changes":[
+                {
+                  "changeId":"change_02",
+                  "sequence":8,
+                  "resource":"event",
+                  "resourceId":"event_02",
+                  "version":1,
+                  "operation":"delete"
+                },
+                {
+                  "changeId":"change_01",
+                  "sequence":7,
+                  "resource":"event",
+                  "resourceId":"event_01",
+                  "version":1,
+                  "operation":"delete"
+                }
+              ],
+              "nextCursor":"cursor_0123456789_next",
+              "hasMore":false
+            }"#,
+        )
+        .expect("result JSON");
+        assert!(unordered.into_domain(&request).is_err());
     }
 
     #[test]
