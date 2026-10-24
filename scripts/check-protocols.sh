@@ -34,14 +34,24 @@ jq empty \
 node --check scripts/test-mcp-e2e.mjs
 sh -n scripts/test-provider-http.sh
 node --check scripts/test-provider-http-runner.mjs
+sh -n scripts/test-key-provider-http.sh
+node --check scripts/test-key-provider-http-runner.mjs
 if [ "${REMBRANE_RUN_LOOPBACK_TESTS:-0}" = "1" ]; then
     node scripts/test-provider-http-runner.mjs
+    node scripts/test-key-provider-http-runner.mjs
 fi
 if REMBRANE_PROVIDER_BASE_URL=http://provider.example \
     REMBRANE_PROVIDER_TOKEN=test-token \
     ./scripts/test-provider-http.sh static-check >/dev/null 2>&1
 then
     echo "provider runner unexpectedly accepted remote plaintext HTTP" >&2
+    exit 1
+fi
+if REMBRANE_KEY_PROVIDER_BASE_URL=http://key-provider.example \
+    REMBRANE_KEY_PROVIDER_TOKEN=test-token \
+    ./scripts/test-key-provider-http.sh static-check >/dev/null 2>&1
+then
+    echo "key provider runner unexpectedly accepted remote plaintext HTTP" >&2
     exit 1
 fi
 

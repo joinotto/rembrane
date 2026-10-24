@@ -113,6 +113,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   bounded plaintext requests, and bounded open responses.
 - Expanded dependency-free core verification to compile, test, and lint the
   cryptographic boundary and key-provider contracts.
+- Secret-safe key-provider HTTP conformance runner covering bearer
+  authentication, manifest limits, envelope shape, round trips, cross-workspace
+  context substitution, unknown keys, oversized plaintext, and token leakage.
 - Versioned discovery, OpenAPI, and MCP protocol specifications.
 - Tenant-isolated SQLite canonical schema with encrypted-payload metadata.
 - Versioned SQLite initialization with legacy-schema adoption, idempotent

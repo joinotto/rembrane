@@ -132,8 +132,8 @@ This roadmap describes sequencing, not release dates.
   adapters.
   - [x] Add transport-independent Rust manifest, negotiation, request, context,
     and response-limit contracts to the offline verification gate.
-  - [ ] Add an authenticated HTTP client adapter and black-box conformance
-    runner.
+  - [x] Add a secret-safe black-box HTTP conformance runner.
+  - [ ] Add an authenticated HTTP client adapter.
 - [ ] TypeScript, Python, Rust, Swift, and Kotlin SDKs.
 - [x] Reusable semantic-provider conformance suite.
 - [x] Evidence-backed provider compatibility registry schema and initial

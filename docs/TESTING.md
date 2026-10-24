@@ -78,6 +78,19 @@ fixture cleanup, and asserts that captured output does not contain the bearer
 token. Restricted sandboxes still syntax-check both scripts and verify that
 remote plaintext HTTP is rejected.
 
+External key-provider sidecars have a separate non-destructive black-box suite:
+
+```sh
+REMBRANE_KEY_PROVIDER_BASE_URL=https://keys.example \
+REMBRANE_KEY_PROVIDER_TOKEN='replace-from-secret-store' \
+./scripts/test-key-provider-http.sh unique-request-namespace
+```
+
+It verifies authentication, protocol and algorithm discovery, exact envelope
+shape, bounded plaintext, round-trip opening, workspace-context substitution
+denial, unknown-key denial, and bearer-token redaction. The runner sends
+disposable plaintext and must only target a test provider.
+
 ## Manual local setup
 
 Build binaries:

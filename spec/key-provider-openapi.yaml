@@ -39,6 +39,10 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/EncryptedEnvelope"
+        "413":
+          description: Plaintext exceeds the advertised provider limit.
+        "422":
+          description: Context or request is invalid.
   /v0.1/open:
     post:
       operationId: openRecord
