@@ -14,6 +14,7 @@ use crate::ApplicationError;
 use crate::{RetentionPurgePlan, RetentionPurgeResult};
 
 pub const MAX_ADMINISTRATIVE_AUDIT_PAGE: usize = 1_000;
+pub const MAX_CHANNEL_INBOX_PAGE: usize = 100;
 
 /// Durable replay protection for authenticated messaging-channel events.
 ///
@@ -72,6 +73,41 @@ pub trait ChannelIngressRepository {
         replay_window_seconds: u64,
         maximum_events: usize,
     ) -> Result<VerifiedChannelMessage, ApplicationError>;
+}
+
+/// Atomic authenticated-channel admission plus encrypted durable enqueue.
+///
+/// Implementations must not acknowledge an event unless sender resolution,
+/// replay reservation, and ciphertext inbox insertion commit together.
+pub trait DurableChannelIngressRepository {
+    fn accept_bound_channel_event_to_inbox(
+        &mut self,
+        channel: ChannelKind,
+        account_lookup_key: &str,
+        sender_lookup_key: &str,
+        event_id: &str,
+        text: &str,
+        received_at_epoch_seconds: u64,
+        now_epoch_seconds: u64,
+        replay_window_seconds: u64,
+        maximum_events: usize,
+    ) -> Result<VerifiedChannelMessage, ApplicationError>;
+}
+
+/// Tenant-scoped recovery and completion of encrypted channel messages.
+pub trait ChannelInboxRepository {
+    fn pending_channel_messages(
+        &self,
+        workspace_id: &WorkspaceId,
+        limit: usize,
+    ) -> Result<Vec<VerifiedChannelMessage>, ApplicationError>;
+
+    fn complete_channel_message(
+        &mut self,
+        workspace_id: &WorkspaceId,
+        channel: ChannelKind,
+        event_id: &str,
+    ) -> Result<(), ApplicationError>;
 }
 
 pub trait AdministrativeAuditRepository {

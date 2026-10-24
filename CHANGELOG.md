@@ -37,6 +37,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - A socket-free executable WhatsApp gateway integration test covering a real
   signed payload, active pseudonymous sender binding, SQLite admission, and
   idempotent replay.
+- A versioned encrypted channel-inbox schema and portable repository contracts
+  for atomic durable admission, tenant-scoped recovery, and monotonic delivery
+  completion without plaintext-at-rest fields.
 - Durable, content-free SQLite channel replay receipts with atomic cleanup,
   fail-closed capacity enforcement, per-platform namespaces, and
   cross-workspace duplicate denial for multi-process gateways.

@@ -568,6 +568,8 @@ This roadmap describes sequencing, not release dates.
   - [x] Exercise the executable webhook path in-process across signature
     verification, active sender resolution, SQLite replay admission, and
     idempotent duplicate delivery.
+  - [x] Define the encrypted tenant-scoped channel inbox schema and application
+    ports required for atomic admission, recovery, and completion.
   - [x] Define a bounded authenticated-channel message contract whose
     canonical workspace, principal, and client identity must come from a
     deployment-owned sender binding rather than webhook payload claims.

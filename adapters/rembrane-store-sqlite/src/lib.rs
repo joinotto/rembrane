@@ -70,7 +70,9 @@ const CHANNEL_BINDING_LIFECYCLE_MIGRATION: &str =
     include_str!("../../../migrations/sqlite/0019_channel_binding_lifecycle.sql");
 const CHANNEL_BINDING_AUDIT_MIGRATION: &str =
     include_str!("../../../migrations/sqlite/0020_channel_binding_audit.sql");
-const CURRENT_SCHEMA_VERSION: u32 = 20;
+const ENCRYPTED_CHANNEL_INBOX_MIGRATION: &str =
+    include_str!("../../../migrations/sqlite/0021_encrypted_channel_inbox.sql");
+const CURRENT_SCHEMA_VERSION: u32 = 21;
 const CANONICAL_TABLES: [&str; 10] = [
     "activity_checkpoints",
     "disclosed_memories",
@@ -793,6 +795,12 @@ fn migrate(connection: &mut Connection) -> Result<(), ApplicationError> {
     if version == 19 {
         transaction
             .execute_batch(CHANNEL_BINDING_AUDIT_MIGRATION)
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        version = 20;
+    }
+    if version == 20 {
+        transaction
+            .execute_batch(ENCRYPTED_CHANNEL_INBOX_MIGRATION)
             .map_err(|_| ApplicationError::StorageUnavailable)?;
     }
     transaction

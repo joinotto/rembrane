@@ -25,6 +25,7 @@ pub enum PayloadPurpose {
     MemoryContent,
     TripEntity,
     BookingResearch,
+    ChannelMessage,
 }
 
 impl PayloadPurpose {
@@ -38,6 +39,7 @@ impl PayloadPurpose {
             Self::MemoryContent => "memory-content",
             Self::TripEntity => "trip-entity",
             Self::BookingResearch => "booking-research",
+            Self::ChannelMessage => "channel-message",
         }
     }
 }
