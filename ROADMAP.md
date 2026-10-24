@@ -89,6 +89,8 @@ This roadmap describes sequencing, not release dates.
     subject/client/workspace identity exclusively from verified remote claims.
   - [ ] Serve Streamable HTTP through the official Rust MCP SDK.
   - [ ] Add OAuth and cross-tenant transport integration tests.
+    - [x] Prove verified remote identity is still constrained by canonical
+      workspace membership, audience, expiry, and token validity.
   - [x] Add a hardened Cloudflare Tunnel Compose overlay that keeps persistent
     memory and encryption credentials on the operator-controlled origin.
 - [x] Persist a disclosure receipt for every SQLite context response.

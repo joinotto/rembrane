@@ -367,6 +367,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Added verified-remote-access initialization for the shared MCP handler;
   remote subject, client, and workspace identity no longer need to come from
   process-level identity environment variables.
+- Cross-tenant remote-access integration coverage proving OAuth claims cannot
+  bypass canonical workspace membership and that wrong-audience, expired, and
+  invalid tokens fail closed.
 - Workspace lint policy documents constructor-arity and public error-doc
   exceptions while retaining warnings-as-errors for actionable Clippy checks.
 - Minimum Rust version is 1.88 and the MCP transport targets the official
