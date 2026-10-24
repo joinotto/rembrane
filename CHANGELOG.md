@@ -40,6 +40,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   provider polling.
 - Resource-specific SQLite partial unique indexes that preserve graph
   projection idempotency despite nullable node/edge identity columns.
+- SQLite graph projection outbox repository with provider-scoped polling,
+  tenant-bound lookups, strict row decoding, and optimistic status/attempt
+  transitions.
 - Authenticated key-provider HTTP adapter using Rustls, bounded response reads,
   disabled redirects and environment proxies, zeroized bearer credentials,
   strict JSON/base64 decoding, and HTTPS except for exact loopback origins.

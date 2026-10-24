@@ -149,6 +149,8 @@ This roadmap describes sequencing, not release dates.
       conformance and benchmark baseline.
     - [x] Model durable graph projection work independently from semantic
       memory projection jobs.
+    - [x] Persist graph projection jobs in SQLite with idempotent provider
+      polling and optimistic transitions.
     - [ ] Add Graphiti projection adapter.
 
 - [x] Project entities and scoped preferences.
