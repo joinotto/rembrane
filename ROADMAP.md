@@ -40,6 +40,8 @@ This roadmap describes sequencing, not release dates.
   secret references rather than stored credential values.
   - [x] Bound and validate portable environment, file, and external
     secret-manager references before storing configuration.
+  - [x] Bound and deduplicate each provider profile's credential-reference
+    list before any secret-manager resolution.
 - [x] Implement the encrypted local SQLite adapter.
 - [x] Add development-key encrypted CLI remember and recall commands.
 - [x] Add encrypted CLI correction and deletion commands.

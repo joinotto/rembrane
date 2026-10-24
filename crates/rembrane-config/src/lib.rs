@@ -11,6 +11,7 @@ use std::fmt::{self, Display};
 use url::{Host, Position, Url};
 
 pub const MAX_PROVIDER_ENDPOINT_BYTES: usize = 2_048;
+pub const MAX_PROVIDER_CREDENTIAL_REFERENCES: usize = 16;
 pub const MAX_REMOTE_ENDPOINT_BYTES: usize = 2_048;
 pub const MAX_REMOTE_CLIENT_ID_BYTES: usize = 255;
 pub const MAX_REMOTE_TRUSTED_ORIGINS: usize = 64;
@@ -55,6 +56,7 @@ pub enum ProviderConnectionError {
     EmptyEndpoint,
     InsecureRemoteEndpoint,
     CredentialBearingEndpoint,
+    InvalidCredentialReferences,
 }
 
 impl Display for ProviderConnectionError {
@@ -69,6 +71,9 @@ impl Display for ProviderConnectionError {
             }
             Self::CredentialBearingEndpoint => formatter
                 .write_str("provider endpoint must not contain credentials, query, or fragment"),
+            Self::InvalidCredentialReferences => formatter.write_str(
+                "provider credential references must be bounded and contain no duplicates",
+            ),
         }
     }
 }
@@ -97,6 +102,14 @@ impl ProviderConnection {
         }
         let endpoint = endpoint.into();
         validate_provider_endpoint(&endpoint, placement)?;
+        if credentials.len() > MAX_PROVIDER_CREDENTIAL_REFERENCES
+            || credentials
+                .iter()
+                .enumerate()
+                .any(|(index, credential)| credentials[..index].contains(credential))
+        {
+            return Err(ProviderConnectionError::InvalidCredentialReferences);
+        }
         Ok(Self {
             kind,
             endpoint: Some(endpoint),
@@ -556,13 +569,13 @@ mod tests {
     use rembrane_provider_sdk::Capability;
 
     use super::{
-        DeploymentPolicy, MAX_PROVIDER_ENDPOINT_BYTES, MAX_REMOTE_CLIENT_ID_BYTES,
-        MAX_REMOTE_ENDPOINT_BYTES, MAX_REMOTE_ORIGIN_BYTES, MAX_REMOTE_TRUSTED_ORIGINS,
-        MAX_SECRET_ENVIRONMENT_NAME_BYTES, MAX_SECRET_EXTERNAL_KEY_BYTES,
-        MAX_SECRET_FILE_REFERENCE_BYTES, MAX_SECRET_PROVIDER_ID_BYTES, ProcessingMode,
-        ProviderConnection, ProviderConnectionError, ProviderKind, ProviderPlacement,
-        RemoteMcpConfig, RemoteMcpConfigError, SecretReference, SecretReferenceError,
-        parse_read_permissions, parse_read_scopes,
+        DeploymentPolicy, MAX_PROVIDER_CREDENTIAL_REFERENCES, MAX_PROVIDER_ENDPOINT_BYTES,
+        MAX_REMOTE_CLIENT_ID_BYTES, MAX_REMOTE_ENDPOINT_BYTES, MAX_REMOTE_ORIGIN_BYTES,
+        MAX_REMOTE_TRUSTED_ORIGINS, MAX_SECRET_ENVIRONMENT_NAME_BYTES,
+        MAX_SECRET_EXTERNAL_KEY_BYTES, MAX_SECRET_FILE_REFERENCE_BYTES,
+        MAX_SECRET_PROVIDER_ID_BYTES, ProcessingMode, ProviderConnection, ProviderConnectionError,
+        ProviderKind, ProviderPlacement, RemoteMcpConfig, RemoteMcpConfigError, SecretReference,
+        SecretReferenceError, parse_read_permissions, parse_read_scopes,
     };
 
     #[test]
@@ -810,6 +823,30 @@ mod tests {
                 ProviderPlacement::External,
             ),
             Err(ProviderConnectionError::InsecureRemoteEndpoint)
+        );
+    }
+
+    #[test]
+    fn provider_profiles_bound_and_deduplicate_credential_references() {
+        let credential =
+            SecretReference::environment("PROVIDER_TOKEN").expect("credential reference");
+        assert_eq!(
+            ProviderConnection::remote(
+                ProviderKind::Mem0,
+                "https://memory.example",
+                vec![credential.clone(), credential.clone()],
+                ProviderPlacement::External,
+            ),
+            Err(ProviderConnectionError::InvalidCredentialReferences)
+        );
+        assert_eq!(
+            ProviderConnection::remote(
+                ProviderKind::Mem0,
+                "https://memory.example",
+                vec![credential; MAX_PROVIDER_CREDENTIAL_REFERENCES + 1],
+                ProviderPlacement::External,
+            ),
+            Err(ProviderConnectionError::InvalidCredentialReferences)
         );
     }
 

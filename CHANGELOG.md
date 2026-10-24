@@ -70,6 +70,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Bounded portable secret references for environment variables, protected
   files, and external secret-manager keys, rejecting whitespace ambiguity,
   controls, invalid provider identifiers, and resource-exhaustion inputs.
+- Bounded duplicate-free credential-reference lists for bring-your-own
+  provider profiles, preventing ambiguous precedence and amplified
+  secret-manager resolution.
 - A transport-injectable Mem0 OSS semantic adapter mapping authorized
   projections into HMAC-pseudonymous workspace partitions while preserving
   canonical memory IDs, versions, replacement, bounded ranking, and
