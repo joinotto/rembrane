@@ -11,7 +11,8 @@ use axum::{Json, Router};
 use rembrane_application::{
     AddTripConstraintCommand, AddTripParticipantCommand, ApplicationError, AuthorizeClientCommand,
     AuthorizeClientService, CaptureBookingResearchCommand, CaptureBookingResearchService,
-    CreateTripCommand, RecordTripDecisionCommand, ResolveContextCommand, ResolveContextService,
+    ClientGrantBundle, CreateTripCommand, KeyRotationRepository, MemberLifecycleService,
+    MembershipRepository, RecordTripDecisionCommand, ResolveContextCommand, ResolveContextService,
     ResolveTravelContextCommand, TravelContextResearch, TravelContextService, TravelContextTrip,
     TravelSensitiveProfile, TripService,
 };
@@ -21,9 +22,10 @@ use rembrane_crypto_configured::ConfiguredRecordCipher;
 use rembrane_domain::{
     ActivityId, BookingResearch, BookingResearchId, BookingResearchKind, ClientId, ContextPackId,
     DecisionStatus, DisclosureId, EntityId, EventId, EvidenceId, EvidenceReference, EvidenceSource,
-    MemoryKind, MemoryScope, MemoryStatus, PrincipalId, ReadGrant, TravelDateWindow, Trip,
-    TripConstraint, TripConstraintId, TripConstraintKind, TripDecision, TripDecisionId,
-    TripParticipant, TripParticipantId, WorkspaceId, WriteGrant, WritePermission,
+    KeyRotationStatus, MemoryKind, MemoryScope, MemoryStatus, PrincipalId, ReadGrant,
+    TravelDateWindow, Trip, TripConstraint, TripConstraintId, TripConstraintKind, TripDecision,
+    TripDecisionId, TripParticipant, TripParticipantId, WorkspaceId, WorkspaceRole, WriteGrant,
+    WritePermission,
 };
 use rembrane_store_sqlite::SqliteStore;
 use serde::{Deserialize, Serialize};
@@ -43,6 +45,7 @@ struct Inner {
 
 struct Runtime {
     store: SqliteStore<ConfiguredRecordCipher>,
+    rotation_provider: ConfiguredRecordCipher,
     read_grant: ReadGrant,
     write_grant: WriteGrant,
     next_id: u128,
@@ -60,6 +63,12 @@ struct ResolveRequest {
     query: String,
     maximum_items: usize,
     maximum_bytes: Option<usize>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct RotateWorkspaceKeyRequest {
+    workspace_id: String,
 }
 
 #[derive(Deserialize)]
@@ -298,6 +307,15 @@ struct Health {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+struct RotateWorkspaceKeyResponse {
+    workspace_id: String,
+    generation: u64,
+    key_id: String,
+    status: &'static str,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct Problem {
     code: &'static str,
     message: &'static str,
@@ -342,6 +360,8 @@ impl AppState {
         let oauth_resource_metadata = oauth_resource_metadata_from_environment()?;
         let cipher = ConfiguredRecordCipher::from_environment()
             .context("failed to load workspace cipher")?;
+        let rotation_provider = ConfiguredRecordCipher::from_environment()
+            .context("failed to load workspace rotation provider")?;
         let read_scopes = parse_read_scopes(
             &std::env::var("REMBRANE_READ_SCOPES").unwrap_or_else(|_| "global".to_owned()),
         )
@@ -354,9 +374,9 @@ impl AppState {
             .with_cipher(cipher);
         let grants = AuthorizeClientService::new(&store)
             .execute(AuthorizeClientCommand {
-                client_id,
-                workspace_id,
-                principal_id,
+                client_id: client_id.clone(),
+                workspace_id: workspace_id.clone(),
+                principal_id: principal_id.clone(),
                 requested_read_scopes: read_scopes,
                 requested_read_permissions: read_permissions,
                 requested_write_permissions: vec![
@@ -364,6 +384,13 @@ impl AppState {
                     WritePermission::ReviseTrip,
                     WritePermission::CaptureBookingResearch,
                 ],
+            })
+            .or_else(|error| {
+                if error == ApplicationError::AccessDenied {
+                    management_only_grants(&store, client_id, workspace_id, principal_id)
+                } else {
+                    Err(error)
+                }
             })
             .context("failed to authorize API connection")?;
         let next_id = SystemTime::now()
@@ -375,6 +402,7 @@ impl AppState {
             inner: Arc::new(Inner {
                 runtime: Mutex::new(Runtime {
                     store,
+                    rotation_provider,
                     read_grant: grants.read,
                     write_grant: grants.write,
                     next_id,
@@ -384,6 +412,89 @@ impl AppState {
             }),
         })
     }
+}
+
+fn management_only_grants(
+    store: &SqliteStore<ConfiguredRecordCipher>,
+    client_id: ClientId,
+    workspace_id: WorkspaceId,
+    principal_id: PrincipalId,
+) -> Result<ClientGrantBundle, ApplicationError> {
+    let membership = store
+        .find_membership(&workspace_id, &principal_id)?
+        .filter(|membership| {
+            membership.is_active()
+                && matches!(
+                    membership.role(),
+                    WorkspaceRole::Owner | WorkspaceRole::Admin
+                )
+        })
+        .ok_or(ApplicationError::AccessDenied)?;
+    let pending = store
+        .latest_key_rotation(&workspace_id)?
+        .is_some_and(|rotation| rotation.status() == KeyRotationStatus::Required);
+    if !pending {
+        return Err(ApplicationError::AccessDenied);
+    }
+    let read = ReadGrant {
+        client_id: client_id.clone(),
+        workspace_id: workspace_id.clone(),
+        subject_id: membership.principal_id().clone(),
+        scopes: Vec::new(),
+        permissions: Vec::new(),
+    };
+    let write = WriteGrant {
+        client_id,
+        workspace_id,
+        subject_id: principal_id,
+        scopes: Vec::new(),
+        permissions: Vec::new(),
+    };
+    Ok(ClientGrantBundle { read, write })
+}
+
+async fn rotate_workspace_key(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<RotateWorkspaceKeyRequest>,
+) -> Result<Json<RotateWorkspaceKeyResponse>, ApiError> {
+    authorize_bearer(&state, &headers)?;
+    let mut runtime = state
+        .inner
+        .runtime
+        .lock()
+        .map_err(|_| ApiError::internal())?;
+    if request.workspace_id != runtime.write_grant.workspace_id.as_str() {
+        return Err(ApiError::access_denied());
+    }
+    let completed_by = runtime.write_grant.subject_id.clone();
+    let workspace_id = runtime.write_grant.workspace_id.clone();
+    let Runtime {
+        store,
+        rotation_provider,
+        ..
+    } = &mut *runtime;
+    let completed = MemberLifecycleService::new(store)
+        .orchestrate_key_rotation(
+            workspace_id,
+            completed_by,
+            |workspace_id, generation, recipients| {
+                rotation_provider
+                    .rotate_workspace_key(workspace_id, generation, recipients)
+                    .map_err(|_| ApplicationError::StorageUnavailable)
+            },
+        )
+        .map_err(ApiError::from_application)?;
+    let key_id = completed
+        .completed_key_id()
+        .ok_or_else(ApiError::internal)?
+        .to_owned();
+    Ok(Json(RotateWorkspaceKeyResponse {
+        workspace_id: completed.workspace_id().to_string(),
+        generation: completed.generation(),
+        key_id,
+        status: "completed",
+    }))
 }
 
 async fn oauth_protected_resource(
@@ -1162,6 +1273,7 @@ async fn main() -> Result<()> {
             get(oauth_protected_resource),
         )
         .route("/v1/context/resolve", post(resolve_context))
+        .route("/v1/workspaces/key-rotation", post(rotate_workspace_key))
         .route("/v1/travel/trips", post(create_trip))
         .route("/v1/travel/trip-participants", post(add_trip_participant))
         .route("/v1/travel/trip-constraints", post(add_trip_constraint))

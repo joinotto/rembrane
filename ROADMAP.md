@@ -306,11 +306,11 @@ This roadmap describes sequencing, not release dates.
       atomically with rotation completion.
     - [x] Transport rotation requests and strictly decoded receipts over the
       authenticated bounded HTTP adapter with replay conformance coverage.
-    - [ ] Orchestrate provider rotation and completion through the management
+    - [x] Orchestrate provider rotation and completion through the management
       API and CLI.
       - [x] Add authorization-first application orchestration and a configured
         provider CLI command.
-      - [ ] Add the authenticated management REST operation.
+      - [x] Add the authenticated management REST operation.
 - [ ] Organizational audit and retention controls.
 
 ## Phase 5 — Integration ecosystem

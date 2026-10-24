@@ -57,6 +57,37 @@ paths:
           $ref: "#/components/responses/AccessDenied"
         "409":
           $ref: "#/components/responses/Conflict"
+  /workspaces/key-rotation:
+    post:
+      operationId: rotateWorkspaceKey
+      summary: Complete a required shared-workspace key rotation
+      description: |
+        Authorizes the configured owner or administrator, derives the exact
+        active recipient set from canonical membership, invokes the configured
+        customer key provider, validates its receipt, and records completion.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RotateWorkspaceKeyRequest"
+      responses:
+        "200":
+          description: Key rotation completed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RotateWorkspaceKeyResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/AccessDenied"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
   /travel/booking-research:
     post:
       operationId: captureBookingResearch
@@ -266,6 +297,28 @@ components:
           schema:
             $ref: "#/components/schemas/Problem"
   schemas:
+    RotateWorkspaceKeyRequest:
+      type: object
+      additionalProperties: false
+      required: [workspaceId]
+      properties:
+        workspaceId:
+          $ref: "#/components/schemas/OpaqueId"
+    RotateWorkspaceKeyResponse:
+      type: object
+      additionalProperties: false
+      required: [workspaceId, generation, keyId, status]
+      properties:
+        workspaceId:
+          $ref: "#/components/schemas/OpaqueId"
+        generation:
+          type: integer
+          minimum: 1
+        keyId:
+          type: string
+          minLength: 1
+        status:
+          const: completed
     OpaqueId:
       type: string
       minLength: 1

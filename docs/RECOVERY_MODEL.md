@@ -86,9 +86,12 @@ detect rollback across devices.
 
 ### Removed shared-workspace member
 
-The current pre-alpha local CLI does not implement group-key rotation.
-Production shared workspaces require rotation after member removal and cannot
-claim forward secrecy until that workflow and its tests exist.
+The pre-alpha CLI and authenticated REST API can orchestrate a required
+group-key rotation through a configured customer-controlled HTTP key provider.
+They derive the exact recipient set from canonical active membership and
+persist only the correlated content-free provider receipt. Deployments still
+cannot claim forward secrecy unless their provider actually replaces the
+workspace key and prevents removed members from using future generations.
 
 ## Required operator drill
 
