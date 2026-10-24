@@ -49,6 +49,11 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   provider-negotiated output ceilings, plus answers grounded in unique exact
   memory revisions and linked to canonical context-pack and disclosure receipt
   identities.
+- Cursor-bound Memory Provider synchronization payloads with negotiated item
+  limits, canonical batch byte ceilings, strictly ordered server pull changes,
+  optimistic atomic push mutations, exact request-result correlation, and
+  ciphertext-compatible SHA-256 content digests without caller-controlled
+  workspace identity or canonical event sequences.
 - Expiry-aware remote MCP session capacity reclamation so abandoned bindings
   cannot exhaust the bounded in-process registry indefinitely.
 - A transport-neutral remote MCP lifecycle boundary that composes strict HTTP

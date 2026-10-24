@@ -232,7 +232,7 @@ This roadmap describes sequencing, not release dates.
   - [x] Define transport-neutral request and response envelopes with bounded
     correlation IDs, protocol negotiation, operation binding, and closed
     portable error codes.
-  - [ ] Define canonical operation payloads and validation.
+  - [x] Define canonical operation payloads and validation.
     - [x] Add bounded context-resolution requests with global, domain, entity,
       and activity selectors constrained by provider-advertised limits.
       - [x] Seal selector representation so callers cannot bypass domain and
@@ -254,6 +254,9 @@ This roadmap describes sequencing, not release dates.
       provenance references, observation time, and canonical ordered results.
     - [x] Add bounded scoped question payloads and answers grounded in exact
       memory revisions with context-pack and disclosure receipt identity.
+    - [x] Add cursor-bound bounded sync pull/push payloads with server-assigned
+      ordering, optimistic atomic mutations, ciphertext-compatible content
+      digests, and no caller-controlled tenant identity.
   - [ ] Publish a serialization schema and HTTP binding.
   - [ ] Add cross-implementation conformance fixtures.
 - [x] Versioned key-provider sidecar protocol for OS, HSM, and customer-KMS

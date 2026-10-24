@@ -15,6 +15,7 @@ mod memory_lifecycle;
 mod memory_mutation;
 mod memory_protocol;
 mod memory_question;
+mod memory_sync;
 mod semantic;
 
 pub use capability::{
@@ -53,6 +54,12 @@ pub use memory_protocol::{
 };
 pub use memory_question::{
     MAX_QUESTION_BYTES, MAX_QUESTION_PURPOSE_BYTES, ResolveQuestionPayload, ResolveQuestionResult,
+};
+pub use memory_sync::{
+    MAX_SYNC_BATCH_BYTES, MAX_SYNC_CURSOR_BYTES, MAX_SYNC_PAYLOAD_BYTES,
+    MAX_SYNC_RESOURCE_ID_BYTES, MemoryProviderAcceptedMutation, MemoryProviderPulledChange,
+    MemoryProviderPushMutation, MemoryProviderSyncCursor, MemoryProviderSyncOperation,
+    MemoryProviderSyncResource, SyncPullPayload, SyncPullResult, SyncPushPayload, SyncPushResult,
 };
 pub use semantic::{
     AuthorizedMemoryProjection, CandidateMemory, SemanticMemoryProvider, SemanticQuery,
