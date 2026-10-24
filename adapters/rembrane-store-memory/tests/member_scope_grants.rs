@@ -234,6 +234,55 @@ fn owner_membership_cannot_be_removed() {
 }
 
 #[test]
+fn rotation_orchestration_authorizes_before_provider_and_derives_exact_recipients() {
+    let mut store = store_with_member();
+    MemberLifecycleService::new(&mut store)
+        .remove(RemoveMemberCommand {
+            workspace_id: WorkspaceId::new("team"),
+            principal_id: PrincipalId::new("member"),
+            removed_by: PrincipalId::new("owner"),
+            rotation_id: rembrane_domain::KeyRotationId::new("rotation_orchestrated"),
+        })
+        .expect("owner should remove member");
+
+    let provider_called = std::cell::Cell::new(false);
+    let error = MemberLifecycleService::new(&mut store)
+        .orchestrate_key_rotation(
+            WorkspaceId::new("team"),
+            PrincipalId::new("member"),
+            |_, _, _| {
+                provider_called.set(true);
+                Err(ApplicationError::StorageUnavailable)
+            },
+        )
+        .expect_err("removed member must be denied before provider invocation");
+    assert_eq!(error, ApplicationError::AccessDenied);
+    assert!(!provider_called.get());
+
+    let completed = MemberLifecycleService::new(&mut store)
+        .orchestrate_key_rotation(
+            WorkspaceId::new("team"),
+            PrincipalId::new("owner"),
+            |workspace_id, generation, recipients| {
+                assert_eq!(workspace_id, WorkspaceId::new("team"));
+                assert_eq!(generation, 1);
+                assert_eq!(recipients, vec![PrincipalId::new("owner")]);
+                KeyRotationReceipt::new(
+                    ProviderId::new("customer.kms"),
+                    "rotation-request-orchestrated",
+                    workspace_id,
+                    generation,
+                    "workspace-key:v2",
+                    recipients,
+                )
+                .map_err(|error| ApplicationError::Validation(error.to_string()))
+            },
+        )
+        .expect("authorized exact provider receipt should complete rotation");
+    assert_eq!(completed.status(), KeyRotationStatus::Completed);
+}
+
+#[test]
 fn revoking_one_scope_immediately_removes_client_authority() {
     let mut store = store_with_member();
     let scope = ReadScope::Entity {

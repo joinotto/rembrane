@@ -39,6 +39,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   memberships before invoking a configured customer key provider.
 - An authenticated `POST /v1/workspaces/key-rotation` management operation
   with tenant-bound workspace selection and content-free completion output.
+- Executable rotation-orchestration coverage proving authorization precedes
+  provider side effects and canonical recipients exclude removed members.
 - Consumed customer key-provider HTTP configuration for application-owned
   vault, keychain, cloud-secret, and deployment integrations without fixed
   Rembrane environment-variable names.

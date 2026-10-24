@@ -311,6 +311,8 @@ This roadmap describes sequencing, not release dates.
       - [x] Add authorization-first application orchestration and a configured
         provider CLI command.
       - [x] Add the authenticated management REST operation.
+      - [x] Prove unauthorized callers cannot trigger provider side effects
+        and removed members are excluded from the provider recipient set.
 - [ ] Organizational audit and retention controls.
 
 ## Phase 5 — Integration ecosystem
