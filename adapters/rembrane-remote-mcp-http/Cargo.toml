@@ -1,0 +1,18 @@
+[package]
+name = "rembrane-remote-mcp-http"
+description = "OAuth-aware HTTP authorization gate for Rembrane remote MCP transports"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+rembrane-application = { path = "../../crates/rembrane-application" }
+rembrane-contracts = { path = "../../crates/rembrane-contracts" }
+
+[dev-dependencies]
+rembrane-domain = { path = "../../crates/rembrane-domain" }
+
+[lints]
+workspace = true

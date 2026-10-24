@@ -125,6 +125,9 @@ This roadmap describes sequencing, not release dates.
     - [x] Preserve those HTTP outcomes through session establishment,
       per-request reauthentication, cross-tenant replay denial, and
       authenticated termination.
+    - [x] Add a framework-neutral HTTP gate that validates the session header,
+      calls the hardened lifecycle before SDK dispatch, and emits bounded
+      401/403/409/503 response policy with an RFC 9728 bearer challenge.
   - [x] Allow the shared MCP handler service to initialize canonical
     subject/client/workspace identity exclusively from verified remote claims.
   - [x] Bind remote sessions to issuer, resource, canonical identity,

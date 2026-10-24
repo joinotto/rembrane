@@ -11,6 +11,7 @@ members = [
     "adapters/rembrane-memory-provider-http",
     "adapters/rembrane-oauth-introspection",
     "adapters/rembrane-oauth-introspection-http",
+    "adapters/rembrane-remote-mcp-http",
     "adapters/rembrane-store-memory",
     "adapters/rembrane-store-sqlite",
     "adapters/rembrane-semantic-native",

@@ -16,7 +16,7 @@ for crate in \
 do
     cp -R "$repository_root/crates/$crate" "$test_directory/crates/"
 done
-for adapter in rembrane-graph-graphiti rembrane-graph-native rembrane-oauth-introspection rembrane-semantic-native rembrane-store-memory; do
+for adapter in rembrane-graph-graphiti rembrane-graph-native rembrane-oauth-introspection rembrane-remote-mcp-http rembrane-semantic-native rembrane-store-memory; do
     cp -R "$repository_root/adapters/$adapter" "$test_directory/adapters/"
 done
 
@@ -27,6 +27,7 @@ members = [
     "adapters/rembrane-graph-native",
     "adapters/rembrane-semantic-native",
     "adapters/rembrane-oauth-introspection",
+    "adapters/rembrane-remote-mcp-http",
     "adapters/rembrane-store-memory",
     "crates/rembrane-application",
     "crates/rembrane-config",

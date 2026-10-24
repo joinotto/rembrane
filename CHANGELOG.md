@@ -67,6 +67,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Preserved remote MCP HTTP authentication outcomes through session
   establishment, request classification, cross-tenant revalidation, bounded
   capacity handling, and authenticated termination.
+- Added a framework-neutral remote MCP HTTP gate that validates session
+  headers, authorizes every request before protocol dispatch, produces safe
+  RFC 9728 bearer challenges, and maps duplicate or exhausted sessions to
+  explicit bounded transport outcomes.
 - A versioned per-workspace retention policy contract with separate periods
   for memory, checkpoints, travel research, disclosures, canonical events, and
   administrative audit, including bounded expiry and legal-hold overrides.
