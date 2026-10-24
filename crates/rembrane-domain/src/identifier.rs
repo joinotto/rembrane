@@ -45,6 +45,7 @@ identifier!(DisclosureId);
 identifier!(EntityId);
 identifier!(EventId);
 identifier!(EvidenceId);
+identifier!(InvitationId);
 identifier!(MemoryId);
 identifier!(PrincipalId);
 identifier!(ProjectionJobId);

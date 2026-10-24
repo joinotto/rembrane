@@ -3,13 +3,14 @@
 use rembrane_application::{
     ApplicationError, CanonicalMutationRepository, CheckpointDisclosureRepository,
     CheckpointMutationRepository, CheckpointRepository, DisclosureRepository, EventRepository,
-    MembershipRepository, MemoryRepository, ProjectionOutboxRepository, WorkspaceRepository,
+    InvitationRepository, MembershipRepository, MemoryRepository, ProjectionOutboxRepository,
+    WorkspaceRepository,
 };
 use rembrane_domain::{
     ActivityCheckpoint, ActivityId, CanonicalEvent, CheckpointDisclosureReceipt, DisclosureReceipt,
-    Membership, MemoryId, MemoryRecord, Principal, PrincipalId, ProjectionJob, ProjectionJobId,
-    ProjectionOperation, ProjectionStatus, ProviderId, Workspace, WorkspaceId, WorkspaceKind,
-    WorkspaceRole,
+    Invitation, InvitationId, InvitationStatus, Membership, MemoryId, MemoryRecord, Principal,
+    PrincipalId, ProjectionJob, ProjectionJobId, ProjectionOperation, ProjectionStatus, ProviderId,
+    Workspace, WorkspaceId, WorkspaceKind, WorkspaceRole,
 };
 
 #[derive(Debug, Default)]
@@ -21,6 +22,7 @@ pub struct InMemoryStore {
     checkpoint_disclosures: Vec<CheckpointDisclosureReceipt>,
     events: Vec<CanonicalEvent>,
     checkpoints: Vec<ActivityCheckpoint>,
+    invitations: Vec<Invitation>,
     memberships: Vec<Membership>,
     projections: Vec<ProjectionJob>,
 }
@@ -100,6 +102,36 @@ impl InMemoryStore {
     #[must_use]
     pub fn checkpoint_disclosure_count(&self) -> usize {
         self.checkpoint_disclosures.len()
+    }
+
+    pub fn initialize_shared_workspace(
+        &mut self,
+        workspace: Workspace,
+        owner_membership: Membership,
+    ) -> Result<(), ApplicationError> {
+        if workspace.kind() != WorkspaceKind::Shared
+            || owner_membership.workspace_id() != workspace.id()
+            || owner_membership.role() != WorkspaceRole::Owner
+            || !owner_membership.is_active()
+        {
+            return Err(ApplicationError::Validation(
+                "shared workspace bootstrap records must agree".to_owned(),
+            ));
+        }
+        if self
+            .workspaces
+            .iter()
+            .any(|stored| stored.id() == workspace.id())
+            || self.memberships.iter().any(|stored| {
+                stored.workspace_id() == workspace.id()
+                    && stored.principal_id() == owner_membership.principal_id()
+            })
+        {
+            return Err(ApplicationError::AlreadyExists);
+        }
+        self.workspaces.push(workspace);
+        self.memberships.push(owner_membership);
+        Ok(())
     }
 }
 
@@ -361,6 +393,70 @@ impl MembershipRepository for InMemoryStore {
             .ok_or(ApplicationError::NotFound)?;
 
         *stored = membership;
+        Ok(())
+    }
+}
+
+impl InvitationRepository for InMemoryStore {
+    fn insert_invitation(&mut self, invitation: Invitation) -> Result<(), ApplicationError> {
+        if self.invitations.iter().any(|stored| {
+            stored.id() == invitation.id()
+                || (stored.workspace_id() == invitation.workspace_id()
+                    && stored.invited_principal_id() == invitation.invited_principal_id()
+                    && stored.status() == InvitationStatus::Pending)
+        }) {
+            return Err(ApplicationError::AlreadyExists);
+        }
+        self.invitations.push(invitation);
+        Ok(())
+    }
+
+    fn find_invitation(
+        &self,
+        workspace_id: &WorkspaceId,
+        invitation_id: &InvitationId,
+    ) -> Result<Option<Invitation>, ApplicationError> {
+        Ok(self
+            .invitations
+            .iter()
+            .find(|invitation| {
+                invitation.workspace_id() == workspace_id && invitation.id() == invitation_id
+            })
+            .cloned())
+    }
+
+    fn accept_invitation_with_membership(
+        &mut self,
+        invitation: Invitation,
+        membership: Membership,
+    ) -> Result<(), ApplicationError> {
+        if invitation.status() != InvitationStatus::Accepted
+            || invitation.workspace_id() != membership.workspace_id()
+            || invitation.invited_principal_id() != membership.principal_id()
+            || invitation.role() != membership.role()
+        {
+            return Err(ApplicationError::Validation(
+                "accepted invitation and membership must agree".to_owned(),
+            ));
+        }
+        let invitation_position = self
+            .invitations
+            .iter()
+            .position(|stored| {
+                stored.workspace_id() == invitation.workspace_id()
+                    && stored.id() == invitation.id()
+                    && stored.status() == InvitationStatus::Pending
+            })
+            .ok_or(ApplicationError::VersionConflict)?;
+        if self.memberships.iter().any(|stored| {
+            stored.workspace_id() == membership.workspace_id()
+                && stored.principal_id() == membership.principal_id()
+        }) {
+            return Err(ApplicationError::AlreadyExists);
+        }
+
+        self.invitations[invitation_position] = invitation;
+        self.memberships.push(membership);
         Ok(())
     }
 }

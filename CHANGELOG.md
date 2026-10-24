@@ -13,6 +13,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   application layers.
 - Canonical memory, provenance, event, disclosure, membership, grant,
   checkpoint, and projection-outbox models.
+- Shared-workspace invitation lifecycle with owner/admin creation authority,
+  non-enumerating invitee acceptance, role validation, and atomic membership
+  activation in the in-memory reference adapter.
 - Atomic canonical mutation ports and an in-memory reference adapter.
 - Native semantic baseline with authorization revalidation.
 - Provider capability verification and retry/quarantine projection worker.

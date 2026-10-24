@@ -1,7 +1,7 @@
 use rembrane_domain::{
     ActivityCheckpoint, ActivityId, CanonicalEvent, CheckpointDisclosureReceipt, DisclosureReceipt,
-    Membership, MemoryId, MemoryRecord, Principal, PrincipalId, ProjectionJob, ProjectionJobId,
-    ProjectionStatus, ProviderId, Workspace, WorkspaceId,
+    Invitation, InvitationId, Membership, MemoryId, MemoryRecord, Principal, PrincipalId,
+    ProjectionJob, ProjectionJobId, ProjectionStatus, ProviderId, Workspace, WorkspaceId,
 };
 
 use crate::ApplicationError;
@@ -106,6 +106,22 @@ pub trait MembershipRepository {
     ) -> Result<Option<Membership>, ApplicationError>;
 
     fn replace_membership(&mut self, membership: Membership) -> Result<(), ApplicationError>;
+}
+
+pub trait InvitationRepository {
+    fn insert_invitation(&mut self, invitation: Invitation) -> Result<(), ApplicationError>;
+
+    fn find_invitation(
+        &self,
+        workspace_id: &WorkspaceId,
+        invitation_id: &InvitationId,
+    ) -> Result<Option<Invitation>, ApplicationError>;
+
+    fn accept_invitation_with_membership(
+        &mut self,
+        invitation: Invitation,
+        membership: Membership,
+    ) -> Result<(), ApplicationError>;
 }
 
 pub trait WorkspaceRepository {

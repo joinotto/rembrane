@@ -9,6 +9,7 @@ mod disclosure;
 mod event;
 mod grant;
 mod identifier;
+mod invitation;
 mod memory;
 mod projection;
 mod provenance;
@@ -21,8 +22,9 @@ pub use event::{CanonicalEvent, EventError, EventPayload};
 pub use grant::{ReadGrant, ReadScope, WriteGrant, WritePermission};
 pub use identifier::{
     ActivityId, CheckpointId, ClientId, ContextPackId, DisclosureId, EntityId, EventId, EvidenceId,
-    MemoryId, PrincipalId, ProjectionJobId, ProviderId, WorkspaceId,
+    InvitationId, MemoryId, PrincipalId, ProjectionJobId, ProviderId, WorkspaceId,
 };
+pub use invitation::{Invitation, InvitationError, InvitationStatus};
 pub use memory::{
     MAX_MEMORY_CONTENT_BYTES, MemoryKind, MemoryLifecycleError, MemoryRecord, MemoryStatus,
 };

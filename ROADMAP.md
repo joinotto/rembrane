@@ -94,7 +94,8 @@ This roadmap describes sequencing, not release dates.
 
 ## Phase 4 — Shared workspaces
 
-- [ ] Invitations, roles, and entity-level grants.
+- [x] Shared-workspace invitations and role-bound acceptance.
+- [ ] Shared-workspace entity-level grants.
 - [ ] Private-to-shared memory proposals.
 - [ ] Group key rotation and member removal.
 - [ ] Organizational audit and retention controls.
