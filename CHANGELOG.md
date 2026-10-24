@@ -66,6 +66,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Typed Memory Provider proposal writes carrying bounded content, selector,
   idempotency, evidence source, source reference, and observation time while
   excluding workspace, subject, and caller-asserted confirmation fields.
+- Exact-version Memory Provider deletion with safe one-segment URL encoding,
+  path/payload identity binding, idempotency, correlated errors, and validation
+  that the returned tombstone immediately follows the deleted revision.
 - Canonical engine-neutral temporal knowledge graph aggregates with typed
   nodes, validated relationship types, strict workspace namespaces, separate
   validity and ingestion time, evidence provenance, bounded aliases, versions,

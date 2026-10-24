@@ -8,12 +8,13 @@ use rembrane_domain::{
     EvidenceSource, MemoryId, MemoryKind, MemoryScope,
 };
 use rembrane_provider_sdk::{
-    CURRENT_MEMORY_PROVIDER_PROTOCOL, MEMORY_PROVIDER_DISCOVERY_PATH, MemoryProviderCapability,
-    MemoryProviderConnection, MemoryProviderContextItem, MemoryProviderDisclosureConstraint,
-    MemoryProviderLimits, MemoryProviderManifest, MemoryProviderPolicy, MemoryProviderPrivacyMode,
-    MemoryProviderRequest, MemoryProviderResponse, MemoryProviderSensitivity,
-    MemoryProviderTransport, ProposeMemoryPayload, ProposeMemoryResult, ProviderError,
-    ProviderProtocolVersion, ResolveContextPayload, ResolveContextResult,
+    CURRENT_MEMORY_PROVIDER_PROTOCOL, DeleteMemoryPayload, DeleteMemoryResult,
+    MEMORY_PROVIDER_DISCOVERY_PATH, MemoryProviderCapability, MemoryProviderConnection,
+    MemoryProviderContextItem, MemoryProviderDisclosureConstraint, MemoryProviderLimits,
+    MemoryProviderManifest, MemoryProviderPolicy, MemoryProviderPrivacyMode, MemoryProviderRequest,
+    MemoryProviderResponse, MemoryProviderSensitivity, MemoryProviderTransport,
+    ProposeMemoryPayload, ProposeMemoryResult, ProviderError, ProviderProtocolVersion,
+    ResolveContextPayload, ResolveContextResult,
 };
 use reqwest::Url;
 use reqwest::blocking::{Client, Response};
@@ -139,6 +140,44 @@ impl HttpMemoryProviderClient {
         }
     }
 
+    pub fn delete_memory(
+        &self,
+        request: &MemoryProviderRequest<DeleteMemoryPayload>,
+    ) -> Result<MemoryProviderResponse<DeleteMemoryResult>, ProviderError> {
+        let endpoint = memory_endpoint(&self.base_url, request.payload().memory_id().as_str())?;
+        let body = RequestEnvelope {
+            request_id: request.request_id().as_str(),
+            protocol_version: "0.1",
+            operation: "delete_memory",
+            payload: DeleteMemoryBody::from(request.payload()),
+        };
+        let response = self.delete_json(endpoint, &body)?;
+        let status = response.status().as_u16();
+        let wire: ResponseEnvelope<DeleteMemoryResultBody> =
+            decode_json(response, MAXIMUM_OPERATION_BYTES)?;
+        validate_response_identity(request, &wire.request_id, &wire.protocol_version)?;
+        match (wire.result, wire.error) {
+            (Some(result), None) if (200..300).contains(&status) => {
+                if result.memory_id != request.payload().memory_id().as_str() {
+                    return Err(ProviderError::Rejected(
+                        "memory provider deletion returned another memory id".to_owned(),
+                    ));
+                }
+                Ok(request.success(DeleteMemoryResult::new(
+                    MemoryId::new(result.memory_id),
+                    result.deleted_version,
+                    result.tombstone_version,
+                )?))
+            }
+            (None, Some(error)) if !(200..300).contains(&status) => {
+                Ok(request.error(parse_error_code(&error.code)?))
+            }
+            _ => Err(ProviderError::Rejected(
+                "memory provider response status and envelope disagree".to_owned(),
+            )),
+        }
+    }
+
     fn post_json<Body: Serialize>(
         &self,
         endpoint: Url,
@@ -163,6 +202,44 @@ impl HttpMemoryProviderClient {
             .send()
             .map_err(|_| ProviderError::Unavailable)
     }
+
+    fn delete_json<Body: Serialize>(
+        &self,
+        endpoint: Url,
+        body: &Body,
+    ) -> Result<Response, ProviderError> {
+        let encoded = serde_json::to_vec(body).map_err(|_| {
+            ProviderError::InvalidConfiguration(
+                "memory provider request could not be encoded".to_owned(),
+            )
+        })?;
+        if encoded.len() as u64 > MAXIMUM_OPERATION_BYTES {
+            return Err(ProviderError::InvalidConfiguration(
+                "memory provider request exceeds the transport limit".to_owned(),
+            ));
+        }
+        self.client
+            .delete(endpoint)
+            .header(ACCEPT, "application/json")
+            .header(CONTENT_TYPE, "application/json")
+            .bearer_auth(self.bearer_token.as_str())
+            .body(encoded)
+            .send()
+            .map_err(|_| ProviderError::Unavailable)
+    }
+}
+
+fn memory_endpoint(base_url: &Url, memory_id: &str) -> Result<Url, ProviderError> {
+    let mut endpoint = base_url
+        .join("v1/memories/")
+        .map_err(|_| ProviderError::Unavailable)?;
+    endpoint
+        .path_segments_mut()
+        .map_err(|_| {
+            ProviderError::InvalidConfiguration("memory provider URL cannot be a base".to_owned())
+        })?
+        .push(memory_id);
+    Ok(endpoint)
 }
 
 fn validate_base_url(value: &str) -> Result<Url, ProviderError> {
@@ -286,6 +363,26 @@ impl<'request> From<&'request ProposeMemoryPayload> for ProposeMemoryBody<'reque
     }
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DeleteMemoryBody<'request> {
+    idempotency_key: &'request str,
+    memory_id: &'request str,
+    expected_version: u64,
+    reason: &'request str,
+}
+
+impl<'request> From<&'request DeleteMemoryPayload> for DeleteMemoryBody<'request> {
+    fn from(payload: &'request DeleteMemoryPayload) -> Self {
+        Self {
+            idempotency_key: payload.idempotency_key().as_str(),
+            memory_id: payload.memory_id().as_str(),
+            expected_version: payload.expected_version(),
+            reason: payload.reason(),
+        }
+    }
+}
+
 impl<'request> From<&'request ResolveContextPayload> for ResolveContextBody<'request> {
     fn from(payload: &'request ResolveContextPayload) -> Self {
         Self {
@@ -350,6 +447,14 @@ struct ResolveContextResultBody {
 struct ProposeMemoryResultBody {
     memory_id: String,
     version: u64,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct DeleteMemoryResultBody {
+    memory_id: String,
+    deleted_version: u64,
+    tombstone_version: u64,
 }
 
 impl ResolveContextResultBody {
@@ -757,7 +862,7 @@ mod tests {
 
     use super::{
         DiscoveryBody, ProposeMemoryBody, RequestEnvelope, ResolveContextBody,
-        ResolveContextResultBody, validate_base_url, validate_bearer_token,
+        ResolveContextResultBody, memory_endpoint, validate_base_url, validate_bearer_token,
     };
 
     const DISCOVERY: &str = r#"{
@@ -954,5 +1059,20 @@ mod tests {
         assert!(encoded.get("workspaceId").is_none());
         assert!(encoded.get("subjectId").is_none());
         assert!(encoded.get("confirmed").is_none());
+    }
+
+    #[test]
+    fn percent_encodes_memory_identity_as_one_path_segment() {
+        let base = validate_base_url("https://memory.example.test").expect("base URL");
+        let endpoint = memory_endpoint(&base, "memory/with?reserved#bytes").expect("endpoint");
+        assert_eq!(
+            endpoint.as_str(),
+            "https://memory.example.test/v1/memories/memory%2Fwith%3Freserved%23bytes"
+        );
+        assert_eq!(
+            endpoint.path_segments().expect("segments").count(),
+            3,
+            "opaque memory identity must remain one final path segment"
+        );
     }
 }

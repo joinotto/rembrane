@@ -362,6 +362,9 @@ This roadmap describes sequencing, not release dates.
         pack, and disclosure identity.
       - [x] Submit idempotent evidence-backed memory proposals without tenant
         identity or caller-asserted confirmation.
+      - [x] Delete one exact memory revision through a percent-encoded,
+        path/payload-bound identifier and validate the consecutive tombstone
+        result.
       - [ ] Add question, event, checkpoint, disclosure, lifecycle, and sync
         operations.
 - [x] Versioned key-provider sidecar protocol for OS, HSM, and customer-KMS
