@@ -512,6 +512,13 @@ This roadmap describes sequencing, not release dates.
 - [x] Expose the build-pinned compatibility registry through the CLI.
 - [x] Run installed native-provider conformance through the CLI.
 - [ ] Automated external-provider registry verification and release signing.
+  - [x] Verify registry identity, timestamps, conformance status, and pinned
+    native Git evidence in the repository static gate.
+  - [x] Produce and tamper-test detached Ed25519 signatures using an
+    externally supplied private key.
+  - [ ] Publish signed registry artifacts from tagged releases.
+  - [ ] Run conformance against each external provider before promoting its
+    registry status to compatible.
 - [ ] WhatsApp Business gateway.
 - [ ] Mobile share flows and iMessage extension.
 - [ ] Community provider and agent adapters.

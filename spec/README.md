@@ -67,6 +67,17 @@ Registry entries are evidence records, not endorsements: they pin the tested
 adapter revision, protocol versions, deployment and plaintext boundaries, and
 dated conformance result. A passing entry is not a security certification.
 
+Run `scripts/verify-provider-registry.sh` before publishing registry changes.
+It rejects duplicate provider identities, invalid or future-dated evidence,
+compatible providers without passing conformance, and native entries whose
+pinned Git revision is absent locally.
+
+Registry releases use detached Ed25519 signatures over the exact published
+JSON bytes. Set `REMBRANE_REGISTRY_SIGNING_KEY` to a PEM private-key path and
+run `scripts/sign-provider-registry.sh`; no private key belongs in this
+repository. Consumers verify the JSON and `.sig` artifact with
+`scripts/verify-provider-registry-signature.sh` and the release public key.
+
 ## Memory Provider conformance
 
 `memory-provider-conformance.schema.json` and

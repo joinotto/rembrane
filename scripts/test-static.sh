@@ -23,6 +23,8 @@ require_command "$python_command"
 ./scripts/check-architecture.sh
 ./scripts/check-sensitive-files.sh
 ./scripts/check-protocols.sh
+./scripts/verify-provider-registry.sh
+./scripts/test-provider-registry-signing.sh
 ./scripts/test-sqlite-schema.sh
 ./scripts/test-sqlite-atomicity.sh
 node sdks/typescript/test.mjs
@@ -47,6 +49,10 @@ for deployment_file in \
     scripts/test-graphiti-sidecar.sh \
     scripts/test-swift-sdk.sh \
     scripts/test-kotlin-sdk.sh \
+    scripts/verify-provider-registry.sh \
+    scripts/sign-provider-registry.sh \
+    scripts/verify-provider-registry-signature.sh \
+    scripts/test-provider-registry-signing.sh \
     scripts/test-core-offline.sh
 do
     test -s "$deployment_file" || {
@@ -59,6 +65,10 @@ sh -n scripts/test-graphiti-http-e2e.sh
 sh -n scripts/test-graphiti-sidecar.sh
 sh -n scripts/test-swift-sdk.sh
 sh -n scripts/test-kotlin-sdk.sh
+sh -n scripts/verify-provider-registry.sh
+sh -n scripts/sign-provider-registry.sh
+sh -n scripts/verify-provider-registry-signature.sh
+sh -n scripts/test-provider-registry-signing.sh
 sh -n scripts/test-core-offline.sh
 rg -q '127\.0\.0\.1:8787:8787' compose.yaml
 rg -q 'no-new-privileges:true' compose.yaml
