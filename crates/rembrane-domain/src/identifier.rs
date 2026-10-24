@@ -38,6 +38,7 @@ macro_rules! identifier {
 }
 
 identifier!(ActivityId);
+identifier!(AdministrativeAuditEventId);
 identifier!(BookingResearchId);
 identifier!(CheckpointId);
 identifier!(ClientId);

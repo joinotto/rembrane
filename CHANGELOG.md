@@ -9,6 +9,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- An immutable, bounded, content-free administrative audit event contract with
+  tenant, actor, closed action, opaque target, request correlation, and
+  occurrence time while excluding memory content, secrets, and key material.
 - A provider-independent, content-free shared-workspace key-rotation
   aggregate with monotonic generations, removal provenance, explicit pending
   state, and opaque key-provider completion identity.

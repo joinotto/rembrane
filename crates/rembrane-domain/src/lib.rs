@@ -5,6 +5,7 @@
 //! adapters.
 
 mod activity;
+mod audit;
 mod booking_research;
 mod disclosure;
 mod event;
@@ -24,6 +25,10 @@ mod trip;
 mod workspace;
 
 pub use activity::{ActivityCheckpoint, CheckpointError, MAX_CHECKPOINT_PAYLOAD_BYTES};
+pub use audit::{
+    AdministrativeAction, AdministrativeAuditError, AdministrativeAuditEvent,
+    AdministrativeTargetKind, MAX_AUDIT_REQUEST_ID_BYTES, MAX_AUDIT_TARGET_ID_BYTES,
+};
 pub use booking_research::{
     BookingResearch, BookingResearchError, BookingResearchKind, ResearchFreshness,
 };
@@ -35,10 +40,10 @@ pub use event::{CanonicalEvent, EventError, EventPayload};
 pub use grant::{ReadGrant, ReadPermission, ReadScope, WriteGrant, WritePermission};
 pub use graph_projection::{GraphProjectionJob, GraphProjectionJobError, GraphProjectionResource};
 pub use identifier::{
-    ActivityId, BookingResearchId, CheckpointId, ClientId, ContextPackId, DisclosureId, EntityId,
-    EventId, EvidenceId, InvitationId, KeyRotationId, KnowledgeEdgeId, KnowledgeNodeId, MemoryId,
-    PrincipalId, ProjectionJobId, ProviderId, ShareProposalId, TripConstraintId, TripDecisionId,
-    TripParticipantId, WorkspaceId,
+    ActivityId, AdministrativeAuditEventId, BookingResearchId, CheckpointId, ClientId,
+    ContextPackId, DisclosureId, EntityId, EventId, EvidenceId, InvitationId, KeyRotationId,
+    KnowledgeEdgeId, KnowledgeNodeId, MemoryId, PrincipalId, ProjectionJobId, ProviderId,
+    ShareProposalId, TripConstraintId, TripDecisionId, TripParticipantId, WorkspaceId,
 };
 pub use invitation::{Invitation, InvitationError, InvitationStatus};
 pub use key_rotation::{
