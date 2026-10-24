@@ -83,7 +83,9 @@ const fn role_allows(role: WorkspaceRole, permission: WritePermission) -> bool {
         WorkspaceRole::Owner | WorkspaceRole::Admin => true,
         WorkspaceRole::Member => matches!(
             permission,
-            WritePermission::ProposeMemory | WritePermission::WriteCheckpoint
+            WritePermission::ProposeMemory
+                | WritePermission::WriteCheckpoint
+                | WritePermission::ReviseTrip
         ),
         WorkspaceRole::Viewer => false,
     }
@@ -173,6 +175,8 @@ mod tests {
                 WritePermission::DeleteMemory,
                 WritePermission::ShareMemory,
                 WritePermission::WriteCheckpoint,
+                WritePermission::CreateTrip,
+                WritePermission::ReviseTrip,
             ],
         }
     }
@@ -196,7 +200,8 @@ mod tests {
             grants.write.permissions,
             vec![
                 WritePermission::ProposeMemory,
-                WritePermission::WriteCheckpoint
+                WritePermission::WriteCheckpoint,
+                WritePermission::ReviseTrip,
             ]
         );
         assert_eq!(grants.read.scopes, Vec::<ReadScope>::new());

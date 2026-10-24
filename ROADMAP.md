@@ -102,8 +102,10 @@ This roadmap describes sequencing, not release dates.
     date windows, evidence-backed constraints, and attributed decisions.
   - [x] Versioned canonical trip wire format with strict aggregate
     reconstruction.
-  - [ ] Encrypted trip repository, audit events, and authorized application
-    services.
+  - [x] Authorized create/revise application service with exact entity-scoped
+    grants and an atomic in-memory reference repository.
+  - [ ] Encrypted persistent trip repository with tenant-isolation and rollback
+    coverage.
 - [ ] Booking-research evidence and expiry.
 - [ ] Cross-agent activity continuation.
 - [ ] Sensitive travel-data permissions.

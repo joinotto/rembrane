@@ -17,6 +17,7 @@ mod resolve_context;
 mod revise_memory;
 mod semantic_context;
 mod share_memory;
+mod trip;
 
 pub use authorize_client::{AuthorizeClientCommand, AuthorizeClientService, ClientGrantBundle};
 pub use checkpoint::{
@@ -33,7 +34,7 @@ pub use ports::{
     CheckpointRepository, DisclosureRepository, EventRepository, InvitationRepository,
     MemberLifecycleRepository, MemberScopeGrantRepository, MembershipRepository, MemoryRepository,
     ProjectionOutboxRepository, ShareProposalMutationRepository, ShareProposalRepository,
-    WorkspaceRepository,
+    TripMutationRepository, TripRepository, WorkspaceRepository,
 };
 pub use projection_worker::{ProjectionOutcome, ProjectionWorker};
 pub use propose_memory::{ConfirmMemoryCommand, MemoryProposalService, ProposeMemoryCommand};
@@ -44,3 +45,4 @@ pub use semantic_context::SemanticContextService;
 pub use share_memory::{
     ApproveShareProposalCommand, CreateShareProposalCommand, MemoryShareService,
 };
+pub use trip::{CreateTripCommand, ReplaceTripCommand, TripService};

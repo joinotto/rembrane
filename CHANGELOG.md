@@ -9,6 +9,12 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- Explicit trip create/revise permissions, exact entity-scoped authorization,
+  versioned trip audit events, and atomic in-memory trip/event mutations.
+- Member trip revisions through persisted entity grants while trip creation
+  remains restricted to workspace owners and administrators.
+- Version 3 canonical event encoding for trip lifecycle events while retaining
+  the existing version 1 and version 2 wire formats.
 - Rust modular-monolith workspace with provider-independent domain and
   application layers.
 - Canonical memory, provenance, event, disclosure, membership, grant,

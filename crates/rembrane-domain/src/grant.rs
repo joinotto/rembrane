@@ -27,6 +27,8 @@ pub enum WritePermission {
     DeleteMemory,
     ShareMemory,
     WriteCheckpoint,
+    CreateTrip,
+    ReviseTrip,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

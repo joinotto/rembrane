@@ -2,7 +2,7 @@ use std::error::Error;
 use std::fmt::{self, Display};
 
 use crate::{
-    ActivityId, ContextPackId, DisclosureId, EventId, EvidenceId, MemoryId, PrincipalId,
+    ActivityId, ContextPackId, DisclosureId, EntityId, EventId, EvidenceId, MemoryId, PrincipalId,
     ShareProposalId, WorkspaceId,
 };
 
@@ -58,6 +58,14 @@ pub enum EventPayload {
     },
     ActivityCheckpointed {
         activity_id: ActivityId,
+        version: u64,
+    },
+    TripCreated {
+        trip_id: EntityId,
+        version: u64,
+    },
+    TripRevised {
+        trip_id: EntityId,
         version: u64,
     },
     DisclosureRecorded {

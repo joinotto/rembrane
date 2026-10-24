@@ -1,6 +1,6 @@
 use rembrane_domain::{
-    ActivityId, CanonicalEvent, ContextPackId, DisclosureId, EventId, EventPayload, EvidenceId,
-    MemoryId, PrincipalId, ShareProposalId, WorkspaceId,
+    ActivityId, CanonicalEvent, ContextPackId, DisclosureId, EntityId, EventId, EventPayload,
+    EvidenceId, MemoryId, PrincipalId, ShareProposalId, WorkspaceId,
 };
 use serde::{Deserialize, Serialize};
 
@@ -9,6 +9,7 @@ use crate::CodecError;
 const EVENT_FORMAT: &str = "rembrane.event";
 const EVENT_FORMAT_V1: u16 = 1;
 const EVENT_FORMAT_V2: u16 = 2;
+const EVENT_FORMAT_V3: u16 = 3;
 
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -77,6 +78,14 @@ enum EventPayloadDto {
         target_memory_id: String,
         target_version: u64,
     },
+    TripCreated {
+        trip_id: String,
+        version: u64,
+    },
+    TripRevised {
+        trip_id: String,
+        version: u64,
+    },
     ObservationCaptured {
         evidence_id: String,
     },
@@ -106,8 +115,11 @@ pub fn decode_event(payload: &[u8]) -> Result<CanonicalEvent, CodecError> {
     if envelope.format != EVENT_FORMAT {
         return Err(CodecError::UnsupportedFormat);
     }
-    if !matches!(envelope.version, EVENT_FORMAT_V1 | EVENT_FORMAT_V2)
-        || (envelope.version == EVENT_FORMAT_V1 && envelope.record.payload.is_share_event())
+    if !matches!(
+        envelope.version,
+        EVENT_FORMAT_V1 | EVENT_FORMAT_V2 | EVENT_FORMAT_V3
+    ) || (envelope.version == EVENT_FORMAT_V1 && envelope.record.payload.is_share_event())
+        || (envelope.version < EVENT_FORMAT_V3 && envelope.record.payload.is_trip_event())
     {
         return Err(CodecError::UnsupportedVersion);
     }
@@ -132,6 +144,7 @@ impl From<&CanonicalEvent> for EventDto {
 
 const fn event_format_version(payload: &EventPayload) -> u16 {
     match payload {
+        EventPayload::TripCreated { .. } | EventPayload::TripRevised { .. } => EVENT_FORMAT_V3,
         EventPayload::MemoryShareProposed { .. }
         | EventPayload::MemoryShareApproved { .. }
         | EventPayload::MemoryShareRejected { .. }
@@ -151,6 +164,10 @@ impl EventPayloadDto {
                 | Self::MemoryShareRevoked { .. }
                 | Self::MemorySharedIn { .. }
         )
+    }
+
+    const fn is_trip_event(&self) -> bool {
+        matches!(self, Self::TripCreated { .. } | Self::TripRevised { .. })
     }
 }
 
@@ -233,6 +250,14 @@ impl From<&EventPayload> for EventPayloadDto {
                 source_version: *source_version,
                 target_memory_id: target_memory_id.as_str().to_owned(),
                 target_version: *target_version,
+            },
+            EventPayload::TripCreated { trip_id, version } => Self::TripCreated {
+                trip_id: trip_id.as_str().to_owned(),
+                version: *version,
+            },
+            EventPayload::TripRevised { trip_id, version } => Self::TripRevised {
+                trip_id: trip_id.as_str().to_owned(),
+                version: *version,
             },
             EventPayload::ObservationCaptured { evidence_id } => Self::ObservationCaptured {
                 evidence_id: evidence_id.as_str().to_owned(),
@@ -319,6 +344,14 @@ impl From<EventPayloadDto> for EventPayload {
                 target_memory_id: MemoryId::new(target_memory_id),
                 target_version,
             },
+            EventPayloadDto::TripCreated { trip_id, version } => Self::TripCreated {
+                trip_id: EntityId::new(trip_id),
+                version,
+            },
+            EventPayloadDto::TripRevised { trip_id, version } => Self::TripRevised {
+                trip_id: EntityId::new(trip_id),
+                version,
+            },
             EventPayloadDto::ObservationCaptured { evidence_id } => Self::ObservationCaptured {
                 evidence_id: EvidenceId::new(evidence_id),
             },
@@ -343,7 +376,8 @@ impl From<EventPayloadDto> for EventPayload {
 #[cfg(test)]
 mod tests {
     use rembrane_domain::{
-        CanonicalEvent, EventId, EventPayload, MemoryId, PrincipalId, ShareProposalId, WorkspaceId,
+        CanonicalEvent, EntityId, EventId, EventPayload, MemoryId, PrincipalId, ShareProposalId,
+        WorkspaceId,
     };
 
     use super::{decode_event, encode_event};
@@ -421,6 +455,55 @@ mod tests {
                 "payload":{
                     "type":"memory-share-rejected",
                     "proposal_id":"share_01"
+                }
+            }
+        }"#;
+
+        assert_eq!(
+            decode_event(payload),
+            Err(super::CodecError::UnsupportedVersion)
+        );
+    }
+
+    #[test]
+    fn round_trips_trip_event_as_wire_version_three() {
+        let event = CanonicalEvent::new(
+            EventId::new("event_trip_01"),
+            WorkspaceId::new("personal_01"),
+            PrincipalId::new("principal_01"),
+            Some(PrincipalId::new("principal_01")),
+            3,
+            EventPayload::TripCreated {
+                trip_id: EntityId::new("trip_01"),
+                version: 1,
+            },
+        )
+        .expect("trip event should be valid");
+
+        let encoded = encode_event(&event).expect("trip event should encode");
+        let wire = std::str::from_utf8(&encoded).expect("JSON should be UTF-8");
+        assert!(wire.contains("\"version\":3"));
+        assert_eq!(
+            decode_event(&encoded).expect("trip event should decode"),
+            event
+        );
+    }
+
+    #[test]
+    fn rejects_trip_variant_claiming_older_wire_version() {
+        let payload = br#"{
+            "format":"rembrane.event",
+            "version":2,
+            "record":{
+                "id":"event_trip_01",
+                "workspace_id":"personal_01",
+                "actor_id":"principal_01",
+                "subject_id":"principal_01",
+                "sequence":3,
+                "payload":{
+                    "type":"trip-created",
+                    "trip_id":"trip_01",
+                    "version":1
                 }
             }
         }"#;

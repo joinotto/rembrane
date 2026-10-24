@@ -5,14 +5,16 @@ use rembrane_application::{
     CheckpointMutationRepository, CheckpointRepository, DisclosureRepository, EventRepository,
     InvitationRepository, MemberLifecycleRepository, MemberScopeGrantRepository,
     MembershipRepository, MemoryRepository, ProjectionOutboxRepository,
-    ShareProposalMutationRepository, ShareProposalRepository, WorkspaceRepository,
+    ShareProposalMutationRepository, ShareProposalRepository, TripMutationRepository,
+    TripRepository, WorkspaceRepository,
 };
 use rembrane_domain::{
     ActivityCheckpoint, ActivityId, CanonicalEvent, CheckpointDisclosureReceipt, DisclosureReceipt,
     EventPayload, Invitation, InvitationId, InvitationStatus, MemberScopeGrant, Membership,
     MemoryId, MemoryRecord, MemoryShareProposal, MemoryStatus, Principal, PrincipalId,
     ProjectionJob, ProjectionJobId, ProjectionOperation, ProjectionStatus, ProviderId,
-    ShareProposalId, ShareProposalStatus, Workspace, WorkspaceId, WorkspaceKind, WorkspaceRole,
+    ShareProposalId, ShareProposalStatus, Trip, Workspace, WorkspaceId, WorkspaceKind,
+    WorkspaceRole,
 };
 
 #[derive(Debug, Default)]
@@ -29,6 +31,111 @@ pub struct InMemoryStore {
     share_proposals: Vec<MemoryShareProposal>,
     memberships: Vec<Membership>,
     projections: Vec<ProjectionJob>,
+    trips: Vec<Trip>,
+}
+
+impl TripRepository for InMemoryStore {
+    fn find_trip(
+        &self,
+        workspace_id: &WorkspaceId,
+        trip_id: &rembrane_domain::EntityId,
+    ) -> Result<Option<Trip>, ApplicationError> {
+        Ok(self
+            .trips
+            .iter()
+            .find(|trip| trip.workspace_id() == workspace_id && trip.id() == trip_id)
+            .cloned())
+    }
+
+    fn list_trips_for_owner(
+        &self,
+        workspace_id: &WorkspaceId,
+        owner_subject_id: &PrincipalId,
+    ) -> Result<Vec<Trip>, ApplicationError> {
+        Ok(self
+            .trips
+            .iter()
+            .filter(|trip| {
+                trip.workspace_id() == workspace_id && trip.owner_subject_id() == owner_subject_id
+            })
+            .cloned()
+            .collect())
+    }
+}
+
+impl TripMutationRepository for InMemoryStore {
+    fn insert_trip_with_event(
+        &mut self,
+        trip: Trip,
+        event: CanonicalEvent,
+        expected_previous_sequence: u64,
+    ) -> Result<(), ApplicationError> {
+        validate_trip_event(&trip, &event, true)?;
+        if self
+            .trips
+            .iter()
+            .any(|stored| stored.workspace_id() == trip.workspace_id() && stored.id() == trip.id())
+        {
+            return Err(ApplicationError::AlreadyExists);
+        }
+        self.validate_event(&event, expected_previous_sequence)?;
+        self.trips.push(trip);
+        self.events.push(event);
+        Ok(())
+    }
+
+    fn replace_trip_with_event(
+        &mut self,
+        trip: Trip,
+        expected_trip_version: u64,
+        event: CanonicalEvent,
+        expected_previous_sequence: u64,
+    ) -> Result<(), ApplicationError> {
+        validate_trip_event(&trip, &event, false)?;
+        let position = self
+            .trips
+            .iter()
+            .position(|stored| {
+                stored.workspace_id() == trip.workspace_id() && stored.id() == trip.id()
+            })
+            .ok_or(ApplicationError::NotFound)?;
+        let stored = &self.trips[position];
+        if stored.owner_subject_id() != trip.owner_subject_id()
+            || stored.version() != expected_trip_version
+            || trip.version() != expected_trip_version.saturating_add(1)
+        {
+            return Err(ApplicationError::VersionConflict);
+        }
+        self.validate_event(&event, expected_previous_sequence)?;
+        self.trips[position] = trip;
+        self.events.push(event);
+        Ok(())
+    }
+}
+
+fn validate_trip_event(
+    trip: &Trip,
+    event: &CanonicalEvent,
+    creating: bool,
+) -> Result<(), ApplicationError> {
+    let payload_matches = match event.payload() {
+        EventPayload::TripCreated { trip_id, version } if creating => {
+            trip_id == trip.id() && *version == trip.version()
+        }
+        EventPayload::TripRevised { trip_id, version } if !creating => {
+            trip_id == trip.id() && *version == trip.version()
+        }
+        _ => false,
+    };
+    if event.workspace_id() != trip.workspace_id()
+        || event.subject_id() != Some(trip.owner_subject_id())
+        || !payload_matches
+    {
+        return Err(ApplicationError::Validation(
+            "event does not describe canonical trip mutation".to_owned(),
+        ));
+    }
+    Ok(())
 }
 
 impl WorkspaceRepository for InMemoryStore {

@@ -1,9 +1,9 @@
 use rembrane_domain::{
     ActivityCheckpoint, ActivityId, CanonicalEvent, CheckpointDisclosureReceipt, DisclosureReceipt,
-    Invitation, InvitationId, InvitationStatus, MemberScopeGrant, Membership, MembershipStatus,
-    MemoryId, MemoryRecord, MemoryShareProposal, Principal, PrincipalId, ProjectionJob,
-    ProjectionJobId, ProjectionStatus, ProviderId, ShareProposalId, ShareProposalStatus, Workspace,
-    WorkspaceId,
+    EntityId, Invitation, InvitationId, InvitationStatus, MemberScopeGrant, Membership,
+    MembershipStatus, MemoryId, MemoryRecord, MemoryShareProposal, Principal, PrincipalId,
+    ProjectionJob, ProjectionJobId, ProjectionStatus, ProviderId, ShareProposalId,
+    ShareProposalStatus, Trip, Workspace, WorkspaceId,
 };
 
 use crate::ApplicationError;
@@ -93,6 +93,37 @@ pub trait CheckpointMutationRepository: CheckpointRepository + EventRepository {
         &mut self,
         checkpoint: ActivityCheckpoint,
         expected_checkpoint_version: u64,
+        event: CanonicalEvent,
+        expected_previous_sequence: u64,
+    ) -> Result<(), ApplicationError>;
+}
+
+pub trait TripRepository {
+    fn find_trip(
+        &self,
+        workspace_id: &WorkspaceId,
+        trip_id: &EntityId,
+    ) -> Result<Option<Trip>, ApplicationError>;
+
+    fn list_trips_for_owner(
+        &self,
+        workspace_id: &WorkspaceId,
+        owner_subject_id: &PrincipalId,
+    ) -> Result<Vec<Trip>, ApplicationError>;
+}
+
+pub trait TripMutationRepository: TripRepository + EventRepository {
+    fn insert_trip_with_event(
+        &mut self,
+        trip: Trip,
+        event: CanonicalEvent,
+        expected_previous_sequence: u64,
+    ) -> Result<(), ApplicationError>;
+
+    fn replace_trip_with_event(
+        &mut self,
+        trip: Trip,
+        expected_trip_version: u64,
         event: CanonicalEvent,
         expected_previous_sequence: u64,
     ) -> Result<(), ApplicationError>;
