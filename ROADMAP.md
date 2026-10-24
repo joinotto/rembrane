@@ -290,6 +290,8 @@ This roadmap describes sequencing, not release dates.
     identity.
   - [ ] Extend the key-provider protocol with a verifiable rotation receipt
     binding generation and authorized recipients.
+    - [x] Expose tenant-scoped canonical active-membership enumeration for
+      exact recipient-set validation.
 - [ ] Organizational audit and retention controls.
 
 ## Phase 5 — Integration ecosystem

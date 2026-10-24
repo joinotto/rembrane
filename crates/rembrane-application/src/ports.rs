@@ -250,6 +250,11 @@ pub trait MembershipRepository {
         principal_id: &PrincipalId,
     ) -> Result<Option<Membership>, ApplicationError>;
 
+    fn list_active_memberships(
+        &self,
+        workspace_id: &WorkspaceId,
+    ) -> Result<Vec<Membership>, ApplicationError>;
+
     fn replace_membership(&mut self, membership: Membership) -> Result<(), ApplicationError>;
 }
 

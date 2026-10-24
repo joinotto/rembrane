@@ -78,3 +78,30 @@ fn duplicate_membership_is_rejected() {
 
     assert_eq!(error, ApplicationError::AlreadyExists);
 }
+
+#[test]
+fn active_membership_enumeration_is_tenant_scoped_and_excludes_removed_members() {
+    let mut store = InMemoryStore::new();
+    let active = membership("workspace_01", "principal_active", WorkspaceRole::Owner);
+    let removed = membership("workspace_01", "principal_removed", WorkspaceRole::Member).remove();
+    store
+        .insert_membership(active)
+        .expect("active membership insert");
+    store
+        .insert_membership(removed)
+        .expect("removed membership insert");
+    store
+        .insert_membership(membership(
+            "workspace_other",
+            "principal_other",
+            WorkspaceRole::Owner,
+        ))
+        .expect("other workspace membership insert");
+
+    let memberships = store
+        .list_active_memberships(&WorkspaceId::new("workspace_01"))
+        .expect("active membership lookup");
+
+    assert_eq!(memberships.len(), 1);
+    assert_eq!(memberships[0].principal_id().as_str(), "principal_active");
+}

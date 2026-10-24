@@ -188,6 +188,18 @@ mod tests {
             }
         }
 
+        fn list_active_memberships(
+            &self,
+            workspace_id: &WorkspaceId,
+        ) -> Result<Vec<Membership>, ApplicationError> {
+            Ok(
+                (self.membership.workspace_id() == workspace_id && self.membership.is_active())
+                    .then(|| self.membership.clone())
+                    .into_iter()
+                    .collect(),
+            )
+        }
+
         fn replace_membership(&mut self, _membership: Membership) -> Result<(), ApplicationError> {
             unreachable!("not used by authorization tests")
         }

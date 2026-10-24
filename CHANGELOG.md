@@ -19,6 +19,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   incomplete encryption-key rotation.
 - Owner/admin-only, generation-bound key-rotation completion with optimistic
   in-memory and SQLite persistence and opaque key-provider identity.
+- Tenant-scoped active-membership enumeration for comparing future
+  key-provider rotation receipts against canonical authorized recipients.
 - Consumed customer key-provider HTTP configuration for application-owned
   vault, keychain, cloud-secret, and deployment integrations without fixed
   Rembrane environment-variable names.

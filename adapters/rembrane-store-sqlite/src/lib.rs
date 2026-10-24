@@ -735,6 +735,34 @@ impl<C> MembershipRepository for SqliteStore<C> {
             .transpose()
     }
 
+    fn list_active_memberships(
+        &self,
+        workspace_id: &WorkspaceId,
+    ) -> Result<Vec<Membership>, ApplicationError> {
+        let mut statement = self
+            .connection
+            .prepare(
+                "SELECT principal_id, role
+                 FROM memberships
+                 WHERE workspace_id = ?1 AND status = 'active'
+                 ORDER BY principal_id",
+            )
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        let rows = statement
+            .query_map([workspace_id.as_str()], |row| {
+                decode_membership(
+                    workspace_id.clone(),
+                    PrincipalId::new(row.get::<_, String>(0)?),
+                    &row.get::<_, String>(1)?,
+                    "active",
+                )
+                .map_err(|_| rusqlite::Error::InvalidQuery)
+            })
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|_| ApplicationError::StorageUnavailable)
+    }
+
     fn replace_membership(&mut self, membership: Membership) -> Result<(), ApplicationError> {
         let changed = self
             .connection

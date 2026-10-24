@@ -983,6 +983,20 @@ impl MembershipRepository for InMemoryStore {
             .cloned())
     }
 
+    fn list_active_memberships(
+        &self,
+        workspace_id: &WorkspaceId,
+    ) -> Result<Vec<Membership>, ApplicationError> {
+        Ok(self
+            .memberships
+            .iter()
+            .filter(|membership| {
+                membership.workspace_id() == workspace_id && membership.is_active()
+            })
+            .cloned()
+            .collect())
+    }
+
     fn replace_membership(&mut self, membership: Membership) -> Result<(), ApplicationError> {
         let stored = self
             .memberships

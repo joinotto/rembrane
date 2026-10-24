@@ -106,6 +106,17 @@ fn membership_lookup_is_tenant_scoped() {
             .expect("lookup succeeds")
             .is_none()
     );
+    let memberships = store
+        .list_active_memberships(&WorkspaceId::new("workspace_01"))
+        .expect("active membership lookup succeeds");
+    assert_eq!(memberships.len(), 1);
+    assert_eq!(memberships[0].principal_id(), &principal_id);
+    assert!(
+        store
+            .list_active_memberships(&WorkspaceId::new("workspace_other"))
+            .expect("cross-workspace active membership lookup succeeds")
+            .is_empty()
+    );
 }
 
 #[test]
