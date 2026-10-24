@@ -19,6 +19,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - SQLite schema migration for encrypted temporal graph aggregates, including
   workspace-bound endpoint and supersession foreign keys plus indexed incoming
   and outgoing validity-window traversal.
+- Versioned knowledge-node and knowledge-edge codecs plus distinct encryption
+  purposes, keeping labels, aliases, relations, and evidence inside
+  authenticated ciphertext.
 - Authenticated key-provider HTTP adapter using Rustls, bounded response reads,
   disabled redirects and environment proxies, zeroized bearer credentials,
   strict JSON/base64 decoding, and HTTPS except for exact loopback origins.

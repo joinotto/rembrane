@@ -20,6 +20,8 @@ pub use provider_protocol::{
 pub enum PayloadPurpose {
     ActivityCheckpoint,
     CanonicalEvent,
+    KnowledgeEdge,
+    KnowledgeNode,
     MemoryContent,
     TripEntity,
     BookingResearch,
@@ -31,6 +33,8 @@ impl PayloadPurpose {
         match self {
             Self::ActivityCheckpoint => "activity-checkpoint",
             Self::CanonicalEvent => "canonical-event",
+            Self::KnowledgeEdge => "knowledge-edge",
+            Self::KnowledgeNode => "knowledge-node",
             Self::MemoryContent => "memory-content",
             Self::TripEntity => "trip-entity",
             Self::BookingResearch => "booking-research",

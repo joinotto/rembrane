@@ -3,6 +3,7 @@
 mod booking_research;
 mod checkpoint;
 mod event;
+mod knowledge_graph;
 mod trip;
 
 use std::error::Error;
@@ -17,6 +18,9 @@ use serde::{Deserialize, Serialize};
 pub use booking_research::{decode_booking_research, encode_booking_research};
 pub use checkpoint::{decode_checkpoint, encode_checkpoint};
 pub use event::{decode_event, encode_event};
+pub use knowledge_graph::{
+    decode_knowledge_edge, decode_knowledge_node, encode_knowledge_edge, encode_knowledge_node,
+};
 pub use trip::{decode_trip, encode_trip};
 
 const MEMORY_FORMAT: &str = "rembrane.memory";
