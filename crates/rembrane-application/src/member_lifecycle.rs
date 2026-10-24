@@ -111,6 +111,49 @@ where
         )?;
         Ok(completed)
     }
+
+    pub fn orchestrate_key_rotation<Rotate>(
+        &mut self,
+        workspace_id: WorkspaceId,
+        completed_by: PrincipalId,
+        rotate: Rotate,
+    ) -> Result<WorkspaceKeyRotation, ApplicationError>
+    where
+        Rotate: FnOnce(
+            WorkspaceId,
+            u64,
+            Vec<PrincipalId>,
+        ) -> Result<KeyRotationReceipt, ApplicationError>,
+    {
+        let actor = self
+            .repository
+            .find_membership(&workspace_id, &completed_by)?
+            .ok_or(ApplicationError::AccessDenied)?;
+        if !actor.is_active()
+            || !matches!(actor.role(), WorkspaceRole::Owner | WorkspaceRole::Admin)
+        {
+            return Err(ApplicationError::AccessDenied);
+        }
+        let rotation = self
+            .repository
+            .latest_key_rotation(&workspace_id)?
+            .ok_or(ApplicationError::NotFound)?;
+        if rotation.status() != KeyRotationStatus::Required {
+            return Err(ApplicationError::VersionConflict);
+        }
+        let mut recipients = self
+            .repository
+            .list_active_memberships(&workspace_id)?
+            .into_iter()
+            .map(|membership| membership.principal_id().clone())
+            .collect::<Vec<_>>();
+        recipients.sort();
+        let receipt = rotate(workspace_id, rotation.generation(), recipients)?;
+        self.complete_key_rotation(CompleteKeyRotationCommand {
+            receipt,
+            completed_by,
+        })
+    }
 }
 
 const fn can_remove(actor: WorkspaceRole, target: WorkspaceRole) -> bool {

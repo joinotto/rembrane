@@ -1,9 +1,9 @@
 use rembrane_application::{
     ApplicationError, AuthorizeClientCommand, AuthorizeClientService, CanonicalMutationRepository,
     CheckpointRepository, ClientGrantBundle, DeleteMemoryCommand, EventRepository,
-    MembershipRepository, MemoryLifecycleService, MemoryRepository, RememberPreferenceCommand,
-    RememberPreferenceService, ResolveContextCommand, ResolveContextService, ReviseMemoryCommand,
-    WorkspaceRepository,
+    MemberLifecycleService, MembershipRepository, MemoryLifecycleService, MemoryRepository,
+    RememberPreferenceCommand, RememberPreferenceService, ResolveContextCommand,
+    ResolveContextService, ReviseMemoryCommand, WorkspaceRepository,
 };
 use rembrane_config::{ProviderConnection, ProviderKind, ProviderPlacement, SecretReference};
 use rembrane_contracts::ResolveContextRequest;
@@ -51,6 +51,7 @@ fn run(arguments: Vec<String>) -> Result<(), String> {
         Some("mcp-config") => print_mcp_config(&arguments[1..]),
         Some("providers") => providers(&arguments[1..]),
         Some("memory-provider") => memory_provider(&arguments[1..]),
+        Some("rotate-key") => rotate_key(&arguments[1..]),
         Some("remember") => remember(&arguments[1..]),
         Some("recall") => recall(&arguments[1..]),
         Some("correct") => correct(&arguments[1..]),
@@ -60,6 +61,33 @@ fn run(arguments: Vec<String>) -> Result<(), String> {
             Ok(())
         }
     }
+}
+
+fn rotate_key(arguments: &[String]) -> Result<(), String> {
+    let (mut store, principal_id, workspace_id) = encrypted_store(arguments)?;
+    let provider = ConfiguredRecordCipher::from_environment()
+        .map_err(|error| format!("cannot load rotation key provider: {error}"))?;
+    let completed = MemberLifecycleService::new(&mut store)
+        .orchestrate_key_rotation(
+            workspace_id,
+            principal_id,
+            |workspace_id, generation, recipients| {
+                provider
+                    .rotate_workspace_key(workspace_id, generation, recipients)
+                    .map_err(|_| ApplicationError::StorageUnavailable)
+            },
+        )
+        .map_err(|error| format!("cannot rotate workspace key: {error}"))?;
+    println!(
+        "{}",
+        serde_json::json!({
+            "workspaceId": completed.workspace_id().as_str(),
+            "generation": completed.generation(),
+            "keyId": completed.completed_key_id(),
+            "status": "completed"
+        })
+    );
+    Ok(())
 }
 
 fn memory_provider(arguments: &[String]) -> Result<(), String> {
@@ -1195,6 +1223,8 @@ fn print_help() {
            rembrane providers test --provider <id> --namespace <unique-name>\n\
            rembrane memory-provider check \
              [--privacy <end-to-end-encrypted|trusted-boundary|provider-plaintext>]\n\
+           rembrane rotate-key --database <path> --principal <owner-or-admin-id> \
+             --workspace <shared-workspace-id>\n\
            rembrane mcp-config --client <codex|claude-code|gemini-cli|generic> \
              --server-binary <path> \
              [--key-provider <environment|macos-keychain|http>]\n\

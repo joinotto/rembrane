@@ -7,6 +7,7 @@ use rembrane_crypto::{
     KeyProviderCipher, KeyProviderPolicy, RecordCipher,
 };
 use rembrane_crypto_rustcrypto::RustCryptoKeyringCipher;
+use rembrane_domain::{KeyRotationReceipt, PrincipalId, WorkspaceId};
 use rembrane_key_provider_http::HttpKeyProviderTransport;
 use zeroize::Zeroize;
 
@@ -174,6 +175,23 @@ impl ConfiguredRecordCipher {
             request_prefix,
         )?;
         Ok(Self::Http(cipher))
+    }
+
+    /// Requests a shared-workspace key rotation from the configured
+    /// customer-controlled provider.
+    ///
+    /// Local keyrings do not yet implement group-recipient rotation and fail
+    /// closed rather than manufacturing a receipt.
+    pub fn rotate_workspace_key(
+        &self,
+        workspace_id: WorkspaceId,
+        generation: u64,
+        recipient_ids: Vec<PrincipalId>,
+    ) -> Result<KeyRotationReceipt, CryptoError> {
+        match self {
+            Self::Http(cipher) => cipher.rotate(workspace_id, generation, recipient_ids),
+            Self::Local(_) => Err(CryptoError::KeyUnavailable),
+        }
     }
 }
 

@@ -308,6 +308,9 @@ This roadmap describes sequencing, not release dates.
       authenticated bounded HTTP adapter with replay conformance coverage.
     - [ ] Orchestrate provider rotation and completion through the management
       API and CLI.
+      - [x] Add authorization-first application orchestration and a configured
+        provider CLI command.
+      - [ ] Add the authenticated management REST operation.
 - [ ] Organizational audit and retention controls.
 
 ## Phase 5 — Integration ecosystem
