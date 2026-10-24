@@ -42,7 +42,9 @@ authorization remains mandatory for every operation.
 `stdio-connection-manifest.schema.json` defines the secret-free local process
 manifest emitted by `rembrane mcp-config --client generic`. Launchers resolve
 the listed environment variables inside the operator-controlled environment;
-the manifest never contains their values.
+the manifest never contains their values. Commands and arguments are bounded
+and reject control characters; launchers execute them directly without a
+shell.
 
 ## Provider adapter manifest
 

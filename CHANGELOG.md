@@ -15,6 +15,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Fail-closed validation of MCP server executable commands before rendering
   any agent configuration, preventing control-character injection across TOML
   and JSON client formats.
+- Bounded control-free command and argument requirements in the portable stdio
+  connection manifest, with a requirement that launchers execute directly
+  rather than through a shell.
 - A modern stateless remote-MCP authorization path that rejects legacy session
   ambiguity while preserving per-request bearer verification, trusted Host and
   Origin checks, strict method/tool classification, and narrow OAuth scopes.

@@ -49,6 +49,16 @@ jq empty \
     tests/postman/rembrane-local.postman_collection.json
 
 jq -e '
+    .properties.command.minLength == 1
+    and .properties.command.maxLength == 4096
+    and .properties.command.pattern == "^[^\\u0000-\\u001F\\u007F]+$"
+    and .properties.args.maxItems == 64
+    and .properties.args.items.maxLength == 4096
+    and .properties.args.items.pattern == "^[^\\u0000-\\u001F\\u007F]*$"
+    and .properties.requiredEnvironment.uniqueItems == true
+' spec/stdio-connection-manifest.schema.json >/dev/null
+
+jq -e '
     ."$defs".protocolVersion.const == "0.1"
     and (."$defs".operation.enum | length == 10)
     and (."$defs".oauthScope.enum | length == 10)

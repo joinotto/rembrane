@@ -651,6 +651,8 @@ This roadmap describes sequencing, not release dates.
     using its command-array and environment-substitution contract.
   - [x] Enforce one bounded control-free executable-command contract before
     rendering any supported agent's TOML or JSON MCP configuration.
+  - [x] Encode bounded control-free command and argument invariants in the
+    implementation-independent stdio connection manifest schema.
 
 ## Release gates
 
