@@ -25,6 +25,7 @@ jq empty \
     spec/examples/memory-provider-discovery.json \
     spec/examples/memory-provider-context-request.json \
     spec/examples/memory-provider-context-response.json \
+    spec/examples/memory-provider-proposal-request.json \
     spec/examples/oauth-protected-resource.json \
     spec/examples/provider-manifest.json \
     spec/examples/provider-projection.json \
@@ -54,6 +55,13 @@ jq -e '
     and ."$defs".deleteMemoryResult.additionalProperties == false
     and ."$defs".explainMemoryPayload.additionalProperties == false
     and ."$defs".explainMemoryResult.additionalProperties == false
+    and ."$defs".recordEventPayload.additionalProperties == false
+    and ."$defs".recordEventResult.additionalProperties == false
+    and ."$defs".proposeMemoryPayload.additionalProperties == false
+    and ."$defs".checkpointActivityPayload.oneOf[0].additionalProperties == false
+    and ."$defs".checkpointActivityPayload.oneOf[1].additionalProperties == false
+    and ."$defs".recordDisclosurePayload.additionalProperties == false
+    and ."$defs".recordDisclosureResult.additionalProperties == false
 ' spec/memory-provider.schema.json >/dev/null
 
 jq -e '
@@ -88,6 +96,17 @@ jq -e '
         and (.evidence | length > 0)
     )
 ' spec/examples/memory-provider-context-response.json >/dev/null
+
+jq -e '
+    .protocolVersion == "0.1"
+    and .operation == "propose_memory"
+    and .payload.selector.scope == "global"
+    and .payload.kind == "preference"
+    and .payload.evidenceSource == "user_statement"
+    and (.payload | has("workspaceId") | not)
+    and (.payload | has("subjectId") | not)
+    and (.payload | has("confirmed") | not)
+' spec/examples/memory-provider-proposal-request.json >/dev/null
 
 jq -e '
     (.resource | startswith("https://"))

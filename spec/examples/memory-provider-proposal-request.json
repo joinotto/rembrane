@@ -1,0 +1,16 @@
+{
+  "requestId": "request_abcdef0123456789",
+  "protocolVersion": "0.1",
+  "operation": "propose_memory",
+  "payload": {
+    "idempotencyKey": "proposal_abcdef0123456789",
+    "selector": {
+      "scope": "global"
+    },
+    "kind": "preference",
+    "content": "The user asked every assistant to call them Hippo.",
+    "evidenceSource": "user_statement",
+    "sourceReference": "conversation-turn-42",
+    "observedAtEpochSeconds": 1792790000
+  }
+}

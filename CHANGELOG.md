@@ -18,6 +18,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   questions, exact-version deletion, and provenance explanation, including
   evidence, sensitivity, disclosure constraints, and executable context
   request/response examples.
+- Strict Memory Provider JSON schemas for bounded event batches, unconfirmed
+  evidence-bearing proposals, create/update activity checkpoints, and
+  append-only disclosure receipts, including a proposal example proving
+  workspace, subject, and confirmation authority are absent from client data.
 - Initial full Memory Provider Protocol discovery contract with a versioned
   well-known manifest, HTTPS/MCP transports, portable memory capabilities,
   explicit privacy modes, supported domains, and bounded operation limits.
