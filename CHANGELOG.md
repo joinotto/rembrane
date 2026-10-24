@@ -26,6 +26,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Canonical booking-research records tied to trips with evidence provenance,
   bounded opaque source references, strict UTC timestamps, and deterministic
   fresh/expired evaluation.
+- Version 1 `rembrane.booking-research` wire encoding with strict domain
+  reconstruction and provider-independent evidence representation.
 - Rust modular-monolith workspace with provider-independent domain and
   application layers.
 - Canonical memory, provenance, event, disclosure, membership, grant,

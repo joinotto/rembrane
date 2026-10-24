@@ -112,7 +112,8 @@ This roadmap describes sequencing, not release dates.
 - [ ] Booking-research evidence and expiry.
   - [x] Canonical evidence-backed booking-research record with strict UTC
     observation and expiry semantics.
-  - [ ] Versioned codec, encrypted repository, authorization, and capture API.
+  - [x] Versioned provider-independent booking-research codec.
+  - [ ] Encrypted repository, authorization, and capture API.
 - [ ] Cross-agent activity continuation.
 - [ ] Sensitive travel-data permissions.
 

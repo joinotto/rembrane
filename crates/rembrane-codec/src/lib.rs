@@ -1,5 +1,6 @@
 //! Versioned, provider-independent serialization for encrypted canonical data.
 
+mod booking_research;
 mod checkpoint;
 mod event;
 mod trip;
@@ -13,6 +14,7 @@ use rembrane_domain::{
 };
 use serde::{Deserialize, Serialize};
 
+pub use booking_research::{decode_booking_research, encode_booking_research};
 pub use checkpoint::{decode_checkpoint, encode_checkpoint};
 pub use event::{decode_event, encode_event};
 pub use trip::{decode_trip, encode_trip};
