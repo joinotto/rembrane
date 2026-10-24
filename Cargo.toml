@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "adapters/rembrane-channel-whatsapp",
     "adapters/rembrane-crypto-rustcrypto",
     "adapters/rembrane-crypto-configured",
     "adapters/rembrane-graph-configured",

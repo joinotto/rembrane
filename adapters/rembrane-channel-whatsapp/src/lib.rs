@@ -1,0 +1,309 @@
+//! Authenticated, bounded `WhatsApp` Business webhook ingestion.
+
+use ring::hmac;
+use serde::Deserialize;
+use zeroize::Zeroize;
+
+const MAXIMUM_WEBHOOK_BYTES: usize = 3 * 1024 * 1024;
+const MAXIMUM_MESSAGES: usize = 100;
+const MAXIMUM_IDENTIFIER_BYTES: usize = 256;
+const MAXIMUM_TEXT_BYTES: usize = 16_384;
+
+pub struct WhatsAppWebhookVerifier {
+    signature_key: hmac::Key,
+    lookup_key: hmac::Key,
+}
+
+pub struct WhatsAppTextEvent {
+    account_lookup_key: String,
+    sender_lookup_key: String,
+    event_id: String,
+    text: String,
+    received_at_epoch_seconds: u64,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WhatsAppWebhookError {
+    InvalidConfiguration,
+    InvalidSignature,
+    InvalidPayload,
+    PayloadTooLarge,
+    TooManyMessages,
+}
+
+impl WhatsAppWebhookVerifier {
+    pub fn new(
+        mut app_secret: Vec<u8>,
+        mut binding_lookup_secret: Vec<u8>,
+    ) -> Result<Self, WhatsAppWebhookError> {
+        if app_secret.len() < 32 || binding_lookup_secret.len() < 32 {
+            app_secret.zeroize();
+            binding_lookup_secret.zeroize();
+            return Err(WhatsAppWebhookError::InvalidConfiguration);
+        }
+        let signature_key = hmac::Key::new(hmac::HMAC_SHA256, &app_secret);
+        let lookup_key = hmac::Key::new(hmac::HMAC_SHA256, &binding_lookup_secret);
+        app_secret.zeroize();
+        binding_lookup_secret.zeroize();
+        Ok(Self {
+            signature_key,
+            lookup_key,
+        })
+    }
+
+    pub fn verify_and_extract_text(
+        &self,
+        signature_header: &str,
+        payload: &[u8],
+    ) -> Result<Vec<WhatsAppTextEvent>, WhatsAppWebhookError> {
+        if payload.len() > MAXIMUM_WEBHOOK_BYTES {
+            return Err(WhatsAppWebhookError::PayloadTooLarge);
+        }
+        let signature = decode_signature(signature_header)?;
+        hmac::verify(&self.signature_key, payload, &signature)
+            .map_err(|_| WhatsAppWebhookError::InvalidSignature)?;
+        let webhook: Webhook =
+            serde_json::from_slice(payload).map_err(|_| WhatsAppWebhookError::InvalidPayload)?;
+        if webhook.object != "whatsapp_business_account" {
+            return Err(WhatsAppWebhookError::InvalidPayload);
+        }
+        let mut events = Vec::new();
+        for entry in webhook.entry {
+            for change in entry.changes {
+                if change.field != "messages" {
+                    continue;
+                }
+                let account = bounded_identifier(&change.value.metadata.phone_number_id)?;
+                for message in change.value.messages {
+                    if message.kind != "text" {
+                        continue;
+                    }
+                    if events.len() >= MAXIMUM_MESSAGES {
+                        return Err(WhatsAppWebhookError::TooManyMessages);
+                    }
+                    let sender = bounded_identifier(&message.from)?;
+                    let event_id = bounded_identifier(&message.id)?;
+                    let received_at_epoch_seconds = message
+                        .timestamp
+                        .parse::<u64>()
+                        .ok()
+                        .filter(|timestamp| *timestamp > 0)
+                        .ok_or(WhatsAppWebhookError::InvalidPayload)?;
+                    let text = message
+                        .text
+                        .ok_or(WhatsAppWebhookError::InvalidPayload)?
+                        .body;
+                    if text.trim().is_empty() || text.len() > MAXIMUM_TEXT_BYTES {
+                        return Err(WhatsAppWebhookError::InvalidPayload);
+                    }
+                    events.push(WhatsAppTextEvent {
+                        account_lookup_key: lookup_fingerprint(
+                            &self.lookup_key,
+                            b"account",
+                            account,
+                        ),
+                        sender_lookup_key: lookup_fingerprint(&self.lookup_key, b"sender", sender),
+                        event_id: event_id.to_owned(),
+                        text,
+                        received_at_epoch_seconds,
+                    });
+                }
+            }
+        }
+        Ok(events)
+    }
+}
+
+impl WhatsAppTextEvent {
+    #[must_use]
+    pub fn account_lookup_key(&self) -> &str {
+        &self.account_lookup_key
+    }
+
+    #[must_use]
+    pub fn sender_lookup_key(&self) -> &str {
+        &self.sender_lookup_key
+    }
+
+    #[must_use]
+    pub fn event_id(&self) -> &str {
+        &self.event_id
+    }
+
+    #[must_use]
+    pub fn text(&self) -> &str {
+        &self.text
+    }
+
+    #[must_use]
+    pub const fn received_at_epoch_seconds(&self) -> u64 {
+        self.received_at_epoch_seconds
+    }
+}
+
+fn bounded_identifier(value: &str) -> Result<&str, WhatsAppWebhookError> {
+    if value.is_empty()
+        || value.len() > MAXIMUM_IDENTIFIER_BYTES
+        || value
+            .bytes()
+            .any(|byte| byte.is_ascii_control() || byte.is_ascii_whitespace())
+    {
+        return Err(WhatsAppWebhookError::InvalidPayload);
+    }
+    Ok(value)
+}
+
+fn decode_signature(header: &str) -> Result<[u8; 32], WhatsAppWebhookError> {
+    let encoded = header
+        .strip_prefix("sha256=")
+        .filter(|value| value.len() == 64)
+        .ok_or(WhatsAppWebhookError::InvalidSignature)?;
+    let mut signature = [0_u8; 32];
+    for (index, pair) in encoded.as_bytes().chunks_exact(2).enumerate() {
+        signature[index] = (decode_hex(pair[0])? << 4) | decode_hex(pair[1])?;
+    }
+    Ok(signature)
+}
+
+fn decode_hex(value: u8) -> Result<u8, WhatsAppWebhookError> {
+    match value {
+        b'0'..=b'9' => Ok(value - b'0'),
+        b'a'..=b'f' => Ok(value - b'a' + 10),
+        _ => Err(WhatsAppWebhookError::InvalidSignature),
+    }
+}
+
+fn lookup_fingerprint(key: &hmac::Key, namespace: &[u8], identifier: &str) -> String {
+    let mut input = Vec::with_capacity(namespace.len() + 1 + identifier.len());
+    input.extend_from_slice(namespace);
+    input.push(0);
+    input.extend_from_slice(identifier.as_bytes());
+    let digest = hmac::sign(key, &input);
+    input.zeroize();
+    encode_hex(digest.as_ref())
+}
+
+fn encode_hex(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut encoded = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        encoded.push(char::from(HEX[usize::from(byte >> 4)]));
+        encoded.push(char::from(HEX[usize::from(byte & 0x0f)]));
+    }
+    encoded
+}
+
+#[derive(Deserialize)]
+struct Webhook {
+    object: String,
+    entry: Vec<Entry>,
+}
+
+#[derive(Deserialize)]
+struct Entry {
+    changes: Vec<Change>,
+}
+
+#[derive(Deserialize)]
+struct Change {
+    field: String,
+    value: Value,
+}
+
+#[derive(Deserialize)]
+struct Value {
+    metadata: Metadata,
+    #[serde(default)]
+    messages: Vec<Message>,
+}
+
+#[derive(Deserialize)]
+struct Metadata {
+    phone_number_id: String,
+}
+
+#[derive(Deserialize)]
+struct Message {
+    from: String,
+    id: String,
+    timestamp: String,
+    #[serde(rename = "type")]
+    kind: String,
+    text: Option<Text>,
+}
+
+#[derive(Deserialize)]
+struct Text {
+    body: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use ring::hmac;
+
+    use super::{MAXIMUM_WEBHOOK_BYTES, WhatsAppWebhookError, WhatsAppWebhookVerifier, encode_hex};
+
+    const PAYLOAD: &[u8] = br#"{
+      "object":"whatsapp_business_account",
+      "entry":[{"changes":[{"field":"messages","value":{
+        "metadata":{"phone_number_id":"15550000001"},
+        "messages":[{"from":"15550000002","id":"wamid.opaque-event",
+          "timestamp":"1700000000","type":"text",
+          "text":{"body":"Continue my flight search"}}]
+      }}]}]
+    }"#;
+
+    fn verifier() -> WhatsAppWebhookVerifier {
+        WhatsAppWebhookVerifier::new(vec![7; 32], vec![9; 32])
+            .expect("test secrets should be valid")
+    }
+
+    fn signature(payload: &[u8]) -> String {
+        let key = hmac::Key::new(hmac::HMAC_SHA256, &[7; 32]);
+        format!("sha256={}", encode_hex(hmac::sign(&key, payload).as_ref()))
+    }
+
+    #[test]
+    fn verifies_before_extracting_pseudonymous_bound_event() {
+        let events = verifier()
+            .verify_and_extract_text(&signature(PAYLOAD), PAYLOAD)
+            .expect("valid webhook should pass");
+        assert_eq!(events.len(), 1);
+        let event = &events[0];
+        assert_eq!(event.event_id(), "wamid.opaque-event");
+        assert_eq!(event.text(), "Continue my flight search");
+        assert_eq!(event.received_at_epoch_seconds(), 1_700_000_000);
+        assert_eq!(event.account_lookup_key().len(), 64);
+        assert_eq!(event.sender_lookup_key().len(), 64);
+        assert!(!event.account_lookup_key().contains("15550000001"));
+        assert!(!event.sender_lookup_key().contains("15550000002"));
+    }
+
+    #[test]
+    fn rejects_tampering_bad_headers_and_oversized_payloads() {
+        let mut tampered = PAYLOAD.to_vec();
+        tampered.push(b' ');
+        assert_eq!(
+            verifier()
+                .verify_and_extract_text(&signature(PAYLOAD), &tampered)
+                .err()
+                .expect("tampering must fail"),
+            WhatsAppWebhookError::InvalidSignature
+        );
+        assert_eq!(
+            verifier()
+                .verify_and_extract_text("sha256=ABC", PAYLOAD)
+                .err()
+                .expect("malformed signature must fail"),
+            WhatsAppWebhookError::InvalidSignature
+        );
+        let oversized = vec![0; MAXIMUM_WEBHOOK_BYTES + 1];
+        assert_eq!(
+            verifier()
+                .verify_and_extract_text(&signature(&oversized), &oversized)
+                .err()
+                .expect("oversized payload must fail"),
+            WhatsAppWebhookError::PayloadTooLarge
+        );
+    }
+}
