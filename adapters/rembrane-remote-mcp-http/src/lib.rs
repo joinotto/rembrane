@@ -5,6 +5,8 @@
 //! protocol execution, while this gate ensures every accepted request has
 //! already passed bearer, origin, method/tool, session, and tenant checks.
 
+use std::future::Future;
+
 use axum::{
     http::{
         HeaderMap, HeaderName, HeaderValue, StatusCode,
@@ -59,13 +61,14 @@ pub struct AuthorizedRemoteMcpRequest {
 pub trait AuthorizedRemoteMcpDispatcher {
     type Output;
     type Error;
+    type DispatchFuture: Future<Output = Result<Self::Output, Self::Error>> + Send;
 
     fn dispatch(
         &self,
         access: VerifiedRemoteAccess,
         invocation: RemoteMcpInvocation,
         body: Zeroizing<Vec<u8>>,
-    ) -> Result<Self::Output, Self::Error>;
+    ) -> Self::DispatchFuture;
 }
 
 impl AuthorizedRemoteMcpRequest {
@@ -111,7 +114,7 @@ impl AuthorizedRemoteMcpRequest {
     ///
     /// Returns the dispatcher's error without recreating or retaining the
     /// authorization proof.
-    pub fn dispatch_with<Dispatcher>(
+    pub async fn dispatch_with<Dispatcher>(
         self,
         dispatcher: &Dispatcher,
     ) -> Result<Dispatcher::Output, Dispatcher::Error>
@@ -119,7 +122,7 @@ impl AuthorizedRemoteMcpRequest {
         Dispatcher: AuthorizedRemoteMcpDispatcher,
     {
         let (access, invocation, body) = self.into_dispatch_parts();
-        dispatcher.dispatch(access, invocation, body)
+        dispatcher.dispatch(access, invocation, body).await
     }
 }
 
@@ -688,19 +691,20 @@ mod tests {
     impl AuthorizedRemoteMcpDispatcher for RecordingDispatcher {
         type Output = (String, String, Option<String>, Vec<u8>);
         type Error = std::convert::Infallible;
+        type DispatchFuture = std::future::Ready<Result<Self::Output, Self::Error>>;
 
         fn dispatch(
             &self,
             access: rembrane_contracts::VerifiedRemoteAccess,
             invocation: RemoteMcpInvocation,
             body: zeroize::Zeroizing<Vec<u8>>,
-        ) -> Result<Self::Output, Self::Error> {
-            Ok((
+        ) -> Self::DispatchFuture {
+            std::future::ready(Ok((
                 access.workspace_id().to_string(),
                 invocation.method().to_owned(),
                 invocation.tool_name().map(str::to_owned),
                 body.as_slice().to_vec(),
-            ))
+            )))
         }
     }
 
@@ -978,8 +982,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn stateless_body_authorization_cannot_drift_from_dispatched_bytes() {
+    #[tokio::test]
+    async fn stateless_body_authorization_cannot_drift_from_dispatched_bytes() {
         let verifier = Verifier;
         let authenticator = RemoteAccessAuthenticator::new(
             &verifier,
@@ -1011,6 +1015,7 @@ mod tests {
         assert_eq!(authorized.body(), body);
         let dispatched = authorized
             .dispatch_with(&RecordingDispatcher)
+            .await
             .expect("authorized dispatch cannot fail");
         assert_eq!(dispatched.0, "workspace_01");
         assert_eq!(dispatched.1, "tools/call");

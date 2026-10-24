@@ -14,6 +14,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   request body together to the eventual official SDK transport.
 - An owned authorized remote-MCP dispatcher port with regression coverage
   proving exact tenant, operation, tool, and request-body transfer.
+- A dependency-free asynchronous future contract for remote-MCP dispatchers,
+  avoiding blocking at the eventual official SDK Tower boundary.
 - A transport-injectable Mem0 OSS semantic adapter mapping authorized
   projections into HMAC-pseudonymous workspace partitions while preserving
   canonical memory IDs, versions, replacement, bounded ranking, and

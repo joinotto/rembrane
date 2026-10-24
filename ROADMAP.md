@@ -166,6 +166,8 @@ This roadmap describes sequencing, not release dates.
       until the official SDK transport takes ownership.
       - [x] Define an owned authorized-dispatcher port for the official SDK
         adapter and prove exact body and tenant transfer through it.
+        - [x] Model dispatch as an associated future so official asynchronous
+          Tower services need no blocking bridge or macro dependency.
   - [x] Allow the shared MCP handler service to initialize canonical
     subject/client/workspace identity exclusively from verified remote claims.
   - [x] Bind remote sessions to issuer, resource, canonical identity,
