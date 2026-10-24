@@ -1,6 +1,6 @@
 use rembrane_domain::{
-    KeyRotationId, KeyRotationStatus, Membership, PrincipalId, WorkspaceId, WorkspaceKeyRotation,
-    WorkspaceRole,
+    KeyRotationId, KeyRotationReceipt, KeyRotationStatus, Membership, PrincipalId, WorkspaceId,
+    WorkspaceKeyRotation, WorkspaceRole,
 };
 
 use crate::{
@@ -17,9 +17,7 @@ pub struct RemoveMemberCommand {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CompleteKeyRotationCommand {
-    pub workspace_id: WorkspaceId,
-    pub expected_generation: u64,
-    pub completed_key_id: String,
+    pub receipt: KeyRotationReceipt,
     pub completed_by: PrincipalId,
 }
 
@@ -72,14 +70,10 @@ where
         &mut self,
         command: CompleteKeyRotationCommand,
     ) -> Result<WorkspaceKeyRotation, ApplicationError> {
-        if command.expected_generation == 0 {
-            return Err(ApplicationError::Validation(
-                "expected key generation must be greater than zero".to_owned(),
-            ));
-        }
+        let workspace_id = command.receipt.workspace_id().clone();
         let actor = self
             .repository
-            .find_membership(&command.workspace_id, &command.completed_by)?
+            .find_membership(&workspace_id, &command.completed_by)?
             .ok_or(ApplicationError::AccessDenied)?;
         if !actor.is_active()
             || !matches!(actor.role(), WorkspaceRole::Owner | WorkspaceRole::Admin)
@@ -88,18 +82,29 @@ where
         }
         let rotation = self
             .repository
-            .latest_key_rotation(&command.workspace_id)?
+            .latest_key_rotation(&workspace_id)?
             .ok_or(ApplicationError::NotFound)?;
         if rotation.status() != KeyRotationStatus::Required
-            || rotation.generation() != command.expected_generation
+            || rotation.generation() != command.receipt.generation()
+            || rotation.workspace_id() != command.receipt.workspace_id()
         {
             return Err(ApplicationError::VersionConflict);
         }
+        let mut canonical_recipients = self
+            .repository
+            .list_active_memberships(&workspace_id)?
+            .into_iter()
+            .map(|membership| membership.principal_id().clone())
+            .collect::<Vec<_>>();
+        canonical_recipients.sort();
+        if canonical_recipients != command.receipt.recipient_ids() {
+            return Err(ApplicationError::AccessDenied);
+        }
         let completed = rotation
-            .complete(command.completed_key_id, command.completed_by)
+            .complete(command.receipt.key_id(), command.completed_by)
             .map_err(|error| ApplicationError::Validation(error.to_string()))?;
         self.repository
-            .complete_key_rotation(completed.clone(), command.expected_generation)?;
+            .complete_key_rotation(completed.clone(), command.receipt.generation())?;
         Ok(completed)
     }
 }

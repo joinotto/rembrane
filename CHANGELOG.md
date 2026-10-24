@@ -24,6 +24,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - A bounded, content-free key-provider rotation receipt contract binding
   provider and request identity, workspace generation, opaque key identity,
   and a canonical exact recipient set.
+- Fail-closed rotation completion unless the provider receipt matches the
+  pending workspace generation and exact canonical active-member set.
 - Consumed customer key-provider HTTP configuration for application-owned
   vault, keychain, cloud-secret, and deployment integrations without fixed
   Rembrane environment-variable names.

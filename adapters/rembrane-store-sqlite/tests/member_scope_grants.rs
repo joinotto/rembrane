@@ -5,8 +5,8 @@ use rembrane_application::{
     RevokeMemberScopeCommand, WorkspaceRepository,
 };
 use rembrane_domain::{
-    ClientId, EntityId, KeyRotationStatus, Membership, Principal, PrincipalId, ReadScope,
-    Workspace, WorkspaceId, WorkspaceRole, WritePermission,
+    ClientId, EntityId, KeyRotationReceipt, KeyRotationStatus, Membership, Principal, PrincipalId,
+    ProviderId, ReadScope, Workspace, WorkspaceId, WorkspaceRole, WritePermission,
 };
 use rembrane_store_sqlite::SqliteStore;
 
@@ -146,9 +146,15 @@ fn persisted_member_removal_deletes_grants_and_denies_authorization() {
     assert_eq!(rotation.requested_by().as_str(), "owner");
     let completed = MemberLifecycleService::new(&mut store)
         .complete_key_rotation(CompleteKeyRotationCommand {
-            workspace_id: WorkspaceId::new("team"),
-            expected_generation: 1,
-            completed_key_id: "workspace-key:v2".to_owned(),
+            receipt: KeyRotationReceipt::new(
+                ProviderId::new("customer.kms"),
+                "rotation-request-01",
+                WorkspaceId::new("team"),
+                1,
+                "workspace-key:v2",
+                vec![PrincipalId::new("owner")],
+            )
+            .expect("receipt"),
             completed_by: PrincipalId::new("owner"),
         })
         .expect("owner should complete exact pending generation");

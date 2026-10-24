@@ -5,8 +5,8 @@ use rembrane_application::{
     RevokeMemberScopeCommand, WorkspaceRepository,
 };
 use rembrane_domain::{
-    ClientId, EntityId, KeyRotationStatus, Membership, Principal, PrincipalId, ReadScope,
-    Workspace, WorkspaceId, WorkspaceRole, WritePermission,
+    ClientId, EntityId, KeyRotationReceipt, KeyRotationStatus, Membership, Principal, PrincipalId,
+    ProviderId, ReadScope, Workspace, WorkspaceId, WorkspaceRole, WritePermission,
 };
 use rembrane_store_memory::InMemoryStore;
 
@@ -99,6 +99,7 @@ fn ordinary_member_cannot_grant_scope() {
 }
 
 #[test]
+#[allow(clippy::too_many_lines)]
 fn owner_removal_revokes_membership_and_all_scope_grants() {
     let mut store = store_with_member();
     MemberScopeGrantService::new(&mut store)
@@ -152,11 +153,32 @@ fn owner_removal_revokes_membership_and_all_scope_grants() {
         })
         .expect_err("pending rotation must deny the remaining owner");
     assert_eq!(pending_error, ApplicationError::AccessDenied);
+    let recipient_error = MemberLifecycleService::new(&mut store)
+        .complete_key_rotation(CompleteKeyRotationCommand {
+            receipt: KeyRotationReceipt::new(
+                ProviderId::new("customer.kms"),
+                "rotation-request-wrong-recipients",
+                WorkspaceId::new("team"),
+                1,
+                "workspace-key:v2",
+                vec![PrincipalId::new("owner"), PrincipalId::new("member")],
+            )
+            .expect("syntactically valid but stale receipt"),
+            completed_by: PrincipalId::new("owner"),
+        })
+        .expect_err("removed member must not remain a rotation recipient");
+    assert_eq!(recipient_error, ApplicationError::AccessDenied);
     let completed = MemberLifecycleService::new(&mut store)
         .complete_key_rotation(CompleteKeyRotationCommand {
-            workspace_id: WorkspaceId::new("team"),
-            expected_generation: 1,
-            completed_key_id: "workspace-key:v2".to_owned(),
+            receipt: KeyRotationReceipt::new(
+                ProviderId::new("customer.kms"),
+                "rotation-request-01",
+                WorkspaceId::new("team"),
+                1,
+                "workspace-key:v2",
+                vec![PrincipalId::new("owner")],
+            )
+            .expect("receipt"),
             completed_by: PrincipalId::new("owner"),
         })
         .expect("owner should complete exact pending generation");

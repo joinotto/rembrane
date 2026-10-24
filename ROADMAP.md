@@ -295,6 +295,8 @@ This roadmap describes sequencing, not release dates.
       identities.
     - [x] Expose tenant-scoped canonical active-membership enumeration for
       exact recipient-set validation.
+    - [x] Require receipt workspace and generation equality plus exact
+      canonical active-recipient equality before completing rotation.
 - [ ] Organizational audit and retention controls.
 
 ## Phase 5 — Integration ecosystem
