@@ -21,6 +21,7 @@ rembrane-provider-sdk = { path = "../../crates/rembrane-provider-sdk" }
 rembrane-semantic-mem0 = { path = "../../adapters/rembrane-semantic-mem0" }
 rembrane-semantic-native = { path = "../../adapters/rembrane-semantic-native" }
 rembrane-semantic-supermemory = { path = "../../adapters/rembrane-semantic-supermemory" }
+rembrane-secret-local = { path = "../../adapters/rembrane-secret-local" }
 rembrane-store-memory = { path = "../../adapters/rembrane-store-memory" }
 rembrane-store-sqlite = { path = "../../adapters/rembrane-store-sqlite" }
 serde_json = "1"

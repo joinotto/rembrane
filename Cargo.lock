@@ -1141,6 +1141,7 @@ dependencies = [
  "rembrane-domain",
  "rembrane-memory-provider-configured",
  "rembrane-provider-sdk",
+ "rembrane-secret-local",
  "rembrane-semantic-mem0",
  "rembrane-semantic-native",
  "rembrane-semantic-supermemory",

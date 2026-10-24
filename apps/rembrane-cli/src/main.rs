@@ -26,6 +26,7 @@ use rembrane_provider_sdk::{
     MemoryProviderPolicy, MemoryProviderPrivacyMode, MemoryProviderTransport,
     verify_semantic_provider,
 };
+use rembrane_secret_local::{LocalSecretResolver, SecretResolver};
 use rembrane_semantic_mem0::Mem0SemanticProvider;
 use rembrane_semantic_native::NativeSemanticProvider;
 use rembrane_semantic_supermemory::SupermemorySemanticProvider;
@@ -115,35 +116,7 @@ fn channel_binding(arguments: &[String]) -> Result<(), String> {
     let subject_id = PrincipalId::new(option(arguments, "--subject")?);
     let client_id = ClientId::new(option(arguments, "--client")?);
     let request_id = option(arguments, "--request")?;
-    let (account_lookup_key, sender_lookup_key) = if channel_kind == ChannelKind::MobileShare {
-        let account_identifier = secret_environment("REMBRANE_MOBILE_SHARE_ACCOUNT_ID")?;
-        let device_identifier = secret_environment("REMBRANE_MOBILE_SHARE_DEVICE_ID")?;
-        let lookup_secret = secret_environment("REMBRANE_MOBILE_SHARE_BINDING_LOOKUP_SECRET")?;
-        let lookup = derive_mobile_binding_lookup_keys(
-            lookup_secret.as_bytes().to_vec(),
-            &account_identifier,
-            &device_identifier,
-        )
-        .map_err(|_| "cannot derive mobile-share binding lookup keys".to_owned())?;
-        (
-            lookup.account_lookup_key().to_owned(),
-            lookup.device_lookup_key().to_owned(),
-        )
-    } else {
-        let account_identifier = secret_environment("REMBRANE_WHATSAPP_ACCOUNT_ID")?;
-        let sender_identifier = secret_environment("REMBRANE_WHATSAPP_SENDER_ID")?;
-        let lookup_secret = secret_environment("REMBRANE_WHATSAPP_BINDING_LOOKUP_SECRET")?;
-        let lookup = derive_whatsapp_binding_lookup_keys(
-            lookup_secret.as_bytes().to_vec(),
-            &account_identifier,
-            &sender_identifier,
-        )
-        .map_err(|_| "cannot derive WhatsApp binding lookup keys".to_owned())?;
-        (
-            lookup.account_lookup_key().to_owned(),
-            lookup.sender_lookup_key().to_owned(),
-        )
-    };
+    let (account_lookup_key, sender_lookup_key) = channel_lookup_keys(channel_kind)?;
     let mut store =
         SqliteStore::open(database).map_err(|error| format!("cannot open database: {error}"))?;
     let binding = ChannelSenderBinding::new(
@@ -184,6 +157,45 @@ fn channel_binding(arguments: &[String]) -> Result<(), String> {
         })
     );
     Ok(())
+}
+
+fn channel_lookup_keys(channel_kind: ChannelKind) -> Result<(String, String), String> {
+    let keys = if channel_kind == ChannelKind::MobileShare {
+        let account_identifier = secret_environment("REMBRANE_MOBILE_SHARE_ACCOUNT_ID")?;
+        let device_identifier = secret_environment("REMBRANE_MOBILE_SHARE_DEVICE_ID")?;
+        let lookup_secret = referenced_secret_environment(
+            "REMBRANE_MOBILE_SHARE_BINDING_LOOKUP_SECRET_REFERENCE",
+            "REMBRANE_MOBILE_SHARE_BINDING_LOOKUP_SECRET",
+        )?;
+        let lookup = derive_mobile_binding_lookup_keys(
+            lookup_secret.as_bytes().to_vec(),
+            &account_identifier,
+            &device_identifier,
+        )
+        .map_err(|_| "cannot derive mobile-share binding lookup keys".to_owned())?;
+        (
+            lookup.account_lookup_key().to_owned(),
+            lookup.device_lookup_key().to_owned(),
+        )
+    } else {
+        let account_identifier = secret_environment("REMBRANE_WHATSAPP_ACCOUNT_ID")?;
+        let sender_identifier = secret_environment("REMBRANE_WHATSAPP_SENDER_ID")?;
+        let lookup_secret = referenced_secret_environment(
+            "REMBRANE_WHATSAPP_BINDING_LOOKUP_SECRET_REFERENCE",
+            "REMBRANE_WHATSAPP_BINDING_LOOKUP_SECRET",
+        )?;
+        let lookup = derive_whatsapp_binding_lookup_keys(
+            lookup_secret.as_bytes().to_vec(),
+            &account_identifier,
+            &sender_identifier,
+        )
+        .map_err(|_| "cannot derive WhatsApp binding lookup keys".to_owned())?;
+        (
+            lookup.account_lookup_key().to_owned(),
+            lookup.sender_lookup_key().to_owned(),
+        )
+    };
+    Ok(keys)
 }
 
 fn channel_status(arguments: &[String]) -> Result<(), String> {
@@ -254,6 +266,35 @@ fn secret_environment(name: &str) -> Result<Zeroizing<String>, String> {
         return Err(format!("{name} is empty"));
     }
     Ok(value)
+}
+
+fn referenced_secret_environment(
+    locator_name: &str,
+    default_variable: &str,
+) -> Result<Zeroizing<String>, String> {
+    let locator = match std::env::var(locator_name) {
+        Ok(locator) => locator,
+        Err(std::env::VarError::NotPresent) => String::new(),
+        Err(_) => return Err(format!("cannot read {locator_name}")),
+    };
+    let reference = selected_secret_reference(&locator, default_variable)?;
+    LocalSecretResolver
+        .resolve(&reference)
+        .map_err(|_| format!("secret referenced by {locator_name} is unavailable or invalid"))
+}
+
+fn selected_secret_reference(
+    locator: &str,
+    default_variable: &str,
+) -> Result<SecretReference, String> {
+    if locator.is_empty() {
+        SecretReference::environment(default_variable)
+            .map_err(|_| "invalid default secret reference".to_owned())
+    } else {
+        locator
+            .parse()
+            .map_err(|_| "invalid secret reference".to_owned())
+    }
 }
 
 fn rotate_key(arguments: &[String]) -> Result<(), String> {
@@ -1867,8 +1908,9 @@ mod tests {
         gemini_mcp_config, generic_mcp_config, mcp_environment_variables, memory_privacy_mode_name,
         memory_provider_check_policy, opencode_mcp_config, option, positive_u64, providers,
         read_export, recall_scope_context, redact_endpoint, requested_memory_privacy,
-        requested_memory_scope, test_provider, validate_external_conformance_namespace,
-        validate_mcp_server_binary, vscode_mcp_config, write_export, zed_mcp_config,
+        requested_memory_scope, selected_secret_reference, test_provider,
+        validate_external_conformance_namespace, validate_mcp_server_binary, vscode_mcp_config,
+        write_export, zed_mcp_config,
     };
 
     fn temporary_path(name: &str) -> std::path::PathBuf {
@@ -1894,6 +1936,26 @@ mod tests {
         assert_eq!(
             option(&arguments, "--database").expect("option exists"),
             "memory.db"
+        );
+    }
+
+    #[test]
+    fn channel_lookup_secret_reference_defaults_and_rejects_inline_values() {
+        let default = selected_secret_reference("", "REMBRANE_WHATSAPP_BINDING_LOOKUP_SECRET")
+            .expect("default environment reference");
+        assert_eq!(
+            default.environment_variable(),
+            Some("REMBRANE_WHATSAPP_BINDING_LOOKUP_SECRET")
+        );
+        let file = selected_secret_reference(
+            "file:/run/secrets/whatsapp-lookup",
+            "REMBRANE_WHATSAPP_BINDING_LOOKUP_SECRET",
+        )
+        .expect("file reference");
+        assert_eq!(file.file_path(), Some("/run/secrets/whatsapp-lookup"));
+        assert!(
+            selected_secret_reference("raw-secret", "REMBRANE_WHATSAPP_BINDING_LOOKUP_SECRET")
+                .is_err()
         );
     }
 

@@ -343,6 +343,11 @@ docker compose -f compose.yaml -f compose.mobile-share.yaml up -d \
   rembrane rembrane-mobile-share-gateway
 ```
 
+The bind and unbind commands honor the same
+`REMBRANE_MOBILE_SHARE_BINDING_LOOKUP_SECRET_REFERENCE` locator as the
+gateway. This lets an administrator derive matching pseudonyms from a
+protected file without exporting the lookup key into the shell environment.
+
 The signing and lookup secrets must be distinct and at least 32 bytes. The
 gateway has no memory-read token or default identity. It maps the authenticated
 account/device pseudonyms through an active membership and acknowledges only
@@ -380,6 +385,11 @@ rembrane channel bind-whatsapp \
   --client client_whatsapp \
   --request request_whatsapp_bind_01
 ```
+
+The WhatsApp bind and unbind commands likewise honor
+`REMBRANE_WHATSAPP_BINDING_LOOKUP_SECRET_REFERENCE`, so onboarding and gateway
+ingress can resolve the same deployment-owned key through the same validated
+metadata.
 
 The command emits canonical IDs and status only. Shell history, logs, and the
 database never receive the raw identifiers as command-line arguments or

@@ -719,6 +719,8 @@ This roadmap describes sequencing, not release dates.
   - [x] Add administrator-authorized CLI enrollment and revocation for mobile
     devices without persisting raw account identifiers, device identifiers, or
     lookup secrets.
+    - [x] Resolve stable WhatsApp and mobile-share binding keys through the
+      same reference metadata used by their gateway processes.
   - [x] Expose the signed mobile-share boundary through a narrowly scoped
     companion HTTP service.
     - [x] Resolve distinct signing and pseudonymous-binding credentials from

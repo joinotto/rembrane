@@ -65,3 +65,8 @@ An empty locator preserves the documented environment-variable default;
 otherwise use `env:VARIABLE` or `file:path` with the local resolver.
 Unsupported `external:provider:key` references fail closed unless the
 embedding deployment supplies that provider's resolver.
+
+Administrative WhatsApp and mobile-share bind/unbind commands consume the
+same binding-key locator variables as their gateways. Raw account, sender, and
+device identifiers remain short-lived zeroizing environment inputs, while the
+stable pseudonym key can stay in a protected secret file.
