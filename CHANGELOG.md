@@ -21,6 +21,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   HTTPS-or-loopback origin validation, header-safe credentials, strict
   timeouts, disabled redirects and proxies, bounded JSON bodies, fail-closed
   manifests, and correlated sidecar responses.
+- Portable encoding for arbitrary canonical graph identifiers before they
+  enter Graphiti mutation idempotency keys.
 - Canonical engine-neutral temporal knowledge graph aggregates with typed
   nodes, validated relationship types, strict workspace namespaces, separate
   validity and ingestion time, evidence provenance, bounded aliases, versions,

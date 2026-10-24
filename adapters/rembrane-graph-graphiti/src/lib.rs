@@ -222,7 +222,12 @@ impl<Transport: GraphitiTransport> GraphitiProvider<Transport> {
         id: &str,
         version: u64,
     ) -> Result<GraphitiIdempotencyKey, ProviderError> {
-        GraphitiIdempotencyKey::new(format!("rembrane.{resource}.{id}.{version}"))
+        let mut encoded_id = String::with_capacity(id.len().saturating_mul(2));
+        for byte in id.bytes() {
+            use std::fmt::Write as _;
+            write!(&mut encoded_id, "{byte:02x}").map_err(|_| ProviderError::Unavailable)?;
+        }
+        GraphitiIdempotencyKey::new(format!("rembrane.{resource}.{encoded_id}.{version}"))
     }
 
     fn accept<'response, ResultPayload>(
@@ -574,5 +579,14 @@ mod tests {
         let namespaces = provider.transport().namespaces.borrow();
         assert_eq!(namespaces.len(), 1);
         assert!(!namespaces[0].as_str().contains("private-workspace"));
+    }
+
+    #[test]
+    fn encodes_opaque_identifiers_before_using_them_as_idempotency_keys() {
+        let key = GraphitiProvider::<MockSidecar>::mutation_key("node", "node:日本語", 2)
+            .expect("opaque identifier should be encoded");
+        assert!(key.as_str().starts_with("rembrane.node."));
+        assert!(!key.as_str().contains(':'));
+        assert!(!key.as_str().contains("日本語"));
     }
 }
