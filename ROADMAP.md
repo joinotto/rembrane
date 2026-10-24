@@ -97,7 +97,7 @@ This roadmap describes sequencing, not release dates.
 ## Phase 3 — Travel continuity
 
 - [x] Reuse layered domain/entity context for travel and trip constraints.
-- [ ] Trip entities, participants, constraints, and decisions.
+- [x] Trip entities, participants, constraints, and decisions.
   - [x] Canonical versioned trip aggregate with opaque participants, validated
     date windows, evidence-backed constraints, and attributed decisions.
   - [x] Versioned canonical trip wire format with strict aggregate
@@ -106,12 +106,12 @@ This roadmap describes sequencing, not release dates.
     grants and an atomic in-memory reference repository.
   - [x] Dedicated travel-domain capability for creating new trip entities;
     revisions remain exact-entity scoped.
-  - [ ] Encrypted persistent trip repository with tenant-isolation and rollback
+  - [x] Encrypted persistent trip repository with tenant-isolation and rollback
     coverage.
     - [x] Versioned SQLite schema and encrypted atomic trip/event repository.
     - [x] Executable encrypted tenant-isolation, optimistic revision, and
       rollback adapter tests.
-- [ ] Booking-research evidence and expiry.
+- [x] Booking-research evidence and expiry.
   - [x] Canonical evidence-backed booking-research record with strict UTC
     observation and expiry semantics.
   - [x] Versioned provider-independent booking-research codec.
@@ -129,12 +129,12 @@ This roadmap describes sequencing, not release dates.
     unrelated trip state and uses server-assigned participant identity.
   - [x] Narrow evidence-backed constraint and attributed-decision mutations
     over REST and MCP, with server-assigned record identity.
-- [ ] Cross-agent activity continuation.
+- [x] Cross-agent activity continuation.
   - [x] Exact-trip travel context separates fresh research from expired
     observations at a caller-supplied canonical timestamp.
   - [x] Audited REST/MCP travel context retrieval and exact-version disclosure
     receipts, with opaque provider source references excluded from responses.
-- [ ] Sensitive travel-data permissions.
+- [x] Sensitive travel-data permissions.
   - [x] MCP trip creation uses a dedicated travel-domain capability and
     server-assigned identity.
   - [x] Source references are redacted by default and require both explicit
