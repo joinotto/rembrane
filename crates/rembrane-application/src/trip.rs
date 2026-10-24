@@ -1,5 +1,6 @@
 use rembrane_domain::{
-    CanonicalEvent, EventId, EventPayload, MemoryScope, Trip, WriteGrant, WritePermission,
+    CanonicalEvent, EntityId, EventId, EventPayload, MemoryScope, Trip, TripParticipant,
+    WriteGrant, WritePermission,
 };
 
 use crate::{ApplicationError, TripMutationRepository};
@@ -16,6 +17,16 @@ pub struct CreateTripCommand {
 pub struct ReplaceTripCommand {
     pub grant: WriteGrant,
     pub trip: Trip,
+    pub expected_trip_version: u64,
+    pub event_id: EventId,
+    pub expected_previous_sequence: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AddTripParticipantCommand {
+    pub grant: WriteGrant,
+    pub trip_id: EntityId,
+    pub participant: TripParticipant,
     pub expected_trip_version: u64,
     pub event_id: EventId,
     pub expected_previous_sequence: u64,
@@ -89,6 +100,30 @@ where
             command.expected_previous_sequence,
         )?;
         Ok(command.trip)
+    }
+
+    pub fn add_participant(
+        &mut self,
+        command: AddTripParticipantCommand,
+    ) -> Result<Trip, ApplicationError> {
+        let stored = self
+            .repository
+            .find_trip(&command.grant.workspace_id, &command.trip_id)?
+            .ok_or(ApplicationError::NotFound)?;
+        validate_grant(&command.grant, &stored, WritePermission::ReviseTrip)?;
+        if stored.version() != command.expected_trip_version {
+            return Err(ApplicationError::VersionConflict);
+        }
+        let revised = stored
+            .add_participant(command.participant)
+            .map_err(|_| ApplicationError::Validation("invalid trip participant".to_owned()))?;
+        self.replace(ReplaceTripCommand {
+            grant: command.grant,
+            trip: revised,
+            expected_trip_version: command.expected_trip_version,
+            event_id: command.event_id,
+            expected_previous_sequence: command.expected_previous_sequence,
+        })
     }
 }
 

@@ -1,6 +1,6 @@
 use rembrane_application::{
-    ApplicationError, CreateTripCommand, EventRepository, ReplaceTripCommand, TripRepository,
-    TripService, WorkspaceRepository,
+    AddTripParticipantCommand, ApplicationError, CreateTripCommand, EventRepository,
+    ReplaceTripCommand, TripRepository, TripService, WorkspaceRepository,
 };
 use rembrane_domain::{
     ClientId, EntityId, EventId, Membership, Principal, PrincipalId, ReadScope, TravelDateWindow,
@@ -21,6 +21,47 @@ fn store() -> InMemoryStore {
         )
         .expect("workspace should initialize");
     store
+}
+
+#[test]
+fn narrow_participant_mutation_preserves_existing_trip_state() {
+    let mut store = store();
+    TripService::new(&mut store)
+        .create(CreateTripCommand {
+            grant: grant(WritePermission::CreateTrip),
+            trip: trip(),
+            event_id: EventId::new("event_trip_created"),
+            expected_previous_sequence: 0,
+        })
+        .expect("trip should persist");
+
+    let revised = TripService::new(&mut store)
+        .add_participant(AddTripParticipantCommand {
+            grant: grant(WritePermission::ReviseTrip),
+            trip_id: EntityId::new("trip_tokyo"),
+            participant: TripParticipant::new(TripParticipantId::new("traveller_01"), "Hippo")
+                .expect("participant should be valid"),
+            expected_trip_version: 1,
+            event_id: EventId::new("event_participant_added"),
+            expected_previous_sequence: 1,
+        })
+        .expect("narrow participant mutation should persist");
+
+    assert_eq!(revised.title(), "Tokyo");
+    assert_eq!(revised.destinations(), ["Tokyo"]);
+    assert_eq!(revised.participants()[0].label(), "Hippo");
+    assert_eq!(revised.version(), 2);
+
+    let stale = TripService::new(&mut store).add_participant(AddTripParticipantCommand {
+        grant: grant(WritePermission::ReviseTrip),
+        trip_id: EntityId::new("trip_tokyo"),
+        participant: TripParticipant::new(TripParticipantId::new("traveller_02"), "Friend")
+            .expect("participant should be valid"),
+        expected_trip_version: 1,
+        event_id: EventId::new("event_stale_participant"),
+        expected_previous_sequence: 2,
+    });
+    assert_eq!(stale, Err(ApplicationError::VersionConflict));
 }
 
 fn trip() -> Trip {
