@@ -192,10 +192,22 @@ pub struct DeploymentPolicy {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum SecretReference {
+pub struct SecretReference {
+    kind: SecretReferenceKind,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum SecretReferenceKind {
     Environment { variable: String },
     File { path: String },
     External { provider: String, key: String },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SecretReferenceSource {
+    Environment,
+    File,
+    External,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -234,7 +246,9 @@ impl SecretReference {
         {
             return Err(SecretReferenceError::InvalidField);
         }
-        Ok(Self::Environment { variable })
+        Ok(Self {
+            kind: SecretReferenceKind::Environment { variable },
+        })
     }
 
     pub fn file(path: impl Into<String>) -> Result<Self, SecretReferenceError> {
@@ -248,7 +262,9 @@ impl SecretReference {
         {
             return Err(SecretReferenceError::InvalidField);
         }
-        Ok(Self::File { path })
+        Ok(Self {
+            kind: SecretReferenceKind::File { path },
+        })
     }
 
     pub fn external(
@@ -272,11 +288,54 @@ impl SecretReference {
         {
             return Err(SecretReferenceError::InvalidField);
         }
-        Ok(Self::External { provider, key })
+        Ok(Self {
+            kind: SecretReferenceKind::External { provider, key },
+        })
     }
 
     pub fn inline(_value: impl Into<String>) -> Result<Self, SecretReferenceError> {
         Err(SecretReferenceError::InlineValueForbidden)
+    }
+
+    #[must_use]
+    pub const fn source(&self) -> SecretReferenceSource {
+        match &self.kind {
+            SecretReferenceKind::Environment { .. } => SecretReferenceSource::Environment,
+            SecretReferenceKind::File { .. } => SecretReferenceSource::File,
+            SecretReferenceKind::External { .. } => SecretReferenceSource::External,
+        }
+    }
+
+    #[must_use]
+    pub fn environment_variable(&self) -> Option<&str> {
+        match &self.kind {
+            SecretReferenceKind::Environment { variable } => Some(variable),
+            SecretReferenceKind::File { .. } | SecretReferenceKind::External { .. } => None,
+        }
+    }
+
+    #[must_use]
+    pub fn file_path(&self) -> Option<&str> {
+        match &self.kind {
+            SecretReferenceKind::File { path } => Some(path),
+            SecretReferenceKind::Environment { .. } | SecretReferenceKind::External { .. } => None,
+        }
+    }
+
+    #[must_use]
+    pub fn external_provider(&self) -> Option<&str> {
+        match &self.kind {
+            SecretReferenceKind::External { provider, .. } => Some(provider),
+            SecretReferenceKind::Environment { .. } | SecretReferenceKind::File { .. } => None,
+        }
+    }
+
+    #[must_use]
+    pub fn external_key(&self) -> Option<&str> {
+        match &self.kind {
+            SecretReferenceKind::External { key, .. } => Some(key),
+            SecretReferenceKind::Environment { .. } | SecretReferenceKind::File { .. } => None,
+        }
     }
 }
 
@@ -595,7 +654,7 @@ mod tests {
         MAX_SECRET_EXTERNAL_KEY_BYTES, MAX_SECRET_FILE_REFERENCE_BYTES,
         MAX_SECRET_PROVIDER_ID_BYTES, ProcessingMode, ProviderConnection, ProviderConnectionError,
         ProviderKind, ProviderPlacement, RemoteMcpConfig, RemoteMcpConfigError, SecretReference,
-        SecretReferenceError, parse_read_permissions, parse_read_scopes,
+        SecretReferenceError, SecretReferenceSource, parse_read_permissions, parse_read_scopes,
     };
 
     #[test]
@@ -634,12 +693,14 @@ mod tests {
             SecretReference::inline("database-password"),
             Err(SecretReferenceError::InlineValueForbidden)
         );
+        let reference = SecretReference::environment("REMBRANE_DATABASE_URL")
+            .expect("environment reference should validate");
+        assert_eq!(reference.source(), SecretReferenceSource::Environment);
         assert_eq!(
-            SecretReference::environment("REMBRANE_DATABASE_URL"),
-            Ok(SecretReference::Environment {
-                variable: "REMBRANE_DATABASE_URL".to_owned()
-            })
+            reference.environment_variable(),
+            Some("REMBRANE_DATABASE_URL")
         );
+        assert_eq!(reference.file_path(), None);
     }
 
     #[test]
@@ -742,9 +803,10 @@ mod tests {
         assert_eq!(profile.placement(), ProviderPlacement::External);
         assert_eq!(
             profile.credentials(),
-            vec![SecretReference::Environment {
-                variable: "MEM0_API_KEY".to_owned()
-            }]
+            vec![
+                SecretReference::environment("MEM0_API_KEY")
+                    .expect("secret reference should be valid")
+            ]
         );
 
         let supermemory = ProviderConnection::remote(

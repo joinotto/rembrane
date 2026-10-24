@@ -76,6 +76,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Opaque validated provider profiles with read-only accessors, preventing
   integrations from bypassing endpoint, placement, and credential-reference
   construction invariants through public fields.
+- Opaque validated secret references with source-specific read-only accessors,
+  preventing direct construction of unvalidated environment, file, or external
+  secret-manager variants.
 - A transport-injectable Mem0 OSS semantic adapter mapping authorized
   projections into HMAC-pseudonymous workspace partitions while preserving
   canonical memory IDs, versions, replacement, bounded ranking, and

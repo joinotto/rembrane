@@ -40,6 +40,8 @@ This roadmap describes sequencing, not release dates.
   secret references rather than stored credential values.
   - [x] Bound and validate portable environment, file, and external
     secret-manager references before storing configuration.
+    - [x] Make secret references opaque with source-specific read-only
+      accessors so integrations cannot construct unvalidated variants.
   - [x] Bound and deduplicate each provider profile's credential-reference
     list before any secret-manager resolution.
   - [x] Make validated provider profiles opaque so callers cannot bypass
