@@ -16,7 +16,7 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   Keychain, or policy-negotiated HTTP key providers through secret-bearing
   environment variables local to the deployment.
 - Dedicated Rust 1.88 test and Clippy CI gate for the key-provider HTTP
-  adapter.
+  adapter, configured cipher, and CLI, REST, and MCP consumers.
 - Strict language-neutral Memory Provider lifecycle fixtures defining actor
   scope expectations and disposable scenario inputs, consumed directly by the
   black-box HTTP conformance client without storing credentials or tenant IDs.
