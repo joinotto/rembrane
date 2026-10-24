@@ -8,6 +8,7 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+rembrane-channel-whatsapp = { path = "../../adapters/rembrane-channel-whatsapp" }
 rembrane-application = { path = "../../crates/rembrane-application" }
 rembrane-crypto-configured = { path = "../../adapters/rembrane-crypto-configured" }
 rembrane-contracts = { path = "../../crates/rembrane-contracts" }
@@ -20,6 +21,7 @@ rembrane-semantic-native = { path = "../../adapters/rembrane-semantic-native" }
 rembrane-store-memory = { path = "../../adapters/rembrane-store-memory" }
 rembrane-store-sqlite = { path = "../../adapters/rembrane-store-sqlite" }
 serde_json = "1"
+zeroize = "1"
 
 [lints]
 workspace = true

@@ -30,6 +30,11 @@ pub struct WhatsAppTextEvent {
     received_at_epoch_seconds: u64,
 }
 
+pub struct WhatsAppBindingLookupKeys {
+    account_lookup_key: String,
+    sender_lookup_key: String,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum WhatsAppWebhookError {
     InvalidConfiguration,
@@ -176,6 +181,43 @@ impl WhatsAppWebhookVerifier {
             }
         }
         Ok(admitted)
+    }
+}
+
+/// Derives the same pseudonymous account and sender keys used by webhook
+/// ingestion, without retaining the deployment-owned lookup secret.
+///
+/// # Errors
+///
+/// Rejects weak secrets and malformed platform identifiers.
+pub fn derive_binding_lookup_keys(
+    mut binding_lookup_secret: Vec<u8>,
+    account_identifier: &str,
+    sender_identifier: &str,
+) -> Result<WhatsAppBindingLookupKeys, WhatsAppWebhookError> {
+    if binding_lookup_secret.len() < 32 {
+        binding_lookup_secret.zeroize();
+        return Err(WhatsAppWebhookError::InvalidConfiguration);
+    }
+    let account_identifier = bounded_identifier(account_identifier)?;
+    let sender_identifier = bounded_identifier(sender_identifier)?;
+    let key = hmac::Key::new(hmac::HMAC_SHA256, &binding_lookup_secret);
+    binding_lookup_secret.zeroize();
+    Ok(WhatsAppBindingLookupKeys {
+        account_lookup_key: lookup_fingerprint(&key, b"account", account_identifier),
+        sender_lookup_key: lookup_fingerprint(&key, b"sender", sender_identifier),
+    })
+}
+
+impl WhatsAppBindingLookupKeys {
+    #[must_use]
+    pub fn account_lookup_key(&self) -> &str {
+        &self.account_lookup_key
+    }
+
+    #[must_use]
+    pub fn sender_lookup_key(&self) -> &str {
+        &self.sender_lookup_key
     }
 }
 
@@ -381,7 +423,8 @@ mod tests {
 
     use super::{
         MAXIMUM_WEBHOOK_BYTES, WhatsAppHttpStatus, WhatsAppSubscriptionVerifier,
-        WhatsAppWebhookError, WhatsAppWebhookVerifier, encode_hex, webhook_http_status,
+        WhatsAppWebhookError, WhatsAppWebhookVerifier, derive_binding_lookup_keys, encode_hex,
+        webhook_http_status,
     };
 
     const PAYLOAD: &[u8] = br#"{
@@ -603,5 +646,18 @@ mod tests {
             ))),
             WhatsAppHttpStatus::ServiceUnavailable
         );
+    }
+
+    #[test]
+    fn onboarding_derives_the_same_pseudonyms_as_verified_ingress() {
+        let event = verifier()
+            .verify_and_extract_text(&signature(PAYLOAD), PAYLOAD)
+            .expect("fixture webhook should verify")
+            .pop()
+            .expect("fixture should contain one event");
+        let binding = derive_binding_lookup_keys(vec![9; 32], "15550000001", "15550000002")
+            .expect("binding identifiers should be valid");
+        assert_eq!(binding.account_lookup_key(), event.account_lookup_key());
+        assert_eq!(binding.sender_lookup_key(), event.sender_lookup_key());
     }
 }

@@ -1085,6 +1085,7 @@ name = "rembrane-cli"
 version = "0.1.0-alpha.1"
 dependencies = [
  "rembrane-application",
+ "rembrane-channel-whatsapp",
  "rembrane-config",
  "rembrane-contracts",
  "rembrane-crypto",
@@ -1096,6 +1097,7 @@ dependencies = [
  "rembrane-store-memory",
  "rembrane-store-sqlite",
  "serde_json",
+ "zeroize",
 ]
 
 [[package]]

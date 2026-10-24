@@ -26,6 +26,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - An opt-in hardened WhatsApp Compose overlay and operator guide that share
   only the canonical database volume and keep the gateway host port on
   loopback behind a deployment-owned HTTPS proxy.
+- Administrator-only WhatsApp sender onboarding through the CLI, consuming
+  raw platform identifiers from protected environment variables while
+  persisting and reporting no raw or derived identifiers.
 - Durable, content-free SQLite channel replay receipts with atomic cleanup,
   fail-closed capacity enforcement, per-platform namespaces, and
   cross-workspace duplicate denial for multi-process gateways.

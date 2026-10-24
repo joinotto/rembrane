@@ -560,6 +560,9 @@ This roadmap describes sequencing, not release dates.
     encryption keys.
   - [x] Package the gateway as an opt-in hardened Compose overlay with a
     loopback-only host port and documented TLS proxy boundary.
+  - [x] Add administrator-only sender onboarding that consumes raw identifiers
+    and the lookup secret from protected environment variables and persists
+    only matching keyed pseudonyms.
   - [x] Define a bounded authenticated-channel message contract whose
     canonical workspace, principal, and client identity must come from a
     deployment-owned sender binding rather than webhook payload claims.
