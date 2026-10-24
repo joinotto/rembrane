@@ -359,6 +359,8 @@ This roadmap describes sequencing, not release dates.
     - [x] Use canonical direct HTTPS operation bodies and results while
       binding request and protocol correlation exclusively through mandatory
       transport headers.
+      - [x] Add socket-level Rust integration coverage for direct mutation
+        bodies and bodyless percent-encoded GET operations.
     - [x] Reject manifests whose capability, OAuth scope, HTTP method, or path
       bindings differ from the canonical protocol registry.
     - [x] Add typed codecs and response validation for every operation.

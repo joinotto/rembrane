@@ -95,6 +95,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   OpenAPI payloads and results, mandatory request/protocol correlation
   headers, query-encoded GET parameters, closed direct error bodies, and
   credential-free public discovery.
+- Socket-level Memory Provider client integration tests that inspect direct
+  request bodies, bearer and correlation headers, percent-encoded resource
+  paths, query parameters, bodyless GET requests, and correlated responses.
 - Canonical engine-neutral temporal knowledge graph aggregates with typed
   nodes, validated relationship types, strict workspace namespaces, separate
   validity and ingestion time, evidence provenance, bounded aliases, versions,
