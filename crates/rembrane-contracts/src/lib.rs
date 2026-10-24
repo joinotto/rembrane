@@ -75,7 +75,58 @@ pub enum RemoteMcpOperation {
     ResolveTravelContext,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RemoteMcpRequestAuthorization {
+    Connection,
+    Tool(RemoteMcpOperation),
+}
+
+impl RemoteMcpRequestAuthorization {
+    /// Classifies one MCP JSON-RPC request for authorization.
+    ///
+    /// The current Rembrane MCP surface exposes tools only. Unknown methods,
+    /// tool metadata on non-tool methods, missing tool names, and unknown tool
+    /// names fail closed so a transport adapter cannot accidentally authorize
+    /// a newly introduced SDK method as generic connection traffic.
+    #[must_use]
+    pub fn classify(method: &str, tool_name: Option<&str>) -> Option<Self> {
+        match (method, tool_name) {
+            (
+                "initialize"
+                | "notifications/initialized"
+                | "notifications/cancelled"
+                | "ping"
+                | "tools/list",
+                None,
+            ) => Some(Self::Connection),
+            ("tools/call", Some(tool_name)) => {
+                RemoteMcpOperation::from_tool_name(tool_name).map(Self::Tool)
+            }
+            _ => None,
+        }
+    }
+}
+
 impl RemoteMcpOperation {
+    #[must_use]
+    pub const fn tool_name(self) -> &'static str {
+        match self {
+            Self::ResolveContext => "rembrane_resolve_context",
+            Self::RememberPreference => "rembrane_remember_preference",
+            Self::RequestCorrection => "rembrane_request_correction",
+            Self::ForgetMemory => "rembrane_forget_memory",
+            Self::RecordWorkTrace => "rembrane_record_work_trace",
+            Self::CheckpointActivity => "rembrane_checkpoint_activity",
+            Self::ResumeActivity => "rembrane_resume_activity",
+            Self::CreateTrip => "rembrane_create_trip",
+            Self::CaptureBookingResearch => "rembrane_capture_booking_research",
+            Self::AddTripParticipant => "rembrane_add_trip_participant",
+            Self::AddTripConstraint => "rembrane_add_trip_constraint",
+            Self::RecordTripDecision => "rembrane_record_trip_decision",
+            Self::ResolveTravelContext => "rembrane_resolve_travel_context",
+        }
+    }
+
     #[must_use]
     pub fn from_tool_name(tool_name: &str) -> Option<Self> {
         match tool_name {
@@ -395,7 +446,7 @@ impl Error for RemoteAccessError {}
 mod tests {
     use super::{
         ClientId, PrincipalId, RemoteAccessError, RemoteAccessScope, RemoteMcpOperation,
-        RemoteSessionId, RemoteTokenClaims, WorkspaceId,
+        RemoteMcpRequestAuthorization, RemoteSessionId, RemoteTokenClaims, WorkspaceId,
     };
 
     fn claims(scopes: &[RemoteAccessScope]) -> RemoteTokenClaims {
@@ -662,5 +713,38 @@ mod tests {
             RemoteMcpOperation::from_tool_name("untrusted_future_tool"),
             None
         );
+    }
+
+    #[test]
+    fn classifies_only_the_supported_mcp_request_surface() {
+        for method in [
+            "initialize",
+            "notifications/initialized",
+            "notifications/cancelled",
+            "ping",
+            "tools/list",
+        ] {
+            assert_eq!(
+                RemoteMcpRequestAuthorization::classify(method, None),
+                Some(RemoteMcpRequestAuthorization::Connection)
+            );
+        }
+        assert_eq!(
+            RemoteMcpRequestAuthorization::classify("tools/call", Some("rembrane_resolve_context")),
+            Some(RemoteMcpRequestAuthorization::Tool(
+                RemoteMcpOperation::ResolveContext
+            ))
+        );
+        for (method, tool_name) in [
+            ("resources/read", None),
+            ("tools/call", None),
+            ("tools/call", Some("untrusted_future_tool")),
+            ("tools/list", Some("rembrane_resolve_context")),
+        ] {
+            assert_eq!(
+                RemoteMcpRequestAuthorization::classify(method, tool_name),
+                None
+            );
+        }
     }
 }

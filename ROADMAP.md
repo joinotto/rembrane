@@ -96,6 +96,9 @@ This roadmap describes sequencing, not release dates.
     - [x] Provide one transport-neutral lifecycle boundary that composes
       per-request HTTP authorization with session establish, revalidation,
       tool-scope enforcement, and authenticated deletion.
+    - [x] Classify the exact supported MCP JSON-RPC method surface and reject
+      unknown methods, missing tool names, and method/tool mismatches before
+      dispatch.
   - [x] Allow the shared MCP handler service to initialize canonical
     subject/client/workspace identity exclusively from verified remote claims.
   - [x] Bind remote sessions to issuer, resource, canonical identity,

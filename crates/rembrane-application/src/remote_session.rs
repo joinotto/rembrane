@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
 
-use rembrane_contracts::{RemoteSessionBinding, RemoteSessionId, VerifiedRemoteAccess};
+use rembrane_contracts::{
+    RemoteMcpRequestAuthorization, RemoteSessionBinding, RemoteSessionId, VerifiedRemoteAccess,
+};
 
 use crate::{ApplicationError, RemoteHttpAuthorization, RemoteTokenVerifier};
 
@@ -129,6 +131,47 @@ impl RemoteSessionRegistry {
         )?;
         self.revalidate(session_id, &access, now_epoch_seconds)?;
         Ok(access)
+    }
+
+    /// Classifies and authorizes one established-session MCP request.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AccessDenied` for every unsupported method or malformed
+    /// method/tool combination, as well as any request or session
+    /// authorization failure.
+    pub fn authorize_request<Verifier>(
+        &mut self,
+        authorization: &RemoteHttpAuthorization<'_, '_, Verifier>,
+        session_id: &RemoteSessionId,
+        authorization_header: Option<&str>,
+        origin_header: Option<&str>,
+        method: &str,
+        tool_name: Option<&str>,
+        now_epoch_seconds: u64,
+    ) -> Result<VerifiedRemoteAccess, ApplicationError>
+    where
+        Verifier: RemoteTokenVerifier,
+    {
+        match RemoteMcpRequestAuthorization::classify(method, tool_name)
+            .ok_or(ApplicationError::AccessDenied)?
+        {
+            RemoteMcpRequestAuthorization::Connection => self.authorize_connection(
+                authorization,
+                session_id,
+                authorization_header,
+                origin_header,
+                now_epoch_seconds,
+            ),
+            RemoteMcpRequestAuthorization::Tool(operation) => self.authorize_tool(
+                authorization,
+                session_id,
+                authorization_header,
+                origin_header,
+                operation.tool_name(),
+                now_epoch_seconds,
+            ),
+        }
     }
 
     /// Reauthenticates and deletes a remote session.
@@ -448,5 +491,73 @@ mod tests {
             )
             .expect("bound delete should authenticate");
         assert!(registry.is_empty());
+    }
+
+    #[test]
+    fn request_classifier_dispatches_tools_and_rejects_unknown_methods() {
+        let verifier = FixtureVerifier;
+        let authenticator = RemoteAccessAuthenticator::new(
+            &verifier,
+            "https://identity.example.test",
+            "https://memory.example.test/mcp",
+        );
+        let authorization = RemoteHttpAuthorization::new(&authenticator, &[]);
+        let mut registry = RemoteSessionRegistry::new(1).expect("capacity should be valid");
+        let session =
+            RemoteSessionId::new("session_0123456789abcdef").expect("session id should be valid");
+        registry
+            .authorize_and_establish(
+                &authorization,
+                session.clone(),
+                Some("Bearer workspace-one"),
+                None,
+                1_000,
+            )
+            .expect("initialize should authenticate");
+
+        registry
+            .authorize_request(
+                &authorization,
+                &session,
+                Some("Bearer workspace-one"),
+                None,
+                "tools/call",
+                Some("rembrane_remember_preference"),
+                1_100,
+            )
+            .expect("known scoped tool should authenticate");
+        registry
+            .authorize_request(
+                &authorization,
+                &session,
+                Some("Bearer workspace-one"),
+                None,
+                "tools/list",
+                None,
+                1_100,
+            )
+            .expect("known connection method should authenticate");
+
+        for (method, tool_name) in [
+            ("resources/read", None),
+            ("tools/call", None),
+            ("tools/call", Some("untrusted_future_tool")),
+            ("tools/list", Some("rembrane_resolve_context")),
+        ] {
+            assert_eq!(
+                registry
+                    .authorize_request(
+                        &authorization,
+                        &session,
+                        Some("Bearer workspace-one"),
+                        None,
+                        method,
+                        tool_name,
+                        1_100,
+                    )
+                    .expect_err("unsupported request shape must fail closed"),
+                ApplicationError::AccessDenied
+            );
+        }
     }
 }
