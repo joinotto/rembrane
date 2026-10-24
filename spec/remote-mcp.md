@@ -75,9 +75,15 @@ permission, and write permission checks still run for every operation.
 
 - `rembrane:context:read`
 - `rembrane:memory:write`
+- `rembrane:checkpoint:read`
 - `rembrane:checkpoint:write`
 - `rembrane:travel:read`
 - `rembrane:travel:write`
+
+Each tool name maps to exactly one required outer scope. Unknown tool names
+fail closed instead of inheriting a general MCP permission. Resume operations
+use checkpoint-read authority; creating or updating a checkpoint requires
+checkpoint-write authority.
 
 Sensitive travel source references and profiles additionally require their
 existing Rembrane connection permissions. Broad OAuth travel-read authority

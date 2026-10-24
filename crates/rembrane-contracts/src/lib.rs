@@ -38,6 +38,7 @@ pub struct RecordDisclosureRequest {
 pub enum RemoteAccessScope {
     ContextRead,
     MemoryWrite,
+    CheckpointRead,
     CheckpointWrite,
     TravelRead,
     TravelWrite,
@@ -49,9 +50,68 @@ impl RemoteAccessScope {
         match self {
             Self::ContextRead => "rembrane:context:read",
             Self::MemoryWrite => "rembrane:memory:write",
+            Self::CheckpointRead => "rembrane:checkpoint:read",
             Self::CheckpointWrite => "rembrane:checkpoint:write",
             Self::TravelRead => "rembrane:travel:read",
             Self::TravelWrite => "rembrane:travel:write",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RemoteMcpOperation {
+    ResolveContext,
+    RememberPreference,
+    RequestCorrection,
+    ForgetMemory,
+    RecordWorkTrace,
+    CheckpointActivity,
+    ResumeActivity,
+    CreateTrip,
+    CaptureBookingResearch,
+    AddTripParticipant,
+    AddTripConstraint,
+    RecordTripDecision,
+    ResolveTravelContext,
+}
+
+impl RemoteMcpOperation {
+    #[must_use]
+    pub fn from_tool_name(tool_name: &str) -> Option<Self> {
+        match tool_name {
+            "rembrane_resolve_context" => Some(Self::ResolveContext),
+            "rembrane_remember_preference" => Some(Self::RememberPreference),
+            "rembrane_request_correction" => Some(Self::RequestCorrection),
+            "rembrane_forget_memory" => Some(Self::ForgetMemory),
+            "rembrane_record_work_trace" => Some(Self::RecordWorkTrace),
+            "rembrane_checkpoint_activity" => Some(Self::CheckpointActivity),
+            "rembrane_resume_activity" => Some(Self::ResumeActivity),
+            "rembrane_create_trip" => Some(Self::CreateTrip),
+            "rembrane_capture_booking_research" => Some(Self::CaptureBookingResearch),
+            "rembrane_add_trip_participant" => Some(Self::AddTripParticipant),
+            "rembrane_add_trip_constraint" => Some(Self::AddTripConstraint),
+            "rembrane_record_trip_decision" => Some(Self::RecordTripDecision),
+            "rembrane_resolve_travel_context" => Some(Self::ResolveTravelContext),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub const fn required_scope(self) -> RemoteAccessScope {
+        match self {
+            Self::ResolveContext => RemoteAccessScope::ContextRead,
+            Self::RememberPreference
+            | Self::RequestCorrection
+            | Self::ForgetMemory
+            | Self::RecordWorkTrace => RemoteAccessScope::MemoryWrite,
+            Self::CheckpointActivity => RemoteAccessScope::CheckpointWrite,
+            Self::ResumeActivity => RemoteAccessScope::CheckpointRead,
+            Self::CreateTrip
+            | Self::CaptureBookingResearch
+            | Self::AddTripParticipant
+            | Self::AddTripConstraint
+            | Self::RecordTripDecision => RemoteAccessScope::TravelWrite,
+            Self::ResolveTravelContext => RemoteAccessScope::TravelRead,
         }
     }
 }
@@ -201,7 +261,8 @@ impl Error for RemoteAccessError {}
 #[cfg(test)]
 mod tests {
     use super::{
-        ClientId, PrincipalId, RemoteAccessError, RemoteAccessScope, RemoteTokenClaims, WorkspaceId,
+        ClientId, PrincipalId, RemoteAccessError, RemoteAccessScope, RemoteMcpOperation,
+        RemoteTokenClaims, WorkspaceId,
     };
 
     fn claims(scopes: &[RemoteAccessScope]) -> RemoteTokenClaims {
@@ -296,6 +357,62 @@ mod tests {
                 )
                 .expect_err("issuer confusion must fail"),
             RemoteAccessError::Issuer
+        );
+    }
+
+    #[test]
+    fn maps_every_known_mcp_tool_to_a_narrow_scope_and_rejects_unknown_tools() {
+        let cases = [
+            ("rembrane_resolve_context", RemoteAccessScope::ContextRead),
+            (
+                "rembrane_remember_preference",
+                RemoteAccessScope::MemoryWrite,
+            ),
+            (
+                "rembrane_request_correction",
+                RemoteAccessScope::MemoryWrite,
+            ),
+            ("rembrane_forget_memory", RemoteAccessScope::MemoryWrite),
+            ("rembrane_record_work_trace", RemoteAccessScope::MemoryWrite),
+            (
+                "rembrane_checkpoint_activity",
+                RemoteAccessScope::CheckpointWrite,
+            ),
+            (
+                "rembrane_resume_activity",
+                RemoteAccessScope::CheckpointRead,
+            ),
+            ("rembrane_create_trip", RemoteAccessScope::TravelWrite),
+            (
+                "rembrane_capture_booking_research",
+                RemoteAccessScope::TravelWrite,
+            ),
+            (
+                "rembrane_add_trip_participant",
+                RemoteAccessScope::TravelWrite,
+            ),
+            (
+                "rembrane_add_trip_constraint",
+                RemoteAccessScope::TravelWrite,
+            ),
+            (
+                "rembrane_record_trip_decision",
+                RemoteAccessScope::TravelWrite,
+            ),
+            (
+                "rembrane_resolve_travel_context",
+                RemoteAccessScope::TravelRead,
+            ),
+        ];
+
+        for (tool_name, expected_scope) in cases {
+            let operation = RemoteMcpOperation::from_tool_name(tool_name)
+                .expect("known MCP tool must have a remote operation");
+            assert_eq!(operation.required_scope(), expected_scope);
+        }
+        assert_eq!(
+            RemoteMcpOperation::from_tool_name("untrusted_future_tool"),
+            None
         );
     }
 }

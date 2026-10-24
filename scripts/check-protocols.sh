@@ -151,6 +151,10 @@ for tool in $implemented_tools; do
         echo "implemented MCP tool is undocumented: $tool" >&2
         exit 1
     fi
+    if ! rg -F "\"$tool\"" crates/rembrane-contracts/src/lib.rs >/dev/null; then
+        echo "implemented MCP tool has no remote OAuth scope mapping: $tool" >&2
+        exit 1
+    fi
 done
 
 if ! rg -F '/context/resolve:' spec/openapi.yaml >/dev/null ||

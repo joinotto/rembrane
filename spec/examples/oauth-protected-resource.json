@@ -6,6 +6,7 @@
   "scopes_supported": [
     "rembrane:context:read",
     "rembrane:memory:write",
+    "rembrane:checkpoint:read",
     "rembrane:checkpoint:write",
     "rembrane:travel:read",
     "rembrane:travel:write"

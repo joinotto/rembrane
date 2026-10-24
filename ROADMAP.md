@@ -77,6 +77,8 @@ This roadmap describes sequencing, not release dates.
   - [x] Add a fail-closed verified-token claims contract.
   - [x] Add a transport-independent authentication boundary backed by a
     signature-verifying or authenticated-introspection adapter.
+  - [x] Map every current MCP tool to one narrow OAuth scope and fail closed
+    for unknown tools.
   - [ ] Add HTTP authorization middleware around that authentication boundary.
   - [ ] Serve Streamable HTTP through the official Rust MCP SDK.
   - [ ] Add OAuth and cross-tenant transport integration tests.
