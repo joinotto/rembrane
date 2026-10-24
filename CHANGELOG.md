@@ -58,6 +58,11 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   loopback enforcement, disabled redirects and environment proxies, bounded
   JSON responses, zeroized bearer credentials, and fail-closed validation of
   every advertised capability, OAuth scope, method, and path binding.
+- A typed Memory Provider context-resolution client that excludes connection
+  identity from payloads, preserves global/domain/entity/activity selectors,
+  validates correlated success and error envelopes, reconstructs canonical
+  provenance and disclosure constraints, and reapplies originating item and
+  byte limits before returning context.
 - Canonical engine-neutral temporal knowledge graph aggregates with typed
   nodes, validated relationship types, strict workspace namespaces, separate
   validity and ingestion time, evidence provenance, bounded aliases, versions,
