@@ -576,6 +576,7 @@ mod tests {
         }
         for invalid in [
             "http://graph.example.test",
+            "http://localhost:8793",
             "https://user:secret@graph.example.test",
             "https://graph.example.test/provider",
             "https://graph.example.test?token=secret",

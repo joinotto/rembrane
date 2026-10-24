@@ -1599,6 +1599,7 @@ mod tests {
         }
         for invalid in [
             "http://memory.example.test",
+            "http://localhost:8794",
             "https://user:secret@memory.example.test",
             "https://memory.example.test/provider",
             "https://memory.example.test?token=secret",

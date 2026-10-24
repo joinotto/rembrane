@@ -389,6 +389,7 @@ mod tests {
         );
         for invalid in [
             "http://keys.example.test",
+            "http://localhost:8792",
             "https://user:secret@keys.example.test",
             "https://keys.example.test/provider",
             "https://keys.example.test?token=secret",

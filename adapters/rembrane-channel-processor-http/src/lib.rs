@@ -175,6 +175,7 @@ mod tests {
         );
         for origin in [
             "http://bot.example",
+            "http://localhost:9000",
             "https://user@bot.example",
             "https://bot.example/path",
             "https://bot.example?query=1",
