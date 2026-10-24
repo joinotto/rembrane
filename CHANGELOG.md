@@ -23,6 +23,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - A standalone least-privileged WhatsApp gateway binary with bounded GET
   subscription and POST event endpoints, loopback-safe defaults, configurable
   replay limits, and no access to workspace encryption keys.
+- An opt-in hardened WhatsApp Compose overlay and operator guide that share
+  only the canonical database volume and keep the gateway host port on
+  loopback behind a deployment-owned HTTPS proxy.
 - Durable, content-free SQLite channel replay receipts with atomic cleanup,
   fail-closed capacity enforcement, per-platform namespaces, and
   cross-workspace duplicate denial for multi-process gateways.

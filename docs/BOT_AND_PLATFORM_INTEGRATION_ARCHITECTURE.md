@@ -240,6 +240,31 @@ One of these must happen:
 
 Routing through the central gateway produces a new user-controlled bot experience; it does not retrofit memory into the vendor's original WhatsApp contact.
 
+### 7.3 Reference self-hosted gateway
+
+Rembrane ships an opt-in, least-privileged webhook process. It receives only
+the canonical SQLite path and three deployment-owned WhatsApp secrets; it does
+not receive workspace record-encryption keys.
+
+```sh
+export REMBRANE_WHATSAPP_APP_SECRET='<Meta app secret>'
+export REMBRANE_WHATSAPP_BINDING_LOOKUP_SECRET='<stable random secret>'
+export REMBRANE_WHATSAPP_WEBHOOK_VERIFICATION_TOKEN='<random verification token>'
+
+docker compose -f compose.yaml -f compose.whatsapp.yaml up -d \
+  rembrane rembrane-whatsapp-gateway
+```
+
+Configure the HTTPS proxy or tunnel to forward the exact public webhook path
+to `http://rembrane-whatsapp-gateway:8790/webhooks/whatsapp`. Port 8790 binds
+to host loopback by default. The gateway authenticates the raw POST body,
+rejects stale events, maps keyed pseudonymous sender identifiers through an
+active canonical membership, and atomically reserves replay protection.
+
+The three secrets must be distinct, at least 32 bytes each, and supplied by a
+deployment secret manager. Never store them in canonical memory, sender
+bindings, committed Compose files, or URLs.
+
 ## 8. iMessage
 
 Apple's published Messages framework is centered on app extensions and interactive content inside Messages. It is not documented as a general server-side webhook API for arbitrary iMessage conversations. This means the supported integration should be explicit and user-controlled.

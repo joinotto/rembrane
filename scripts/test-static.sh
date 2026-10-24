@@ -43,6 +43,7 @@ for deployment_file in \
     compose.yaml \
     compose.cloudflare.yaml \
     compose.graphiti.yaml \
+    compose.whatsapp.yaml \
     docs/CLOUDFLARE_DEPLOYMENT.md \
     docs/GRAPHITI_SIDECAR.md \
     docker/entrypoint.sh \
@@ -92,6 +93,12 @@ rg -q 'rembrane-graph-worker' compose.graphiti.yaml
 rg -q 'REMBRANE_GRAPH_PROVIDER_ALLOW_PLAINTEXT: "true"' compose.graphiti.yaml
 rg -q 'no-new-privileges:true' compose.graphiti.yaml
 rg -q -- '--package rembrane-graph-worker' Dockerfile
+rg -q -- '--package rembrane-whatsapp-gateway' Dockerfile
+rg -q '127\.0\.0\.1:8790:8790' compose.whatsapp.yaml
+rg -q 'REMBRANE_WHATSAPP_APP_SECRET' compose.whatsapp.yaml
+rg -q 'REMBRANE_WHATSAPP_BINDING_LOOKUP_SECRET' compose.whatsapp.yaml
+rg -q 'REMBRANE_WHATSAPP_WEBHOOK_VERIFICATION_TOKEN' compose.whatsapp.yaml
+rg -q 'no-new-privileges:true' compose.whatsapp.yaml
 rg -q 'USER 10002:10002' sidecars/rembrane-graphiti/Dockerfile
 if command -v docker >/dev/null 2>&1; then
     REMBRANE_PRINCIPAL_ID=principal_static \
@@ -120,6 +127,16 @@ if command -v docker >/dev/null 2>&1; then
     REMBRANE_GRAPHITI_NEO4J_PASSWORD=graphiti-static-password \
     REMBRANE_GRAPHITI_OPENAI_API_KEY=graphiti-static-model-key \
         docker compose -f compose.yaml -f compose.graphiti.yaml config --quiet
+    REMBRANE_PRINCIPAL_ID=principal_static \
+    REMBRANE_WORKSPACE_ID=workspace_static \
+    REMBRANE_CLIENT_ID=client_static \
+    REMBRANE_WORKSPACE_KEY_ID=key_static \
+    REMBRANE_WORKSPACE_KEY_HEX=0000000000000000000000000000000000000000000000000000000000000000 \
+    REMBRANE_API_TOKEN=token_static \
+    REMBRANE_WHATSAPP_APP_SECRET=whatsapp-static-app-secret-000000 \
+    REMBRANE_WHATSAPP_BINDING_LOOKUP_SECRET=whatsapp-static-lookup-secret-000 \
+    REMBRANE_WHATSAPP_WEBHOOK_VERIFICATION_TOKEN=whatsapp-static-verify-token-000 \
+        docker compose -f compose.yaml -f compose.whatsapp.yaml config --quiet
 fi
 
 echo "all static Rembrane checks passed"
