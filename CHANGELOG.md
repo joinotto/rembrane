@@ -30,6 +30,12 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   opaque provider source references.
 - REST/Postman and MCP lifecycle coverage for cross-agent travel continuity
   from encrypted trip creation through research capture and audited recall.
+- Explicit `travel-source-references` read permission, limited to owner/admin
+  connections and requiring per-request opt-in before opaque provider
+  references can leave the application boundary.
+- Application-level travel disclosure projections that redact sensitive source
+  references by default, plus schema version 9 receipts recording whether a
+  privileged response included them.
 - Explicit trip create/revise permissions, exact entity-scoped authorization,
   versioned trip audit events, and atomic in-memory trip/event mutations.
 - Member trip revisions through persisted entity grants while trip creation

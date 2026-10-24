@@ -87,10 +87,12 @@ Arguments:
 - `tripId`
 - `purpose`
 - `asOf`
+- `includeSourceReferences` (optional, defaults to `false`)
 
-The response deliberately omits opaque `sourceReference` values. A client must
-hold the exact trip entity scope; a travel-domain grant alone cannot read an
-existing trip.
+The response omits opaque `sourceReference` values by default. Revealing them
+requires both `includeSourceReferences: true` and the connection-level
+`travel-source-references` read permission. A client must also hold the exact
+trip entity scope; a travel-domain grant alone cannot read an existing trip.
 
 ### `rembrane_resolve_context`
 

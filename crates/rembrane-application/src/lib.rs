@@ -49,5 +49,7 @@ pub use semantic_context::SemanticContextService;
 pub use share_memory::{
     ApproveShareProposalCommand, CreateShareProposalCommand, MemoryShareService,
 };
-pub use travel_context::{ResolveTravelContextCommand, TravelContext, TravelContextService};
+pub use travel_context::{
+    ResolveTravelContextCommand, TravelContext, TravelContextResearch, TravelContextService,
+};
 pub use trip::{CreateTripCommand, ReplaceTripCommand, TripService};

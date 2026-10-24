@@ -107,6 +107,8 @@ export REMBRANE_PRINCIPAL_ID=principal_local
 export REMBRANE_WORKSPACE_ID=workspace_personal
 export REMBRANE_CLIENT_ID=assistant_local
 export REMBRANE_READ_SCOPES=global,domain:development,entity:project_local
+# Optional; keep empty unless testing privileged travel source disclosure.
+export REMBRANE_READ_PERMISSIONS=
 export REMBRANE_WORKSPACE_KEY_ID=local-key-v1
 export REMBRANE_WORKSPACE_KEY_HEX="$(openssl rand -hex 32)"
 export REMBRANE_API_TOKEN="$(openssl rand -hex 32)"
@@ -220,6 +222,7 @@ Configure an MCP-capable client to launch:
     "REMBRANE_WORKSPACE_ID": "workspace_personal",
     "REMBRANE_CLIENT_ID": "assistant_local",
     "REMBRANE_READ_SCOPES": "global,domain:development,entity:project_local",
+    "REMBRANE_READ_PERMISSIONS": "",
     "REMBRANE_WORKSPACE_KEY_ID": "local-key-v1",
     "REMBRANE_WORKSPACE_KEY_HEX": "<development-key>"
   }

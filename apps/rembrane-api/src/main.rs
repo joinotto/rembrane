@@ -12,9 +12,9 @@ use rembrane_application::{
     ApplicationError, AuthorizeClientCommand, AuthorizeClientService,
     CaptureBookingResearchCommand, CaptureBookingResearchService, CreateTripCommand,
     ResolveContextCommand, ResolveContextService, ResolveTravelContextCommand,
-    TravelContextService, TripService,
+    TravelContextResearch, TravelContextService, TripService,
 };
-use rembrane_config::parse_read_scopes;
+use rembrane_config::{parse_read_permissions, parse_read_scopes};
 use rembrane_contracts::ResolveContextRequest;
 use rembrane_crypto_rustcrypto::RustCryptoRecordCipher;
 use rembrane_domain::{
@@ -96,6 +96,7 @@ struct ResolveTravelContextRequest {
     trip_id: String,
     purpose: String,
     as_of: String,
+    include_source_references: Option<bool>,
 }
 
 #[derive(Serialize)]
@@ -150,6 +151,8 @@ struct TravelResearchOutput {
     observed_at: String,
     expires_at: String,
     version: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    source_reference: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -235,6 +238,9 @@ impl AppState {
             &std::env::var("REMBRANE_READ_SCOPES").unwrap_or_else(|_| "global".to_owned()),
         )
         .map_err(anyhow::Error::msg)?;
+        let read_permissions =
+            parse_read_permissions(&std::env::var("REMBRANE_READ_PERMISSIONS").unwrap_or_default())
+                .map_err(anyhow::Error::msg)?;
         let store = SqliteStore::open(database)
             .context("failed to open Rembrane database")?
             .with_cipher(cipher);
@@ -244,7 +250,7 @@ impl AppState {
                 workspace_id,
                 principal_id,
                 requested_read_scopes: read_scopes,
-                requested_read_permissions: Vec::new(),
+                requested_read_permissions: read_permissions,
                 requested_write_permissions: vec![
                     WritePermission::CreateTrip,
                     WritePermission::CaptureBookingResearch,
@@ -421,6 +427,7 @@ async fn resolve_travel_context(
             trip_id,
             purpose: request.purpose,
             as_of: request.as_of,
+            include_source_references: request.include_source_references.unwrap_or(false),
         })
         .map_err(ApiError::from_application)?;
     Ok(Json(TravelContextResponse {
@@ -637,17 +644,18 @@ impl From<&Trip> for TravelTripOutput {
     }
 }
 
-impl From<&BookingResearch> for TravelResearchOutput {
-    fn from(research: &BookingResearch) -> Self {
+impl From<&TravelContextResearch> for TravelResearchOutput {
+    fn from(research: &TravelContextResearch) -> Self {
         Self {
-            research_id: research.id().to_string(),
-            kind: research_kind_name(research.kind()),
-            provider: research.provider().to_owned(),
-            summary: research.summary().to_owned(),
-            evidence_id: research.evidence().id.to_string(),
-            observed_at: research.observed_at().to_owned(),
-            expires_at: research.expires_at().to_owned(),
-            version: research.version(),
+            research_id: research.id.to_string(),
+            kind: research_kind_name(research.kind),
+            provider: research.provider.clone(),
+            summary: research.summary.clone(),
+            evidence_id: research.evidence_id.to_string(),
+            observed_at: research.observed_at.clone(),
+            expires_at: research.expires_at.clone(),
+            version: research.version,
+            source_reference: research.source_reference.clone(),
         }
     }
 }

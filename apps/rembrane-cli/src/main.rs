@@ -98,12 +98,13 @@ fn test_provider(arguments: &[String]) -> Result<String, String> {
     }
 }
 
-const MCP_BASE_ENVIRONMENT_VARIABLES: [&str; 5] = [
+const MCP_BASE_ENVIRONMENT_VARIABLES: [&str; 6] = [
     "REMBRANE_DATABASE",
     "REMBRANE_PRINCIPAL_ID",
     "REMBRANE_WORKSPACE_ID",
     "REMBRANE_CLIENT_ID",
     "REMBRANE_READ_SCOPES",
+    "REMBRANE_READ_PERMISSIONS",
 ];
 
 fn print_mcp_config(arguments: &[String]) -> Result<(), String> {

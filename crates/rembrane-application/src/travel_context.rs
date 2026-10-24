@@ -1,6 +1,7 @@
 use rembrane_domain::{
-    BookingResearch, DisclosedBookingResearch, DisclosureId, EntityId, MemoryScope, ReadGrant,
-    ResearchFreshness, TravelDisclosureReceipt, Trip,
+    BookingResearch, BookingResearchId, BookingResearchKind, DisclosedBookingResearch,
+    DisclosureId, EntityId, EvidenceId, MemoryScope, ReadGrant, ReadPermission, ResearchFreshness,
+    TravelDisclosureReceipt, Trip,
 };
 
 use crate::{
@@ -14,13 +15,27 @@ pub struct ResolveTravelContextCommand {
     pub trip_id: EntityId,
     pub purpose: String,
     pub as_of: String,
+    pub include_source_references: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TravelContext {
     pub trip: Trip,
-    pub fresh_research: Vec<BookingResearch>,
-    pub expired_research: Vec<BookingResearch>,
+    pub fresh_research: Vec<TravelContextResearch>,
+    pub expired_research: Vec<TravelContextResearch>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TravelContextResearch {
+    pub id: BookingResearchId,
+    pub kind: BookingResearchKind,
+    pub provider: String,
+    pub summary: String,
+    pub source_reference: Option<String>,
+    pub evidence_id: EvidenceId,
+    pub observed_at: String,
+    pub expires_at: String,
+    pub version: u64,
 }
 
 pub struct TravelContextService<'repository, Repository> {
@@ -43,6 +58,13 @@ where
             return Err(ApplicationError::Validation(
                 "travel context purpose must not be empty".to_owned(),
             ));
+        }
+        if command.include_source_references
+            && !command
+                .grant
+                .allows_permission(ReadPermission::RevealTravelSourceReferences)
+        {
+            return Err(ApplicationError::AccessDenied);
         }
         let scope = MemoryScope::Entity {
             id: command.trip_id.clone(),
@@ -95,12 +117,37 @@ where
                 trip_id: command.trip_id.clone(),
                 trip_version: trip.version(),
                 as_of: command.as_of.clone(),
+                source_references_included: command.include_source_references,
                 research: disclosed_research,
             })?;
+        let include_source_references = command.include_source_references;
         Ok(TravelContext {
             trip,
-            fresh_research,
-            expired_research,
+            fresh_research: fresh_research
+                .iter()
+                .map(|research| TravelContextResearch::new(research, include_source_references))
+                .collect(),
+            expired_research: expired_research
+                .iter()
+                .map(|research| TravelContextResearch::new(research, include_source_references))
+                .collect(),
         })
+    }
+}
+
+impl TravelContextResearch {
+    fn new(research: &BookingResearch, include_source_reference: bool) -> Self {
+        Self {
+            id: research.id().clone(),
+            kind: research.kind(),
+            provider: research.provider().to_owned(),
+            summary: research.summary().to_owned(),
+            source_reference: include_source_reference
+                .then(|| research.source_reference().to_owned()),
+            evidence_id: research.evidence().id.clone(),
+            observed_at: research.observed_at().to_owned(),
+            expires_at: research.expires_at().to_owned(),
+            version: research.version(),
+        }
     }
 }

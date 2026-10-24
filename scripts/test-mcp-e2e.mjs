@@ -424,6 +424,21 @@ try {
   if ("sourceReference" in travelContext.freshResearch[0]) {
     throw new Error("MCP travel context exposed an opaque source reference");
   }
+
+  const deniedSensitiveContextCall = await request(19, "tools/call", {
+    name: "rembrane_resolve_travel_context",
+    arguments: {
+      tripId: createdTrip.tripId,
+      purpose: "reopen the provider result",
+      asOf: "2026-10-25T10:15:00Z",
+      includeSourceReferences: true,
+    },
+  });
+  if (!deniedSensitiveContextCall.isError) {
+    throw new Error(
+      "MCP revealed a source reference without connection-level permission",
+    );
+  }
 } finally {
   child.kill("SIGTERM");
   await new Promise((resolve) => {

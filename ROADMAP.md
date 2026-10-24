@@ -133,6 +133,12 @@ This roadmap describes sequencing, not release dates.
 - [ ] Sensitive travel-data permissions.
   - [x] MCP trip creation uses a dedicated travel-domain capability and
     server-assigned identity.
+  - [x] Source references are redacted by default and require both explicit
+    request intent and an owner/admin connection permission.
+  - [x] Application-level safe projections prevent transport adapters from
+    bypassing source-reference redaction.
+  - [x] Disclosure receipts distinguish redacted responses from privileged
+    source-reference disclosures.
 
 ## Phase 4 — Shared workspaces
 

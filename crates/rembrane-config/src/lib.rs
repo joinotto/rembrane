@@ -4,7 +4,7 @@
 //! container secrets, or secret managers. They do not belong in this crate's
 //! serializable deployment policy.
 
-use rembrane_domain::{ActivityId, EntityId, ReadScope};
+use rembrane_domain::{ActivityId, EntityId, ReadPermission, ReadScope};
 use rembrane_provider_sdk::{CURRENT_PROVIDER_PROTOCOL, Capability, ProviderPolicy};
 use std::error::Error;
 use std::fmt::{self, Display};
@@ -243,6 +243,24 @@ pub fn parse_read_scopes(value: &str) -> Result<Vec<ReadScope>, String> {
     Ok(scopes)
 }
 
+pub fn parse_read_permissions(value: &str) -> Result<Vec<ReadPermission>, String> {
+    let mut permissions = Vec::new();
+    for entry in value
+        .split(',')
+        .map(str::trim)
+        .filter(|entry| !entry.is_empty())
+    {
+        let permission = match entry {
+            "travel-source-references" => ReadPermission::RevealTravelSourceReferences,
+            _ => return Err(format!("invalid read permission {entry}")),
+        };
+        if !permissions.contains(&permission) {
+            permissions.push(permission);
+        }
+    }
+    Ok(permissions)
+}
+
 fn nonempty_scope_value(value: &str, entry: &str) -> Result<(), String> {
     if value.trim().is_empty() {
         Err(format!("read scope {entry} has an empty value"))
@@ -257,7 +275,8 @@ mod tests {
 
     use super::{
         DeploymentPolicy, ProcessingMode, ProviderConnection, ProviderConnectionError,
-        ProviderKind, ProviderPlacement, SecretReference, SecretReferenceError, parse_read_scopes,
+        ProviderKind, ProviderPlacement, SecretReference, SecretReferenceError,
+        parse_read_permissions, parse_read_scopes,
     };
 
     #[test]
@@ -317,6 +336,20 @@ mod tests {
         assert!(parse_read_scopes("*").is_err());
         assert!(parse_read_scopes("entity:").is_err());
         assert!(parse_read_scopes(" ").is_err());
+    }
+
+    #[test]
+    fn parses_explicit_sensitive_read_permissions() {
+        let permissions =
+            parse_read_permissions("travel-source-references,travel-source-references")
+                .expect("permission configuration should parse");
+        assert_eq!(permissions.len(), 1);
+        assert_eq!(
+            parse_read_permissions("").expect("empty permissions should be valid"),
+            []
+        );
+        assert!(parse_read_permissions("*").is_err());
+        assert!(parse_read_permissions("unknown").is_err());
     }
 
     #[test]

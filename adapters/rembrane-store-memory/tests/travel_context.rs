@@ -5,7 +5,8 @@ use rembrane_application::{
 use rembrane_domain::{
     BookingResearch, BookingResearchId, BookingResearchKind, CanonicalEvent, ClientId,
     DisclosureId, EntityId, EventId, EventPayload, EvidenceId, EvidenceReference, EvidenceSource,
-    PrincipalId, ReadGrant, ReadScope, ResearchFreshness, TravelDateWindow, Trip, WorkspaceId,
+    PrincipalId, ReadGrant, ReadPermission, ReadScope, ResearchFreshness, TravelDateWindow, Trip,
+    WorkspaceId,
 };
 use rembrane_store_memory::InMemoryStore;
 
@@ -117,6 +118,7 @@ fn exact_scope_allows_a_shared_workspace_reader_without_changing_trip_ownership(
             trip_id: EntityId::new("trip_01"),
             purpose: "continue shared trip planning".to_owned(),
             as_of: "2026-10-24T10:00:00Z".to_owned(),
+            include_source_references: false,
         })
         .expect("an exact entity grant should authorize the shared reader");
 
@@ -137,14 +139,17 @@ fn separates_fresh_and_expired_research_for_handoff() {
             trip_id: EntityId::new("trip_01"),
             purpose: "continue flight planning".to_owned(),
             as_of: "2026-10-24T10:00:00Z".to_owned(),
+            include_source_references: false,
         })
         .expect("authorized context should resolve");
 
     assert_eq!(context.trip.id().as_str(), "trip_01");
-    assert_eq!(context.fresh_research[0].id().as_str(), "fresh");
-    assert_eq!(context.expired_research[0].id().as_str(), "expired");
+    assert_eq!(context.fresh_research[0].id.as_str(), "fresh");
+    assert_eq!(context.expired_research[0].id.as_str(), "expired");
+    assert_eq!(context.fresh_research[0].source_reference, None);
     let receipt = &store.travel_disclosures()[0];
     assert_eq!(receipt.trip_version, 1);
+    assert!(!receipt.source_references_included);
     assert_eq!(receipt.research.len(), 2);
     assert!(
         receipt.research.iter().any(|item| {
@@ -163,6 +168,7 @@ fn rejects_another_trip_scope_and_invalid_clock() {
             trip_id: EntityId::new("trip_01"),
             purpose: "continue planning".to_owned(),
             as_of: "2026-10-24T10:00:00Z".to_owned(),
+            include_source_references: false,
         }),
         Err(rembrane_application::ApplicationError::AccessDenied)
     );
@@ -173,8 +179,45 @@ fn rejects_another_trip_scope_and_invalid_clock() {
             trip_id: EntityId::new("trip_01"),
             purpose: "continue planning".to_owned(),
             as_of: "not-a-timestamp".to_owned(),
+            include_source_references: false,
         }),
         Err(rembrane_application::ApplicationError::Validation(_))
     ));
     assert_eq!(store.travel_disclosures(), []);
+}
+
+#[test]
+fn sensitive_source_reference_requires_explicit_request_and_permission() {
+    let mut store = seeded_store();
+    let mut authorized_grant = grant("trip_01");
+    authorized_grant
+        .permissions
+        .push(ReadPermission::RevealTravelSourceReferences);
+    let context = TravelContextService::new(&mut store)
+        .resolve(&ResolveTravelContextCommand {
+            grant: authorized_grant,
+            disclosure_id: DisclosureId::new("disclosure_sensitive"),
+            trip_id: EntityId::new("trip_01"),
+            purpose: "reopen selected flight result".to_owned(),
+            as_of: "2026-10-24T10:00:00Z".to_owned(),
+            include_source_references: true,
+        })
+        .expect("explicitly authorized source reference should resolve");
+    assert_eq!(
+        context.fresh_research[0].source_reference.as_deref(),
+        Some("opaque-fresh")
+    );
+    assert!(store.travel_disclosures()[0].source_references_included);
+
+    let error = TravelContextService::new(&mut store)
+        .resolve(&ResolveTravelContextCommand {
+            grant: grant("trip_01"),
+            disclosure_id: DisclosureId::new("disclosure_sensitive_denied"),
+            trip_id: EntityId::new("trip_01"),
+            purpose: "reopen selected flight result".to_owned(),
+            as_of: "2026-10-24T10:00:00Z".to_owned(),
+            include_source_references: true,
+        })
+        .expect_err("scope alone must not reveal a source reference");
+    assert_eq!(error, rembrane_application::ApplicationError::AccessDenied);
 }

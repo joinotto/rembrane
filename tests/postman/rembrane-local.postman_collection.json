@@ -273,6 +273,40 @@
           }
         }
       ]
+    },
+    {
+      "name": "Deny sensitive travel source without connection permission",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{apiToken}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"workspaceId\":\"{{workspaceId}}\",\"subjectId\":\"{{principalId}}\",\"tripId\":\"{{createdTripId}}\",\"purpose\":\"reopen the provider result\",\"asOf\":\"2026-10-25T10:15:00Z\",\"includeSourceReferences\":true}"
+        },
+        "url": "{{baseUrl}}/v1/travel/context/resolve"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('sensitive travel source needs a connection permission', function () {",
+              "  pm.response.to.have.status(403);",
+              "  pm.expect(pm.response.json().code).to.eql('access_denied');",
+              "});"
+            ]
+          }
+        }
+      ]
     }
   ]
 }

@@ -8,17 +8,17 @@ use rembrane_application::{
     CreateTripCommand, DeleteMemoryCommand, EventRepository, MemoryLifecycleService,
     MemoryProposalService, ProposeMemoryCommand, RememberPreferenceCommand,
     RememberPreferenceService, ResolveContextCommand, ResolveContextService,
-    ResolveTravelContextCommand, ResumeActivityCommand, ReviseMemoryCommand, TravelContextService,
-    TripService, UpdateCheckpointCommand,
+    ResolveTravelContextCommand, ResumeActivityCommand, ReviseMemoryCommand, TravelContextResearch,
+    TravelContextService, TripService, UpdateCheckpointCommand,
 };
-use rembrane_config::parse_read_scopes;
+use rembrane_config::{parse_read_permissions, parse_read_scopes};
 use rembrane_contracts::ResolveContextRequest;
 use rembrane_crypto_rustcrypto::RustCryptoRecordCipher;
 use rembrane_domain::{
     ActivityCheckpoint, ActivityId, BookingResearch, BookingResearchId, BookingResearchKind,
     CheckpointId, ClientId, ContextPackId, DisclosureId, EntityId, EventId, EvidenceId,
-    EvidenceReference, EvidenceSource, MemoryId, MemoryKind, MemoryScope, PrincipalId, ReadScope,
-    TravelDateWindow, Trip, WorkspaceId, WritePermission,
+    EvidenceReference, EvidenceSource, MemoryId, MemoryKind, MemoryScope, PrincipalId,
+    ReadPermission, ReadScope, TravelDateWindow, Trip, WorkspaceId, WritePermission,
 };
 use rembrane_store_sqlite::SqliteStore;
 use rmcp::handler::server::wrapper::Parameters;
@@ -149,6 +149,7 @@ struct ResolveTravelContextParameters {
     trip_id: String,
     purpose: String,
     as_of: String,
+    include_source_references: Option<bool>,
 }
 
 #[derive(Serialize)]
@@ -199,6 +200,8 @@ struct TravelResearchOutput {
     observed_at: String,
     expires_at: String,
     version: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    source_reference: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -223,6 +226,7 @@ struct State {
     workspace_id: WorkspaceId,
     client_id: ClientId,
     read_scopes: Vec<ReadScope>,
+    read_permissions: Vec<ReadPermission>,
     next_id: u128,
 }
 
@@ -243,6 +247,9 @@ impl RembraneMcp {
             &std::env::var("REMBRANE_READ_SCOPES").unwrap_or_else(|_| "global".to_owned()),
         )
         .map_err(anyhow::Error::msg)?;
+        let read_permissions =
+            parse_read_permissions(&std::env::var("REMBRANE_READ_PERMISSIONS").unwrap_or_default())
+                .map_err(anyhow::Error::msg)?;
         let store = SqliteStore::open(database)
             .context("failed to open Rembrane database")?
             .with_cipher(cipher);
@@ -252,7 +259,7 @@ impl RembraneMcp {
                 workspace_id: workspace_id.clone(),
                 principal_id: principal_id.clone(),
                 requested_read_scopes: read_scopes.clone(),
-                requested_read_permissions: Vec::new(),
+                requested_read_permissions: read_permissions.clone(),
                 requested_write_permissions: Vec::new(),
             })
             .context("failed to authorize MCP connection")?;
@@ -268,6 +275,7 @@ impl RembraneMcp {
                 workspace_id,
                 client_id,
                 read_scopes,
+                read_permissions,
                 next_id,
             })),
         })
@@ -780,6 +788,7 @@ impl RembraneMcp {
                 trip_id,
                 purpose: parameters.purpose,
                 as_of: parameters.as_of,
+                include_source_references: parameters.include_source_references.unwrap_or(false),
             })
             .map_err(application_error)?;
         serde_json::to_string(&TravelContextOutput {
@@ -879,17 +888,18 @@ impl From<&Trip> for TravelTripOutput {
     }
 }
 
-impl From<&BookingResearch> for TravelResearchOutput {
-    fn from(research: &BookingResearch) -> Self {
+impl From<&TravelContextResearch> for TravelResearchOutput {
+    fn from(research: &TravelContextResearch) -> Self {
         Self {
-            research_id: research.id().to_string(),
-            kind: research_kind_name(research.kind()),
-            provider: research.provider().to_owned(),
-            summary: research.summary().to_owned(),
-            evidence_id: research.evidence().id.to_string(),
-            observed_at: research.observed_at().to_owned(),
-            expires_at: research.expires_at().to_owned(),
-            version: research.version(),
+            research_id: research.id.to_string(),
+            kind: research_kind_name(research.kind),
+            provider: research.provider.clone(),
+            summary: research.summary.clone(),
+            evidence_id: research.evidence_id.to_string(),
+            observed_at: research.observed_at.clone(),
+            expires_at: research.expires_at.clone(),
+            version: research.version,
+            source_reference: research.source_reference.clone(),
         }
     }
 }
@@ -931,7 +941,7 @@ fn authorize(
             workspace_id: state.workspace_id.clone(),
             principal_id: state.principal_id.clone(),
             requested_read_scopes: read_scopes,
-            requested_read_permissions: Vec::new(),
+            requested_read_permissions: state.read_permissions.clone(),
             requested_write_permissions: write_permissions,
         })
         .map_err(application_error)
