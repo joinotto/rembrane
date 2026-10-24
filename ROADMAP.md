@@ -79,7 +79,10 @@ This roadmap describes sequencing, not release dates.
     signature-verifying or authenticated-introspection adapter.
   - [x] Map every current MCP tool to one narrow OAuth scope and fail closed
     for unknown tools.
-  - [ ] Add HTTP authorization middleware around that authentication boundary.
+  - [x] Add transport-neutral HTTP authorization middleware with strict bearer
+    parsing, trusted-origin checks, fail-closed tool lookup, and per-request
+    reauthentication.
+  - [ ] Integrate the authorization middleware with the HTTP server adapter.
   - [ ] Serve Streamable HTTP through the official Rust MCP SDK.
   - [ ] Add OAuth and cross-tenant transport integration tests.
 - [x] Persist a disclosure receipt for every SQLite context response.

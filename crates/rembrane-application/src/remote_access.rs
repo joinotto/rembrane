@@ -1,7 +1,9 @@
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 
-use rembrane_contracts::{RemoteAccessScope, RemoteTokenClaims, VerifiedRemoteAccess};
+use rembrane_contracts::{
+    RemoteAccessScope, RemoteMcpOperation, RemoteTokenClaims, VerifiedRemoteAccess,
+};
 
 use crate::ApplicationError;
 
@@ -82,6 +84,72 @@ where
     }
 }
 
+pub struct RemoteHttpAuthorization<'authenticator, 'verifier, Verifier> {
+    authenticator: &'authenticator RemoteAccessAuthenticator<'verifier, Verifier>,
+    trusted_origins: &'authenticator [&'authenticator str],
+}
+
+impl<'authenticator, 'verifier, Verifier>
+    RemoteHttpAuthorization<'authenticator, 'verifier, Verifier>
+where
+    Verifier: RemoteTokenVerifier,
+{
+    #[must_use]
+    pub const fn new(
+        authenticator: &'authenticator RemoteAccessAuthenticator<'verifier, Verifier>,
+        trusted_origins: &'authenticator [&'authenticator str],
+    ) -> Self {
+        Self {
+            authenticator,
+            trusted_origins,
+        }
+    }
+
+    /// Authorizes one remote MCP tool request.
+    ///
+    /// Browser-originated requests require an exact trusted-origin match.
+    /// Requests without an `Origin` header remain valid for native MCP clients.
+    /// The bearer token is verified again on every invocation.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AccessDenied` for malformed authorization, an untrusted origin,
+    /// an unknown tool, invalid claims, or insufficient OAuth scope.
+    pub fn authorize_tool(
+        &self,
+        authorization_header: Option<&str>,
+        origin_header: Option<&str>,
+        tool_name: &str,
+        now_epoch_seconds: u64,
+    ) -> Result<VerifiedRemoteAccess, ApplicationError> {
+        if origin_header
+            .is_some_and(|origin| origin.is_empty() || !self.trusted_origins.contains(&origin))
+        {
+            return Err(ApplicationError::AccessDenied);
+        }
+        let operation =
+            RemoteMcpOperation::from_tool_name(tool_name).ok_or(ApplicationError::AccessDenied)?;
+        let bearer_token = authorization_header
+            .and_then(parse_bearer_token)
+            .ok_or(ApplicationError::AccessDenied)?;
+        self.authenticator
+            .authenticate(bearer_token, now_epoch_seconds, operation.required_scope())
+    }
+}
+
+fn parse_bearer_token(header: &str) -> Option<&str> {
+    let (scheme, token) = header.split_once(' ')?;
+    if !scheme.eq_ignore_ascii_case("Bearer")
+        || token.is_empty()
+        || token
+            .bytes()
+            .any(|byte| byte.is_ascii_whitespace() || byte.is_ascii_control())
+    {
+        return None;
+    }
+    Some(token)
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;
@@ -89,7 +157,10 @@ mod tests {
     use rembrane_contracts::{RemoteAccessScope, RemoteTokenClaims};
     use rembrane_domain::{ClientId, PrincipalId, WorkspaceId};
 
-    use super::{RemoteAccessAuthenticator, RemoteTokenVerificationError, RemoteTokenVerifier};
+    use super::{
+        RemoteAccessAuthenticator, RemoteHttpAuthorization, RemoteTokenVerificationError,
+        RemoteTokenVerifier, parse_bearer_token,
+    };
     use crate::ApplicationError;
 
     struct TestVerifier;
@@ -156,6 +227,71 @@ mod tests {
             authenticator()
                 .authenticate("", 1_000, RemoteAccessScope::ContextRead)
                 .expect_err("empty token must fail"),
+            ApplicationError::AccessDenied
+        );
+    }
+
+    #[test]
+    fn bearer_parser_accepts_one_token_and_rejects_ambiguous_headers() {
+        assert_eq!(
+            parse_bearer_token("Bearer signed-token"),
+            Some("signed-token")
+        );
+        assert_eq!(
+            parse_bearer_token("bearer signed-token"),
+            Some("signed-token")
+        );
+        assert_eq!(parse_bearer_token("signed-token"), None);
+        assert_eq!(parse_bearer_token("Basic signed-token"), None);
+        assert_eq!(parse_bearer_token("Bearer "), None);
+        assert_eq!(parse_bearer_token("Bearer signed token"), None);
+        assert_eq!(parse_bearer_token("Bearer signed-token\n"), None);
+    }
+
+    #[test]
+    fn http_boundary_reauthenticates_known_tools_and_checks_browser_origin() {
+        let authenticator = authenticator();
+        let trusted_origins = ["https://app.example.test"];
+        let http = RemoteHttpAuthorization::new(&authenticator, &trusted_origins);
+
+        let access = http
+            .authorize_tool(
+                Some("Bearer signed-token"),
+                Some("https://app.example.test"),
+                "rembrane_resolve_context",
+                1_000,
+            )
+            .expect("trusted request should authenticate");
+        assert_eq!(access.workspace_id().as_str(), "workspace_01");
+
+        assert_eq!(
+            http.authorize_tool(
+                Some("Bearer signed-token"),
+                Some("https://evil.example.test"),
+                "rembrane_resolve_context",
+                1_000,
+            )
+            .expect_err("untrusted browser origin must fail"),
+            ApplicationError::AccessDenied
+        );
+        assert_eq!(
+            http.authorize_tool(
+                Some("Bearer signed-token"),
+                None,
+                "untrusted_future_tool",
+                1_000,
+            )
+            .expect_err("unknown tools must fail closed"),
+            ApplicationError::AccessDenied
+        );
+        assert_eq!(
+            http.authorize_tool(
+                Some("Bearer signed-token"),
+                None,
+                "rembrane_remember_preference",
+                1_000,
+            )
+            .expect_err("operation scope is checked on every request"),
             ApplicationError::AccessDenied
         );
     }

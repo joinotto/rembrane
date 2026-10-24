@@ -21,6 +21,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   connection-bound identity after all semantic checks pass.
 - Exhaustive remote MCP tool-to-OAuth-scope mapping, including separate
   checkpoint read/write authority and fail-closed handling for unknown tools.
+- Transport-neutral remote HTTP authorization middleware with strict
+  case-insensitive Bearer parsing, exact browser-origin allowlisting,
+  fail-closed tool lookup, and token verification on every tool request.
 - Secret-safe Gemini CLI `settings.json` MCP configuration generation alongside
   the existing Codex, Claude Code, and vendor-neutral connection manifests.
 - Dedicated `travel` domain authorization for creating new trip entities,
