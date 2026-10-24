@@ -78,7 +78,9 @@ const CHANNEL_INBOX_LEASE_MIGRATION: &str =
     include_str!("../../../migrations/sqlite/0023_channel_inbox_leases.sql");
 const CHANNEL_INBOX_LEASE_OWNERSHIP_MIGRATION: &str =
     include_str!("../../../migrations/sqlite/0024_channel_inbox_lease_ownership.sql");
-const CURRENT_SCHEMA_VERSION: u32 = 24;
+const CHANNEL_MESSAGE_AUDIT_MIGRATION: &str =
+    include_str!("../../../migrations/sqlite/0025_channel_message_audit.sql");
+const CURRENT_SCHEMA_VERSION: u32 = 25;
 const CANONICAL_TABLES: [&str; 10] = [
     "activity_checkpoints",
     "disclosed_memories",
@@ -616,6 +618,7 @@ fn parse_administrative_action(value: &str) -> Result<AdministrativeAction, Appl
         "legal-hold-released" => Ok(AdministrativeAction::LegalHoldReleased),
         "channel-binding-created" => Ok(AdministrativeAction::ChannelBindingCreated),
         "channel-binding-revoked" => Ok(AdministrativeAction::ChannelBindingRevoked),
+        "channel-message-requeued" => Ok(AdministrativeAction::ChannelMessageRequeued),
         _ => Err(ApplicationError::StorageUnavailable),
     }
 }
@@ -630,6 +633,7 @@ fn parse_administrative_target_kind(
         "retention-policy" => Ok(AdministrativeTargetKind::RetentionPolicy),
         "legal-hold" => Ok(AdministrativeTargetKind::LegalHold),
         "channel-binding" => Ok(AdministrativeTargetKind::ChannelBinding),
+        "channel-message" => Ok(AdministrativeTargetKind::ChannelMessage),
         _ => Err(ApplicationError::StorageUnavailable),
     }
 }
@@ -825,6 +829,12 @@ fn migrate(connection: &mut Connection) -> Result<(), ApplicationError> {
     if version == 23 {
         transaction
             .execute_batch(CHANNEL_INBOX_LEASE_OWNERSHIP_MIGRATION)
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        version = 24;
+    }
+    if version == 24 {
+        transaction
+            .execute_batch(CHANNEL_MESSAGE_AUDIT_MIGRATION)
             .map_err(|_| ApplicationError::StorageUnavailable)?;
     }
     transaction

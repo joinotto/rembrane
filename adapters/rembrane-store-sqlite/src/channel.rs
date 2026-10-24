@@ -468,6 +468,43 @@ impl<C> ChannelInboxAdministrationRepository for SqliteStore<C> {
             )
             .map_err(|_| ApplicationError::StorageUnavailable)
     }
+
+    fn requeue_quarantined_channel_message(
+        &mut self,
+        workspace_id: &WorkspaceId,
+        channel: ChannelKind,
+        event_id: &str,
+        audit_event: AdministrativeAuditEvent,
+    ) -> Result<(), ApplicationError> {
+        validate_requeue_audit(workspace_id, channel, event_id, &audit_event)?;
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        let changed = transaction
+            .execute(
+                "UPDATE channel_inbox
+                 SET status = 'pending',
+                     attempts = 0,
+                     available_at_epoch_seconds = ?4
+                 WHERE workspace_id = ?1
+                   AND channel = ?2
+                   AND event_id = ?3
+                   AND status = 'quarantined'",
+                params![
+                    workspace_id.as_str(),
+                    encode_channel(channel),
+                    event_id,
+                    audit_event.occurred_at_epoch_seconds()
+                ],
+            )
+            .map_err(map_write_error)?;
+        if changed != 1 {
+            return Err(ApplicationError::NotFound);
+        }
+        insert_administrative_audit(&transaction, &audit_event)?;
+        transaction.commit().map_err(map_write_error)
+    }
 }
 
 impl<C: RecordCipher> ChannelInboxRepository for SqliteStore<C> {
@@ -832,14 +869,33 @@ fn validate_binding_audit(
     Ok(())
 }
 
+fn validate_requeue_audit(
+    workspace_id: &WorkspaceId,
+    channel: ChannelKind,
+    event_id: &str,
+    event: &AdministrativeAuditEvent,
+) -> Result<(), ApplicationError> {
+    let expected_target = format!("{}:{event_id}", channel.label());
+    if event.workspace_id() != workspace_id
+        || event.action() != AdministrativeAction::ChannelMessageRequeued
+        || event.target_kind() != AdministrativeTargetKind::ChannelMessage
+        || event.target_id() != expected_target
+    {
+        return Err(ApplicationError::Validation(
+            "channel requeue audit does not match the target".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use rembrane_application::{
         AdministrativeAuditRepository, ApplicationError, ChannelBindingService,
         ChannelInboxAdministrationService, ChannelInboxRepository, ChannelIngressRepository,
         ChannelReplayRepository, ChannelSenderBindingRepository, CreateChannelBindingCommand,
-        DurableChannelIngressRepository, MembershipRepository, RevokeChannelBindingCommand,
-        WorkspaceRepository,
+        DurableChannelIngressRepository, MembershipRepository, RequeueChannelMessageCommand,
+        RevokeChannelBindingCommand, WorkspaceRepository,
     };
     use rembrane_contracts::{ChannelKind, ChannelSenderBinding, VerifiedChannelMessage};
     use rembrane_crypto_rustcrypto::RustCryptoRecordCipher;
@@ -1349,7 +1405,7 @@ mod tests {
                 .expect_err("quarantine must be terminal"),
             ApplicationError::NotFound
         );
-        let summary = ChannelInboxAdministrationService::new(&store)
+        let summary = ChannelInboxAdministrationService::new(&mut store)
             .summary(
                 &WorkspaceId::new("workspace_01"),
                 &PrincipalId::new("principal_01"),
@@ -1359,13 +1415,42 @@ mod tests {
         assert_eq!(summary.processing(), 0);
         assert_eq!(summary.quarantined(), 1);
         assert_eq!(
-            ChannelInboxAdministrationService::new(&store)
+            ChannelInboxAdministrationService::new(&mut store)
                 .summary(
                     &WorkspaceId::new("workspace_01"),
                     &PrincipalId::new("principal_02"),
                 )
                 .expect_err("non-member must not inspect another tenant"),
             ApplicationError::AccessDenied
+        );
+        ChannelInboxAdministrationService::new(&mut store)
+            .requeue(RequeueChannelMessageCommand {
+                workspace_id: WorkspaceId::new("workspace_01"),
+                channel: ChannelKind::WhatsAppBusiness,
+                event_id: admitted.event_id().to_owned(),
+                actor_id: PrincipalId::new("principal_01"),
+                request_id: "request-requeue-01".to_owned(),
+            })
+            .expect("administrator should requeue quarantined message");
+        let audits = store
+            .list_administrative_audit(&WorkspaceId::new("workspace_01"), 0, 100)
+            .expect("audit should load");
+        let requeue_audit = audits.last().expect("requeue should append audit");
+        assert_eq!(
+            requeue_audit.action(),
+            AdministrativeAction::ChannelMessageRequeued
+        );
+        assert_eq!(
+            store
+                .claim_channel_messages(
+                    &WorkspaceId::new("workspace_01"),
+                    "lease-requeued",
+                    requeue_audit.occurred_at_epoch_seconds(),
+                    requeue_audit.occurred_at_epoch_seconds() + 60,
+                    10,
+                )
+                .expect("requeued message should become claimable"),
+            vec![admitted]
         );
     }
 

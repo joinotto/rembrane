@@ -90,6 +90,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Administrator-only content-free channel inbox summaries and a CLI status
   command exposing pending, processing, and quarantined counts without
   decrypting or returning message content.
+- Administrator-only single-event quarantine recovery through the CLI, with
+  atomic retry reset and append-only content-free audit evidence while leaving
+  encrypted message bytes unchanged.
 - Durable, content-free SQLite channel replay receipts with atomic cleanup,
   fail-closed capacity enforcement, per-platform namespaces, and
   cross-workspace duplicate denial for multi-process gateways.

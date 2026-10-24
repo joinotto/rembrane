@@ -131,6 +131,14 @@ pub trait ChannelInboxAdministrationRepository {
         &self,
         workspace_id: &WorkspaceId,
     ) -> Result<ChannelInboxSummary, ApplicationError>;
+
+    fn requeue_quarantined_channel_message(
+        &mut self,
+        workspace_id: &WorkspaceId,
+        channel: ChannelKind,
+        event_id: &str,
+        audit_event: AdministrativeAuditEvent,
+    ) -> Result<(), ApplicationError>;
 }
 
 /// Pluggable trusted-boundary handler for one authenticated channel message.

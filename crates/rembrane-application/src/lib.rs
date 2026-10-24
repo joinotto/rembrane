@@ -35,7 +35,9 @@ pub use channel_binding::{
     ChannelBindingService, CreateChannelBindingCommand, RevokeChannelBindingCommand,
 };
 pub use channel_gateway::ChannelReplayGuard;
-pub use channel_inbox_administration::ChannelInboxAdministrationService;
+pub use channel_inbox_administration::{
+    ChannelInboxAdministrationService, RequeueChannelMessageCommand,
+};
 pub use channel_inbox_worker::{ChannelDispatchReport, ChannelInboxWorker};
 pub use checkpoint::{
     CheckpointService, CreateCheckpointCommand, ResumeActivityCommand, UpdateCheckpointCommand,

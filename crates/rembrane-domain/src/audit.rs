@@ -17,6 +17,7 @@ pub enum AdministrativeAction {
     LegalHoldReleased,
     ChannelBindingCreated,
     ChannelBindingRevoked,
+    ChannelMessageRequeued,
 }
 
 impl AdministrativeAction {
@@ -32,6 +33,7 @@ impl AdministrativeAction {
             Self::LegalHoldReleased => "legal-hold-released",
             Self::ChannelBindingCreated => "channel-binding-created",
             Self::ChannelBindingRevoked => "channel-binding-revoked",
+            Self::ChannelMessageRequeued => "channel-message-requeued",
         }
     }
 }
@@ -44,6 +46,7 @@ pub enum AdministrativeTargetKind {
     RetentionPolicy,
     LegalHold,
     ChannelBinding,
+    ChannelMessage,
 }
 
 impl AdministrativeTargetKind {
@@ -56,6 +59,7 @@ impl AdministrativeTargetKind {
             Self::RetentionPolicy => "retention-policy",
             Self::LegalHold => "legal-hold",
             Self::ChannelBinding => "channel-binding",
+            Self::ChannelMessage => "channel-message",
         }
     }
 }

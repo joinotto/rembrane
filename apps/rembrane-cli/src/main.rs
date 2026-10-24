@@ -5,9 +5,9 @@ use rembrane_application::{
     CreateChannelBindingCommand, DeleteMemoryCommand, EventRepository,
     ExecuteRetentionPurgeCommand, MemberLifecycleService, MembershipRepository,
     MemoryLifecycleService, MemoryRepository, PlaceLegalHoldCommand, ReleaseLegalHoldCommand,
-    RememberPreferenceCommand, RememberPreferenceService, ResolveContextCommand,
-    ResolveContextService, RetentionService, ReviseMemoryCommand, RevokeChannelBindingCommand,
-    SetRetentionPolicyCommand, WorkspaceRepository,
+    RememberPreferenceCommand, RememberPreferenceService, RequeueChannelMessageCommand,
+    ResolveContextCommand, ResolveContextService, RetentionService, ReviseMemoryCommand,
+    RevokeChannelBindingCommand, SetRetentionPolicyCommand, WorkspaceRepository,
 };
 use rembrane_channel_mobile_share::derive_binding_lookup_keys as derive_mobile_binding_lookup_keys;
 use rembrane_channel_whatsapp::derive_binding_lookup_keys as derive_whatsapp_binding_lookup_keys;
@@ -80,6 +80,13 @@ fn channel(arguments: &[String]) -> Result<(), String> {
     if arguments.first().map(String::as_str) == Some("status") {
         return channel_status(&arguments[1..]);
     }
+    if arguments.first().map(String::as_str) == Some("requeue") {
+        return channel_requeue(&arguments[1..]);
+    }
+    channel_binding(arguments)
+}
+
+fn channel_binding(arguments: &[String]) -> Result<(), String> {
     let (operation, channel_kind, channel_label) = match arguments.first().map(String::as_str) {
         Some("bind-whatsapp") => ("bound", ChannelKind::WhatsAppBusiness, "whatsapp-business"),
         Some("unbind-whatsapp") => (
@@ -181,9 +188,9 @@ fn channel_status(arguments: &[String]) -> Result<(), String> {
     let database = option(arguments, "--database")?;
     let principal_id = PrincipalId::new(option(arguments, "--principal")?);
     let workspace_id = WorkspaceId::new(option(arguments, "--workspace")?);
-    let store =
+    let mut store =
         SqliteStore::open(database).map_err(|error| format!("cannot open database: {error}"))?;
-    let summary = ChannelInboxAdministrationService::new(&store)
+    let summary = ChannelInboxAdministrationService::new(&mut store)
         .summary(&workspace_id, &principal_id)
         .map_err(|error| format!("cannot inspect channel inbox: {error}"))?;
     println!(
@@ -193,6 +200,45 @@ fn channel_status(arguments: &[String]) -> Result<(), String> {
             "pending": summary.pending(),
             "processing": summary.processing(),
             "quarantined": summary.quarantined()
+        })
+    );
+    Ok(())
+}
+
+fn channel_requeue(arguments: &[String]) -> Result<(), String> {
+    let database = option(arguments, "--database")?;
+    let actor_id = PrincipalId::new(option(arguments, "--principal")?);
+    let workspace_id = WorkspaceId::new(option(arguments, "--workspace")?);
+    let event_id = option(arguments, "--event")?.to_owned();
+    let request_id = option(arguments, "--request")?.to_owned();
+    let channel = match option(arguments, "--channel")? {
+        "whatsapp-business" => ChannelKind::WhatsAppBusiness,
+        "imessage-extension" => ChannelKind::IMessageExtension,
+        "mobile-share" => ChannelKind::MobileShare,
+        _ => {
+            return Err(
+                "channel must be whatsapp-business, imessage-extension, or mobile-share".to_owned(),
+            );
+        }
+    };
+    let mut store =
+        SqliteStore::open(database).map_err(|error| format!("cannot open database: {error}"))?;
+    ChannelInboxAdministrationService::new(&mut store)
+        .requeue(RequeueChannelMessageCommand {
+            workspace_id: workspace_id.clone(),
+            channel,
+            event_id: event_id.clone(),
+            actor_id,
+            request_id,
+        })
+        .map_err(|error| format!("cannot requeue channel message: {error}"))?;
+    println!(
+        "{}",
+        serde_json::json!({
+            "workspaceId": workspace_id.as_str(),
+            "channel": channel.label(),
+            "eventId": event_id,
+            "status": "pending"
         })
     );
     Ok(())
@@ -1644,6 +1690,8 @@ fn print_help() {
              --hold <id> --request <id>\n\
            rembrane channel status --database <path> --principal <owner-or-admin-id> \
              --workspace <id>\n\
+           rembrane channel requeue --database <path> --principal <owner-or-admin-id> \
+             --workspace <id> --channel <channel> --event <id> --request <id>\n\
            rembrane channel <bind-whatsapp|unbind-whatsapp|bind-mobile-share|unbind-mobile-share> --database <path> \
              --principal <owner-or-admin-id> --workspace <id> \
              --subject <active-member-id> --client <id> --request <id>\n\
