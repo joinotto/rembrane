@@ -68,6 +68,13 @@ REMBRANE_KEY_PROVIDER_ALGORITHM=xchacha20poly1305-ietf
 REMBRANE_KEY_PROVIDER_REQUIRE_HISTORICAL_KEYS=true
 ```
 
+The shipped configured cipher also accepts
+`REMBRANE_KEY_PROVIDER_TOKEN_REFERENCE=env:VARIABLE` or a protected
+`file:path` locator. When the locator is present, only reference metadata is
+kept in deployment configuration and the credential remains zeroizing from
+resolution through HTTP transport ownership. An unsupported external
+reference fails closed unless the embedding deployment supplies its resolver.
+
 Literal loopback HTTP is supported for a same-machine sidecar. Every other
 deployment requires HTTPS. Production deployments should prefer private
 networking plus workload or mutually authenticated transport; a bearer token

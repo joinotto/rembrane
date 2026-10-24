@@ -13,6 +13,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   resolution and bounded RFC-compatible token validation.
 - Protected-file or environment reference resolution for stable WhatsApp and
   mobile-share binding keys during administrative CLI onboarding.
+- Protected local reference resolution for customer HTTP key-provider bearer
+  credentials with zeroizing configuration ownership.
 - A consuming remote-MCP dispatch handoff that transfers verified tenant
   identity, classified invocation, and the exact OAuth-authorized zeroizing
   request body together to the eventual official SDK transport.

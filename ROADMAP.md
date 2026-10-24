@@ -106,6 +106,8 @@ This roadmap describes sequencing, not release dates.
       validation failure, transport construction, and teardown.
     - [x] Construct customer key providers from validated reference-only
       profiles through any deployment-selected secret resolver.
+    - [x] Resolve the environment-driven HTTP key-provider credential from
+      validated environment or protected-file reference metadata.
   - [x] Wire configured cipher selection through CLI, REST, MCP, generated
     agent configuration, and privacy diagnostics.
 - [x] Retrieve minimal context through local stdio MCP.

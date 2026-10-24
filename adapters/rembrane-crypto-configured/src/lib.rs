@@ -2,7 +2,7 @@
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use rembrane_config::{ProviderConnection, ProviderKind};
+use rembrane_config::{ProviderConnection, ProviderKind, SecretReference};
 use rembrane_crypto::{
     CURRENT_KEY_PROVIDER_PROTOCOL, CryptoError, EncryptedPayload, EncryptionContext,
     KeyProviderCipher, KeyProviderPolicy, RecordCipher,
@@ -10,8 +10,8 @@ use rembrane_crypto::{
 use rembrane_crypto_rustcrypto::RustCryptoKeyringCipher;
 use rembrane_domain::{KeyRotationReceipt, PrincipalId, WorkspaceId};
 use rembrane_key_provider_http::HttpKeyProviderTransport;
-use rembrane_secret_local::{SecretResolver, resolve_provider_credentials};
-use zeroize::Zeroize;
+use rembrane_secret_local::{LocalSecretResolver, SecretResolver, resolve_provider_credentials};
+use zeroize::Zeroizing;
 
 const DEFAULT_ALGORITHM: &str = "xchacha20poly1305-ietf";
 const DEFAULT_MINIMUM_PLAINTEXT_BYTES: usize = 262_144;
@@ -28,7 +28,7 @@ pub enum ConfiguredRecordCipher {
 /// or fails.
 pub struct KeyProviderHttpConfig {
     base_url: String,
-    bearer_token: String,
+    bearer_token: Zeroizing<String>,
     algorithm: String,
     minimum_plaintext_bytes: usize,
     require_historical_keys: bool,
@@ -38,9 +38,14 @@ pub struct KeyProviderHttpConfig {
 impl KeyProviderHttpConfig {
     #[must_use]
     pub fn new(base_url: impl Into<String>, bearer_token: impl Into<String>) -> Self {
+        Self::new_with_secret(base_url, Zeroizing::new(bearer_token.into()))
+    }
+
+    #[must_use]
+    pub fn new_with_secret(base_url: impl Into<String>, bearer_token: Zeroizing<String>) -> Self {
         Self {
             base_url: base_url.into(),
-            bearer_token: bearer_token.into(),
+            bearer_token,
             algorithm: DEFAULT_ALGORITHM.to_owned(),
             minimum_plaintext_bytes: DEFAULT_MINIMUM_PLAINTEXT_BYTES,
             require_historical_keys: true,
@@ -73,12 +78,6 @@ impl KeyProviderHttpConfig {
     }
 }
 
-impl Drop for KeyProviderHttpConfig {
-    fn drop(&mut self) {
-        self.bearer_token.zeroize();
-    }
-}
-
 impl ConfiguredRecordCipher {
     /// Loads the selected encryption provider without placing key material in
     /// application configuration.
@@ -86,7 +85,7 @@ impl ConfiguredRecordCipher {
     /// Supported values for `REMBRANE_KEY_PROVIDER` are `environment`,
     /// `macos-keychain`, `linux-secret-service`, `windows-dpapi`, and `http`.
     /// The HTTP provider requires `REMBRANE_KEY_PROVIDER_BASE_URL` and
-    /// `REMBRANE_KEY_PROVIDER_TOKEN`.
+    /// `REMBRANE_KEY_PROVIDER_TOKEN` or its reference locator.
     ///
     /// # Errors
     ///
@@ -106,7 +105,10 @@ impl ConfiguredRecordCipher {
 
     fn http_from_environment() -> Result<Self, CryptoError> {
         let endpoint = required_environment("REMBRANE_KEY_PROVIDER_BASE_URL")?;
-        let token = required_environment("REMBRANE_KEY_PROVIDER_TOKEN")?;
+        let token_reference = configured_token_reference()?;
+        let token = LocalSecretResolver
+            .resolve(&token_reference)
+            .map_err(|_| CryptoError::KeyUnavailable)?;
         let algorithm = std::env::var("REMBRANE_KEY_PROVIDER_ALGORITHM")
             .unwrap_or_else(|_| DEFAULT_ALGORITHM.to_owned());
         if algorithm.trim().is_empty() || algorithm.trim() != algorithm {
@@ -132,7 +134,7 @@ impl ConfiguredRecordCipher {
                 _ => return Err(CryptoError::KeyUnavailable),
             };
         let request_prefix = std::env::var("REMBRANE_KEY_PROVIDER_REQUEST_PREFIX").ok();
-        let config = KeyProviderHttpConfig::new(endpoint, token)
+        let config = KeyProviderHttpConfig::new_with_secret(endpoint, token)
             .with_algorithm(algorithm)
             .with_minimum_plaintext_bytes(minimum_plaintext_bytes)
             .require_historical_keys(require_historical_keys);
@@ -162,7 +164,7 @@ impl ConfiguredRecordCipher {
             None => default_request_prefix()?,
         };
         let token = std::mem::take(&mut config.bearer_token);
-        let transport = HttpKeyProviderTransport::new(&config.base_url, token)?;
+        let transport = HttpKeyProviderTransport::new_with_secret(&config.base_url, token)?;
         let cipher = KeyProviderCipher::connect(
             transport,
             KeyProviderPolicy {
@@ -279,6 +281,23 @@ fn required_environment(name: &str) -> Result<String, CryptoError> {
         .ok_or(CryptoError::KeyUnavailable)
 }
 
+fn configured_token_reference() -> Result<SecretReference, CryptoError> {
+    match std::env::var("REMBRANE_KEY_PROVIDER_TOKEN_REFERENCE") {
+        Ok(locator) => selected_token_reference(&locator),
+        Err(std::env::VarError::NotPresent) => selected_token_reference(""),
+        Err(_) => Err(CryptoError::KeyUnavailable),
+    }
+}
+
+fn selected_token_reference(locator: &str) -> Result<SecretReference, CryptoError> {
+    if locator.is_empty() {
+        SecretReference::environment("REMBRANE_KEY_PROVIDER_TOKEN")
+            .map_err(|_| CryptoError::KeyUnavailable)
+    } else {
+        locator.parse().map_err(|_| CryptoError::KeyUnavailable)
+    }
+}
+
 fn default_request_prefix() -> Result<String, CryptoError> {
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -295,7 +314,7 @@ mod tests {
 
     use super::{
         ConfiguredRecordCipher, DEFAULT_MINIMUM_PLAINTEXT_BYTES, KeyProviderHttpConfig,
-        default_request_prefix,
+        default_request_prefix, selected_token_reference,
     };
 
     struct PanicResolver;
@@ -324,6 +343,19 @@ mod tests {
     #[test]
     fn default_plaintext_policy_covers_canonical_records() {
         assert_eq!(DEFAULT_MINIMUM_PLAINTEXT_BYTES, 262_144);
+    }
+
+    #[test]
+    fn key_provider_token_reference_defaults_and_rejects_inline_values() {
+        let default = selected_token_reference("").expect("default environment reference");
+        assert_eq!(
+            default.environment_variable(),
+            Some("REMBRANE_KEY_PROVIDER_TOKEN")
+        );
+        let file = selected_token_reference("file:/run/secrets/key-provider-token")
+            .expect("file reference");
+        assert_eq!(file.file_path(), Some("/run/secrets/key-provider-token"));
+        assert!(selected_token_reference("inline-token").is_err());
     }
 
     #[test]
