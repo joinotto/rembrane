@@ -647,9 +647,11 @@ fn test_provider(arguments: &[String]) -> Result<String, String> {
                     .count()
                     != 1
             {
-                return Err("Supermemory conformance sends disposable plaintext; rerun with \
+                return Err(
+                    "Supermemory conformance sends disposable plaintext; rerun with \
                      --allow-provider-plaintext after verifying the target"
-                    .to_owned());
+                        .to_owned(),
+                );
             }
             validate_external_conformance_namespace(namespace)?;
             let base_url = secret_environment("SUPERMEMORY_BASE_URL")?;
