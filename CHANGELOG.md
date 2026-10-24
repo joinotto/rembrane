@@ -27,6 +27,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   deterministic tenant-scoped physical identifiers, cross-workspace endpoint
   denial, idempotent retries, same-version conflicts, temporal traversal, and
   version-bounded deletion.
+- A fixed-route FastAPI shell for the Graphiti sidecar with fail-closed bearer
+  authentication, constant-time credential comparison, streaming request-size
+  enforcement, disabled schema surfaces, and mandatory production-store
+  initialization.
 - Canonical engine-neutral temporal knowledge graph aggregates with typed
   nodes, validated relationship types, strict workspace namespaces, separate
   validity and ingestion time, evidence provenance, bounded aliases, versions,

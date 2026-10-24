@@ -168,8 +168,9 @@ This roadmap describes sequencing, not release dates.
         - [x] Implement and test a dependency-free contract core for workspace
           isolation, physical identity, idempotency, optimistic versions,
           temporal traversal, and bounded deletion.
-        - [ ] Bind the contract core to authenticated FastAPI endpoints and a
-          Graphiti persistence driver.
+        - [x] Bind the contract core to authenticated, body-bounded FastAPI
+          endpoints that fail startup without an explicit bearer secret.
+        - [ ] Add the production Graphiti persistence driver.
         - [ ] Exercise the Rust HTTP adapter against the live sidecar.
 
 - [x] Project entities and scoped preferences.
