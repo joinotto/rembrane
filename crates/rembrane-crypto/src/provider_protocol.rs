@@ -2,6 +2,8 @@ use std::error::Error;
 use std::fmt::{self, Display};
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use rembrane_domain::{KeyRotationReceipt, MAX_KEY_ROTATION_RECIPIENTS, PrincipalId, WorkspaceId};
+
 use crate::{CryptoError, EncryptedPayload, EncryptionContext, RecordCipher};
 
 pub const CURRENT_KEY_PROVIDER_PROTOCOL: KeyProviderProtocolVersion =
@@ -32,6 +34,7 @@ pub struct KeyProviderManifest {
     pub algorithms: Vec<String>,
     pub maximum_plaintext_bytes: usize,
     pub supports_historical_keys: bool,
+    pub supports_rotation: bool,
 }
 
 impl KeyProviderManifest {
@@ -71,6 +74,7 @@ pub struct KeyProviderPolicy {
     pub required_algorithm: String,
     pub minimum_plaintext_bytes: usize,
     pub require_historical_keys: bool,
+    pub require_rotation: bool,
 }
 
 impl KeyProviderPolicy {
@@ -94,7 +98,70 @@ impl KeyProviderPolicy {
         if self.require_historical_keys && !manifest.supports_historical_keys {
             return Err(KeyProviderProtocolError::HistoricalKeysRequired);
         }
+        if self.require_rotation && !manifest.supports_rotation {
+            return Err(KeyProviderProtocolError::RotationRequired);
+        }
         Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RotateKeyRequest {
+    request_id: String,
+    workspace_id: WorkspaceId,
+    generation: u64,
+    recipient_ids: Vec<PrincipalId>,
+}
+
+impl RotateKeyRequest {
+    pub fn new(
+        request_id: impl Into<String>,
+        workspace_id: WorkspaceId,
+        generation: u64,
+        mut recipient_ids: Vec<PrincipalId>,
+    ) -> Result<Self, KeyProviderProtocolError> {
+        let request_id = request_id.into();
+        validate_request_id(&request_id)?;
+        if workspace_id.as_str().is_empty()
+            || generation == 0
+            || recipient_ids.is_empty()
+            || recipient_ids.len() > MAX_KEY_ROTATION_RECIPIENTS
+            || recipient_ids
+                .iter()
+                .any(|recipient| recipient.as_str().is_empty())
+        {
+            return Err(KeyProviderProtocolError::InvalidRequest);
+        }
+        recipient_ids.sort();
+        if recipient_ids.windows(2).any(|pair| pair[0] == pair[1]) {
+            return Err(KeyProviderProtocolError::InvalidRequest);
+        }
+        Ok(Self {
+            request_id,
+            workspace_id,
+            generation,
+            recipient_ids,
+        })
+    }
+
+    #[must_use]
+    pub fn request_id(&self) -> &str {
+        &self.request_id
+    }
+
+    #[must_use]
+    pub const fn workspace_id(&self) -> &WorkspaceId {
+        &self.workspace_id
+    }
+
+    #[must_use]
+    pub const fn generation(&self) -> u64 {
+        self.generation
+    }
+
+    #[must_use]
+    pub fn recipient_ids(&self) -> &[PrincipalId] {
+        &self.recipient_ids
     }
 }
 
@@ -210,6 +277,7 @@ pub enum KeyProviderProtocolError {
     InvalidRequest,
     LimitTooSmall,
     PlaintextTooLarge,
+    RotationRequired,
     UnsupportedAlgorithm,
 }
 
@@ -223,6 +291,7 @@ impl Display for KeyProviderProtocolError {
             Self::InvalidRequest => "key provider request is invalid",
             Self::LimitTooSmall => "key provider plaintext limit is too small",
             Self::PlaintextTooLarge => "plaintext exceeds the key provider limit",
+            Self::RotationRequired => "key provider must support workspace key rotation",
             Self::UnsupportedAlgorithm => "required encryption algorithm is unsupported",
         })
     }
@@ -236,6 +305,10 @@ pub trait KeyProviderTransport {
     fn seal(&self, request: &SealRequest) -> Result<EncryptedPayload, CryptoError>;
 
     fn open(&self, request: &OpenRequest) -> Result<Vec<u8>, CryptoError>;
+
+    fn rotate(&self, _request: &RotateKeyRequest) -> Result<KeyRotationReceipt, CryptoError> {
+        Err(CryptoError::KeyUnavailable)
+    }
 }
 
 pub struct KeyProviderCipher<Transport> {
@@ -287,6 +360,34 @@ impl<Transport: KeyProviderTransport> KeyProviderCipher<Transport> {
                 Err(observed) => current = observed,
             }
         }
+    }
+
+    pub fn rotate(
+        &self,
+        workspace_id: WorkspaceId,
+        generation: u64,
+        recipient_ids: Vec<PrincipalId>,
+    ) -> Result<KeyRotationReceipt, CryptoError> {
+        if !self.manifest.supports_rotation {
+            return Err(CryptoError::KeyUnavailable);
+        }
+        let request = RotateKeyRequest::new(
+            self.request_id("rotate")?,
+            workspace_id,
+            generation,
+            recipient_ids,
+        )
+        .map_err(protocol_error)?;
+        let receipt = self.transport.rotate(&request)?;
+        if receipt.provider_id().as_str() != self.manifest.provider_id
+            || receipt.request_id() != request.request_id()
+            || receipt.workspace_id() != request.workspace_id()
+            || receipt.generation() != request.generation()
+            || receipt.recipient_ids() != request.recipient_ids()
+        {
+            return Err(CryptoError::InvalidEnvelope);
+        }
+        Ok(receipt)
     }
 }
 
@@ -344,18 +445,19 @@ fn protocol_error(error: KeyProviderProtocolError) -> CryptoError {
         | KeyProviderProtocolError::IncompatibleProtocol
         | KeyProviderProtocolError::InvalidManifest
         | KeyProviderProtocolError::InvalidPolicy
-        | KeyProviderProtocolError::LimitTooSmall => CryptoError::KeyUnavailable,
+        | KeyProviderProtocolError::LimitTooSmall
+        | KeyProviderProtocolError::RotationRequired => CryptoError::KeyUnavailable,
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use rembrane_domain::WorkspaceId;
+    use rembrane_domain::{KeyRotationReceipt, PrincipalId, ProviderId, WorkspaceId};
 
     use super::{
         CURRENT_KEY_PROVIDER_PROTOCOL, KeyProviderCipher, KeyProviderManifest, KeyProviderPolicy,
         KeyProviderProtocolError, KeyProviderProtocolVersion, KeyProviderTransport, OpenRequest,
-        SealRequest,
+        RotateKeyRequest, SealRequest,
     };
     use crate::{CryptoError, EncryptedPayload, EncryptionContext, PayloadPurpose, RecordCipher};
 
@@ -366,6 +468,7 @@ mod tests {
             algorithms: vec!["xchacha20poly1305-ietf".to_owned()],
             maximum_plaintext_bytes: 262_144,
             supports_historical_keys: true,
+            supports_rotation: true,
         }
     }
 
@@ -386,6 +489,7 @@ mod tests {
             required_algorithm: "xchacha20poly1305-ietf".to_owned(),
             minimum_plaintext_bytes: 262_144,
             require_historical_keys: true,
+            require_rotation: false,
         };
         assert_eq!(policy.validate(&manifest()), Ok(()));
 
@@ -446,6 +550,18 @@ mod tests {
             assert_eq!(request.context().workspace_id().as_str(), "workspace_01");
             Ok(self.open_response.clone())
         }
+
+        fn rotate(&self, request: &RotateKeyRequest) -> Result<KeyRotationReceipt, CryptoError> {
+            KeyRotationReceipt::new(
+                ProviderId::new(self.manifest.provider_id.clone()),
+                request.request_id(),
+                request.workspace_id().clone(),
+                request.generation(),
+                format!("key_v{}", request.generation()),
+                request.recipient_ids().to_vec(),
+            )
+            .map_err(|_| CryptoError::InvalidEnvelope)
+        }
     }
 
     fn connected(open_response: Vec<u8>) -> KeyProviderCipher<FakeTransport> {
@@ -459,6 +575,7 @@ mod tests {
                 required_algorithm: "xchacha20poly1305-ietf".to_owned(),
                 minimum_plaintext_bytes: 10,
                 require_historical_keys: true,
+                require_rotation: false,
             },
             "test-client",
         )
@@ -477,6 +594,26 @@ mod tests {
                 .open(&context(), &envelope)
                 .expect("provider response should open"),
             b"opened"
+        );
+    }
+
+    #[test]
+    fn provider_cipher_rotates_for_exact_workspace_generation_and_recipients() {
+        let cipher = connected(Vec::new());
+        let receipt = cipher
+            .rotate(
+                WorkspaceId::new("workspace_01"),
+                2,
+                vec![PrincipalId::new("owner"), PrincipalId::new("member")],
+            )
+            .expect("rotation-capable provider should return a correlated receipt");
+
+        assert_eq!(receipt.provider_id().as_str(), "rembrane.test-key-provider");
+        assert_eq!(receipt.generation(), 2);
+        assert_eq!(receipt.key_id(), "key_v2");
+        assert_eq!(
+            receipt.recipient_ids(),
+            &[PrincipalId::new("member"), PrincipalId::new("owner")]
         );
     }
 
@@ -513,6 +650,7 @@ mod tests {
                 required_algorithm: "xchacha20poly1305-ietf".to_owned(),
                 minimum_plaintext_bytes: 1,
                 require_historical_keys: false,
+                require_rotation: false,
             },
             "x".repeat(201),
         );

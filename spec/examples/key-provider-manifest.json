@@ -3,5 +3,6 @@
   "protocolVersion": "0.1",
   "algorithms": ["xchacha20poly1305-ietf"],
   "maximumPlaintextBytes": 1048576,
-  "supportsHistoricalKeys": true
+  "supportsHistoricalKeys": true,
+  "supportsRotation": false
 }

@@ -28,6 +28,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   pending workspace generation and exact canonical active-member set.
 - Atomic tenant-scoped persistence of validated rotation provider, request,
   generation, opaque key, and recipient evidence alongside completion.
+- Optional Key Provider Protocol rotation capability with bounded canonical
+  requests and fail-closed provider, request, workspace, generation, and
+  recipient receipt correlation.
 - Consumed customer key-provider HTTP configuration for application-owned
   vault, keychain, cloud-secret, and deployment integrations without fixed
   Rembrane environment-variable names.

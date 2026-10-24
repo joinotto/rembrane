@@ -93,6 +93,9 @@ components:
         supportsHistoricalKeys:
           type: boolean
           default: false
+        supportsRotation:
+          type: boolean
+          default: false
     EncryptionContext:
       type: object
       additionalProperties: false

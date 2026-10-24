@@ -13,7 +13,7 @@ mod provider_protocol;
 pub use provider_protocol::{
     CURRENT_KEY_PROVIDER_PROTOCOL, KeyProviderCipher, KeyProviderManifest, KeyProviderPolicy,
     KeyProviderProtocolError, KeyProviderProtocolVersion, KeyProviderTransport, OpenRequest,
-    SealRequest,
+    RotateKeyRequest, SealRequest,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

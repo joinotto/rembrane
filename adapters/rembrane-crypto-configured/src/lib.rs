@@ -169,6 +169,7 @@ impl ConfiguredRecordCipher {
                 required_algorithm: config.algorithm.clone(),
                 minimum_plaintext_bytes: config.minimum_plaintext_bytes,
                 require_historical_keys: config.require_historical_keys,
+                require_rotation: false,
             },
             request_prefix,
         )?;

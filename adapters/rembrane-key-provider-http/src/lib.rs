@@ -191,6 +191,8 @@ struct ManifestResponse {
     maximum_plaintext_bytes: usize,
     #[serde(default)]
     supports_historical_keys: bool,
+    #[serde(default)]
+    supports_rotation: bool,
 }
 
 impl TryFrom<ManifestResponse> for KeyProviderManifest {
@@ -208,6 +210,7 @@ impl TryFrom<ManifestResponse> for KeyProviderManifest {
             algorithms: wire.algorithms,
             maximum_plaintext_bytes: wire.maximum_plaintext_bytes,
             supports_historical_keys: wire.supports_historical_keys,
+            supports_rotation: wire.supports_rotation,
         };
         manifest
             .validate()
@@ -360,6 +363,7 @@ mod tests {
             algorithms: vec!["xchacha20poly1305-ietf".to_owned()],
             maximum_plaintext_bytes: 262_144,
             supports_historical_keys: true,
+            supports_rotation: false,
         })
         .expect("manifest should validate");
         assert_eq!(manifest.maximum_plaintext_bytes, 262_144);
@@ -371,6 +375,7 @@ mod tests {
                 algorithms: vec!["xchacha20poly1305-ietf".to_owned()],
                 maximum_plaintext_bytes: 262_144,
                 supports_historical_keys: true,
+                supports_rotation: false,
             }),
             Err(CryptoError::KeyUnavailable)
         );

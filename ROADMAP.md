@@ -65,6 +65,9 @@ This roadmap describes sequencing, not release dates.
   - [ ] Add Windows DPAPI and Linux Secret Service adapters.
   - [x] Define a vendor-neutral authenticated key-provider operation protocol
     that never exports raw workspace keys.
+    - [x] Negotiate optional workspace-rotation capability and validate
+      transport receipts against exact request, provider, workspace,
+      generation, and recipient correlation.
   - [ ] Resolve or unwrap keyring material through customer KMS adapters.
   - [x] Add a provider-agnostic configured cipher that dispatches to local
     environment/macOS keyrings or a policy-negotiated HTTP key provider.
