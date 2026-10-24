@@ -1,0 +1,82 @@
+# Customer KMS integration
+
+Rembrane integrates customer KMS and HSM systems through the Key Provider
+Protocol. The Rembrane process calls authenticated `manifest`, `seal`, `open`,
+and optional `rotate` operations; it never receives a KMS master key or cloud
+credential.
+
+## Trust boundary
+
+Run the key-provider sidecar in the customer's account, network, and workload
+identity boundary. The sidecar owns:
+
+- AWS KMS, Azure Key Vault/Managed HSM, Google Cloud KMS, or HSM credentials;
+- mapping Rembrane workspace generations to provider key versions;
+- authenticated encryption and historical-key lookup;
+- replay-resistant rotation state;
+- provider audit logging that excludes plaintext and key material.
+
+Rembrane owns canonical record context, authorization, encrypted envelopes,
+rotation orchestration, and receipt validation. Provider responses must contain
+only ciphertext, an opaque key identifier, algorithm metadata, nonce metadata,
+or a correlated rotation receipt.
+
+## Required request binding
+
+Every seal and open operation must cryptographically bind the complete
+length-delimited context:
+
+- workspace ID;
+- record ID;
+- record version;
+- payload purpose.
+
+The sidecar must reject context substitution, unknown historical keys,
+unsupported algorithms, stale rotations, duplicate request identifiers, and
+plaintext larger than its advertised limit.
+
+## Cloud mappings
+
+### AWS
+
+Use IAM workload identity and KMS encryption context. Restrict the role to the
+configured key ARN and required operations. Do not place AWS access keys in
+Rembrane configuration. If envelope encryption is used, plaintext data keys
+exist only inside the sidecar and must be zeroized immediately after record
+AEAD processing.
+
+### Azure
+
+Use managed identity with a Key Vault or Managed HSM key scoped to the required
+cryptographic operations. Keep vault credentials and key-version resolution in
+the sidecar. Bind the canonical context as authenticated data in the record
+AEAD layer.
+
+### Google Cloud
+
+Use workload identity with a narrowly scoped Cloud KMS CryptoKey. Keep service
+account credentials outside Rembrane. Bind the canonical context as additional
+authenticated data and retain provider ciphertext for historical decrypts.
+
+## Rembrane configuration
+
+```sh
+REMBRANE_KEY_PROVIDER=http
+REMBRANE_KEY_PROVIDER_BASE_URL=https://keys.internal.example
+REMBRANE_KEY_PROVIDER_TOKEN='resolved-by-the-process-secret-store'
+REMBRANE_KEY_PROVIDER_ALGORITHM=xchacha20poly1305-ietf
+REMBRANE_KEY_PROVIDER_REQUIRE_HISTORICAL_KEYS=true
+```
+
+Literal loopback HTTP is supported for a same-machine sidecar. Every other
+deployment requires HTTPS. Production deployments should prefer private
+networking plus workload or mutually authenticated transport; a bearer token
+alone is only the protocol's minimum authentication control.
+
+## Acceptance
+
+Before use, run `scripts/test-key-provider-http.sh` against a disposable
+provider namespace. Promotion requires context-substitution denial,
+historical-key behavior, exact receipt correlation, response bounds, token
+redaction, and a review of the cloud IAM policy.
+

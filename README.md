@@ -225,7 +225,9 @@ The resolver uses the fixed system Windows PowerShell executable, passes only
 the protected blob path and key ID, binds the key ID as DPAPI entropy, and
 zeroizes captured output. A blob is user- and machine-bound by DPAPI; preserve
 a separately protected recovery copy before relying on it. HSM and direct
-customer-KMS resolvers remain roadmap work.
+cloud-specific customer-KMS sidecars remain roadmap work. The vendor-neutral
+operation boundary and deployment contract are documented in
+`docs/CUSTOMER_KMS.md`.
 
 A customer-controlled Key Provider Protocol sidecar can keep raw workspace
 keys outside the Rembrane process:

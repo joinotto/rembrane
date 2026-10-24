@@ -25,6 +25,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Literal-IP-only loopback HTTP policy across Mem0, Graphiti, memory-provider,
   key-provider, and channel-processor transports, preventing remapped
   `localhost` names from bypassing HTTPS requirements.
+- A customer-KMS deployment contract mapping the operation-only key-provider
+  boundary to AWS KMS, Azure Key Vault/Managed HSM, and Google Cloud KMS while
+  keeping cloud identity and key material inside the customer sidecar.
 - A public-API-only iMessage app extension reference with explicit text entry,
   review, confirmation, Keychain-held enrollment material, narrow signed
   gateway submission, and an iPhone Simulator type-check gate.
