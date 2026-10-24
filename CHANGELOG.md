@@ -41,6 +41,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - In-memory Axum integration coverage routing two OAuth workspaces through the
   asynchronous dispatcher and proving dispatched tenant identity cannot bleed
   across requests.
+- Concurrent in-memory Axum event-stream routing coverage proving stateless
+  GET dispatch preserves separate OAuth workspace identities and rejects an
+  untrusted browser origin before opening a stream.
 - A transport-injectable Mem0 OSS semantic adapter mapping authorized
   projections into HMAC-pseudonymous workspace partitions while preserving
   canonical memory IDs, versions, replacement, bounded ranking, and

@@ -1022,7 +1022,7 @@ mod tests {
             },
         },
         response::IntoResponse,
-        routing::post,
+        routing::{get, post},
     };
     use rembrane_application::{
         RemoteAccessAuthenticator, RemoteHttpAuthorization, RemoteTokenVerificationError,
@@ -1610,6 +1610,20 @@ mod tests {
         }
     }
 
+    async fn authorized_event_workspace(
+        State(authorization): State<Arc<RemoteMcpAxumAuthorization<Verifier>>>,
+        headers: HeaderMap,
+    ) -> Result<String, RemoteMcpHttpRejection> {
+        match authorization
+            .authorize_and_dispatch_event_stream(&headers, 1_000, &RecordingEventStreamDispatcher)
+            .await
+        {
+            Ok((workspace, _, _)) => Ok(workspace),
+            Err(RemoteMcpDispatchError::Authorization(rejection)) => Err(rejection),
+            Err(RemoteMcpDispatchError::Dispatch(infallible)) => match infallible {},
+        }
+    }
+
     #[tokio::test]
     async fn owned_axum_service_preserves_dispatched_tenant_identity() {
         let config = RemoteMcpConfig::new(
@@ -1669,6 +1683,69 @@ mod tests {
             .await
             .expect("in-memory router should respond");
         assert_eq!(denied.status(), 403);
+    }
+
+    #[tokio::test]
+    async fn concurrent_event_stream_routes_preserve_tenant_identity() {
+        let config = RemoteMcpConfig::new(
+            "https://memory.example.test/mcp".to_owned(),
+            "https://identity.example.test".to_owned(),
+            "https://identity.example.test/introspect".to_owned(),
+            "rembrane".to_owned(),
+            SecretReference::environment("OAUTH_SECRET").expect("reference should be valid"),
+            vec!["https://agent.example.test".to_owned()],
+        )
+        .expect("remote profile should be valid");
+        let authorization = Arc::new(
+            RemoteMcpAxumAuthorization::from_config(16, &config, Verifier)
+                .expect("owned authorization service should initialize"),
+        );
+        let app = Router::new()
+            .route("/mcp", get(authorized_event_workspace))
+            .with_state(authorization);
+        let request = |token: &'static str, origin: &'static str| {
+            Request::get("/mcp")
+                .header(HOST, "memory.example.test")
+                .header(ACCEPT, "text/event-stream")
+                .header(AUTHORIZATION, format!("Bearer {token}"))
+                .header(ORIGIN, origin)
+                .header(MCP_PROTOCOL_VERSION_HEADER_NAME, "2025-03-26")
+                .body(Body::empty())
+                .expect("request should build")
+        };
+
+        let workspace_one = app
+            .clone()
+            .oneshot(request("workspace-one", "https://agent.example.test"));
+        let workspace_two = app
+            .clone()
+            .oneshot(request("workspace-two", "https://agent.example.test"));
+        let denied = app.oneshot(request("workspace-one", "https://attacker.example.test"));
+        let (workspace_one, workspace_two, denied) =
+            tokio::join!(workspace_one, workspace_two, denied);
+
+        let workspace_one = workspace_one.expect("first stream route should respond");
+        assert_eq!(workspace_one.status(), 200);
+        assert_eq!(
+            to_bytes(workspace_one.into_body(), 128)
+                .await
+                .expect("first response should remain bounded"),
+            "workspace_01"
+        );
+
+        let workspace_two = workspace_two.expect("second stream route should respond");
+        assert_eq!(workspace_two.status(), 200);
+        assert_eq!(
+            to_bytes(workspace_two.into_body(), 128)
+                .await
+                .expect("second response should remain bounded"),
+            "workspace_02"
+        );
+
+        assert_eq!(
+            denied.expect("denied stream route should respond").status(),
+            403
+        );
     }
 
     #[tokio::test]

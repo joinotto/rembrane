@@ -201,6 +201,8 @@ This roadmap describes sequencing, not release dates.
       identities and rejects an untrusted browser origin over HTTP routing.
       - [x] Route both tenants through the owned asynchronous dispatcher and
         prove dispatched workspace identity remains isolated per request.
+        - [x] Route concurrent stateless event-stream GETs through Axum and
+          prove distinct OAuth tenants remain isolated before stream opening.
   - [x] Add a hardened Cloudflare Tunnel Compose overlay that keeps persistent
     memory and encryption credentials on the operator-controlled origin.
 - [x] Persist a disclosure receipt for every SQLite context response.
@@ -719,7 +721,7 @@ This roadmap describes sequencing, not release dates.
       secret custody and an explicit plaintext-processing acknowledgement.
       - [x] Require a bounded safe external namespace with enough room for a
         fresh random suffix before any provider credential is resolved.
-  - [ ] Add a Supermemory v5 semantic adapter with HMAC-derived namespaces,
+  - [x] Add a Supermemory v5 semantic adapter with HMAC-derived namespaces,
     deterministic document identity, processing convergence, exact deletion,
     and shared disposable-provider conformance.
     - [x] Define the v5 API mapping, asynchronous replacement contract,
