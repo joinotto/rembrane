@@ -39,6 +39,7 @@ fi
 if command -v xcrun >/dev/null 2>&1 \
     && xcrun --sdk iphonesimulator --show-sdk-path >/dev/null 2>&1; then
     ./scripts/test-ios-share-extension.sh
+    ./scripts/test-ios-imessage-extension.sh
 fi
 ./scripts/test-kotlin-sdk.sh
 
@@ -56,6 +57,7 @@ for deployment_file in \
     scripts/test-graphiti-sidecar.sh \
     scripts/test-swift-sdk.sh \
     scripts/test-ios-share-extension.sh \
+    scripts/test-ios-imessage-extension.sh \
     scripts/test-kotlin-sdk.sh \
     scripts/check-postgres-rls.sh \
     scripts/check-ci-security.sh \
@@ -77,6 +79,7 @@ sh -n scripts/test-graphiti-http-e2e.sh
 sh -n scripts/test-graphiti-sidecar.sh
 sh -n scripts/test-swift-sdk.sh
 sh -n scripts/test-ios-share-extension.sh
+sh -n scripts/test-ios-imessage-extension.sh
 sh -n scripts/test-kotlin-sdk.sh
 sh -n scripts/check-postgres-rls.sh
 sh -n scripts/check-ci-security.sh

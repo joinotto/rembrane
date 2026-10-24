@@ -9,6 +9,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- A public-API-only iMessage app extension reference with explicit text entry,
+  review, confirmation, Keychain-held enrollment material, narrow signed
+  gateway submission, and an iPhone Simulator type-check gate.
 - An Axum-facing remote MCP authorization boundary that rejects duplicate
   credential, host, origin, and session headers, authorizes the exact bounded
   JSON-RPC body, and maps 401/403/503 outcomes into safe HTTP responses before

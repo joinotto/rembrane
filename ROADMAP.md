@@ -638,7 +638,7 @@ This roadmap describes sequencing, not release dates.
     revoke bindings automatically when that membership becomes inactive.
   - [x] Resolve active sender identity and reserve replay protection in one
     atomic storage transaction to prevent membership-revocation races.
-- [ ] Mobile share flows and iMessage extension.
+- [x] Mobile share flows and iMessage extension.
   - [x] Reuse the authenticated-channel contract for explicit iMessage
     extension and mobile-share ingestion without claiming conversation
     interception.
@@ -665,6 +665,9 @@ This roadmap describes sequencing, not release dates.
   - [x] Publish a public-API-only iOS Share Extension reference controller with
     single-text selection, Keychain-held enrollment material, and explicit
     limitations against Messages database or background access.
+  - [x] Publish a public-API-only Messages app extension reference that
+    requires explicit text entry and confirmation without transcript,
+    participant, composer, attachment, or background access.
 - [ ] Community provider and agent adapters.
   - [x] Generate a secret-reference-only local MCP configuration for OpenCode
     using its command-array and environment-substitution contract.

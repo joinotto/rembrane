@@ -361,6 +361,12 @@ Recommended integration:
 - A local companion app that performs identity, decryption, retrieval, and context compilation on the authorized device.
 - No automatic capture of every conversation.
 
+The repository includes `examples/ios-imessage-extension`, a compile-checked
+`MSMessagesAppViewController` reference. Because the public Messages API does
+not expose transcript or composer contents, the user explicitly pastes or
+types the text, reviews a clear confirmation prompt, and submits only that
+text through the same signed mobile-share gateway.
+
 A macOS helper that reads or automates local Messages data would depend on private, brittle, permission-sensitive surfaces. If an experimental adapter is offered, it must be optional, local-only, allowlist exact threads, default to read-only capture, require explicit send confirmation, and never be the project's primary integration path.
 
 ## 9. Named consumer bots
