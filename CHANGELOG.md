@@ -34,6 +34,11 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   public discovery, missing and insufficient credentials, proposal
   idempotency, cross-workspace isolation, optimistic deletion conflicts,
   content removal, and workspace-scoped strictly ordered synchronization.
+- Secret-safe black-box Memory Provider HTTPS conformance client using three
+  distinct scoped connections to verify public discovery, 401/403 separation,
+  proposal idempotency, cross-workspace non-disclosure, stale-version
+  conflicts, exact tombstones, content removal, and isolated ordered sync,
+  with loopback-only plaintext and deterministic fixture cleanup.
 - Initial full Memory Provider Protocol discovery contract with a versioned
   well-known manifest, HTTPS/MCP transports, portable memory capabilities,
   explicit privacy modes, supported domains, and bounded operation limits.

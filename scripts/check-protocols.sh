@@ -168,6 +168,7 @@ sh -n scripts/test-provider-http.sh
 node --check scripts/test-provider-http-runner.mjs
 sh -n scripts/test-key-provider-http.sh
 node --check scripts/test-key-provider-http-runner.mjs
+sh -n scripts/test-memory-provider-http.sh
 if [ "${REMBRANE_RUN_LOOPBACK_TESTS:-0}" = "1" ]; then
     node scripts/test-provider-http-runner.mjs
     node scripts/test-key-provider-http-runner.mjs
@@ -184,6 +185,15 @@ if REMBRANE_KEY_PROVIDER_BASE_URL=http://key-provider.example \
     ./scripts/test-key-provider-http.sh static-check >/dev/null 2>&1
 then
     echo "key provider runner unexpectedly accepted remote plaintext HTTP" >&2
+    exit 1
+fi
+if REMBRANE_MEMORY_PROVIDER_BASE_URL=http://memory-provider.example \
+    REMBRANE_MEMORY_PROVIDER_PRIMARY_TOKEN=primary-token \
+    REMBRANE_MEMORY_PROVIDER_OTHER_TOKEN=other-token \
+    REMBRANE_MEMORY_PROVIDER_READONLY_TOKEN=readonly-token \
+    ./scripts/test-memory-provider-http.sh static-check >/dev/null 2>&1
+then
+    echo "memory provider runner unexpectedly accepted remote plaintext HTTP" >&2
     exit 1
 fi
 

@@ -270,7 +270,7 @@ This roadmap describes sequencing, not release dates.
     - [x] Publish a versioned machine-readable core profile covering discovery,
       authentication, exact scopes, idempotency, tenant isolation, optimistic
       deletion, and ordered workspace-scoped sync.
-    - [ ] Add a secret-safe black-box HTTPS conformance runner.
+    - [x] Add a secret-safe black-box HTTPS conformance runner.
     - [ ] Prove the runner against an independent local mock implementation.
 - [x] Versioned key-provider sidecar protocol for OS, HSM, and customer-KMS
   adapters.
