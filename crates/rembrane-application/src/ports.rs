@@ -1,7 +1,7 @@
 use rembrane_domain::{
-    ActivityCheckpoint, ActivityId, BookingResearch, BookingResearchId, CanonicalEvent,
-    CheckpointDisclosureReceipt, DisclosureReceipt, EntityId, GraphProjectionJob, Invitation,
-    InvitationId, InvitationStatus, KeyRotationId, KeyRotationReceipt, KnowledgeEdge,
+    ActivityCheckpoint, ActivityId, AdministrativeAuditEvent, BookingResearch, BookingResearchId,
+    CanonicalEvent, CheckpointDisclosureReceipt, DisclosureReceipt, EntityId, GraphProjectionJob,
+    Invitation, InvitationId, InvitationStatus, KeyRotationId, KeyRotationReceipt, KnowledgeEdge,
     KnowledgeEdgeId, KnowledgeNode, KnowledgeNodeId, MemberScopeGrant, Membership,
     MembershipStatus, MemoryId, MemoryRecord, MemoryShareProposal, Principal, PrincipalId,
     ProjectionJob, ProjectionJobId, ProjectionStatus, ProviderId, ShareProposalId,
@@ -10,6 +10,22 @@ use rembrane_domain::{
 };
 
 use crate::ApplicationError;
+
+pub const MAX_ADMINISTRATIVE_AUDIT_PAGE: usize = 1_000;
+
+pub trait AdministrativeAuditRepository {
+    fn append_administrative_audit(
+        &mut self,
+        event: AdministrativeAuditEvent,
+    ) -> Result<(), ApplicationError>;
+
+    fn list_administrative_audit(
+        &self,
+        workspace_id: &WorkspaceId,
+        after_epoch_seconds: u64,
+        limit: usize,
+    ) -> Result<Vec<AdministrativeAuditEvent>, ApplicationError>;
+}
 
 pub trait MemoryRepository {
     fn find(

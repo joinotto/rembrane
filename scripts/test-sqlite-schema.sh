@@ -33,7 +33,9 @@ sqlite3 "$database" < \
     "$repository_root/migrations/sqlite/0013_workspace_key_rotations.sql"
 sqlite3 "$database" < \
     "$repository_root/migrations/sqlite/0014_key_rotation_receipts.sql"
-sqlite3 "$database" "PRAGMA user_version = 14;"
+sqlite3 "$database" < \
+    "$repository_root/migrations/sqlite/0015_administrative_audit.sql"
+sqlite3 "$database" "PRAGMA user_version = 15;"
 
 sqlite3 "$database" <<'SQL'
 PRAGMA foreign_keys = ON;
@@ -580,7 +582,27 @@ INSERT INTO workspace_key_rotation_recipients (
 ) VALUES (
     'workspace_shared', 'rotation_01', 'principal_01'
 );
+INSERT INTO administrative_audit_events (
+    workspace_id, id, actor_id, action, target_kind, target_id,
+    request_id, occurred_at_epoch_seconds
+) VALUES (
+    'workspace_01', 'audit_01', 'principal_01', 'member-removed',
+    'principal', 'principal_02', 'request_01', 100
+);
 SQL
+
+if sqlite3 "$database" \
+    "UPDATE administrative_audit_events SET target_id = 'changed' WHERE id = 'audit_01';"
+then
+    echo "append-only administrative audit update unexpectedly succeeded" >&2
+    exit 1
+fi
+if sqlite3 "$database" \
+    "DELETE FROM administrative_audit_events WHERE id = 'audit_01';"
+then
+    echo "append-only administrative audit deletion unexpectedly succeeded" >&2
+    exit 1
+fi
 
 table_count=$(
     sqlite3 "$database" \
@@ -588,7 +610,7 @@ table_count=$(
 )
 
 test "$table_count" -ge 9
-test "$(sqlite3 "$database" "PRAGMA user_version;")" -eq 14
+test "$(sqlite3 "$database" "PRAGMA user_version;")" -eq 15
 test "$(
     sqlite3 "$database" \
         "SELECT count(*) FROM graph_projection_outbox WHERE provider_id = 'graph.primary' AND status = 'pending';"

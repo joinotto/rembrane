@@ -13,14 +13,15 @@ mod trip;
 use std::path::Path;
 
 use rembrane_application::{
-    ApplicationError, InvitationRepository, KeyRotationRepository, MemberLifecycleRepository,
-    MemberScopeGrantRepository, MembershipRepository, MemoryRepository, ShareProposalRepository,
-    WorkspaceRepository,
+    AdministrativeAuditRepository, ApplicationError, InvitationRepository, KeyRotationRepository,
+    MAX_ADMINISTRATIVE_AUDIT_PAGE, MemberLifecycleRepository, MemberScopeGrantRepository,
+    MembershipRepository, MemoryRepository, ShareProposalRepository, WorkspaceRepository,
 };
 use rembrane_codec::decode_memory;
 use rembrane_crypto::{EncryptedPayload, EncryptionContext, PayloadPurpose, RecordCipher};
 use rembrane_domain::{
-    ActivityId, EntityId, Invitation, InvitationId, InvitationStatus, KeyRotationId,
+    ActivityId, AdministrativeAction, AdministrativeAuditEvent, AdministrativeAuditEventId,
+    AdministrativeTargetKind, EntityId, Invitation, InvitationId, InvitationStatus, KeyRotationId,
     KeyRotationReceipt, KeyRotationStatus, MemberScopeGrant, Membership, MembershipStatus,
     MemoryId, MemoryRecord, MemoryScope, MemoryShareProposal, Principal, PrincipalId, ProviderId,
     ReadScope, ShareProposalId, ShareProposalStatus, Workspace, WorkspaceId, WorkspaceKeyRotation,
@@ -54,7 +55,9 @@ const WORKSPACE_KEY_ROTATION_MIGRATION: &str =
     include_str!("../../../migrations/sqlite/0013_workspace_key_rotations.sql");
 const KEY_ROTATION_RECEIPT_MIGRATION: &str =
     include_str!("../../../migrations/sqlite/0014_key_rotation_receipts.sql");
-const CURRENT_SCHEMA_VERSION: u32 = 14;
+const ADMINISTRATIVE_AUDIT_MIGRATION: &str =
+    include_str!("../../../migrations/sqlite/0015_administrative_audit.sql");
+const CURRENT_SCHEMA_VERSION: u32 = 15;
 const CANONICAL_TABLES: [&str; 10] = [
     "activity_checkpoints",
     "disclosed_memories",
@@ -73,6 +76,115 @@ pub struct MissingCipher;
 pub struct SqliteStore<C = MissingCipher> {
     connection: Connection,
     cipher: C,
+}
+
+impl<C> AdministrativeAuditRepository for SqliteStore<C> {
+    fn append_administrative_audit(
+        &mut self,
+        event: AdministrativeAuditEvent,
+    ) -> Result<(), ApplicationError> {
+        self.connection
+            .execute(
+                "INSERT INTO administrative_audit_events (
+                    workspace_id, id, actor_id, action, target_kind, target_id,
+                    request_id, occurred_at_epoch_seconds
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                params![
+                    event.workspace_id().as_str(),
+                    event.id().as_str(),
+                    event.actor_id().as_str(),
+                    event.action().label(),
+                    event.target_kind().label(),
+                    event.target_id(),
+                    event.request_id(),
+                    event.occurred_at_epoch_seconds(),
+                ],
+            )
+            .map_err(map_write_error)?;
+        Ok(())
+    }
+
+    fn list_administrative_audit(
+        &self,
+        workspace_id: &WorkspaceId,
+        after_epoch_seconds: u64,
+        limit: usize,
+    ) -> Result<Vec<AdministrativeAuditEvent>, ApplicationError> {
+        if !(1..=MAX_ADMINISTRATIVE_AUDIT_PAGE).contains(&limit) {
+            return Err(ApplicationError::Validation(
+                "administrative audit page limit is invalid".to_owned(),
+            ));
+        }
+        let mut statement = self
+            .connection
+            .prepare(
+                "SELECT id, actor_id, action, target_kind, target_id, request_id,
+                        occurred_at_epoch_seconds
+                 FROM administrative_audit_events
+                 WHERE workspace_id = ?1 AND occurred_at_epoch_seconds > ?2
+                 ORDER BY occurred_at_epoch_seconds, id
+                 LIMIT ?3",
+            )
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        let rows = statement
+            .query_map(
+                params![workspace_id.as_str(), after_epoch_seconds, limit as u64],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, String>(3)?,
+                        row.get::<_, String>(4)?,
+                        row.get::<_, String>(5)?,
+                        row.get::<_, u64>(6)?,
+                    ))
+                },
+            )
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        rows.map(|row| {
+            let (id, actor_id, action, target_kind, target_id, request_id, occurred_at) =
+                row.map_err(|_| ApplicationError::StorageUnavailable)?;
+            AdministrativeAuditEvent::new(
+                AdministrativeAuditEventId::new(id),
+                workspace_id.clone(),
+                PrincipalId::new(actor_id),
+                parse_administrative_action(&action)?,
+                parse_administrative_target_kind(&target_kind)?,
+                target_id,
+                request_id,
+                occurred_at,
+            )
+            .map_err(|_| ApplicationError::StorageUnavailable)
+        })
+        .collect()
+    }
+}
+
+fn parse_administrative_action(value: &str) -> Result<AdministrativeAction, ApplicationError> {
+    match value {
+        "member-removed" => Ok(AdministrativeAction::MemberRemoved),
+        "key-rotation-required" => Ok(AdministrativeAction::KeyRotationRequired),
+        "key-rotation-completed" => Ok(AdministrativeAction::KeyRotationCompleted),
+        "scope-grant-changed" => Ok(AdministrativeAction::ScopeGrantChanged),
+        "retention-policy-changed" => Ok(AdministrativeAction::RetentionPolicyChanged),
+        "legal-hold-placed" => Ok(AdministrativeAction::LegalHoldPlaced),
+        "legal-hold-released" => Ok(AdministrativeAction::LegalHoldReleased),
+        _ => Err(ApplicationError::StorageUnavailable),
+    }
+}
+
+fn parse_administrative_target_kind(
+    value: &str,
+) -> Result<AdministrativeTargetKind, ApplicationError> {
+    match value {
+        "principal" => Ok(AdministrativeTargetKind::Principal),
+        "key-rotation" => Ok(AdministrativeTargetKind::KeyRotation),
+        "scope-grant" => Ok(AdministrativeTargetKind::ScopeGrant),
+        "retention-policy" => Ok(AdministrativeTargetKind::RetentionPolicy),
+        "legal-hold" => Ok(AdministrativeTargetKind::LegalHold),
+        _ => Err(ApplicationError::StorageUnavailable),
+    }
 }
 
 impl SqliteStore<MissingCipher> {
@@ -205,6 +317,12 @@ fn migrate(connection: &mut Connection) -> Result<(), ApplicationError> {
     if version == 13 {
         transaction
             .execute_batch(KEY_ROTATION_RECEIPT_MIGRATION)
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        version = 14;
+    }
+    if version == 14 {
+        transaction
+            .execute_batch(ADMINISTRATIVE_AUDIT_MIGRATION)
             .map_err(|_| ApplicationError::StorageUnavailable)?;
     }
     transaction

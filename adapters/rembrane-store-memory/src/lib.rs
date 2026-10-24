@@ -1,25 +1,26 @@
 //! Volatile reference adapter used by tests, examples, and local prototypes.
 
 use rembrane_application::{
-    ApplicationError, BookingResearchMutationRepository, BookingResearchRepository,
-    CanonicalGraphMutationRepository, CanonicalMutationRepository, CheckpointDisclosureRepository,
-    CheckpointMutationRepository, CheckpointRepository, DisclosureRepository, EventRepository,
-    GraphProjectionOutboxRepository, InvitationRepository, KeyRotationRepository,
-    KnowledgeDirection, KnowledgeGraphMutationRepository, KnowledgeGraphRepository,
-    MAX_KNOWLEDGE_NEIGHBOURS, MemberLifecycleRepository, MemberScopeGrantRepository,
-    MembershipRepository, MemoryRepository, ProjectionOutboxRepository,
-    ShareProposalMutationRepository, ShareProposalRepository, TravelDisclosureRepository,
-    TripMutationRepository, TripRepository, WorkspaceRepository,
+    AdministrativeAuditRepository, ApplicationError, BookingResearchMutationRepository,
+    BookingResearchRepository, CanonicalGraphMutationRepository, CanonicalMutationRepository,
+    CheckpointDisclosureRepository, CheckpointMutationRepository, CheckpointRepository,
+    DisclosureRepository, EventRepository, GraphProjectionOutboxRepository, InvitationRepository,
+    KeyRotationRepository, KnowledgeDirection, KnowledgeGraphMutationRepository,
+    KnowledgeGraphRepository, MAX_ADMINISTRATIVE_AUDIT_PAGE, MAX_KNOWLEDGE_NEIGHBOURS,
+    MemberLifecycleRepository, MemberScopeGrantRepository, MembershipRepository, MemoryRepository,
+    ProjectionOutboxRepository, ShareProposalMutationRepository, ShareProposalRepository,
+    TravelDisclosureRepository, TripMutationRepository, TripRepository, WorkspaceRepository,
 };
 use rembrane_domain::{
-    ActivityCheckpoint, ActivityId, BookingResearch, BookingResearchId, CanonicalEvent,
-    CheckpointDisclosureReceipt, DisclosureReceipt, EntityId, EventPayload, GraphProjectionJob,
-    GraphProjectionResource, Invitation, InvitationId, InvitationStatus, KeyRotationId,
-    KeyRotationReceipt, KeyRotationStatus, KnowledgeEdge, KnowledgeEdgeId, KnowledgeNode,
-    KnowledgeNodeId, MemberScopeGrant, Membership, MemoryId, MemoryRecord, MemoryShareProposal,
-    MemoryStatus, Principal, PrincipalId, ProjectionJob, ProjectionJobId, ProjectionOperation,
-    ProjectionStatus, ProviderId, ShareProposalId, ShareProposalStatus, TravelDisclosureReceipt,
-    Trip, Workspace, WorkspaceId, WorkspaceKeyRotation, WorkspaceKind, WorkspaceRole,
+    ActivityCheckpoint, ActivityId, AdministrativeAuditEvent, BookingResearch, BookingResearchId,
+    CanonicalEvent, CheckpointDisclosureReceipt, DisclosureReceipt, EntityId, EventPayload,
+    GraphProjectionJob, GraphProjectionResource, Invitation, InvitationId, InvitationStatus,
+    KeyRotationId, KeyRotationReceipt, KeyRotationStatus, KnowledgeEdge, KnowledgeEdgeId,
+    KnowledgeNode, KnowledgeNodeId, MemberScopeGrant, Membership, MemoryId, MemoryRecord,
+    MemoryShareProposal, MemoryStatus, Principal, PrincipalId, ProjectionJob, ProjectionJobId,
+    ProjectionOperation, ProjectionStatus, ProviderId, ShareProposalId, ShareProposalStatus,
+    TravelDisclosureReceipt, Trip, Workspace, WorkspaceId, WorkspaceKeyRotation, WorkspaceKind,
+    WorkspaceRole,
 };
 
 #[derive(Debug, Default)]
@@ -44,6 +45,51 @@ pub struct InMemoryStore {
     knowledge_edges: Vec<KnowledgeEdge>,
     key_rotations: Vec<WorkspaceKeyRotation>,
     key_rotation_receipts: Vec<(KeyRotationId, KeyRotationReceipt)>,
+    administrative_audit: Vec<AdministrativeAuditEvent>,
+}
+
+impl AdministrativeAuditRepository for InMemoryStore {
+    fn append_administrative_audit(
+        &mut self,
+        event: AdministrativeAuditEvent,
+    ) -> Result<(), ApplicationError> {
+        if self.administrative_audit.iter().any(|stored| {
+            stored.id() == event.id()
+                || (stored.workspace_id() == event.workspace_id()
+                    && stored.request_id() == event.request_id()
+                    && stored.action() == event.action()
+                    && stored.target_id() == event.target_id())
+        }) {
+            return Err(ApplicationError::AlreadyExists);
+        }
+        self.administrative_audit.push(event);
+        Ok(())
+    }
+
+    fn list_administrative_audit(
+        &self,
+        workspace_id: &WorkspaceId,
+        after_epoch_seconds: u64,
+        limit: usize,
+    ) -> Result<Vec<AdministrativeAuditEvent>, ApplicationError> {
+        if !(1..=MAX_ADMINISTRATIVE_AUDIT_PAGE).contains(&limit) {
+            return Err(ApplicationError::Validation(
+                "administrative audit page limit is invalid".to_owned(),
+            ));
+        }
+        let mut events = self
+            .administrative_audit
+            .iter()
+            .filter(|event| {
+                event.workspace_id() == workspace_id
+                    && event.occurred_at_epoch_seconds() > after_epoch_seconds
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        events.sort_by_key(AdministrativeAuditEvent::occurred_at_epoch_seconds);
+        events.truncate(limit);
+        Ok(events)
+    }
 }
 
 impl GraphProjectionOutboxRepository for InMemoryStore {
@@ -1785,22 +1831,69 @@ fn validate_share_approval_events(
 #[cfg(test)]
 mod tests {
     use rembrane_application::{
-        ApplicationError, CanonicalGraphMutationRepository, CanonicalMutationRepository,
-        EventRepository, GraphProjectionOutboxRepository, KnowledgeDirection,
-        KnowledgeGraphMutationRepository, KnowledgeGraphRepository, MemoryRepository,
+        AdministrativeAuditRepository, ApplicationError, CanonicalGraphMutationRepository,
+        CanonicalMutationRepository, EventRepository, GraphProjectionOutboxRepository,
+        KnowledgeDirection, KnowledgeGraphMutationRepository, KnowledgeGraphRepository,
+        MemoryRepository,
     };
     use rembrane_domain::{
-        CanonicalEvent, EventId, EventPayload, EvidenceId, EvidenceReference, EvidenceSource,
-        GraphProjectionJob, GraphProjectionResource, KnowledgeEdge, KnowledgeEdgeId, KnowledgeNode,
-        KnowledgeNodeId, KnowledgeNodeKind, KnowledgeRelationType, MemoryId, MemoryRecord,
-        MemoryScope, PrincipalId, ProjectionJobId, ProjectionOperation, ProviderId,
-        TemporalValidity, WorkspaceId,
+        AdministrativeAction, AdministrativeAuditEvent, AdministrativeAuditEventId,
+        AdministrativeTargetKind, CanonicalEvent, EventId, EventPayload, EvidenceId,
+        EvidenceReference, EvidenceSource, GraphProjectionJob, GraphProjectionResource,
+        KnowledgeEdge, KnowledgeEdgeId, KnowledgeNode, KnowledgeNodeId, KnowledgeNodeKind,
+        KnowledgeRelationType, MemoryId, MemoryRecord, MemoryScope, PrincipalId, ProjectionJobId,
+        ProjectionOperation, ProviderId, TemporalValidity, WorkspaceId,
     };
 
     use super::InMemoryStore;
 
     fn evidence(id: &str) -> EvidenceReference {
         EvidenceReference::new(EvidenceId::new(id), EvidenceSource::UserStatement)
+    }
+
+    #[test]
+    fn administrative_audit_is_append_only_bounded_and_tenant_scoped() {
+        let mut store = InMemoryStore::new();
+        let event = AdministrativeAuditEvent::new(
+            AdministrativeAuditEventId::new("audit_01"),
+            WorkspaceId::new("workspace_01"),
+            PrincipalId::new("owner_01"),
+            AdministrativeAction::MemberRemoved,
+            AdministrativeTargetKind::Principal,
+            "member_01",
+            "request_01",
+            100,
+        )
+        .expect("audit event");
+        store
+            .append_administrative_audit(event.clone())
+            .expect("first append should succeed");
+        assert_eq!(
+            store.append_administrative_audit(event),
+            Err(ApplicationError::AlreadyExists)
+        );
+        assert_eq!(
+            store
+                .list_administrative_audit(&WorkspaceId::new("workspace_01"), 0, 10)
+                .expect("workspace audit"),
+            vec![
+                store
+                    .list_administrative_audit(&WorkspaceId::new("workspace_01"), 0, 1)
+                    .expect("bounded audit")
+                    .remove(0)
+            ]
+        );
+        assert_eq!(
+            store
+                .list_administrative_audit(&WorkspaceId::new("workspace_02"), 0, 10)
+                .expect("other workspace audit"),
+            Vec::new()
+        );
+        assert!(
+            store
+                .list_administrative_audit(&WorkspaceId::new("workspace_01"), 0, 0)
+                .is_err()
+        );
     }
 
     fn knowledge_node(id: &str, workspace_id: &str, version: u64) -> KnowledgeNode {

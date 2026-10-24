@@ -12,6 +12,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - An immutable, bounded, content-free administrative audit event contract with
   tenant, actor, closed action, opaque target, request correlation, and
   occurrence time while excluding memory content, secrets, and key material.
+- Append-only tenant-scoped administrative audit repositories for volatile and
+  SQLite storage, including bounded chronological reads and database triggers
+  that reject update or deletion.
 - A provider-independent, content-free shared-workspace key-rotation
   aggregate with monotonic generations, removal provenance, explicit pending
   state, and opaque key-provider completion identity.

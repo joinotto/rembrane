@@ -317,7 +317,7 @@ This roadmap describes sequencing, not release dates.
   - [x] Define an immutable bounded content-free administrative audit event
     contract with tenant, actor, closed action, opaque target, request
     correlation, and occurrence time.
-  - [ ] Persist administrative audit events append-only and tenant-scoped.
+  - [x] Persist administrative audit events append-only and tenant-scoped.
   - [ ] Record membership, scope, key-rotation, retention, and legal-hold
     mutations atomically with their administrative audit evidence.
   - [ ] Define enforceable per-workspace retention policies and legal holds.
