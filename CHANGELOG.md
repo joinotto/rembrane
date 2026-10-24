@@ -80,6 +80,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   so retries and corrections do not append stale canonical content.
 - Explicit Supermemory `dreaming: "instant"` processing for create and PATCH
   requests, aligning bounded readiness polling with v5 processing behavior.
+- Fail-closed Supermemory HTTP status classification that surfaces invalid
+  credentials without retry loops and reserves retryable failure for timeout,
+  throttling, and server-side availability conditions.
 - A public-API-only iMessage app extension reference with explicit text entry,
   review, confirmation, Keychain-held enrollment material, narrow signed
   gateway submission, and an iPhone Simulator type-check gate.

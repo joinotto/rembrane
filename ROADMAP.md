@@ -734,6 +734,8 @@ This roadmap describes sequencing, not release dates.
           independently and prefer the deterministic caller ID.
     - [x] Add an authenticated, redirect-free, proxy-free, bounded HTTP
       transport with scoped convergence polling and confirmed deletion.
+      - [x] Classify credential failures and permanent provider rejection
+        separately from transient timeout, throttling, and server failures.
     - [x] Expose disposable Supermemory conformance through the CLI with
       environment-only secrets and explicit plaintext acknowledgement.
       - [x] Require exact provider-identity confirmation before replacement or

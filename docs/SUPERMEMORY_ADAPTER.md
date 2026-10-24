@@ -62,12 +62,14 @@ The provider adapter must:
 2. require HTTPS except literal loopback IPs for a local deployment;
 3. disable redirects and environment proxies;
 4. apply strict connection, request, and response-size limits;
-5. send deterministic document identity and exact canonical metadata;
-6. poll bounded processing status before reporting an index operation ready;
-7. collapse search results to the newest canonical version;
-8. perform exact-ID deletion rather than semantic deletion;
-9. require a one-item deletion count with no per-item errors;
-10. never delegate authorization, tenant identity, or canonical truth to
+5. fail configured credential rejection without retrying, while retrying only
+   transient timeout, throttling, and server failures;
+6. send deterministic document identity and exact canonical metadata;
+7. poll bounded processing status before reporting an index operation ready;
+8. collapse search results to the newest canonical version;
+9. perform exact-ID deletion rather than semantic deletion;
+10. require a one-item deletion count with no per-item errors;
+11. never delegate authorization, tenant identity, or canonical truth to
     Supermemory.
 
 ## Replacement semantics

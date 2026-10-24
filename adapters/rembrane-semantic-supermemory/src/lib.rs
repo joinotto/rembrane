@@ -249,12 +249,7 @@ impl HttpSupermemoryTransport {
 
     fn decode(response: Response) -> Result<Vec<u8>, ProviderError> {
         if !response.status().is_success() {
-            return Err(match response.status().as_u16() {
-                400 | 404 | 409 | 413 | 422 => {
-                    ProviderError::Rejected("Supermemory rejected the operation".to_owned())
-                }
-                _ => ProviderError::Unavailable,
-            });
+            return Err(classify_http_failure(response.status().as_u16()));
         }
         let is_json = response
             .headers()
@@ -307,6 +302,19 @@ impl HttpSupermemoryTransport {
             .send()
             .map_err(|_| ProviderError::Unavailable)?;
         decode_records(&Self::decode(response)?)
+    }
+}
+
+fn classify_http_failure(status: u16) -> ProviderError {
+    match status {
+        401 | 403 => ProviderError::InvalidConfiguration(
+            "Supermemory rejected the configured credentials".to_owned(),
+        ),
+        400 | 404 | 409 | 413 | 422 => {
+            ProviderError::Rejected("Supermemory rejected the operation".to_owned())
+        }
+        408 | 425 | 429 | 500..=599 => ProviderError::Unavailable,
+        _ => ProviderError::Rejected("Supermemory returned an unexpected HTTP status".to_owned()),
     }
 }
 
@@ -950,6 +958,30 @@ mod tests {
                 .as_str(),
             "https://api.supermemory.ai/ns/rembrane-test/document/rembrane-document"
         );
+    }
+
+    #[test]
+    fn http_failures_distinguish_credentials_rejections_and_retries() {
+        use rembrane_provider_sdk::ProviderError;
+
+        for status in [401, 403] {
+            assert!(matches!(
+                super::classify_http_failure(status),
+                ProviderError::InvalidConfiguration(_)
+            ));
+        }
+        for status in [400, 404, 409, 413, 422, 302] {
+            assert!(matches!(
+                super::classify_http_failure(status),
+                ProviderError::Rejected(_)
+            ));
+        }
+        for status in [408, 425, 429, 500, 503, 599] {
+            assert_eq!(
+                super::classify_http_failure(status),
+                ProviderError::Unavailable
+            );
+        }
     }
 
     #[test]
