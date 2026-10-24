@@ -47,3 +47,9 @@ validated Graphiti provider profile. It checks provider kind, credential
 cardinality, and the explicit plaintext-processing policy before resolving the
 bearer credential, then transfers the zeroizing value directly into the HTTP
 transport.
+
+`ConfiguredMemoryProvider::from_connection` consumes validated Mem0 or
+Supermemory profiles through the resolver boundary. It validates provider
+kind, credential cardinality, and request identity before resolution, moves
+the zeroizing bearer value directly into the portable HTTP client, and still
+requires provider discovery to satisfy the caller's explicit privacy policy.

@@ -56,6 +56,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Graphiti composition from validated provider profiles through pluggable
   secret resolvers, with provider-kind, credential-cardinality, and explicit
   plaintext-policy checks before resolution.
+- Portable Mem0 and Supermemory composition from validated provider profiles
+  through pluggable secret resolvers, retaining zeroizing credentials through
+  HTTP construction and enforcing negotiated privacy policy at discovery.
 - Fail-closed OAuth introspection claim bounds covering audience cardinality,
   issuer and identity sizes, scope size, and control-character rejection
   before claims become canonical tenant identity.

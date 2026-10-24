@@ -564,6 +564,8 @@ This roadmap describes sequencing, not release dates.
   - [x] Add deployment-selected Memory Provider composition using
     environment-owned endpoint and bearer-token values plus safe request
     identity prefixes.
+    - [x] Consume validated Mem0 or Supermemory profiles through any
+      deployment-selected secret resolver.
     - [x] Accept consumed HTTP configuration values from application-owned
       keychains, vaults, cloud secret managers, and other secret resolvers
       without requiring fixed environment-variable names.

@@ -42,7 +42,19 @@ pub struct HttpMemoryProviderClient {
 
 impl HttpMemoryProviderClient {
     pub fn new(base_url: &str, bearer_token: String) -> Result<Self, ProviderError> {
-        let bearer_token = Zeroizing::new(bearer_token);
+        Self::new_with_secret(base_url, Zeroizing::new(bearer_token))
+    }
+
+    /// Builds a client from an already resolved zeroizing credential.
+    ///
+    /// # Errors
+    ///
+    /// Returns a provider error when the endpoint or credential is invalid or
+    /// the bounded HTTP client cannot be constructed.
+    pub fn new_with_secret(
+        base_url: &str,
+        bearer_token: Zeroizing<String>,
+    ) -> Result<Self, ProviderError> {
         let base = validate_base_url(base_url)?;
         validate_bearer_token(bearer_token.as_str())?;
         let client = Client::builder()

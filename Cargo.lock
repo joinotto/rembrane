@@ -1295,8 +1295,10 @@ dependencies = [
 name = "rembrane-memory-provider-configured"
 version = "0.1.0-alpha.1"
 dependencies = [
+ "rembrane-config",
  "rembrane-memory-provider-http",
  "rembrane-provider-sdk",
+ "rembrane-secret-local",
  "zeroize",
 ]
 

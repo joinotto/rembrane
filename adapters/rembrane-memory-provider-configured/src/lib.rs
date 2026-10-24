@@ -2,6 +2,7 @@
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use rembrane_config::{ProviderConnection, ProviderKind};
 use rembrane_memory_provider_http::HttpMemoryProviderClient;
 use rembrane_provider_sdk::{
     CheckpointActivityPayload, CheckpointActivityResult, DeleteMemoryPayload, DeleteMemoryResult,
@@ -11,6 +12,7 @@ use rembrane_provider_sdk::{
     RecordEventResult, ResolveContextPayload, ResolveContextResult, ResolveQuestionPayload,
     ResolveQuestionResult, SyncPullPayload, SyncPullResult, SyncPushPayload, SyncPushResult,
 };
+use rembrane_secret_local::{SecretResolver, resolve_provider_credentials};
 use zeroize::Zeroize;
 
 pub struct ConfiguredMemoryProvider {
@@ -108,6 +110,62 @@ impl ConfiguredMemoryProvider {
         };
         let bearer_token = std::mem::take(&mut config.bearer_token);
         let client = HttpMemoryProviderClient::new(&config.base_url, bearer_token)?;
+        Self::from_client(Box::new(client), policy, request_prefix)
+    }
+
+    /// Connects a portable semantic provider from a validated profile through
+    /// a deployment-selected secret resolver.
+    ///
+    /// The negotiated provider policy remains responsible for explicitly
+    /// accepting or rejecting the provider's advertised privacy mode.
+    ///
+    /// # Errors
+    ///
+    /// Returns a provider error unless the profile selects Mem0 or
+    /// Supermemory with one endpoint and one credential reference, resolution
+    /// succeeds, and provider discovery satisfies the supplied policy.
+    pub fn from_connection<Resolver>(
+        connection: &ProviderConnection,
+        resolver: &Resolver,
+        policy: &MemoryProviderPolicy,
+        request_prefix: Option<String>,
+    ) -> Result<Self, ProviderError>
+    where
+        Resolver: SecretResolver + ?Sized,
+    {
+        if !matches!(
+            connection.kind(),
+            ProviderKind::Mem0 | ProviderKind::Supermemory
+        ) || connection.endpoint().is_none()
+            || connection.credentials().len() != 1
+        {
+            return Err(ProviderError::InvalidConfiguration(
+                "portable semantic provider requires one endpoint and one credential reference"
+                    .to_owned(),
+            ));
+        }
+        let request_prefix = match request_prefix {
+            Some(value) => validate_request_prefix(value)?,
+            None => default_request_prefix()?,
+        };
+        let mut credentials = resolve_provider_credentials(resolver, connection).map_err(|_| {
+            ProviderError::InvalidConfiguration(
+                "portable semantic provider credential unavailable".to_owned(),
+            )
+        })?;
+        let bearer_token = credentials.pop().ok_or_else(|| {
+            ProviderError::InvalidConfiguration(
+                "portable semantic provider credential unavailable".to_owned(),
+            )
+        })?;
+        let client = HttpMemoryProviderClient::new_with_secret(
+            connection.endpoint().ok_or_else(|| {
+                ProviderError::InvalidConfiguration(
+                    "portable semantic provider endpoint unavailable".to_owned(),
+                )
+            })?,
+            bearer_token,
+        )?;
         Self::from_client(Box::new(client), policy, request_prefix)
     }
 
@@ -249,15 +307,29 @@ fn default_request_prefix() -> Result<String, ProviderError> {
 
 #[cfg(test)]
 mod tests {
+    use rembrane_config::{ProviderConnection, ProviderKind, ProviderPlacement, SecretReference};
     use rembrane_provider_sdk::{
         CURRENT_MEMORY_PROVIDER_PROTOCOL, MemoryProviderCapability, MemoryProviderLimits,
         MemoryProviderPolicy, MemoryProviderPrivacyMode, MemoryProviderTransport,
     };
+    use rembrane_secret_local::{SecretResolutionError, SecretResolver};
+    use zeroize::Zeroizing;
 
     use super::{
         ConfiguredMemoryProvider, MemoryProviderHttpConfig, default_request_prefix,
         validate_request_prefix,
     };
+
+    struct RejectingResolver;
+
+    impl SecretResolver for RejectingResolver {
+        fn resolve(
+            &self,
+            _reference: &SecretReference,
+        ) -> Result<Zeroizing<String>, SecretResolutionError> {
+            Err(SecretResolutionError::Unavailable)
+        }
+    }
 
     fn minimal_policy() -> MemoryProviderPolicy {
         MemoryProviderPolicy::new(
@@ -331,5 +403,46 @@ mod tests {
         };
 
         assert!(error.to_string().contains("HTTPS"));
+    }
+
+    #[test]
+    fn validates_portable_profile_before_resolving_credential() {
+        let graphiti = ProviderConnection::remote(
+            ProviderKind::Graphiti,
+            "https://graph.example.test",
+            vec![SecretReference::environment("GRAPH_TOKEN").expect("reference")],
+            ProviderPlacement::External,
+        )
+        .expect("profile");
+        assert!(
+            ConfiguredMemoryProvider::from_connection(
+                &graphiti,
+                &RejectingResolver,
+                &minimal_policy(),
+                Some("safe-client-01".to_owned()),
+            )
+            .is_err()
+        );
+
+        let mem0 = ProviderConnection::remote(
+            ProviderKind::Mem0,
+            "https://memory.example.test",
+            vec![SecretReference::external("vault", "memory/token").expect("reference")],
+            ProviderPlacement::External,
+        )
+        .expect("profile");
+        let error = match ConfiguredMemoryProvider::from_connection(
+            &mem0,
+            &RejectingResolver,
+            &minimal_policy(),
+            Some("safe-client-01".to_owned()),
+        ) {
+            Ok(_) => panic!("resolver failure must remain opaque"),
+            Err(error) => error,
+        };
+        assert_eq!(
+            error.to_string(),
+            "invalid provider configuration: portable semantic provider credential unavailable"
+        );
     }
 }
