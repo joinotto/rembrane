@@ -7,7 +7,7 @@
 use chacha20poly1305::aead::{Aead, KeyInit, Payload};
 use chacha20poly1305::{Key, XChaCha20Poly1305, XNonce};
 use rembrane_crypto::{CryptoError, EncryptedPayload, EncryptionContext, RecordCipher};
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 use std::process::Command;
 use zeroize::Zeroizing;
 
@@ -227,6 +227,43 @@ impl RustCryptoRecordCipher {
         )
     }
 
+    /// Resolves a workspace key protected for the current Windows user with
+    /// DPAPI. The key identifier is authenticated as optional entropy, binding
+    /// each protected blob to its declared key generation.
+    #[cfg(target_os = "windows")]
+    pub fn from_windows_dpapi(reference: &WindowsDpapiKeyReference) -> Result<Self, CryptoError> {
+        const POWERSHELL: &str = r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe";
+        const UNPROTECT: &str = r#"$ErrorActionPreference='Stop';$blob=[IO.File]::ReadAllBytes($args[0]);$entropy=[Text.Encoding]::UTF8.GetBytes($args[1]);$plain=$null;try{$plain=[Security.Cryptography.ProtectedData]::Unprotect($blob,$entropy,[Security.Cryptography.DataProtectionScope]::CurrentUser);-join($plain|ForEach-Object{$_.ToString('x2')})}finally{if($null-ne$plain){[Array]::Clear($plain,0,$plain.Length)};[Array]::Clear($blob,0,$blob.Length);[Array]::Clear($entropy,0,$entropy.Length)}"#;
+        let output = Command::new(POWERSHELL)
+            .args([
+                "-NoLogo",
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                UNPROTECT,
+                reference.blob_path(),
+                reference.key_id(),
+            ])
+            .output()
+            .map_err(|_| CryptoError::KeyUnavailable)?;
+        let status = output.status;
+        let stdout = Zeroizing::new(output.stdout);
+        let stderr = Zeroizing::new(output.stderr);
+        if !status.success() || !stderr.is_empty() {
+            return Err(CryptoError::KeyUnavailable);
+        }
+        let encoded =
+            std::str::from_utf8(stdout.as_ref()).map_err(|_| CryptoError::KeyUnavailable)?;
+        let key = decode_key(encoded.trim())?;
+        Self::new(reference.key_id.clone(), key)
+    }
+
+    pub fn from_windows_dpapi_reference(
+        reference: &WindowsDpapiKeyReference,
+    ) -> Result<Self, CryptoError> {
+        Self::from_windows_dpapi(reference)
+    }
+
     #[cfg(not(target_os = "linux"))]
     pub fn from_linux_secret_service(
         _key_id: impl Into<String>,
@@ -242,6 +279,11 @@ impl RustCryptoRecordCipher {
         _service: &str,
         _account: &str,
     ) -> Result<Self, CryptoError> {
+        Err(CryptoError::KeyUnavailable)
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    pub fn from_windows_dpapi(_reference: &WindowsDpapiKeyReference) -> Result<Self, CryptoError> {
         Err(CryptoError::KeyUnavailable)
     }
 
@@ -273,6 +315,14 @@ impl RustCryptoRecordCipher {
                 let account = std::env::var("REMBRANE_SECRET_SERVICE_ACCOUNT")
                     .map_err(|_| CryptoError::KeyUnavailable)?;
                 Self::from_linux_secret_service(key_id, &service, &account)
+            }
+            "windows-dpapi" => {
+                let key_id = std::env::var("REMBRANE_WORKSPACE_KEY_ID")
+                    .map_err(|_| CryptoError::KeyUnavailable)?;
+                let blob_path = std::env::var("REMBRANE_DPAPI_BLOB_PATH")
+                    .map_err(|_| CryptoError::KeyUnavailable)?;
+                let reference = WindowsDpapiKeyReference::new(key_id, blob_path)?;
+                Self::from_windows_dpapi(&reference)
             }
             _ => Err(CryptoError::KeyUnavailable),
         }
@@ -343,6 +393,19 @@ impl RustCryptoKeyringCipher {
         Self::new(active, historical)
     }
 
+    pub fn from_windows_dpapi(
+        active: &WindowsDpapiKeyReference,
+        historical: &[WindowsDpapiKeyReference],
+    ) -> Result<Self, CryptoError> {
+        validate_windows_key_references(active, historical)?;
+        let active = RustCryptoRecordCipher::from_windows_dpapi_reference(active)?;
+        let historical = historical
+            .iter()
+            .map(RustCryptoRecordCipher::from_windows_dpapi_reference)
+            .collect::<Result<Vec<_>, _>>()?;
+        Self::new(active, historical)
+    }
+
     pub fn from_configured_provider() -> Result<Self, CryptoError> {
         match std::env::var("REMBRANE_KEY_PROVIDER")
             .unwrap_or_else(|_| "environment".to_owned())
@@ -381,6 +444,20 @@ impl RustCryptoKeyringCipher {
                     .unwrap_or_default();
                 Self::from_linux_secret_service(&active, &historical)
             }
+            "windows-dpapi" => {
+                let key_id = std::env::var("REMBRANE_WORKSPACE_KEY_ID")
+                    .map_err(|_| CryptoError::KeyUnavailable)?;
+                let blob_path = std::env::var("REMBRANE_DPAPI_BLOB_PATH")
+                    .map_err(|_| CryptoError::KeyUnavailable)?;
+                let active = WindowsDpapiKeyReference::new(key_id, blob_path)?;
+                let historical = std::env::var("REMBRANE_DPAPI_HISTORICAL_KEYS")
+                    .ok()
+                    .filter(|value| !value.trim().is_empty())
+                    .map(|value| parse_windows_dpapi_history(&value))
+                    .transpose()?
+                    .unwrap_or_default();
+                Self::from_windows_dpapi(&active, &historical)
+            }
             _ => Err(CryptoError::KeyUnavailable),
         }
     }
@@ -417,7 +494,6 @@ fn parse_linux_key_history(
         .collect()
 }
 
-#[cfg(any(test, target_os = "windows"))]
 fn parse_windows_dpapi_history(value: &str) -> Result<Vec<WindowsDpapiKeyReference>, CryptoError> {
     value
         .split(',')
@@ -470,6 +546,27 @@ fn validate_key_references(
 fn validate_linux_key_references(
     active: &LinuxSecretServiceKeyReference,
     historical: &[LinuxSecretServiceKeyReference],
+) -> Result<(), CryptoError> {
+    if historical
+        .iter()
+        .any(|candidate| candidate.key_id() == active.key_id())
+    {
+        return Err(CryptoError::KeyUnavailable);
+    }
+    for (index, candidate) in historical.iter().enumerate() {
+        if historical[..index]
+            .iter()
+            .any(|earlier| earlier.key_id() == candidate.key_id())
+        {
+            return Err(CryptoError::KeyUnavailable);
+        }
+    }
+    Ok(())
+}
+
+fn validate_windows_key_references(
+    active: &WindowsDpapiKeyReference,
+    historical: &[WindowsDpapiKeyReference],
 ) -> Result<(), CryptoError> {
     if historical
         .iter()
@@ -600,7 +697,7 @@ mod tests {
         LinuxSecretServiceKeyReference, MacosKeychainKeyReference, RustCryptoKeyringCipher,
         RustCryptoRecordCipher, WindowsDpapiKeyReference, parse_keychain_history,
         parse_linux_key_history, parse_windows_dpapi_history, validate_key_references,
-        validate_linux_key_references,
+        validate_linux_key_references, validate_windows_key_references,
     };
 
     fn context(workspace: &str) -> EncryptionContext {
@@ -683,6 +780,8 @@ mod tests {
         let history = parse_windows_dpapi_history(r"key_v1=C:\Rembrane\workspace_01-key_v1.dpapi")
             .expect("history should parse");
         assert_eq!(history[0].key_id(), "key_v1");
+        validate_windows_key_references(&reference, &history)
+            .expect("distinct history should validate");
 
         for path in [
             r"relative\key.dpapi",
@@ -695,6 +794,63 @@ mod tests {
                 "unsafe DPAPI blob path must fail"
             );
         }
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_dpapi_resolves_current_user_key_without_raw_key_environment() {
+        use std::process::Command;
+
+        const POWERSHELL: &str = r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe";
+        const PROTECT: &str = r#"$ErrorActionPreference='Stop';$hex=$args[1];[byte[]]$plain=for($i=0;$i-lt$hex.Length;$i+=2){[Convert]::ToByte($hex.Substring($i,2),16)};$entropy=[Text.Encoding]::UTF8.GetBytes($args[2]);$blob=$null;try{$blob=[Security.Cryptography.ProtectedData]::Protect($plain,$entropy,[Security.Cryptography.DataProtectionScope]::CurrentUser);[IO.File]::WriteAllBytes($args[0],$blob)}finally{if($null-ne$blob){[Array]::Clear($blob,0,$blob.Length)};[Array]::Clear($plain,0,$plain.Length);[Array]::Clear($entropy,0,$entropy.Length)}"#;
+        let blob_path = std::env::temp_dir().join(format!(
+            "rembrane-dpapi-{}-{}.bin",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system clock should follow the Unix epoch")
+                .as_nanos()
+        ));
+        let blob_path = blob_path
+            .to_str()
+            .expect("Windows temporary path should be Unicode")
+            .to_owned();
+        let key_id = "key_windows_test";
+        let fixture_key = "0707070707070707070707070707070707070707070707070707070707070707";
+        let output = Command::new(POWERSHELL)
+            .args([
+                "-NoLogo",
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                PROTECT,
+                &blob_path,
+                fixture_key,
+                key_id,
+            ])
+            .output()
+            .expect("PowerShell should protect the fixture key");
+        assert!(
+            output.status.success(),
+            "PowerShell failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        let reference =
+            WindowsDpapiKeyReference::new(key_id, &blob_path).expect("reference should validate");
+        let cipher = RustCryptoRecordCipher::from_windows_dpapi(&reference)
+            .expect("DPAPI should resolve the current user's key");
+        let encrypted = cipher
+            .seal(&context("workspace_01"), b"protected by DPAPI")
+            .expect("resolved key should seal");
+        assert_eq!(
+            cipher
+                .open(&context("workspace_01"), &encrypted)
+                .expect("resolved key should open"),
+            b"protected by DPAPI"
+        );
+
+        std::fs::remove_file(blob_path).expect("fixture blob should be removed");
     }
 
     #[test]
