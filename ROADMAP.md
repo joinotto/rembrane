@@ -240,6 +240,9 @@ This roadmap describes sequencing, not release dates.
     - [x] Add bounded context responses carrying canonical IDs, versions,
       scopes, kinds, evidence, confidence, validity, sensitivity, disclosure
       constraints, and disclosure receipts.
+    - [x] Add idempotent memory-proposal payloads that preserve validated
+      scope, memory kind, provenance source, and observation time without
+      allowing clients to assert confirmed status.
   - [ ] Publish a serialization schema and HTTP binding.
   - [ ] Add cross-implementation conformance fixtures.
 - [x] Versioned key-provider sidecar protocol for OS, HSM, and customer-KMS

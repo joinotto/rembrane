@@ -108,6 +108,37 @@ impl MemoryProviderRequestId {
     }
 }
 
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct MemoryProviderIdempotencyKey(String);
+
+impl MemoryProviderIdempotencyKey {
+    /// Creates a mutation idempotency key safe for protocol headers and logs.
+    ///
+    /// # Errors
+    ///
+    /// Returns an invalid-configuration error unless the key contains 16-128
+    /// URL-safe ASCII characters.
+    pub fn new(value: impl Into<String>) -> Result<Self, ProviderError> {
+        let value = value.into();
+        if !(16..=128).contains(&value.len())
+            || !value
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+        {
+            return Err(ProviderError::InvalidConfiguration(
+                "memory provider idempotency key must contain 16 to 128 URL-safe ASCII characters"
+                    .to_owned(),
+            ));
+        }
+        Ok(Self(value))
+    }
+
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MemoryProviderRequest<Payload> {
     request_id: MemoryProviderRequestId,

@@ -8,6 +8,7 @@ mod capability;
 mod conformance;
 mod error;
 mod memory_context;
+mod memory_mutation;
 mod memory_protocol;
 mod semantic;
 
@@ -22,12 +23,14 @@ pub use memory_context::{
     MemoryProviderContextSelector, MemoryProviderDisclosureConstraint, MemoryProviderSensitivity,
     ResolveContextPayload, ResolveContextResult,
 };
+pub use memory_mutation::{MAX_SOURCE_REFERENCE_BYTES, ProposeMemoryPayload, ProposeMemoryResult};
 pub use memory_protocol::{
     CURRENT_MEMORY_PROVIDER_PROTOCOL, MEMORY_PROVIDER_DISCOVERY_PATH, MemoryProviderCapability,
-    MemoryProviderErrorCode, MemoryProviderHttpMethod, MemoryProviderLimits,
-    MemoryProviderManifest, MemoryProviderOperation, MemoryProviderPrivacyMode,
-    MemoryProviderRequest, MemoryProviderRequestId, MemoryProviderResponse,
-    MemoryProviderResponseBody, MemoryProviderScope, MemoryProviderTransport,
+    MemoryProviderErrorCode, MemoryProviderHttpMethod, MemoryProviderIdempotencyKey,
+    MemoryProviderLimits, MemoryProviderManifest, MemoryProviderOperation,
+    MemoryProviderPrivacyMode, MemoryProviderRequest, MemoryProviderRequestId,
+    MemoryProviderResponse, MemoryProviderResponseBody, MemoryProviderScope,
+    MemoryProviderTransport,
 };
 pub use semantic::{
     AuthorizedMemoryProjection, CandidateMemory, SemanticMemoryProvider, SemanticQuery,

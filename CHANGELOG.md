@@ -26,6 +26,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Provenance-bearing Memory Provider context responses with exact canonical
   versions, scope, kind, confidence, validity, sensitivity, disclosure
   constraints, receipt IDs, duplicate rejection, and whole-pack byte limits.
+- Idempotent Memory Provider proposal payloads with validated scope, bounded
+  content and source references, provenance class, non-future observation
+  time, and canonical proposed-record identity—without a client-controlled
+  confirmed-status field.
 - Expiry-aware remote MCP session capacity reclamation so abandoned bindings
   cannot exhaust the bounded in-process registry indefinitely.
 - A transport-neutral remote MCP lifecycle boundary that composes strict HTTP
