@@ -9,6 +9,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- A versioned Graphiti sidecar protocol that derives opaque provider
+  namespaces exclusively from canonical workspace identity, requires
+  idempotency keys for mutations, bounds transport payloads, and rejects
+  mismatched responses.
 - Canonical engine-neutral temporal knowledge graph aggregates with typed
   nodes, validated relationship types, strict workspace namespaces, separate
   validity and ingestion time, evidence provenance, bounded aliases, versions,

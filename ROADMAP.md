@@ -158,6 +158,11 @@ This roadmap describes sequencing, not release dates.
       - [x] Implement the in-memory transaction adapter.
       - [x] Implement the SQLite transaction adapter.
     - [ ] Add Graphiti projection adapter.
+      - [x] Define a versioned, bounded sidecar protocol with workspace-derived
+        namespaces, mutation idempotency, and response correlation.
+      - [ ] Implement the transport-injected Graphiti graph provider.
+      - [ ] Add authenticated bounded HTTP transport and sidecar contract
+        tests.
 
 - [x] Project entities and scoped preferences.
 - [x] Layer global, domain, entity, and activity context in one request.

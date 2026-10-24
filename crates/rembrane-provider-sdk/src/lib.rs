@@ -8,6 +8,7 @@ mod capability;
 mod conformance;
 mod error;
 mod graph_conformance;
+mod graphiti_protocol;
 mod knowledge_graph;
 mod memory_checkpoint;
 mod memory_context;
@@ -27,6 +28,12 @@ pub use capability::{
 pub use conformance::{ConformanceFailure, verify_semantic_provider};
 pub use error::ProviderError;
 pub use graph_conformance::verify_knowledge_graph_provider;
+pub use graphiti_protocol::{
+    CURRENT_GRAPHITI_PROTOCOL, GRAPHITI_DISCOVERY_PATH, GraphitiConnection, GraphitiErrorCode,
+    GraphitiIdempotencyKey, GraphitiNamespace, GraphitiOperation, GraphitiPayload, GraphitiRequest,
+    GraphitiRequestId, GraphitiResponse, MAX_GRAPHITI_NAMESPACE_BYTES, MAX_GRAPHITI_REQUEST_BYTES,
+    MAX_GRAPHITI_RESPONSE_BYTES,
+};
 pub use knowledge_graph::{
     CandidateKnowledgeEdge, GraphDirection, GraphNeighbourQuery, KnowledgeGraphProvider,
     MAX_GRAPH_CANDIDATES, validate_graph_candidates,
