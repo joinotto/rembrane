@@ -69,6 +69,13 @@ defaults to `env:REMBRANE_WORKSPACE_KEY_HEX` for compatibility. A protected
 before the active cipher enters service. Stock Compose uses this path so raw
 workspace keys are absent from container environment metadata.
 
+Because local Compose implementations may not honor requested ownership and
+mode metadata for file-backed secrets, the shared container entrypoint does
+not resolve directly from `/run/secrets`. It rejects non-regular and symbolic
+link entries, copies each mounted value into `/run/rembrane-secrets`, enforces
+service-user ownership and mode `0400`, and only then drops privileges. The
+runtime directory is a bounded private tmpfs and is not persisted.
+
 The shipped REST API, WhatsApp gateway, mobile-share gateway, and channel
 worker also accept locator variables for their bearer or HMAC credentials.
 An empty locator preserves the documented environment-variable default;

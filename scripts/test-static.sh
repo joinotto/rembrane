@@ -96,9 +96,10 @@ rg -q 'no-new-privileges:true' compose.yaml
 rg -q 'cap_drop:' compose.yaml
 rg -q 'read_only: true' compose.yaml
 rg -q '/tmp:size=16m,mode=1777' compose.yaml
-rg -q 'REMBRANE_WORKSPACE_KEY_REFERENCE: file:/run/secrets/rembrane_workspace_key' \
+rg -q '/run/rembrane-secrets:size=1m,mode=0700' compose.yaml
+rg -q 'REMBRANE_WORKSPACE_KEY_REFERENCE: file:/run/rembrane-secrets/rembrane_workspace_key' \
     compose.yaml
-rg -q 'REMBRANE_API_TOKEN_REFERENCE: file:/run/secrets/rembrane_api_token' compose.yaml
+rg -q 'REMBRANE_API_TOKEN_REFERENCE: file:/run/rembrane-secrets/rembrane_api_token' compose.yaml
 if rg -q '^[[:space:]]+(REMBRANE_WORKSPACE_KEY_HEX|REMBRANE_API_TOKEN):' compose.yaml; then
     echo "core Compose must not interpolate raw workspace or API credentials" >&2
     exit 1
@@ -118,6 +119,7 @@ rg -q 'REMBRANE_GRAPHITI_BEARER_TOKEN_FILE' compose.graphiti.yaml
 rg -q 'REMBRANE_GRAPHITI_NEO4J_AUTH_FILE' compose.graphiti.yaml
 rg -q 'REMBRANE_GRAPHITI_OPENAI_API_KEY_FILE' compose.graphiti.yaml
 rg -q 'file:/run/secrets/rembrane_graphiti_bearer_token' compose.graphiti.yaml
+rg -q 'file:/run/rembrane-secrets/rembrane_graphiti_bearer_token' compose.graphiti.yaml
 rg -q 'NEO4J_AUTH_FILE: /run/secrets/rembrane_graphiti_neo4j_auth' compose.graphiti.yaml
 rg -q 'OPENAI_API_KEY_REFERENCE: file:/run/secrets/rembrane_graphiti_openai_api_key' \
     compose.graphiti.yaml
@@ -173,8 +175,10 @@ rg -q 'REMBRANE_API_TOKEN_REFERENCE' compose.yaml
 rg -q 'no-new-privileges:true' compose.whatsapp.yaml
 test "$(rg -c 'read_only: true' compose.whatsapp.yaml)" -eq 2
 test "$(rg -c '/tmp:size=16m,mode=1777' compose.whatsapp.yaml)" -eq 2
+test "$(rg -c '/run/rembrane-secrets:size=1m,mode=0700' compose.whatsapp.yaml)" -eq 2
 test "$(rg -c 'read_only: true' compose.mobile-share.yaml)" -eq 1
 test "$(rg -c '/tmp:size=16m,mode=1777' compose.mobile-share.yaml)" -eq 1
+test "$(rg -c '/run/rembrane-secrets:size=1m,mode=0700' compose.mobile-share.yaml)" -eq 1
 test "$(rg 'REMBRANE_SKIP_WORKSPACE_INIT: \"1\"' \
     compose.whatsapp.yaml compose.mobile-share.yaml | wc -l | tr -d ' ')" -eq 3
 rg -q 'USER 10002:10002' sidecars/rembrane-graphiti/Dockerfile

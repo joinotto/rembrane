@@ -339,7 +339,9 @@ their values into container environment metadata. The local file-backed key
 mode is for development and single-node self-hosting; production deployments
 should use an OS keychain or customer-controlled key provider. The service
 root filesystem is read-only; only the encrypted data volume and bounded
-temporary filesystem remain writable.
+temporary filesystems remain writable. At startup, mounted Compose secrets
+are copied into a private runtime tmpfs with enforced owner-only permissions
+before the service drops root privileges.
 
 ## Contributing
 

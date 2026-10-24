@@ -12,8 +12,8 @@ services:
       REMBRANE_READ_PERMISSIONS: ${REMBRANE_READ_PERMISSIONS:-}
       REMBRANE_KEY_PROVIDER: environment
       REMBRANE_WORKSPACE_KEY_ID: ${REMBRANE_WORKSPACE_KEY_ID:?required}
-      REMBRANE_WORKSPACE_KEY_REFERENCE: file:/run/secrets/rembrane_workspace_key
-      REMBRANE_API_TOKEN_REFERENCE: file:/run/secrets/rembrane_api_token
+      REMBRANE_WORKSPACE_KEY_REFERENCE: file:/run/rembrane-secrets/rembrane_workspace_key
+      REMBRANE_API_TOKEN_REFERENCE: file:/run/rembrane-secrets/rembrane_api_token
       REMBRANE_LISTEN: 0.0.0.0:8787
       REMBRANE_ALLOW_NON_LOOPBACK: "1"
     secrets:
@@ -34,6 +34,7 @@ services:
     read_only: true
     tmpfs:
       - /tmp:size=16m,mode=1777
+      - /run/rembrane-secrets:size=1m,mode=0700
     security_opt:
       - no-new-privileges:true
     cap_drop:

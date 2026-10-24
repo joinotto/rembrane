@@ -11,11 +11,11 @@ services:
       REMBRANE_WORKSPACE_ID: ${REMBRANE_WORKSPACE_ID:?required}
       REMBRANE_KEY_PROVIDER: environment
       REMBRANE_WORKSPACE_KEY_ID: ${REMBRANE_WORKSPACE_KEY_ID:?required}
-      REMBRANE_WORKSPACE_KEY_REFERENCE: file:/run/secrets/rembrane_workspace_key
+      REMBRANE_WORKSPACE_KEY_REFERENCE: file:/run/rembrane-secrets/rembrane_workspace_key
       REMBRANE_GRAPH_PROVIDER: graphiti
       REMBRANE_GRAPH_PROVIDER_ALLOW_PLAINTEXT: "true"
       REMBRANE_GRAPHITI_BASE_URL: http://graphiti-sidecar:8793
-      REMBRANE_GRAPHITI_BEARER_TOKEN_REFERENCE: file:/run/secrets/rembrane_graphiti_bearer_token
+      REMBRANE_GRAPHITI_BEARER_TOKEN_REFERENCE: file:/run/rembrane-secrets/rembrane_graphiti_bearer_token
       REMBRANE_GRAPH_WORKER_POLL_MILLISECONDS: ${REMBRANE_GRAPH_WORKER_POLL_MILLISECONDS:-1000}
       REMBRANE_GRAPH_WORKER_MAXIMUM_ATTEMPTS: ${REMBRANE_GRAPH_WORKER_MAXIMUM_ATTEMPTS:-5}
     secrets:
@@ -37,6 +37,7 @@ services:
     read_only: true
     tmpfs:
       - /tmp:size=16m,mode=1777
+      - /run/rembrane-secrets:size=1m,mode=0700
     security_opt:
       - no-new-privileges:true
     cap_drop:

@@ -75,6 +75,9 @@ This roadmap describes sequencing, not release dates.
     canonical service to initialize shared storage.
   - [x] Make the canonical and channel-service container roots read-only with
     only encrypted state volumes and bounded temporary filesystems writable.
+  - [x] Stage file-backed Compose secrets into an owner-only runtime tmpfs
+    before dropping privileges so strict file validation does not depend on
+    Compose implementations honoring secret ownership metadata.
 - [ ] Add production OS-keychain and customer-KMS key providers.
   - [x] Honor environment or macOS Keychain selection uniformly in the CLI,
     REST API, and MCP server, including historical-key reads.

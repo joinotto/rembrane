@@ -9,6 +9,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- Container-entrypoint staging of mounted secrets into a bounded owner-only
+  runtime tmpfs before privilege drop, avoiding dependence on Compose
+  implementations preserving requested file ownership and modes.
 - Read-only root filesystems and bounded temporary mounts for the canonical
   REST service, WhatsApp gateway, channel worker, and mobile-share gateway.
 - File-backed Cloudflare Tunnel token injection through `--token-file`, with a

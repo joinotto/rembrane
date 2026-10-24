@@ -8,8 +8,8 @@ services:
     environment:
       REMBRANE_DATABASE: /var/lib/rembrane/rembrane.db
       REMBRANE_SKIP_WORKSPACE_INIT: "1"
-      REMBRANE_MOBILE_SHARE_SIGNING_SECRET_REFERENCE: file:/run/secrets/rembrane_mobile_share_signing
-      REMBRANE_MOBILE_SHARE_BINDING_LOOKUP_SECRET_REFERENCE: file:/run/secrets/rembrane_mobile_share_binding_lookup
+      REMBRANE_MOBILE_SHARE_SIGNING_SECRET_REFERENCE: file:/run/rembrane-secrets/rembrane_mobile_share_signing
+      REMBRANE_MOBILE_SHARE_BINDING_LOOKUP_SECRET_REFERENCE: file:/run/rembrane-secrets/rembrane_mobile_share_binding_lookup
       REMBRANE_MOBILE_SHARE_MAXIMUM_EVENT_AGE_SECONDS: ${REMBRANE_MOBILE_SHARE_MAXIMUM_EVENT_AGE_SECONDS:-300}
       REMBRANE_MOBILE_SHARE_REPLAY_WINDOW_SECONDS: ${REMBRANE_MOBILE_SHARE_REPLAY_WINDOW_SECONDS:-604800}
       REMBRANE_MOBILE_SHARE_MAXIMUM_REPLAY_EVENTS: ${REMBRANE_MOBILE_SHARE_MAXIMUM_REPLAY_EVENTS:-100000}
@@ -17,7 +17,7 @@ services:
       REMBRANE_MOBILE_SHARE_ALLOW_NON_LOOPBACK: "1"
       REMBRANE_KEY_PROVIDER: ${REMBRANE_KEY_PROVIDER:-environment}
       REMBRANE_WORKSPACE_KEY_ID: ${REMBRANE_WORKSPACE_KEY_ID:-}
-      REMBRANE_WORKSPACE_KEY_REFERENCE: ${REMBRANE_WORKSPACE_KEY_REFERENCE:-file:/run/secrets/rembrane_workspace_key}
+      REMBRANE_WORKSPACE_KEY_REFERENCE: ${REMBRANE_WORKSPACE_KEY_REFERENCE:-file:/run/rembrane-secrets/rembrane_workspace_key}
       REMBRANE_KEYCHAIN_SERVICE: ${REMBRANE_KEYCHAIN_SERVICE:-}
       REMBRANE_KEYCHAIN_ACCOUNT: ${REMBRANE_KEYCHAIN_ACCOUNT:-}
       REMBRANE_KEYCHAIN_HISTORICAL_KEYS: ${REMBRANE_KEYCHAIN_HISTORICAL_KEYS:-}
@@ -52,6 +52,7 @@ services:
     read_only: true
     tmpfs:
       - /tmp:size=16m,mode=1777
+      - /run/rembrane-secrets:size=1m,mode=0700
     security_opt:
       - no-new-privileges:true
     cap_drop:
