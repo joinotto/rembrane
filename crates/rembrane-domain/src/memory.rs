@@ -1,6 +1,4 @@
-use crate::{
-    EvidenceReference, MemoryId, MemoryScope, PrincipalId, WorkspaceId,
-};
+use crate::{EvidenceReference, MemoryId, MemoryScope, PrincipalId, WorkspaceId};
 use std::error::Error;
 use std::fmt::{self, Display};
 
@@ -41,18 +39,12 @@ impl Display for MemoryLifecycleError {
             Self::ContentTooLarge => {
                 formatter.write_str("content exceeds the canonical byte limit")
             }
-            Self::MissingEvidence => {
-                formatter.write_str("memory must reference evidence")
-            }
+            Self::MissingEvidence => formatter.write_str("memory must reference evidence"),
             Self::InvalidStatus => {
                 formatter.write_str("memory status does not allow this transition")
             }
-            Self::InvalidVersion => {
-                formatter.write_str("memory version must be greater than zero")
-            }
-            Self::VersionOverflow => {
-                formatter.write_str("memory version cannot be incremented")
-            }
+            Self::InvalidVersion => formatter.write_str("memory version must be greater than zero"),
+            Self::VersionOverflow => formatter.write_str("memory version cannot be incremented"),
         }
     }
 }
@@ -223,10 +215,7 @@ impl MemoryRecord {
         })
     }
 
-    pub fn confirm(
-        mut self,
-        evidence: EvidenceReference,
-    ) -> Result<Self, MemoryLifecycleError> {
+    pub fn confirm(mut self, evidence: EvidenceReference) -> Result<Self, MemoryLifecycleError> {
         if self.status != MemoryStatus::Proposed {
             return Err(MemoryLifecycleError::InvalidStatus);
         }
@@ -266,10 +255,7 @@ impl MemoryRecord {
         Ok(self)
     }
 
-    pub fn delete(
-        mut self,
-        evidence: EvidenceReference,
-    ) -> Result<Self, MemoryLifecycleError> {
+    pub fn delete(mut self, evidence: EvidenceReference) -> Result<Self, MemoryLifecycleError> {
         if self.status == MemoryStatus::Deleted {
             return Err(MemoryLifecycleError::InvalidStatus);
         }
@@ -287,12 +273,10 @@ impl MemoryRecord {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        MemoryKind, MemoryLifecycleError, MemoryRecord, MemoryStatus,
-    };
+    use super::{MemoryKind, MemoryLifecycleError, MemoryRecord, MemoryStatus};
     use crate::{
-        EvidenceId, EvidenceReference, EvidenceSource, MemoryId, MemoryScope,
-        PrincipalId, WorkspaceId,
+        EvidenceId, EvidenceReference, EvidenceSource, MemoryId, MemoryScope, PrincipalId,
+        WorkspaceId,
     };
 
     #[test]

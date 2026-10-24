@@ -1,10 +1,10 @@
 use rembrane_application::{
-    ApplicationError, AuthorizeClientCommand, AuthorizeClientService,
-    MembershipRepository, WorkspaceRepository,
+    ApplicationError, AuthorizeClientCommand, AuthorizeClientService, MembershipRepository,
+    WorkspaceRepository,
 };
 use rembrane_domain::{
-    ClientId, Membership, Principal, PrincipalId, ReadScope, Workspace,
-    WorkspaceId, WorkspaceRole, WritePermission,
+    ClientId, Membership, Principal, PrincipalId, ReadScope, Workspace, WorkspaceId, WorkspaceRole,
+    WritePermission,
 };
 use rembrane_store_sqlite::SqliteStore;
 
@@ -26,18 +26,24 @@ fn persists_personal_workspace_bootstrap() {
         )
         .expect("bootstrap succeeds");
 
-    assert!(store
-        .find_principal(&principal_id)
-        .expect("lookup succeeds")
-        .is_some());
-    assert!(store
-        .find_workspace(&workspace_id)
-        .expect("lookup succeeds")
-        .is_some());
-    assert!(store
-        .find_membership(&workspace_id, &principal_id)
-        .expect("lookup succeeds")
-        .is_some());
+    assert!(
+        store
+            .find_principal(&principal_id)
+            .expect("lookup succeeds")
+            .is_some()
+    );
+    assert!(
+        store
+            .find_workspace(&workspace_id)
+            .expect("lookup succeeds")
+            .is_some()
+    );
+    assert!(
+        store
+            .find_membership(&workspace_id, &principal_id)
+            .expect("lookup succeeds")
+            .is_some()
+    );
 }
 
 #[test]
@@ -72,10 +78,12 @@ fn duplicate_bootstrap_does_not_create_partial_workspace() {
         .expect_err("duplicate principal must fail");
 
     assert_eq!(error, ApplicationError::AlreadyExists);
-    assert!(store
-        .find_workspace(&second_workspace_id)
-        .expect("lookup succeeds")
-        .is_none());
+    assert!(
+        store
+            .find_workspace(&second_workspace_id)
+            .expect("lookup succeeds")
+            .is_none()
+    );
 }
 
 #[test]
@@ -88,18 +96,16 @@ fn membership_lookup_is_tenant_scoped() {
         .initialize_personal_workspace(
             Principal::new(principal_id.clone()),
             Workspace::personal(workspace_id.clone()),
-            Membership::new(
-                workspace_id,
-                principal_id.clone(),
-                WorkspaceRole::Owner,
-            ),
+            Membership::new(workspace_id, principal_id.clone(), WorkspaceRole::Owner),
         )
         .expect("bootstrap succeeds");
 
-    assert!(store
-        .find_membership(&WorkspaceId::new("workspace_other"), &principal_id)
-        .expect("lookup succeeds")
-        .is_none());
+    assert!(
+        store
+            .find_membership(&WorkspaceId::new("workspace_other"), &principal_id)
+            .expect("lookup succeeds")
+            .is_none()
+    );
 }
 
 #[test]

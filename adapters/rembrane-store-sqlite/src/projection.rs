@@ -1,19 +1,14 @@
-use rembrane_application::{
-    ApplicationError, ProjectionOutboxRepository,
-};
+use rembrane_application::{ApplicationError, ProjectionOutboxRepository};
 use rembrane_domain::{
-    MemoryId, ProjectionJob, ProjectionJobId, ProjectionOperation,
-    ProjectionStatus, ProviderId, WorkspaceId,
+    MemoryId, ProjectionJob, ProjectionJobId, ProjectionOperation, ProjectionStatus, ProviderId,
+    WorkspaceId,
 };
 use rusqlite::{OptionalExtension, params};
 
 use crate::{SqliteStore, map_write_error};
 
 impl<C> ProjectionOutboxRepository for SqliteStore<C> {
-    fn enqueue_projection(
-        &mut self,
-        job: ProjectionJob,
-    ) -> Result<(), ApplicationError> {
+    fn enqueue_projection(&mut self, job: ProjectionJob) -> Result<(), ApplicationError> {
         let memory_version = to_i64(job.memory_version())?;
         self.connection
             .execute(
@@ -176,21 +171,17 @@ impl TryFrom<ProjectionRow> for ProjectionJob {
             ProjectionJobId::new(row.id),
             WorkspaceId::new(row.workspace_id),
             MemoryId::new(row.memory_id),
-            u64::try_from(row.memory_version)
-                .map_err(|_| ApplicationError::StorageUnavailable)?,
+            u64::try_from(row.memory_version).map_err(|_| ApplicationError::StorageUnavailable)?,
             ProviderId::new(row.provider_id),
             decode_operation(&row.operation)?,
             decode_status(&row.status)?,
-            u32::try_from(row.attempts)
-                .map_err(|_| ApplicationError::StorageUnavailable)?,
+            u32::try_from(row.attempts).map_err(|_| ApplicationError::StorageUnavailable)?,
         )
         .map_err(|_| ApplicationError::StorageUnavailable)
     }
 }
 
-fn decode_projection_row(
-    row: &rusqlite::Row<'_>,
-) -> rusqlite::Result<ProjectionRow> {
+fn decode_projection_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ProjectionRow> {
     Ok(ProjectionRow {
         id: row.get(0)?,
         workspace_id: row.get(1)?,
@@ -210,9 +201,7 @@ const fn encode_operation(operation: ProjectionOperation) -> &'static str {
     }
 }
 
-fn decode_operation(
-    operation: &str,
-) -> Result<ProjectionOperation, ApplicationError> {
+fn decode_operation(operation: &str) -> Result<ProjectionOperation, ApplicationError> {
     match operation {
         "upsert" => Ok(ProjectionOperation::Upsert),
         "delete" => Ok(ProjectionOperation::Delete),
@@ -240,7 +229,6 @@ fn decode_status(status: &str) -> Result<ProjectionStatus, ApplicationError> {
 }
 
 fn to_i64(value: u64) -> Result<i64, ApplicationError> {
-    i64::try_from(value).map_err(|_| {
-        ApplicationError::Validation("numeric value exceeds SQLite range".to_owned())
-    })
+    i64::try_from(value)
+        .map_err(|_| ApplicationError::Validation("numeric value exceeds SQLite range".to_owned()))
 }

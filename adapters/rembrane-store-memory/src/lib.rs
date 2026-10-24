@@ -1,18 +1,15 @@
 //! Volatile reference adapter used by tests, examples, and local prototypes.
 
 use rembrane_application::{
-    ApplicationError, CanonicalMutationRepository,
-    CheckpointDisclosureRepository, CheckpointMutationRepository,
-    CheckpointRepository, DisclosureRepository, EventRepository,
-    MembershipRepository, MemoryRepository, ProjectionOutboxRepository,
-    WorkspaceRepository,
+    ApplicationError, CanonicalMutationRepository, CheckpointDisclosureRepository,
+    CheckpointMutationRepository, CheckpointRepository, DisclosureRepository, EventRepository,
+    MembershipRepository, MemoryRepository, ProjectionOutboxRepository, WorkspaceRepository,
 };
 use rembrane_domain::{
-    ActivityCheckpoint, ActivityId, CanonicalEvent,
-    CheckpointDisclosureReceipt, DisclosureReceipt, Membership, MemoryId,
-    MemoryRecord, Principal, PrincipalId, ProjectionJob, ProjectionJobId,
-    ProjectionOperation, ProjectionStatus, ProviderId, Workspace, WorkspaceId,
-    WorkspaceKind, WorkspaceRole,
+    ActivityCheckpoint, ActivityId, CanonicalEvent, CheckpointDisclosureReceipt, DisclosureReceipt,
+    Membership, MemoryId, MemoryRecord, Principal, PrincipalId, ProjectionJob, ProjectionJobId,
+    ProjectionOperation, ProjectionStatus, ProviderId, Workspace, WorkspaceId, WorkspaceKind,
+    WorkspaceRole,
 };
 
 #[derive(Debug, Default)]
@@ -54,8 +51,7 @@ impl WorkspaceRepository for InMemoryStore {
                 .iter()
                 .any(|stored| stored.id() == workspace.id())
             || self.memberships.iter().any(|stored| {
-                stored.workspace_id() == workspace.id()
-                    && stored.principal_id() == principal.id()
+                stored.workspace_id() == workspace.id() && stored.principal_id() == principal.id()
             })
         {
             return Err(ApplicationError::AlreadyExists);
@@ -116,10 +112,7 @@ impl MemoryRepository for InMemoryStore {
         Ok(self
             .memories
             .iter()
-            .find(|memory| {
-                memory.workspace_id() == workspace_id
-                    && memory.id() == memory_id
-            })
+            .find(|memory| memory.workspace_id() == workspace_id && memory.id() == memory_id)
             .cloned())
     }
 
@@ -132,13 +125,11 @@ impl MemoryRepository for InMemoryStore {
             .memories
             .iter()
             .filter(|memory| {
-                memory.workspace_id() == workspace_id
-                    && memory.subject_id() == subject_id
+                memory.workspace_id() == workspace_id && memory.subject_id() == subject_id
             })
             .cloned()
             .collect())
     }
-
 }
 
 impl CanonicalMutationRepository for InMemoryStore {
@@ -155,8 +146,7 @@ impl CanonicalMutationRepository for InMemoryStore {
             ));
         }
         if self.memories.iter().any(|stored| {
-            stored.workspace_id() == memory.workspace_id()
-                && stored.id() == memory.id()
+            stored.workspace_id() == memory.workspace_id() && stored.id() == memory.id()
         }) {
             return Err(ApplicationError::AlreadyExists);
         }
@@ -187,14 +177,12 @@ impl CanonicalMutationRepository for InMemoryStore {
             .memories
             .iter()
             .position(|stored| {
-                stored.workspace_id() == memory.workspace_id()
-                    && stored.id() == memory.id()
+                stored.workspace_id() == memory.workspace_id() && stored.id() == memory.id()
             })
             .ok_or(ApplicationError::NotFound)?;
         let stored = &self.memories[position];
         if stored.version() != expected_memory_version
-            || memory.version()
-                != expected_memory_version.saturating_add(1)
+            || memory.version() != expected_memory_version.saturating_add(1)
         {
             return Err(ApplicationError::VersionConflict);
         }
@@ -209,10 +197,7 @@ impl CanonicalMutationRepository for InMemoryStore {
 }
 
 impl DisclosureRepository for InMemoryStore {
-    fn append(
-        &mut self,
-        receipt: DisclosureReceipt,
-    ) -> Result<(), ApplicationError> {
+    fn append(&mut self, receipt: DisclosureReceipt) -> Result<(), ApplicationError> {
         let duplicate = self
             .disclosures
             .iter()
@@ -232,9 +217,7 @@ impl CheckpointDisclosureRepository for InMemoryStore {
         &mut self,
         receipt: CheckpointDisclosureReceipt,
     ) -> Result<(), ApplicationError> {
-        if receipt.purpose.trim().is_empty()
-            || receipt.checkpoint_version == 0
-        {
+        if receipt.purpose.trim().is_empty() || receipt.checkpoint_version == 0 {
             return Err(ApplicationError::Validation(
                 "invalid checkpoint disclosure".to_owned(),
             ));
@@ -262,10 +245,7 @@ impl CheckpointDisclosureRepository for InMemoryStore {
 }
 
 impl ProjectionOutboxRepository for InMemoryStore {
-    fn enqueue_projection(
-        &mut self,
-        job: ProjectionJob,
-    ) -> Result<(), ApplicationError> {
+    fn enqueue_projection(&mut self, job: ProjectionJob) -> Result<(), ApplicationError> {
         let duplicate = self.projections.iter().any(|stored| {
             stored.id() == job.id()
                 || (stored.workspace_id() == job.workspace_id()
@@ -291,8 +271,7 @@ impl ProjectionOutboxRepository for InMemoryStore {
             .projections
             .iter()
             .filter(|job| {
-                job.provider_id() == provider_id
-                    && job.status() == ProjectionStatus::Pending
+                job.provider_id() == provider_id && job.status() == ProjectionStatus::Pending
             })
             .take(limit)
             .cloned()
@@ -311,9 +290,7 @@ impl ProjectionOutboxRepository for InMemoryStore {
             .find(|stored| stored.id() == job.id())
             .ok_or(ApplicationError::NotFound)?;
 
-        if stored.status() != expected_status
-            || stored.attempts() != expected_attempts
-        {
+        if stored.status() != expected_status || stored.attempts() != expected_attempts {
             return Err(ApplicationError::VersionConflict);
         }
         if stored.workspace_id() != job.workspace_id()
@@ -339,18 +316,13 @@ impl ProjectionOutboxRepository for InMemoryStore {
         Ok(self
             .projections
             .iter()
-            .find(|job| {
-                job.workspace_id() == workspace_id && job.id() == job_id
-            })
+            .find(|job| job.workspace_id() == workspace_id && job.id() == job_id)
             .cloned())
     }
 }
 
 impl MembershipRepository for InMemoryStore {
-    fn insert_membership(
-        &mut self,
-        membership: Membership,
-    ) -> Result<(), ApplicationError> {
+    fn insert_membership(&mut self, membership: Membership) -> Result<(), ApplicationError> {
         let duplicate = self.memberships.iter().any(|stored| {
             stored.workspace_id() == membership.workspace_id()
                 && stored.principal_id() == membership.principal_id()
@@ -378,10 +350,7 @@ impl MembershipRepository for InMemoryStore {
             .cloned())
     }
 
-    fn replace_membership(
-        &mut self,
-        membership: Membership,
-    ) -> Result<(), ApplicationError> {
+    fn replace_membership(&mut self, membership: Membership) -> Result<(), ApplicationError> {
         let stored = self
             .memberships
             .iter_mut()
@@ -424,8 +393,7 @@ impl CheckpointRepository for InMemoryStore {
             .checkpoints
             .iter()
             .filter(|checkpoint| {
-                checkpoint.workspace_id() == workspace_id
-                    && checkpoint.subject_id() == subject_id
+                checkpoint.workspace_id() == workspace_id && checkpoint.subject_id() == subject_id
             })
             .cloned()
             .collect())
@@ -445,8 +413,7 @@ impl CheckpointMutationRepository for InMemoryStore {
             ));
         }
         if self.checkpoints.iter().any(|stored| {
-            stored.workspace_id() == checkpoint.workspace_id()
-                && stored.id() == checkpoint.id()
+            stored.workspace_id() == checkpoint.workspace_id() && stored.id() == checkpoint.id()
         }) {
             return Err(ApplicationError::AlreadyExists);
         }
@@ -473,14 +440,12 @@ impl CheckpointMutationRepository for InMemoryStore {
             .checkpoints
             .iter()
             .position(|stored| {
-                stored.workspace_id() == checkpoint.workspace_id()
-                    && stored.id() == checkpoint.id()
+                stored.workspace_id() == checkpoint.workspace_id() && stored.id() == checkpoint.id()
             })
             .ok_or(ApplicationError::NotFound)?;
         let stored = &self.checkpoints[position];
         if stored.version() != expected_checkpoint_version
-            || checkpoint.version()
-                != expected_checkpoint_version.saturating_add(1)
+            || checkpoint.version() != expected_checkpoint_version.saturating_add(1)
         {
             return Err(ApplicationError::VersionConflict);
         }
@@ -512,10 +477,7 @@ impl EventRepository for InMemoryStore {
             return Err(ApplicationError::SequenceConflict);
         }
 
-        let duplicate_id = self
-            .events
-            .iter()
-            .any(|stored| stored.id() == event.id());
+        let duplicate_id = self.events.iter().any(|stored| stored.id() == event.id());
         if duplicate_id {
             return Err(ApplicationError::AlreadyExists);
         }
@@ -532,10 +494,7 @@ impl EventRepository for InMemoryStore {
         let mut events: Vec<_> = self
             .events
             .iter()
-            .filter(|event| {
-                event.workspace_id() == workspace_id
-                    && event.sequence() > sequence
-            })
+            .filter(|event| event.workspace_id() == workspace_id && event.sequence() > sequence)
             .cloned()
             .collect();
         events.sort_by_key(CanonicalEvent::sequence);
@@ -561,11 +520,7 @@ impl InMemoryStore {
         {
             return Err(ApplicationError::SequenceConflict);
         }
-        if self
-            .events
-            .iter()
-            .any(|stored| stored.id() == event.id())
-        {
+        if self.events.iter().any(|stored| stored.id() == event.id()) {
             return Err(ApplicationError::AlreadyExists);
         }
         Ok(())
@@ -576,9 +531,7 @@ impl InMemoryStore {
         memory: &MemoryRecord,
         projections: &[ProjectionJob],
     ) -> Result<(), ApplicationError> {
-        let expected_operation = if memory.status()
-            == rembrane_domain::MemoryStatus::Deleted
-        {
+        let expected_operation = if memory.status() == rembrane_domain::MemoryStatus::Deleted {
             ProjectionOperation::Delete
         } else {
             ProjectionOperation::Upsert
@@ -591,16 +544,14 @@ impl InMemoryStore {
                 || projection.operation() != expected_operation
             {
                 return Err(ApplicationError::Validation(
-                    "projection does not match canonical memory mutation"
-                        .to_owned(),
+                    "projection does not match canonical memory mutation".to_owned(),
                 ));
             }
             if self.projections.iter().any(|stored| {
                 stored.id() == projection.id()
                     || (stored.workspace_id() == projection.workspace_id()
                         && stored.memory_id() == projection.memory_id()
-                        && stored.memory_version()
-                            == projection.memory_version()
+                        && stored.memory_version() == projection.memory_version()
                         && stored.provider_id() == projection.provider_id()
                         && stored.operation() == projection.operation())
             }) {
@@ -622,13 +573,11 @@ impl InMemoryStore {
 #[cfg(test)]
 mod tests {
     use rembrane_application::{
-        ApplicationError, CanonicalMutationRepository, EventRepository,
-        MemoryRepository,
+        ApplicationError, CanonicalMutationRepository, EventRepository, MemoryRepository,
     };
     use rembrane_domain::{
-        CanonicalEvent, EventId, EventPayload, EvidenceId, EvidenceReference,
-        EvidenceSource, MemoryId, MemoryRecord, MemoryScope, PrincipalId,
-        WorkspaceId,
+        CanonicalEvent, EventId, EventPayload, EvidenceId, EvidenceReference, EvidenceSource,
+        MemoryId, MemoryRecord, MemoryScope, PrincipalId, WorkspaceId,
     };
 
     use super::InMemoryStore;
@@ -756,10 +705,9 @@ mod tests {
             "Call me Hippo",
         );
 
-        insert(&mut store, memory.clone(), "event_01")
-            .expect("first insert should succeed");
-        let error = insert(&mut store, memory, "event_02")
-            .expect_err("duplicate insert should fail");
+        insert(&mut store, memory.clone(), "event_01").expect("first insert should succeed");
+        let error =
+            insert(&mut store, memory, "event_02").expect_err("duplicate insert should fail");
 
         assert_eq!(error, ApplicationError::AlreadyExists);
     }
@@ -773,8 +721,7 @@ mod tests {
             "principal_01",
             "Call me Hippo",
         );
-        insert(&mut store, original.clone(), "event_01")
-            .expect("initial insert should succeed");
+        insert(&mut store, original.clone(), "event_01").expect("initial insert should succeed");
 
         let revised = original
             .revise(
@@ -799,23 +746,13 @@ mod tests {
         )
         .expect("test event should be valid");
         let error = store
-            .replace_memory_with_event(
-                revised,
-                2,
-                revision_event,
-                Vec::new(),
-                1,
-            )
+            .replace_memory_with_event(revised, 2, revision_event, Vec::new(), 1)
             .expect_err("stale expected version should fail");
 
         assert_eq!(error, ApplicationError::VersionConflict);
     }
 
-    fn event(
-        id: &str,
-        workspace_id: &str,
-        sequence: u64,
-    ) -> CanonicalEvent {
+    fn event(id: &str, workspace_id: &str, sequence: u64) -> CanonicalEvent {
         CanonicalEvent::new(
             EventId::new(id),
             WorkspaceId::new(workspace_id),

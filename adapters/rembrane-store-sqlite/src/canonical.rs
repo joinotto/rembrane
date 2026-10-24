@@ -1,14 +1,9 @@
-use rembrane_application::{
-    ApplicationError, CanonicalMutationRepository, EventRepository,
-};
+use rembrane_application::{ApplicationError, CanonicalMutationRepository, EventRepository};
 use rembrane_codec::{decode_event, encode_event, encode_memory};
-use rembrane_crypto::{
-    EncryptedPayload, EncryptionContext, PayloadPurpose, RecordCipher,
-};
+use rembrane_crypto::{EncryptedPayload, EncryptionContext, PayloadPurpose, RecordCipher};
 use rembrane_domain::{
-    CanonicalEvent, EventPayload, EvidenceSource, MemoryKind, MemoryRecord,
-    MemoryScope, MemoryStatus, ProjectionJob, ProjectionOperation,
-    ProjectionStatus, WorkspaceId,
+    CanonicalEvent, EventPayload, EvidenceSource, MemoryKind, MemoryRecord, MemoryScope,
+    MemoryStatus, ProjectionJob, ProjectionOperation, ProjectionStatus, WorkspaceId,
 };
 use rusqlite::{OptionalExtension, Transaction, params};
 
@@ -130,26 +125,23 @@ impl<C: RecordCipher> EventRepository for SqliteStore<C> {
             )
             .map_err(|_| ApplicationError::StorageUnavailable)?;
         let rows = statement
-            .query_map(
-                params![workspace_id.as_str(), to_i64(sequence)?],
-                |row| {
-                    Ok((
-                        row.get::<_, i64>(0)?,
-                        row.get::<_, String>(1)?,
-                        row.get::<_, Vec<u8>>(2)?,
-                        row.get::<_, String>(3)?,
-                        row.get::<_, String>(4)?,
-                        row.get::<_, Vec<u8>>(5)?,
-                    ))
-                },
-            )
+            .query_map(params![workspace_id.as_str(), to_i64(sequence)?], |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Vec<u8>>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, String>(4)?,
+                    row.get::<_, Vec<u8>>(5)?,
+                ))
+            })
             .map_err(|_| ApplicationError::StorageUnavailable)?;
         let mut events = Vec::new();
         for row in rows {
             let (sequence, event_id, ciphertext, key_id, algorithm, nonce) =
                 row.map_err(|_| ApplicationError::StorageUnavailable)?;
-            let sequence = u64::try_from(sequence)
-                .map_err(|_| ApplicationError::StorageUnavailable)?;
+            let sequence =
+                u64::try_from(sequence).map_err(|_| ApplicationError::StorageUnavailable)?;
             let context = EncryptionContext::new(
                 workspace_id.clone(),
                 &event_id,
@@ -157,15 +149,14 @@ impl<C: RecordCipher> EventRepository for SqliteStore<C> {
                 PayloadPurpose::CanonicalEvent,
             )
             .map_err(|_| ApplicationError::StorageUnavailable)?;
-            let payload =
-                EncryptedPayload::new(ciphertext, key_id, algorithm, nonce)
-                    .map_err(|_| ApplicationError::StorageUnavailable)?;
+            let payload = EncryptedPayload::new(ciphertext, key_id, algorithm, nonce)
+                .map_err(|_| ApplicationError::StorageUnavailable)?;
             let plaintext = self
                 .cipher
                 .open(&context, &payload)
                 .map_err(|_| ApplicationError::StorageUnavailable)?;
-            let event = decode_event(&plaintext)
-                .map_err(|_| ApplicationError::StorageUnavailable)?;
+            let event =
+                decode_event(&plaintext).map_err(|_| ApplicationError::StorageUnavailable)?;
             if event.workspace_id() != workspace_id
                 || event.id().as_str() != event_id
                 || event.sequence() != sequence
@@ -189,8 +180,7 @@ fn seal_memory(
     cipher: &impl RecordCipher,
     memory: &MemoryRecord,
 ) -> Result<SealedRecord, ApplicationError> {
-    let plaintext =
-        encode_memory(memory).map_err(|_| ApplicationError::StorageUnavailable)?;
+    let plaintext = encode_memory(memory).map_err(|_| ApplicationError::StorageUnavailable)?;
     let context = EncryptionContext::new(
         memory.workspace_id().clone(),
         memory.id().as_str(),
@@ -213,8 +203,7 @@ pub(super) fn seal_event(
     cipher: &impl RecordCipher,
     event: &CanonicalEvent,
 ) -> Result<SealedRecord, ApplicationError> {
-    let plaintext =
-        encode_event(event).map_err(|_| ApplicationError::StorageUnavailable)?;
+    let plaintext = encode_event(event).map_err(|_| ApplicationError::StorageUnavailable)?;
     let context = EncryptionContext::new(
         event.workspace_id().clone(),
         event.id().as_str(),
@@ -339,9 +328,7 @@ fn insert_evidence(
                     memory.workspace_id().as_str(),
                     memory.id().as_str(),
                     i64::try_from(ordinal).map_err(|_| {
-                        ApplicationError::Validation(
-                            "too many evidence references".to_owned(),
-                        )
+                        ApplicationError::Validation("too many evidence references".to_owned())
                     })?,
                     evidence.id.as_str(),
                     encode_evidence_source(evidence.source)
@@ -437,9 +424,7 @@ pub(super) fn require_event_sequence(
         )
         .map_err(|_| ApplicationError::StorageUnavailable)?;
     let expected = to_i64(expected_previous_sequence)?;
-    if current != expected
-        || event_sequence != expected_previous_sequence.saturating_add(1)
-    {
+    if current != expected || event_sequence != expected_previous_sequence.saturating_add(1) {
         return Err(ApplicationError::SequenceConflict);
     }
     Ok(())
@@ -484,14 +469,18 @@ fn validate_mutation(
 
 fn event_describes_memory(payload: &EventPayload, memory: &MemoryRecord) -> bool {
     let (memory_id, version, compatible_status) = match payload {
-        EventPayload::MemoryProposed { memory_id, version } => {
-            (memory_id, version, memory.status() == MemoryStatus::Proposed)
-        }
+        EventPayload::MemoryProposed { memory_id, version } => (
+            memory_id,
+            version,
+            memory.status() == MemoryStatus::Proposed,
+        ),
         EventPayload::MemoryConfirmed { memory_id, version }
         | EventPayload::MemoryCreated { memory_id, version }
-        | EventPayload::MemoryRevised { memory_id, version } => {
-            (memory_id, version, memory.status() == MemoryStatus::Confirmed)
-        }
+        | EventPayload::MemoryRevised { memory_id, version } => (
+            memory_id,
+            version,
+            memory.status() == MemoryStatus::Confirmed,
+        ),
         EventPayload::MemoryDeleted { memory_id, version } => {
             (memory_id, version, memory.status() == MemoryStatus::Deleted)
         }
@@ -500,9 +489,7 @@ fn event_describes_memory(payload: &EventPayload, memory: &MemoryRecord) -> bool
         | EventPayload::DisclosureRecorded { .. } => return false,
     };
 
-    compatible_status
-        && memory_id == memory.id()
-        && *version == memory.version()
+    compatible_status && memory_id == memory.id() && *version == memory.version()
 }
 
 fn encode_scope(scope: &MemoryScope) -> (&'static str, Option<&str>) {
@@ -544,9 +531,7 @@ const fn encode_evidence_source(source: EvidenceSource) -> &'static str {
     }
 }
 
-const fn encode_projection_operation(
-    operation: ProjectionOperation,
-) -> &'static str {
+const fn encode_projection_operation(operation: ProjectionOperation) -> &'static str {
     match operation {
         ProjectionOperation::Upsert => "upsert",
         ProjectionOperation::Delete => "delete",
@@ -565,26 +550,17 @@ const fn encode_projection_status(status: ProjectionStatus) -> &'static str {
 fn event_type(event: &CanonicalEvent) -> &'static str {
     match event.payload() {
         rembrane_domain::EventPayload::MemoryProposed { .. } => "memory-proposed",
-        rembrane_domain::EventPayload::MemoryConfirmed { .. } => {
-            "memory-confirmed"
-        }
+        rembrane_domain::EventPayload::MemoryConfirmed { .. } => "memory-confirmed",
         rembrane_domain::EventPayload::MemoryCreated { .. } => "memory-created",
         rembrane_domain::EventPayload::MemoryRevised { .. } => "memory-revised",
         rembrane_domain::EventPayload::MemoryDeleted { .. } => "memory-deleted",
-        rembrane_domain::EventPayload::ObservationCaptured { .. } => {
-            "observation-captured"
-        }
-        rembrane_domain::EventPayload::ActivityCheckpointed { .. } => {
-            "activity-checkpointed"
-        }
-        rembrane_domain::EventPayload::DisclosureRecorded { .. } => {
-            "disclosure-recorded"
-        }
+        rembrane_domain::EventPayload::ObservationCaptured { .. } => "observation-captured",
+        rembrane_domain::EventPayload::ActivityCheckpointed { .. } => "activity-checkpointed",
+        rembrane_domain::EventPayload::DisclosureRecorded { .. } => "disclosure-recorded",
     }
 }
 
 pub(super) fn to_i64(value: u64) -> Result<i64, ApplicationError> {
-    i64::try_from(value).map_err(|_| {
-        ApplicationError::Validation("numeric value exceeds SQLite range".to_owned())
-    })
+    i64::try_from(value)
+        .map_err(|_| ApplicationError::Validation("numeric value exceeds SQLite range".to_owned()))
 }

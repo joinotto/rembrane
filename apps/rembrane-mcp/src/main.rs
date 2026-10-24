@@ -3,28 +3,23 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
 use rembrane_application::{
-    AuthorizeClientCommand, AuthorizeClientService, ClientGrantBundle,
-    CheckpointService, CreateCheckpointCommand, DeleteMemoryCommand,
-    EventRepository, MemoryLifecycleService, RememberPreferenceCommand,
-    MemoryProposalService, ProposeMemoryCommand, RememberPreferenceService,
-    ResolveContextCommand, ResolveContextService, ResumeActivityCommand,
+    AuthorizeClientCommand, AuthorizeClientService, CheckpointService, ClientGrantBundle,
+    CreateCheckpointCommand, DeleteMemoryCommand, EventRepository, MemoryLifecycleService,
+    MemoryProposalService, ProposeMemoryCommand, RememberPreferenceCommand,
+    RememberPreferenceService, ResolveContextCommand, ResolveContextService, ResumeActivityCommand,
     ReviseMemoryCommand, UpdateCheckpointCommand,
 };
-use rembrane_contracts::ResolveContextRequest;
 use rembrane_config::parse_read_scopes;
+use rembrane_contracts::ResolveContextRequest;
 use rembrane_crypto_rustcrypto::RustCryptoRecordCipher;
 use rembrane_domain::{
-    ActivityCheckpoint, ActivityId, CheckpointId, ClientId, ContextPackId,
-    DisclosureId, EntityId, EventId, EvidenceId, EvidenceReference,
-    EvidenceSource, MemoryId, MemoryKind, MemoryScope, PrincipalId, ReadScope,
-    WorkspaceId, WritePermission,
+    ActivityCheckpoint, ActivityId, CheckpointId, ClientId, ContextPackId, DisclosureId, EntityId,
+    EventId, EvidenceId, EvidenceReference, EvidenceSource, MemoryId, MemoryKind, MemoryScope,
+    PrincipalId, ReadScope, WorkspaceId, WritePermission,
 };
 use rembrane_store_sqlite::SqliteStore;
 use rmcp::handler::server::wrapper::Parameters;
-use rmcp::{
-    ErrorData as McpError, ServiceExt, schemars, tool, tool_router,
-    transport::stdio,
-};
+use rmcp::{ErrorData as McpError, ServiceExt, schemars, tool, tool_router, transport::stdio};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -155,17 +150,13 @@ struct RembraneMcp {
 impl RembraneMcp {
     fn from_environment() -> Result<Self> {
         let database = required_environment("REMBRANE_DATABASE")?;
-        let principal_id =
-            PrincipalId::new(required_environment("REMBRANE_PRINCIPAL_ID")?);
-        let workspace_id =
-            WorkspaceId::new(required_environment("REMBRANE_WORKSPACE_ID")?);
-        let client_id =
-            ClientId::new(required_environment("REMBRANE_CLIENT_ID")?);
+        let principal_id = PrincipalId::new(required_environment("REMBRANE_PRINCIPAL_ID")?);
+        let workspace_id = WorkspaceId::new(required_environment("REMBRANE_WORKSPACE_ID")?);
+        let client_id = ClientId::new(required_environment("REMBRANE_CLIENT_ID")?);
         let cipher = RustCryptoRecordCipher::from_environment()
             .context("failed to load workspace cipher")?;
         let read_scopes = parse_read_scopes(
-            &std::env::var("REMBRANE_READ_SCOPES")
-                .unwrap_or_else(|_| "global".to_owned()),
+            &std::env::var("REMBRANE_READ_SCOPES").unwrap_or_else(|_| "global".to_owned()),
         )
         .map_err(anyhow::Error::msg)?;
         let store = SqliteStore::open(database)
@@ -208,9 +199,7 @@ impl RembraneMcp {
         &self,
         Parameters(parameters): Parameters<ResolveContextParameters>,
     ) -> Result<String, McpError> {
-        if parameters.purpose.trim().is_empty()
-            || parameters.query.trim().is_empty()
-        {
+        if parameters.purpose.trim().is_empty() || parameters.query.trim().is_empty() {
             return Err(McpError::invalid_params(
                 "purpose and query must not be empty",
                 None,
@@ -260,18 +249,11 @@ impl RembraneMcp {
                     maximum_bytes,
                 },
                 grant: grants.read,
-                context_pack_id: ContextPackId::new(format!(
-                    "context_{suffix}"
-                )),
-                disclosure_id: DisclosureId::new(format!(
-                    "disclosure_{suffix}"
-                )),
+                context_pack_id: ContextPackId::new(format!("context_{suffix}")),
+                disclosure_id: DisclosureId::new(format!("disclosure_{suffix}")),
             })
             .map_err(|error| {
-                McpError::internal_error(
-                    format!("context resolution failed: {error}"),
-                    None,
-                )
+                McpError::internal_error(format!("context resolution failed: {error}"), None)
             })?;
         let output = ResolveContextOutput {
             context_pack_id: response.context_pack_id.to_string(),
@@ -287,9 +269,8 @@ impl RembraneMcp {
                 .collect(),
         };
 
-        serde_json::to_string(&output).map_err(|_| {
-            McpError::internal_error("response serialization failed", None)
-        })
+        serde_json::to_string(&output)
+            .map_err(|_| McpError::internal_error("response serialization failed", None))
     }
 
     #[tool(
@@ -301,10 +282,7 @@ impl RembraneMcp {
         Parameters(parameters): Parameters<RememberPreferenceParameters>,
     ) -> Result<String, McpError> {
         if parameters.content.trim().is_empty() {
-            return Err(McpError::invalid_params(
-                "content must not be empty",
-                None,
-            ));
+            return Err(McpError::invalid_params("content must not be empty", None));
         }
         let mut state = lock_state(&self.state)?;
         let scope = memory_scope(
@@ -440,9 +418,7 @@ impl RembraneMcp {
         &self,
         Parameters(parameters): Parameters<WorkTraceParameters>,
     ) -> Result<String, McpError> {
-        if parameters.activity_id.trim().is_empty()
-            || parameters.summary.trim().is_empty()
-        {
+        if parameters.activity_id.trim().is_empty() || parameters.summary.trim().is_empty() {
             return Err(McpError::invalid_params(
                 "activityId and summary must not be empty",
                 None,
@@ -514,15 +490,11 @@ impl RembraneMcp {
         let suffix = next_id(&mut state);
         let next_steps = parameters.next_steps.unwrap_or_default();
         let blockers = parameters.blockers.unwrap_or_default();
-        let checkpoint = if let Some(expected_version) =
-            parameters.expected_version
-        {
+        let checkpoint = if let Some(expected_version) = parameters.expected_version {
             let current = CheckpointService::new(&mut state.store)
                 .load_for_update(&grants.read, &activity_id)
                 .map_err(application_error)?
-                .ok_or_else(|| {
-                    McpError::invalid_params("activity checkpoint not found", None)
-                })?;
+                .ok_or_else(|| McpError::invalid_params("activity checkpoint not found", None))?;
             if current.version() != expected_version {
                 return Err(McpError::invalid_params(
                     "checkpoint version conflict",
@@ -531,18 +503,11 @@ impl RembraneMcp {
             }
             let updated = current
                 .update(parameters.summary, next_steps, blockers)
-                .map_err(|_| {
-                    McpError::invalid_params("invalid checkpoint update", None)
-                })?;
-            let updated = if let Some(fingerprint) =
-                parameters.state_fingerprint
-            {
-                updated.with_state_fingerprint(fingerprint).map_err(|_| {
-                    McpError::invalid_params(
-                        "invalid state fingerprint",
-                        None,
-                    )
-                })?
+                .map_err(|_| McpError::invalid_params("invalid checkpoint update", None))?;
+            let updated = if let Some(fingerprint) = parameters.state_fingerprint {
+                updated
+                    .with_state_fingerprint(fingerprint)
+                    .map_err(|_| McpError::invalid_params("invalid state fingerprint", None))?
             } else {
                 updated
             };
@@ -560,10 +525,7 @@ impl RembraneMcp {
                 .goal
                 .filter(|goal| !goal.trim().is_empty())
                 .ok_or_else(|| {
-                    McpError::invalid_params(
-                        "goal is required for a new checkpoint",
-                        None,
-                    )
+                    McpError::invalid_params("goal is required for a new checkpoint", None)
                 })?;
             let mut checkpoint = ActivityCheckpoint::new(
                 CheckpointId::new(format!("checkpoint_{suffix}")),
@@ -576,18 +538,11 @@ impl RembraneMcp {
                 next_steps,
                 blockers,
             )
-            .map_err(|_| {
-                McpError::invalid_params("invalid activity checkpoint", None)
-            })?;
+            .map_err(|_| McpError::invalid_params("invalid activity checkpoint", None))?;
             if let Some(fingerprint) = parameters.state_fingerprint {
                 checkpoint = checkpoint
                     .with_state_fingerprint(fingerprint)
-                    .map_err(|_| {
-                        McpError::invalid_params(
-                            "invalid state fingerprint",
-                            None,
-                        )
-                    })?;
+                    .map_err(|_| McpError::invalid_params("invalid state fingerprint", None))?;
             }
             CheckpointService::new(&mut state.store)
                 .create(CreateCheckpointCommand {
@@ -625,8 +580,7 @@ impl RembraneMcp {
             }],
             Vec::new(),
         )?;
-        let disclosure_id =
-            DisclosureId::new(format!("disclosure_{}", next_id(&mut state)));
+        let disclosure_id = DisclosureId::new(format!("disclosure_{}", next_id(&mut state)));
         let checkpoint = CheckpointService::new(&mut state.store)
             .resume(&ResumeActivityCommand {
                 grant: grants.read,
@@ -648,9 +602,7 @@ impl RembraneMcp {
     }
 }
 
-fn lock_state(
-    state: &Arc<Mutex<State>>,
-) -> Result<std::sync::MutexGuard<'_, State>, McpError> {
+fn lock_state(state: &Arc<Mutex<State>>) -> Result<std::sync::MutexGuard<'_, State>, McpError> {
     state
         .lock()
         .map_err(|_| McpError::internal_error("state lock failed", None))
@@ -744,13 +696,9 @@ fn memory_scope(
 fn read_scope(scope: &MemoryScope) -> ReadScope {
     match scope {
         MemoryScope::Global => ReadScope::Global,
-        MemoryScope::Domain { name } => ReadScope::Domain {
-            name: name.clone(),
-        },
+        MemoryScope::Domain { name } => ReadScope::Domain { name: name.clone() },
         MemoryScope::Entity { id } => ReadScope::Entity { id: id.clone() },
-        MemoryScope::Activity { id } => {
-            ReadScope::Activity { id: id.clone() }
-        }
+        MemoryScope::Activity { id } => ReadScope::Activity { id: id.clone() },
     }
 }
 
@@ -758,7 +706,11 @@ fn current_sequence(state: &State) -> Result<u64, McpError> {
     state
         .store
         .list_events_since(&state.workspace_id, 0)
-        .map(|events| events.last().map_or(0, rembrane_domain::CanonicalEvent::sequence))
+        .map(|events| {
+            events
+                .last()
+                .map_or(0, rembrane_domain::CanonicalEvent::sequence)
+        })
         .map_err(application_error)
 }
 
@@ -810,29 +762,21 @@ fn application_error(error: rembrane_application::ApplicationError) -> McpError 
 
     match error {
         ApplicationError::AccessDenied | ApplicationError::NotFound => {
-            McpError::invalid_params(
-                "operation is not authorized or available",
-                None,
-            )
+            McpError::invalid_params("operation is not authorized or available", None)
         }
-        ApplicationError::AlreadyExists => {
-            McpError::invalid_params("record already exists", None)
-        }
-        ApplicationError::SequenceConflict
-        | ApplicationError::VersionConflict => {
+        ApplicationError::AlreadyExists => McpError::invalid_params("record already exists", None),
+        ApplicationError::SequenceConflict | ApplicationError::VersionConflict => {
             McpError::invalid_params(
                 "operation conflicts with newer state; refresh and retry",
                 None,
             )
         }
-        ApplicationError::Validation(message) => McpError::invalid_params(
-            format!("operation validation failed: {message}"),
-            None,
-        ),
-        ApplicationError::StorageUnavailable => McpError::internal_error(
-            "memory storage is temporarily unavailable",
-            None,
-        ),
+        ApplicationError::Validation(message) => {
+            McpError::invalid_params(format!("operation validation failed: {message}"), None)
+        }
+        ApplicationError::StorageUnavailable => {
+            McpError::internal_error("memory storage is temporarily unavailable", None)
+        }
     }
 }
 

@@ -1,9 +1,7 @@
 use std::error::Error;
 use std::fmt::{self, Display};
 
-use crate::{
-    MemoryId, ProjectionJobId, ProviderId, WorkspaceId,
-};
+use crate::{MemoryId, ProjectionJobId, ProviderId, WorkspaceId};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ProjectionOperation {
@@ -32,12 +30,8 @@ impl Display for ProjectionJobError {
             Self::InvalidVersion => {
                 formatter.write_str("projection version must be greater than zero")
             }
-            Self::InvalidTransition => {
-                formatter.write_str("invalid projection status transition")
-            }
-            Self::AttemptOverflow => {
-                formatter.write_str("projection attempt count overflow")
-            }
+            Self::InvalidTransition => formatter.write_str("invalid projection status transition"),
+            Self::AttemptOverflow => formatter.write_str("projection attempt count overflow"),
         }
     }
 }
@@ -190,13 +184,8 @@ impl ProjectionJob {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        ProjectionJob, ProjectionJobError, ProjectionOperation,
-        ProjectionStatus,
-    };
-    use crate::{
-        MemoryId, ProjectionJobId, ProviderId, WorkspaceId,
-    };
+    use super::{ProjectionJob, ProjectionJobError, ProjectionOperation, ProjectionStatus};
+    use crate::{MemoryId, ProjectionJobId, ProviderId, WorkspaceId};
 
     fn job() -> ProjectionJob {
         ProjectionJob::new(
@@ -224,9 +213,6 @@ mod tests {
 
     #[test]
     fn cannot_complete_job_that_never_started() {
-        assert_eq!(
-            job().complete(),
-            Err(ProjectionJobError::InvalidTransition)
-        );
+        assert_eq!(job().complete(), Err(ProjectionJobError::InvalidTransition));
     }
 }

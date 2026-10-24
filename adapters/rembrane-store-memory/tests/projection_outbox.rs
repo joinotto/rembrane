@@ -1,9 +1,7 @@
-use rembrane_application::{
-    ApplicationError, ProjectionOutboxRepository,
-};
+use rembrane_application::{ApplicationError, ProjectionOutboxRepository};
 use rembrane_domain::{
-    MemoryId, ProjectionJob, ProjectionJobId, ProjectionOperation,
-    ProjectionStatus, ProviderId, WorkspaceId,
+    MemoryId, ProjectionJob, ProjectionJobId, ProjectionOperation, ProjectionStatus, ProviderId,
+    WorkspaceId,
 };
 use rembrane_store_memory::InMemoryStore;
 
@@ -45,9 +43,7 @@ fn worker_transition_uses_optimistic_status_and_attempts() {
         .into_iter()
         .next()
         .expect("projection should be pending");
-    let processing = pending
-        .begin()
-        .expect("pending projection should begin");
+    let processing = pending.begin().expect("pending projection should begin");
     store
         .replace_projection(processing.clone(), ProjectionStatus::Pending, 0)
         .expect("first worker should claim projection");

@@ -6,9 +6,7 @@
 
 use chacha20poly1305::aead::{Aead, KeyInit, Payload};
 use chacha20poly1305::{Key, XChaCha20Poly1305, XNonce};
-use rembrane_crypto::{
-    CryptoError, EncryptedPayload, EncryptionContext, RecordCipher,
-};
+use rembrane_crypto::{CryptoError, EncryptedPayload, EncryptionContext, RecordCipher};
 use zeroize::Zeroizing;
 
 const ALGORITHM: &str = "xchacha20poly1305-ietf";
@@ -20,10 +18,7 @@ pub struct RustCryptoRecordCipher {
 }
 
 impl RustCryptoRecordCipher {
-    pub fn new(
-        key_id: impl Into<String>,
-        key: [u8; 32],
-    ) -> Result<Self, CryptoError> {
+    pub fn new(key_id: impl Into<String>, key: [u8; 32]) -> Result<Self, CryptoError> {
         let key_id = key_id.into();
         if key_id.trim().is_empty() {
             return Err(CryptoError::KeyUnavailable);
@@ -35,11 +30,10 @@ impl RustCryptoRecordCipher {
     }
 
     pub fn from_environment() -> Result<Self, CryptoError> {
-        let key_id = std::env::var("REMBRANE_WORKSPACE_KEY_ID")
-            .map_err(|_| CryptoError::KeyUnavailable)?;
+        let key_id =
+            std::env::var("REMBRANE_WORKSPACE_KEY_ID").map_err(|_| CryptoError::KeyUnavailable)?;
         let encoded_key = Zeroizing::new(
-            std::env::var("REMBRANE_WORKSPACE_KEY_HEX")
-                .map_err(|_| CryptoError::KeyUnavailable)?,
+            std::env::var("REMBRANE_WORKSPACE_KEY_HEX").map_err(|_| CryptoError::KeyUnavailable)?,
         );
         let key = decode_key(&encoded_key)?;
         Self::new(key_id, key)
@@ -66,8 +60,7 @@ impl RecordCipher for RustCryptoRecordCipher {
         plaintext: &[u8],
     ) -> Result<EncryptedPayload, CryptoError> {
         let mut nonce = [0_u8; NONCE_LENGTH];
-        getrandom::fill(&mut nonce)
-            .map_err(|_| CryptoError::EntropyUnavailable)?;
+        getrandom::fill(&mut nonce).map_err(|_| CryptoError::EntropyUnavailable)?;
         let cipher = XChaCha20Poly1305::new(Key::from_slice(self.key.as_ref()));
         let associated_data = context.associated_data();
         let ciphertext = cipher
@@ -80,12 +73,7 @@ impl RecordCipher for RustCryptoRecordCipher {
             )
             .map_err(|_| CryptoError::AuthenticationFailed)?;
 
-        EncryptedPayload::new(
-            ciphertext,
-            self.key_id.clone(),
-            ALGORITHM,
-            nonce.to_vec(),
-        )
+        EncryptedPayload::new(ciphertext, self.key_id.clone(), ALGORITHM, nonce.to_vec())
     }
 
     fn open(
@@ -119,9 +107,7 @@ impl RecordCipher for RustCryptoRecordCipher {
 
 #[cfg(test)]
 mod tests {
-    use rembrane_crypto::{
-        CryptoError, EncryptionContext, PayloadPurpose, RecordCipher,
-    };
+    use rembrane_crypto::{CryptoError, EncryptionContext, PayloadPurpose, RecordCipher};
     use rembrane_domain::WorkspaceId;
 
     use super::RustCryptoRecordCipher;
@@ -138,8 +124,7 @@ mod tests {
 
     #[test]
     fn round_trips_authenticated_record() {
-        let cipher =
-            RustCryptoRecordCipher::new("key_01", [7; 32]).expect("key is valid");
+        let cipher = RustCryptoRecordCipher::new("key_01", [7; 32]).expect("key is valid");
         let encrypted = cipher
             .seal(&context("workspace_01"), b"Call me Hippo")
             .expect("encryption succeeds");
@@ -152,8 +137,7 @@ mod tests {
 
     #[test]
     fn rejects_cross_workspace_substitution() {
-        let cipher =
-            RustCryptoRecordCipher::new("key_01", [7; 32]).expect("key is valid");
+        let cipher = RustCryptoRecordCipher::new("key_01", [7; 32]).expect("key is valid");
         let encrypted = cipher
             .seal(&context("workspace_01"), b"Call me Hippo")
             .expect("encryption succeeds");

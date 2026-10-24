@@ -1,16 +1,8 @@
-use rembrane_application::{
-    ApplicationError, MembershipRepository,
-};
-use rembrane_domain::{
-    Membership, MembershipStatus, PrincipalId, WorkspaceId, WorkspaceRole,
-};
+use rembrane_application::{ApplicationError, MembershipRepository};
+use rembrane_domain::{Membership, MembershipStatus, PrincipalId, WorkspaceId, WorkspaceRole};
 use rembrane_store_memory::InMemoryStore;
 
-fn membership(
-    workspace_id: &str,
-    principal_id: &str,
-    role: WorkspaceRole,
-) -> Membership {
+fn membership(workspace_id: &str, principal_id: &str, role: WorkspaceRole) -> Membership {
     Membership::new(
         WorkspaceId::new(workspace_id),
         PrincipalId::new(principal_id),
@@ -52,11 +44,7 @@ fn membership_lookup_requires_workspace_and_principal() {
 #[test]
 fn removed_membership_replaces_active_state() {
     let mut store = InMemoryStore::new();
-    let active = membership(
-        "workspace_01",
-        "principal_01",
-        WorkspaceRole::Member,
-    );
+    let active = membership("workspace_01", "principal_01", WorkspaceRole::Member);
     store
         .insert_membership(active.clone())
         .expect("membership insert should succeed");
@@ -79,11 +67,7 @@ fn removed_membership_replaces_active_state() {
 #[test]
 fn duplicate_membership_is_rejected() {
     let mut store = InMemoryStore::new();
-    let member = membership(
-        "workspace_01",
-        "principal_01",
-        WorkspaceRole::Member,
-    );
+    let member = membership("workspace_01", "principal_01", WorkspaceRole::Member);
     store
         .insert_membership(member.clone())
         .expect("membership insert should succeed");

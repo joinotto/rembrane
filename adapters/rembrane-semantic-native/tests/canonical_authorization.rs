@@ -1,25 +1,17 @@
 use rembrane_application::{
-    CanonicalMutationRepository, ResolveContextCommand,
-    SemanticContextService,
+    CanonicalMutationRepository, ResolveContextCommand, SemanticContextService,
 };
 use rembrane_contracts::ResolveContextRequest;
 use rembrane_domain::{
-    CanonicalEvent, ClientId, ContextPackId, DisclosureId, EntityId, EventId,
-    EventPayload, EvidenceId, EvidenceReference, EvidenceSource, MemoryId,
-    MemoryKind, MemoryRecord, MemoryScope, PrincipalId, ReadGrant, ReadScope,
-    WorkspaceId,
+    CanonicalEvent, ClientId, ContextPackId, DisclosureId, EntityId, EventId, EventPayload,
+    EvidenceId, EvidenceReference, EvidenceSource, MemoryId, MemoryKind, MemoryRecord, MemoryScope,
+    PrincipalId, ReadGrant, ReadScope, WorkspaceId,
 };
-use rembrane_provider_sdk::{
-    AuthorizedMemoryProjection, SemanticMemoryProvider,
-};
+use rembrane_provider_sdk::{AuthorizedMemoryProjection, SemanticMemoryProvider};
 use rembrane_semantic_native::NativeSemanticProvider;
 use rembrane_store_memory::InMemoryStore;
 
-fn memory(
-    memory_id: &str,
-    subject_id: &str,
-    scope: MemoryScope,
-) -> MemoryRecord {
+fn memory(memory_id: &str, subject_id: &str, scope: MemoryScope) -> MemoryRecord {
     MemoryRecord::confirmed_preference(
         MemoryId::new(memory_id),
         WorkspaceId::new("workspace_01"),
@@ -113,11 +105,7 @@ fn provider_candidate_is_rejected_without_canonical_grant() {
 
 #[test]
 fn provider_candidate_for_another_subject_is_rejected() {
-    let private_memory = memory(
-        "memory_private",
-        "principal_other",
-        MemoryScope::Global,
-    );
+    let private_memory = memory("memory_private", "principal_other", MemoryScope::Global);
     let mut store = InMemoryStore::new();
     insert(&mut store, private_memory.clone(), "event_01");
     let mut provider = NativeSemanticProvider::new();

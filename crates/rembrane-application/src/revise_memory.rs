@@ -1,7 +1,6 @@
 use rembrane_domain::{
-    CanonicalEvent, EventId, EventPayload, EvidenceReference, MemoryId,
-    MemoryRecord, PrincipalId, ProjectionJob, WorkspaceId, WriteGrant,
-    WritePermission,
+    CanonicalEvent, EventId, EventPayload, EvidenceReference, MemoryId, MemoryRecord, PrincipalId,
+    ProjectionJob, WorkspaceId, WriteGrant, WritePermission,
 };
 
 use crate::{ApplicationError, CanonicalMutationRepository};
@@ -152,10 +151,7 @@ fn event(
     .map_err(|error| ApplicationError::Validation(error.to_string()))
 }
 
-fn authorize(
-    grant: &WriteGrant,
-    permission: WritePermission,
-) -> Result<(), ApplicationError> {
+fn authorize(grant: &WriteGrant, permission: WritePermission) -> Result<(), ApplicationError> {
     if grant.allows(permission) {
         Ok(())
     } else {
@@ -163,10 +159,7 @@ fn authorize(
     }
 }
 
-fn authorize_scope(
-    grant: &WriteGrant,
-    memory: &MemoryRecord,
-) -> Result<(), ApplicationError> {
+fn authorize_scope(grant: &WriteGrant, memory: &MemoryRecord) -> Result<(), ApplicationError> {
     if grant.allows_scope(memory.scope()) {
         Ok(())
     } else {
@@ -174,10 +167,7 @@ fn authorize_scope(
     }
 }
 
-fn ensure_version(
-    memory: &MemoryRecord,
-    expected_version: u64,
-) -> Result<(), ApplicationError> {
+fn ensure_version(memory: &MemoryRecord, expected_version: u64) -> Result<(), ApplicationError> {
     if memory.version() == expected_version {
         Ok(())
     } else {

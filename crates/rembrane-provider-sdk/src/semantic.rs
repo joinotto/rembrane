@@ -34,15 +34,9 @@ pub struct CandidateMemory {
 pub trait SemanticMemoryProvider {
     fn manifest(&self) -> ProviderManifest;
 
-    fn index(
-        &mut self,
-        projection: AuthorizedMemoryProjection,
-    ) -> Result<(), ProviderError>;
+    fn index(&mut self, projection: AuthorizedMemoryProjection) -> Result<(), ProviderError>;
 
-    fn search(
-        &self,
-        query: &SemanticQuery,
-    ) -> Result<Vec<CandidateMemory>, ProviderError>;
+    fn search(&self, query: &SemanticQuery) -> Result<Vec<CandidateMemory>, ProviderError>;
 
     fn delete(
         &mut self,

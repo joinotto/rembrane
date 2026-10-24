@@ -1,9 +1,5 @@
-use rembrane_application::{
-    ApplicationError, MembershipRepository, WorkspaceRepository,
-};
-use rembrane_domain::{
-    Membership, Principal, PrincipalId, Workspace, WorkspaceId, WorkspaceRole,
-};
+use rembrane_application::{ApplicationError, MembershipRepository, WorkspaceRepository};
+use rembrane_domain::{Membership, Principal, PrincipalId, Workspace, WorkspaceId, WorkspaceRole};
 use rembrane_store_memory::InMemoryStore;
 
 #[test]

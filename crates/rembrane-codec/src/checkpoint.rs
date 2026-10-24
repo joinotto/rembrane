@@ -1,6 +1,5 @@
 use rembrane_domain::{
-    ActivityCheckpoint, ActivityId, CheckpointId, EntityId, PrincipalId,
-    WorkspaceId,
+    ActivityCheckpoint, ActivityId, CheckpointId, EntityId, PrincipalId, WorkspaceId,
 };
 use serde::{Deserialize, Serialize};
 
@@ -34,9 +33,7 @@ struct CheckpointDto {
     record_version: u64,
 }
 
-pub fn encode_checkpoint(
-    checkpoint: &ActivityCheckpoint,
-) -> Result<Vec<u8>, CodecError> {
+pub fn encode_checkpoint(checkpoint: &ActivityCheckpoint) -> Result<Vec<u8>, CodecError> {
     let envelope = CheckpointEnvelope {
         format: CHECKPOINT_FORMAT.to_owned(),
         version: CHECKPOINT_FORMAT_VERSION,
@@ -46,11 +43,9 @@ pub fn encode_checkpoint(
     serde_json::to_vec(&envelope).map_err(|_| CodecError::MalformedPayload)
 }
 
-pub fn decode_checkpoint(
-    payload: &[u8],
-) -> Result<ActivityCheckpoint, CodecError> {
-    let envelope: CheckpointEnvelope = serde_json::from_slice(payload)
-        .map_err(|_| CodecError::MalformedPayload)?;
+pub fn decode_checkpoint(payload: &[u8]) -> Result<ActivityCheckpoint, CodecError> {
+    let envelope: CheckpointEnvelope =
+        serde_json::from_slice(payload).map_err(|_| CodecError::MalformedPayload)?;
     if envelope.format != CHECKPOINT_FORMAT {
         return Err(CodecError::UnsupportedFormat);
     }
@@ -75,9 +70,7 @@ impl From<&ActivityCheckpoint> for CheckpointDto {
             summary: checkpoint.summary().to_owned(),
             next_steps: checkpoint.next_steps().to_vec(),
             blockers: checkpoint.blockers().to_vec(),
-            state_fingerprint: checkpoint
-                .state_fingerprint()
-                .map(str::to_owned),
+            state_fingerprint: checkpoint.state_fingerprint().map(str::to_owned),
             record_version: checkpoint.version(),
         }
     }
@@ -107,8 +100,7 @@ impl TryFrom<CheckpointDto> for ActivityCheckpoint {
 #[cfg(test)]
 mod tests {
     use rembrane_domain::{
-        ActivityCheckpoint, ActivityId, CheckpointId, EntityId, PrincipalId,
-        WorkspaceId,
+        ActivityCheckpoint, ActivityId, CheckpointId, EntityId, PrincipalId, WorkspaceId,
     };
 
     use super::{decode_checkpoint, encode_checkpoint};
@@ -140,10 +132,9 @@ mod tests {
     #[test]
     fn preserves_checkpoint_v1_wire_fixture() {
         let encoded = encode_checkpoint(&checkpoint()).expect("encoding succeeds");
-        let expected =
-            include_str!("../fixtures/checkpoint-v1-project-handoff.json")
-                .trim_end()
-                .as_bytes();
+        let expected = include_str!("../fixtures/checkpoint-v1-project-handoff.json")
+            .trim_end()
+            .as_bytes();
 
         assert_eq!(encoded, expected);
     }

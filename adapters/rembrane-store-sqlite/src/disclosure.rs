@@ -7,10 +7,7 @@ use rusqlite::{OptionalExtension, params};
 use crate::{SqliteStore, map_write_error};
 
 impl<C> DisclosureRepository for SqliteStore<C> {
-    fn append(
-        &mut self,
-        receipt: DisclosureReceipt,
-    ) -> Result<(), ApplicationError> {
+    fn append(&mut self, receipt: DisclosureReceipt) -> Result<(), ApplicationError> {
         if receipt.purpose.trim().is_empty() {
             return Err(ApplicationError::Validation(
                 "disclosure purpose must not be empty".to_owned(),
@@ -61,9 +58,7 @@ impl<C> DisclosureRepository for SqliteStore<C> {
                 .map_err(|_| ApplicationError::StorageUnavailable)?;
             if stored_version
                 != Some(i64::try_from(memory.version).map_err(|_| {
-                    ApplicationError::Validation(
-                        "memory version exceeds SQLite range".to_owned(),
-                    )
+                    ApplicationError::Validation("memory version exceeds SQLite range".to_owned())
                 })?)
             {
                 return Err(ApplicationError::VersionConflict);
@@ -88,9 +83,7 @@ impl<C> DisclosureRepository for SqliteStore<C> {
                             )
                         })?,
                         i64::try_from(ordinal).map_err(|_| {
-                            ApplicationError::Validation(
-                                "too many disclosed memories".to_owned(),
-                            )
+                            ApplicationError::Validation("too many disclosed memories".to_owned())
                         })?
                     ],
                 )
@@ -106,16 +99,13 @@ impl<C> CheckpointDisclosureRepository for SqliteStore<C> {
         &mut self,
         receipt: CheckpointDisclosureReceipt,
     ) -> Result<(), ApplicationError> {
-        if receipt.purpose.trim().is_empty() || receipt.checkpoint_version == 0
-        {
+        if receipt.purpose.trim().is_empty() || receipt.checkpoint_version == 0 {
             return Err(ApplicationError::Validation(
                 "invalid checkpoint disclosure".to_owned(),
             ));
         }
         let version = i64::try_from(receipt.checkpoint_version).map_err(|_| {
-            ApplicationError::Validation(
-                "checkpoint version exceeds SQLite range".to_owned(),
-            )
+            ApplicationError::Validation("checkpoint version exceeds SQLite range".to_owned())
         })?;
         let stored_version: Option<i64> = self
             .connection

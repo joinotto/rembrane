@@ -8,24 +8,19 @@ mod projection;
 use std::path::Path;
 
 use rembrane_application::{
-    ApplicationError, MembershipRepository, MemoryRepository,
-    WorkspaceRepository,
+    ApplicationError, MembershipRepository, MemoryRepository, WorkspaceRepository,
 };
 use rembrane_codec::decode_memory;
-use rembrane_crypto::{
-    EncryptedPayload, EncryptionContext, PayloadPurpose, RecordCipher,
-};
+use rembrane_crypto::{EncryptedPayload, EncryptionContext, PayloadPurpose, RecordCipher};
 use rembrane_domain::{
-    Membership, MembershipStatus, MemoryId, MemoryRecord, Principal,
-    PrincipalId, Workspace, WorkspaceId, WorkspaceKind, WorkspaceRole,
+    Membership, MembershipStatus, MemoryId, MemoryRecord, Principal, PrincipalId, Workspace,
+    WorkspaceId, WorkspaceKind, WorkspaceRole,
 };
 use rusqlite::{Connection, ErrorCode, OptionalExtension, params};
 
-const CANONICAL_SCHEMA: &str =
-    include_str!("../../../migrations/sqlite/0001_canonical_schema.sql");
-const CHECKPOINT_DISCLOSURE_MIGRATION: &str = include_str!(
-    "../../../migrations/sqlite/0002_checkpoint_disclosures.sql"
-);
+const CANONICAL_SCHEMA: &str = include_str!("../../../migrations/sqlite/0001_canonical_schema.sql");
+const CHECKPOINT_DISCLOSURE_MIGRATION: &str =
+    include_str!("../../../migrations/sqlite/0002_checkpoint_disclosures.sql");
 const CURRENT_SCHEMA_VERSION: u32 = 2;
 const CANONICAL_TABLES: [&str; 10] = [
     "activity_checkpoints",
@@ -49,20 +44,18 @@ pub struct SqliteStore<C = MissingCipher> {
 
 impl SqliteStore<MissingCipher> {
     pub fn open(path: impl AsRef<Path>) -> Result<Self, ApplicationError> {
-        let connection = Connection::open(path)
-            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        let connection =
+            Connection::open(path).map_err(|_| ApplicationError::StorageUnavailable)?;
         Self::initialize(connection)
     }
 
     pub fn open_in_memory() -> Result<Self, ApplicationError> {
-        let connection = Connection::open_in_memory()
-            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        let connection =
+            Connection::open_in_memory().map_err(|_| ApplicationError::StorageUnavailable)?;
         Self::initialize(connection)
     }
 
-    fn initialize(
-        mut connection: Connection,
-    ) -> Result<Self, ApplicationError> {
+    fn initialize(mut connection: Connection) -> Result<Self, ApplicationError> {
         connection
             .execute_batch(
                 "PRAGMA foreign_keys = ON;
@@ -137,9 +130,7 @@ fn has_user_tables(connection: &Connection) -> Result<bool, ApplicationError> {
         .map_err(|_| ApplicationError::StorageUnavailable)
 }
 
-fn verify_legacy_schema(
-    connection: &Connection,
-) -> Result<(), ApplicationError> {
+fn verify_legacy_schema(connection: &Connection) -> Result<(), ApplicationError> {
     let mut statement = connection
         .prepare(
             "SELECT name
@@ -170,10 +161,7 @@ impl<C> SqliteStore<C> {
         }
     }
 
-    pub fn backup_to(
-        &self,
-        destination: impl AsRef<Path>,
-    ) -> Result<(), ApplicationError> {
+    pub fn backup_to(&self, destination: impl AsRef<Path>) -> Result<(), ApplicationError> {
         let destination = destination.as_ref();
         if destination.exists() {
             return Err(ApplicationError::AlreadyExists);
@@ -214,24 +202,21 @@ mod migration_tests {
         let database = database_path("schema-reopen");
         SqliteStore::open(&database).expect("database should initialize");
 
-        let connection =
-            Connection::open(&database).expect("database should reopen");
+        let connection = Connection::open(&database).expect("database should reopen");
         assert_eq!(
             schema_version(&connection).expect("schema version should read"),
             CURRENT_SCHEMA_VERSION
         );
         drop(connection);
 
-        SqliteStore::open(&database)
-            .expect("current database should reopen idempotently");
+        SqliteStore::open(&database).expect("current database should reopen idempotently");
         fs::remove_file(database).expect("temporary database should be removed");
     }
 
     #[test]
     fn configures_integrity_and_contention_pragmas() {
         let database = database_path("connection-pragmas");
-        let store =
-            SqliteStore::open(&database).expect("database should initialize");
+        let store = SqliteStore::open(&database).expect("database should initialize");
         let foreign_keys: u32 = store
             .connection
             .pragma_query_value(None, "foreign_keys", |row| row.get(0))
@@ -255,8 +240,7 @@ mod migration_tests {
     #[test]
     fn rejects_a_database_from_a_newer_schema_version() {
         let database = database_path("future-schema");
-        let connection =
-            Connection::open(&database).expect("database should open");
+        let connection = Connection::open(&database).expect("database should open");
         connection
             .pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION + 1)
             .expect("future version should be set");
@@ -269,17 +253,14 @@ mod migration_tests {
     #[test]
     fn adopts_the_complete_pre_versioned_schema() {
         let database = database_path("legacy-schema");
-        let connection =
-            Connection::open(&database).expect("database should open");
+        let connection = Connection::open(&database).expect("database should open");
         connection
             .execute_batch(super::CANONICAL_SCHEMA)
             .expect("legacy schema should initialize");
         drop(connection);
 
-        SqliteStore::open(&database)
-            .expect("complete legacy schema should be adopted");
-        let connection =
-            Connection::open(&database).expect("database should reopen");
+        SqliteStore::open(&database).expect("complete legacy schema should be adopted");
+        let connection = Connection::open(&database).expect("database should reopen");
         assert_eq!(
             schema_version(&connection).expect("schema version should read"),
             CURRENT_SCHEMA_VERSION
@@ -291,8 +272,7 @@ mod migration_tests {
     #[test]
     fn upgrades_version_one_with_checkpoint_disclosures() {
         let database = database_path("schema-v1-upgrade");
-        let connection =
-            Connection::open(&database).expect("database should open");
+        let connection = Connection::open(&database).expect("database should open");
         connection
             .execute_batch(super::CANONICAL_SCHEMA)
             .expect("version one schema should initialize");
@@ -302,8 +282,7 @@ mod migration_tests {
         drop(connection);
 
         SqliteStore::open(&database).expect("version one should upgrade");
-        let connection =
-            Connection::open(&database).expect("database should reopen");
+        let connection = Connection::open(&database).expect("database should reopen");
         assert_eq!(
             schema_version(&connection).expect("schema version should read"),
             CURRENT_SCHEMA_VERSION
@@ -327,8 +306,7 @@ mod migration_tests {
     #[test]
     fn rejects_an_unknown_pre_versioned_schema() {
         let database = database_path("unknown-schema");
-        let connection =
-            Connection::open(&database).expect("database should open");
+        let connection = Connection::open(&database).expect("database should open");
         connection
             .execute("CREATE TABLE unrelated (id TEXT PRIMARY KEY) STRICT", [])
             .expect("unknown table should initialize");
@@ -362,10 +340,8 @@ impl<C: RecordCipher> MemoryRepository for SqliteStore<C> {
             .optional()
             .map_err(|_| ApplicationError::StorageUnavailable)?;
 
-        row.map(|encrypted| {
-            self.decrypt_memory(workspace_id, memory_id, encrypted)
-        })
-        .transpose()
+        row.map(|encrypted| self.decrypt_memory(workspace_id, memory_id, encrypted))
+            .transpose()
     }
 
     fn list_for_subject(
@@ -389,29 +365,24 @@ impl<C: RecordCipher> MemoryRepository for SqliteStore<C> {
             )
             .map_err(|_| ApplicationError::StorageUnavailable)?;
         let rows = statement
-            .query_map(
-                params![workspace_id.as_str(), subject_id.as_str()],
-                |row| {
-                    Ok((
-                        row.get::<_, String>(0)?,
-                        EncryptedMemoryRow {
-                            version: row.get(1)?,
-                            ciphertext: row.get(2)?,
-                            key_id: row.get(3)?,
-                            algorithm: row.get(4)?,
-                            nonce: row.get(5)?,
-                        },
-                    ))
-                },
-            )
+            .query_map(params![workspace_id.as_str(), subject_id.as_str()], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    EncryptedMemoryRow {
+                        version: row.get(1)?,
+                        ciphertext: row.get(2)?,
+                        key_id: row.get(3)?,
+                        algorithm: row.get(4)?,
+                        nonce: row.get(5)?,
+                    },
+                ))
+            })
             .map_err(|_| ApplicationError::StorageUnavailable)?;
         let mut memories = Vec::new();
         for row in rows {
-            let (memory_id, encrypted) =
-                row.map_err(|_| ApplicationError::StorageUnavailable)?;
+            let (memory_id, encrypted) = row.map_err(|_| ApplicationError::StorageUnavailable)?;
             let memory_id = MemoryId::new(memory_id);
-            let memory =
-                self.decrypt_memory(workspace_id, &memory_id, encrypted)?;
+            let memory = self.decrypt_memory(workspace_id, &memory_id, encrypted)?;
             if memory.subject_id() != subject_id {
                 return Err(ApplicationError::StorageUnavailable);
             }
@@ -446,8 +417,7 @@ impl<C: RecordCipher> SqliteStore<C> {
             .cipher
             .open(&context, &payload)
             .map_err(|_| ApplicationError::StorageUnavailable)?;
-        let memory = decode_memory(&plaintext)
-            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        let memory = decode_memory(&plaintext).map_err(|_| ApplicationError::StorageUnavailable)?;
         if memory.workspace_id() != workspace_id || memory.id() != memory_id {
             return Err(ApplicationError::StorageUnavailable);
         }
@@ -463,9 +433,7 @@ struct EncryptedMemoryRow {
     nonce: Vec<u8>,
 }
 
-fn encrypted_memory_row(
-    row: &rusqlite::Row<'_>,
-) -> rusqlite::Result<EncryptedMemoryRow> {
+fn encrypted_memory_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<EncryptedMemoryRow> {
     Ok(EncryptedMemoryRow {
         version: row.get(0)?,
         ciphertext: row.get(1)?,
@@ -542,9 +510,7 @@ impl<C> WorkspaceRepository for SqliteStore<C> {
             .query_row(
                 "SELECT id, kind FROM workspaces WHERE id = ?1",
                 [workspace_id.as_str()],
-                |row| {
-                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-                },
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
             )
             .optional()
             .map_err(|_| ApplicationError::StorageUnavailable)?
@@ -554,10 +520,7 @@ impl<C> WorkspaceRepository for SqliteStore<C> {
 }
 
 impl<C> MembershipRepository for SqliteStore<C> {
-    fn insert_membership(
-        &mut self,
-        membership: Membership,
-    ) -> Result<(), ApplicationError> {
+    fn insert_membership(&mut self, membership: Membership) -> Result<(), ApplicationError> {
         self.connection
             .execute(
                 "INSERT INTO memberships (
@@ -588,27 +551,17 @@ impl<C> MembershipRepository for SqliteStore<C> {
                  FROM memberships
                  WHERE workspace_id = ?1 AND principal_id = ?2",
                 params![workspace_id.as_str(), principal_id.as_str()],
-                |row| {
-                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-                },
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
             )
             .optional()
             .map_err(|_| ApplicationError::StorageUnavailable)?
             .map(|(role, status)| {
-                decode_membership(
-                    workspace_id.clone(),
-                    principal_id.clone(),
-                    &role,
-                    &status,
-                )
+                decode_membership(workspace_id.clone(), principal_id.clone(), &role, &status)
             })
             .transpose()
     }
 
-    fn replace_membership(
-        &mut self,
-        membership: Membership,
-    ) -> Result<(), ApplicationError> {
+    fn replace_membership(&mut self, membership: Membership) -> Result<(), ApplicationError> {
         let changed = self
             .connection
             .execute(
@@ -648,10 +601,7 @@ fn validate_personal_bootstrap(
     Ok(())
 }
 
-fn decode_workspace(
-    id: String,
-    kind: &str,
-) -> Result<Workspace, ApplicationError> {
+fn decode_workspace(id: String, kind: &str) -> Result<Workspace, ApplicationError> {
     match kind {
         "personal" => Ok(Workspace::personal(WorkspaceId::new(id))),
         "shared" => Ok(Workspace::shared(WorkspaceId::new(id))),

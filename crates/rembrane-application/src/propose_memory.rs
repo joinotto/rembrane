@@ -1,7 +1,6 @@
 use rembrane_domain::{
-    CanonicalEvent, EventId, EventPayload, EvidenceReference, MemoryId,
-    MemoryKind, MemoryRecord, MemoryScope, ProjectionJob, WriteGrant,
-    WritePermission,
+    CanonicalEvent, EventId, EventPayload, EvidenceReference, MemoryId, MemoryKind, MemoryRecord,
+    MemoryScope, ProjectionJob, WriteGrant, WritePermission,
 };
 
 use crate::{ApplicationError, CanonicalMutationRepository};
@@ -150,10 +149,7 @@ fn require_permission(
     }
 }
 
-fn require_scope(
-    grant: &WriteGrant,
-    scope: &MemoryScope,
-) -> Result<(), ApplicationError> {
+fn require_scope(grant: &WriteGrant, scope: &MemoryScope) -> Result<(), ApplicationError> {
     if grant.allows_scope(scope) {
         Ok(())
     } else {

@@ -21,10 +21,7 @@ pub struct ProviderManifest {
 
 impl ProviderManifest {
     #[must_use]
-    pub fn missing_capabilities(
-        &self,
-        required: &[Capability],
-    ) -> Vec<Capability> {
+    pub fn missing_capabilities(&self, required: &[Capability]) -> Vec<Capability> {
         required
             .iter()
             .filter(|capability| !self.capabilities.contains(capability))
@@ -45,21 +42,15 @@ pub struct ProviderPolicy {
 }
 
 impl ProviderPolicy {
-    pub fn validate(
-        &self,
-        provider: &ProviderManifest,
-    ) -> Result<(), ProviderError> {
+    pub fn validate(&self, provider: &ProviderManifest) -> Result<(), ProviderError> {
         let missing = provider.missing_capabilities(&self.required_capabilities);
         if let Some(capability) = missing.first() {
-            return Err(ProviderError::MissingCapability(format!(
-                "{capability:?}"
-            )));
+            return Err(ProviderError::MissingCapability(format!("{capability:?}")));
         }
 
         if provider.plaintext_processing && !self.allow_plaintext_processing {
             return Err(ProviderError::Rejected(
-                "plaintext processing is forbidden by deployment policy"
-                    .to_owned(),
+                "plaintext processing is forbidden by deployment policy".to_owned(),
             ));
         }
 
@@ -82,10 +73,7 @@ mod tests {
         };
 
         assert_eq!(
-            provider.missing_capabilities(&[
-                Capability::Search,
-                Capability::WorkspaceFilter,
-            ]),
+            provider.missing_capabilities(&[Capability::Search, Capability::WorkspaceFilter,]),
             vec![Capability::WorkspaceFilter]
         );
         assert!(!provider.supports_all(&[Capability::WorkspaceFilter]));
@@ -134,8 +122,7 @@ mod tests {
         assert_eq!(
             policy.validate(&provider),
             Err(ProviderError::Rejected(
-                "plaintext processing is forbidden by deployment policy"
-                    .to_owned()
+                "plaintext processing is forbidden by deployment policy".to_owned()
             ))
         );
     }

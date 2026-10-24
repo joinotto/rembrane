@@ -1,20 +1,15 @@
 use rembrane_application::{
-    ApplicationError, DeleteMemoryCommand, MemoryLifecycleService,
-    ReviseMemoryCommand,
+    ApplicationError, DeleteMemoryCommand, MemoryLifecycleService, ReviseMemoryCommand,
 };
 use rembrane_domain::{
-    CanonicalEvent, ClientId, EventId, EventPayload, EvidenceId,
-    EvidenceReference, EvidenceSource, MemoryId, MemoryRecord, MemoryScope,
-    MemoryStatus, PrincipalId, ReadScope, WorkspaceId, WriteGrant,
-    WritePermission,
+    CanonicalEvent, ClientId, EventId, EventPayload, EvidenceId, EvidenceReference, EvidenceSource,
+    MemoryId, MemoryRecord, MemoryScope, MemoryStatus, PrincipalId, ReadScope, WorkspaceId,
+    WriteGrant, WritePermission,
 };
 use rembrane_store_memory::InMemoryStore;
 
 fn evidence(id: &str) -> EvidenceReference {
-    EvidenceReference::new(
-        EvidenceId::new(id),
-        EvidenceSource::UserStatement,
-    )
+    EvidenceReference::new(EvidenceId::new(id), EvidenceSource::UserStatement)
 }
 
 fn initial_memory() -> MemoryRecord {
@@ -35,10 +30,7 @@ fn writer(subject_id: &str) -> WriteGrant {
         workspace_id: WorkspaceId::new("workspace_01"),
         subject_id: PrincipalId::new(subject_id),
         scopes: vec![ReadScope::Global],
-        permissions: vec![
-            WritePermission::ReviseMemory,
-            WritePermission::DeleteMemory,
-        ],
+        permissions: vec![WritePermission::ReviseMemory, WritePermission::DeleteMemory],
     }
 }
 

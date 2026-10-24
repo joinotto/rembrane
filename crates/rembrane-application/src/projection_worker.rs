@@ -1,14 +1,9 @@
 use rembrane_domain::{
-    MemoryStatus, ProjectionJob, ProjectionOperation, ProjectionStatus,
-    ProviderId,
+    MemoryStatus, ProjectionJob, ProjectionOperation, ProjectionStatus, ProviderId,
 };
-use rembrane_provider_sdk::{
-    AuthorizedMemoryProjection, Capability, SemanticMemoryProvider,
-};
+use rembrane_provider_sdk::{AuthorizedMemoryProjection, Capability, SemanticMemoryProvider};
 
-use crate::{
-    ApplicationError, MemoryRepository, ProjectionOutboxRepository,
-};
+use crate::{ApplicationError, MemoryRepository, ProjectionOutboxRepository};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ProjectionOutcome {
@@ -26,8 +21,7 @@ pub struct ProjectionWorker<'worker, Repository, Provider> {
     maximum_attempts: u32,
 }
 
-impl<'worker, Repository, Provider>
-    ProjectionWorker<'worker, Repository, Provider>
+impl<'worker, Repository, Provider> ProjectionWorker<'worker, Repository, Provider>
 where
     Repository: MemoryRepository + ProjectionOutboxRepository,
     Provider: SemanticMemoryProvider,
@@ -46,8 +40,7 @@ where
         let manifest = provider.manifest();
         if manifest.id != provider_id.as_str() {
             return Err(ApplicationError::Validation(
-                "configured provider id does not match provider manifest"
-                    .to_owned(),
+                "configured provider id does not match provider manifest".to_owned(),
             ));
         }
         let required = [
@@ -69,9 +62,7 @@ where
         })
     }
 
-    pub fn process_next(
-        &mut self,
-    ) -> Result<ProjectionOutcome, ApplicationError> {
+    pub fn process_next(&mut self) -> Result<ProjectionOutcome, ApplicationError> {
         let Some(pending) = self
             .repository
             .pending_projections(&self.provider_id, 1)?
@@ -92,17 +83,11 @@ where
         )?;
 
         match self.apply(&processing) {
-            Ok(
-                result
-                @ (ProjectionOutcome::Completed
-                    | ProjectionOutcome::Superseded),
-            ) => {
+            Ok(result @ (ProjectionOutcome::Completed | ProjectionOutcome::Superseded)) => {
                 let completed = processing
                     .clone()
                     .complete()
-                    .map_err(|error| {
-                        ApplicationError::Validation(error.to_string())
-                    })?;
+                    .map_err(|error| ApplicationError::Validation(error.to_string()))?;
                 self.repository.replace_projection(
                     completed,
                     ProjectionStatus::Processing,
@@ -115,9 +100,7 @@ where
                 let quarantined = processing
                     .clone()
                     .quarantine()
-                    .map_err(|error| {
-                        ApplicationError::Validation(error.to_string())
-                    })?;
+                    .map_err(|error| ApplicationError::Validation(error.to_string()))?;
                 self.repository.replace_projection(
                     quarantined,
                     ProjectionStatus::Processing,
@@ -129,9 +112,7 @@ where
                 let retry = processing
                     .clone()
                     .retry()
-                    .map_err(|error| {
-                        ApplicationError::Validation(error.to_string())
-                    })?;
+                    .map_err(|error| ApplicationError::Validation(error.to_string()))?;
                 self.repository.replace_projection(
                     retry,
                     ProjectionStatus::Processing,
@@ -142,29 +123,18 @@ where
         }
     }
 
-    fn apply(
-        &mut self,
-        job: &ProjectionJob,
-    ) -> Result<ProjectionOutcome, ApplicationError> {
+    fn apply(&mut self, job: &ProjectionJob) -> Result<ProjectionOutcome, ApplicationError> {
         match job.operation() {
             ProjectionOperation::Upsert => self.upsert(job),
             ProjectionOperation::Delete => self.delete(job),
         }
     }
 
-    fn upsert(
-        &mut self,
-        job: &ProjectionJob,
-    ) -> Result<ProjectionOutcome, ApplicationError> {
-        let Some(memory) = self
-            .repository
-            .find(job.workspace_id(), job.memory_id())?
-        else {
+    fn upsert(&mut self, job: &ProjectionJob) -> Result<ProjectionOutcome, ApplicationError> {
+        let Some(memory) = self.repository.find(job.workspace_id(), job.memory_id())? else {
             return Ok(ProjectionOutcome::Superseded);
         };
-        if memory.version() != job.memory_version()
-            || memory.status() == MemoryStatus::Deleted
-        {
+        if memory.version() != job.memory_version() || memory.status() == MemoryStatus::Deleted {
             return Ok(ProjectionOutcome::Superseded);
         }
 
@@ -181,16 +151,9 @@ where
         Ok(ProjectionOutcome::Completed)
     }
 
-    fn delete(
-        &mut self,
-        job: &ProjectionJob,
-    ) -> Result<ProjectionOutcome, ApplicationError> {
+    fn delete(&mut self, job: &ProjectionJob) -> Result<ProjectionOutcome, ApplicationError> {
         self.provider
-            .delete(
-                job.workspace_id(),
-                job.memory_id(),
-                job.memory_version(),
-            )
+            .delete(job.workspace_id(), job.memory_id(), job.memory_version())
             .map_err(|_| ApplicationError::StorageUnavailable)?;
         Ok(ProjectionOutcome::Completed)
     }

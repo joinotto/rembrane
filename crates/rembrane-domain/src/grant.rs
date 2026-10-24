@@ -1,6 +1,4 @@
-use crate::{
-    ActivityId, ClientId, EntityId, MemoryScope, PrincipalId, WorkspaceId,
-};
+use crate::{ActivityId, ClientId, EntityId, MemoryScope, PrincipalId, WorkspaceId};
 
 /// A scope a client may read. Global means global memories only; it is not a
 /// wildcard over every entity and activity.
@@ -58,24 +56,18 @@ impl ReadGrant {
     }
 }
 
-fn scope_is_allowed(
-    scopes: &[ReadScope],
-    memory_scope: &MemoryScope,
-) -> bool {
+fn scope_is_allowed(scopes: &[ReadScope], memory_scope: &MemoryScope) -> bool {
     scopes.iter().any(|scope| match (scope, memory_scope) {
         (ReadScope::Global, MemoryScope::Global) => true,
-        (
-            ReadScope::Domain { name: allowed },
-            MemoryScope::Domain { name: requested },
-        ) => allowed == requested,
-        (
-            ReadScope::Entity { id: allowed },
-            MemoryScope::Entity { id: requested },
-        ) => allowed == requested,
-        (
-            ReadScope::Activity { id: allowed },
-            MemoryScope::Activity { id: requested },
-        ) => allowed == requested,
+        (ReadScope::Domain { name: allowed }, MemoryScope::Domain { name: requested }) => {
+            allowed == requested
+        }
+        (ReadScope::Entity { id: allowed }, MemoryScope::Entity { id: requested }) => {
+            allowed == requested
+        }
+        (ReadScope::Activity { id: allowed }, MemoryScope::Activity { id: requested }) => {
+            allowed == requested
+        }
         _ => false,
     })
 }
@@ -83,9 +75,7 @@ fn scope_is_allowed(
 #[cfg(test)]
 mod tests {
     use super::{ReadGrant, ReadScope, WriteGrant, WritePermission};
-    use crate::{
-        ClientId, EntityId, MemoryScope, PrincipalId, WorkspaceId,
-    };
+    use crate::{ClientId, EntityId, MemoryScope, PrincipalId, WorkspaceId};
 
     #[test]
     fn global_permission_is_not_an_all_memory_wildcard() {

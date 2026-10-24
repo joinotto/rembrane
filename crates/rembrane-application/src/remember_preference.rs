@@ -1,6 +1,6 @@
 use rembrane_domain::{
-    CanonicalEvent, EventId, EventPayload, EvidenceReference, MemoryId,
-    MemoryRecord, MemoryScope, ProjectionJob, WriteGrant, WritePermission,
+    CanonicalEvent, EventId, EventPayload, EvidenceReference, MemoryId, MemoryRecord, MemoryScope,
+    ProjectionJob, WriteGrant, WritePermission,
 };
 
 use crate::{ApplicationError, CanonicalMutationRepository};

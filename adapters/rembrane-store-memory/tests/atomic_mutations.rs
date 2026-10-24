@@ -1,12 +1,11 @@
 use rembrane_application::{
-    ApplicationError, CanonicalMutationRepository, EventRepository,
-    MemoryRepository, ProjectionOutboxRepository,
+    ApplicationError, CanonicalMutationRepository, EventRepository, MemoryRepository,
+    ProjectionOutboxRepository,
 };
 use rembrane_domain::{
-    CanonicalEvent, EventId, EventPayload, EvidenceId, EvidenceReference,
-    EvidenceSource, MemoryId, MemoryRecord, MemoryScope, PrincipalId,
-    ProjectionJob, ProjectionJobId, ProjectionOperation, ProviderId,
-    WorkspaceId,
+    CanonicalEvent, EventId, EventPayload, EvidenceId, EvidenceReference, EvidenceSource, MemoryId,
+    MemoryRecord, MemoryScope, PrincipalId, ProjectionJob, ProjectionJobId, ProjectionOperation,
+    ProviderId, WorkspaceId,
 };
 use rembrane_store_memory::InMemoryStore;
 
@@ -109,12 +108,7 @@ fn projection_validation_failure_rolls_back_entire_mutation() {
     let mut store = InMemoryStore::new();
 
     let error = store
-        .insert_memory_with_event(
-            memory(),
-            event(1),
-            vec![projection("workspace_other")],
-            0,
-        )
+        .insert_memory_with_event(memory(), event(1), vec![projection("workspace_other")], 0)
         .expect_err("mismatched projection should fail atomically");
 
     assert_eq!(
@@ -151,12 +145,7 @@ fn valid_mutation_commits_outbox_record() {
     let mut store = InMemoryStore::new();
 
     store
-        .insert_memory_with_event(
-            memory(),
-            event(1),
-            vec![projection("workspace_01")],
-            0,
-        )
+        .insert_memory_with_event(memory(), event(1), vec![projection("workspace_01")], 0)
         .expect("valid atomic mutation should succeed");
 
     assert_eq!(

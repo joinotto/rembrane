@@ -1,9 +1,7 @@
-use rembrane_application::{
-    ApplicationError, CheckpointMutationRepository, CheckpointRepository,
-};
+use rembrane_application::{ApplicationError, CheckpointMutationRepository, CheckpointRepository};
 use rembrane_domain::{
-    ActivityCheckpoint, ActivityId, CanonicalEvent, CheckpointId, EntityId,
-    EventId, EventPayload, PrincipalId, WorkspaceId,
+    ActivityCheckpoint, ActivityId, CanonicalEvent, CheckpointId, EntityId, EventId, EventPayload,
+    PrincipalId, WorkspaceId,
 };
 use rembrane_store_memory::InMemoryStore;
 
@@ -83,11 +81,7 @@ fn rejects_stale_checkpoint_update() {
     let original = checkpoint("workspace_01", "principal_01");
     let creation_event = event(&original, "event_01", 1);
     store
-        .insert_checkpoint_with_event(
-            original.clone(),
-            creation_event,
-            0,
-        )
+        .insert_checkpoint_with_event(original.clone(), creation_event, 0)
         .expect("checkpoint insert should succeed");
     let updated = original
         .update(

@@ -9,15 +9,14 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use rembrane_application::{
-    AuthorizeClientCommand, AuthorizeClientService, ResolveContextCommand,
-    ResolveContextService,
+    AuthorizeClientCommand, AuthorizeClientService, ResolveContextCommand, ResolveContextService,
 };
-use rembrane_contracts::ResolveContextRequest;
 use rembrane_config::parse_read_scopes;
+use rembrane_contracts::ResolveContextRequest;
 use rembrane_crypto_rustcrypto::RustCryptoRecordCipher;
 use rembrane_domain::{
-    ActivityId, ClientId, ContextPackId, DisclosureId, EntityId, MemoryKind,
-    MemoryScope, MemoryStatus, PrincipalId, ReadGrant, WorkspaceId,
+    ActivityId, ClientId, ContextPackId, DisclosureId, EntityId, MemoryKind, MemoryScope,
+    MemoryStatus, PrincipalId, ReadGrant, WorkspaceId,
 };
 use rembrane_store_sqlite::SqliteStore;
 use serde::{Deserialize, Serialize};
@@ -126,20 +125,15 @@ impl IntoResponse for ApiError {
 impl AppState {
     fn from_environment() -> Result<Self> {
         let database = required_environment("REMBRANE_DATABASE")?;
-        let principal_id =
-            PrincipalId::new(required_environment("REMBRANE_PRINCIPAL_ID")?);
-        let workspace_id =
-            WorkspaceId::new(required_environment("REMBRANE_WORKSPACE_ID")?);
-        let client_id =
-            ClientId::new(required_environment("REMBRANE_CLIENT_ID")?);
-        let bearer_token =
-            Zeroizing::new(required_environment("REMBRANE_API_TOKEN")?);
+        let principal_id = PrincipalId::new(required_environment("REMBRANE_PRINCIPAL_ID")?);
+        let workspace_id = WorkspaceId::new(required_environment("REMBRANE_WORKSPACE_ID")?);
+        let client_id = ClientId::new(required_environment("REMBRANE_CLIENT_ID")?);
+        let bearer_token = Zeroizing::new(required_environment("REMBRANE_API_TOKEN")?);
         anyhow::ensure!(!bearer_token.is_empty(), "REMBRANE_API_TOKEN is empty");
         let cipher = RustCryptoRecordCipher::from_environment()
             .context("failed to load workspace cipher")?;
         let read_scopes = parse_read_scopes(
-            &std::env::var("REMBRANE_READ_SCOPES")
-                .unwrap_or_else(|_| "global".to_owned()),
+            &std::env::var("REMBRANE_READ_SCOPES").unwrap_or_else(|_| "global".to_owned()),
         )
         .map_err(anyhow::Error::msg)?;
         let store = SqliteStore::open(database)
@@ -237,21 +231,21 @@ async fn resolve_context(
     }))
 }
 
-fn request_is_within_grant(
-    request: &ResolveRequest,
-    grant: &ReadGrant,
-) -> bool {
-    request.domain.as_ref().is_none_or(|name| {
-        grant.allows(&MemoryScope::Domain { name: name.clone() })
-    }) && request.entity_id.as_ref().is_none_or(|id| {
-        grant.allows(&MemoryScope::Entity {
-            id: EntityId::new(id),
+fn request_is_within_grant(request: &ResolveRequest, grant: &ReadGrant) -> bool {
+    request
+        .domain
+        .as_ref()
+        .is_none_or(|name| grant.allows(&MemoryScope::Domain { name: name.clone() }))
+        && request.entity_id.as_ref().is_none_or(|id| {
+            grant.allows(&MemoryScope::Entity {
+                id: EntityId::new(id),
+            })
         })
-    }) && request.activity_id.as_ref().is_none_or(|id| {
-        grant.allows(&MemoryScope::Activity {
-            id: ActivityId::new(id),
+        && request.activity_id.as_ref().is_none_or(|id| {
+            grant.allows(&MemoryScope::Activity {
+                id: ActivityId::new(id),
+            })
         })
-    })
 }
 
 fn authorize_bearer(state: &AppState, headers: &HeaderMap) -> Result<(), ApiError> {
@@ -271,11 +265,7 @@ fn authorize_bearer(state: &AppState, headers: &HeaderMap) -> Result<(), ApiErro
 }
 
 fn token_matches(expected: &str, presented: &str) -> bool {
-    presented
-        .as_bytes()
-        .ct_eq(expected.as_bytes())
-        .unwrap_u8()
-        == 1
+    presented.as_bytes().ct_eq(expected.as_bytes()).unwrap_u8() == 1
 }
 
 impl ApiError {
@@ -329,19 +319,11 @@ impl From<&rembrane_domain::MemoryRecord> for MemoryOutput {
                 .map(|evidence| EvidenceOutput {
                     id: evidence.id.to_string(),
                     source: match evidence.source {
-                        rembrane_domain::EvidenceSource::UserStatement => {
-                            "user-statement"
-                        }
-                        rembrane_domain::EvidenceSource::AgentObservation => {
-                            "agent-observation"
-                        }
+                        rembrane_domain::EvidenceSource::UserStatement => "user-statement",
+                        rembrane_domain::EvidenceSource::AgentObservation => "agent-observation",
                         rembrane_domain::EvidenceSource::ToolResult => "tool-result",
-                        rembrane_domain::EvidenceSource::ImportedRecord => {
-                            "imported-record"
-                        }
-                        rembrane_domain::EvidenceSource::WorkspaceDecision => {
-                            "workspace-decision"
-                        }
+                        rembrane_domain::EvidenceSource::ImportedRecord => "imported-record",
+                        rembrane_domain::EvidenceSource::WorkspaceDecision => "workspace-decision",
                     },
                 })
                 .collect(),
@@ -355,9 +337,7 @@ impl From<&MemoryScope> for ScopeOutput {
             MemoryScope::Global => Self::Global,
             MemoryScope::Domain { name } => Self::Domain { name: name.clone() },
             MemoryScope::Entity { id } => Self::Entity { id: id.to_string() },
-            MemoryScope::Activity { id } => {
-                Self::Activity { id: id.to_string() }
-            }
+            MemoryScope::Activity { id } => Self::Activity { id: id.to_string() },
         }
     }
 }
@@ -389,13 +369,12 @@ fn required_environment(name: &str) -> Result<String> {
 #[tokio::main]
 async fn main() -> Result<()> {
     let state = AppState::from_environment()?;
-    let configured_address = std::env::var("REMBRANE_LISTEN")
-        .unwrap_or_else(|_| "127.0.0.1:8787".to_owned());
+    let configured_address =
+        std::env::var("REMBRANE_LISTEN").unwrap_or_else(|_| "127.0.0.1:8787".to_owned());
     let address = configured_address
         .parse::<std::net::SocketAddr>()
         .with_context(|| format!("invalid listen address {configured_address}"))?;
-    let allow_non_loopback =
-        std::env::var("REMBRANE_ALLOW_NON_LOOPBACK").as_deref() == Ok("1");
+    let allow_non_loopback = std::env::var("REMBRANE_ALLOW_NON_LOOPBACK").as_deref() == Ok("1");
     anyhow::ensure!(
         address.ip().is_loopback() || allow_non_loopback,
         "non-loopback HTTP requires REMBRANE_ALLOW_NON_LOOPBACK=1 and a trusted TLS proxy"
@@ -414,9 +393,7 @@ async fn main() -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use rembrane_domain::{
-        ClientId, EntityId, PrincipalId, ReadGrant, ReadScope, WorkspaceId,
-    };
+    use rembrane_domain::{ClientId, EntityId, PrincipalId, ReadGrant, ReadScope, WorkspaceId};
 
     use super::{ResolveRequest, request_is_within_grant, token_matches};
 

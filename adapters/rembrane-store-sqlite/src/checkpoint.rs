@@ -1,18 +1,10 @@
-use rembrane_application::{
-    ApplicationError, CheckpointMutationRepository, CheckpointRepository,
-};
+use rembrane_application::{ApplicationError, CheckpointMutationRepository, CheckpointRepository};
 use rembrane_codec::{decode_checkpoint, encode_checkpoint};
-use rembrane_crypto::{
-    EncryptedPayload, EncryptionContext, PayloadPurpose, RecordCipher,
-};
-use rembrane_domain::{
-    ActivityCheckpoint, ActivityId, CanonicalEvent, PrincipalId, WorkspaceId,
-};
+use rembrane_crypto::{EncryptedPayload, EncryptionContext, PayloadPurpose, RecordCipher};
+use rembrane_domain::{ActivityCheckpoint, ActivityId, CanonicalEvent, PrincipalId, WorkspaceId};
 use rusqlite::{OptionalExtension, Transaction, params};
 
-use crate::canonical::{
-    SealedRecord, insert_event, require_event_sequence, seal_event, to_i64,
-};
+use crate::canonical::{SealedRecord, insert_event, require_event_sequence, seal_event, to_i64};
 use crate::{SqliteStore, map_write_error};
 
 type EncryptedCheckpointRow = (String, i64, Vec<u8>, String, String, Vec<u8>);
@@ -50,15 +42,8 @@ impl<C: RecordCipher> CheckpointRepository for SqliteStore<C> {
             .optional()
             .map_err(|_| ApplicationError::StorageUnavailable)?;
 
-        row.map(|row| {
-            self.decrypt_checkpoint(
-                workspace_id,
-                subject_id,
-                Some(activity_id),
-                row,
-            )
-        })
-        .transpose()
+        row.map(|row| self.decrypt_checkpoint(workspace_id, subject_id, Some(activity_id), row))
+            .transpose()
     }
 
     fn list_checkpoints_for_subject(
@@ -108,10 +93,8 @@ impl<C: RecordCipher> SqliteStore<C> {
         expected_activity_id: Option<&ActivityId>,
         row: EncryptedCheckpointRow,
     ) -> Result<ActivityCheckpoint, ApplicationError> {
-        let (checkpoint_id, version, ciphertext, key_id, algorithm, nonce) =
-            row;
-        let version = u64::try_from(version)
-            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        let (checkpoint_id, version, ciphertext, key_id, algorithm, nonce) = row;
+        let version = u64::try_from(version).map_err(|_| ApplicationError::StorageUnavailable)?;
         let context = EncryptionContext::new(
             workspace_id.clone(),
             &checkpoint_id,
@@ -119,21 +102,19 @@ impl<C: RecordCipher> SqliteStore<C> {
             PayloadPurpose::ActivityCheckpoint,
         )
         .map_err(|_| ApplicationError::StorageUnavailable)?;
-        let payload =
-            EncryptedPayload::new(ciphertext, key_id, algorithm, nonce)
-                .map_err(|_| ApplicationError::StorageUnavailable)?;
+        let payload = EncryptedPayload::new(ciphertext, key_id, algorithm, nonce)
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
         let plaintext = self
             .cipher
             .open(&context, &payload)
             .map_err(|_| ApplicationError::StorageUnavailable)?;
-        let checkpoint = decode_checkpoint(&plaintext)
-            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        let checkpoint =
+            decode_checkpoint(&plaintext).map_err(|_| ApplicationError::StorageUnavailable)?;
         if checkpoint.workspace_id() != workspace_id
             || checkpoint.subject_id() != subject_id
             || checkpoint.id().as_str() != checkpoint_id
             || checkpoint.version() != version
-            || expected_activity_id
-                .is_some_and(|expected| checkpoint.activity_id() != expected)
+            || expected_activity_id.is_some_and(|expected| checkpoint.activity_id() != expected)
         {
             return Err(ApplicationError::StorageUnavailable);
         }
@@ -141,9 +122,7 @@ impl<C: RecordCipher> SqliteStore<C> {
     }
 }
 
-fn encrypted_checkpoint_row(
-    row: &rusqlite::Row<'_>,
-) -> rusqlite::Result<EncryptedCheckpointRow> {
+fn encrypted_checkpoint_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<EncryptedCheckpointRow> {
     Ok((
         row.get(0)?,
         row.get(1)?,
@@ -174,11 +153,7 @@ impl<C: RecordCipher> CheckpointMutationRepository for SqliteStore<C> {
             event.sequence(),
             expected_previous_sequence,
         )?;
-        insert_checkpoint(
-            &transaction,
-            &checkpoint,
-            &encrypted_checkpoint,
-        )?;
+        insert_checkpoint(&transaction, &checkpoint, &encrypted_checkpoint)?;
         insert_event(&transaction, &event, &encrypted_event)?;
         transaction.commit().map_err(map_write_error)
     }
@@ -191,9 +166,7 @@ impl<C: RecordCipher> CheckpointMutationRepository for SqliteStore<C> {
         expected_previous_sequence: u64,
     ) -> Result<(), ApplicationError> {
         validate_checkpoint_event(&checkpoint, &event)?;
-        if checkpoint.version()
-            != expected_checkpoint_version.saturating_add(1)
-        {
+        if checkpoint.version() != expected_checkpoint_version.saturating_add(1) {
             return Err(ApplicationError::VersionConflict);
         }
         let encrypted_checkpoint = seal_checkpoint(&self.cipher, &checkpoint)?;
@@ -223,17 +196,15 @@ fn seal_checkpoint(
     cipher: &impl RecordCipher,
     checkpoint: &ActivityCheckpoint,
 ) -> Result<SealedRecord, ApplicationError> {
-    let plaintext = encode_checkpoint(checkpoint)
-        .map_err(|_| ApplicationError::StorageUnavailable)?;
+    let plaintext =
+        encode_checkpoint(checkpoint).map_err(|_| ApplicationError::StorageUnavailable)?;
     let context = EncryptionContext::new(
         checkpoint.workspace_id().clone(),
         checkpoint.id().as_str(),
         checkpoint.version(),
         PayloadPurpose::ActivityCheckpoint,
     )
-    .map_err(|_| {
-        ApplicationError::Validation("invalid checkpoint context".to_owned())
-    })?;
+    .map_err(|_| ApplicationError::Validation("invalid checkpoint context".to_owned()))?;
     let encrypted = cipher
         .seal(&context, &plaintext)
         .map_err(|_| ApplicationError::StorageUnavailable)?;
@@ -336,11 +307,7 @@ fn validate_checkpoint_event(
         rembrane_domain::EventPayload::ActivityCheckpointed {
             activity_id,
             version,
-        } if activity_id == checkpoint.activity_id()
-            && *version == checkpoint.version() =>
-        {
-            Ok(())
-        }
+        } if activity_id == checkpoint.activity_id() && *version == checkpoint.version() => Ok(()),
         _ => Err(ApplicationError::Validation(
             "event does not describe activity checkpoint".to_owned(),
         )),

@@ -1,13 +1,9 @@
 use rembrane_domain::{
-    ActivityCheckpoint, ActivityId, CanonicalEvent,
-    CheckpointDisclosureReceipt, DisclosureId, EventId, EventPayload,
-    MemoryScope, ReadGrant, WriteGrant, WritePermission,
+    ActivityCheckpoint, ActivityId, CanonicalEvent, CheckpointDisclosureReceipt, DisclosureId,
+    EventId, EventPayload, MemoryScope, ReadGrant, WriteGrant, WritePermission,
 };
 
-use crate::{
-    ApplicationError, CheckpointDisclosureRepository,
-    CheckpointMutationRepository,
-};
+use crate::{ApplicationError, CheckpointDisclosureRepository, CheckpointMutationRepository};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CreateCheckpointCommand {
@@ -94,13 +90,10 @@ where
                 "checkpoint disclosure purpose must not be empty".to_owned(),
             ));
         }
-        let checkpoint = self.load_authorized(
-            &command.grant,
-            &command.activity_id,
-        )?;
+        let checkpoint = self.load_authorized(&command.grant, &command.activity_id)?;
         if let Some(checkpoint) = &checkpoint {
-            self.repository.append_checkpoint_disclosure(
-                CheckpointDisclosureReceipt {
+            self.repository
+                .append_checkpoint_disclosure(CheckpointDisclosureReceipt {
                     id: command.disclosure_id.clone(),
                     workspace_id: command.grant.workspace_id.clone(),
                     subject_id: command.grant.subject_id.clone(),
@@ -109,8 +102,7 @@ where
                     checkpoint_id: checkpoint.id().clone(),
                     checkpoint_version: checkpoint.version(),
                     activity_id: checkpoint.activity_id().clone(),
-                },
-            )?;
+                })?;
         }
         Ok(checkpoint)
     }
@@ -135,11 +127,8 @@ where
             return Err(ApplicationError::AccessDenied);
         }
 
-        self.repository.latest_checkpoint(
-            &grant.workspace_id,
-            &grant.subject_id,
-            activity_id,
-        )
+        self.repository
+            .latest_checkpoint(&grant.workspace_id, &grant.subject_id, activity_id)
     }
 }
 

@@ -2,9 +2,8 @@ use rembrane_application::{
     ApplicationError, RememberPreferenceCommand, RememberPreferenceService,
 };
 use rembrane_domain::{
-    ClientId, EventId, EvidenceId, EvidenceReference, EvidenceSource, MemoryId,
-    MemoryScope, PrincipalId, ReadScope, WorkspaceId, WriteGrant,
-    WritePermission,
+    ClientId, EventId, EvidenceId, EvidenceReference, EvidenceSource, MemoryId, MemoryScope,
+    PrincipalId, ReadScope, WorkspaceId, WriteGrant, WritePermission,
 };
 use rembrane_store_memory::InMemoryStore;
 

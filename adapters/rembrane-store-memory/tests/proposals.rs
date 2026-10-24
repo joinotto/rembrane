@@ -1,11 +1,9 @@
 use rembrane_application::{
-    ApplicationError, ConfirmMemoryCommand, MemoryProposalService,
-    ProposeMemoryCommand,
+    ApplicationError, ConfirmMemoryCommand, MemoryProposalService, ProposeMemoryCommand,
 };
 use rembrane_domain::{
-    ClientId, EventId, EvidenceId, EvidenceReference, EvidenceSource,
-    MemoryId, MemoryKind, MemoryScope, MemoryStatus, PrincipalId, ReadScope,
-    WorkspaceId, WriteGrant, WritePermission,
+    ClientId, EventId, EvidenceId, EvidenceReference, EvidenceSource, MemoryId, MemoryKind,
+    MemoryScope, MemoryStatus, PrincipalId, ReadScope, WorkspaceId, WriteGrant, WritePermission,
 };
 use rembrane_store_memory::InMemoryStore;
 
@@ -29,18 +27,12 @@ fn agent_proposal_remains_unconfirmed_until_approved() {
     let mut service = MemoryProposalService::new(&mut store);
     let proposal = service
         .propose(ProposeMemoryCommand {
-            grant: grant(
-                "principal_01",
-                vec![WritePermission::ProposeMemory],
-            ),
+            grant: grant("principal_01", vec![WritePermission::ProposeMemory]),
             memory_id: MemoryId::new("memory_01"),
             scope: MemoryScope::Global,
             kind: MemoryKind::Observation,
             content: "The user may prefer aisle seats.".to_owned(),
-            evidence: evidence(
-                "evidence_agent",
-                EvidenceSource::AgentObservation,
-            ),
+            evidence: evidence("evidence_agent", EvidenceSource::AgentObservation),
             event_id: EventId::new("event_01"),
             expected_previous_sequence: 0,
             projections: Vec::new(),
@@ -51,16 +43,10 @@ fn agent_proposal_remains_unconfirmed_until_approved() {
 
     let confirmed = service
         .confirm(ConfirmMemoryCommand {
-            grant: grant(
-                "principal_01",
-                vec![WritePermission::ConfirmMemory],
-            ),
+            grant: grant("principal_01", vec![WritePermission::ConfirmMemory]),
             memory_id: MemoryId::new("memory_01"),
             expected_version: 1,
-            evidence: evidence(
-                "evidence_user",
-                EvidenceSource::UserStatement,
-            ),
+            evidence: evidence("evidence_user", EvidenceSource::UserStatement),
             event_id: EventId::new("event_02"),
             expected_previous_sequence: 1,
             projections: Vec::new(),
@@ -77,18 +63,12 @@ fn another_subject_cannot_confirm_proposal() {
     let mut service = MemoryProposalService::new(&mut store);
     service
         .propose(ProposeMemoryCommand {
-            grant: grant(
-                "principal_private",
-                vec![WritePermission::ProposeMemory],
-            ),
+            grant: grant("principal_private", vec![WritePermission::ProposeMemory]),
             memory_id: MemoryId::new("memory_01"),
             scope: MemoryScope::Global,
             kind: MemoryKind::Observation,
             content: "Private observation".to_owned(),
-            evidence: evidence(
-                "evidence_agent",
-                EvidenceSource::AgentObservation,
-            ),
+            evidence: evidence("evidence_agent", EvidenceSource::AgentObservation),
             event_id: EventId::new("event_01"),
             expected_previous_sequence: 0,
             projections: Vec::new(),
@@ -97,16 +77,10 @@ fn another_subject_cannot_confirm_proposal() {
 
     let error = service
         .confirm(ConfirmMemoryCommand {
-            grant: grant(
-                "principal_other",
-                vec![WritePermission::ConfirmMemory],
-            ),
+            grant: grant("principal_other", vec![WritePermission::ConfirmMemory]),
             memory_id: MemoryId::new("memory_01"),
             expected_version: 1,
-            evidence: evidence(
-                "evidence_other",
-                EvidenceSource::UserStatement,
-            ),
+            evidence: evidence("evidence_other", EvidenceSource::UserStatement),
             event_id: EventId::new("event_02"),
             expected_previous_sequence: 1,
             projections: Vec::new(),
@@ -126,10 +100,7 @@ fn client_without_proposal_permission_is_denied() {
             scope: MemoryScope::Global,
             kind: MemoryKind::Observation,
             content: "Unauthorized observation".to_owned(),
-            evidence: evidence(
-                "evidence_agent",
-                EvidenceSource::AgentObservation,
-            ),
+            evidence: evidence("evidence_agent", EvidenceSource::AgentObservation),
             event_id: EventId::new("event_01"),
             expected_previous_sequence: 0,
             projections: Vec::new(),

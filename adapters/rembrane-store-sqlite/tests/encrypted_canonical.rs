@@ -1,16 +1,15 @@
 use rembrane_application::{
-    CanonicalMutationRepository, CheckpointMutationRepository,
-    CheckpointRepository, DisclosureRepository, EventRepository,
-    MemoryRepository, ProjectionOutboxRepository, WorkspaceRepository,
+    CanonicalMutationRepository, CheckpointMutationRepository, CheckpointRepository,
+    DisclosureRepository, EventRepository, MemoryRepository, ProjectionOutboxRepository,
+    WorkspaceRepository,
 };
 use rembrane_crypto_rustcrypto::RustCryptoRecordCipher;
 use rembrane_domain::{
-    ActivityCheckpoint, ActivityId, CanonicalEvent, CheckpointId, ClientId,
-    ContextPackId, DisclosedMemory, DisclosureId, DisclosureReceipt, EntityId,
-    EventId, EventPayload, EvidenceId, EvidenceReference, EvidenceSource,
-    Membership, MemoryId, MemoryRecord, MemoryScope, Principal, PrincipalId,
-    ProjectionJob, ProjectionJobId, ProjectionOperation, ProjectionStatus,
-    ProviderId, Workspace, WorkspaceId, WorkspaceRole,
+    ActivityCheckpoint, ActivityId, CanonicalEvent, CheckpointId, ClientId, ContextPackId,
+    DisclosedMemory, DisclosureId, DisclosureReceipt, EntityId, EventId, EventPayload, EvidenceId,
+    EvidenceReference, EvidenceSource, Membership, MemoryId, MemoryRecord, MemoryScope, Principal,
+    PrincipalId, ProjectionJob, ProjectionJobId, ProjectionOperation, ProjectionStatus, ProviderId,
+    Workspace, WorkspaceId, WorkspaceRole,
 };
 use rembrane_store_sqlite::SqliteStore;
 
@@ -22,10 +21,7 @@ impl TemporaryDatabase {
             .duration_since(std::time::UNIX_EPOCH)
             .expect("test clock is valid")
             .as_nanos();
-        Self(std::env::temp_dir().join(format!(
-            "rembrane-{suffix}-{}.sqlite",
-            std::process::id()
-        )))
+        Self(std::env::temp_dir().join(format!("rembrane-{suffix}-{}.sqlite", std::process::id())))
     }
 }
 
@@ -36,8 +32,7 @@ impl Drop for TemporaryDatabase {
 }
 
 fn test_cipher() -> RustCryptoRecordCipher {
-    RustCryptoRecordCipher::new("test-key", [7; 32])
-        .expect("test key is valid")
+    RustCryptoRecordCipher::new("test-key", [7; 32]).expect("test key is valid")
 }
 
 fn initialized_store() -> SqliteStore<RustCryptoRecordCipher> {
@@ -165,46 +160,50 @@ fn encrypted_memory_lookup_is_workspace_scoped() {
         .expect("lookup succeeds");
 
     assert!(leaked.is_none());
-    assert!(store
-        .list_for_subject(
-            &WorkspaceId::new("workspace_01"),
-            &PrincipalId::new("principal_other"),
-        )
-        .expect("subject-scoped lookup succeeds")
-        .is_empty());
+    assert!(
+        store
+            .list_for_subject(
+                &WorkspaceId::new("workspace_01"),
+                &PrincipalId::new("principal_other"),
+            )
+            .expect("subject-scoped lookup succeeds")
+            .is_empty()
+    );
 }
 
 #[test]
 fn event_and_checkpoint_reads_are_workspace_scoped() {
     let mut store = initialized_store();
     store
-        .insert_checkpoint_with_event(
-            checkpoint(),
-            checkpoint_event(1, 1),
-            0,
-        )
+        .insert_checkpoint_with_event(checkpoint(), checkpoint_event(1, 1), 0)
         .expect("checkpoint insert succeeds");
 
-    assert!(store
-        .list_events_since(&WorkspaceId::new("workspace_other"), 0)
-        .expect("event lookup succeeds")
-        .is_empty());
-    assert!(store
-        .latest_checkpoint(
-            &WorkspaceId::new("workspace_other"),
-            &PrincipalId::new("principal_01"),
-            &ActivityId::new("activity_01"),
-        )
-        .expect("checkpoint lookup succeeds")
-        .is_none());
-    assert!(store
-        .latest_checkpoint(
-            &WorkspaceId::new("workspace_01"),
-            &PrincipalId::new("principal_other"),
-            &ActivityId::new("activity_01"),
-        )
-        .expect("subject-scoped checkpoint lookup succeeds")
-        .is_none());
+    assert!(
+        store
+            .list_events_since(&WorkspaceId::new("workspace_other"), 0)
+            .expect("event lookup succeeds")
+            .is_empty()
+    );
+    assert!(
+        store
+            .latest_checkpoint(
+                &WorkspaceId::new("workspace_other"),
+                &PrincipalId::new("principal_01"),
+                &ActivityId::new("activity_01"),
+            )
+            .expect("checkpoint lookup succeeds")
+            .is_none()
+    );
+    assert!(
+        store
+            .latest_checkpoint(
+                &WorkspaceId::new("workspace_01"),
+                &PrincipalId::new("principal_other"),
+                &ActivityId::new("activity_01"),
+            )
+            .expect("subject-scoped checkpoint lookup succeeds")
+            .is_none()
+    );
 }
 
 #[test]
@@ -219,25 +218,22 @@ fn sequence_conflict_rolls_back_memory() {
         error,
         rembrane_application::ApplicationError::SequenceConflict
     );
-    assert!(store
-        .find(
-            &WorkspaceId::new("workspace_01"),
-            &MemoryId::new("memory_01"),
-        )
-        .expect("lookup succeeds")
-        .is_none());
+    assert!(
+        store
+            .find(
+                &WorkspaceId::new("workspace_01"),
+                &MemoryId::new("memory_01"),
+            )
+            .expect("lookup succeeds")
+            .is_none()
+    );
 }
 
 #[test]
 fn persists_and_optimistically_updates_projection() {
     let mut store = initialized_store();
     store
-        .insert_memory_with_event(
-            memory(),
-            event(),
-            vec![projection()],
-            0,
-        )
+        .insert_memory_with_event(memory(), event(), vec![projection()], 0)
         .expect("canonical mutation succeeds");
 
     let pending = store
@@ -247,11 +243,7 @@ fn persists_and_optimistically_updates_projection() {
 
     let processing = pending[0].clone().begin().expect("job begins");
     store
-        .replace_projection(
-            processing.clone(),
-            ProjectionStatus::Pending,
-            0,
-        )
+        .replace_projection(processing.clone(), ProjectionStatus::Pending, 0)
         .expect("optimistic update succeeds");
 
     assert_eq!(
@@ -263,13 +255,15 @@ fn persists_and_optimistically_updates_projection() {
             .expect("projection lookup succeeds"),
         Some(processing)
     );
-    assert!(store
-        .find_projection(
-            &WorkspaceId::new("workspace_other"),
-            &ProjectionJobId::new("projection_01"),
-        )
-        .expect("cross-workspace lookup succeeds")
-        .is_none());
+    assert!(
+        store
+            .find_projection(
+                &WorkspaceId::new("workspace_other"),
+                &ProjectionJobId::new("projection_01"),
+            )
+            .expect("cross-workspace lookup succeeds")
+            .is_none()
+    );
 }
 
 #[test]
@@ -277,11 +271,7 @@ fn persists_and_resumes_latest_encrypted_checkpoint() {
     let mut store = initialized_store();
     let first = checkpoint();
     store
-        .insert_checkpoint_with_event(
-            first.clone(),
-            checkpoint_event(1, 1),
-            0,
-        )
+        .insert_checkpoint_with_event(first.clone(), checkpoint_event(1, 1), 0)
         .expect("checkpoint insert succeeds");
 
     let updated = first
@@ -292,12 +282,7 @@ fn persists_and_resumes_latest_encrypted_checkpoint() {
         )
         .expect("checkpoint update succeeds");
     store
-        .replace_checkpoint_with_event(
-            updated.clone(),
-            1,
-            checkpoint_event(2, 2),
-            1,
-        )
+        .replace_checkpoint_with_event(updated.clone(), 1, checkpoint_event(2, 2), 1)
         .expect("checkpoint update persists");
 
     let resumed = store
@@ -372,18 +357,8 @@ fn rejects_ciphertext_substituted_between_workspaces() {
     }
     let mut store = store.with_cipher(test_cipher());
     for (workspace, principal, event_id, content) in [
-        (
-            "workspace_01",
-            "principal_01",
-            "event_01",
-            "Call me Hippo",
-        ),
-        (
-            "workspace_02",
-            "principal_02",
-            "event_02",
-            "Call me Rhino",
-        ),
+        ("workspace_01", "principal_01", "event_01", "Call me Hippo"),
+        ("workspace_02", "principal_02", "event_02", "Call me Rhino"),
     ] {
         let memory = MemoryRecord::confirmed_preference(
             MemoryId::new("memory_shared"),
@@ -415,8 +390,7 @@ fn rejects_ciphertext_substituted_between_workspaces() {
     }
     drop(store);
 
-    let connection = rusqlite::Connection::open(&database.0)
-        .expect("tamper connection opens");
+    let connection = rusqlite::Connection::open(&database.0).expect("tamper connection opens");
     connection
         .execute(
             "UPDATE memories

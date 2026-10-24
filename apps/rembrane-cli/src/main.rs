@@ -1,21 +1,17 @@
 use rembrane_application::{
-    ApplicationError, AuthorizeClientCommand, AuthorizeClientService,
-    CanonicalMutationRepository, CheckpointRepository, ClientGrantBundle,
-    DeleteMemoryCommand, EventRepository, MembershipRepository,
-    MemoryLifecycleService, MemoryRepository, RememberPreferenceCommand,
-    RememberPreferenceService, ResolveContextCommand, ResolveContextService,
-    ReviseMemoryCommand, WorkspaceRepository,
+    ApplicationError, AuthorizeClientCommand, AuthorizeClientService, CanonicalMutationRepository,
+    CheckpointRepository, ClientGrantBundle, DeleteMemoryCommand, EventRepository,
+    MembershipRepository, MemoryLifecycleService, MemoryRepository, RememberPreferenceCommand,
+    RememberPreferenceService, ResolveContextCommand, ResolveContextService, ReviseMemoryCommand,
+    WorkspaceRepository,
 };
-use rembrane_crypto_rustcrypto::RustCryptoRecordCipher;
+use rembrane_config::{ProviderConnection, ProviderKind, ProviderPlacement, SecretReference};
 use rembrane_contracts::ResolveContextRequest;
-use rembrane_config::{
-    ProviderConnection, ProviderKind, ProviderPlacement, SecretReference,
-};
+use rembrane_crypto_rustcrypto::RustCryptoRecordCipher;
 use rembrane_domain::{
-    CanonicalEvent, ClientId, ContextPackId, DisclosureId, EventId,
-    EventPayload, EvidenceId, EvidenceReference, EvidenceSource, MemoryId,
-    MemoryRecord, MemoryScope, Membership, Principal, PrincipalId, ReadGrant,
-    ReadScope, Workspace, WorkspaceId, WorkspaceRole, WritePermission,
+    CanonicalEvent, ClientId, ContextPackId, DisclosureId, EventId, EventPayload, EvidenceId,
+    EvidenceReference, EvidenceSource, Membership, MemoryId, MemoryRecord, MemoryScope, Principal,
+    PrincipalId, ReadGrant, ReadScope, Workspace, WorkspaceId, WorkspaceRole, WritePermission,
 };
 use rembrane_store_memory::InMemoryStore;
 use rembrane_store_sqlite::SqliteStore;
@@ -75,9 +71,7 @@ fn print_mcp_config(arguments: &[String]) -> Result<(), String> {
         "claude-code" => claude_mcp_config(server_binary),
         "generic" => generic_mcp_config(server_binary),
         _ => {
-            return Err(
-                "--client must be codex, claude-code, or generic".to_owned(),
-            );
+            return Err("--client must be codex, claude-code, or generic".to_owned());
         }
     };
     println!("{config}");
@@ -114,9 +108,7 @@ fn codex_mcp_config(server_binary: &str) -> String {
 fn claude_mcp_config(server_binary: &str) -> String {
     let environment = MCP_ENVIRONMENT_VARIABLES
         .iter()
-        .map(|variable| {
-            format!("\"{variable}\":\"${{{variable}}}\"")
-        })
+        .map(|variable| format!("\"{variable}\":\"${{{variable}}}\""))
         .collect::<Vec<_>>()
         .join(",");
     format!(
@@ -150,10 +142,7 @@ fn fingerprint_git(arguments: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-fn git_output(
-    repository: &std::path::Path,
-    arguments: &[&str],
-) -> Result<String, String> {
+fn git_output(repository: &std::path::Path, arguments: &[&str]) -> Result<String, String> {
     let output = std::process::Command::new("git")
         .args(["-C"])
         .arg(repository)
@@ -177,10 +166,7 @@ fn backup(arguments: &[String]) -> Result<(), String> {
     if destination.exists() {
         return Err("backup destination already exists".to_owned());
     }
-    let temporary = destination.with_extension(format!(
-        "encrypted-snapshot-{}",
-        unique_suffix()?
-    ));
+    let temporary = destination.with_extension(format!("encrypted-snapshot-{}", unique_suffix()?));
     let result = (|| {
         store
             .backup_to(&temporary)
@@ -216,10 +202,8 @@ fn restore(arguments: &[String]) -> Result<(), String> {
     read_export(source, destination)?;
 
     let result = (|| {
-        let principal_id =
-            PrincipalId::new(option(arguments, "--principal")?);
-        let workspace_id =
-            WorkspaceId::new(option(arguments, "--workspace")?);
+        let principal_id = PrincipalId::new(option(arguments, "--principal")?);
+        let workspace_id = WorkspaceId::new(option(arguments, "--workspace")?);
         let cipher = RustCryptoRecordCipher::from_environment()
             .map_err(|error| format!("cannot load workspace cipher: {error}"))?;
         let store = SqliteStore::open(destination)
@@ -244,18 +228,15 @@ fn restore(arguments: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-fn write_export(
-    snapshot: &std::path::Path,
-    destination: &std::path::Path,
-) -> Result<(), String> {
+fn write_export(snapshot: &std::path::Path, destination: &std::path::Path) -> Result<(), String> {
     use std::io::Write;
 
     let payload_length = snapshot
         .metadata()
         .map_err(|error| format!("cannot inspect snapshot: {error}"))?
         .len();
-    let mut input = std::fs::File::open(snapshot)
-        .map_err(|error| format!("cannot open snapshot: {error}"))?;
+    let mut input =
+        std::fs::File::open(snapshot).map_err(|error| format!("cannot open snapshot: {error}"))?;
     let mut output = std::fs::OpenOptions::new()
         .write(true)
         .create_new(true)
@@ -276,14 +257,11 @@ fn write_export(
         .map_err(|error| format!("cannot flush export: {error}"))
 }
 
-fn read_export(
-    source: &std::path::Path,
-    destination: &std::path::Path,
-) -> Result<(), String> {
+fn read_export(source: &std::path::Path, destination: &std::path::Path) -> Result<(), String> {
     use std::io::{Read, Write};
 
-    let mut input = std::fs::File::open(source)
-        .map_err(|error| format!("cannot open export: {error}"))?;
+    let mut input =
+        std::fs::File::open(source).map_err(|error| format!("cannot open export: {error}"))?;
     let mut magic = [0_u8; EXPORT_MAGIC.len()];
     input
         .read_exact(&mut magic)
@@ -328,10 +306,7 @@ fn read_export(
         .create_new(true)
         .open(destination)
         .map_err(|error| format!("cannot create restore destination: {error}"))?;
-    let copied = match std::io::copy(
-        &mut input.by_ref().take(payload_length),
-        &mut output,
-    ) {
+    let copied = match std::io::copy(&mut input.by_ref().take(payload_length), &mut output) {
         Ok(copied) => copied,
         Err(error) => {
             drop(output);
@@ -374,12 +349,10 @@ fn doctor(arguments: &[String]) -> Result<(), String> {
 }
 
 fn print_privacy_diagnostics() -> Result<(), String> {
-    let configured_scopes = std::env::var("REMBRANE_READ_SCOPES")
-        .unwrap_or_else(|_| "global".to_owned());
+    let configured_scopes =
+        std::env::var("REMBRANE_READ_SCOPES").unwrap_or_else(|_| "global".to_owned());
     let scopes = rembrane_config::parse_read_scopes(&configured_scopes)
-        .map_err(|error| {
-            format!("invalid REMBRANE_READ_SCOPES configuration: {error}")
-        })?;
+        .map_err(|error| format!("invalid REMBRANE_READ_SCOPES configuration: {error}"))?;
     validate_configured_provider_profiles()?;
 
     println!("Privacy diagnostics:");
@@ -425,24 +398,14 @@ fn validate_configured_provider_profiles() -> Result<(), String> {
             })
             .into_iter()
             .collect();
-        ProviderConnection::remote(
-            kind,
-            endpoint,
-            credentials,
-            ProviderPlacement::External,
-        )
-        .map_err(|error| {
-            format!("invalid {endpoint_variable} configuration: {error}")
-        })?;
+        ProviderConnection::remote(kind, endpoint, credentials, ProviderPlacement::External)
+            .map_err(|error| format!("invalid {endpoint_variable} configuration: {error}"))?;
     }
     Ok(())
 }
 
 fn configured_secret_sources() -> Vec<&'static str> {
-    let mut sources = vec![
-        "REMBRANE_WORKSPACE_KEY_ID",
-        "REMBRANE_WORKSPACE_KEY_HEX",
-    ];
+    let mut sources = vec!["REMBRANE_WORKSPACE_KEY_ID", "REMBRANE_WORKSPACE_KEY_HEX"];
     for source in ["MEM0_API_KEY", "GRAPHITI_CREDENTIALS"] {
         if std::env::var(source)
             .ok()
@@ -514,9 +477,7 @@ where
     let membership = store
         .find_membership(workspace_id, principal_id)
         .map_err(|error| format!("cannot inspect membership: {error}"))?
-        .ok_or_else(|| {
-            "principal is not a member of the configured workspace".to_owned()
-        })?;
+        .ok_or_else(|| "principal is not a member of the configured workspace".to_owned())?;
     if !membership.is_active() {
         return Err("configured workspace membership is not active".to_owned());
     }
@@ -524,23 +485,15 @@ where
     let memories = store
         .list_for_subject(workspace_id, principal_id)
         .map_err(|error| {
-            format!(
-                "cannot authenticate workspace memories with the configured key: {error}"
-            )
+            format!("cannot authenticate workspace memories with the configured key: {error}")
         })?;
-    let events = store
-        .list_events_since(workspace_id, 0)
-        .map_err(|error| {
-            format!(
-                "cannot authenticate workspace events with the configured key: {error}"
-            )
-        })?;
+    let events = store.list_events_since(workspace_id, 0).map_err(|error| {
+        format!("cannot authenticate workspace events with the configured key: {error}")
+    })?;
     let checkpoints = store
         .list_checkpoints_for_subject(workspace_id, principal_id)
         .map_err(|error| {
-            format!(
-                "cannot authenticate workspace checkpoints with the configured key: {error}"
-            )
+            format!("cannot authenticate workspace checkpoints with the configured key: {error}")
         })?;
     Ok((
         membership.role(),
@@ -554,10 +507,8 @@ fn remember(arguments: &[String]) -> Result<(), String> {
     let content = option(arguments, "--content")?;
     let scope = requested_memory_scope(arguments)?;
     let read_scope = read_scope(&scope);
-    let client_id =
-        optional_option(arguments, "--client").unwrap_or("rembrane-cli");
-    let (mut store, principal_id, workspace_id) =
-        encrypted_store(arguments)?;
+    let client_id = optional_option(arguments, "--client").unwrap_or("rembrane-cli");
+    let (mut store, principal_id, workspace_id) = encrypted_store(arguments)?;
     let grants = authorize_client(
         &store,
         ClientId::new(client_id),
@@ -593,10 +544,8 @@ fn correct(arguments: &[String]) -> Result<(), String> {
     let expected_version = positive_u64(arguments, "--version")?;
     let content = option(arguments, "--content")?;
     let scope = requested_memory_scope(arguments)?;
-    let client_id =
-        optional_option(arguments, "--client").unwrap_or("rembrane-cli");
-    let (mut store, principal_id, workspace_id) =
-        encrypted_store(arguments)?;
+    let client_id = optional_option(arguments, "--client").unwrap_or("rembrane-cli");
+    let (mut store, principal_id, workspace_id) = encrypted_store(arguments)?;
     let grants = authorize_client(
         &store,
         ClientId::new(client_id),
@@ -631,10 +580,8 @@ fn forget(arguments: &[String]) -> Result<(), String> {
     let memory_id = MemoryId::new(option(arguments, "--memory")?);
     let expected_version = positive_u64(arguments, "--version")?;
     let scope = requested_memory_scope(arguments)?;
-    let client_id =
-        optional_option(arguments, "--client").unwrap_or("rembrane-cli");
-    let (mut store, principal_id, workspace_id) =
-        encrypted_store(arguments)?;
+    let client_id = optional_option(arguments, "--client").unwrap_or("rembrane-cli");
+    let (mut store, principal_id, workspace_id) = encrypted_store(arguments)?;
     let grants = authorize_client(
         &store,
         ClientId::new(client_id),
@@ -681,10 +628,8 @@ fn recall(arguments: &[String]) -> Result<(), String> {
     if maximum_bytes == 0 {
         return Err("--max-bytes must be a positive integer".to_owned());
     }
-    let (domain, entity_id, activity_id, read_scopes) =
-        recall_scope_context(arguments);
-    let (mut store, principal_id, workspace_id) =
-        encrypted_store(arguments)?;
+    let (domain, entity_id, activity_id, read_scopes) = recall_scope_context(arguments);
+    let (mut store, principal_id, workspace_id) = encrypted_store(arguments)?;
     let grants = authorize_client(
         &store,
         ClientId::new(client_id),
@@ -730,10 +675,9 @@ fn recall_scope_context(
     Vec<ReadScope>,
 ) {
     let domain = optional_option(arguments, "--domain").map(str::to_owned);
-    let entity_id = optional_option(arguments, "--entity")
-        .map(rembrane_domain::EntityId::new);
-    let activity_id = optional_option(arguments, "--activity")
-        .map(rembrane_domain::ActivityId::new);
+    let entity_id = optional_option(arguments, "--entity").map(rembrane_domain::EntityId::new);
+    let activity_id =
+        optional_option(arguments, "--activity").map(rembrane_domain::ActivityId::new);
     let mut scopes = vec![ReadScope::Global];
     if let Some(name) = &domain {
         scopes.push(ReadScope::Domain { name: name.clone() });
@@ -751,21 +695,15 @@ fn requested_memory_scope(arguments: &[String]) -> Result<MemoryScope, String> {
     Ok(optional_requested_scope(arguments)?.unwrap_or(MemoryScope::Global))
 }
 
-fn optional_requested_scope(
-    arguments: &[String],
-) -> Result<Option<MemoryScope>, String> {
+fn optional_requested_scope(arguments: &[String]) -> Result<Option<MemoryScope>, String> {
     let domain = optional_option(arguments, "--domain");
     let entity = optional_option(arguments, "--entity");
     let activity = optional_option(arguments, "--activity");
-    let count =
-        usize::from(domain.is_some())
-            + usize::from(entity.is_some())
-            + usize::from(activity.is_some());
+    let count = usize::from(domain.is_some())
+        + usize::from(entity.is_some())
+        + usize::from(activity.is_some());
     if count > 1 {
-        return Err(
-            "--domain, --entity, and --activity are mutually exclusive"
-                .to_owned(),
-        );
+        return Err("--domain, --entity, and --activity are mutually exclusive".to_owned());
     }
 
     Ok(if let Some(name) = domain {
@@ -786,13 +724,9 @@ fn optional_requested_scope(
 fn read_scope(scope: &MemoryScope) -> ReadScope {
     match scope {
         MemoryScope::Global => ReadScope::Global,
-        MemoryScope::Domain { name } => ReadScope::Domain {
-            name: name.clone(),
-        },
+        MemoryScope::Domain { name } => ReadScope::Domain { name: name.clone() },
         MemoryScope::Entity { id } => ReadScope::Entity { id: id.clone() },
-        MemoryScope::Activity { id } => {
-            ReadScope::Activity { id: id.clone() }
-        }
+        MemoryScope::Activity { id } => ReadScope::Activity { id: id.clone() },
     }
 }
 
@@ -837,10 +771,7 @@ fn authorize_client<C>(
         .map_err(|error| format!("cannot authorize client: {error}"))
 }
 
-fn current_sequence<C>(
-    store: &SqliteStore<C>,
-    workspace_id: &WorkspaceId,
-) -> Result<u64, String>
+fn current_sequence<C>(store: &SqliteStore<C>, workspace_id: &WorkspaceId) -> Result<u64, String>
 where
     SqliteStore<C>: EventRepository,
 {
@@ -879,30 +810,22 @@ fn initialize(arguments: &[String]) -> Result<(), String> {
     let workspace_id = WorkspaceId::new(workspace);
     let mut store = SqliteStore::open(database_path)
         .map_err(|error| format!("cannot open database: {error}"))?;
-    let initialization = store
-        .initialize_personal_workspace(
-            Principal::new(principal_id.clone()),
-            Workspace::personal(workspace_id.clone()),
-            Membership::new(
-                workspace_id.clone(),
-                principal_id.clone(),
-                WorkspaceRole::Owner,
-            ),
-        );
+    let initialization = store.initialize_personal_workspace(
+        Principal::new(principal_id.clone()),
+        Workspace::personal(workspace_id.clone()),
+        Membership::new(
+            workspace_id.clone(),
+            principal_id.clone(),
+            WorkspaceRole::Owner,
+        ),
+    );
     let already_initialized = match initialization {
         Ok(()) => false,
         Err(ApplicationError::AlreadyExists) => {
-            if existing_personal_workspace_is_valid(
-                &store,
-                &principal_id,
-                &workspace_id,
-            )? {
+            if existing_personal_workspace_is_valid(&store, &principal_id, &workspace_id)? {
                 true
             } else {
-                return Err(
-                    "cannot initialize workspace: existing state conflicts"
-                        .to_owned(),
-                );
+                return Err("cannot initialize workspace: existing state conflicts".to_owned());
             }
         }
         Err(error) => {
@@ -937,12 +860,10 @@ fn existing_personal_workspace_is_valid<C>(
         .map_err(|error| format!("cannot inspect membership: {error}"))?;
 
     Ok(principal.is_some()
-        && workspace.is_some_and(|workspace| {
-            workspace.kind() == rembrane_domain::WorkspaceKind::Personal
-        })
+        && workspace
+            .is_some_and(|workspace| workspace.kind() == rembrane_domain::WorkspaceKind::Personal)
         && membership.is_some_and(|membership| {
-            membership.role() == WorkspaceRole::Owner
-                && membership.is_active()
+            membership.role() == WorkspaceRole::Owner && membership.is_active()
         }))
 }
 
@@ -1078,9 +999,8 @@ mod tests {
     use rembrane_domain::{EntityId, MemoryScope, ReadScope};
 
     use super::{
-        EXPORT_MAGIC, claude_mcp_config, codex_mcp_config,
-        format_read_scopes, generic_mcp_config, option, positive_u64,
-        read_export, recall_scope_context, redact_endpoint,
+        EXPORT_MAGIC, claude_mcp_config, codex_mcp_config, format_read_scopes, generic_mcp_config,
+        option, positive_u64, read_export, recall_scope_context, redact_endpoint,
         requested_memory_scope, write_export,
     };
 
@@ -1130,10 +1050,7 @@ mod tests {
 
     #[test]
     fn parses_one_entity_scope_and_rejects_ambiguous_scopes() {
-        let scoped = vec![
-            "--entity".to_owned(),
-            "project_01".to_owned(),
-        ];
+        let scoped = vec!["--entity".to_owned(), "project_01".to_owned()];
         assert_eq!(
             requested_memory_scope(&scoped).expect("scope should parse"),
             MemoryScope::Entity {
@@ -1188,9 +1105,7 @@ mod tests {
     #[test]
     fn privacy_diagnostics_redact_endpoint_credentials_and_paths() {
         assert_eq!(
-            redact_endpoint(
-                "https://operator:secret@graph.example/v1?token=hidden"
-            ),
+            redact_endpoint("https://operator:secret@graph.example/v1?token=hidden"),
             "https://graph.example"
         );
         assert_eq!(
@@ -1242,9 +1157,9 @@ mod tests {
         assert!(!codex.contains("00010203"));
 
         let claude = claude_mcp_config("/opt/rembrane-mcp");
-        assert!(claude.contains(
-            "\"REMBRANE_WORKSPACE_KEY_HEX\":\"${REMBRANE_WORKSPACE_KEY_HEX}\""
-        ));
+        assert!(
+            claude.contains("\"REMBRANE_WORKSPACE_KEY_HEX\":\"${REMBRANE_WORKSPACE_KEY_HEX}\"")
+        );
         assert!(!claude.contains("00010203"));
 
         let generic = generic_mcp_config("/opt/rembrane-mcp");

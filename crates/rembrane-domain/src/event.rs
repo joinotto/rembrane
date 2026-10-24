@@ -2,8 +2,8 @@ use std::error::Error;
 use std::fmt::{self, Display};
 
 use crate::{
-    ActivityId, ContextPackId, DisclosureId, EventId, EvidenceId, MemoryId,
-    PrincipalId, WorkspaceId,
+    ActivityId, ContextPackId, DisclosureId, EventId, EvidenceId, MemoryId, PrincipalId,
+    WorkspaceId,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]

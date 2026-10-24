@@ -82,11 +82,7 @@ pub struct Membership {
 
 impl Membership {
     #[must_use]
-    pub fn new(
-        workspace_id: WorkspaceId,
-        principal_id: PrincipalId,
-        role: WorkspaceRole,
-    ) -> Self {
+    pub fn new(workspace_id: WorkspaceId, principal_id: PrincipalId, role: WorkspaceRole) -> Self {
         Self {
             workspace_id,
             principal_id,
@@ -122,8 +118,7 @@ impl Membership {
 
     #[must_use]
     pub const fn can_manage_members(&self) -> bool {
-        self.is_active()
-            && matches!(self.role, WorkspaceRole::Owner | WorkspaceRole::Admin)
+        self.is_active() && matches!(self.role, WorkspaceRole::Owner | WorkspaceRole::Admin)
     }
 
     #[must_use]
@@ -131,9 +126,7 @@ impl Membership {
         self.is_active()
             && matches!(
                 self.role,
-                WorkspaceRole::Owner
-                    | WorkspaceRole::Admin
-                    | WorkspaceRole::Member
+                WorkspaceRole::Owner | WorkspaceRole::Admin | WorkspaceRole::Member
             )
     }
 
@@ -152,9 +145,7 @@ impl Membership {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        Membership, Principal, Workspace, WorkspaceKind, WorkspaceRole,
-    };
+    use super::{Membership, Principal, Workspace, WorkspaceKind, WorkspaceRole};
     use crate::{PrincipalId, WorkspaceId};
 
     fn member(role: WorkspaceRole) -> Membership {

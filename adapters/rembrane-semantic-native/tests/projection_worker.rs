@@ -1,16 +1,14 @@
 use rembrane_application::{
-    CanonicalMutationRepository, ProjectionOutboxRepository,
-    ProjectionOutcome, ProjectionWorker,
+    CanonicalMutationRepository, ProjectionOutboxRepository, ProjectionOutcome, ProjectionWorker,
 };
 use rembrane_domain::{
-    CanonicalEvent, EventId, EventPayload, EvidenceId, EvidenceReference,
-    EvidenceSource, MemoryId, MemoryRecord, MemoryScope, PrincipalId,
-    ProjectionJob, ProjectionJobId, ProjectionOperation, ProjectionStatus,
-    ProviderId, WorkspaceId,
+    CanonicalEvent, EventId, EventPayload, EvidenceId, EvidenceReference, EvidenceSource, MemoryId,
+    MemoryRecord, MemoryScope, PrincipalId, ProjectionJob, ProjectionJobId, ProjectionOperation,
+    ProjectionStatus, ProviderId, WorkspaceId,
 };
 use rembrane_provider_sdk::{
-    AuthorizedMemoryProjection, CandidateMemory, Capability, ProviderError,
-    ProviderManifest, SemanticMemoryProvider, SemanticQuery,
+    AuthorizedMemoryProjection, CandidateMemory, Capability, ProviderError, ProviderManifest,
+    SemanticMemoryProvider, SemanticQuery,
 };
 use rembrane_semantic_native::NativeSemanticProvider;
 use rembrane_store_memory::InMemoryStore;
@@ -129,13 +127,7 @@ fn stale_projection_is_completed_without_overwriting_provider() {
     )
     .expect("revision event should be valid");
     store
-        .replace_memory_with_event(
-            revised,
-            1,
-            revision_event,
-            Vec::new(),
-            1,
-        )
+        .replace_memory_with_event(revised, 1, revision_event, Vec::new(), 1)
         .expect("test replacement should succeed");
     let mut provider = NativeSemanticProvider::new();
 
@@ -181,17 +173,11 @@ impl SemanticMemoryProvider for FailingProvider {
         }
     }
 
-    fn index(
-        &mut self,
-        _projection: AuthorizedMemoryProjection,
-    ) -> Result<(), ProviderError> {
+    fn index(&mut self, _projection: AuthorizedMemoryProjection) -> Result<(), ProviderError> {
         Err(ProviderError::Unavailable)
     }
 
-    fn search(
-        &self,
-        _query: &SemanticQuery,
-    ) -> Result<Vec<CandidateMemory>, ProviderError> {
+    fn search(&self, _query: &SemanticQuery) -> Result<Vec<CandidateMemory>, ProviderError> {
         Err(ProviderError::Unavailable)
     }
 
@@ -210,10 +196,7 @@ fn provider_failures_retry_then_quarantine() {
     let mut store = seeded_store();
     let mut provider = FailingProvider;
 
-    for expected in [
-        ProjectionOutcome::Retried,
-        ProjectionOutcome::Quarantined,
-    ] {
+    for expected in [ProjectionOutcome::Retried, ProjectionOutcome::Quarantined] {
         let outcome = ProjectionWorker::new(
             &mut store,
             &mut provider,

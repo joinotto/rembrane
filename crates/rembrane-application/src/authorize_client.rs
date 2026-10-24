@@ -1,7 +1,4 @@
-use rembrane_domain::{
-    ClientId, ReadGrant, ReadScope, WorkspaceRole, WriteGrant,
-    WritePermission,
-};
+use rembrane_domain::{ClientId, ReadGrant, ReadScope, WorkspaceRole, WriteGrant, WritePermission};
 
 use crate::{ApplicationError, MembershipRepository};
 
@@ -68,16 +65,12 @@ where
     }
 }
 
-const fn role_allows(
-    role: WorkspaceRole,
-    permission: WritePermission,
-) -> bool {
+const fn role_allows(role: WorkspaceRole, permission: WritePermission) -> bool {
     match role {
         WorkspaceRole::Owner | WorkspaceRole::Admin => true,
         WorkspaceRole::Member => matches!(
             permission,
-            WritePermission::ProposeMemory
-                | WritePermission::WriteCheckpoint
+            WritePermission::ProposeMemory | WritePermission::WriteCheckpoint
         ),
         WorkspaceRole::Viewer => false,
     }
@@ -86,26 +79,18 @@ const fn role_allows(
 #[cfg(test)]
 mod tests {
     use rembrane_domain::{
-        Membership, PrincipalId, ReadScope, WorkspaceId, WorkspaceRole,
-        WritePermission,
+        Membership, PrincipalId, ReadScope, WorkspaceId, WorkspaceRole, WritePermission,
     };
 
-    use super::{
-        AuthorizeClientCommand, AuthorizeClientService,
-    };
-    use crate::{
-        ApplicationError, MembershipRepository,
-    };
+    use super::{AuthorizeClientCommand, AuthorizeClientService};
+    use crate::{ApplicationError, MembershipRepository};
 
     struct Memberships {
         membership: Membership,
     }
 
     impl MembershipRepository for Memberships {
-        fn insert_membership(
-            &mut self,
-            _membership: Membership,
-        ) -> Result<(), ApplicationError> {
+        fn insert_membership(&mut self, _membership: Membership) -> Result<(), ApplicationError> {
             unreachable!("not used by authorization tests")
         }
 
@@ -123,10 +108,7 @@ mod tests {
             }
         }
 
-        fn replace_membership(
-            &mut self,
-            _membership: Membership,
-        ) -> Result<(), ApplicationError> {
+        fn replace_membership(&mut self, _membership: Membership) -> Result<(), ApplicationError> {
             unreachable!("not used by authorization tests")
         }
     }

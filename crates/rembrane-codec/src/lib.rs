@@ -7,9 +7,8 @@ use std::error::Error;
 use std::fmt::{self, Display};
 
 use rembrane_domain::{
-    ActivityId, EntityId, EvidenceId, EvidenceReference, EvidenceSource,
-    MemoryId, MemoryKind, MemoryRecord, MemoryScope, MemoryStatus, PrincipalId,
-    WorkspaceId,
+    ActivityId, EntityId, EvidenceId, EvidenceReference, EvidenceSource, MemoryId, MemoryKind,
+    MemoryRecord, MemoryScope, MemoryStatus, PrincipalId, WorkspaceId,
 };
 use serde::{Deserialize, Serialize};
 
@@ -30,16 +29,10 @@ pub enum CodecError {
 impl Display for CodecError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::InvalidDomainRecord => {
-                formatter.write_str("decoded domain record is invalid")
-            }
+            Self::InvalidDomainRecord => formatter.write_str("decoded domain record is invalid"),
             Self::MalformedPayload => formatter.write_str("payload is malformed"),
-            Self::UnsupportedFormat => {
-                formatter.write_str("payload format is unsupported")
-            }
-            Self::UnsupportedVersion => {
-                formatter.write_str("payload version is unsupported")
-            }
+            Self::UnsupportedFormat => formatter.write_str("payload format is unsupported"),
+            Self::UnsupportedVersion => formatter.write_str("payload version is unsupported"),
         }
     }
 }
@@ -125,8 +118,8 @@ pub fn encode_memory(memory: &MemoryRecord) -> Result<Vec<u8>, CodecError> {
 }
 
 pub fn decode_memory(payload: &[u8]) -> Result<MemoryRecord, CodecError> {
-    let envelope: MemoryEnvelope = serde_json::from_slice(payload)
-        .map_err(|_| CodecError::MalformedPayload)?;
+    let envelope: MemoryEnvelope =
+        serde_json::from_slice(payload).map_err(|_| CodecError::MalformedPayload)?;
     if envelope.format != MEMORY_FORMAT {
         return Err(CodecError::UnsupportedFormat);
     }
@@ -148,11 +141,7 @@ impl From<&MemoryRecord> for MemoryDto {
             status: MemoryStatusDto::from(memory.status()),
             content: memory.content().to_owned(),
             record_version: memory.version(),
-            evidence: memory
-                .evidence()
-                .iter()
-                .map(EvidenceDto::from)
-                .collect(),
+            evidence: memory.evidence().iter().map(EvidenceDto::from).collect(),
         }
     }
 }
@@ -304,8 +293,8 @@ impl From<EvidenceSourceDto> for EvidenceSource {
 mod tests {
     use super::{CodecError, decode_memory, encode_memory};
     use rembrane_domain::{
-        EvidenceId, EvidenceReference, EvidenceSource, MemoryId, MemoryRecord,
-        MemoryScope, PrincipalId, WorkspaceId,
+        EvidenceId, EvidenceReference, EvidenceSource, MemoryId, MemoryRecord, MemoryScope,
+        PrincipalId, WorkspaceId,
     };
 
     fn preference() -> MemoryRecord {
@@ -335,10 +324,9 @@ mod tests {
     #[test]
     fn preserves_memory_v1_wire_fixture() {
         let encoded = encode_memory(&preference()).expect("encoding succeeds");
-        let expected =
-            include_str!("../fixtures/memory-v1-confirmed-preference.json")
-                .trim_end()
-                .as_bytes();
+        let expected = include_str!("../fixtures/memory-v1-confirmed-preference.json")
+            .trim_end()
+            .as_bytes();
 
         assert_eq!(encoded, expected);
     }
@@ -348,10 +336,7 @@ mod tests {
         let encoded = encode_memory(&preference()).expect("encoding succeeds");
         let incompatible = String::from_utf8(encoded)
             .expect("JSON payload is UTF-8")
-            .replace(
-                "\"version\":1",
-                "\"version\":2",
-            );
+            .replace("\"version\":1", "\"version\":2");
 
         assert!(matches!(
             decode_memory(incompatible.as_bytes()),
@@ -364,10 +349,7 @@ mod tests {
         let encoded = encode_memory(&preference()).expect("encoding succeeds");
         let incompatible = String::from_utf8(encoded)
             .expect("JSON payload is UTF-8")
-            .replace(
-                "\"record\":{",
-                "\"unexpected\":true,\"record\":{",
-            );
+            .replace("\"record\":{", "\"unexpected\":true,\"record\":{");
 
         assert!(matches!(
             decode_memory(incompatible.as_bytes()),

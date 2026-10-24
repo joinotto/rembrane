@@ -1,9 +1,7 @@
 use std::error::Error;
 use std::fmt::{self, Display};
 
-use crate::{
-    ActivityId, CheckpointId, EntityId, PrincipalId, WorkspaceId,
-};
+use crate::{ActivityId, CheckpointId, EntityId, PrincipalId, WorkspaceId};
 
 pub const MAX_CHECKPOINT_PAYLOAD_BYTES: usize = 262_144;
 
@@ -21,9 +19,7 @@ impl Display for CheckpointError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::EmptyGoal => formatter.write_str("activity goal must not be empty"),
-            Self::EmptySummary => {
-                formatter.write_str("activity summary must not be empty")
-            }
+            Self::EmptySummary => formatter.write_str("activity summary must not be empty"),
             Self::EmptyStateFingerprint => {
                 formatter.write_str("state fingerprint must not be empty")
             }
@@ -128,13 +124,7 @@ impl ActivityCheckpoint {
         if summary.trim().is_empty() {
             return Err(CheckpointError::EmptySummary);
         }
-        validate_payload_size(
-            &goal,
-            &summary,
-            &next_steps,
-            &blockers,
-            None,
-        )?;
+        validate_payload_size(&goal, &summary, &next_steps, &blockers, None)?;
 
         Ok(Self {
             id,
@@ -259,9 +249,7 @@ impl ActivityCheckpoint {
     }
 }
 
-fn validate_state_fingerprint(
-    state_fingerprint: Option<&str>,
-) -> Result<(), CheckpointError> {
+fn validate_state_fingerprint(state_fingerprint: Option<&str>) -> Result<(), CheckpointError> {
     if state_fingerprint.is_some_and(|value| value.trim().is_empty()) {
         Err(CheckpointError::EmptyStateFingerprint)
     } else {
@@ -295,9 +283,7 @@ fn validate_payload_size(
 #[cfg(test)]
 mod tests {
     use super::ActivityCheckpoint;
-    use crate::{
-        ActivityId, CheckpointId, EntityId, PrincipalId, WorkspaceId,
-    };
+    use crate::{ActivityId, CheckpointId, EntityId, PrincipalId, WorkspaceId};
 
     fn checkpoint() -> ActivityCheckpoint {
         ActivityCheckpoint::new(

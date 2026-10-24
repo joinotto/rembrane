@@ -1,11 +1,9 @@
 use rembrane_application::{
-    ApplicationError, CheckpointService, CreateCheckpointCommand,
-    ResumeActivityCommand,
+    ApplicationError, CheckpointService, CreateCheckpointCommand, ResumeActivityCommand,
 };
 use rembrane_domain::{
-    ActivityCheckpoint, ActivityId, CheckpointId, ClientId, DisclosureId,
-    EventId, PrincipalId, ReadGrant, ReadScope, WorkspaceId, WriteGrant,
-    WritePermission,
+    ActivityCheckpoint, ActivityId, CheckpointId, ClientId, DisclosureId, EventId, PrincipalId,
+    ReadGrant, ReadScope, WorkspaceId, WriteGrant, WritePermission,
 };
 use rembrane_store_memory::InMemoryStore;
 

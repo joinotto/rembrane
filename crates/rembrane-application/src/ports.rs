@@ -1,7 +1,6 @@
 use rembrane_domain::{
-    ActivityCheckpoint, ActivityId, CanonicalEvent,
-    CheckpointDisclosureReceipt, DisclosureReceipt, Membership, MemoryId,
-    MemoryRecord, Principal, PrincipalId, ProjectionJob, ProjectionJobId,
+    ActivityCheckpoint, ActivityId, CanonicalEvent, CheckpointDisclosureReceipt, DisclosureReceipt,
+    Membership, MemoryId, MemoryRecord, Principal, PrincipalId, ProjectionJob, ProjectionJobId,
     ProjectionStatus, ProviderId, Workspace, WorkspaceId,
 };
 
@@ -19,14 +18,10 @@ pub trait MemoryRepository {
         workspace_id: &WorkspaceId,
         subject_id: &PrincipalId,
     ) -> Result<Vec<MemoryRecord>, ApplicationError>;
-
 }
 
 pub trait DisclosureRepository {
-    fn append(
-        &mut self,
-        receipt: DisclosureReceipt,
-    ) -> Result<(), ApplicationError>;
+    fn append(&mut self, receipt: DisclosureReceipt) -> Result<(), ApplicationError>;
 }
 
 pub trait CheckpointDisclosureRepository {
@@ -102,10 +97,7 @@ pub trait CheckpointMutationRepository: CheckpointRepository + EventRepository {
 }
 
 pub trait MembershipRepository {
-    fn insert_membership(
-        &mut self,
-        membership: Membership,
-    ) -> Result<(), ApplicationError>;
+    fn insert_membership(&mut self, membership: Membership) -> Result<(), ApplicationError>;
 
     fn find_membership(
         &self,
@@ -113,10 +105,7 @@ pub trait MembershipRepository {
         principal_id: &PrincipalId,
     ) -> Result<Option<Membership>, ApplicationError>;
 
-    fn replace_membership(
-        &mut self,
-        membership: Membership,
-    ) -> Result<(), ApplicationError>;
+    fn replace_membership(&mut self, membership: Membership) -> Result<(), ApplicationError>;
 }
 
 pub trait WorkspaceRepository {
@@ -139,10 +128,7 @@ pub trait WorkspaceRepository {
 }
 
 pub trait ProjectionOutboxRepository {
-    fn enqueue_projection(
-        &mut self,
-        job: ProjectionJob,
-    ) -> Result<(), ApplicationError>;
+    fn enqueue_projection(&mut self, job: ProjectionJob) -> Result<(), ApplicationError>;
 
     fn pending_projections(
         &self,

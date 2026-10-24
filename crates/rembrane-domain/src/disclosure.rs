@@ -1,6 +1,6 @@
 use crate::{
-    ActivityId, CheckpointId, ClientId, ContextPackId, DisclosureId, MemoryId,
-    PrincipalId, WorkspaceId,
+    ActivityId, CheckpointId, ClientId, ContextPackId, DisclosureId, MemoryId, PrincipalId,
+    WorkspaceId,
 };
 
 /// Identifies the exact memory revision disclosed to a client.
@@ -47,10 +47,7 @@ impl DisclosureReceipt {
 #[cfg(test)]
 mod tests {
     use super::{DisclosedMemory, DisclosureReceipt};
-    use crate::{
-        ClientId, ContextPackId, DisclosureId, MemoryId, PrincipalId,
-        WorkspaceId,
-    };
+    use crate::{ClientId, ContextPackId, DisclosureId, MemoryId, PrincipalId, WorkspaceId};
 
     #[test]
     fn receipt_tracks_exact_memory_version() {

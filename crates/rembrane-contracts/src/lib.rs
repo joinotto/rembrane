@@ -1,8 +1,8 @@
 //! Transport-independent request and response contracts.
 
 use rembrane_domain::{
-    ActivityId, ContextPackId, DisclosureId, DisclosureReceipt, EntityId,
-    MemoryRecord, PrincipalId, WorkspaceId,
+    ActivityId, ContextPackId, DisclosureId, DisclosureReceipt, EntityId, MemoryRecord,
+    PrincipalId, WorkspaceId,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]

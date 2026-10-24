@@ -4,8 +4,8 @@
 //! container secrets, or secret managers. They do not belong in this crate's
 //! serializable deployment policy.
 
-use rembrane_provider_sdk::{Capability, ProviderPolicy};
 use rembrane_domain::{ActivityId, EntityId, ReadScope};
+use rembrane_provider_sdk::{Capability, ProviderPolicy};
 use std::error::Error;
 use std::fmt::{self, Display};
 
@@ -48,18 +48,15 @@ pub enum ProviderConnectionError {
 impl Display for ProviderConnectionError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::NativeProviderMustBeLocal => formatter.write_str(
-                "native provider must not configure an endpoint or credentials",
-            ),
-            Self::EmptyEndpoint => {
-                formatter.write_str("provider endpoint must not be empty")
+            Self::NativeProviderMustBeLocal => {
+                formatter.write_str("native provider must not configure an endpoint or credentials")
             }
-            Self::InsecureRemoteEndpoint => formatter.write_str(
-                "provider endpoint must use HTTPS or loopback HTTP",
-            ),
-            Self::CredentialBearingEndpoint => formatter.write_str(
-                "provider endpoint must not contain credentials, query, or fragment",
-            ),
+            Self::EmptyEndpoint => formatter.write_str("provider endpoint must not be empty"),
+            Self::InsecureRemoteEndpoint => {
+                formatter.write_str("provider endpoint must use HTTPS or loopback HTTP")
+            }
+            Self::CredentialBearingEndpoint => formatter
+                .write_str("provider endpoint must not contain credentials, query, or fragment"),
         }
     }
 }
@@ -97,17 +94,12 @@ impl ProviderConnection {
     }
 }
 
-fn validate_provider_endpoint(
-    endpoint: &str,
-) -> Result<(), ProviderConnectionError> {
+fn validate_provider_endpoint(endpoint: &str) -> Result<(), ProviderConnectionError> {
     let endpoint = endpoint.trim();
     if endpoint.is_empty() {
         return Err(ProviderConnectionError::EmptyEndpoint);
     }
-    if endpoint.contains('@')
-        || endpoint.contains('?')
-        || endpoint.contains('#')
-    {
+    if endpoint.contains('@') || endpoint.contains('?') || endpoint.contains('#') {
         return Err(ProviderConnectionError::CredentialBearingEndpoint);
     }
     let Some((scheme, remainder)) = endpoint.split_once("://") else {
@@ -152,12 +144,10 @@ pub enum SecretReferenceError {
 impl Display for SecretReferenceError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::EmptyField => {
-                formatter.write_str("secret reference fields must not be empty")
+            Self::EmptyField => formatter.write_str("secret reference fields must not be empty"),
+            Self::InlineValueForbidden => {
+                formatter.write_str("inline secret values are forbidden; use a reference")
             }
-            Self::InlineValueForbidden => formatter.write_str(
-                "inline secret values are forbidden; use a reference",
-            ),
         }
     }
 }
@@ -165,9 +155,7 @@ impl Display for SecretReferenceError {
 impl Error for SecretReferenceError {}
 
 impl SecretReference {
-    pub fn environment(
-        variable: impl Into<String>,
-    ) -> Result<Self, SecretReferenceError> {
+    pub fn environment(variable: impl Into<String>) -> Result<Self, SecretReferenceError> {
         let variable = variable.into();
         if variable.trim().is_empty() {
             return Err(SecretReferenceError::EmptyField);
@@ -175,9 +163,7 @@ impl SecretReference {
         Ok(Self::Environment { variable })
     }
 
-    pub fn file(
-        path: impl Into<String>,
-    ) -> Result<Self, SecretReferenceError> {
+    pub fn file(path: impl Into<String>) -> Result<Self, SecretReferenceError> {
         let path = path.into();
         if path.trim().is_empty() {
             return Err(SecretReferenceError::EmptyField);
@@ -197,9 +183,7 @@ impl SecretReference {
         Ok(Self::External { provider, key })
     }
 
-    pub fn inline(
-        _value: impl Into<String>,
-    ) -> Result<Self, SecretReferenceError> {
+    pub fn inline(_value: impl Into<String>) -> Result<Self, SecretReferenceError> {
         Err(SecretReferenceError::InlineValueForbidden)
     }
 }
@@ -211,9 +195,8 @@ impl DeploymentPolicy {
         required_capabilities: Vec<Capability>,
         placement: ProviderPlacement,
     ) -> ProviderPolicy {
-        let allow_plaintext_processing =
-            self.processing_mode == ProcessingMode::Hosted
-                || placement == ProviderPlacement::TrustedBoundary;
+        let allow_plaintext_processing = self.processing_mode == ProcessingMode::Hosted
+            || placement == ProviderPlacement::TrustedBoundary;
 
         ProviderPolicy {
             required_capabilities,
@@ -272,32 +255,22 @@ mod tests {
     use rembrane_provider_sdk::Capability;
 
     use super::{
-        DeploymentPolicy, ProcessingMode, ProviderConnection,
-        ProviderConnectionError, ProviderKind, ProviderPlacement,
-        SecretReference, SecretReferenceError, parse_read_scopes,
+        DeploymentPolicy, ProcessingMode, ProviderConnection, ProviderConnectionError,
+        ProviderKind, ProviderPlacement, SecretReference, SecretReferenceError, parse_read_scopes,
     };
 
     #[test]
     fn strict_modes_allow_plaintext_only_inside_trusted_boundary() {
-        for processing_mode in [
-            ProcessingMode::CustomerGateway,
-            ProcessingMode::LocalOnly,
-        ] {
+        for processing_mode in [ProcessingMode::CustomerGateway, ProcessingMode::LocalOnly] {
             let deployment = DeploymentPolicy { processing_mode };
             assert!(
                 deployment
-                    .provider_policy(
-                        vec![Capability::Search],
-                        ProviderPlacement::TrustedBoundary,
-                    )
+                    .provider_policy(vec![Capability::Search], ProviderPlacement::TrustedBoundary,)
                     .allow_plaintext_processing
             );
             assert!(
                 !deployment
-                    .provider_policy(
-                        vec![Capability::Search],
-                        ProviderPlacement::External,
-                    )
+                    .provider_policy(vec![Capability::Search], ProviderPlacement::External,)
                     .allow_plaintext_processing
             );
         }
@@ -311,10 +284,7 @@ mod tests {
 
         assert!(
             deployment
-                .provider_policy(
-                    vec![Capability::Search],
-                    ProviderPlacement::External,
-                )
+                .provider_policy(vec![Capability::Search], ProviderPlacement::External,)
                 .allow_plaintext_processing
         );
     }
@@ -335,10 +305,8 @@ mod tests {
 
     #[test]
     fn parses_and_deduplicates_connection_read_scopes() {
-        let scopes = parse_read_scopes(
-            "global,domain:development,entity:project_01,global",
-        )
-        .expect("scope configuration should parse");
+        let scopes = parse_read_scopes("global,domain:development,entity:project_01,global")
+            .expect("scope configuration should parse");
 
         assert_eq!(scopes.len(), 3);
     }
@@ -392,19 +360,23 @@ mod tests {
             ),
             Err(ProviderConnectionError::InsecureRemoteEndpoint)
         );
-        assert!(ProviderConnection::remote(
-            ProviderKind::Graphiti,
-            "http://127.0.0.1:8000",
-            Vec::new(),
-            ProviderPlacement::TrustedBoundary,
-        )
-        .is_ok());
-        assert!(ProviderConnection::remote(
-            ProviderKind::Graphiti,
-            "http://localhost.evil.example",
-            Vec::new(),
-            ProviderPlacement::TrustedBoundary,
-        )
-        .is_err());
+        assert!(
+            ProviderConnection::remote(
+                ProviderKind::Graphiti,
+                "http://127.0.0.1:8000",
+                Vec::new(),
+                ProviderPlacement::TrustedBoundary,
+            )
+            .is_ok()
+        );
+        assert!(
+            ProviderConnection::remote(
+                ProviderKind::Graphiti,
+                "http://localhost.evil.example",
+                Vec::new(),
+                ProviderPlacement::TrustedBoundary,
+            )
+            .is_err()
+        );
     }
 }

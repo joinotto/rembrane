@@ -10,35 +10,25 @@ mod event;
 mod grant;
 mod identifier;
 mod memory;
-mod provenance;
 mod projection;
+mod provenance;
 mod scope;
 mod workspace;
 
-pub use activity::{
-    ActivityCheckpoint, CheckpointError, MAX_CHECKPOINT_PAYLOAD_BYTES,
-};
-pub use disclosure::{
-    CheckpointDisclosureReceipt, DisclosedMemory, DisclosureReceipt,
-};
+pub use activity::{ActivityCheckpoint, CheckpointError, MAX_CHECKPOINT_PAYLOAD_BYTES};
+pub use disclosure::{CheckpointDisclosureReceipt, DisclosedMemory, DisclosureReceipt};
 pub use event::{CanonicalEvent, EventError, EventPayload};
 pub use grant::{ReadGrant, ReadScope, WriteGrant, WritePermission};
 pub use identifier::{
-    ActivityId, CheckpointId, ClientId, ContextPackId, DisclosureId, EntityId,
-    EventId, EvidenceId, MemoryId, PrincipalId, ProjectionJobId, ProviderId,
-    WorkspaceId,
+    ActivityId, CheckpointId, ClientId, ContextPackId, DisclosureId, EntityId, EventId, EvidenceId,
+    MemoryId, PrincipalId, ProjectionJobId, ProviderId, WorkspaceId,
 };
 pub use memory::{
-    MAX_MEMORY_CONTENT_BYTES, MemoryKind, MemoryLifecycleError, MemoryRecord,
-    MemoryStatus,
+    MAX_MEMORY_CONTENT_BYTES, MemoryKind, MemoryLifecycleError, MemoryRecord, MemoryStatus,
 };
+pub use projection::{ProjectionJob, ProjectionJobError, ProjectionOperation, ProjectionStatus};
 pub use provenance::{EvidenceReference, EvidenceSource};
-pub use projection::{
-    ProjectionJob, ProjectionJobError, ProjectionOperation,
-    ProjectionStatus,
-};
 pub use scope::MemoryScope;
 pub use workspace::{
-    Membership, MembershipStatus, Principal, Workspace, WorkspaceKind,
-    WorkspaceRole,
+    Membership, MembershipStatus, Principal, Workspace, WorkspaceKind, WorkspaceRole,
 };

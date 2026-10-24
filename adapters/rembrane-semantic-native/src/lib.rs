@@ -8,8 +8,8 @@ use std::collections::BTreeSet;
 
 use rembrane_domain::{MemoryId, WorkspaceId};
 use rembrane_provider_sdk::{
-    AuthorizedMemoryProjection, CandidateMemory, Capability, ProviderError,
-    ProviderManifest, SemanticMemoryProvider, SemanticQuery,
+    AuthorizedMemoryProjection, CandidateMemory, Capability, ProviderError, ProviderManifest,
+    SemanticMemoryProvider, SemanticQuery,
 };
 
 #[derive(Debug, Default)]
@@ -41,10 +41,7 @@ impl SemanticMemoryProvider for NativeSemanticProvider {
         }
     }
 
-    fn index(
-        &mut self,
-        projection: AuthorizedMemoryProjection,
-    ) -> Result<(), ProviderError> {
+    fn index(&mut self, projection: AuthorizedMemoryProjection) -> Result<(), ProviderError> {
         if projection.content.trim().is_empty() {
             return Err(ProviderError::Rejected(
                 "empty content cannot be indexed".to_owned(),
@@ -59,10 +56,7 @@ impl SemanticMemoryProvider for NativeSemanticProvider {
         Ok(())
     }
 
-    fn search(
-        &self,
-        query: &SemanticQuery,
-    ) -> Result<Vec<CandidateMemory>, ProviderError> {
+    fn search(&self, query: &SemanticQuery) -> Result<Vec<CandidateMemory>, ProviderError> {
         if query.maximum_candidates == 0 {
             return Err(ProviderError::Rejected(
                 "maximum_candidates must be greater than zero".to_owned(),
@@ -80,9 +74,7 @@ impl SemanticMemoryProvider for NativeSemanticProvider {
             .filter(|projection| projection.workspace_id == query.workspace_id)
             .filter_map(|projection| {
                 let content_tokens = tokens(&projection.content);
-                let overlap = query_tokens
-                    .intersection(&content_tokens)
-                    .count();
+                let overlap = query_tokens.intersection(&content_tokens).count();
                 if overlap == 0 {
                     return None;
                 }
@@ -138,9 +130,7 @@ fn tokens(value: &str) -> BTreeSet<String> {
 
 #[cfg(test)]
 mod tests {
-    use rembrane_domain::{
-        MemoryId, MemoryKind, MemoryScope, WorkspaceId,
-    };
+    use rembrane_domain::{MemoryId, MemoryKind, MemoryScope, WorkspaceId};
     use rembrane_provider_sdk::{
         AuthorizedMemoryProjection, SemanticMemoryProvider, SemanticQuery,
     };
@@ -190,12 +180,7 @@ mod tests {
     fn newer_projection_replaces_old_version() {
         let mut provider = NativeSemanticProvider::new();
         provider
-            .index(projection(
-                "workspace_01",
-                "memory_01",
-                1,
-                "Call me Hippo",
-            ))
+            .index(projection("workspace_01", "memory_01", 1, "Call me Hippo"))
             .expect("initial index should succeed");
         provider
             .index(projection(

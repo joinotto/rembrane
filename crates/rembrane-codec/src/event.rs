@@ -1,6 +1,6 @@
 use rembrane_domain::{
-    ActivityId, CanonicalEvent, ContextPackId, DisclosureId, EventId,
-    EventPayload, EvidenceId, MemoryId, PrincipalId, WorkspaceId,
+    ActivityId, CanonicalEvent, ContextPackId, DisclosureId, EventId, EventPayload, EvidenceId,
+    MemoryId, PrincipalId, WorkspaceId,
 };
 use serde::{Deserialize, Serialize};
 
@@ -75,8 +75,8 @@ pub fn encode_event(event: &CanonicalEvent) -> Result<Vec<u8>, CodecError> {
 }
 
 pub fn decode_event(payload: &[u8]) -> Result<CanonicalEvent, CodecError> {
-    let envelope: EventEnvelope = serde_json::from_slice(payload)
-        .map_err(|_| CodecError::MalformedPayload)?;
+    let envelope: EventEnvelope =
+        serde_json::from_slice(payload).map_err(|_| CodecError::MalformedPayload)?;
     if envelope.format != EVENT_FORMAT {
         return Err(CodecError::UnsupportedFormat);
     }
@@ -121,41 +121,29 @@ impl TryFrom<EventDto> for CanonicalEvent {
 impl From<&EventPayload> for EventPayloadDto {
     fn from(payload: &EventPayload) -> Self {
         match payload {
-            EventPayload::MemoryProposed { memory_id, version } => {
-                Self::MemoryProposed {
-                    memory_id: memory_id.as_str().to_owned(),
-                    version: *version,
-                }
-            }
-            EventPayload::MemoryConfirmed { memory_id, version } => {
-                Self::MemoryConfirmed {
-                    memory_id: memory_id.as_str().to_owned(),
-                    version: *version,
-                }
-            }
-            EventPayload::MemoryCreated { memory_id, version } => {
-                Self::MemoryCreated {
-                    memory_id: memory_id.as_str().to_owned(),
-                    version: *version,
-                }
-            }
-            EventPayload::MemoryRevised { memory_id, version } => {
-                Self::MemoryRevised {
-                    memory_id: memory_id.as_str().to_owned(),
-                    version: *version,
-                }
-            }
-            EventPayload::MemoryDeleted { memory_id, version } => {
-                Self::MemoryDeleted {
-                    memory_id: memory_id.as_str().to_owned(),
-                    version: *version,
-                }
-            }
-            EventPayload::ObservationCaptured { evidence_id } => {
-                Self::ObservationCaptured {
-                    evidence_id: evidence_id.as_str().to_owned(),
-                }
-            }
+            EventPayload::MemoryProposed { memory_id, version } => Self::MemoryProposed {
+                memory_id: memory_id.as_str().to_owned(),
+                version: *version,
+            },
+            EventPayload::MemoryConfirmed { memory_id, version } => Self::MemoryConfirmed {
+                memory_id: memory_id.as_str().to_owned(),
+                version: *version,
+            },
+            EventPayload::MemoryCreated { memory_id, version } => Self::MemoryCreated {
+                memory_id: memory_id.as_str().to_owned(),
+                version: *version,
+            },
+            EventPayload::MemoryRevised { memory_id, version } => Self::MemoryRevised {
+                memory_id: memory_id.as_str().to_owned(),
+                version: *version,
+            },
+            EventPayload::MemoryDeleted { memory_id, version } => Self::MemoryDeleted {
+                memory_id: memory_id.as_str().to_owned(),
+                version: *version,
+            },
+            EventPayload::ObservationCaptured { evidence_id } => Self::ObservationCaptured {
+                evidence_id: evidence_id.as_str().to_owned(),
+            },
             EventPayload::ActivityCheckpointed {
                 activity_id,
                 version,
@@ -177,41 +165,29 @@ impl From<&EventPayload> for EventPayloadDto {
 impl From<EventPayloadDto> for EventPayload {
     fn from(payload: EventPayloadDto) -> Self {
         match payload {
-            EventPayloadDto::MemoryProposed { memory_id, version } => {
-                Self::MemoryProposed {
-                    memory_id: MemoryId::new(memory_id),
-                    version,
-                }
-            }
-            EventPayloadDto::MemoryConfirmed { memory_id, version } => {
-                Self::MemoryConfirmed {
-                    memory_id: MemoryId::new(memory_id),
-                    version,
-                }
-            }
-            EventPayloadDto::MemoryCreated { memory_id, version } => {
-                Self::MemoryCreated {
-                    memory_id: MemoryId::new(memory_id),
-                    version,
-                }
-            }
-            EventPayloadDto::MemoryRevised { memory_id, version } => {
-                Self::MemoryRevised {
-                    memory_id: MemoryId::new(memory_id),
-                    version,
-                }
-            }
-            EventPayloadDto::MemoryDeleted { memory_id, version } => {
-                Self::MemoryDeleted {
-                    memory_id: MemoryId::new(memory_id),
-                    version,
-                }
-            }
-            EventPayloadDto::ObservationCaptured { evidence_id } => {
-                Self::ObservationCaptured {
-                    evidence_id: EvidenceId::new(evidence_id),
-                }
-            }
+            EventPayloadDto::MemoryProposed { memory_id, version } => Self::MemoryProposed {
+                memory_id: MemoryId::new(memory_id),
+                version,
+            },
+            EventPayloadDto::MemoryConfirmed { memory_id, version } => Self::MemoryConfirmed {
+                memory_id: MemoryId::new(memory_id),
+                version,
+            },
+            EventPayloadDto::MemoryCreated { memory_id, version } => Self::MemoryCreated {
+                memory_id: MemoryId::new(memory_id),
+                version,
+            },
+            EventPayloadDto::MemoryRevised { memory_id, version } => Self::MemoryRevised {
+                memory_id: MemoryId::new(memory_id),
+                version,
+            },
+            EventPayloadDto::MemoryDeleted { memory_id, version } => Self::MemoryDeleted {
+                memory_id: MemoryId::new(memory_id),
+                version,
+            },
+            EventPayloadDto::ObservationCaptured { evidence_id } => Self::ObservationCaptured {
+                evidence_id: EvidenceId::new(evidence_id),
+            },
             EventPayloadDto::ActivityCheckpointed {
                 activity_id,
                 version,
@@ -233,8 +209,7 @@ impl From<EventPayloadDto> for EventPayload {
 #[cfg(test)]
 mod tests {
     use rembrane_domain::{
-        CanonicalEvent, EventId, EventPayload, MemoryId, PrincipalId,
-        WorkspaceId,
+        CanonicalEvent, EventId, EventPayload, MemoryId, PrincipalId, WorkspaceId,
     };
 
     use super::{decode_event, encode_event};
@@ -266,10 +241,9 @@ mod tests {
     #[test]
     fn preserves_event_v1_wire_fixture() {
         let encoded = encode_event(&event()).expect("encoding succeeds");
-        let expected =
-            include_str!("../fixtures/event-v1-memory-created.json")
-                .trim_end()
-                .as_bytes();
+        let expected = include_str!("../fixtures/event-v1-memory-created.json")
+            .trim_end()
+            .as_bytes();
 
         assert_eq!(encoded, expected);
     }

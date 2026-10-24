@@ -1,12 +1,10 @@
 use rembrane_contracts::{ResolveContextRequest, ResolveContextResponse};
-use rembrane_domain::{
-    DisclosedMemory, DisclosureReceipt, MemoryScope, MemoryStatus,
-};
+use rembrane_domain::{DisclosedMemory, DisclosureReceipt, MemoryScope, MemoryStatus};
 use rembrane_provider_sdk::{SemanticMemoryProvider, SemanticQuery};
 
 use crate::{
-    ApplicationError, DisclosureRepository, MemoryRepository,
-    ResolveContextCommand, resolve_context::apply_context_budget,
+    ApplicationError, DisclosureRepository, MemoryRepository, ResolveContextCommand,
+    resolve_context::apply_context_budget,
 };
 
 /// Resolves provider-ranked candidates only after canonical authorization.
@@ -15,16 +13,12 @@ pub struct SemanticContextService<'service, Repository, Provider> {
     provider: &'service Provider,
 }
 
-impl<'service, Repository, Provider>
-    SemanticContextService<'service, Repository, Provider>
+impl<'service, Repository, Provider> SemanticContextService<'service, Repository, Provider>
 where
     Repository: DisclosureRepository + MemoryRepository,
     Provider: SemanticMemoryProvider,
 {
-    pub fn new(
-        repository: &'service mut Repository,
-        provider: &'service Provider,
-    ) -> Self {
+    pub fn new(repository: &'service mut Repository, provider: &'service Provider) -> Self {
         Self {
             repository,
             provider,
@@ -41,8 +35,7 @@ where
             || command.request.maximum_bytes == 0
         {
             return Err(ApplicationError::Validation(
-                "purpose, query, maximum_items, and maximum_bytes are required"
-                    .to_owned(),
+                "purpose, query, maximum_items, and maximum_bytes are required".to_owned(),
             ));
         }
         if command.grant.workspace_id != command.request.workspace_id
@@ -63,10 +56,10 @@ where
 
         let mut items = Vec::new();
         for candidate in candidates {
-            let Some(memory) = self.repository.find(
-                &command.request.workspace_id,
-                &candidate.memory_id,
-            )? else {
+            let Some(memory) = self
+                .repository
+                .find(&command.request.workspace_id, &candidate.memory_id)?
+            else {
                 continue;
             };
 
@@ -112,16 +105,11 @@ where
     }
 }
 
-fn requested_scope_matches(
-    scope: &MemoryScope,
-    request: &ResolveContextRequest,
-) -> bool {
+fn requested_scope_matches(scope: &MemoryScope, request: &ResolveContextRequest) -> bool {
     match scope {
         MemoryScope::Global => true,
         MemoryScope::Domain { name } => request.domain.as_ref() == Some(name),
         MemoryScope::Entity { id } => request.entity_id.as_ref() == Some(id),
-        MemoryScope::Activity { id } => {
-            request.activity_id.as_ref() == Some(id)
-        }
+        MemoryScope::Activity { id } => request.activity_id.as_ref() == Some(id),
     }
 }

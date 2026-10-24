@@ -91,8 +91,7 @@ impl EncryptionContext {
         let mut encoded = Vec::new();
 
         for field in fields {
-            let length =
-                u64::try_from(field.len()).expect("field length fits in u64");
+            let length = u64::try_from(field.len()).expect("field length fits in u64");
             encoded.extend_from_slice(&length.to_be_bytes());
             encoded.extend_from_slice(field);
         }
@@ -168,21 +167,11 @@ pub enum CryptoError {
 impl Display for CryptoError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::AuthenticationFailed => {
-                formatter.write_str("payload authentication failed")
-            }
-            Self::EntropyUnavailable => {
-                formatter.write_str("secure randomness is unavailable")
-            }
-            Self::InvalidContext => {
-                formatter.write_str("encryption context is invalid")
-            }
-            Self::InvalidEnvelope => {
-                formatter.write_str("encrypted payload is invalid")
-            }
-            Self::KeyUnavailable => {
-                formatter.write_str("encryption key is unavailable")
-            }
+            Self::AuthenticationFailed => formatter.write_str("payload authentication failed"),
+            Self::EntropyUnavailable => formatter.write_str("secure randomness is unavailable"),
+            Self::InvalidContext => formatter.write_str("encryption context is invalid"),
+            Self::InvalidEnvelope => formatter.write_str("encrypted payload is invalid"),
+            Self::KeyUnavailable => formatter.write_str("encryption key is unavailable"),
             Self::UnsupportedAlgorithm => {
                 formatter.write_str("encryption algorithm is unsupported")
             }
@@ -208,9 +197,7 @@ pub trait RecordCipher {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        CryptoError, EncryptedPayload, EncryptionContext, PayloadPurpose,
-    };
+    use super::{CryptoError, EncryptedPayload, EncryptionContext, PayloadPurpose};
     use rembrane_domain::WorkspaceId;
 
     #[test]
@@ -235,13 +222,8 @@ mod tests {
 
     #[test]
     fn rejects_incomplete_encryption_envelope() {
-        let error = EncryptedPayload::new(
-            vec![1],
-            "key_01",
-            "xchacha20poly1305",
-            vec![0; 8],
-        )
-        .expect_err("short nonce must fail");
+        let error = EncryptedPayload::new(vec![1], "key_01", "xchacha20poly1305", vec![0; 8])
+            .expect_err("short nonce must fail");
 
         assert_eq!(error, CryptoError::InvalidEnvelope);
     }

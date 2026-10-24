@@ -3,40 +3,30 @@
 //! Infrastructure adapters implement these ports. Application code must not
 //! depend on a concrete database, graph, vector store, or memory engine.
 
-mod error;
-mod checkpoint;
 mod authorize_client;
+mod checkpoint;
+mod error;
 mod ports;
-mod propose_memory;
 mod projection_worker;
+mod propose_memory;
 mod remember_preference;
-mod revise_memory;
 mod resolve_context;
+mod revise_memory;
 mod semantic_context;
 
-pub use error::ApplicationError;
+pub use authorize_client::{AuthorizeClientCommand, AuthorizeClientService, ClientGrantBundle};
 pub use checkpoint::{
-    CheckpointService, CreateCheckpointCommand, ResumeActivityCommand,
-    UpdateCheckpointCommand,
+    CheckpointService, CreateCheckpointCommand, ResumeActivityCommand, UpdateCheckpointCommand,
 };
-pub use authorize_client::{
-    AuthorizeClientCommand, AuthorizeClientService, ClientGrantBundle,
-};
+pub use error::ApplicationError;
 pub use ports::{
-    CanonicalMutationRepository, CheckpointMutationRepository,
-    CheckpointDisclosureRepository, CheckpointRepository,
-    DisclosureRepository, EventRepository, MembershipRepository,
+    CanonicalMutationRepository, CheckpointDisclosureRepository, CheckpointMutationRepository,
+    CheckpointRepository, DisclosureRepository, EventRepository, MembershipRepository,
     MemoryRepository, ProjectionOutboxRepository, WorkspaceRepository,
 };
-pub use propose_memory::{
-    ConfirmMemoryCommand, MemoryProposalService, ProposeMemoryCommand,
-};
 pub use projection_worker::{ProjectionOutcome, ProjectionWorker};
-pub use remember_preference::{
-    RememberPreferenceCommand, RememberPreferenceService,
-};
-pub use revise_memory::{
-    DeleteMemoryCommand, MemoryLifecycleService, ReviseMemoryCommand,
-};
+pub use propose_memory::{ConfirmMemoryCommand, MemoryProposalService, ProposeMemoryCommand};
+pub use remember_preference::{RememberPreferenceCommand, RememberPreferenceService};
 pub use resolve_context::{ResolveContextCommand, ResolveContextService};
+pub use revise_memory::{DeleteMemoryCommand, MemoryLifecycleService, ReviseMemoryCommand};
 pub use semantic_context::SemanticContextService;

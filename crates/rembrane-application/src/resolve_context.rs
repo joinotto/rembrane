@@ -1,9 +1,7 @@
-use rembrane_contracts::{
-    ResolveContextRequest, ResolveContextResponse,
-};
+use rembrane_contracts::{ResolveContextRequest, ResolveContextResponse};
 use rembrane_domain::{
-    ContextPackId, DisclosedMemory, DisclosureId, DisclosureReceipt,
-    MemoryRecord, MemoryScope, MemoryStatus, ReadGrant,
+    ContextPackId, DisclosedMemory, DisclosureId, DisclosureReceipt, MemoryRecord, MemoryScope,
+    MemoryStatus, ReadGrant,
 };
 use std::collections::BTreeSet;
 
@@ -36,10 +34,9 @@ where
         validate(&command.request)?;
         authorize(&command)?;
 
-        let mut items = self.repository.list_for_subject(
-            &command.request.workspace_id,
-            &command.request.principal_id,
-        )?;
+        let mut items = self
+            .repository
+            .list_for_subject(&command.request.workspace_id, &command.request.principal_id)?;
 
         items.retain(|memory| {
             memory.status() == MemoryStatus::Confirmed
@@ -88,8 +85,7 @@ pub(crate) fn apply_context_budget(
     let mut used_bytes = 0_usize;
     let mut selected = Vec::new();
     for memory in items.drain(..) {
-        let Some(next_bytes) = used_bytes.checked_add(memory.content().len())
-        else {
+        let Some(next_bytes) = used_bytes.checked_add(memory.content().len()) else {
             continue;
         };
         if next_bytes <= maximum_bytes {
@@ -120,12 +116,7 @@ fn rank_by_relevance(items: &mut Vec<MemoryRecord>, query: &str) {
     ranked.sort_by(|(left, left_relevance), (right, right_relevance)| {
         right_relevance
             .cmp(left_relevance)
-            .then_with(|| {
-                right
-                    .scope()
-                    .specificity()
-                    .cmp(&left.scope().specificity())
-            })
+            .then_with(|| right.scope().specificity().cmp(&left.scope().specificity()))
             .then_with(|| left.id().as_str().cmp(right.id().as_str()))
     });
 
@@ -176,17 +167,12 @@ fn validate(request: &ResolveContextRequest) -> Result<(), ApplicationError> {
     Ok(())
 }
 
-fn scope_matches(
-    memory: &MemoryRecord,
-    request: &ResolveContextRequest,
-) -> bool {
+fn scope_matches(memory: &MemoryRecord, request: &ResolveContextRequest) -> bool {
     match memory.scope() {
         MemoryScope::Global => true,
         MemoryScope::Domain { name } => request.domain.as_ref() == Some(name),
         MemoryScope::Entity { id } => request.entity_id.as_ref() == Some(id),
-        MemoryScope::Activity { id } => {
-            request.activity_id.as_ref() == Some(id)
-        }
+        MemoryScope::Activity { id } => request.activity_id.as_ref() == Some(id),
     }
 }
 
@@ -194,16 +180,13 @@ fn scope_matches(
 mod tests {
     use rembrane_contracts::ResolveContextRequest;
     use rembrane_domain::{
-        ActivityId, ClientId, ContextPackId, DisclosureId, DisclosureReceipt,
-        EntityId, EvidenceId, EvidenceReference, EvidenceSource, MemoryId,
-        MemoryRecord, MemoryScope, PrincipalId, ReadGrant, ReadScope,
-        WorkspaceId,
+        ActivityId, ClientId, ContextPackId, DisclosureId, DisclosureReceipt, EntityId, EvidenceId,
+        EvidenceReference, EvidenceSource, MemoryId, MemoryRecord, MemoryScope, PrincipalId,
+        ReadGrant, ReadScope, WorkspaceId,
     };
 
     use super::{ResolveContextCommand, ResolveContextService};
-    use crate::{
-        ApplicationError, DisclosureRepository, MemoryRepository,
-    };
+    use crate::{ApplicationError, DisclosureRepository, MemoryRepository};
 
     #[derive(Default)]
     struct TestRepository {
@@ -220,10 +203,7 @@ mod tests {
             Ok(self
                 .memories
                 .iter()
-                .find(|memory| {
-                    memory.workspace_id() == workspace_id
-                        && memory.id() == memory_id
-                })
+                .find(|memory| memory.workspace_id() == workspace_id && memory.id() == memory_id)
                 .cloned())
         }
 
@@ -236,30 +216,21 @@ mod tests {
                 .memories
                 .iter()
                 .filter(|memory| {
-                    memory.workspace_id() == workspace_id
-                        && memory.subject_id() == subject_id
+                    memory.workspace_id() == workspace_id && memory.subject_id() == subject_id
                 })
                 .cloned()
                 .collect())
         }
-
     }
 
     impl DisclosureRepository for TestRepository {
-        fn append(
-            &mut self,
-            receipt: DisclosureReceipt,
-        ) -> Result<(), ApplicationError> {
+        fn append(&mut self, receipt: DisclosureReceipt) -> Result<(), ApplicationError> {
             self.disclosures.push(receipt);
             Ok(())
         }
     }
 
-    fn memory_with_content(
-        id: &str,
-        scope: MemoryScope,
-        content: &str,
-    ) -> MemoryRecord {
+    fn memory_with_content(id: &str, scope: MemoryScope, content: &str) -> MemoryRecord {
         MemoryRecord::confirmed_preference(
             MemoryId::new(id),
             WorkspaceId::new("workspace_01"),
@@ -380,9 +351,7 @@ mod tests {
 
         assert_eq!(
             error,
-            ApplicationError::Validation(
-                "purpose must not be empty".to_owned()
-            )
+            ApplicationError::Validation("purpose must not be empty".to_owned())
         );
         assert!(repository.disclosures.is_empty());
     }
@@ -449,10 +418,7 @@ mod tests {
             .expect("resolution should succeed");
 
         assert_eq!(response.items.len(), 1);
-        assert_eq!(
-            response.items[0].id(),
-            &MemoryId::new("preferred_name")
-        );
+        assert_eq!(response.items[0].id(), &MemoryId::new("preferred_name"));
         assert_eq!(
             repository.disclosures[0].memories,
             vec![DisclosedMemory {
@@ -486,14 +452,8 @@ mod tests {
             .execute(command(10))
             .expect("resolution should succeed");
 
-        assert_eq!(
-            response.items[0].id(),
-            &MemoryId::new("global_match")
-        );
-        assert_eq!(
-            response.items[1].id(),
-            &MemoryId::new("activity_match")
-        );
+        assert_eq!(response.items[0].id(), &MemoryId::new("global_match"));
+        assert_eq!(response.items[1].id(), &MemoryId::new("activity_match"));
     }
 
     #[test]
@@ -505,11 +465,7 @@ mod tests {
                     MemoryScope::Global,
                     "Call the user a name that is much too long.",
                 ),
-                memory_with_content(
-                    "small",
-                    MemoryScope::Global,
-                    "Call Hippo.",
-                ),
+                memory_with_content("small", MemoryScope::Global, "Call Hippo."),
             ],
             disclosures: Vec::new(),
         };
