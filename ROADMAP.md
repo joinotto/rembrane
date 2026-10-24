@@ -54,6 +54,8 @@ This roadmap describes sequencing, not release dates.
 - [x] Package the local REST service for loopback-only Docker Compose
   self-hosting with persistent encrypted storage.
 - [ ] Add production OS-keychain and customer-KMS key providers.
+  - [x] Honor environment or macOS Keychain selection uniformly in the CLI,
+    REST API, and MCP server, including historical-key reads.
   - [x] Support active-key writes and historical-key reads through a
     duplicate-safe versioned record-cipher keyring.
   - [x] Resolve a single active key from macOS Keychain without environment

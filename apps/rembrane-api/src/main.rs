@@ -17,7 +17,7 @@ use rembrane_application::{
 };
 use rembrane_config::{parse_read_permissions, parse_read_scopes};
 use rembrane_contracts::ResolveContextRequest;
-use rembrane_crypto_rustcrypto::RustCryptoRecordCipher;
+use rembrane_crypto_rustcrypto::RustCryptoKeyringCipher;
 use rembrane_domain::{
     ActivityId, BookingResearch, BookingResearchId, BookingResearchKind, ClientId, ContextPackId,
     DecisionStatus, DisclosureId, EntityId, EventId, EvidenceId, EvidenceReference, EvidenceSource,
@@ -42,7 +42,7 @@ struct Inner {
 }
 
 struct Runtime {
-    store: SqliteStore<RustCryptoRecordCipher>,
+    store: SqliteStore<RustCryptoKeyringCipher>,
     read_grant: ReadGrant,
     write_grant: WriteGrant,
     next_id: u128,
@@ -340,7 +340,7 @@ impl AppState {
         let bearer_token = Zeroizing::new(required_environment("REMBRANE_API_TOKEN")?);
         anyhow::ensure!(!bearer_token.is_empty(), "REMBRANE_API_TOKEN is empty");
         let oauth_resource_metadata = oauth_resource_metadata_from_environment()?;
-        let cipher = RustCryptoRecordCipher::from_environment()
+        let cipher = RustCryptoKeyringCipher::from_configured_provider()
             .context("failed to load workspace cipher")?;
         let read_scopes = parse_read_scopes(
             &std::env::var("REMBRANE_READ_SCOPES").unwrap_or_else(|_| "global".to_owned()),
