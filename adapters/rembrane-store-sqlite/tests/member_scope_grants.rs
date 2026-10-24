@@ -57,6 +57,7 @@ fn persisted_scope_filters_member_client_authorization() {
             principal_id: PrincipalId::new("member"),
             granted_by: PrincipalId::new("owner"),
             scope: allowed.clone(),
+            request_id: "sqlite-grant-allowed".to_owned(),
         })
         .expect("owner should grant entity access");
 
@@ -91,6 +92,7 @@ fn grant_lookup_is_workspace_and_principal_scoped() {
             scope: ReadScope::Entity {
                 id: EntityId::new("project"),
             },
+            request_id: "sqlite-grant-project".to_owned(),
         })
         .expect("owner should grant entity access");
 
@@ -119,6 +121,7 @@ fn persisted_member_removal_deletes_grants_and_denies_authorization() {
             scope: ReadScope::Entity {
                 id: EntityId::new("project"),
             },
+            request_id: "sqlite-grant-before-removal".to_owned(),
         })
         .expect("scope should be granted");
 
@@ -202,6 +205,7 @@ fn persisted_scope_revocation_immediately_filters_authorization() {
             principal_id: PrincipalId::new("member"),
             granted_by: PrincipalId::new("owner"),
             scope: scope.clone(),
+            request_id: "sqlite-grant-before-revoke".to_owned(),
         })
         .expect("scope should be granted");
     MemberScopeGrantService::new(&mut store)
@@ -210,6 +214,7 @@ fn persisted_scope_revocation_immediately_filters_authorization() {
             principal_id: PrincipalId::new("member"),
             revoked_by: PrincipalId::new("owner"),
             scope: scope.clone(),
+            request_id: "sqlite-revoke-scope".to_owned(),
         })
         .expect("scope should be revoked");
 

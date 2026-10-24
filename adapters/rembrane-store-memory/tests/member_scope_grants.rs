@@ -59,6 +59,7 @@ fn administrator_grant_limits_member_client_to_exact_entity() {
             principal_id: PrincipalId::new("member"),
             granted_by: PrincipalId::new("owner"),
             scope: allowed.clone(),
+            request_id: "grant-allowed".to_owned(),
         })
         .expect("owner should grant entity scope");
 
@@ -94,6 +95,7 @@ fn ordinary_member_cannot_grant_scope() {
             scope: ReadScope::Entity {
                 id: EntityId::new("project"),
             },
+            request_id: "unauthorized-grant".to_owned(),
         })
         .expect_err("member must not grant its own scope");
 
@@ -112,6 +114,7 @@ fn owner_removal_revokes_membership_and_all_scope_grants() {
             scope: ReadScope::Entity {
                 id: EntityId::new("project"),
             },
+            request_id: "grant-before-removal".to_owned(),
         })
         .expect("scope should be granted");
 
@@ -147,13 +150,14 @@ fn owner_removal_revokes_membership_and_all_scope_grants() {
     let removal_audit = store
         .list_administrative_audit(&WorkspaceId::new("team"), 0, 10)
         .expect("removal audit lookup should succeed");
-    assert_eq!(removal_audit.len(), 2);
+    assert_eq!(removal_audit.len(), 3);
     assert_eq!(
         removal_audit
             .iter()
             .map(rembrane_domain::AdministrativeAuditEvent::action)
             .collect::<Vec<_>>(),
         vec![
+            AdministrativeAction::ScopeGrantChanged,
             AdministrativeAction::MemberRemoved,
             AdministrativeAction::KeyRotationRequired,
         ]
@@ -211,7 +215,7 @@ fn owner_removal_revokes_membership_and_all_scope_grants() {
     let completed_audit = store
         .list_administrative_audit(&WorkspaceId::new("team"), 0, 10)
         .expect("completion audit lookup should succeed");
-    assert_eq!(completed_audit.len(), 3);
+    assert_eq!(completed_audit.len(), 4);
     assert_eq!(
         completed_audit
             .last()
@@ -320,6 +324,7 @@ fn revoking_one_scope_immediately_removes_client_authority() {
             principal_id: PrincipalId::new("member"),
             granted_by: PrincipalId::new("owner"),
             scope: scope.clone(),
+            request_id: "grant-before-revoke".to_owned(),
         })
         .expect("scope should be granted");
     MemberScopeGrantService::new(&mut store)
@@ -328,8 +333,18 @@ fn revoking_one_scope_immediately_removes_client_authority() {
             principal_id: PrincipalId::new("member"),
             revoked_by: PrincipalId::new("owner"),
             scope: scope.clone(),
+            request_id: "revoke-scope".to_owned(),
         })
         .expect("owner should revoke scope");
+    let audit = store
+        .list_administrative_audit(&WorkspaceId::new("team"), 0, 10)
+        .expect("scope audit lookup should succeed");
+    assert_eq!(audit.len(), 2);
+    assert!(
+        audit
+            .iter()
+            .all(|event| event.action() == AdministrativeAction::ScopeGrantChanged)
+    );
 
     let grants = AuthorizeClientService::new(&store)
         .execute(AuthorizeClientCommand {
@@ -357,6 +372,7 @@ fn member_cannot_revoke_its_own_scope() {
             principal_id: PrincipalId::new("member"),
             granted_by: PrincipalId::new("owner"),
             scope: scope.clone(),
+            request_id: "grant-member-scope".to_owned(),
         })
         .expect("scope should be granted");
 
@@ -366,6 +382,7 @@ fn member_cannot_revoke_its_own_scope() {
             principal_id: PrincipalId::new("member"),
             revoked_by: PrincipalId::new("member"),
             scope,
+            request_id: "unauthorized-revoke".to_owned(),
         })
         .expect_err("member must not revoke its own persisted grant");
     assert_eq!(error, ApplicationError::AccessDenied);

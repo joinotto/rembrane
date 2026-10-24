@@ -20,9 +20,9 @@ use rembrane_domain::{
     KeyRotationStatus, KnowledgeEdge, KnowledgeEdgeId, KnowledgeNode, KnowledgeNodeId, LegalHoldId,
     LegalHoldStatus, MemberScopeGrant, Membership, MemoryId, MemoryRecord, MemoryShareProposal,
     MemoryStatus, Principal, PrincipalId, ProjectionJob, ProjectionJobId, ProjectionOperation,
-    ProjectionStatus, ProviderId, ShareProposalId, ShareProposalStatus, TravelDisclosureReceipt,
-    Trip, Workspace, WorkspaceId, WorkspaceKeyRotation, WorkspaceKind, WorkspaceLegalHold,
-    WorkspaceRetentionPolicy, WorkspaceRole,
+    ProjectionStatus, ProviderId, ReadScope, ShareProposalId, ShareProposalStatus,
+    TravelDisclosureReceipt, Trip, Workspace, WorkspaceId, WorkspaceKeyRotation, WorkspaceKind,
+    WorkspaceLegalHold, WorkspaceRetentionPolicy, WorkspaceRole,
 };
 
 #[derive(Debug, Default)]
@@ -1402,7 +1402,9 @@ impl MemberScopeGrantRepository for InMemoryStore {
     fn insert_member_scope_grant(
         &mut self,
         grant: MemberScopeGrant,
+        audit_event: AdministrativeAuditEvent,
     ) -> Result<(), ApplicationError> {
+        validate_scope_audit(&grant, &audit_event)?;
         if self.member_scope_grants.iter().any(|stored| {
             stored.workspace_id() == grant.workspace_id()
                 && stored.principal_id() == grant.principal_id()
@@ -1410,7 +1412,9 @@ impl MemberScopeGrantRepository for InMemoryStore {
         }) {
             return Err(ApplicationError::AlreadyExists);
         }
+        validate_new_audit_event(&self.administrative_audit, &audit_event)?;
         self.member_scope_grants.push(grant);
+        self.administrative_audit.push(audit_event);
         Ok(())
     }
 
@@ -1432,13 +1436,17 @@ impl MemberScopeGrantRepository for InMemoryStore {
     fn delete_member_scope_grant(
         &mut self,
         grant: &MemberScopeGrant,
+        audit_event: AdministrativeAuditEvent,
     ) -> Result<(), ApplicationError> {
+        validate_scope_audit(grant, &audit_event)?;
+        validate_new_audit_event(&self.administrative_audit, &audit_event)?;
         let position = self
             .member_scope_grants
             .iter()
             .position(|stored| stored == grant)
             .ok_or(ApplicationError::NotFound)?;
         self.member_scope_grants.remove(position);
+        self.administrative_audit.push(audit_event);
         Ok(())
     }
 }
@@ -1961,6 +1969,52 @@ fn validate_share_approval_events(
         return Err(ApplicationError::Validation(
             "events do not describe atomic share approval".to_owned(),
         ));
+    }
+    Ok(())
+}
+
+fn validate_scope_audit(
+    grant: &MemberScopeGrant,
+    event: &AdministrativeAuditEvent,
+) -> Result<(), ApplicationError> {
+    let (scope_type, scope_value) = match grant.scope() {
+        ReadScope::Global => ("global", ""),
+        ReadScope::Domain { name } => ("domain", name.as_str()),
+        ReadScope::Entity { id } => ("entity", id.as_str()),
+        ReadScope::Activity { id } => ("activity", id.as_str()),
+    };
+    let expected_target = if scope_value.is_empty() {
+        format!("{}:{scope_type}", grant.principal_id().as_str())
+    } else {
+        format!(
+            "{}:{scope_type}:{scope_value}",
+            grant.principal_id().as_str()
+        )
+    };
+    if event.workspace_id() != grant.workspace_id()
+        || event.action() != AdministrativeAction::ScopeGrantChanged
+        || event.target_kind() != rembrane_domain::AdministrativeTargetKind::ScopeGrant
+        || event.target_id() != expected_target
+    {
+        return Err(ApplicationError::Validation(
+            "scope grant audit evidence is invalid".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_new_audit_event(
+    stored_events: &[AdministrativeAuditEvent],
+    event: &AdministrativeAuditEvent,
+) -> Result<(), ApplicationError> {
+    if stored_events.iter().any(|stored| {
+        stored.id() == event.id()
+            || (stored.workspace_id() == event.workspace_id()
+                && stored.request_id() == event.request_id()
+                && stored.action() == event.action()
+                && stored.target_id() == event.target_id())
+    }) {
+        return Err(ApplicationError::AlreadyExists);
     }
     Ok(())
 }

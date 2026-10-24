@@ -1494,9 +1494,15 @@ impl<C> MemberScopeGrantRepository for SqliteStore<C> {
     fn insert_member_scope_grant(
         &mut self,
         grant: MemberScopeGrant,
+        audit_event: AdministrativeAuditEvent,
     ) -> Result<(), ApplicationError> {
+        validate_scope_audit(&grant, &audit_event)?;
         let (scope_type, scope_value) = encode_read_scope(grant.scope());
-        self.connection
+        let transaction = self
+            .connection
+            .transaction()
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        transaction
             .execute(
                 "INSERT INTO member_scope_grants (
                     workspace_id, principal_id, scope_type, scope_value
@@ -1508,8 +1514,11 @@ impl<C> MemberScopeGrantRepository for SqliteStore<C> {
                     scope_value
                 ],
             )
-            .map(|_| ())
-            .map_err(map_write_error)
+            .map_err(map_write_error)?;
+        insert_administrative_audit(&transaction, &audit_event)?;
+        transaction
+            .commit()
+            .map_err(|_| ApplicationError::StorageUnavailable)
     }
 
     fn list_member_scope_grants(
@@ -1548,10 +1557,15 @@ impl<C> MemberScopeGrantRepository for SqliteStore<C> {
     fn delete_member_scope_grant(
         &mut self,
         grant: &MemberScopeGrant,
+        audit_event: AdministrativeAuditEvent,
     ) -> Result<(), ApplicationError> {
+        validate_scope_audit(grant, &audit_event)?;
         let (scope_type, scope_value) = encode_read_scope(grant.scope());
-        let changed = self
+        let transaction = self
             .connection
+            .transaction()
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        let changed = transaction
             .execute(
                 "DELETE FROM member_scope_grants
                  WHERE workspace_id = ?1 AND principal_id = ?2
@@ -1567,7 +1581,10 @@ impl<C> MemberScopeGrantRepository for SqliteStore<C> {
         if changed != 1 {
             return Err(ApplicationError::NotFound);
         }
-        Ok(())
+        insert_administrative_audit(&transaction, &audit_event)?;
+        transaction
+            .commit()
+            .map_err(|_| ApplicationError::StorageUnavailable)
     }
 }
 
@@ -1873,6 +1890,31 @@ fn insert_administrative_audit(
             ],
         )
         .map_err(map_write_error)?;
+    Ok(())
+}
+
+fn validate_scope_audit(
+    grant: &MemberScopeGrant,
+    event: &AdministrativeAuditEvent,
+) -> Result<(), ApplicationError> {
+    let (scope_type, scope_value) = encode_read_scope(grant.scope());
+    let expected_target = if scope_value.is_empty() {
+        format!("{}:{scope_type}", grant.principal_id().as_str())
+    } else {
+        format!(
+            "{}:{scope_type}:{scope_value}",
+            grant.principal_id().as_str()
+        )
+    };
+    if event.workspace_id() != grant.workspace_id()
+        || event.action() != AdministrativeAction::ScopeGrantChanged
+        || event.target_kind() != AdministrativeTargetKind::ScopeGrant
+        || event.target_id() != expected_target
+    {
+        return Err(ApplicationError::Validation(
+            "scope grant audit evidence is invalid".to_owned(),
+        ));
+    }
     Ok(())
 }
 

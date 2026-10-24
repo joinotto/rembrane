@@ -381,6 +381,7 @@ pub trait MemberScopeGrantRepository {
     fn insert_member_scope_grant(
         &mut self,
         grant: MemberScopeGrant,
+        audit_event: AdministrativeAuditEvent,
     ) -> Result<(), ApplicationError>;
 
     fn list_member_scope_grants(
@@ -392,6 +393,7 @@ pub trait MemberScopeGrantRepository {
     fn delete_member_scope_grant(
         &mut self,
         grant: &MemberScopeGrant,
+        audit_event: AdministrativeAuditEvent,
     ) -> Result<(), ApplicationError>;
 }
 

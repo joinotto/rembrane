@@ -18,6 +18,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Atomic content-free administrative audit evidence for member removal,
   key-rotation requirement, and key-rotation completion in both in-memory and
   SQLite repository transactions.
+- Request-correlated scope grants and revocations that commit their
+  content-free administrative audit evidence atomically in both storage
+  adapters.
 - A versioned per-workspace retention policy contract with separate periods
   for memory, checkpoints, travel research, disclosures, canonical events, and
   administrative audit, including bounded expiry and legal-hold overrides.

@@ -1,4 +1,9 @@
-use rembrane_domain::{MemberScopeGrant, PrincipalId, ReadScope, WorkspaceId};
+use std::time::{SystemTime, UNIX_EPOCH};
+
+use rembrane_domain::{
+    AdministrativeAction, AdministrativeAuditEvent, AdministrativeAuditEventId,
+    AdministrativeTargetKind, MemberScopeGrant, PrincipalId, ReadScope, WorkspaceId,
+};
 
 use crate::{ApplicationError, MemberScopeGrantRepository, MembershipRepository};
 
@@ -8,6 +13,7 @@ pub struct GrantMemberScopeCommand {
     pub principal_id: PrincipalId,
     pub granted_by: PrincipalId,
     pub scope: ReadScope,
+    pub request_id: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -16,6 +22,7 @@ pub struct RevokeMemberScopeCommand {
     pub principal_id: PrincipalId,
     pub revoked_by: PrincipalId,
     pub scope: ReadScope,
+    pub request_id: String,
 }
 
 pub struct MemberScopeGrantService<'repository, Repository> {
@@ -49,9 +56,19 @@ where
             return Err(ApplicationError::NotFound);
         }
 
-        let grant =
-            MemberScopeGrant::new(command.workspace_id, command.principal_id, command.scope);
-        self.repository.insert_member_scope_grant(grant.clone())?;
+        let grant = MemberScopeGrant::new(
+            command.workspace_id.clone(),
+            command.principal_id,
+            command.scope,
+        );
+        let audit = scope_audit(
+            &grant,
+            &command.granted_by,
+            &command.request_id,
+            now_epoch_seconds()?,
+        )?;
+        self.repository
+            .insert_member_scope_grant(grant.clone(), audit)?;
         Ok(grant)
     }
 
@@ -64,6 +81,7 @@ where
             principal_id,
             revoked_by,
             scope,
+            request_id,
         } = command;
         let actor = self
             .repository
@@ -81,7 +99,52 @@ where
         }
 
         let grant = MemberScopeGrant::new(workspace_id, principal_id, scope);
-        self.repository.delete_member_scope_grant(&grant)?;
+        let audit = scope_audit(&grant, &revoked_by, &request_id, now_epoch_seconds()?)?;
+        self.repository.delete_member_scope_grant(&grant, audit)?;
         Ok(grant)
     }
+}
+
+fn scope_audit(
+    grant: &MemberScopeGrant,
+    actor_id: &PrincipalId,
+    request_id: &str,
+    occurred_at_epoch_seconds: u64,
+) -> Result<AdministrativeAuditEvent, ApplicationError> {
+    let (scope_type, scope_value) = scope_identity(grant.scope());
+    let target_id = if scope_value.is_empty() {
+        format!("{}:{scope_type}", grant.principal_id().as_str())
+    } else {
+        format!(
+            "{}:{scope_type}:{scope_value}",
+            grant.principal_id().as_str()
+        )
+    };
+    AdministrativeAuditEvent::new(
+        AdministrativeAuditEventId::new(format!("audit:scope-grant-changed:{request_id}")),
+        grant.workspace_id().clone(),
+        actor_id.clone(),
+        AdministrativeAction::ScopeGrantChanged,
+        AdministrativeTargetKind::ScopeGrant,
+        target_id,
+        request_id,
+        occurred_at_epoch_seconds,
+    )
+    .map_err(|error| ApplicationError::Validation(error.to_string()))
+}
+
+fn scope_identity(scope: &ReadScope) -> (&'static str, &str) {
+    match scope {
+        ReadScope::Global => ("global", ""),
+        ReadScope::Domain { name } => ("domain", name),
+        ReadScope::Entity { id } => ("entity", id.as_str()),
+        ReadScope::Activity { id } => ("activity", id.as_str()),
+    }
+}
+
+fn now_epoch_seconds() -> Result<u64, ApplicationError> {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| ApplicationError::StorageUnavailable)
+        .map(|duration| duration.as_secs())
 }

@@ -142,6 +142,7 @@ mod tests {
         fn insert_member_scope_grant(
             &mut self,
             _grant: MemberScopeGrant,
+            _audit_event: rembrane_domain::AdministrativeAuditEvent,
         ) -> Result<(), ApplicationError> {
             unreachable!("not used by authorization tests")
         }
@@ -164,6 +165,7 @@ mod tests {
         fn delete_member_scope_grant(
             &mut self,
             _grant: &MemberScopeGrant,
+            _audit_event: rembrane_domain::AdministrativeAuditEvent,
         ) -> Result<(), ApplicationError> {
             unreachable!("not used by authorization tests")
         }
