@@ -99,6 +99,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Versioned RustCrypto record-cipher keyring for staged key rotation, using one
   active key for new ciphertext while selecting historical keys strictly by
   envelope key ID for reads and rejecting duplicate key identifiers.
+- macOS Keychain workspace-key resolver selected through
+  `REMBRANE_KEY_PROVIDER=macos-keychain`, plus provider-aware CLI, privacy
+  diagnostics, MCP configuration generation, and secret-safe setup guidance.
 - Versioned discovery, OpenAPI, and MCP protocol specifications.
 - Tenant-isolated SQLite canonical schema with encrypted-payload metadata.
 - Versioned SQLite initialization with legacy-schema adoption, idempotent

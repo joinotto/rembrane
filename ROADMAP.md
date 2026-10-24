@@ -56,7 +56,10 @@ This roadmap describes sequencing, not release dates.
 - [ ] Add production OS-keychain and customer-KMS key providers.
   - [x] Support active-key writes and historical-key reads through a
     duplicate-safe versioned record-cipher keyring.
-  - [ ] Resolve keyring material from OS keychains without environment secrets.
+  - [x] Resolve a single active key from macOS Keychain without environment
+    key material.
+  - [ ] Resolve rotating keyrings from macOS Keychain.
+  - [ ] Add Windows DPAPI and Linux Secret Service adapters.
   - [ ] Resolve or unwrap keyring material through customer KMS adapters.
 - [x] Retrieve minimal context through local stdio MCP.
 - [x] Rank canonical context by deterministic local query relevance.

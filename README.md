@@ -152,15 +152,30 @@ PostgreSQL, shared-workspace lifecycle, and third-party agent adapters remain
 roadmap work.
 
 The environment-key flow is for development testing only. Shell history must
-never contain the key value; production setup will use operating-system
-keychains, HSMs, or customer KMS providers.
+never contain the key value. On macOS, Rembrane can resolve the workspace key
+from the current user's Keychain without exporting the key:
+
+```text
+export REMBRANE_KEY_PROVIDER=macos-keychain
+export REMBRANE_WORKSPACE_KEY_ID=local-key-v1
+export REMBRANE_KEYCHAIN_SERVICE=org.rembrane.workspace
+export REMBRANE_KEYCHAIN_ACCOUNT="$REMBRANE_WORKSPACE_ID"
+
+openssl rand -hex 32 | /usr/bin/security add-generic-password \
+  -U -s "$REMBRANE_KEYCHAIN_SERVICE" -a "$REMBRANE_KEYCHAIN_ACCOUNT" -w
+```
+
+The final `-w` prompts through standard input, so key material is not placed in
+the process arguments. Do not use `-A`; retain Keychain access control. Windows,
+Linux, HSM, and customer-KMS resolvers remain roadmap work.
 
 Generate a secret-safe stdio MCP configuration for a supported coding client:
 
 ```text
 target/debug/rembrane mcp-config \
   --client codex \
-  --server-binary "$PWD/target/debug/rembrane-mcp"
+  --server-binary "$PWD/target/debug/rembrane-mcp" \
+  --key-provider macos-keychain
 
 target/debug/rembrane mcp-config \
   --client claude-code \

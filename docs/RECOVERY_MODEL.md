@@ -12,13 +12,15 @@ A recoverable local deployment requires two independently protected assets:
 
 1. the encrypted SQLite backup produced by `rembrane backup`; and
 2. the exact workspace key material referenced by
-   `REMBRANE_WORKSPACE_KEY_ID`.
+   `REMBRANE_WORKSPACE_KEY_ID`, retained independently in the configured key
+   provider.
 
 The database contains ciphertext, non-secret routing metadata, canonical event
 history, evidence references, checkpoints, disclosure receipts, membership
 records, deletion tombstones, and pending provider-projection work. The
-development workspace key is intentionally not embedded in the database or
-backup.
+workspace key is intentionally not embedded in the database or backup. In the
+macOS Keychain profile, recovery therefore requires restoring or synchronizing
+the corresponding Keychain item; the SQLite backup alone is insufficient.
 
 ## Backup
 
@@ -67,7 +69,8 @@ lost unless another synchronized replica contains them.
 
 Strict-E2EE content is unrecoverable. Maintainers and infrastructure providers
 must not have a hidden recovery key. Development environment variables are not
-a production recovery mechanism.
+a production recovery mechanism. Losing the macOS Keychain item and every
+separately protected recovery copy has the same irreversible result.
 
 ### Database available, wrong key
 

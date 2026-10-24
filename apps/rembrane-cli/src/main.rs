@@ -98,23 +98,23 @@ fn test_provider(arguments: &[String]) -> Result<String, String> {
     }
 }
 
-const MCP_ENVIRONMENT_VARIABLES: [&str; 7] = [
+const MCP_BASE_ENVIRONMENT_VARIABLES: [&str; 5] = [
     "REMBRANE_DATABASE",
     "REMBRANE_PRINCIPAL_ID",
     "REMBRANE_WORKSPACE_ID",
     "REMBRANE_CLIENT_ID",
     "REMBRANE_READ_SCOPES",
-    "REMBRANE_WORKSPACE_KEY_ID",
-    "REMBRANE_WORKSPACE_KEY_HEX",
 ];
 
 fn print_mcp_config(arguments: &[String]) -> Result<(), String> {
     let client = option(arguments, "--client")?;
     let server_binary = option(arguments, "--server-binary")?;
+    let key_provider = optional_option(arguments, "--key-provider").unwrap_or("environment");
+    let environment = mcp_environment_variables(key_provider)?;
     let config = match client {
-        "codex" => codex_mcp_config(server_binary),
-        "claude-code" => claude_mcp_config(server_binary),
-        "generic" => generic_mcp_config(server_binary),
+        "codex" => codex_mcp_config(server_binary, &environment),
+        "claude-code" => claude_mcp_config(server_binary, &environment),
+        "generic" => generic_mcp_config(server_binary, &environment),
         _ => {
             return Err("--client must be codex, claude-code, or generic".to_owned());
         }
@@ -123,8 +123,29 @@ fn print_mcp_config(arguments: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-fn generic_mcp_config(server_binary: &str) -> String {
-    let variables = MCP_ENVIRONMENT_VARIABLES
+fn mcp_environment_variables(key_provider: &str) -> Result<Vec<&'static str>, String> {
+    let mut variables = MCP_BASE_ENVIRONMENT_VARIABLES.to_vec();
+    match key_provider {
+        "environment" => {
+            variables.extend(["REMBRANE_WORKSPACE_KEY_ID", "REMBRANE_WORKSPACE_KEY_HEX"])
+        }
+        "macos-keychain" => variables.extend([
+            "REMBRANE_KEY_PROVIDER",
+            "REMBRANE_WORKSPACE_KEY_ID",
+            "REMBRANE_KEYCHAIN_SERVICE",
+            "REMBRANE_KEYCHAIN_ACCOUNT",
+        ]),
+        provider => {
+            return Err(format!(
+                "unsupported --key-provider {provider}; expected environment or macos-keychain"
+            ));
+        }
+    }
+    Ok(variables)
+}
+
+fn generic_mcp_config(server_binary: &str, environment: &[&str]) -> String {
+    let variables = environment
         .iter()
         .map(|variable| format!("\"{variable}\""))
         .collect::<Vec<_>>()
@@ -137,8 +158,8 @@ fn generic_mcp_config(server_binary: &str) -> String {
     )
 }
 
-fn codex_mcp_config(server_binary: &str) -> String {
-    let variables = MCP_ENVIRONMENT_VARIABLES
+fn codex_mcp_config(server_binary: &str, environment: &[&str]) -> String {
+    let variables = environment
         .iter()
         .map(|variable| format!("\"{variable}\""))
         .collect::<Vec<_>>()
@@ -150,8 +171,8 @@ fn codex_mcp_config(server_binary: &str) -> String {
     )
 }
 
-fn claude_mcp_config(server_binary: &str) -> String {
-    let environment = MCP_ENVIRONMENT_VARIABLES
+fn claude_mcp_config(server_binary: &str, variables: &[&str]) -> String {
+    let environment = variables
         .iter()
         .map(|variable| format!("\"{variable}\":\"${{{variable}}}\""))
         .collect::<Vec<_>>()
@@ -249,7 +270,7 @@ fn restore(arguments: &[String]) -> Result<(), String> {
     let result = (|| {
         let principal_id = PrincipalId::new(option(arguments, "--principal")?);
         let workspace_id = WorkspaceId::new(option(arguments, "--workspace")?);
-        let cipher = RustCryptoRecordCipher::from_environment()
+        let cipher = RustCryptoRecordCipher::from_configured_provider()
             .map_err(|error| format!("cannot load workspace cipher: {error}"))?;
         let store = SqliteStore::open(destination)
             .map_err(|error| format!("cannot open restored database: {error}"))?
@@ -402,6 +423,7 @@ fn print_privacy_diagnostics() -> Result<(), String> {
 
     println!("Privacy diagnostics:");
     println!("Processing location: local trusted boundary");
+    println!("Encryption key provider: {}", configured_key_provider()?);
     let endpoints = configured_outbound_endpoints();
     if endpoints.is_empty() {
         println!("Outbound endpoints: none");
@@ -450,7 +472,13 @@ fn validate_configured_provider_profiles() -> Result<(), String> {
 }
 
 fn configured_secret_sources() -> Vec<&'static str> {
-    let mut sources = vec!["REMBRANE_WORKSPACE_KEY_ID", "REMBRANE_WORKSPACE_KEY_HEX"];
+    let mut sources = match std::env::var("REMBRANE_KEY_PROVIDER")
+        .unwrap_or_else(|_| "environment".to_owned())
+        .as_str()
+    {
+        "macos-keychain" => vec!["macOS Keychain"],
+        _ => vec!["REMBRANE_WORKSPACE_KEY_ID", "REMBRANE_WORKSPACE_KEY_HEX"],
+    };
     for source in ["MEM0_API_KEY", "GRAPHITI_CREDENTIALS"] {
         if std::env::var(source)
             .ok()
@@ -460,6 +488,19 @@ fn configured_secret_sources() -> Vec<&'static str> {
         }
     }
     sources
+}
+
+fn configured_key_provider() -> Result<&'static str, String> {
+    match std::env::var("REMBRANE_KEY_PROVIDER")
+        .unwrap_or_else(|_| "environment".to_owned())
+        .as_str()
+    {
+        "environment" => Ok("environment (development only)"),
+        "macos-keychain" => Ok("macOS Keychain"),
+        provider => Err(format!(
+            "unsupported REMBRANE_KEY_PROVIDER {provider}; expected environment or macos-keychain"
+        )),
+    }
 }
 
 fn configured_outbound_endpoints() -> Vec<(&'static str, String)> {
@@ -788,7 +829,7 @@ fn encrypted_store(
     let database = option(arguments, "--database")?;
     let principal_id = PrincipalId::new(option(arguments, "--principal")?);
     let workspace_id = WorkspaceId::new(option(arguments, "--workspace")?);
-    let cipher = RustCryptoRecordCipher::from_environment()
+    let cipher = RustCryptoRecordCipher::from_configured_provider()
         .map_err(|error| format!("cannot load workspace cipher: {error}"))?;
     let store = SqliteStore::open(database)
         .map_err(|error| format!("cannot open database: {error}"))?
@@ -1024,7 +1065,8 @@ fn print_help() {
            rembrane providers list\n\
            rembrane providers test --provider <id> --namespace <unique-name>\n\
            rembrane mcp-config --client <codex|claude-code|generic> \
-             --server-binary <path>\n\
+             --server-binary <path> \
+             [--key-provider <environment|macos-keychain>]\n\
            rembrane remember --database <path> --principal <id> \
              --workspace <id> --content <preference> \
              [--domain <name> | --entity <id> | --activity <id>]\n\
@@ -1234,21 +1276,34 @@ mod tests {
 
     #[test]
     fn mcp_configs_reference_secrets_without_embedding_values() {
-        let codex = codex_mcp_config("/opt/rembrane-mcp");
+        let environment =
+            mcp_environment_variables("environment").expect("built-in provider should be valid");
+        let codex = codex_mcp_config("/opt/rembrane-mcp", &environment);
         assert!(codex.contains("env_vars = ["));
         assert!(codex.contains("\"REMBRANE_WORKSPACE_KEY_HEX\""));
         assert!(!codex.contains("00010203"));
 
-        let claude = claude_mcp_config("/opt/rembrane-mcp");
+        let claude = claude_mcp_config("/opt/rembrane-mcp", &environment);
         assert!(
             claude.contains("\"REMBRANE_WORKSPACE_KEY_HEX\":\"${REMBRANE_WORKSPACE_KEY_HEX}\"")
         );
         assert!(!claude.contains("00010203"));
 
-        let generic = generic_mcp_config("/opt/rembrane-mcp");
+        let generic = generic_mcp_config("/opt/rembrane-mcp", &environment);
         assert!(generic.contains("\"schemaVersion\":1"));
         assert!(generic.contains("\"transport\":\"stdio\""));
         assert!(generic.contains("\"requiredEnvironment\""));
         assert!(!generic.contains("00010203"));
+    }
+
+    #[test]
+    fn keychain_mcp_config_never_requests_raw_key_environment_variable() {
+        let environment = mcp_environment_variables("macos-keychain")
+            .expect("macOS keychain provider should be valid");
+        let config = codex_mcp_config("/opt/rembrane-mcp", &environment);
+
+        assert!(config.contains("\"REMBRANE_KEYCHAIN_SERVICE\""));
+        assert!(config.contains("\"REMBRANE_KEYCHAIN_ACCOUNT\""));
+        assert!(!config.contains("REMBRANE_WORKSPACE_KEY_HEX"));
     }
 }

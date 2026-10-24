@@ -7,6 +7,8 @@
 use chacha20poly1305::aead::{Aead, KeyInit, Payload};
 use chacha20poly1305::{Key, XChaCha20Poly1305, XNonce};
 use rembrane_crypto::{CryptoError, EncryptedPayload, EncryptionContext, RecordCipher};
+#[cfg(target_os = "macos")]
+use std::process::Command;
 use zeroize::Zeroizing;
 
 const ALGORITHM: &str = "xchacha20poly1305-ietf";
@@ -37,6 +39,63 @@ impl RustCryptoRecordCipher {
         );
         let key = decode_key(&encoded_key)?;
         Self::new(key_id, key)
+    }
+
+    /// Resolves a hex-encoded workspace key from the current user's macOS
+    /// Keychain. The service and account are lookup metadata, not secrets.
+    #[cfg(target_os = "macos")]
+    pub fn from_macos_keychain(
+        key_id: impl Into<String>,
+        service: &str,
+        account: &str,
+    ) -> Result<Self, CryptoError> {
+        if service.trim().is_empty() || account.trim().is_empty() {
+            return Err(CryptoError::KeyUnavailable);
+        }
+        let output = Command::new("/usr/bin/security")
+            .args(["find-generic-password", "-s", service, "-a", account, "-w"])
+            .output()
+            .map_err(|_| CryptoError::KeyUnavailable)?;
+        if !output.status.success() {
+            return Err(CryptoError::KeyUnavailable);
+        }
+        let encoded = String::from_utf8(output.stdout).map_err(|_| CryptoError::KeyUnavailable)?;
+        let encoded = Zeroizing::new(encoded);
+        let key = decode_key(encoded.trim())?;
+        Self::new(key_id, key)
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    pub fn from_macos_keychain(
+        _key_id: impl Into<String>,
+        _service: &str,
+        _account: &str,
+    ) -> Result<Self, CryptoError> {
+        Err(CryptoError::KeyUnavailable)
+    }
+
+    /// Selects the configured local key source without accepting key material
+    /// through command-line arguments.
+    ///
+    /// `environment` is the pre-alpha development mode. `macos-keychain`
+    /// resolves the value from the current user's login keychain.
+    pub fn from_configured_provider() -> Result<Self, CryptoError> {
+        match std::env::var("REMBRANE_KEY_PROVIDER")
+            .unwrap_or_else(|_| "environment".to_owned())
+            .as_str()
+        {
+            "environment" => Self::from_environment(),
+            "macos-keychain" => {
+                let key_id = std::env::var("REMBRANE_WORKSPACE_KEY_ID")
+                    .map_err(|_| CryptoError::KeyUnavailable)?;
+                let service = std::env::var("REMBRANE_KEYCHAIN_SERVICE")
+                    .map_err(|_| CryptoError::KeyUnavailable)?;
+                let account = std::env::var("REMBRANE_KEYCHAIN_ACCOUNT")
+                    .map_err(|_| CryptoError::KeyUnavailable)?;
+                Self::from_macos_keychain(key_id, &service, &account)
+            }
+            _ => Err(CryptoError::KeyUnavailable),
+        }
     }
 
     #[must_use]

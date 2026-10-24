@@ -102,6 +102,21 @@ export REMBRANE_API_TOKEN="$(openssl rand -hex 32)"
 Do not put real keys directly in shell history, command arguments, committed
 configuration, screenshots, logs, or issue reports.
 
+On macOS, the equivalent Keychain-backed profile is:
+
+```text
+export REMBRANE_KEY_PROVIDER=macos-keychain
+export REMBRANE_WORKSPACE_KEY_ID=local-key-v1
+export REMBRANE_KEYCHAIN_SERVICE=org.rembrane.workspace.test
+export REMBRANE_KEYCHAIN_ACCOUNT="$REMBRANE_WORKSPACE_ID"
+openssl rand -hex 32 | /usr/bin/security add-generic-password \
+  -U -s "$REMBRANE_KEYCHAIN_SERVICE" -a "$REMBRANE_KEYCHAIN_ACCOUNT" -w
+unset REMBRANE_WORKSPACE_KEY_HEX
+```
+
+Use a disposable Keychain item for tests and delete it after testing. Never use
+the `security -A` option, which would permit unrestricted item access.
+
 Initialize and exercise the encrypted CLI:
 
 ```text
