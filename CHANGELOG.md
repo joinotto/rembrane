@@ -26,6 +26,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   Member and viewer client scopes are now the exact intersection of requested
   scopes and persisted workspace grants; owners and administrators retain
   unrestricted workspace scope administration.
+- Role-hierarchy-enforced member removal with owner protection, optimistic
+  membership-state checks, atomic scope-grant cleanup, and immediate denial of
+  new client authorization.
 - Atomic canonical mutation ports and an in-memory reference adapter.
 - Native semantic baseline with authorization revalidation.
 - Provider capability verification and retry/quarantine projection worker.

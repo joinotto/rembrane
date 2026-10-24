@@ -3,8 +3,8 @@
 use rembrane_application::{
     ApplicationError, CanonicalMutationRepository, CheckpointDisclosureRepository,
     CheckpointMutationRepository, CheckpointRepository, DisclosureRepository, EventRepository,
-    InvitationRepository, MemberScopeGrantRepository, MembershipRepository, MemoryRepository,
-    ProjectionOutboxRepository, WorkspaceRepository,
+    InvitationRepository, MemberLifecycleRepository, MemberScopeGrantRepository,
+    MembershipRepository, MemoryRepository, ProjectionOutboxRepository, WorkspaceRepository,
 };
 use rembrane_domain::{
     ActivityCheckpoint, ActivityId, CanonicalEvent, CheckpointDisclosureReceipt, DisclosureReceipt,
@@ -529,6 +529,37 @@ impl MemberScopeGrantRepository for InMemoryStore {
             })
             .cloned()
             .collect())
+    }
+}
+
+impl MemberLifecycleRepository for InMemoryStore {
+    fn remove_member_and_scope_grants(
+        &mut self,
+        membership: Membership,
+        expected_status: rembrane_domain::MembershipStatus,
+    ) -> Result<(), ApplicationError> {
+        if membership.status() != rembrane_domain::MembershipStatus::Removed {
+            return Err(ApplicationError::Validation(
+                "member lifecycle transition must end in removed status".to_owned(),
+            ));
+        }
+        let stored = self
+            .memberships
+            .iter_mut()
+            .find(|stored| {
+                stored.workspace_id() == membership.workspace_id()
+                    && stored.principal_id() == membership.principal_id()
+            })
+            .ok_or(ApplicationError::NotFound)?;
+        if stored.status() != expected_status || stored.role() != membership.role() {
+            return Err(ApplicationError::VersionConflict);
+        }
+        *stored = membership.clone();
+        self.member_scope_grants.retain(|grant| {
+            grant.workspace_id() != membership.workspace_id()
+                || grant.principal_id() != membership.principal_id()
+        });
+        Ok(())
     }
 }
 

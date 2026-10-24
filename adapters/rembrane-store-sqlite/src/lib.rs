@@ -8,8 +8,8 @@ mod projection;
 use std::path::Path;
 
 use rembrane_application::{
-    ApplicationError, InvitationRepository, MemberScopeGrantRepository, MembershipRepository,
-    MemoryRepository, WorkspaceRepository,
+    ApplicationError, InvitationRepository, MemberLifecycleRepository, MemberScopeGrantRepository,
+    MembershipRepository, MemoryRepository, WorkspaceRepository,
 };
 use rembrane_codec::decode_memory;
 use rembrane_crypto::{EncryptedPayload, EncryptionContext, PayloadPurpose, RecordCipher};
@@ -857,6 +857,54 @@ impl<C> MemberScopeGrantRepository for SqliteStore<C> {
             ));
         }
         Ok(grants)
+    }
+}
+
+impl<C> MemberLifecycleRepository for SqliteStore<C> {
+    fn remove_member_and_scope_grants(
+        &mut self,
+        membership: Membership,
+        expected_status: MembershipStatus,
+    ) -> Result<(), ApplicationError> {
+        if membership.status() != MembershipStatus::Removed {
+            return Err(ApplicationError::Validation(
+                "member lifecycle transition must end in removed status".to_owned(),
+            ));
+        }
+        let transaction = self
+            .connection
+            .transaction()
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        let changed = transaction
+            .execute(
+                "UPDATE memberships
+                 SET status = 'removed', updated_at = CURRENT_TIMESTAMP
+                 WHERE workspace_id = ?1 AND principal_id = ?2
+                   AND role = ?3 AND status = ?4",
+                params![
+                    membership.workspace_id().as_str(),
+                    membership.principal_id().as_str(),
+                    encode_role(membership.role()),
+                    encode_status(expected_status)
+                ],
+            )
+            .map_err(map_write_error)?;
+        if changed != 1 {
+            return Err(ApplicationError::VersionConflict);
+        }
+        transaction
+            .execute(
+                "DELETE FROM member_scope_grants
+                 WHERE workspace_id = ?1 AND principal_id = ?2",
+                params![
+                    membership.workspace_id().as_str(),
+                    membership.principal_id().as_str()
+                ],
+            )
+            .map_err(map_write_error)?;
+        transaction
+            .commit()
+            .map_err(|_| ApplicationError::StorageUnavailable)
     }
 }
 

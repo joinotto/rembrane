@@ -1,6 +1,7 @@
 use rembrane_application::{
     AuthorizeClientCommand, AuthorizeClientService, GrantMemberScopeCommand,
-    MemberScopeGrantRepository, MemberScopeGrantService, MembershipRepository, WorkspaceRepository,
+    MemberLifecycleService, MemberScopeGrantRepository, MemberScopeGrantService,
+    MembershipRepository, RemoveMemberCommand, WorkspaceRepository,
 };
 use rembrane_domain::{
     ClientId, EntityId, Membership, Principal, PrincipalId, ReadScope, Workspace, WorkspaceId,
@@ -103,4 +104,46 @@ fn grant_lookup_is_workspace_and_principal_scoped() {
             .expect("cross-principal lookup should succeed"),
         Vec::new()
     );
+}
+
+#[test]
+fn persisted_member_removal_deletes_grants_and_denies_authorization() {
+    let mut store = initialized_store();
+    MemberScopeGrantService::new(&mut store)
+        .grant(GrantMemberScopeCommand {
+            workspace_id: WorkspaceId::new("team"),
+            principal_id: PrincipalId::new("member"),
+            granted_by: PrincipalId::new("owner"),
+            scope: ReadScope::Entity {
+                id: EntityId::new("project"),
+            },
+        })
+        .expect("scope should be granted");
+
+    MemberLifecycleService::new(&mut store)
+        .remove(RemoveMemberCommand {
+            workspace_id: WorkspaceId::new("team"),
+            principal_id: PrincipalId::new("member"),
+            removed_by: PrincipalId::new("owner"),
+        })
+        .expect("owner should remove member");
+
+    assert_eq!(
+        store
+            .list_member_scope_grants(&WorkspaceId::new("team"), &PrincipalId::new("member"))
+            .expect("scope lookup should succeed"),
+        Vec::new()
+    );
+    let error = AuthorizeClientService::new(&store)
+        .execute(AuthorizeClientCommand {
+            client_id: ClientId::new("assistant"),
+            workspace_id: WorkspaceId::new("team"),
+            principal_id: PrincipalId::new("member"),
+            requested_read_scopes: vec![ReadScope::Entity {
+                id: EntityId::new("project"),
+            }],
+            requested_write_permissions: Vec::new(),
+        })
+        .expect_err("removed member must not authorize");
+    assert_eq!(error, rembrane_application::ApplicationError::AccessDenied);
 }

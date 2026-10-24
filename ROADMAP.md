@@ -97,7 +97,8 @@ This roadmap describes sequencing, not release dates.
 - [x] Shared-workspace invitations and role-bound acceptance.
 - [x] Shared-workspace exact scope grants, including entity-level access.
 - [ ] Private-to-shared memory proposals.
-- [ ] Group key rotation and member removal.
+- [x] Authorized member removal with atomic scope-grant cleanup.
+- [ ] Group key rotation after membership changes.
 - [ ] Organizational audit and retention controls.
 
 ## Phase 5 — Integration ecosystem
