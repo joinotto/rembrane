@@ -93,6 +93,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   recall with automatic disclosure receipts.
 - Deterministic local relevance ranking that suppresses unrelated canonical
   memories when a query has matching context.
+- Layer-aware relevance filtering now keeps the strongest selected match per
+  scope after byte budgeting, preserving smaller fallback memories and layered
+  global/entity/activity context.
 - Deterministic plaintext-byte context budgets across canonical, semantic,
   CLI, REST, and MCP resolution paths.
 - Domain-enforced 256 KiB ceilings for canonical memory content and complete
@@ -149,6 +152,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Changed
 
+- Workspace lint policy documents constructor-arity and public error-doc
+  exceptions while retaining warnings-as-errors for actionable Clippy checks.
 - Minimum Rust version is 1.88 and the MCP transport targets the official
   `rmcp` 3.4.1 SDK.
 - MCP application errors now separate safe validation/conflict feedback from

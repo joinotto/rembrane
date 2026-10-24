@@ -155,7 +155,6 @@ impl MemoryRecord {
         &self.evidence
     }
 
-    #[must_use]
     pub fn confirmed_preference(
         id: MemoryId,
         workspace_id: WorkspaceId,
@@ -354,7 +353,7 @@ mod tests {
 
         assert_eq!(deleted.version, 2);
         assert_eq!(deleted.status, MemoryStatus::Deleted);
-        assert!(deleted.content.is_empty());
+        assert_eq!(deleted.content, "");
     }
 
     #[test]

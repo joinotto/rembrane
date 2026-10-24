@@ -50,6 +50,7 @@ where
             command.request.maximum_items,
             command.request.maximum_bytes,
         );
+        retain_strongest_matches_by_scope(&mut items, &command.request.query);
 
         let receipt = DisclosureReceipt {
             id: command.disclosure_id.clone(),
@@ -121,6 +122,21 @@ fn rank_by_relevance(items: &mut Vec<MemoryRecord>, query: &str) {
     });
 
     items.extend(ranked.into_iter().map(|(memory, _)| memory));
+}
+
+fn retain_strongest_matches_by_scope(items: &mut Vec<MemoryRecord>, query: &str) {
+    let query_tokens = tokens(query);
+    let mut strongest_by_scope = [0_usize; 4];
+    for memory in items.iter() {
+        let scope = usize::from(memory.scope().specificity());
+        let relevance = token_overlap(&query_tokens, memory.content());
+        strongest_by_scope[scope] = strongest_by_scope[scope].max(relevance);
+    }
+    items.retain(|memory| {
+        let scope = usize::from(memory.scope().specificity());
+        let relevance = token_overlap(&query_tokens, memory.content());
+        relevance == strongest_by_scope[scope]
+    });
 }
 
 fn token_overlap(query_tokens: &BTreeSet<String>, content: &str) -> usize {
@@ -353,7 +369,7 @@ mod tests {
             error,
             ApplicationError::Validation("purpose must not be empty".to_owned())
         );
-        assert!(repository.disclosures.is_empty());
+        assert_eq!(repository.disclosures.len(), 0);
     }
 
     #[test]
@@ -367,7 +383,7 @@ mod tests {
             .expect_err("cross-workspace grant should fail");
 
         assert_eq!(error, ApplicationError::AccessDenied);
-        assert!(repository.disclosures.is_empty());
+        assert_eq!(repository.disclosures.len(), 0);
     }
 
     #[test]

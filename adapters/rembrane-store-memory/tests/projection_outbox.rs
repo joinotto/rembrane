@@ -62,11 +62,12 @@ fn pending_query_is_provider_scoped_and_limited() {
         .enqueue_projection(job("projection_01"))
         .expect("projection should enqueue");
 
-    assert!(
+    assert_eq!(
         store
             .pending_projections(&ProviderId::new("semantic.other"), 10)
             .expect("pending lookup should succeed")
-            .is_empty()
+            .len(),
+        0
     );
     assert_eq!(
         store

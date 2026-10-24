@@ -99,7 +99,7 @@ fn provider_candidate_is_rejected_without_canonical_grant() {
         .execute(command(vec![ReadScope::Global]))
         .expect("authorized request should execute");
 
-    assert!(response.items.is_empty());
+    assert_eq!(response.items.len(), 0);
     assert_eq!(store.disclosure_count(), 1);
 }
 
@@ -117,7 +117,7 @@ fn provider_candidate_for_another_subject_is_rejected() {
         .execute(command(vec![ReadScope::Global]))
         .expect("authorized request should execute");
 
-    assert!(response.items.is_empty());
+    assert_eq!(response.items.len(), 0);
 }
 
 #[test]

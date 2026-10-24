@@ -142,7 +142,7 @@ fn stale_projection_is_completed_without_overwriting_provider() {
     .expect("worker should run");
 
     assert_eq!(outcome, ProjectionOutcome::Superseded);
-    assert!(
+    assert_eq!(
         provider
             .search(&SemanticQuery {
                 workspace_id: WorkspaceId::new("workspace_01"),
@@ -150,7 +150,8 @@ fn stale_projection_is_completed_without_overwriting_provider() {
                 maximum_candidates: 10,
             })
             .expect("provider search should succeed")
-            .is_empty()
+            .len(),
+        0
     );
 }
 

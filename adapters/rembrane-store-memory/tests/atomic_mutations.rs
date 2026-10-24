@@ -69,11 +69,12 @@ fn sequence_failure_leaves_memory_and_event_unchanged() {
             .expect("memory lookup should succeed")
             .is_none()
     );
-    assert!(
+    assert_eq!(
         store
             .list_events_since(&WorkspaceId::new("workspace_01"), 0)
             .expect("event lookup should succeed")
-            .is_empty()
+            .len(),
+        0
     );
 }
 
@@ -126,17 +127,19 @@ fn projection_validation_failure_rolls_back_entire_mutation() {
             .expect("memory lookup should succeed")
             .is_none()
     );
-    assert!(
+    assert_eq!(
         store
             .list_events_since(&WorkspaceId::new("workspace_01"), 0)
             .expect("event lookup should succeed")
-            .is_empty()
+            .len(),
+        0
     );
-    assert!(
+    assert_eq!(
         store
             .pending_projections(&ProviderId::new("semantic.primary"), 10)
             .expect("projection lookup should succeed")
-            .is_empty()
+            .len(),
+        0
     );
 }
 

@@ -91,7 +91,7 @@ fn revises_and_deletes_owned_memory() {
 
     assert_eq!(deleted.version(), 3);
     assert_eq!(deleted.status(), MemoryStatus::Deleted);
-    assert!(deleted.content().is_empty());
+    assert_eq!(deleted.content(), "");
 }
 
 #[test]

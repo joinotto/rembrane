@@ -173,7 +173,7 @@ mod tests {
             })
             .expect("search should succeed");
 
-        assert!(results.is_empty());
+        assert_eq!(results.len(), 0);
     }
 
     #[test]
@@ -230,6 +230,6 @@ mod tests {
             })
             .expect("search should succeed");
 
-        assert!(results.is_empty());
+        assert_eq!(results.len(), 0);
     }
 }
