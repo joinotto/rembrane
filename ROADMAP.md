@@ -128,7 +128,8 @@ This roadmap describes sequencing, not release dates.
 - [ ] Cross-agent activity continuation.
   - [x] Exact-trip travel context separates fresh research from expired
     observations at a caller-supplied canonical timestamp.
-  - [ ] Audited REST/MCP travel context retrieval and disclosure receipts.
+  - [x] Audited REST/MCP travel context retrieval and exact-version disclosure
+    receipts, with opaque provider source references excluded from responses.
 - [ ] Sensitive travel-data permissions.
   - [x] MCP trip creation uses a dedicated travel-domain capability and
     server-assigned identity.

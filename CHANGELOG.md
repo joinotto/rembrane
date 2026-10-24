@@ -22,6 +22,14 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   its entity authority, and capturing expiring research against it.
 - Exact-trip travel context resolution for cross-agent handoff, with
   deterministic separation of fresh and expired booking observations.
+- Append-only exact-version travel disclosure receipts persisted
+  transactionally in schema version 8, covering the trip revision and every
+  fresh or expired research revision returned.
+- Authenticated REST and MCP travel-context retrieval with exact trip scope,
+  explicit purpose and as-of time, plus response minimization that excludes
+  opaque provider source references.
+- REST/Postman and MCP lifecycle coverage for cross-agent travel continuity
+  from encrypted trip creation through research capture and audited recall.
 - Explicit trip create/revise permissions, exact entity-scoped authorization,
   versioned trip audit events, and atomic in-memory trip/event mutations.
 - Member trip revisions through persisted entity grants while trip creation
