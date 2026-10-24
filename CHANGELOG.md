@@ -18,6 +18,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Transport-neutral Memory Provider Protocol request and response envelopes
   with bounded correlation IDs, version compatibility checks, explicit
   operation binding, and closed non-enumerating error codes.
+- Bounded provider-independent context-resolution request payloads with
+  validated purpose/query text, portable global/domain/entity/activity
+  selectors, and provider-negotiated item and byte limits.
 - Expiry-aware remote MCP session capacity reclamation so abandoned bindings
   cannot exhaust the bounded in-process registry indefinitely.
 - A transport-neutral remote MCP lifecycle boundary that composes strict HTTP

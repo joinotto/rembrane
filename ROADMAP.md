@@ -233,6 +233,8 @@ This roadmap describes sequencing, not release dates.
     correlation IDs, protocol negotiation, operation binding, and closed
     portable error codes.
   - [ ] Define canonical operation payloads and validation.
+    - [x] Add bounded context-resolution requests with global, domain, entity,
+      and activity selectors constrained by provider-advertised limits.
   - [ ] Publish a serialization schema and HTTP binding.
   - [ ] Add cross-implementation conformance fixtures.
 - [x] Versioned key-provider sidecar protocol for OS, HSM, and customer-KMS

@@ -7,6 +7,7 @@
 mod capability;
 mod conformance;
 mod error;
+mod memory_context;
 mod memory_protocol;
 mod semantic;
 
@@ -16,6 +17,10 @@ pub use capability::{
 };
 pub use conformance::{ConformanceFailure, verify_semantic_provider};
 pub use error::ProviderError;
+pub use memory_context::{
+    MAX_CONTEXT_PURPOSE_BYTES, MAX_CONTEXT_QUERY_BYTES, MemoryProviderContextSelector,
+    ResolveContextPayload,
+};
 pub use memory_protocol::{
     CURRENT_MEMORY_PROVIDER_PROTOCOL, MEMORY_PROVIDER_DISCOVERY_PATH, MemoryProviderCapability,
     MemoryProviderErrorCode, MemoryProviderHttpMethod, MemoryProviderLimits,
