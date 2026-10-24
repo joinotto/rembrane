@@ -2,7 +2,7 @@
 set -eu
 
 repository_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-database=$(mktemp "${TMPDIR:-/tmp}/rembrane-atomicity.XXXXXX.sqlite")
+database=$(mktemp "${TMPDIR:-/tmp}/rembrane-atomicity.sqlite.XXXXXX")
 trap 'rm -f "$database"' EXIT
 
 sqlite3 "$database" < \
