@@ -5,10 +5,10 @@ use anyhow::{Context, Result};
 use rembrane_application::{
     AuthorizeClientCommand, AuthorizeClientService, CaptureBookingResearchCommand,
     CaptureBookingResearchService, CheckpointService, ClientGrantBundle, CreateCheckpointCommand,
-    DeleteMemoryCommand, EventRepository, MemoryLifecycleService, MemoryProposalService,
-    ProposeMemoryCommand, RememberPreferenceCommand, RememberPreferenceService,
-    ResolveContextCommand, ResolveContextService, ResumeActivityCommand, ReviseMemoryCommand,
-    UpdateCheckpointCommand,
+    CreateTripCommand, DeleteMemoryCommand, EventRepository, MemoryLifecycleService,
+    MemoryProposalService, ProposeMemoryCommand, RememberPreferenceCommand,
+    RememberPreferenceService, ResolveContextCommand, ResolveContextService, ResumeActivityCommand,
+    ReviseMemoryCommand, TripService, UpdateCheckpointCommand,
 };
 use rembrane_config::parse_read_scopes;
 use rembrane_contracts::ResolveContextRequest;
@@ -17,7 +17,7 @@ use rembrane_domain::{
     ActivityCheckpoint, ActivityId, BookingResearch, BookingResearchId, BookingResearchKind,
     CheckpointId, ClientId, ContextPackId, DisclosureId, EntityId, EventId, EvidenceId,
     EvidenceReference, EvidenceSource, MemoryId, MemoryKind, MemoryScope, PrincipalId, ReadScope,
-    WorkspaceId, WritePermission,
+    TravelDateWindow, Trip, WorkspaceId, WritePermission,
 };
 use rembrane_store_sqlite::SqliteStore;
 use rmcp::handler::server::wrapper::Parameters;
@@ -130,6 +130,23 @@ struct CaptureBookingResearchParameters {
     evidence_source: String,
     observed_at: String,
     expires_at: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct CreateTripParameters {
+    title: String,
+    origin: String,
+    destinations: Vec<String>,
+    depart_not_before: String,
+    return_not_after: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TripOutput {
+    trip_id: String,
+    version: u64,
 }
 
 #[derive(Serialize)]
@@ -579,6 +596,58 @@ impl RembraneMcp {
         };
 
         checkpoint_response(&checkpoint, None, None)
+    }
+
+    #[tool(
+        name = "rembrane_create_trip",
+        description = "Create a new encrypted trip under the connection's travel-domain capability."
+    )]
+    fn create_trip(
+        &self,
+        Parameters(parameters): Parameters<CreateTripParameters>,
+    ) -> Result<String, McpError> {
+        let mut state = lock_state(&self.state)?;
+        let grants = authorize(
+            &state,
+            vec![ReadScope::Domain {
+                name: "travel".to_owned(),
+            }],
+            vec![WritePermission::CreateTrip],
+        )?;
+        let previous_sequence = current_sequence(&state)?;
+        let suffix = next_id(&mut state);
+        let date_window =
+            TravelDateWindow::new(parameters.depart_not_before, parameters.return_not_after)
+                .map_err(|_| McpError::invalid_params("invalid trip date window", None))?;
+        let trip = Trip::new(
+            EntityId::new(format!("trip_{suffix}")),
+            state.workspace_id.clone(),
+            state.principal_id.clone(),
+            parameters.title,
+            parameters.origin,
+            parameters.destinations,
+            date_window,
+        )
+        .map_err(|_| McpError::invalid_params("invalid trip", None))?;
+        let created = TripService::new(&mut state.store)
+            .create(CreateTripCommand {
+                grant: grants.write,
+                trip,
+                event_id: EventId::new(format!("event_{suffix}")),
+                expected_previous_sequence: previous_sequence,
+            })
+            .map_err(application_error)?;
+        let created_scope = ReadScope::Entity {
+            id: created.id().clone(),
+        };
+        if !state.read_scopes.contains(&created_scope) {
+            state.read_scopes.push(created_scope);
+        }
+        serde_json::to_string(&TripOutput {
+            trip_id: created.id().to_string(),
+            version: created.version(),
+        })
+        .map_err(|_| McpError::internal_error("response serialization failed", None))
     }
 
     #[tool(

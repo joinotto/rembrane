@@ -122,9 +122,12 @@ This roadmap describes sequencing, not release dates.
   - [x] MCP capture tool using connection-bound identity and exact trip scope.
   - [x] REST/Postman and MCP protocol tests reject capture without a canonical
     trip.
-  - [ ] Successful REST and MCP capture lifecycle after public trip creation.
+  - [x] Successful MCP trip creation and booking-research capture lifecycle.
+  - [ ] Successful REST lifecycle after public trip creation.
 - [ ] Cross-agent activity continuation.
 - [ ] Sensitive travel-data permissions.
+  - [x] MCP trip creation uses a dedicated travel-domain capability and
+    server-assigned identity.
 
 ## Phase 4 — Shared workspaces
 

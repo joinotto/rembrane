@@ -98,6 +98,7 @@ try {
     "rembrane_record_work_trace",
     "rembrane_checkpoint_activity",
     "rembrane_resume_activity",
+    "rembrane_create_trip",
     "rembrane_capture_booking_research",
   ]) {
     if (!toolNames.has(expected)) {
@@ -336,12 +337,63 @@ try {
       summary: "Nonstop morning option",
       sourceReference: "opaque-result-e2e",
       evidenceSource: "tool-result",
-      observedAt: "2026-10-24T10:00:00Z",
-      expiresAt: "2026-10-24T10:30:00Z",
+      observedAt: "2026-10-25T10:00:00Z",
+      expiresAt: "2026-10-25T10:30:00Z",
     },
   });
   if (!missingTripResearchCall.isError) {
     throw new Error("MCP captured booking research for a missing canonical trip");
+  }
+
+  const createdTripCall = await request(16, "tools/call", {
+    name: "rembrane_create_trip",
+    arguments: {
+      title: "Kyoto continuity test",
+      origin: "Bengaluru",
+      destinations: ["Kyoto"],
+      departNotBefore: "2026-11-01",
+      returnNotAfter: "2026-11-12",
+    },
+  });
+  if (createdTripCall.isError) {
+    throw new Error(
+      `MCP trip creation returned an error: ${JSON.stringify(createdTripCall)}`,
+    );
+  }
+  const createdTrip = JSON.parse(
+    createdTripCall.content?.find((item) => item.type === "text")?.text,
+  );
+  if (!createdTrip.tripId || createdTrip.version !== 1) {
+    throw new Error("MCP trip creation returned invalid metadata");
+  }
+
+  const capturedResearchCall = await request(17, "tools/call", {
+    name: "rembrane_capture_booking_research",
+    arguments: {
+      tripId: createdTrip.tripId,
+      kind: "flight",
+      provider: "e2e-search",
+      summary: "Nonstop morning option",
+      sourceReference: "opaque-result-success",
+      evidenceSource: "tool-result",
+      observedAt: "2026-10-25T10:00:00Z",
+      expiresAt: "2026-10-25T10:30:00Z",
+    },
+  });
+  if (capturedResearchCall.isError) {
+    throw new Error(
+      `MCP research capture returned an error: ${JSON.stringify(capturedResearchCall)}`,
+    );
+  }
+  const capturedResearch = JSON.parse(
+    capturedResearchCall.content?.find((item) => item.type === "text")?.text,
+  );
+  if (
+    !capturedResearch.researchId ||
+    capturedResearch.tripId !== createdTrip.tripId ||
+    capturedResearch.version !== 1
+  ) {
+    throw new Error("MCP research capture returned invalid metadata");
   }
 } finally {
   child.kill("SIGTERM");

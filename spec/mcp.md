@@ -31,6 +31,23 @@ Workspace and subject identifiers are intentionally absent from tool arguments.
 
 ## Tools
 
+### `rembrane_create_trip`
+
+Creates a new encrypted trip using the authenticated connection's `travel`
+domain capability. The server assigns the opaque trip ID and canonical event
+identity. Subsequent revisions and research capture require the exact returned
+trip entity scope.
+
+Arguments:
+
+- `title`
+- `origin`
+- `destinations`
+- `departNotBefore`
+- `returnNotAfter`
+
+The tool requires `trip:create` and `domain.travel`.
+
 ### `rembrane_capture_booking_research`
 
 Captures one encrypted, time-bounded research observation under an exact trip

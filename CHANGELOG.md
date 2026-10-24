@@ -12,6 +12,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Dedicated `travel` domain authorization for creating new trip entities,
   avoiding pre-grants for identifiers that do not exist while retaining exact
   entity grants for every revision and research capture.
+- `rembrane_create_trip` MCP tool with server-assigned opaque identity,
+  encrypted atomic persistence, and travel-domain authorization.
+- Exact entity authority derived for the creating MCP connection after trip
+  creation, plus an end-to-end encrypted trip-to-research capture lifecycle.
 - Explicit trip create/revise permissions, exact entity-scoped authorization,
   versioned trip audit events, and atomic in-memory trip/event mutations.
 - Member trip revisions through persisted entity grants while trip creation

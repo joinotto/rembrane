@@ -14,7 +14,7 @@ export REMBRANE_DATABASE="$test_directory/rembrane.sqlite"
 export REMBRANE_PRINCIPAL_ID="principal_mcp_e2e"
 export REMBRANE_WORKSPACE_ID="workspace_mcp_e2e"
 export REMBRANE_CLIENT_ID="client_mcp_e2e"
-export REMBRANE_READ_SCOPES="global,entity:project_e2e,entity:trip_missing,activity:activity_e2e"
+export REMBRANE_READ_SCOPES="global,domain:travel,entity:project_e2e,entity:trip_missing,activity:activity_e2e"
 export REMBRANE_WORKSPACE_KEY_ID="mcp-e2e-key-v1"
 export REMBRANE_WORKSPACE_KEY_HEX="000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
 
@@ -46,7 +46,17 @@ event_count=$(
     sqlite3 "$REMBRANE_DATABASE" \
         "SELECT count(*) FROM workspace_events WHERE workspace_id = '$REMBRANE_WORKSPACE_ID';"
 )
-test "$event_count" = "6"
+test "$event_count" = "8"
+trip_count=$(
+    sqlite3 "$REMBRANE_DATABASE" \
+        "SELECT count(*) FROM trips WHERE workspace_id = '$REMBRANE_WORKSPACE_ID';"
+)
+test "$trip_count" = "1"
+research_count=$(
+    sqlite3 "$REMBRANE_DATABASE" \
+        "SELECT count(*) FROM booking_research WHERE workspace_id = '$REMBRANE_WORKSPACE_ID';"
+)
+test "$research_count" = "1"
 trace_count=$(
     sqlite3 "$REMBRANE_DATABASE" \
         "SELECT count(*) FROM memories WHERE workspace_id = '$REMBRANE_WORKSPACE_ID' AND kind = 'observation' AND status = 'proposed' AND scope_type = 'activity' AND scope_value = 'activity_e2e';"

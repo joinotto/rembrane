@@ -144,7 +144,7 @@
         ],
         "body": {
           "mode": "raw",
-          "raw": "{\"workspaceId\":\"{{workspaceId}}\",\"subjectId\":\"{{principalId}}\",\"tripId\":\"{{tripId}}\",\"kind\":\"flight\",\"provider\":\"postman-search\",\"summary\":\"Nonstop morning option\",\"sourceReference\":\"opaque-result-postman\",\"evidenceSource\":\"tool-result\",\"observedAt\":\"2026-10-24T10:00:00Z\",\"expiresAt\":\"2026-10-24T10:30:00Z\",\"expectedPreviousSequence\":2}"
+          "raw": "{\"workspaceId\":\"{{workspaceId}}\",\"subjectId\":\"{{principalId}}\",\"tripId\":\"{{tripId}}\",\"kind\":\"flight\",\"provider\":\"postman-search\",\"summary\":\"Nonstop morning option\",\"sourceReference\":\"opaque-result-postman\",\"evidenceSource\":\"tool-result\",\"observedAt\":\"2026-10-25T10:00:00Z\",\"expiresAt\":\"2026-10-25T10:30:00Z\",\"expectedPreviousSequence\":2}"
         },
         "url": "{{baseUrl}}/v1/travel/booking-research"
       },
