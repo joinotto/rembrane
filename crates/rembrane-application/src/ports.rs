@@ -110,6 +110,18 @@ pub trait ChannelInboxRepository {
     ) -> Result<(), ApplicationError>;
 }
 
+/// Pluggable trusted-boundary handler for one authenticated channel message.
+///
+/// Implementations must treat `(channel, event_id)` as an idempotency key
+/// because a process can stop after handler success but before inbox
+/// completion is persisted.
+pub trait ChannelMessageProcessor {
+    fn process_channel_message(
+        &mut self,
+        message: &VerifiedChannelMessage,
+    ) -> Result<(), ApplicationError>;
+}
+
 pub trait AdministrativeAuditRepository {
     fn append_administrative_audit(
         &mut self,

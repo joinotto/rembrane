@@ -575,6 +575,8 @@ This roadmap describes sequencing, not release dates.
     completion.
   - [x] Make the executable gateway acknowledge new messages only after
     encrypted durable admission succeeds.
+  - [x] Define a bounded provider-neutral inbox worker that completes messages
+    only after an idempotent bot or agent processor succeeds.
   - [x] Define a bounded authenticated-channel message contract whose
     canonical workspace, principal, and client identity must come from a
     deployment-owned sender binding rather than webhook payload claims.

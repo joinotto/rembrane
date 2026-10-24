@@ -7,6 +7,7 @@ mod authorize_client;
 mod booking_research;
 mod channel_binding;
 mod channel_gateway;
+mod channel_inbox_worker;
 mod checkpoint;
 mod error;
 mod graph_projection_worker;
@@ -33,6 +34,7 @@ pub use channel_binding::{
     ChannelBindingService, CreateChannelBindingCommand, RevokeChannelBindingCommand,
 };
 pub use channel_gateway::ChannelReplayGuard;
+pub use channel_inbox_worker::{ChannelDispatchReport, ChannelInboxWorker};
 pub use checkpoint::{
     CheckpointService, CreateCheckpointCommand, ResumeActivityCommand, UpdateCheckpointCommand,
 };
@@ -48,9 +50,9 @@ pub use member_scope::{
 pub use ports::{
     AdministrativeAuditRepository, BookingResearchMutationRepository, BookingResearchRepository,
     CanonicalGraphMutationRepository, CanonicalMutationRepository, ChannelInboxRepository,
-    ChannelIngressRepository, ChannelReplayRepository, ChannelSenderBindingRepository,
-    CheckpointDisclosureRepository, CheckpointMutationRepository, CheckpointReadRepository,
-    CheckpointRepository, ContextReadRepository, DisclosureRepository,
+    ChannelIngressRepository, ChannelMessageProcessor, ChannelReplayRepository,
+    ChannelSenderBindingRepository, CheckpointDisclosureRepository, CheckpointMutationRepository,
+    CheckpointReadRepository, CheckpointRepository, ContextReadRepository, DisclosureRepository,
     DurableChannelIngressRepository, EventRepository, GraphProjectionOutboxRepository,
     InvitationRepository, KeyRotationRepository, KnowledgeDirection,
     KnowledgeGraphMutationRepository, KnowledgeGraphRepository, MAX_ADMINISTRATIVE_AUDIT_PAGE,

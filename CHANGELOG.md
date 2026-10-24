@@ -46,6 +46,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Executable WhatsApp acknowledgement backed by encrypted durable admission,
   with deployment-selected local, keychain, or customer-key-provider cipher
   configuration and an integration assertion that recovers the queued text.
+- A provider-neutral bounded channel-inbox worker contract that passes
+  authenticated messages to idempotent bot or agent processors, completes only
+  successful deliveries, and leaves failures queued for retry.
 - Durable, content-free SQLite channel replay receipts with atomic cleanup,
   fail-closed capacity enforcement, per-platform namespaces, and
   cross-workspace duplicate denial for multi-process gateways.
