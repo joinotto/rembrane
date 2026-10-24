@@ -69,6 +69,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Exact-version Memory Provider deletion with safe one-segment URL encoding,
   path/payload identity binding, idempotency, correlated errors, and validation
   that the returned tombstone immediately follows the deleted revision.
+- Exact-revision Memory Provider explanations over authenticated GET requests,
+  with safe path encoding, path/payload/result identity binding, and canonical
+  bounded evidence references that exclude raw sources and provider-internal
+  reasoning.
 - Canonical engine-neutral temporal knowledge graph aggregates with typed
   nodes, validated relationship types, strict workspace namespaces, separate
   validity and ingestion time, evidence provenance, bounded aliases, versions,

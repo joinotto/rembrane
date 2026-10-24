@@ -9,12 +9,12 @@ use rembrane_domain::{
 };
 use rembrane_provider_sdk::{
     CURRENT_MEMORY_PROVIDER_PROTOCOL, DeleteMemoryPayload, DeleteMemoryResult,
-    MEMORY_PROVIDER_DISCOVERY_PATH, MemoryProviderCapability, MemoryProviderConnection,
-    MemoryProviderContextItem, MemoryProviderDisclosureConstraint, MemoryProviderLimits,
-    MemoryProviderManifest, MemoryProviderPolicy, MemoryProviderPrivacyMode, MemoryProviderRequest,
-    MemoryProviderResponse, MemoryProviderSensitivity, MemoryProviderTransport,
-    ProposeMemoryPayload, ProposeMemoryResult, ProviderError, ProviderProtocolVersion,
-    ResolveContextPayload, ResolveContextResult,
+    ExplainMemoryPayload, ExplainMemoryResult, MEMORY_PROVIDER_DISCOVERY_PATH,
+    MemoryProviderCapability, MemoryProviderConnection, MemoryProviderContextItem,
+    MemoryProviderDisclosureConstraint, MemoryProviderLimits, MemoryProviderManifest,
+    MemoryProviderPolicy, MemoryProviderPrivacyMode, MemoryProviderRequest, MemoryProviderResponse,
+    MemoryProviderSensitivity, MemoryProviderTransport, ProposeMemoryPayload, ProposeMemoryResult,
+    ProviderError, ProviderProtocolVersion, ResolveContextPayload, ResolveContextResult,
 };
 use reqwest::Url;
 use reqwest::blocking::{Client, Response};
@@ -178,21 +178,61 @@ impl HttpMemoryProviderClient {
         }
     }
 
+    pub fn explain_memory(
+        &self,
+        request: &MemoryProviderRequest<ExplainMemoryPayload>,
+    ) -> Result<MemoryProviderResponse<ExplainMemoryResult>, ProviderError> {
+        let endpoint = memory_subresource_endpoint(
+            &self.base_url,
+            request.payload().memory_id().as_str(),
+            "explain",
+        )?;
+        let body = RequestEnvelope {
+            request_id: request.request_id().as_str(),
+            protocol_version: "0.1",
+            operation: "explain_memory",
+            payload: ExplainMemoryBody::from(request.payload()),
+        };
+        let response = self.get_json(endpoint, &body)?;
+        let status = response.status().as_u16();
+        let wire: ResponseEnvelope<ExplainMemoryResultBody> =
+            decode_json(response, MAXIMUM_OPERATION_BYTES)?;
+        validate_response_identity(request, &wire.request_id, &wire.protocol_version)?;
+        match (wire.result, wire.error) {
+            (Some(result), None) if (200..300).contains(&status) => {
+                Ok(request.success(result.into_domain(request.payload())?))
+            }
+            (None, Some(error)) if !(200..300).contains(&status) => {
+                Ok(request.error(parse_error_code(&error.code)?))
+            }
+            _ => Err(ProviderError::Rejected(
+                "memory provider response status and envelope disagree".to_owned(),
+            )),
+        }
+    }
+
+    fn get_json<Body: Serialize>(
+        &self,
+        endpoint: Url,
+        body: &Body,
+    ) -> Result<Response, ProviderError> {
+        let encoded = encode_operation_body(body)?;
+        self.client
+            .get(endpoint)
+            .header(ACCEPT, "application/json")
+            .header(CONTENT_TYPE, "application/json")
+            .bearer_auth(self.bearer_token.as_str())
+            .body(encoded)
+            .send()
+            .map_err(|_| ProviderError::Unavailable)
+    }
+
     fn post_json<Body: Serialize>(
         &self,
         endpoint: Url,
         body: &Body,
     ) -> Result<Response, ProviderError> {
-        let encoded = serde_json::to_vec(body).map_err(|_| {
-            ProviderError::InvalidConfiguration(
-                "memory provider request could not be encoded".to_owned(),
-            )
-        })?;
-        if encoded.len() as u64 > MAXIMUM_OPERATION_BYTES {
-            return Err(ProviderError::InvalidConfiguration(
-                "memory provider request exceeds the transport limit".to_owned(),
-            ));
-        }
+        let encoded = encode_operation_body(body)?;
         self.client
             .post(endpoint)
             .header(ACCEPT, "application/json")
@@ -208,16 +248,7 @@ impl HttpMemoryProviderClient {
         endpoint: Url,
         body: &Body,
     ) -> Result<Response, ProviderError> {
-        let encoded = serde_json::to_vec(body).map_err(|_| {
-            ProviderError::InvalidConfiguration(
-                "memory provider request could not be encoded".to_owned(),
-            )
-        })?;
-        if encoded.len() as u64 > MAXIMUM_OPERATION_BYTES {
-            return Err(ProviderError::InvalidConfiguration(
-                "memory provider request exceeds the transport limit".to_owned(),
-            ));
-        }
+        let encoded = encode_operation_body(body)?;
         self.client
             .delete(endpoint)
             .header(ACCEPT, "application/json")
@@ -227,6 +258,20 @@ impl HttpMemoryProviderClient {
             .send()
             .map_err(|_| ProviderError::Unavailable)
     }
+}
+
+fn encode_operation_body<Body: Serialize>(body: &Body) -> Result<Vec<u8>, ProviderError> {
+    let encoded = serde_json::to_vec(body).map_err(|_| {
+        ProviderError::InvalidConfiguration(
+            "memory provider request could not be encoded".to_owned(),
+        )
+    })?;
+    if encoded.len() as u64 > MAXIMUM_OPERATION_BYTES {
+        return Err(ProviderError::InvalidConfiguration(
+            "memory provider request exceeds the transport limit".to_owned(),
+        ));
+    }
+    Ok(encoded)
 }
 
 fn memory_endpoint(base_url: &Url, memory_id: &str) -> Result<Url, ProviderError> {
@@ -239,6 +284,21 @@ fn memory_endpoint(base_url: &Url, memory_id: &str) -> Result<Url, ProviderError
             ProviderError::InvalidConfiguration("memory provider URL cannot be a base".to_owned())
         })?
         .push(memory_id);
+    Ok(endpoint)
+}
+
+fn memory_subresource_endpoint(
+    base_url: &Url,
+    memory_id: &str,
+    subresource: &str,
+) -> Result<Url, ProviderError> {
+    let mut endpoint = memory_endpoint(base_url, memory_id)?;
+    endpoint
+        .path_segments_mut()
+        .map_err(|_| {
+            ProviderError::InvalidConfiguration("memory provider URL cannot be a base".to_owned())
+        })?
+        .push(subresource);
     Ok(endpoint)
 }
 
@@ -372,6 +432,24 @@ struct DeleteMemoryBody<'request> {
     reason: &'request str,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ExplainMemoryBody<'request> {
+    memory_id: &'request str,
+    version: u64,
+    purpose: &'request str,
+}
+
+impl<'request> From<&'request ExplainMemoryPayload> for ExplainMemoryBody<'request> {
+    fn from(payload: &'request ExplainMemoryPayload) -> Self {
+        Self {
+            memory_id: payload.memory_id().as_str(),
+            version: payload.version(),
+            purpose: payload.purpose(),
+        }
+    }
+}
+
 impl<'request> From<&'request DeleteMemoryPayload> for DeleteMemoryBody<'request> {
     fn from(payload: &'request DeleteMemoryPayload) -> Self {
         Self {
@@ -455,6 +533,37 @@ struct DeleteMemoryResultBody {
     memory_id: String,
     deleted_version: u64,
     tombstone_version: u64,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct ExplainMemoryResultBody {
+    memory_id: String,
+    version: u64,
+    explanation: String,
+    evidence: Vec<EvidenceBody>,
+}
+
+impl ExplainMemoryResultBody {
+    fn into_domain(
+        self,
+        request: &ExplainMemoryPayload,
+    ) -> Result<ExplainMemoryResult, ProviderError> {
+        if self.memory_id != request.memory_id().as_str() || self.version != request.version() {
+            return Err(ProviderError::Rejected(
+                "memory provider explanation returned another memory revision".to_owned(),
+            ));
+        }
+        ExplainMemoryResult::new(
+            MemoryId::new(self.memory_id),
+            self.version,
+            self.explanation,
+            self.evidence
+                .into_iter()
+                .map(EvidenceBody::into_domain)
+                .collect::<Result<Vec<_>, _>>()?,
+        )
+    }
 }
 
 impl ResolveContextResultBody {
@@ -854,15 +963,17 @@ fn invalid_discovery() -> ProviderError {
 mod tests {
     use rembrane_domain::{EntityId, MemoryScope};
     use rembrane_provider_sdk::{
-        CURRENT_MEMORY_PROVIDER_PROTOCOL, MemoryProviderCapability, MemoryProviderConnection,
-        MemoryProviderContextSelector, MemoryProviderIdempotencyKey, MemoryProviderLimits,
-        MemoryProviderManifest, MemoryProviderPolicy, MemoryProviderPrivacyMode,
-        MemoryProviderTransport, ProposeMemoryPayload, ResolveContextPayload,
+        CURRENT_MEMORY_PROVIDER_PROTOCOL, ExplainMemoryPayload, MemoryProviderCapability,
+        MemoryProviderConnection, MemoryProviderContextSelector, MemoryProviderIdempotencyKey,
+        MemoryProviderLimits, MemoryProviderManifest, MemoryProviderPolicy,
+        MemoryProviderPrivacyMode, MemoryProviderTransport, ProposeMemoryPayload,
+        ResolveContextPayload,
     };
 
     use super::{
-        DiscoveryBody, ProposeMemoryBody, RequestEnvelope, ResolveContextBody,
-        ResolveContextResultBody, memory_endpoint, validate_base_url, validate_bearer_token,
+        DiscoveryBody, ExplainMemoryBody, ExplainMemoryResultBody, ProposeMemoryBody,
+        RequestEnvelope, ResolveContextBody, ResolveContextResultBody, memory_endpoint,
+        memory_subresource_endpoint, validate_base_url, validate_bearer_token,
     };
 
     const DISCOVERY: &str = r#"{
@@ -1074,5 +1185,57 @@ mod tests {
             3,
             "opaque memory identity must remain one final path segment"
         );
+    }
+
+    #[test]
+    fn binds_explanations_to_one_exact_memory_revision() {
+        let payload = ExplainMemoryPayload::new(
+            rembrane_domain::MemoryId::new("memory_01"),
+            7,
+            "explain personalization",
+        )
+        .expect("payload");
+        let encoded =
+            serde_json::to_value(ExplainMemoryBody::from(&payload)).expect("request JSON");
+        assert_eq!(encoded["memoryId"], "memory_01");
+        assert_eq!(encoded["version"], 7);
+        assert_eq!(encoded["purpose"], "explain personalization");
+
+        let wire: ExplainMemoryResultBody = serde_json::from_str(
+            r#"{
+              "memoryId":"memory_01",
+              "version":7,
+              "explanation":"The user explicitly selected this preferred name.",
+              "evidence":[{"evidenceId":"evidence_01","source":"user_statement"}]
+            }"#,
+        )
+        .expect("result JSON");
+        let result = wire.into_domain(&payload).expect("canonical result");
+        assert_eq!(result.memory_id().as_str(), "memory_01");
+        assert_eq!(result.version(), 7);
+        assert_eq!(result.evidence().len(), 1);
+
+        let mismatched: ExplainMemoryResultBody = serde_json::from_str(
+            r#"{
+              "memoryId":"memory_01",
+              "version":8,
+              "explanation":"A different revision must not be accepted.",
+              "evidence":[{"evidenceId":"evidence_01","source":"user_statement"}]
+            }"#,
+        )
+        .expect("result JSON");
+        assert!(mismatched.into_domain(&payload).is_err());
+    }
+
+    #[test]
+    fn builds_safe_memory_explanation_endpoint() {
+        let base = validate_base_url("https://memory.example.test").expect("base URL");
+        let endpoint = memory_subresource_endpoint(&base, "memory/with?reserved#bytes", "explain")
+            .expect("endpoint");
+        assert_eq!(
+            endpoint.as_str(),
+            "https://memory.example.test/v1/memories/memory%2Fwith%3Freserved%23bytes/explain"
+        );
+        assert_eq!(endpoint.path_segments().expect("segments").count(), 4);
     }
 }

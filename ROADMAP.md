@@ -365,8 +365,10 @@ This roadmap describes sequencing, not release dates.
       - [x] Delete one exact memory revision through a percent-encoded,
         path/payload-bound identifier and validate the consecutive tombstone
         result.
-      - [ ] Add question, event, checkpoint, disclosure, lifecycle, and sync
-        operations.
+      - [x] Explain one exact memory revision with bounded immutable evidence
+        references, without exposing raw sources or provider-internal
+        reasoning.
+      - [ ] Add question, event, checkpoint, disclosure, and sync operations.
 - [x] Versioned key-provider sidecar protocol for OS, HSM, and customer-KMS
   adapters.
   - [x] Add transport-independent Rust manifest, negotiation, request, context,
