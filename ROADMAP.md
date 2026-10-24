@@ -283,6 +283,8 @@ This roadmap describes sequencing, not release dates.
     - [x] Publish a strict language-neutral lifecycle fixture corpus and make
       the black-box client consume it without embedding credentials or tenant
       identities.
+    - [x] Emit a strict portable result containing the tested provider build
+      and a pass record for every case in the selected profile.
     - [x] Add a secret-safe black-box HTTPS conformance runner.
     - [ ] Prove the runner against an independent local mock implementation.
       - [x] Add the independent mock and opt-in loopback CI execution hook.

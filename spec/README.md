@@ -78,6 +78,11 @@ consume the same fixtures from any language; credentials and authenticated
 workspace identities are supplied by the test environment and never by the
 fixture file.
 
+`memory-provider-conformance-result.schema.json` defines the portable evidence
+record emitted after a complete passing run. It pins the provider ID and
+version, profile, fixture corpus, disposable namespace, and one result for
+every profile case.
+
 ## Design rules
 
 - Canonical identifiers are opaque strings.

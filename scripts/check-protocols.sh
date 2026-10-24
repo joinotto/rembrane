@@ -23,6 +23,7 @@ jq empty \
     spec/discovery.schema.json \
     spec/memory-provider.schema.json \
     spec/memory-provider-conformance.schema.json \
+    spec/memory-provider-conformance-result.schema.json \
     spec/memory-provider-fixtures.schema.json \
     spec/conformance/memory-provider-core.json \
     spec/conformance/memory-provider-core-fixtures.json \
@@ -30,6 +31,7 @@ jq empty \
     spec/examples/memory-provider-discovery.json \
     spec/examples/memory-provider-context-request.json \
     spec/examples/memory-provider-context-response.json \
+    spec/examples/memory-provider-conformance-result.json \
     spec/examples/memory-provider-proposal-request.json \
     spec/examples/memory-provider-sync-push-request.json \
     spec/examples/oauth-protected-resource.json \
@@ -164,6 +166,17 @@ jq -e '
     and (.scenario | has("subjectId") | not)
     and (.scenario | has("token") | not)
 ' spec/conformance/memory-provider-core-fixtures.json >/dev/null
+
+jq -e --slurpfile profile spec/conformance/memory-provider-core.json '
+    .profileId == $profile[0].profileId
+    and .protocolVersion == $profile[0].protocolVersion
+    and .fixtureId == "rembrane.memory-provider.core.lifecycle"
+    and .result == "pass"
+    and (.provider.id | test("^[a-z0-9][a-z0-9._-]+$"))
+    and (.provider.version | length > 0)
+    and ([.cases[].id] == [$profile[0].cases[].id])
+    and all(.cases[]; .result == "pass")
+' spec/examples/memory-provider-conformance-result.json >/dev/null
 
 jq -e '
     (.resource | startswith("https://"))

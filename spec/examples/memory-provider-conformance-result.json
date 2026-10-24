@@ -1,0 +1,57 @@
+{
+  "profileId": "rembrane.memory-provider.core",
+  "fixtureId": "rembrane.memory-provider.core.lifecycle",
+  "protocolVersion": "0.1",
+  "provider": {
+    "id": "rembrane.example-memory-provider",
+    "version": "0.1.0"
+  },
+  "result": "pass",
+  "namespace": "example-disposable-run",
+  "cases": [
+    {
+      "id": "discovery.public",
+      "result": "pass"
+    },
+    {
+      "id": "protected.missing-token",
+      "result": "pass"
+    },
+    {
+      "id": "scope.insufficient",
+      "result": "pass"
+    },
+    {
+      "id": "proposal.accepted",
+      "result": "pass"
+    },
+    {
+      "id": "proposal.idempotent",
+      "result": "pass"
+    },
+    {
+      "id": "context.exact-workspace",
+      "result": "pass"
+    },
+    {
+      "id": "context.cross-workspace",
+      "result": "pass"
+    },
+    {
+      "id": "delete.stale-version",
+      "result": "pass"
+    },
+    {
+      "id": "delete.exact-version",
+      "result": "pass"
+    },
+    {
+      "id": "sync.workspace-isolation",
+      "result": "pass"
+    },
+    {
+      "id": "sync.sequence-order",
+      "result": "pass"
+    }
+  ]
+}

@@ -12,6 +12,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Strict language-neutral Memory Provider lifecycle fixtures defining actor
   scope expectations and disposable scenario inputs, consumed directly by the
   black-box HTTP conformance client without storing credentials or tenant IDs.
+- Portable Memory Provider conformance result schema and runner output pinning
+  the tested provider build, fixture corpus, namespace, and every passed
+  behavioral profile case.
 - Fail-closed Memory Provider negotiation policy covering protocol version,
   required transport and capabilities, explicitly allowed privacy modes, and
   minimum context, event, and sync limits.

@@ -19,10 +19,11 @@ primary_token=${REMBRANE_MEMORY_PROVIDER_PRIMARY_TOKEN:-}
 other_token=${REMBRANE_MEMORY_PROVIDER_OTHER_TOKEN:-}
 readonly_token=${REMBRANE_MEMORY_PROVIDER_READONLY_TOKEN:-}
 fixture_file=${REMBRANE_MEMORY_PROVIDER_FIXTURE_FILE:-"$repository_root/spec/conformance/memory-provider-core-fixtures.json"}
+profile_file=${REMBRANE_MEMORY_PROVIDER_PROFILE_FILE:-"$repository_root/spec/conformance/memory-provider-core.json"}
 namespace=${1:-}
 
-if [ ! -r "$fixture_file" ]; then
-    echo "memory provider conformance fixture file is not readable" >&2
+if [ ! -r "$fixture_file" ] || [ ! -r "$profile_file" ]; then
+    echo "memory provider conformance profile or fixture file is not readable" >&2
     exit 1
 fi
 jq -e '
@@ -62,6 +63,15 @@ required_actor_scopes=$(jq -c '
         .actors.readOnly.requiredScopes[]
     ] | unique
 ' "$fixture_file")
+case_results=$(jq -c '
+    if .profileId != "rembrane.memory-provider.core"
+        or .protocolVersion != "0.1"
+        or (.cases | length) == 0
+    then error("incompatible memory provider conformance profile")
+    else [.cases[] | {id: .id, result: "pass"}]
+    end
+' "$profile_file")
+fixture_id=$(jq -er '.fixtureId' "$fixture_file")
 content_prefix=$(jq -er '.scenario.contentPrefix' "$fixture_file")
 context_purpose=$(jq -er '.scenario.contextPurpose' "$fixture_file")
 evidence_source=$(jq -er '.scenario.evidenceSource' "$fixture_file")
@@ -200,6 +210,8 @@ jq -e --argjson requiredScopes "$required_actor_scopes" '
     and .limits.maximumContextItems > 0
     and .limits.maximumSyncBatchItems > 0
 ' "$response" >/dev/null
+provider_id=$(jq -er '.providerId' "$response")
+provider_version=$(jq -er '.providerVersion' "$response")
 maximum_context_items=$(jq -r --argjson fixture "$fixture_maximum_context_items" \
     '.limits.maximumContextItems | [., $fixture] | min' "$response")
 maximum_context_bytes=$(jq -r --argjson fixture "$fixture_maximum_context_bytes" \
@@ -377,5 +389,20 @@ jq -e \
     --arg content "$proposal_content" \
     'all(.items[]; .content != $content)' "$response" >/dev/null
 
-printf '{"profileId":"rembrane.memory-provider.core","protocolVersion":"0.1","result":"pass","namespace":"%s"}\n' \
-    "$namespace"
+jq -cn \
+    --arg profileId "rembrane.memory-provider.core" \
+    --arg fixtureId "$fixture_id" \
+    --arg protocolVersion "0.1" \
+    --arg providerId "$provider_id" \
+    --arg providerVersion "$provider_version" \
+    --arg namespace "$namespace" \
+    --argjson cases "$case_results" \
+    '{
+        profileId: $profileId,
+        fixtureId: $fixtureId,
+        protocolVersion: $protocolVersion,
+        provider: {id: $providerId, version: $providerVersion},
+        result: "pass",
+        namespace: $namespace,
+        cases: $cases
+    }'

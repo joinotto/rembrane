@@ -397,7 +397,11 @@ await new Promise((resolve, reject) =>
 assert.equal(status, 0, stderr);
 const result = JSON.parse(stdout);
 assert.equal(result.profileId, "rembrane.memory-provider.core");
+assert.equal(result.fixtureId, "rembrane.memory-provider.core.lifecycle");
 assert.equal(result.result, "pass");
+assert.equal(result.provider.id, "rembrane.mock-memory-provider");
+assert.equal(result.cases.length, 11);
+assert.equal(result.cases.every((testCase) => testCase.result === "pass"), true);
 for (const token of Object.values(tokens)) {
   assert.equal(stdout.includes(token), false);
   assert.equal(stderr.includes(token), false);
