@@ -88,6 +88,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Typed Memory Provider sync pull with opaque cursors, caller-selected page
   bounds, strict resource and operation codecs, payload/digest consistency,
   ordered unique changes, and validated continuation state.
+- Typed Memory Provider sync push with an idempotent atomic batch, optimistic
+  expected revisions, base-cursor fork detection, ciphertext-compatible
+  payload integrity, and ordered one-for-one canonical acknowledgements.
 - Canonical engine-neutral temporal knowledge graph aggregates with typed
   nodes, validated relationship types, strict workspace namespaces, separate
   validity and ingestion time, evidence provenance, bounded aliases, versions,

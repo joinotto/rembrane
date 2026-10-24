@@ -351,12 +351,12 @@ This roadmap describes sequencing, not release dates.
     - [ ] Prove the runner against an independent local mock implementation.
       - [x] Add the independent mock and opt-in loopback CI execution hook.
       - [ ] Execute the loopback proof in a socket-enabled environment.
-  - [ ] Add an authenticated Rust HTTP client adapter.
+  - [x] Add an authenticated Rust HTTP client adapter.
     - [x] Add bounded redirect-free, proxy-free HTTPS/loopback discovery with
       zeroized bearer credentials.
     - [x] Reject manifests whose capability, OAuth scope, HTTP method, or path
       bindings differ from the canonical protocol registry.
-    - [ ] Add typed codecs and response validation for every operation.
+    - [x] Add typed codecs and response validation for every operation.
       - [x] Resolve bounded global, domain, entity, or activity context and
         reconstruct canonical provenance, sensitivity, constraints, context
         pack, and disclosure identity.
@@ -382,7 +382,8 @@ This roadmap describes sequencing, not release dates.
       - [x] Pull bounded, strictly ordered sync pages from opaque
         connection-bound cursors while validating resource, operation,
         payload, digest, and continuation invariants.
-      - [ ] Add atomic optimistic sync push.
+      - [x] Push idempotent optimistic mutation batches atomically from a base
+        cursor and require ordered one-for-one canonical acknowledgements.
 - [x] Versioned key-provider sidecar protocol for OS, HSM, and customer-KMS
   adapters.
   - [x] Add transport-independent Rust manifest, negotiation, request, context,

@@ -10,16 +10,17 @@ use rembrane_domain::{
 use rembrane_provider_sdk::{
     CURRENT_MEMORY_PROVIDER_PROTOCOL, CheckpointActivityPayload, CheckpointActivityResult,
     DeleteMemoryPayload, DeleteMemoryResult, ExplainMemoryPayload, ExplainMemoryResult,
-    MEMORY_PROVIDER_DISCOVERY_PATH, MemoryProviderCapability, MemoryProviderConnection,
-    MemoryProviderContextItem, MemoryProviderDisclosedMemory, MemoryProviderDisclosureConstraint,
-    MemoryProviderEvent, MemoryProviderLimits, MemoryProviderManifest, MemoryProviderPolicy,
-    MemoryProviderPrivacyMode, MemoryProviderPulledChange, MemoryProviderRecordedEvent,
+    MEMORY_PROVIDER_DISCOVERY_PATH, MemoryProviderAcceptedMutation, MemoryProviderCapability,
+    MemoryProviderConnection, MemoryProviderContextItem, MemoryProviderDisclosedMemory,
+    MemoryProviderDisclosureConstraint, MemoryProviderEvent, MemoryProviderLimits,
+    MemoryProviderManifest, MemoryProviderPolicy, MemoryProviderPrivacyMode,
+    MemoryProviderPulledChange, MemoryProviderPushMutation, MemoryProviderRecordedEvent,
     MemoryProviderRequest, MemoryProviderResponse, MemoryProviderSensitivity,
     MemoryProviderSyncCursor, MemoryProviderSyncOperation, MemoryProviderSyncResource,
     MemoryProviderTransport, ProposeMemoryPayload, ProposeMemoryResult, ProviderError,
     ProviderProtocolVersion, RecordDisclosurePayload, RecordDisclosureResult, RecordEventPayload,
     RecordEventResult, ResolveContextPayload, ResolveContextResult, ResolveQuestionPayload,
-    ResolveQuestionResult, SyncPullPayload, SyncPullResult,
+    ResolveQuestionResult, SyncPullPayload, SyncPullResult, SyncPushPayload, SyncPushResult,
 };
 use reqwest::Url;
 use reqwest::blocking::{Client, Response};
@@ -291,6 +292,38 @@ impl HttpMemoryProviderClient {
         let response = self.get_json(endpoint, &body)?;
         let status = response.status().as_u16();
         let wire: ResponseEnvelope<SyncPullResultBody> =
+            decode_json(response, MAXIMUM_OPERATION_BYTES)?;
+        validate_response_identity(request, &wire.request_id, &wire.protocol_version)?;
+        match (wire.result, wire.error) {
+            (Some(result), None) if (200..300).contains(&status) => {
+                Ok(request.success(result.into_domain(request.payload())?))
+            }
+            (None, Some(error)) if !(200..300).contains(&status) => {
+                Ok(request.error(parse_error_code(&error.code)?))
+            }
+            _ => Err(ProviderError::Rejected(
+                "memory provider response status and envelope disagree".to_owned(),
+            )),
+        }
+    }
+
+    pub fn sync_push(
+        &self,
+        request: &MemoryProviderRequest<SyncPushPayload>,
+    ) -> Result<MemoryProviderResponse<SyncPushResult>, ProviderError> {
+        let endpoint = self
+            .base_url
+            .join("v1/sync/push")
+            .map_err(|_| ProviderError::Unavailable)?;
+        let body = RequestEnvelope {
+            request_id: request.request_id().as_str(),
+            protocol_version: "0.1",
+            operation: "sync_push",
+            payload: SyncPushBody::from(request.payload()),
+        };
+        let response = self.post_json(endpoint, &body)?;
+        let status = response.status().as_u16();
+        let wire: ResponseEnvelope<SyncPushResultBody> =
             decode_json(response, MAXIMUM_OPERATION_BYTES)?;
         validate_response_identity(request, &wire.request_id, &wire.protocol_version)?;
         match (wire.result, wire.error) {
@@ -653,6 +686,54 @@ struct SyncPullBody<'request> {
     maximum_items: usize,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SyncPushBody<'request> {
+    idempotency_key: &'request str,
+    base_cursor: &'request str,
+    mutations: Vec<PushSyncMutationBody<'request>>,
+}
+
+impl<'request> From<&'request SyncPushPayload> for SyncPushBody<'request> {
+    fn from(payload: &'request SyncPushPayload) -> Self {
+        Self {
+            idempotency_key: payload.idempotency_key().as_str(),
+            base_cursor: payload.base_cursor().as_str(),
+            mutations: payload
+                .mutations()
+                .iter()
+                .map(PushSyncMutationBody::from)
+                .collect(),
+        }
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PushSyncMutationBody<'request> {
+    mutation_id: &'request str,
+    resource: &'static str,
+    resource_id: &'request str,
+    expected_version: Option<u64>,
+    operation: &'static str,
+    payload: Option<&'request str>,
+    payload_sha256: Option<&'request str>,
+}
+
+impl<'request> From<&'request MemoryProviderPushMutation> for PushSyncMutationBody<'request> {
+    fn from(mutation: &'request MemoryProviderPushMutation) -> Self {
+        Self {
+            mutation_id: mutation.mutation_id(),
+            resource: sync_resource_name(mutation.resource()),
+            resource_id: mutation.resource_id(),
+            expected_version: mutation.expected_version(),
+            operation: sync_operation_name(mutation.operation()),
+            payload: mutation.payload(),
+            payload_sha256: mutation.payload_sha256(),
+        }
+    }
+}
+
 impl<'request> From<&'request SyncPullPayload> for SyncPullBody<'request> {
     fn from(payload: &'request SyncPullPayload) -> Self {
         Self {
@@ -926,6 +1007,40 @@ struct SyncPullResultBody {
     changes: Vec<PulledSyncChangeBody>,
     next_cursor: String,
     has_more: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct SyncPushResultBody {
+    accepted: Vec<AcceptedSyncMutationBody>,
+    next_cursor: String,
+}
+
+impl SyncPushResultBody {
+    fn into_domain(self, request: &SyncPushPayload) -> Result<SyncPushResult, ProviderError> {
+        SyncPushResult::new(
+            self.accepted
+                .into_iter()
+                .map(AcceptedSyncMutationBody::into_domain)
+                .collect::<Result<Vec<_>, _>>()?,
+            MemoryProviderSyncCursor::new(self.next_cursor)?,
+            request,
+        )
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct AcceptedSyncMutationBody {
+    mutation_id: String,
+    version: u64,
+    sequence: u64,
+}
+
+impl AcceptedSyncMutationBody {
+    fn into_domain(self) -> Result<MemoryProviderAcceptedMutation, ProviderError> {
+        MemoryProviderAcceptedMutation::new(self.mutation_id, self.version, self.sequence)
+    }
 }
 
 impl SyncPullResultBody {
@@ -1267,11 +1382,29 @@ fn parse_sync_resource(value: &str) -> Result<MemoryProviderSyncResource, Provid
     }
 }
 
+const fn sync_resource_name(value: MemoryProviderSyncResource) -> &'static str {
+    match value {
+        MemoryProviderSyncResource::Memory => "memory",
+        MemoryProviderSyncResource::Evidence => "evidence",
+        MemoryProviderSyncResource::ActivityCheckpoint => "activity_checkpoint",
+        MemoryProviderSyncResource::DisclosureReceipt => "disclosure_receipt",
+        MemoryProviderSyncResource::Entity => "entity",
+        MemoryProviderSyncResource::Event => "event",
+    }
+}
+
 fn parse_sync_operation(value: &str) -> Result<MemoryProviderSyncOperation, ProviderError> {
     match value {
         "upsert" => Ok(MemoryProviderSyncOperation::Upsert),
         "delete" => Ok(MemoryProviderSyncOperation::Delete),
         _ => Err(invalid_operation_response()),
+    }
+}
+
+const fn sync_operation_name(value: MemoryProviderSyncOperation) -> &'static str {
+    match value {
+        MemoryProviderSyncOperation::Upsert => "upsert",
+        MemoryProviderSyncOperation::Delete => "delete",
     }
 }
 
@@ -1487,9 +1620,10 @@ mod tests {
         MemoryProviderCapability, MemoryProviderConnection, MemoryProviderContextSelector,
         MemoryProviderDisclosedMemory, MemoryProviderEvent, MemoryProviderIdempotencyKey,
         MemoryProviderLimits, MemoryProviderManifest, MemoryProviderPolicy,
-        MemoryProviderPrivacyMode, MemoryProviderSyncCursor, MemoryProviderTransport,
+        MemoryProviderPrivacyMode, MemoryProviderPushMutation, MemoryProviderSyncCursor,
+        MemoryProviderSyncOperation, MemoryProviderSyncResource, MemoryProviderTransport,
         ProposeMemoryPayload, RecordDisclosurePayload, RecordEventPayload, ResolveContextPayload,
-        ResolveQuestionPayload, SyncPullPayload,
+        ResolveQuestionPayload, SyncPullPayload, SyncPushPayload,
     };
 
     use super::{
@@ -1497,8 +1631,9 @@ mod tests {
         ExplainMemoryResultBody, ProposeMemoryBody, RecordDisclosureBody,
         RecordDisclosureResultBody, RecordEventBody, RecordEventResultBody, RequestEnvelope,
         ResolveContextBody, ResolveContextResultBody, ResolveQuestionBody,
-        ResolveQuestionResultBody, SyncPullBody, SyncPullResultBody, activity_subresource_endpoint,
-        memory_endpoint, memory_subresource_endpoint, validate_base_url, validate_bearer_token,
+        ResolveQuestionResultBody, SyncPullBody, SyncPullResultBody, SyncPushBody,
+        SyncPushResultBody, activity_subresource_endpoint, memory_endpoint,
+        memory_subresource_endpoint, validate_base_url, validate_bearer_token,
     };
 
     const DISCOVERY: &str = r#"{
@@ -1980,6 +2115,80 @@ mod tests {
         )
         .expect("result JSON");
         assert!(unordered.into_domain(&request).is_err());
+    }
+
+    #[test]
+    fn serializes_and_validates_atomic_ordered_sync_pushes() {
+        const DIGEST: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let limits = MemoryProviderLimits {
+            maximum_context_items: 1,
+            maximum_context_bytes: 1,
+            maximum_event_batch_items: 1,
+            maximum_sync_batch_items: 2,
+        };
+        let request = SyncPushPayload::new(
+            MemoryProviderIdempotencyKey::new("syncpush_0123456789").expect("key"),
+            MemoryProviderSyncCursor::new("cursor_0123456789_base").expect("cursor"),
+            vec![
+                MemoryProviderPushMutation::new(
+                    "mutation_01",
+                    MemoryProviderSyncResource::Memory,
+                    "memory_01",
+                    None,
+                    MemoryProviderSyncOperation::Upsert,
+                    Some("ciphertext".to_owned()),
+                    Some(DIGEST.to_owned()),
+                )
+                .expect("mutation"),
+                MemoryProviderPushMutation::new(
+                    "mutation_02",
+                    MemoryProviderSyncResource::Event,
+                    "event_01",
+                    Some(3),
+                    MemoryProviderSyncOperation::Delete,
+                    None,
+                    None,
+                )
+                .expect("mutation"),
+            ],
+            limits,
+        )
+        .expect("request");
+        let encoded = serde_json::to_value(SyncPushBody::from(&request)).expect("request JSON");
+        assert_eq!(encoded["baseCursor"], "cursor_0123456789_base");
+        assert_eq!(encoded["mutations"][0]["resource"], "memory");
+        assert_eq!(encoded["mutations"][0]["operation"], "upsert");
+        assert_eq!(encoded["mutations"][1]["operation"], "delete");
+        assert_eq!(encoded["mutations"][1]["payload"], serde_json::Value::Null);
+        assert!(encoded.get("workspaceId").is_none());
+        assert!(encoded.get("clientId").is_none());
+
+        let wire: SyncPushResultBody = serde_json::from_str(
+            r#"{
+              "accepted":[
+                {"mutationId":"mutation_01","version":1,"sequence":9},
+                {"mutationId":"mutation_02","version":4,"sequence":10}
+              ],
+              "nextCursor":"cursor_0123456789_next"
+            }"#,
+        )
+        .expect("result JSON");
+        let result = wire.into_domain(&request).expect("canonical result");
+        assert_eq!(result.accepted().len(), 2);
+        assert_eq!(result.accepted()[1].sequence(), 10);
+        assert_eq!(result.next_cursor().as_str(), "cursor_0123456789_next");
+
+        let reordered: SyncPushResultBody = serde_json::from_str(
+            r#"{
+              "accepted":[
+                {"mutationId":"mutation_02","version":4,"sequence":9},
+                {"mutationId":"mutation_01","version":1,"sequence":10}
+              ],
+              "nextCursor":"cursor_0123456789_next"
+            }"#,
+        )
+        .expect("result JSON");
+        assert!(reordered.into_domain(&request).is_err());
     }
 
     #[test]
