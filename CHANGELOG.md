@@ -51,6 +51,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Graph-worker packaging in the main image and Graphiti Compose overlay,
   sharing only the encrypted canonical volume while connecting to the
   authenticated sidecar over the private container network.
+- A process-level graph-worker lifecycle test that seeds a canonical encrypted
+  SQLite node and provider outbox job through the atomic repository, launches
+  the real worker binary, and verifies the auditable job reaches completion.
 - Canonical engine-neutral temporal knowledge graph aggregates with typed
   nodes, validated relationship types, strict workspace namespaces, separate
   validity and ingestion time, evidence provenance, bounded aliases, versions,

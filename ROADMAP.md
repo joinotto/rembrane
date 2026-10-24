@@ -186,7 +186,9 @@ This roadmap describes sequencing, not release dates.
         - [x] Package the graph worker in the self-hosted Graphiti deployment
           with the shared encrypted volume, private sidecar endpoint, and
           operator-supplied credentials.
-        - [ ] Add an executable worker lifecycle test over a real outbox job.
+        - [x] Add a process-level worker lifecycle test that atomically seeds
+          an encrypted SQLite graph node and outbox job, runs the configured
+          worker once, and verifies persisted completion.
 
 - [x] Project entities and scoped preferences.
 - [x] Layer global, domain, entity, and activity context in one request.

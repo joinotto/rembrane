@@ -16,6 +16,9 @@ rembrane-graph-configured = { path = "../../adapters/rembrane-graph-configured" 
 rembrane-provider-sdk = { path = "../../crates/rembrane-provider-sdk" }
 rembrane-store-sqlite = { path = "../../adapters/rembrane-store-sqlite" }
 
+[dev-dependencies]
+rembrane-crypto-rustcrypto = { path = "../../adapters/rembrane-crypto-rustcrypto" }
+
 [lints]
 workspace = true
 
