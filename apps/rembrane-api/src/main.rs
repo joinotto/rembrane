@@ -244,6 +244,7 @@ impl AppState {
                 workspace_id,
                 principal_id,
                 requested_read_scopes: read_scopes,
+                requested_read_permissions: Vec::new(),
                 requested_write_permissions: vec![
                     WritePermission::CreateTrip,
                     WritePermission::CaptureBookingResearch,
@@ -790,6 +791,7 @@ mod tests {
             scopes: vec![ReadScope::Entity {
                 id: EntityId::new("project_01"),
             }],
+            permissions: Vec::new(),
         };
 
         assert!(!request_is_within_grant(&request, &grant));

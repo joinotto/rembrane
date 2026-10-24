@@ -1,4 +1,6 @@
-use rembrane_domain::{ClientId, ReadGrant, ReadScope, WorkspaceRole, WriteGrant, WritePermission};
+use rembrane_domain::{
+    ClientId, ReadGrant, ReadPermission, ReadScope, WorkspaceRole, WriteGrant, WritePermission,
+};
 
 use crate::{ApplicationError, MemberScopeGrantRepository, MembershipRepository};
 
@@ -8,6 +10,7 @@ pub struct AuthorizeClientCommand {
     pub workspace_id: rembrane_domain::WorkspaceId,
     pub principal_id: rembrane_domain::PrincipalId,
     pub requested_read_scopes: Vec<ReadScope>,
+    pub requested_read_permissions: Vec<ReadPermission>,
     pub requested_write_permissions: Vec<WritePermission>,
 }
 
@@ -59,6 +62,11 @@ where
             .into_iter()
             .filter(|permission| role_allows(membership.role(), *permission))
             .collect();
+        let read_permissions = command
+            .requested_read_permissions
+            .into_iter()
+            .filter(|permission| read_role_allows(membership.role(), *permission))
+            .collect();
 
         Ok(ClientGrantBundle {
             read: ReadGrant {
@@ -66,6 +74,7 @@ where
                 workspace_id: command.workspace_id.clone(),
                 subject_id: command.principal_id.clone(),
                 scopes: read_scopes.clone(),
+                permissions: read_permissions,
             },
             write: WriteGrant {
                 client_id: command.client_id,
@@ -75,6 +84,14 @@ where
                 permissions: write_permissions,
             },
         })
+    }
+}
+
+const fn read_role_allows(role: WorkspaceRole, permission: ReadPermission) -> bool {
+    match permission {
+        ReadPermission::RevealTravelSourceReferences => {
+            matches!(role, WorkspaceRole::Owner | WorkspaceRole::Admin)
+        }
     }
 }
 
@@ -95,8 +112,8 @@ const fn role_allows(role: WorkspaceRole, permission: WritePermission) -> bool {
 #[cfg(test)]
 mod tests {
     use rembrane_domain::{
-        EntityId, MemberScopeGrant, Membership, PrincipalId, ReadScope, WorkspaceId, WorkspaceRole,
-        WritePermission,
+        EntityId, MemberScopeGrant, Membership, PrincipalId, ReadPermission, ReadScope,
+        WorkspaceId, WorkspaceRole, WritePermission,
     };
 
     use super::{AuthorizeClientCommand, AuthorizeClientService};
@@ -168,6 +185,7 @@ mod tests {
             workspace_id: WorkspaceId::new("workspace_01"),
             principal_id: PrincipalId::new("principal_01"),
             requested_read_scopes: vec![ReadScope::Global],
+            requested_read_permissions: vec![ReadPermission::RevealTravelSourceReferences],
             requested_write_permissions: vec![
                 WritePermission::CreateMemory,
                 WritePermission::ProposeMemory,
@@ -206,7 +224,37 @@ mod tests {
             ]
         );
         assert_eq!(grants.read.scopes, Vec::<ReadScope>::new());
+        assert_eq!(grants.read.permissions, Vec::<ReadPermission>::new());
         assert_eq!(grants.write.scopes, Vec::<ReadScope>::new());
+    }
+
+    #[test]
+    fn owner_must_explicitly_request_sensitive_read_permission() {
+        let repository = Memberships {
+            membership: Membership::new(
+                WorkspaceId::new("workspace_01"),
+                PrincipalId::new("principal_01"),
+                WorkspaceRole::Owner,
+            ),
+            scopes: Vec::new(),
+        };
+
+        let grants = AuthorizeClientService::new(&repository)
+            .execute(command())
+            .expect("active owner should authorize");
+
+        assert_eq!(
+            grants.read.permissions,
+            vec![ReadPermission::RevealTravelSourceReferences]
+        );
+        let mut without_sensitive_permission = command();
+        without_sensitive_permission
+            .requested_read_permissions
+            .clear();
+        let grants = AuthorizeClientService::new(&repository)
+            .execute(without_sensitive_permission)
+            .expect("active owner should authorize");
+        assert_eq!(grants.read.permissions, Vec::<ReadPermission>::new());
     }
 
     #[test]

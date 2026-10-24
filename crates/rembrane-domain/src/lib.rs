@@ -29,7 +29,7 @@ pub use disclosure::{
     TravelDisclosureReceipt,
 };
 pub use event::{CanonicalEvent, EventError, EventPayload};
-pub use grant::{ReadGrant, ReadScope, WriteGrant, WritePermission};
+pub use grant::{ReadGrant, ReadPermission, ReadScope, WriteGrant, WritePermission};
 pub use identifier::{
     ActivityId, BookingResearchId, CheckpointId, ClientId, ContextPackId, DisclosureId, EntityId,
     EventId, EvidenceId, InvitationId, MemoryId, PrincipalId, ProjectionJobId, ProviderId,

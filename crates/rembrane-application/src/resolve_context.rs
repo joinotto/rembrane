@@ -294,6 +294,7 @@ mod tests {
                         id: ActivityId::new("activity_01"),
                     },
                 ],
+                permissions: Vec::new(),
             },
             context_pack_id: ContextPackId::new("context_01"),
             disclosure_id: DisclosureId::new("disclosure_01"),

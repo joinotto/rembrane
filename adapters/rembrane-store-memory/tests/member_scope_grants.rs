@@ -70,6 +70,7 @@ fn administrator_grant_limits_member_client_to_exact_entity() {
                     id: EntityId::new("project_denied"),
                 },
             ],
+            requested_read_permissions: Vec::new(),
             requested_write_permissions: vec![WritePermission::ProposeMemory],
         })
         .expect("member should authorize");
@@ -139,6 +140,7 @@ fn owner_removal_revokes_membership_and_all_scope_grants() {
             requested_read_scopes: vec![ReadScope::Entity {
                 id: EntityId::new("project"),
             }],
+            requested_read_permissions: Vec::new(),
             requested_write_permissions: vec![WritePermission::ProposeMemory],
         })
         .expect_err("removed member must not authorize");
@@ -189,6 +191,7 @@ fn revoking_one_scope_immediately_removes_client_authority() {
             workspace_id: WorkspaceId::new("team"),
             principal_id: PrincipalId::new("member"),
             requested_read_scopes: vec![scope],
+            requested_read_permissions: Vec::new(),
             requested_write_permissions: vec![WritePermission::ProposeMemory],
         })
         .expect("active member should still authorize");

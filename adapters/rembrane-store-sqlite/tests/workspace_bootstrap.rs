@@ -130,6 +130,7 @@ fn persisted_membership_revocation_denies_new_client_grants() {
         workspace_id: workspace_id.clone(),
         principal_id: principal_id.clone(),
         requested_read_scopes: vec![ReadScope::Global],
+        requested_read_permissions: Vec::new(),
         requested_write_permissions: vec![WritePermission::CreateMemory],
     };
 

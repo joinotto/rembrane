@@ -42,6 +42,7 @@ fn reader(activity_id: &str) -> ReadGrant {
         scopes: vec![ReadScope::Activity {
             id: ActivityId::new(activity_id),
         }],
+        permissions: Vec::new(),
     }
 }
 

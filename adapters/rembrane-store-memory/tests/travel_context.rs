@@ -103,6 +103,7 @@ fn grant_for_subject(trip_id: &str, subject_id: &str) -> ReadGrant {
         scopes: vec![ReadScope::Entity {
             id: EntityId::new(trip_id),
         }],
+        permissions: Vec::new(),
     }
 }
 

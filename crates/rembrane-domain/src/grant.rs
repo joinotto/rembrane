@@ -16,6 +16,12 @@ pub struct ReadGrant {
     pub workspace_id: WorkspaceId,
     pub subject_id: PrincipalId,
     pub scopes: Vec<ReadScope>,
+    pub permissions: Vec<ReadPermission>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ReadPermission {
+    RevealTravelSourceReferences,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -58,6 +64,11 @@ impl ReadGrant {
     pub fn allows(&self, memory_scope: &MemoryScope) -> bool {
         scope_is_allowed(&self.scopes, memory_scope)
     }
+
+    #[must_use]
+    pub fn allows_permission(&self, permission: ReadPermission) -> bool {
+        self.permissions.contains(&permission)
+    }
 }
 
 fn scope_is_allowed(scopes: &[ReadScope], memory_scope: &MemoryScope) -> bool {
@@ -78,7 +89,7 @@ fn scope_is_allowed(scopes: &[ReadScope], memory_scope: &MemoryScope) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{ReadGrant, ReadScope, WriteGrant, WritePermission};
+    use super::{ReadGrant, ReadPermission, ReadScope, WriteGrant, WritePermission};
     use crate::{ClientId, EntityId, MemoryScope, PrincipalId, WorkspaceId};
 
     #[test]
@@ -88,12 +99,14 @@ mod tests {
             workspace_id: WorkspaceId::new("workspace_01"),
             subject_id: PrincipalId::new("principal_01"),
             scopes: vec![ReadScope::Global],
+            permissions: Vec::new(),
         };
 
         assert!(grant.allows(&MemoryScope::Global));
         assert!(!grant.allows(&MemoryScope::Entity {
             id: EntityId::new("project_01"),
         }));
+        assert!(!grant.allows_permission(ReadPermission::RevealTravelSourceReferences));
     }
 
     #[test]

@@ -252,6 +252,7 @@ impl RembraneMcp {
                 workspace_id: workspace_id.clone(),
                 principal_id: principal_id.clone(),
                 requested_read_scopes: read_scopes.clone(),
+                requested_read_permissions: Vec::new(),
                 requested_write_permissions: Vec::new(),
             })
             .context("failed to authorize MCP connection")?;
@@ -930,6 +931,7 @@ fn authorize(
             workspace_id: state.workspace_id.clone(),
             principal_id: state.principal_id.clone(),
             requested_read_scopes: read_scopes,
+            requested_read_permissions: Vec::new(),
             requested_write_permissions: write_permissions,
         })
         .map_err(application_error)

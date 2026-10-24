@@ -853,6 +853,7 @@ fn authorize_client<C>(
             workspace_id: workspace_id.clone(),
             principal_id: principal_id.clone(),
             requested_read_scopes: read_scopes,
+            requested_read_permissions: Vec::new(),
             requested_write_permissions: write_permissions,
         })
         .map_err(|error| format!("cannot authorize client: {error}"))
@@ -1035,6 +1036,7 @@ fn print_demo() {
                 workspace_id,
                 subject_id: principal_id,
                 scopes: vec![ReadScope::Global],
+                permissions: Vec::new(),
             },
             context_pack_id: ContextPackId::new("context_demo"),
             disclosure_id: DisclosureId::new("disclosure_demo"),

@@ -70,6 +70,7 @@ fn persisted_scope_filters_member_client_authorization() {
                     id: EntityId::new("project_denied"),
                 },
             ],
+            requested_read_permissions: Vec::new(),
             requested_write_permissions: vec![WritePermission::ProposeMemory],
         })
         .expect("member should authorize");
@@ -142,6 +143,7 @@ fn persisted_member_removal_deletes_grants_and_denies_authorization() {
             requested_read_scopes: vec![ReadScope::Entity {
                 id: EntityId::new("project"),
             }],
+            requested_read_permissions: Vec::new(),
             requested_write_permissions: Vec::new(),
         })
         .expect_err("removed member must not authorize");
@@ -177,6 +179,7 @@ fn persisted_scope_revocation_immediately_filters_authorization() {
             workspace_id: WorkspaceId::new("team"),
             principal_id: PrincipalId::new("member"),
             requested_read_scopes: vec![scope],
+            requested_read_permissions: Vec::new(),
             requested_write_permissions: vec![WritePermission::ProposeMemory],
         })
         .expect("active member should still authorize");

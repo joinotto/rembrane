@@ -76,6 +76,7 @@ fn command(scopes: Vec<ReadScope>) -> ResolveContextCommand {
             workspace_id: WorkspaceId::new("workspace_01"),
             subject_id: PrincipalId::new("principal_01"),
             scopes,
+            permissions: Vec::new(),
         },
         context_pack_id: ContextPackId::new("context_01"),
         disclosure_id: DisclosureId::new("disclosure_01"),
