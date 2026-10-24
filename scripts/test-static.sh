@@ -94,6 +94,8 @@ sh -n scripts/test-core-offline.sh
 rg -q '127\.0\.0\.1:8787:8787' compose.yaml
 rg -q 'no-new-privileges:true' compose.yaml
 rg -q 'cap_drop:' compose.yaml
+rg -q 'read_only: true' compose.yaml
+rg -q '/tmp:size=16m,mode=1777' compose.yaml
 rg -q 'REMBRANE_WORKSPACE_KEY_REFERENCE: file:/run/secrets/rembrane_workspace_key' \
     compose.yaml
 rg -q 'REMBRANE_API_TOKEN_REFERENCE: file:/run/secrets/rembrane_api_token' compose.yaml
@@ -169,6 +171,10 @@ fi
 rg -q 'REMBRANE_KEY_PROVIDER_TOKEN_REFERENCE' compose.mobile-share.yaml
 rg -q 'REMBRANE_API_TOKEN_REFERENCE' compose.yaml
 rg -q 'no-new-privileges:true' compose.whatsapp.yaml
+test "$(rg -c 'read_only: true' compose.whatsapp.yaml)" -eq 2
+test "$(rg -c '/tmp:size=16m,mode=1777' compose.whatsapp.yaml)" -eq 2
+test "$(rg -c 'read_only: true' compose.mobile-share.yaml)" -eq 1
+test "$(rg -c '/tmp:size=16m,mode=1777' compose.mobile-share.yaml)" -eq 1
 test "$(rg 'REMBRANE_SKIP_WORKSPACE_INIT: \"1\"' \
     compose.whatsapp.yaml compose.mobile-share.yaml | wc -l | tr -d ' ')" -eq 3
 rg -q 'USER 10002:10002' sidecars/rembrane-graphiti/Dockerfile

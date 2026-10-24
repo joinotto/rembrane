@@ -73,6 +73,8 @@ This roadmap describes sequencing, not release dates.
   - [x] Let least-privileged channel services skip personal-workspace
     bootstrap without receiving a default principal, while waiting for the
     canonical service to initialize shared storage.
+  - [x] Make the canonical and channel-service container roots read-only with
+    only encrypted state volumes and bounded temporary filesystems writable.
 - [ ] Add production OS-keychain and customer-KMS key providers.
   - [x] Honor environment or macOS Keychain selection uniformly in the CLI,
     REST API, and MCP server, including historical-key reads.

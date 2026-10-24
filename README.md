@@ -337,7 +337,9 @@ termination in front of it before allowing remote access. Compose mounts the
 workspace key and API token as owner-only files rather than interpolating
 their values into container environment metadata. The local file-backed key
 mode is for development and single-node self-hosting; production deployments
-should use an OS keychain or customer-controlled key provider.
+should use an OS keychain or customer-controlled key provider. The service
+root filesystem is read-only; only the encrypted data volume and bounded
+temporary filesystem remain writable.
 
 ## Contributing
 

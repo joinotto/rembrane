@@ -9,6 +9,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- Read-only root filesystems and bounded temporary mounts for the canonical
+  REST service, WhatsApp gateway, channel worker, and mobile-share gateway.
 - File-backed Cloudflare Tunnel token injection through `--token-file`, with a
   version-pinned non-root container and no token in rendered command arguments.
 - A validated container startup mode for least-privileged channel services

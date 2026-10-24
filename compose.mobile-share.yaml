@@ -49,6 +49,9 @@ services:
     depends_on:
       rembrane:
         condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
     security_opt:
       - no-new-privileges:true
     cap_drop:
