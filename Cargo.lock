@@ -1136,6 +1136,7 @@ dependencies = [
  "rembrane-provider-sdk",
  "rembrane-semantic-mem0",
  "rembrane-semantic-native",
+ "rembrane-semantic-supermemory",
  "rembrane-store-memory",
  "rembrane-store-sqlite",
  "serde_json",

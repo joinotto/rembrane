@@ -716,6 +716,8 @@ This roadmap describes sequencing, not release dates.
         deletion outcomes before connecting the HTTP client.
     - [x] Add an authenticated, redirect-free, proxy-free, bounded HTTP
       transport with scoped convergence polling and confirmed deletion.
+    - [x] Expose disposable Supermemory conformance through the CLI with
+      environment-only secrets and explicit plaintext acknowledgement.
       - [x] Require exact provider-identity confirmation before replacement or
         deletion can complete.
   - [x] Generate a secret-reference-only local MCP configuration for OpenCode

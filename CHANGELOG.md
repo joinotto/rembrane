@@ -51,6 +51,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   custody, HTTPS-or-literal-loopback enforcement, disabled redirects and
   proxies, bounded JSON, exact upsert/delete identities, and scoped readiness
   polling.
+- CLI execution of shared semantic conformance against an operator-owned
+  disposable Supermemory v5 namespace with environment-only secrets and
+  explicit plaintext consent.
 - Exact Supermemory deletion confirmation, treating partial or omitted
   provider identities as retryable failures.
 - Local validation proving generated Supermemory namespace pseudonyms satisfy

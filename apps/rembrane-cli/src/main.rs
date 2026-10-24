@@ -28,6 +28,7 @@ use rembrane_provider_sdk::{
 };
 use rembrane_semantic_mem0::Mem0SemanticProvider;
 use rembrane_semantic_native::NativeSemanticProvider;
+use rembrane_semantic_supermemory::SupermemorySemanticProvider;
 use rembrane_store_memory::InMemoryStore;
 use rembrane_store_sqlite::SqliteStore;
 use zeroize::Zeroizing;
@@ -634,6 +635,37 @@ fn test_provider(arguments: &[String]) -> Result<String, String> {
                 .map_err(|error| format!("provider conformance failed: {error}"))?;
             Ok(format!(
                 "{{\"provider\":\"mem0.oss\",\"protocolVersion\":\"0.1\",\
+                 \"result\":\"pass\",\"suiteVersion\":\"{}\"}}",
+                env!("CARGO_PKG_VERSION")
+            ))
+        }
+        "supermemory.v5" => {
+            if arguments.len() != 6
+                || arguments
+                    .iter()
+                    .filter(|argument| *argument == "--allow-provider-plaintext")
+                    .count()
+                    != 1
+            {
+                return Err("Supermemory conformance sends disposable plaintext; rerun with \
+                     --allow-provider-plaintext after verifying the target"
+                    .to_owned());
+            }
+            validate_external_conformance_namespace(namespace)?;
+            let base_url = secret_environment("SUPERMEMORY_BASE_URL")?;
+            let api_key = std::env::var("SUPERMEMORY_API_KEY")
+                .map_err(|_| "SUPERMEMORY_API_KEY is required in the environment".to_owned())?;
+            let lookup_secret = secret_environment("SUPERMEMORY_WORKSPACE_LOOKUP_SECRET")?;
+            let mut provider = SupermemorySemanticProvider::from_http(
+                &base_url,
+                api_key,
+                lookup_secret.as_bytes().to_vec(),
+            )
+            .map_err(|error| format!("cannot configure Supermemory provider: {error}"))?;
+            verify_semantic_provider(&mut provider, namespace)
+                .map_err(|error| format!("provider conformance failed: {error}"))?;
+            Ok(format!(
+                "{{\"provider\":\"supermemory.v5\",\"protocolVersion\":\"0.1\",\
                  \"result\":\"pass\",\"suiteVersion\":\"{}\"}}",
                 env!("CARGO_PKG_VERSION")
             ))
@@ -2016,6 +2048,20 @@ mod tests {
             "cli-unit".to_owned(),
         ])
         .expect_err("Mem0 test must fail before reading credentials");
+
+        assert!(error.contains("--allow-provider-plaintext"));
+    }
+
+    #[test]
+    fn supermemory_provider_test_requires_explicit_plaintext_acknowledgement() {
+        let error = test_provider(&[
+            "test".to_owned(),
+            "--provider".to_owned(),
+            "supermemory.v5".to_owned(),
+            "--namespace".to_owned(),
+            "cli-unit".to_owned(),
+        ])
+        .expect_err("Supermemory test must fail before reading credentials");
 
         assert!(error.contains("--allow-provider-plaintext"));
     }

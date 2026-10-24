@@ -105,3 +105,8 @@ Before registry promotion:
 - prove credentials and canonical workspace IDs do not appear in logs;
 - record reviewable disposable-instance evidence in the provider registry.
 
+The local CLI runs this suite with `rembrane providers test --provider
+supermemory.v5`. It requires a unique safe namespace, explicit
+`--allow-provider-plaintext`, and all three `SUPERMEMORY_*` environment
+variables shown in `docs/TESTING.md`.
+

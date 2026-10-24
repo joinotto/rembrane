@@ -77,6 +77,21 @@ and are never accepted as command-line arguments. External namespaces accept
 only 16-80 safe ASCII characters; generate a fresh random suffix for every
 run.
 
+Run Supermemory v5 conformance with the same safeguards:
+
+```sh
+SUPERMEMORY_BASE_URL=https://api.supermemory.ai \
+SUPERMEMORY_API_KEY='replace-from-secret-store' \
+SUPERMEMORY_WORKSPACE_LOOKUP_SECRET='independent-secret-at-least-32-bytes' \
+target/debug/rembrane providers test \
+  --provider supermemory.v5 \
+  --namespace supermemory-20261024-a8f21c \
+  --allow-provider-plaintext | jq .
+```
+
+The adapter waits for scoped canonical ID/version visibility before considering
+asynchronous ingestion complete and requires exact deletion confirmation.
+
 External HTTP sidecars can run the equivalent black-box suite. The bearer
 token is read from the environment and written only to a mode-0600 temporary
 header file, so it does not appear in the `curl` process arguments:
