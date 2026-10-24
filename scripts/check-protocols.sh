@@ -18,6 +18,7 @@ done
 ruby -e 'require "yaml"; YAML.load_file(ARGV.fetch(0))' spec/openapi.yaml
 ruby -e 'require "yaml"; YAML.load_file(ARGV.fetch(0))' spec/provider-openapi.yaml
 ruby -e 'require "yaml"; YAML.load_file(ARGV.fetch(0))' spec/key-provider-openapi.yaml
+ruby -e 'require "yaml"; YAML.load_file(ARGV.fetch(0))' spec/memory-provider-openapi.yaml
 jq empty \
     spec/discovery.schema.json \
     spec/memory-provider.schema.json \
@@ -193,6 +194,54 @@ do
         exit 1
     fi
 done
+
+for memory_provider_route in \
+    '/.well-known/ai-memory:' \
+    '/v1/context/resolve:' \
+    '/v1/questions/resolve:' \
+    '/v1/events:' \
+    '/v1/memory/proposals:' \
+    '/v1/activities/{activity_id}/checkpoint:' \
+    '/v1/disclosures/receipt:' \
+    '/v1/memories/{memory_id}:' \
+    '/v1/memories/{memory_id}/explain:' \
+    '/v1/sync/pull:' \
+    '/v1/sync/push:'
+do
+    if ! rg -F "$memory_provider_route" spec/memory-provider-openapi.yaml >/dev/null; then
+        echo "memory provider protocol route is missing: $memory_provider_route" >&2
+        exit 1
+    fi
+done
+
+for memory_provider_scope in \
+    'memory:context:read' \
+    'memory:question:read' \
+    'memory:event:write' \
+    'memory:proposal:write' \
+    'memory:checkpoint:write' \
+    'memory:disclosure:write' \
+    'memory:memory:delete' \
+    'memory:memory:explain' \
+    'memory:sync:read' \
+    'memory:sync:write'
+do
+    if ! rg -F "$memory_provider_scope" spec/memory-provider-openapi.yaml >/dev/null; then
+        echo "memory provider OAuth scope is missing: $memory_provider_scope" >&2
+        exit 1
+    fi
+done
+
+if ! rg -F 'principal, client, workspace, and subject' \
+    spec/memory-provider-openapi.yaml >/dev/null ||
+    ! rg -F 'path memory_id MUST exactly equal payload.memoryId' \
+        spec/memory-provider-openapi.yaml >/dev/null ||
+    ! rg -F 'path activity_id MUST exactly equal payload.activityId' \
+        spec/memory-provider-openapi.yaml >/dev/null
+then
+    echo "memory provider HTTP identity-binding invariants are missing" >&2
+    exit 1
+fi
 
 jq -e '
     .protocolVersion == "0.1"

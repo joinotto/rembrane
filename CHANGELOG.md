@@ -26,6 +26,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   resource and operation enums, distinct server-ordered pull changes and
   sequence-free optimistic push mutations, atomic batch semantics, bounded
   ciphertext payloads, and lowercase SHA-256 integrity digests.
+- Complete Memory Provider HTTPS OpenAPI 3.1 binding covering discovery and all
+  ten operations with exact OAuth scopes, correlation/version headers,
+  operation-specific JSON schemas, closed errors, authenticated identity
+  derivation, GET query mappings, and path/body identity equality rules.
 - Initial full Memory Provider Protocol discovery contract with a versioned
   well-known manifest, HTTPS/MCP transports, portable memory capabilities,
   explicit privacy modes, supported domains, and bounded operation limits.

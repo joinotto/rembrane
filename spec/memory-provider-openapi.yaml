@@ -1,0 +1,419 @@
+openapi: 3.1.0
+info:
+  title: Rembrane Memory Provider Protocol
+  version: 0.1.0
+  description: |
+    Portable HTTPS binding for Memory Provider Protocol 0.1.
+
+    Authentication establishes principal, client, workspace, and subject
+    identity. Those values MUST NOT be accepted from request bodies or query
+    parameters. Every operation is authorized against its exact OAuth scope
+    and canonical memory scope after authentication.
+
+    JSON field definitions are normative in `memory-provider.schema.json`.
+servers:
+  - url: https://memory-provider.example
+paths:
+  /.well-known/ai-memory:
+    get:
+      operationId: discoverMemoryProvider
+      summary: Discover provider capabilities and limits
+      security: []
+      responses:
+        "200":
+          description: Immutable provider discovery manifest
+          content:
+            application/json:
+              schema:
+                $ref: "./memory-provider.schema.json#/$defs/manifest"
+        "500":
+          $ref: "#/components/responses/ProtocolError"
+  /v1/context/resolve:
+    post:
+      operationId: resolveContext
+      summary: Resolve bounded context for an authorized scope
+      security:
+        - oauth2:
+            - memory:context:read
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/ProtocolVersion"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "./memory-provider.schema.json#/$defs/resolveContextPayload"
+      responses:
+        "200":
+          description: Purpose-bound context pack and disclosure receipt
+          headers:
+            X-Rembrane-Request-Id:
+              $ref: "#/components/headers/RequestId"
+            X-Rembrane-Protocol-Version:
+              $ref: "#/components/headers/ProtocolVersion"
+          content:
+            application/json:
+              schema:
+                $ref: "./memory-provider.schema.json#/$defs/resolveContextResult"
+        default:
+          $ref: "#/components/responses/ProtocolError"
+  /v1/questions/resolve:
+    post:
+      operationId: resolveQuestion
+      summary: Answer a scoped question using exact memory revisions
+      security:
+        - oauth2:
+            - memory:question:read
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/ProtocolVersion"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "./memory-provider.schema.json#/$defs/resolveQuestionPayload"
+      responses:
+        "200":
+          description: Grounded answer with exact supporting revisions
+          headers:
+            X-Rembrane-Request-Id:
+              $ref: "#/components/headers/RequestId"
+            X-Rembrane-Protocol-Version:
+              $ref: "#/components/headers/ProtocolVersion"
+          content:
+            application/json:
+              schema:
+                $ref: "./memory-provider.schema.json#/$defs/resolveQuestionResult"
+        default:
+          $ref: "#/components/responses/ProtocolError"
+  /v1/events:
+    post:
+      operationId: recordEvent
+      summary: Atomically append a bounded event batch
+      security:
+        - oauth2:
+            - memory:event:write
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/ProtocolVersion"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "./memory-provider.schema.json#/$defs/recordEventPayload"
+      responses:
+        "200":
+          description: Canonical event identities and ordered sequences
+          headers:
+            X-Rembrane-Request-Id:
+              $ref: "#/components/headers/RequestId"
+            X-Rembrane-Protocol-Version:
+              $ref: "#/components/headers/ProtocolVersion"
+          content:
+            application/json:
+              schema:
+                $ref: "./memory-provider.schema.json#/$defs/recordEventResult"
+        default:
+          $ref: "#/components/responses/ProtocolError"
+  /v1/memory/proposals:
+    post:
+      operationId: proposeMemory
+      summary: Submit an evidence-bearing unconfirmed memory proposal
+      security:
+        - oauth2:
+            - memory:proposal:write
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/ProtocolVersion"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "./memory-provider.schema.json#/$defs/proposeMemoryPayload"
+      responses:
+        "200":
+          description: Canonical proposed-memory identity
+          headers:
+            X-Rembrane-Request-Id:
+              $ref: "#/components/headers/RequestId"
+            X-Rembrane-Protocol-Version:
+              $ref: "#/components/headers/ProtocolVersion"
+          content:
+            application/json:
+              schema:
+                $ref: "./memory-provider.schema.json#/$defs/proposeMemoryResult"
+        default:
+          $ref: "#/components/responses/ProtocolError"
+  /v1/activities/{activity_id}/checkpoint:
+    post:
+      operationId: checkpointActivity
+      summary: Create or optimistically update an activity checkpoint
+      description: The path activity_id MUST exactly equal payload.activityId.
+      security:
+        - oauth2:
+            - memory:checkpoint:write
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/ProtocolVersion"
+        - name: activity_id
+          in: path
+          required: true
+          schema:
+            $ref: "./memory-provider.schema.json#/$defs/safeOpaqueId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "./memory-provider.schema.json#/$defs/checkpointActivityPayload"
+      responses:
+        "200":
+          description: Canonical checkpoint identity and revision
+          headers:
+            X-Rembrane-Request-Id:
+              $ref: "#/components/headers/RequestId"
+            X-Rembrane-Protocol-Version:
+              $ref: "#/components/headers/ProtocolVersion"
+          content:
+            application/json:
+              schema:
+                $ref: "./memory-provider.schema.json#/$defs/checkpointActivityResult"
+        default:
+          $ref: "#/components/responses/ProtocolError"
+  /v1/disclosures/receipt:
+    post:
+      operationId: recordDisclosure
+      summary: Append an exact-version disclosure receipt
+      security:
+        - oauth2:
+            - memory:disclosure:write
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/ProtocolVersion"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "./memory-provider.schema.json#/$defs/recordDisclosurePayload"
+      responses:
+        "200":
+          description: Canonical append-only disclosure identity
+          headers:
+            X-Rembrane-Request-Id:
+              $ref: "#/components/headers/RequestId"
+            X-Rembrane-Protocol-Version:
+              $ref: "#/components/headers/ProtocolVersion"
+          content:
+            application/json:
+              schema:
+                $ref: "./memory-provider.schema.json#/$defs/recordDisclosureResult"
+        default:
+          $ref: "#/components/responses/ProtocolError"
+  /v1/memories/{memory_id}:
+    delete:
+      operationId: deleteMemory
+      summary: Optimistically tombstone one exact memory revision
+      description: The path memory_id MUST exactly equal payload.memoryId.
+      security:
+        - oauth2:
+            - memory:memory:delete
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/ProtocolVersion"
+        - name: memory_id
+          in: path
+          required: true
+          schema:
+            $ref: "./memory-provider.schema.json#/$defs/safeOpaqueId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "./memory-provider.schema.json#/$defs/deleteMemoryPayload"
+      responses:
+        "200":
+          description: Exact deleted revision and consecutive tombstone revision
+          headers:
+            X-Rembrane-Request-Id:
+              $ref: "#/components/headers/RequestId"
+            X-Rembrane-Protocol-Version:
+              $ref: "#/components/headers/ProtocolVersion"
+          content:
+            application/json:
+              schema:
+                $ref: "./memory-provider.schema.json#/$defs/deleteMemoryResult"
+        default:
+          $ref: "#/components/responses/ProtocolError"
+  /v1/memories/{memory_id}/explain:
+    get:
+      operationId: explainMemory
+      summary: Explain one exact memory revision from immutable evidence
+      security:
+        - oauth2:
+            - memory:memory:explain
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/ProtocolVersion"
+        - name: memory_id
+          in: path
+          required: true
+          schema:
+            $ref: "./memory-provider.schema.json#/$defs/safeOpaqueId"
+        - name: version
+          in: query
+          required: true
+          schema:
+            $ref: "./memory-provider.schema.json#/$defs/positiveVersion"
+        - name: purpose
+          in: query
+          required: true
+          schema:
+            $ref: "./memory-provider.schema.json#/$defs/boundedText4096"
+      responses:
+        "200":
+          description: Bounded explanation and immutable evidence references
+          headers:
+            X-Rembrane-Request-Id:
+              $ref: "#/components/headers/RequestId"
+            X-Rembrane-Protocol-Version:
+              $ref: "#/components/headers/ProtocolVersion"
+          content:
+            application/json:
+              schema:
+                $ref: "./memory-provider.schema.json#/$defs/explainMemoryResult"
+        default:
+          $ref: "#/components/responses/ProtocolError"
+  /v1/sync/pull:
+    get:
+      operationId: syncPull
+      summary: Pull a bounded page of server-ordered changes
+      security:
+        - oauth2:
+            - memory:sync:read
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/ProtocolVersion"
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            $ref: "./memory-provider.schema.json#/$defs/syncCursor"
+        - name: maximumItems
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: Ordered incremental changes and next opaque cursor
+          headers:
+            X-Rembrane-Request-Id:
+              $ref: "#/components/headers/RequestId"
+            X-Rembrane-Protocol-Version:
+              $ref: "#/components/headers/ProtocolVersion"
+          content:
+            application/json:
+              schema:
+                $ref: "./memory-provider.schema.json#/$defs/syncPullResult"
+        default:
+          $ref: "#/components/responses/ProtocolError"
+  /v1/sync/push:
+    post:
+      operationId: syncPush
+      summary: Atomically push optimistic changes from an exact base cursor
+      security:
+        - oauth2:
+            - memory:sync:write
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/ProtocolVersion"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "./memory-provider.schema.json#/$defs/syncPushPayload"
+      responses:
+        "200":
+          description: Ordered canonical mutation outcomes and next cursor
+          headers:
+            X-Rembrane-Request-Id:
+              $ref: "#/components/headers/RequestId"
+            X-Rembrane-Protocol-Version:
+              $ref: "#/components/headers/ProtocolVersion"
+          content:
+            application/json:
+              schema:
+                $ref: "./memory-provider.schema.json#/$defs/syncPushResult"
+        default:
+          $ref: "#/components/responses/ProtocolError"
+components:
+  securitySchemes:
+    oauth2:
+      type: oauth2
+      description: |
+        Deployment-specific OAuth authorization server. Discovery of the
+        protected resource and authorization server is deployment-specific;
+        the listed relative URLs are placeholders for generated clients.
+      flows:
+        authorizationCode:
+          authorizationUrl: /oauth/authorize
+          tokenUrl: /oauth/token
+          scopes:
+            memory:context:read: Resolve purpose-bound context
+            memory:question:read: Resolve grounded questions
+            memory:event:write: Append events
+            memory:proposal:write: Submit memory proposals
+            memory:checkpoint:write: Create or update checkpoints
+            memory:disclosure:write: Append disclosure receipts
+            memory:memory:delete: Delete exact memory revisions
+            memory:memory:explain: Explain exact memory revisions
+            memory:sync:read: Pull synchronization changes
+            memory:sync:write: Push synchronization changes
+  parameters:
+    RequestId:
+      name: X-Rembrane-Request-Id
+      in: header
+      required: true
+      schema:
+        $ref: "./memory-provider.schema.json#/$defs/requestId"
+    ProtocolVersion:
+      name: X-Rembrane-Protocol-Version
+      in: header
+      required: true
+      schema:
+        $ref: "./memory-provider.schema.json#/$defs/protocolVersion"
+  headers:
+    RequestId:
+      required: true
+      schema:
+        $ref: "./memory-provider.schema.json#/$defs/requestId"
+    ProtocolVersion:
+      required: true
+      schema:
+        $ref: "./memory-provider.schema.json#/$defs/protocolVersion"
+  responses:
+    ProtocolError:
+      description: Closed portable error response
+      headers:
+        X-Rembrane-Request-Id:
+          $ref: "#/components/headers/RequestId"
+        X-Rembrane-Protocol-Version:
+          $ref: "#/components/headers/ProtocolVersion"
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required:
+              - code
+            properties:
+              code:
+                $ref: "./memory-provider.schema.json#/$defs/errorCode"
