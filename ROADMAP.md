@@ -164,6 +164,8 @@ This roadmap describes sequencing, not release dates.
     - [x] Provide a consuming dispatch handoff that keeps verified identity,
       classified invocation, and the exact zeroizing request body coupled
       until the official SDK transport takes ownership.
+      - [x] Define an owned authorized-dispatcher port for the official SDK
+        adapter and prove exact body and tenant transfer through it.
   - [x] Allow the shared MCP handler service to initialize canonical
     subject/client/workspace identity exclusively from verified remote claims.
   - [x] Bind remote sessions to issuer, resource, canonical identity,

@@ -51,6 +51,23 @@ pub struct AuthorizedRemoteMcpRequest {
     body: Zeroizing<Vec<u8>>,
 }
 
+/// Transport port for handing one fully authorized request to an MCP protocol
+/// implementation.
+///
+/// Implementations receive owned, coupled dispatch inputs. They cannot ask
+/// this boundary to authorize one body and dispatch another.
+pub trait AuthorizedRemoteMcpDispatcher {
+    type Output;
+    type Error;
+
+    fn dispatch(
+        &self,
+        access: VerifiedRemoteAccess,
+        invocation: RemoteMcpInvocation,
+        body: Zeroizing<Vec<u8>>,
+    ) -> Result<Self::Output, Self::Error>;
+}
+
 impl AuthorizedRemoteMcpRequest {
     #[must_use]
     pub const fn access(&self) -> &VerifiedRemoteAccess {
@@ -85,6 +102,24 @@ impl AuthorizedRemoteMcpRequest {
         Zeroizing<Vec<u8>>,
     ) {
         (self.access, self.invocation, self.body)
+    }
+
+    /// Consumes this proof and transfers it to one authorized transport
+    /// dispatcher.
+    ///
+    /// # Errors
+    ///
+    /// Returns the dispatcher's error without recreating or retaining the
+    /// authorization proof.
+    pub fn dispatch_with<Dispatcher>(
+        self,
+        dispatcher: &Dispatcher,
+    ) -> Result<Dispatcher::Output, Dispatcher::Error>
+    where
+        Dispatcher: AuthorizedRemoteMcpDispatcher,
+    {
+        let (access, invocation, body) = self.into_dispatch_parts();
+        dispatcher.dispatch(access, invocation, body)
     }
 }
 
@@ -641,12 +676,33 @@ mod tests {
     use tower::ServiceExt;
 
     use super::{
-        MCP_SESSION_HEADER_NAME, RemoteMcpAxumAuthorization, RemoteMcpHttpGate,
-        RemoteMcpHttpRejection, RemoteMcpHttpRequest, authorize_axum_stateless_body,
-        classify_remote_mcp_request, request_from_axum_headers,
+        AuthorizedRemoteMcpDispatcher, MCP_SESSION_HEADER_NAME, RemoteMcpAxumAuthorization,
+        RemoteMcpHttpGate, RemoteMcpHttpRejection, RemoteMcpHttpRequest, RemoteMcpInvocation,
+        authorize_axum_stateless_body, classify_remote_mcp_request, request_from_axum_headers,
     };
 
     struct Verifier;
+
+    struct RecordingDispatcher;
+
+    impl AuthorizedRemoteMcpDispatcher for RecordingDispatcher {
+        type Output = (String, String, Option<String>, Vec<u8>);
+        type Error = std::convert::Infallible;
+
+        fn dispatch(
+            &self,
+            access: rembrane_contracts::VerifiedRemoteAccess,
+            invocation: RemoteMcpInvocation,
+            body: zeroize::Zeroizing<Vec<u8>>,
+        ) -> Result<Self::Output, Self::Error> {
+            Ok((
+                access.workspace_id().to_string(),
+                invocation.method().to_owned(),
+                invocation.tool_name().map(str::to_owned),
+                body.as_slice().to_vec(),
+            ))
+        }
+    }
 
     impl RemoteTokenVerifier for Verifier {
         fn verify(&self, token: &str) -> Result<RemoteTokenClaims, RemoteTokenVerificationError> {
@@ -953,6 +1009,13 @@ mod tests {
             Some("rembrane_resolve_context")
         );
         assert_eq!(authorized.body(), body);
+        let dispatched = authorized
+            .dispatch_with(&RecordingDispatcher)
+            .expect("authorized dispatch cannot fail");
+        assert_eq!(dispatched.0, "workspace_01");
+        assert_eq!(dispatched.1, "tools/call");
+        assert_eq!(dispatched.2.as_deref(), Some("rembrane_resolve_context"));
+        assert_eq!(dispatched.3, body);
 
         let travel_body = br#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"rembrane_create_trip","arguments":{}}}"#;
         assert_eq!(

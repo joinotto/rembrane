@@ -12,6 +12,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - A consuming remote-MCP dispatch handoff that transfers verified tenant
   identity, classified invocation, and the exact OAuth-authorized zeroizing
   request body together to the eventual official SDK transport.
+- An owned authorized remote-MCP dispatcher port with regression coverage
+  proving exact tenant, operation, tool, and request-body transfer.
 - A transport-injectable Mem0 OSS semantic adapter mapping authorized
   projections into HMAC-pseudonymous workspace partitions while preserving
   canonical memory IDs, versions, replacement, bounded ranking, and
