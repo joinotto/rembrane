@@ -15,6 +15,11 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   remains restricted to workspace owners and administrators.
 - Version 3 canonical event encoding for trip lifecycle events while retaining
   the existing version 1 and version 2 wire formats.
+- Schema version 6 encrypted SQLite trip storage with workspace-bound
+  ciphertext, optimistic revisions, atomic audit events, and owner-scoped
+  listing.
+- A distinct `trip-entity` encryption purpose in the record-cipher and external
+  key-provider contract to prevent ciphertext substitution across data types.
 - Rust modular-monolith workspace with provider-independent domain and
   application layers.
 - Canonical memory, provenance, event, disclosure, membership, grant,

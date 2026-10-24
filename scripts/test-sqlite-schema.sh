@@ -15,7 +15,9 @@ sqlite3 "$database" < \
     "$repository_root/migrations/sqlite/0004_member_scope_grants.sql"
 sqlite3 "$database" < \
     "$repository_root/migrations/sqlite/0005_memory_share_proposals.sql"
-sqlite3 "$database" "PRAGMA user_version = 5;"
+sqlite3 "$database" < \
+    "$repository_root/migrations/sqlite/0006_trips.sql"
+sqlite3 "$database" "PRAGMA user_version = 6;"
 
 sqlite3 "$database" <<'SQL'
 PRAGMA foreign_keys = ON;
@@ -156,6 +158,36 @@ INSERT INTO activity_checkpoints (
     zeroblob(24),
     1
 );
+INSERT INTO trips (
+    workspace_id,
+    id,
+    owner_subject_id,
+    trip_ciphertext,
+    encryption_key_id,
+    encryption_algorithm,
+    encryption_nonce,
+    version
+) VALUES
+    (
+        'workspace_01',
+        'trip_01',
+        'principal_01',
+        X'01',
+        'key_01',
+        'xchacha20poly1305',
+        zeroblob(24),
+        1
+    ),
+    (
+        'workspace_02',
+        'trip_01',
+        'principal_02',
+        X'02',
+        'key_02',
+        'xchacha20poly1305',
+        zeroblob(24),
+        1
+    );
 INSERT INTO checkpoint_disclosures (
     workspace_id,
     id,
@@ -353,11 +385,15 @@ table_count=$(
 )
 
 test "$table_count" -ge 9
-test "$(sqlite3 "$database" "PRAGMA user_version;")" -eq 5
+test "$(sqlite3 "$database" "PRAGMA user_version;")" -eq 6
 test "$(
     sqlite3 "$database" \
         "SELECT count(*) FROM checkpoint_disclosures;"
 )" -eq 1
+test "$(
+    sqlite3 "$database" \
+        "SELECT count(*) FROM trips WHERE id = 'trip_01';"
+)" -eq 2
 test "$(
     sqlite3 "$database" \
         "SELECT count(*) FROM sqlite_schema WHERE type = 'table' AND name = 'workspace_invitations';"

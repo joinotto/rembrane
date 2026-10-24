@@ -108,7 +108,7 @@ components:
           type: integer
           minimum: 1
         purpose:
-          enum: [activity-checkpoint, canonical-event, memory-content]
+          enum: [activity-checkpoint, canonical-event, memory-content, trip-entity]
     SealRequest:
       type: object
       additionalProperties: false

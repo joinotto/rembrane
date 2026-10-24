@@ -21,6 +21,7 @@ pub enum PayloadPurpose {
     ActivityCheckpoint,
     CanonicalEvent,
     MemoryContent,
+    TripEntity,
 }
 
 impl PayloadPurpose {
@@ -30,6 +31,7 @@ impl PayloadPurpose {
             Self::ActivityCheckpoint => "activity-checkpoint",
             Self::CanonicalEvent => "canonical-event",
             Self::MemoryContent => "memory-content",
+            Self::TripEntity => "trip-entity",
         }
     }
 }

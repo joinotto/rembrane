@@ -5,6 +5,7 @@ mod checkpoint;
 mod disclosure;
 mod projection;
 mod share;
+mod trip;
 
 use std::path::Path;
 
@@ -31,7 +32,8 @@ const MEMBER_SCOPE_GRANT_MIGRATION: &str =
     include_str!("../../../migrations/sqlite/0004_member_scope_grants.sql");
 const MEMORY_SHARE_PROPOSAL_MIGRATION: &str =
     include_str!("../../../migrations/sqlite/0005_memory_share_proposals.sql");
-const CURRENT_SCHEMA_VERSION: u32 = 5;
+const TRIP_MIGRATION: &str = include_str!("../../../migrations/sqlite/0006_trips.sql");
+const CURRENT_SCHEMA_VERSION: u32 = 6;
 const CANONICAL_TABLES: [&str; 10] = [
     "activity_checkpoints",
     "disclosed_memories",
@@ -128,6 +130,12 @@ fn migrate(connection: &mut Connection) -> Result<(), ApplicationError> {
     if version == 4 {
         transaction
             .execute_batch(MEMORY_SHARE_PROPOSAL_MIGRATION)
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        version = 5;
+    }
+    if version == 5 {
+        transaction
+            .execute_batch(TRIP_MIGRATION)
             .map_err(|_| ApplicationError::StorageUnavailable)?;
     }
     transaction
