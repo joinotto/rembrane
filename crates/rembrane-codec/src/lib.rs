@@ -2,6 +2,7 @@
 
 mod checkpoint;
 mod event;
+mod trip;
 
 use std::error::Error;
 use std::fmt::{self, Display};
@@ -14,6 +15,7 @@ use serde::{Deserialize, Serialize};
 
 pub use checkpoint::{decode_checkpoint, encode_checkpoint};
 pub use event::{decode_event, encode_event};
+pub use trip::{decode_trip, encode_trip};
 
 const MEMORY_FORMAT: &str = "rembrane.memory";
 const MEMORY_FORMAT_VERSION: u16 = 1;

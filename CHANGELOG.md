@@ -127,6 +127,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Strict trip restoration path for persistence adapters, rejecting zero
   versions, duplicate nested identities, dangling participant references, and
   reconstructed aggregates over the canonical size ceiling.
+- Versioned `rembrane.trip` wire format covering the complete trip aggregate,
+  with unknown-field denial and decoding exclusively through the strict domain
+  restoration path.
 - Versioned discovery, OpenAPI, and MCP protocol specifications.
 - Tenant-isolated SQLite canonical schema with encrypted-payload metadata.
 - Versioned SQLite initialization with legacy-schema adoption, idempotent
