@@ -67,6 +67,9 @@ This roadmap describes sequencing, not release dates.
   self-hosting with persistent encrypted storage.
   - [x] Resolve the REST bearer credential from validated environment or
     protected-file references and enforce bounded RFC bearer-token grammar.
+  - [x] Mount the REST bearer credential and development workspace key as
+    owner-only Compose secrets without interpolating raw values into service
+    environment metadata.
 - [ ] Add production OS-keychain and customer-KMS key providers.
   - [x] Honor environment or macOS Keychain selection uniformly in the CLI,
     REST API, and MCP server, including historical-key reads.
@@ -108,6 +111,8 @@ This roadmap describes sequencing, not release dates.
       profiles through any deployment-selected secret resolver.
     - [x] Resolve the environment-driven HTTP key-provider credential from
       validated environment or protected-file reference metadata.
+    - [x] Resolve the local development workspace key from validated
+      environment or protected-file reference metadata.
   - [x] Wire configured cipher selection through CLI, REST, MCP, generated
     agent configuration, and privacy diagnostics.
 - [x] Retrieve minimal context through local stdio MCP.

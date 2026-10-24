@@ -28,7 +28,9 @@ Set secrets through the shell, a local uncommitted `.env`, Docker secrets, or
 the operator's secret manager:
 
 ```text
-install -m 600 /dev/null .rembrane-graphiti-token .rembrane-neo4j-auth .rembrane-openai-key
+install -m 600 /dev/null .rembrane-graphiti-token
+install -m 600 /dev/null .rembrane-neo4j-auth
+install -m 600 /dev/null .rembrane-openai-key
 openssl rand -hex 32 > .rembrane-graphiti-token
 printf 'neo4j/%s\n' "$(openssl rand -hex 32)" > .rembrane-neo4j-auth
 printf '%s\n' 'replace-from-secret-manager' > .rembrane-openai-key

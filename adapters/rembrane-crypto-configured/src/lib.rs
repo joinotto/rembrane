@@ -7,7 +7,7 @@ use rembrane_crypto::{
     CURRENT_KEY_PROVIDER_PROTOCOL, CryptoError, EncryptedPayload, EncryptionContext,
     KeyProviderCipher, KeyProviderPolicy, RecordCipher,
 };
-use rembrane_crypto_rustcrypto::RustCryptoKeyringCipher;
+use rembrane_crypto_rustcrypto::{RustCryptoKeyringCipher, RustCryptoRecordCipher};
 use rembrane_domain::{KeyRotationReceipt, PrincipalId, WorkspaceId};
 use rembrane_key_provider_http::HttpKeyProviderTransport;
 use rembrane_secret_local::{LocalSecretResolver, SecretResolver, resolve_provider_credentials};
@@ -95,12 +95,23 @@ impl ConfiguredRecordCipher {
         let provider =
             std::env::var("REMBRANE_KEY_PROVIDER").unwrap_or_else(|_| "environment".to_owned());
         match provider.as_str() {
-            "environment" | "macos-keychain" | "linux-secret-service" | "windows-dpapi" => {
+            "environment" => Self::local_environment_from_reference(),
+            "macos-keychain" | "linux-secret-service" | "windows-dpapi" => {
                 RustCryptoKeyringCipher::from_configured_provider().map(Self::Local)
             }
             "http" => Self::http_from_environment(),
             _ => Err(CryptoError::KeyUnavailable),
         }
+    }
+
+    fn local_environment_from_reference() -> Result<Self, CryptoError> {
+        let key_id = required_environment("REMBRANE_WORKSPACE_KEY_ID")?;
+        let reference = configured_workspace_key_reference()?;
+        let encoded_key = LocalSecretResolver
+            .resolve(&reference)
+            .map_err(|_| CryptoError::KeyUnavailable)?;
+        let active = RustCryptoRecordCipher::from_encoded_key(key_id, encoded_key)?;
+        RustCryptoKeyringCipher::new(active, Vec::new()).map(Self::Local)
     }
 
     fn http_from_environment() -> Result<Self, CryptoError> {
@@ -289,6 +300,23 @@ fn configured_token_reference() -> Result<SecretReference, CryptoError> {
     }
 }
 
+fn configured_workspace_key_reference() -> Result<SecretReference, CryptoError> {
+    match std::env::var("REMBRANE_WORKSPACE_KEY_REFERENCE") {
+        Ok(locator) => selected_workspace_key_reference(&locator),
+        Err(std::env::VarError::NotPresent) => selected_workspace_key_reference(""),
+        Err(_) => Err(CryptoError::KeyUnavailable),
+    }
+}
+
+fn selected_workspace_key_reference(locator: &str) -> Result<SecretReference, CryptoError> {
+    if locator.is_empty() {
+        SecretReference::environment("REMBRANE_WORKSPACE_KEY_HEX")
+            .map_err(|_| CryptoError::KeyUnavailable)
+    } else {
+        locator.parse().map_err(|_| CryptoError::KeyUnavailable)
+    }
+}
+
 fn selected_token_reference(locator: &str) -> Result<SecretReference, CryptoError> {
     if locator.is_empty() {
         SecretReference::environment("REMBRANE_KEY_PROVIDER_TOKEN")
@@ -314,7 +342,7 @@ mod tests {
 
     use super::{
         ConfiguredRecordCipher, DEFAULT_MINIMUM_PLAINTEXT_BYTES, KeyProviderHttpConfig,
-        default_request_prefix, selected_token_reference,
+        default_request_prefix, selected_token_reference, selected_workspace_key_reference,
     };
 
     struct PanicResolver;
@@ -356,6 +384,22 @@ mod tests {
             .expect("file reference");
         assert_eq!(file.file_path(), Some("/run/secrets/key-provider-token"));
         assert!(selected_token_reference("inline-token").is_err());
+    }
+
+    #[test]
+    fn workspace_key_reference_defaults_and_rejects_inline_values() {
+        let default = selected_workspace_key_reference("").expect("default environment reference");
+        assert_eq!(
+            default.environment_variable(),
+            Some("REMBRANE_WORKSPACE_KEY_HEX")
+        );
+        let file = selected_workspace_key_reference("file:/run/secrets/rembrane-workspace-key")
+            .expect("file reference");
+        assert_eq!(
+            file.file_path(),
+            Some("/run/secrets/rembrane-workspace-key")
+        );
+        assert!(selected_workspace_key_reference("inline-key").is_err());
     }
 
     #[test]

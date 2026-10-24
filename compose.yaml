@@ -10,12 +10,23 @@ services:
       REMBRANE_CLIENT_ID: ${REMBRANE_CLIENT_ID:?required}
       REMBRANE_READ_SCOPES: ${REMBRANE_READ_SCOPES:-global}
       REMBRANE_READ_PERMISSIONS: ${REMBRANE_READ_PERMISSIONS:-}
+      REMBRANE_KEY_PROVIDER: environment
       REMBRANE_WORKSPACE_KEY_ID: ${REMBRANE_WORKSPACE_KEY_ID:?required}
-      REMBRANE_WORKSPACE_KEY_HEX: ${REMBRANE_WORKSPACE_KEY_HEX:?required}
-      REMBRANE_API_TOKEN: ${REMBRANE_API_TOKEN:-}
-      REMBRANE_API_TOKEN_REFERENCE: ${REMBRANE_API_TOKEN_REFERENCE:-}
+      REMBRANE_WORKSPACE_KEY_REFERENCE: file:/run/secrets/rembrane_workspace_key
+      REMBRANE_API_TOKEN_REFERENCE: file:/run/secrets/rembrane_api_token
       REMBRANE_LISTEN: 0.0.0.0:8787
       REMBRANE_ALLOW_NON_LOOPBACK: "1"
+    secrets:
+      - source: rembrane_workspace_key
+        target: rembrane_workspace_key
+        uid: "10001"
+        gid: "10001"
+        mode: 0400
+      - source: rembrane_api_token
+        target: rembrane_api_token
+        uid: "10001"
+        gid: "10001"
+        mode: 0400
     ports:
       - "127.0.0.1:8787:8787"
     volumes:
@@ -27,3 +38,9 @@ services:
 
 volumes:
   rembrane-data:
+
+secrets:
+  rembrane_workspace_key:
+    file: ${REMBRANE_WORKSPACE_KEY_FILE:?required}
+  rembrane_api_token:
+    file: ${REMBRANE_API_TOKEN_FILE:?required}

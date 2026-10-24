@@ -9,8 +9,9 @@ services:
       REMBRANE_DATABASE: /var/lib/rembrane/rembrane.db
       REMBRANE_PRINCIPAL_ID: ${REMBRANE_PRINCIPAL_ID:?required}
       REMBRANE_WORKSPACE_ID: ${REMBRANE_WORKSPACE_ID:?required}
+      REMBRANE_KEY_PROVIDER: environment
       REMBRANE_WORKSPACE_KEY_ID: ${REMBRANE_WORKSPACE_KEY_ID:?required}
-      REMBRANE_WORKSPACE_KEY_HEX: ${REMBRANE_WORKSPACE_KEY_HEX:?required}
+      REMBRANE_WORKSPACE_KEY_REFERENCE: file:/run/secrets/rembrane_workspace_key
       REMBRANE_GRAPH_PROVIDER: graphiti
       REMBRANE_GRAPH_PROVIDER_ALLOW_PLAINTEXT: "true"
       REMBRANE_GRAPHITI_BASE_URL: http://graphiti-sidecar:8793
@@ -18,6 +19,11 @@ services:
       REMBRANE_GRAPH_WORKER_POLL_MILLISECONDS: ${REMBRANE_GRAPH_WORKER_POLL_MILLISECONDS:-1000}
       REMBRANE_GRAPH_WORKER_MAXIMUM_ATTEMPTS: ${REMBRANE_GRAPH_WORKER_MAXIMUM_ATTEMPTS:-5}
     secrets:
+      - source: rembrane_workspace_key
+        target: rembrane_workspace_key
+        uid: "10001"
+        gid: "10001"
+        mode: 0400
       - source: rembrane_graphiti_bearer_token
         target: rembrane_graphiti_bearer_token
         uid: "10001"

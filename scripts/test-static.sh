@@ -93,6 +93,14 @@ sh -n scripts/test-core-offline.sh
 rg -q '127\.0\.0\.1:8787:8787' compose.yaml
 rg -q 'no-new-privileges:true' compose.yaml
 rg -q 'cap_drop:' compose.yaml
+rg -q 'REMBRANE_WORKSPACE_KEY_REFERENCE: file:/run/secrets/rembrane_workspace_key' \
+    compose.yaml
+rg -q 'REMBRANE_API_TOKEN_REFERENCE: file:/run/secrets/rembrane_api_token' compose.yaml
+if rg -q '^[[:space:]]+(REMBRANE_WORKSPACE_KEY_HEX|REMBRANE_API_TOKEN):' compose.yaml; then
+    echo "core Compose must not interpolate raw workspace or API credentials" >&2
+    exit 1
+fi
+test "$(rg -c 'mode: 0400' compose.yaml)" -eq 2
 rg -q 'CLOUDFLARE_TUNNEL_TOKEN' compose.cloudflare.yaml
 rg -q 'http://rembrane:8787' docs/CLOUDFLARE_DEPLOYMENT.md
 rg -q 'read_only: true' compose.cloudflare.yaml
@@ -113,7 +121,7 @@ if rg -q '^[[:space:]]+(NEO4J_PASSWORD|OPENAI_API_KEY):' compose.graphiti.yaml; 
     echo "Graphiti Compose must not interpolate raw provider credentials" >&2
     exit 1
 fi
-test "$(rg -c 'mode: 0400' compose.graphiti.yaml)" -eq 5
+test "$(rg -c 'mode: 0400' compose.graphiti.yaml)" -eq 6
 rg -q 'rembrane-graph-worker' compose.graphiti.yaml
 rg -q 'REMBRANE_GRAPH_PROVIDER_ALLOW_PLAINTEXT: "true"' compose.graphiti.yaml
 rg -q 'no-new-privileges:true' compose.graphiti.yaml
@@ -131,6 +139,11 @@ rg -q 'REMBRANE_CHANNEL_PROCESSOR_URL' compose.whatsapp.yaml
 rg -q 'REMBRANE_CHANNEL_PROCESSOR_TOKEN' compose.whatsapp.yaml
 rg -q 'REMBRANE_CHANNEL_PROCESSOR_TOKEN_REFERENCE' compose.whatsapp.yaml
 rg -q 'REMBRANE_KEY_PROVIDER_TOKEN_REFERENCE' compose.whatsapp.yaml
+if rg -q '^[[:space:]]+REMBRANE_WORKSPACE_KEY_HEX:' \
+    compose.graphiti.yaml compose.whatsapp.yaml compose.mobile-share.yaml; then
+    echo "Compose overlays must not interpolate raw workspace keys" >&2
+    exit 1
+fi
 rg -q 'rembrane-channel-worker' compose.whatsapp.yaml
 rg -q '127\.0\.0\.1:8791:8791' compose.mobile-share.yaml
 rg -q 'REMBRANE_MOBILE_SHARE_SIGNING_SECRET_REFERENCE' compose.mobile-share.yaml
@@ -144,8 +157,8 @@ if command -v docker >/dev/null 2>&1; then
     REMBRANE_WORKSPACE_ID=workspace_static \
     REMBRANE_CLIENT_ID=client_static \
     REMBRANE_WORKSPACE_KEY_ID=key_static \
-    REMBRANE_WORKSPACE_KEY_HEX=0000000000000000000000000000000000000000000000000000000000000000 \
-    REMBRANE_API_TOKEN=token_static \
+    REMBRANE_WORKSPACE_KEY_FILE=/tmp/rembrane-static-workspace-key \
+    REMBRANE_API_TOKEN_FILE=/tmp/rembrane-static-api-token \
         docker compose config --quiet
     CLOUDFLARE_TUNNEL_TOKEN=static-test-token \
     CLOUDFLARED_IMAGE=cloudflare/cloudflared:latest \
@@ -153,15 +166,15 @@ if command -v docker >/dev/null 2>&1; then
     REMBRANE_WORKSPACE_ID=workspace_static \
     REMBRANE_CLIENT_ID=client_static \
     REMBRANE_WORKSPACE_KEY_ID=key_static \
-    REMBRANE_WORKSPACE_KEY_HEX=0000000000000000000000000000000000000000000000000000000000000000 \
-    REMBRANE_API_TOKEN=token_static \
+    REMBRANE_WORKSPACE_KEY_FILE=/tmp/rembrane-static-workspace-key \
+    REMBRANE_API_TOKEN_FILE=/tmp/rembrane-static-api-token \
         docker compose -f compose.yaml -f compose.cloudflare.yaml config --quiet
     REMBRANE_PRINCIPAL_ID=principal_static \
     REMBRANE_WORKSPACE_ID=workspace_static \
     REMBRANE_CLIENT_ID=client_static \
     REMBRANE_WORKSPACE_KEY_ID=key_static \
-    REMBRANE_WORKSPACE_KEY_HEX=0000000000000000000000000000000000000000000000000000000000000000 \
-    REMBRANE_API_TOKEN=token_static \
+    REMBRANE_WORKSPACE_KEY_FILE=/tmp/rembrane-static-workspace-key \
+    REMBRANE_API_TOKEN_FILE=/tmp/rembrane-static-api-token \
     REMBRANE_GRAPHITI_BEARER_TOKEN_FILE=/tmp/rembrane-graphiti-static-token \
     REMBRANE_GRAPHITI_NEO4J_AUTH_FILE=/tmp/rembrane-graphiti-static-neo4j-auth \
     REMBRANE_GRAPHITI_OPENAI_API_KEY_FILE=/tmp/rembrane-graphiti-static-openai-key \
@@ -170,8 +183,8 @@ if command -v docker >/dev/null 2>&1; then
     REMBRANE_WORKSPACE_ID=workspace_static \
     REMBRANE_CLIENT_ID=client_static \
     REMBRANE_WORKSPACE_KEY_ID=key_static \
-    REMBRANE_WORKSPACE_KEY_HEX=0000000000000000000000000000000000000000000000000000000000000000 \
-    REMBRANE_API_TOKEN=token_static \
+    REMBRANE_WORKSPACE_KEY_FILE=/tmp/rembrane-static-workspace-key \
+    REMBRANE_API_TOKEN_FILE=/tmp/rembrane-static-api-token \
     REMBRANE_WHATSAPP_APP_SECRET=whatsapp-static-app-secret-000000 \
     REMBRANE_WHATSAPP_BINDING_LOOKUP_SECRET=whatsapp-static-lookup-secret-000 \
     REMBRANE_WHATSAPP_WEBHOOK_VERIFICATION_TOKEN=whatsapp-static-verify-token-000 \

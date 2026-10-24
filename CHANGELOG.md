@@ -9,6 +9,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- Protected local workspace-key references and owner-only Compose mounts for
+  both the development encryption key and REST bearer token, removing their
+  raw values from service environment interpolation.
 - Protected Graphiti Neo4j-auth and model-provider key references, including
   file-backed Compose injection and removal of raw credentials from service
   environment metadata.

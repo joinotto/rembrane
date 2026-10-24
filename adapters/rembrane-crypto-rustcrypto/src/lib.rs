@@ -137,7 +137,20 @@ impl RustCryptoRecordCipher {
         let encoded_key = Zeroizing::new(
             std::env::var("REMBRANE_WORKSPACE_KEY_HEX").map_err(|_| CryptoError::KeyUnavailable)?,
         );
+        Self::from_encoded_key(key_id, encoded_key)
+    }
+
+    /// Constructs a cipher from an already resolved zeroizing hex key.
+    ///
+    /// # Errors
+    ///
+    /// Returns key-unavailable when the identifier or encoded key is invalid.
+    pub fn from_encoded_key(
+        key_id: impl Into<String>,
+        encoded_key: Zeroizing<String>,
+    ) -> Result<Self, CryptoError> {
         let key = decode_key(&encoded_key)?;
+        drop(encoded_key);
         Self::new(key_id, key)
     }
 

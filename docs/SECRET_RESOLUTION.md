@@ -63,6 +63,12 @@ Its environment-driven HTTP composition accepts
 and retains the resolved credential in `Zeroizing<String>` throughout
 configuration handoff.
 
+The local development cipher accepts `REMBRANE_WORKSPACE_KEY_REFERENCE` and
+defaults to `env:REMBRANE_WORKSPACE_KEY_HEX` for compatibility. A protected
+`file:path` value is resolved into zeroizing storage, decoded, and dropped
+before the active cipher enters service. Stock Compose uses this path so raw
+workspace keys are absent from container environment metadata.
+
 The shipped REST API, WhatsApp gateway, mobile-share gateway, and channel
 worker also accept locator variables for their bearer or HMAC credentials.
 An empty locator preserves the documented environment-variable default;

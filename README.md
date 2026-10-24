@@ -317,19 +317,27 @@ terminator. For outbound-only self-hosted public connectivity, see
 
 ### Self-host with Docker
 
-Copy `.env.example` to `.env`, fill every required identifier, token, and
-development key, then start the loopback-only REST service:
+Copy `.env.example` to `.env`, fill the required non-secret identifiers, and
+create mode-restricted secret files:
 
 ```text
+install -m 600 /dev/null .rembrane-workspace-key
+install -m 600 /dev/null .rembrane-api-token
+openssl rand -hex 32 > .rembrane-workspace-key
+openssl rand -hex 32 > .rembrane-api-token
+export REMBRANE_WORKSPACE_KEY_FILE="$PWD/.rembrane-workspace-key"
+export REMBRANE_API_TOKEN_FILE="$PWD/.rembrane-api-token"
 docker compose up --build
 ```
 
 The container initializes the requested personal workspace idempotently and
 stores its encrypted SQLite database in the `rembrane-data` volume. The
 published API remains bound to `127.0.0.1`; place authenticated TLS
-termination in front of it before allowing remote access. The current
-environment key is for development only and must not be used for production
-or sensitive data.
+termination in front of it before allowing remote access. Compose mounts the
+workspace key and API token as owner-only files rather than interpolating
+their values into container environment metadata. The local file-backed key
+mode is for development and single-node self-hosting; production deployments
+should use an OS keychain or customer-controlled key provider.
 
 ## Contributing
 
