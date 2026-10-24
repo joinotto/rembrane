@@ -377,7 +377,13 @@ mod tests {
             .lock()
             .expect("runtime lock should be available")
             .store
-            .claim_channel_messages(&WorkspaceId::new("workspace_01"), now, now + 60, 10)
+            .claim_channel_messages(
+                &WorkspaceId::new("workspace_01"),
+                "gateway-test-lease",
+                now,
+                now + 60,
+                10,
+            )
             .expect("encrypted inbox should recover");
         assert_eq!(pending.len(), 1);
         assert_eq!(pending[0].text(), "continue");

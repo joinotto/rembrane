@@ -6,6 +6,7 @@ use rembrane_channel_processor_http::HttpChannelMessageProcessor;
 use rembrane_crypto_configured::ConfiguredRecordCipher;
 use rembrane_domain::WorkspaceId;
 use rembrane_store_sqlite::SqliteStore;
+use ring::rand::{SecureRandom, SystemRandom};
 use zeroize::Zeroizing;
 
 const DEFAULT_BATCH_SIZE: usize = 10;
@@ -13,6 +14,7 @@ const DEFAULT_POLL_MILLISECONDS: u64 = 1_000;
 const DEFAULT_MAXIMUM_ATTEMPTS: u32 = 5;
 const DEFAULT_RETRY_DELAY_SECONDS: u64 = 30;
 const DEFAULT_LEASE_SECONDS: u64 = 120;
+const HEX: &[u8; 16] = b"0123456789abcdef";
 
 struct Configuration {
     database: String,
@@ -24,6 +26,7 @@ struct Configuration {
     maximum_attempts: u32,
     retry_delay_seconds: u64,
     lease_seconds: u64,
+    lease_id: String,
     run_once: bool,
 }
 
@@ -56,6 +59,7 @@ impl Configuration {
                 "REMBRANE_CHANNEL_WORKER_LEASE_SECONDS",
                 DEFAULT_LEASE_SECONDS,
             )?,
+            lease_id: random_lease_id()?,
             run_once: boolean_environment("REMBRANE_CHANNEL_WORKER_RUN_ONCE", false)?,
         })
     }
@@ -80,6 +84,7 @@ fn run(configuration: &Configuration) -> Result<()> {
         let report = ChannelInboxWorker::new(&mut store, &mut processor)
             .process_batch(
                 &configuration.workspace_id,
+                &configuration.lease_id,
                 now_epoch_seconds,
                 configuration.batch_size,
                 configuration.maximum_attempts,
@@ -96,6 +101,19 @@ fn run(configuration: &Configuration) -> Result<()> {
         }
         std::thread::sleep(Duration::from_millis(configuration.poll_milliseconds));
     }
+}
+
+fn random_lease_id() -> Result<String> {
+    let mut bytes = [0_u8; 16];
+    SystemRandom::new()
+        .fill(&mut bytes)
+        .map_err(|_| anyhow::anyhow!("failed to generate channel worker lease identity"))?;
+    let mut encoded = String::with_capacity(32);
+    for byte in bytes {
+        encoded.push(char::from(HEX[usize::from(byte >> 4)]));
+        encoded.push(char::from(HEX[usize::from(byte & 0x0f)]));
+    }
+    Ok(encoded)
 }
 
 fn required_environment(name: &str) -> Result<String> {
@@ -151,10 +169,19 @@ fn main() -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::boolean_environment;
+    use super::{boolean_environment, random_lease_id};
 
     #[test]
     fn absent_boolean_uses_default() {
         assert!(!boolean_environment("REMBRANE_TEST_UNSET_BOOLEAN", false).expect("default"));
+    }
+
+    #[test]
+    fn lease_identity_is_random_and_storage_safe() {
+        let first = random_lease_id().expect("first lease identity");
+        let second = random_lease_id().expect("second lease identity");
+        assert_eq!(first.len(), 32);
+        assert!(first.bytes().all(|byte| byte.is_ascii_hexdigit()));
+        assert_ne!(first, second);
     }
 }

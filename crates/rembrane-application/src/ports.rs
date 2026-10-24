@@ -99,6 +99,7 @@ pub trait ChannelInboxRepository {
     fn claim_channel_messages(
         &mut self,
         workspace_id: &WorkspaceId,
+        lease_id: &str,
         now_epoch_seconds: u64,
         lease_until_epoch_seconds: u64,
         limit: usize,
@@ -109,6 +110,7 @@ pub trait ChannelInboxRepository {
         workspace_id: &WorkspaceId,
         channel: ChannelKind,
         event_id: &str,
+        lease_id: &str,
     ) -> Result<(), ApplicationError>;
 
     fn fail_channel_message(
@@ -116,6 +118,7 @@ pub trait ChannelInboxRepository {
         workspace_id: &WorkspaceId,
         channel: ChannelKind,
         event_id: &str,
+        lease_id: &str,
         retry_at_epoch_seconds: u64,
         maximum_attempts: u32,
     ) -> Result<bool, ApplicationError>;

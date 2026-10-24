@@ -1116,6 +1116,7 @@ dependencies = [
  "rembrane-crypto-configured",
  "rembrane-domain",
  "rembrane-store-sqlite",
+ "ring",
  "zeroize",
 ]
 

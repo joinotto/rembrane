@@ -81,6 +81,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Atomic expiring channel-inbox leases that prevent concurrent workers from
   delivering the same event while automatically reclaiming work after a
   crashed or stalled worker.
+- Cryptographically random per-process channel lease ownership, binding
+  completion and retry transitions to the current claimant so a stale worker
+  cannot mutate a message after another worker reclaims it.
 - Durable, content-free SQLite channel replay receipts with atomic cleanup,
   fail-closed capacity enforcement, per-platform namespaces, and
   cross-workspace duplicate denial for multi-process gateways.

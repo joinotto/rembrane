@@ -14,6 +14,7 @@ rembrane-channel-processor-http = { path = "../../adapters/rembrane-channel-proc
 rembrane-crypto-configured = { path = "../../adapters/rembrane-crypto-configured" }
 rembrane-domain = { path = "../../crates/rembrane-domain" }
 rembrane-store-sqlite = { path = "../../adapters/rembrane-store-sqlite" }
+ring = "0.17"
 zeroize = "1"
 
 [lints]

@@ -32,6 +32,7 @@ where
     pub fn process_batch(
         &mut self,
         workspace_id: &WorkspaceId,
+        lease_id: &str,
         now_epoch_seconds: u64,
         limit: usize,
         maximum_attempts: u32,
@@ -43,6 +44,7 @@ where
             || maximum_attempts == 0
             || retry_delay_seconds == 0
             || lease_seconds == 0
+            || lease_id.is_empty()
         {
             return Err(ApplicationError::Validation(
                 "channel dispatch bounds are invalid".to_owned(),
@@ -61,6 +63,7 @@ where
                 })?;
         let pending = self.repository.claim_channel_messages(
             workspace_id,
+            lease_id,
             now_epoch_seconds,
             lease_until_epoch_seconds,
             limit,
@@ -73,6 +76,7 @@ where
                     message.workspace_id(),
                     message.channel(),
                     message.event_id(),
+                    lease_id,
                     retry_at_epoch_seconds,
                     maximum_attempts,
                 )?;
@@ -87,6 +91,7 @@ where
                 message.workspace_id(),
                 message.channel(),
                 message.event_id(),
+                lease_id,
             )?;
             report.completed += 1;
         }
@@ -113,6 +118,7 @@ mod tests {
         fn claim_channel_messages(
             &mut self,
             workspace_id: &WorkspaceId,
+            _lease_id: &str,
             _now_epoch_seconds: u64,
             _lease_until_epoch_seconds: u64,
             limit: usize,
@@ -131,6 +137,7 @@ mod tests {
             workspace_id: &WorkspaceId,
             _channel: ChannelKind,
             event_id: &str,
+            _lease_id: &str,
         ) -> Result<(), ApplicationError> {
             if workspace_id.as_str() != "workspace_01" {
                 return Err(ApplicationError::AccessDenied);
@@ -144,6 +151,7 @@ mod tests {
             workspace_id: &WorkspaceId,
             _channel: ChannelKind,
             event_id: &str,
+            _lease_id: &str,
             _retry_at_epoch_seconds: u64,
             maximum_attempts: u32,
         ) -> Result<bool, ApplicationError> {
@@ -196,7 +204,15 @@ mod tests {
             fail_event: "event_02",
         };
         let report = ChannelInboxWorker::new(&mut inbox, &mut processor)
-            .process_batch(&WorkspaceId::new("workspace_01"), 1_000, 10, 3, 30, 60)
+            .process_batch(
+                &WorkspaceId::new("workspace_01"),
+                "lease_01",
+                1_000,
+                10,
+                3,
+                30,
+                60,
+            )
             .expect("batch should continue across handler failure");
         assert_eq!(report.attempted, 2);
         assert_eq!(report.completed, 1);
@@ -219,6 +235,7 @@ mod tests {
         assert!(matches!(
             ChannelInboxWorker::new(&mut inbox, &mut processor).process_batch(
                 &WorkspaceId::new("workspace_01"),
+                "lease_01",
                 1_000,
                 MAX_CHANNEL_INBOX_PAGE + 1,
                 3,
