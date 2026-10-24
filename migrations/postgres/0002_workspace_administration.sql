@@ -109,7 +109,8 @@ CREATE TABLE administrative_audit_events (
     workspace_id text NOT NULL REFERENCES workspaces (id),
     id text NOT NULL,
     actor_id text NOT NULL,
-    action text NOT NULL CHECK (action IN (
+    action text NOT NULL CONSTRAINT administrative_audit_events_action_check
+        CHECK (action IN (
         'member-removed',
         'key-rotation-required',
         'key-rotation-completed',
@@ -118,7 +119,9 @@ CREATE TABLE administrative_audit_events (
         'legal-hold-placed',
         'legal-hold-released'
     )),
-    target_kind text NOT NULL CHECK (target_kind IN (
+    target_kind text NOT NULL
+        CONSTRAINT administrative_audit_events_target_kind_check CHECK (
+        target_kind IN (
         'principal',
         'key-rotation',
         'scope-grant',

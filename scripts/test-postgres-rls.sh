@@ -6,6 +6,9 @@ set -eu
 psql "$REMBRANE_POSTGRES_URL" -v ON_ERROR_STOP=1 <<'SQL'
 DROP SCHEMA IF EXISTS rembrane CASCADE;
 DROP TABLE IF EXISTS
+    channel_inbox,
+    channel_sender_bindings,
+    channel_event_receipts,
     graph_projection_outbox,
     knowledge_edges,
     knowledge_nodes,
@@ -45,6 +48,8 @@ psql "$REMBRANE_POSTGRES_URL" -v ON_ERROR_STOP=1 \
     -f migrations/postgres/0003_travel_continuity.sql
 psql "$REMBRANE_POSTGRES_URL" -v ON_ERROR_STOP=1 \
     -f migrations/postgres/0004_knowledge_graph.sql
+psql "$REMBRANE_POSTGRES_URL" -v ON_ERROR_STOP=1 \
+    -f migrations/postgres/0005_channel_continuity.sql
 
 psql "$REMBRANE_POSTGRES_URL" -v ON_ERROR_STOP=1 <<'SQL'
 CREATE ROLE rembrane_runtime_test NOLOGIN NOSUPERUSER NOBYPASSRLS;
@@ -225,6 +230,39 @@ INSERT INTO graph_projection_outbox (
         'graph_job_02', 'workspace_02', 'node', 'node_02a', 1,
         'provider_graph', 'upsert', 'pending'
     );
+INSERT INTO channel_event_receipts (
+    channel, event_id, workspace_id, accepted_at_epoch_seconds,
+    expires_at_epoch_seconds
+) VALUES
+    ('mobile-share', 'event_01', 'workspace_01', 1, 3601),
+    ('mobile-share', 'event_02', 'workspace_02', 1, 3601);
+INSERT INTO channel_sender_bindings (
+    channel, account_lookup_key, sender_lookup_key, workspace_id,
+    principal_id, client_id
+) VALUES
+    (
+        'mobile-share', 'account_01', 'sender_01', 'workspace_01',
+        'principal_01', 'client_01'
+    ),
+    (
+        'mobile-share', 'account_02', 'sender_02', 'workspace_02',
+        'principal_02', 'client_02'
+    );
+INSERT INTO channel_inbox (
+    channel, event_id, workspace_id, principal_id, client_id,
+    received_at_epoch_seconds, text_ciphertext, encryption_key_id,
+    encryption_algorithm, encryption_nonce, available_at_epoch_seconds
+) VALUES
+    (
+        'mobile-share', 'inbox_01', 'workspace_01', 'principal_01',
+        'client_01', 1, '\x51', 'key_01', 'xchacha20poly1305-ietf',
+        decode(repeat('51', 24), 'hex'), 1
+    ),
+    (
+        'mobile-share', 'inbox_02', 'workspace_02', 'principal_02',
+        'client_02', 1, '\x52', 'key_02', 'xchacha20poly1305-ietf',
+        decode(repeat('52', 24), 'hex'), 1
+    );
 SQL
 
 psql "$REMBRANE_POSTGRES_URL" -v ON_ERROR_STOP=1 \
@@ -270,11 +308,14 @@ SELECT
     (SELECT count(*) FROM disclosed_booking_research),
     (SELECT count(*) FROM knowledge_nodes),
     (SELECT count(*) FROM knowledge_edges),
-    (SELECT count(*) FROM graph_projection_outbox);
+    (SELECT count(*) FROM graph_projection_outbox),
+    (SELECT count(*) FROM channel_event_receipts),
+    (SELECT count(*) FROM channel_sender_bindings),
+    (SELECT count(*) FROM channel_inbox);
 ROLLBACK;
 SQL
 )
-test "$result" = "1|1|1|1|1|1|1|1|1|1|1|1|1|2|1|1"
+test "$result" = "1|1|1|1|1|1|1|1|1|1|1|1|1|2|1|1|1|1|1"
 
 if psql "$REMBRANE_POSTGRES_URL" -v ON_ERROR_STOP=1 >/dev/null 2>&1 <<'SQL'
 BEGIN;
@@ -316,10 +357,13 @@ SELECT
     (SELECT count(*) FROM disclosed_booking_research),
     (SELECT count(*) FROM knowledge_nodes),
     (SELECT count(*) FROM knowledge_edges),
-    (SELECT count(*) FROM graph_projection_outbox);
+    (SELECT count(*) FROM graph_projection_outbox),
+    (SELECT count(*) FROM channel_event_receipts),
+    (SELECT count(*) FROM channel_sender_bindings),
+    (SELECT count(*) FROM channel_inbox);
 ROLLBACK;
 SQL
 )
-test "$unscoped" = "0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0"
+test "$unscoped" = "0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0"
 
 echo "PostgreSQL two-tenant RLS test passed"

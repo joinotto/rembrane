@@ -267,6 +267,8 @@ This roadmap describes sequencing, not release dates.
     disclosure, and sensitive travel-disclosure schemas under forced RLS.
   - [x] Add encrypted temporal knowledge-graph and idempotent graph-projection
     PostgreSQL schemas under forced RLS.
+  - [x] Add PostgreSQL channel replay, active-member bindings, encrypted inbox
+    leasing, retry/quarantine, and channel-administration audit schemas.
   - [x] Document transaction-local tenant identity and non-owner,
     non-`BYPASSRLS` runtime-role requirements.
   - [x] Run a live PostgreSQL two-tenant CI proof covering scoped reads,

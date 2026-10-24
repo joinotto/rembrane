@@ -9,6 +9,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- PostgreSQL authenticated channel replay, active-member sender bindings, and
+  an encrypted leased inbox with immutable identity and monotonic delivery,
+  retry, quarantine, and requeue transitions.
 - PostgreSQL encrypted temporal knowledge nodes and edges with validity
   indexes and an idempotent provider projection outbox under forced RLS.
 - PostgreSQL travel-continuity tables for encrypted trips and booking research,

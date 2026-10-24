@@ -5,6 +5,7 @@ schema=migrations/postgres/0001_canonical_schema.sql
 administration=migrations/postgres/0002_workspace_administration.sql
 travel=migrations/postgres/0003_travel_continuity.sql
 graph=migrations/postgres/0004_knowledge_graph.sql
+channel=migrations/postgres/0005_channel_continuity.sql
 migration=migrations/postgres/9999_tenant_rls.sql
 readme=migrations/postgres/README.md
 
@@ -23,6 +24,32 @@ for table in \
 do
     rg -q "^CREATE TABLE $table " "$schema" || {
         echo "PostgreSQL canonical table is missing: $table" >&2
+        exit 1
+    }
+done
+
+for table in \
+    channel_event_receipts \
+    channel_sender_bindings \
+    channel_inbox
+do
+    rg -q "^CREATE TABLE $table " "$channel" || {
+        echo "PostgreSQL channel table is missing: $table" >&2
+        exit 1
+    }
+done
+
+for invariant in \
+    'channel_sender_bindings_require_active_membership_insert' \
+    'channel_sender_bindings_require_active_membership_update' \
+    'channel_sender_bindings_revoke_inactive_membership' \
+    'channel_inbox_transition_guard' \
+    'channel inbox identity and ciphertext are immutable' \
+    'channel inbox state is monotonic' \
+    "'channel-message-requeued'"
+do
+    rg -F "$invariant" "$channel" >/dev/null || {
+        echo "PostgreSQL channel invariant is missing: $invariant" >&2
         exit 1
     }
 done
