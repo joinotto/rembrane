@@ -1,6 +1,8 @@
 //! Authenticated, bounded `WhatsApp` Business webhook ingestion.
 
-use rembrane_application::{ApplicationError, ChannelIngressRepository};
+use rembrane_application::{
+    ApplicationError, ChannelIngressRepository, DurableChannelIngressRepository,
+};
 use rembrane_contracts::{ChannelKind, VerifiedChannelMessage};
 use ring::hmac;
 use serde::Deserialize;
@@ -165,6 +167,47 @@ impl WhatsAppWebhookVerifier {
         let mut admitted = Vec::with_capacity(events.len());
         for event in events {
             match repository.accept_bound_channel_event(
+                ChannelKind::WhatsAppBusiness,
+                event.account_lookup_key(),
+                event.sender_lookup_key(),
+                event.event_id(),
+                event.text(),
+                event.received_at_epoch_seconds(),
+                now_epoch_seconds,
+                replay_window_seconds,
+                maximum_events,
+            ) {
+                Ok(message) => admitted.push(message),
+                Err(ApplicationError::AlreadyExists) => {}
+                Err(error) => return Err(WhatsAppWebhookError::Admission(error)),
+            }
+        }
+        Ok(admitted)
+    }
+
+    /// Authenticates a webhook and durably enqueues each text event through
+    /// Rembrane's atomic sender-binding, replay, and encrypted-inbox boundary.
+    pub fn ingest_text_durable<R: DurableChannelIngressRepository>(
+        &self,
+        repository: &mut R,
+        signature_header: &str,
+        payload: &[u8],
+        now_epoch_seconds: u64,
+        maximum_event_age_seconds: u64,
+        replay_window_seconds: u64,
+        maximum_events: usize,
+    ) -> Result<Vec<VerifiedChannelMessage>, WhatsAppWebhookError> {
+        let events = self.verify_and_extract_text(signature_header, payload)?;
+        let oldest_accepted = now_epoch_seconds.saturating_sub(maximum_event_age_seconds);
+        if events
+            .iter()
+            .any(|event| event.received_at_epoch_seconds() < oldest_accepted)
+        {
+            return Err(WhatsAppWebhookError::StaleEvent);
+        }
+        let mut admitted = Vec::with_capacity(events.len());
+        for event in events {
+            match repository.accept_bound_channel_event_to_inbox(
                 ChannelKind::WhatsAppBusiness,
                 event.account_lookup_key(),
                 event.sender_lookup_key(),

@@ -11,7 +11,9 @@ use axum::routing::get;
 use rembrane_channel_whatsapp::{
     WhatsAppHttpStatus, WhatsAppSubscriptionVerifier, WhatsAppWebhookVerifier, webhook_http_status,
 };
-use rembrane_store_sqlite::{MissingCipher, SqliteStore};
+use rembrane_crypto::RecordCipher;
+use rembrane_crypto_configured::ConfiguredRecordCipher;
+use rembrane_store_sqlite::SqliteStore;
 use serde::Deserialize;
 use zeroize::Zeroizing;
 
@@ -20,13 +22,20 @@ const DEFAULT_MAXIMUM_EVENT_AGE_SECONDS: u64 = 300;
 const DEFAULT_REPLAY_WINDOW_SECONDS: u64 = 7 * 24 * 60 * 60;
 const DEFAULT_MAXIMUM_REPLAY_EVENTS: usize = 1_000_000;
 
-#[derive(Clone)]
-struct AppState {
-    inner: Arc<Inner>,
+struct AppState<C = ConfiguredRecordCipher> {
+    inner: Arc<Inner<C>>,
 }
 
-struct Inner {
-    runtime: Mutex<Runtime>,
+impl<C> Clone for AppState<C> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: Arc::clone(&self.inner),
+        }
+    }
+}
+
+struct Inner<C> {
+    runtime: Mutex<Runtime<C>>,
     webhook_verifier: WhatsAppWebhookVerifier,
     subscription_verifier: WhatsAppSubscriptionVerifier,
     maximum_event_age_seconds: u64,
@@ -34,8 +43,8 @@ struct Inner {
     maximum_replay_events: usize,
 }
 
-struct Runtime {
-    store: SqliteStore<MissingCipher>,
+struct Runtime<C> {
+    store: SqliteStore<C>,
 }
 
 #[derive(Deserialize)]
@@ -48,7 +57,7 @@ struct SubscriptionQuery {
     challenge: String,
 }
 
-impl AppState {
+impl AppState<ConfiguredRecordCipher> {
     fn from_environment() -> Result<Self> {
         let database = required_environment("REMBRANE_DATABASE")?;
         let app_secret = required_secret("REMBRANE_WHATSAPP_APP_SECRET")?;
@@ -66,8 +75,11 @@ impl AppState {
             "REMBRANE_WHATSAPP_MAXIMUM_REPLAY_EVENTS",
             DEFAULT_MAXIMUM_REPLAY_EVENTS,
         )?;
-        let store =
-            SqliteStore::open(database).context("failed to open the Rembrane channel store")?;
+        let cipher = ConfiguredRecordCipher::from_environment()
+            .context("failed to load the channel inbox cipher")?;
+        let store = SqliteStore::open(database)
+            .context("failed to open the Rembrane channel store")?
+            .with_cipher(cipher);
         let webhook_verifier = WhatsAppWebhookVerifier::new(
             app_secret.as_bytes().to_vec(),
             binding_lookup_secret.as_bytes().to_vec(),
@@ -93,8 +105,8 @@ async fn health() -> StatusCode {
     StatusCode::NO_CONTENT
 }
 
-async fn verify_subscription(
-    State(state): State<AppState>,
+async fn verify_subscription<C: Send + Sync + 'static>(
+    State(state): State<AppState<C>>,
     Query(query): Query<SubscriptionQuery>,
 ) -> Response {
     match state.inner.subscription_verifier.verify_challenge(
@@ -107,8 +119,8 @@ async fn verify_subscription(
     }
 }
 
-async fn receive_webhook(
-    State(state): State<AppState>,
+async fn receive_webhook<C: RecordCipher + Send + Sync + 'static>(
+    State(state): State<AppState<C>>,
     headers: HeaderMap,
     payload: Bytes,
 ) -> StatusCode {
@@ -123,7 +135,7 @@ async fn receive_webhook(
         Err(_) => return StatusCode::SERVICE_UNAVAILABLE,
     };
     let result = match state.inner.runtime.lock() {
-        Ok(mut runtime) => state.inner.webhook_verifier.ingest_text(
+        Ok(mut runtime) => state.inner.webhook_verifier.ingest_text_durable(
             &mut runtime.store,
             signature,
             &payload,
@@ -225,12 +237,15 @@ mod tests {
     use axum::body::Bytes;
     use axum::extract::State;
     use axum::http::{HeaderMap, HeaderValue, StatusCode};
-    use rembrane_application::{ChannelSenderBindingRepository, WorkspaceRepository};
+    use rembrane_application::{
+        ChannelInboxRepository, ChannelSenderBindingRepository, WorkspaceRepository,
+    };
     use rembrane_channel_whatsapp::{
         WhatsAppHttpStatus, WhatsAppSubscriptionVerifier, WhatsAppWebhookVerifier,
         derive_binding_lookup_keys,
     };
     use rembrane_contracts::{ChannelKind, ChannelSenderBinding};
+    use rembrane_crypto_rustcrypto::RustCryptoRecordCipher;
     use rembrane_domain::{
         ClientId, Membership, Principal, PrincipalId, Workspace, WorkspaceId, WorkspaceRole,
     };
@@ -317,9 +332,13 @@ mod tests {
                 .expect("binding should validate"),
             )
             .expect("binding should persist");
+        let cipher =
+            RustCryptoRecordCipher::new("gateway-test-key", [23; 32]).expect("key should validate");
         let state = AppState {
             inner: Arc::new(Inner {
-                runtime: Mutex::new(Runtime { store }),
+                runtime: Mutex::new(Runtime {
+                    store: store.with_cipher(cipher),
+                }),
                 webhook_verifier: WhatsAppWebhookVerifier::new(app_secret.clone(), lookup_secret)
                     .expect("verifier should initialize"),
                 subscription_verifier: WhatsAppSubscriptionVerifier::new(vec![11; 32])
@@ -352,6 +371,16 @@ mod tests {
             .await,
             StatusCode::OK
         );
+        let pending = state
+            .inner
+            .runtime
+            .lock()
+            .expect("runtime lock should be available")
+            .store
+            .pending_channel_messages(&WorkspaceId::new("workspace_01"), 10)
+            .expect("encrypted inbox should recover");
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].text(), "continue");
         assert_eq!(
             receive_webhook(
                 State(state),

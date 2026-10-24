@@ -555,9 +555,9 @@ This roadmap describes sequencing, not release dates.
   - [x] Define a framework-neutral webhook HTTP policy with constant-time
     subscription verification, bounded challenges, and non-enumerating sender
     rejection outcomes.
-  - [x] Ship a least-privileged Axum gateway binary that needs only the
-    channel database and deployment-owned WhatsApp secrets, not workspace
-    encryption keys.
+  - [x] Ship a narrowly scoped Axum gateway binary that receives the channel
+    database, deployment-owned WhatsApp secrets, and only the record-cipher
+    capability needed to seal its durable inbox.
   - [x] Package the gateway as an opt-in hardened Compose overlay with a
     loopback-only host port and documented TLS proxy boundary.
   - [x] Add administrator-only sender onboarding that consumes raw identifiers
@@ -573,6 +573,8 @@ This roadmap describes sequencing, not release dates.
   - [x] Atomically seal admitted channel text into SQLite with replay
     reservation, authenticated tenant-scoped recovery, and monotonic delivery
     completion.
+  - [x] Make the executable gateway acknowledge new messages only after
+    encrypted durable admission succeeds.
   - [x] Define a bounded authenticated-channel message contract whose
     canonical workspace, principal, and client identity must come from a
     deployment-owned sender binding rather than webhook payload claims.

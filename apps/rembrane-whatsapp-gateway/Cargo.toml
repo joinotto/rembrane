@@ -11,6 +11,8 @@ rust-version.workspace = true
 anyhow = "1"
 axum = "0.8"
 rembrane-channel-whatsapp = { path = "../../adapters/rembrane-channel-whatsapp" }
+rembrane-crypto = { path = "../../crates/rembrane-crypto" }
+rembrane-crypto-configured = { path = "../../adapters/rembrane-crypto-configured" }
 rembrane-store-sqlite = { path = "../../adapters/rembrane-store-sqlite" }
 serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["macros", "net", "rt-multi-thread"] }
@@ -23,6 +25,7 @@ workspace = true
 rembrane-application = { path = "../../crates/rembrane-application" }
 rembrane-contracts = { path = "../../crates/rembrane-contracts" }
 rembrane-domain = { path = "../../crates/rembrane-domain" }
+rembrane-crypto-rustcrypto = { path = "../../adapters/rembrane-crypto-rustcrypto" }
 ring = "0.17"
 
 [[bin]]

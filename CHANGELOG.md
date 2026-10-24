@@ -20,9 +20,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - A framework-neutral WhatsApp HTTP policy with constant-time bounded
   subscription verification and non-enumerating status mapping for unknown or
   revoked senders.
-- A standalone least-privileged WhatsApp gateway binary with bounded GET
+- A standalone narrowly scoped WhatsApp gateway binary with bounded GET
   subscription and POST event endpoints, loopback-safe defaults, configurable
-  replay limits, and no access to workspace encryption keys.
+  replay limits, and no API or broad memory authorization.
 - An opt-in hardened WhatsApp Compose overlay and operator guide that share
   only the canonical database volume and keep the gateway host port on
   loopback behind a deployment-owned HTTPS proxy.
@@ -43,6 +43,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - SQLite durable channel admission that resolves active identity, reserves
   replay, and AEAD-seals message text in one transaction, plus authenticated
   tenant-scoped recovery and one-way completion.
+- Executable WhatsApp acknowledgement backed by encrypted durable admission,
+  with deployment-selected local, keychain, or customer-key-provider cipher
+  configuration and an integration assertion that recovers the queued text.
 - Durable, content-free SQLite channel replay receipts with atomic cleanup,
   fail-closed capacity enforcement, per-platform namespaces, and
   cross-workspace duplicate denial for multi-process gateways.

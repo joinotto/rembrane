@@ -242,9 +242,12 @@ Routing through the central gateway produces a new user-controlled bot experienc
 
 ### 7.3 Reference self-hosted gateway
 
-Rembrane ships an opt-in, least-privileged webhook process. It receives only
-the canonical SQLite path and three deployment-owned WhatsApp secrets; it does
-not receive workspace record-encryption keys.
+Rembrane ships an opt-in, narrowly scoped webhook process. It receives the
+canonical SQLite path, three deployment-owned WhatsApp secrets, and a
+record-cipher capability used to seal the durable inbox. It receives no
+Rembrane API bearer token, default principal, read grants, or memory-service
+authorization. Prefer a customer-controlled HTTP key provider so raw workspace
+keys do not enter the gateway process.
 
 ```sh
 export REMBRANE_WHATSAPP_APP_SECRET='<Meta app secret>'
@@ -264,6 +267,12 @@ active canonical membership, and atomically reserves replay protection.
 The three secrets must be distinct, at least 32 bytes each, and supplied by a
 deployment secret manager. Never store them in canonical memory, sender
 bindings, committed Compose files, or URLs.
+
+The gateway acknowledges a new message only after active sender resolution,
+replay reservation, and authenticated encryption into the tenant inbox commit
+in one SQLite transaction. Configure the same `REMBRANE_KEY_PROVIDER` profile
+used by trusted Rembrane workers. Environment key material remains a local
+pre-alpha development option, not a production deployment recommendation.
 
 An owner or administrator can bind an active member without placing raw phone
 identifiers in process arguments:
