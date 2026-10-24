@@ -84,6 +84,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Added composite repository capabilities that prevent context, checkpoint,
   and travel read adapters from compiling unless they also implement their
   corresponding disclosure-receipt persistence port.
+- Added a strict production-readiness orchestrator covering offline security,
+  dependency-enabled Rust/Postman, live PostgreSQL RLS, and container gates,
+  with explicit failure for unavailable required infrastructure.
 - A versioned per-workspace retention policy contract with separate periods
   for memory, checkpoints, travel research, disclosures, canonical events, and
   administrative audit, including bounded expiry and legal-hold overrides.

@@ -553,6 +553,8 @@ This roadmap describes sequencing, not release dates.
 
 No stable release until:
 
+- [x] Provide one strict production-readiness command that fails on unavailable
+  dependency, Postman, PostgreSQL, or container gates rather than skipping.
 - [x] Tenant-isolation tests cover every implemented adapter and transport
   read path.
 - [x] Threat model and recovery model are published.

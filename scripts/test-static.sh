@@ -52,6 +52,7 @@ for deployment_file in \
     scripts/test-kotlin-sdk.sh \
     scripts/check-postgres-rls.sh \
     scripts/test-postgres-rls.sh \
+    scripts/check-production-readiness.sh \
     scripts/verify-provider-registry.sh \
     scripts/sign-provider-registry.sh \
     scripts/verify-provider-registry-signature.sh \
@@ -70,6 +71,7 @@ sh -n scripts/test-swift-sdk.sh
 sh -n scripts/test-kotlin-sdk.sh
 sh -n scripts/check-postgres-rls.sh
 sh -n scripts/test-postgres-rls.sh
+sh -n scripts/check-production-readiness.sh
 sh -n scripts/verify-provider-registry.sh
 sh -n scripts/sign-provider-registry.sh
 sh -n scripts/verify-provider-registry-signature.sh
