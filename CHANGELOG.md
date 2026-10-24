@@ -71,6 +71,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   headers, authorizes every request before protocol dispatch, produces safe
   RFC 9728 bearer challenges, and maps duplicate or exhausted sessions to
   explicit bounded transport outcomes.
+- Required exact bounded Host allowlisting at the remote MCP HTTP gate to
+  reject DNS-rebinding requests before bearer verification or SDK dispatch.
 - A versioned per-workspace retention policy contract with separate periods
   for memory, checkpoints, travel research, disclosures, canonical events, and
   administrative audit, including bounded expiry and legal-hold overrides.

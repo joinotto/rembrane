@@ -128,6 +128,8 @@ This roadmap describes sequencing, not release dates.
     - [x] Add a framework-neutral HTTP gate that validates the session header,
       calls the hardened lifecycle before SDK dispatch, and emits bounded
       401/403/409/503 response policy with an RFC 9728 bearer challenge.
+    - [x] Require an explicit bounded `Host` allowlist at the outer gate to
+      reject DNS-rebinding traffic before authentication or MCP dispatch.
   - [x] Allow the shared MCP handler service to initialize canonical
     subject/client/workspace identity exclusively from verified remote claims.
   - [x] Bind remote sessions to issuer, resource, canonical identity,

@@ -15,6 +15,7 @@ pub const MCP_SESSION_HEADER: &str = "Mcp-Session-Id";
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct RemoteMcpHttpRequest<'request> {
     pub authorization: Option<&'request str>,
+    pub host: Option<&'request str>,
     pub origin: Option<&'request str>,
     pub session_id: Option<&'request str>,
 }
@@ -29,6 +30,7 @@ pub struct RemoteMcpHttpRejection {
 pub struct RemoteMcpHttpGate {
     sessions: RemoteSessionRegistry,
     resource_metadata_url: String,
+    allowed_hosts: Vec<String>,
 }
 
 impl RemoteMcpHttpGate {
@@ -40,6 +42,7 @@ impl RemoteMcpHttpGate {
     pub fn new(
         maximum_sessions: usize,
         resource_metadata_url: impl Into<String>,
+        allowed_hosts: &[&str],
     ) -> Result<Self, RemoteMcpHttpRejection> {
         let resource_metadata_url = resource_metadata_url.into();
         if !resource_metadata_url.starts_with("https://")
@@ -51,11 +54,26 @@ impl RemoteMcpHttpGate {
         {
             return Err(Self::forbidden());
         }
+        if allowed_hosts.is_empty()
+            || allowed_hosts.len() > 32
+            || allowed_hosts
+                .iter()
+                .any(|host| !Self::valid_authority(host))
+        {
+            return Err(Self::forbidden());
+        }
+        let mut allowed_hosts = allowed_hosts
+            .iter()
+            .map(|host| (*host).to_owned())
+            .collect::<Vec<_>>();
+        allowed_hosts.sort();
+        allowed_hosts.dedup();
         let sessions =
             RemoteSessionRegistry::new(maximum_sessions).map_err(|_| Self::capacity_exceeded())?;
         Ok(Self {
             sessions,
             resource_metadata_url,
+            allowed_hosts,
         })
     }
 
@@ -74,6 +92,7 @@ impl RemoteMcpHttpGate {
     where
         Verifier: RemoteTokenVerifier,
     {
+        self.require_allowed_host(request.host)?;
         let session_id = Self::session_id(request.session_id)?;
         self.sessions
             .authorize_and_establish_for_http(
@@ -104,6 +123,7 @@ impl RemoteMcpHttpGate {
     where
         Verifier: RemoteTokenVerifier,
     {
+        self.require_allowed_host(request.host)?;
         let session_id = Self::session_id(request.session_id)?;
         self.sessions
             .authorize_request_for_http(
@@ -133,6 +153,7 @@ impl RemoteMcpHttpGate {
     where
         Verifier: RemoteTokenVerifier,
     {
+        self.require_allowed_host(request.host)?;
         let session_id = Self::session_id(request.session_id)?;
         self.sessions
             .authorize_and_terminate_for_http(
@@ -149,6 +170,25 @@ impl RemoteMcpHttpGate {
         value
             .ok_or_else(Self::forbidden)
             .and_then(|value| RemoteSessionId::new(value).map_err(|_| Self::forbidden()))
+    }
+
+    fn require_allowed_host(&self, host: Option<&str>) -> Result<(), RemoteMcpHttpRejection> {
+        let host = host.ok_or_else(Self::forbidden)?;
+        if self.allowed_hosts.iter().any(|allowed| allowed == host) {
+            Ok(())
+        } else {
+            Err(Self::forbidden())
+        }
+    }
+
+    fn valid_authority(value: &str) -> bool {
+        !value.is_empty()
+            && value.len() <= 255
+            && !value.bytes().any(|byte| {
+                byte.is_ascii_whitespace()
+                    || byte.is_ascii_control()
+                    || matches!(byte, b'/' | b'\\' | b'"' | b'\'' | b'@')
+            })
     }
 
     fn rejection(&self, error: RemoteSessionHttpError) -> RemoteMcpHttpRejection {
@@ -229,6 +269,7 @@ mod tests {
     fn request<'a>(token: &'a str, session: &'a str) -> RemoteMcpHttpRequest<'a> {
         RemoteMcpHttpRequest {
             authorization: Some(token),
+            host: Some("memory.example.test"),
             origin: Some("https://agent.example.test"),
             session_id: Some(session),
         }
@@ -247,6 +288,7 @@ mod tests {
         let mut gate = RemoteMcpHttpGate::new(
             1,
             "https://memory.example.test/.well-known/oauth-protected-resource/mcp",
+            &["memory.example.test"],
         )
         .expect("gate should be valid");
         let session = "session_0123456789abcdef";
@@ -296,9 +338,30 @@ mod tests {
 
     #[test]
     fn gate_rejects_unsafe_challenge_and_session_values() {
-        assert!(RemoteMcpHttpGate::new(1, "http://memory.example.test/metadata").is_err());
         assert!(
-            RemoteMcpHttpGate::new(1, "https://memory.example.test/metadata\" injected").is_err()
+            RemoteMcpHttpGate::new(
+                1,
+                "http://memory.example.test/metadata",
+                &["memory.example.test"],
+            )
+            .is_err()
+        );
+        assert!(
+            RemoteMcpHttpGate::new(
+                1,
+                "https://memory.example.test/metadata\" injected",
+                &["memory.example.test"],
+            )
+            .is_err()
+        );
+        assert!(RemoteMcpHttpGate::new(1, "https://memory.example.test/metadata", &[]).is_err());
+        assert!(
+            RemoteMcpHttpGate::new(
+                1,
+                "https://memory.example.test/metadata",
+                &["memory.example.test/path"],
+            )
+            .is_err()
         );
 
         let verifier = Verifier;
@@ -308,13 +371,18 @@ mod tests {
             "https://memory.example.test/mcp",
         );
         let authorization = RemoteHttpAuthorization::new(&authenticator, &[]);
-        let mut gate =
-            RemoteMcpHttpGate::new(1, "https://memory.example.test/metadata").expect("valid gate");
+        let mut gate = RemoteMcpHttpGate::new(
+            1,
+            "https://memory.example.test/metadata",
+            &["memory.example.test"],
+        )
+        .expect("valid gate");
         let rejection = gate
             .establish(
                 &authorization,
                 RemoteMcpHttpRequest {
                     authorization: Some("Bearer workspace-one"),
+                    host: Some("memory.example.test"),
                     origin: None,
                     session_id: Some("invalid session"),
                 },
@@ -322,5 +390,19 @@ mod tests {
             )
             .expect_err("unsafe session header must fail");
         assert_eq!(rejection.status, 403);
+
+        let hostile_host = gate
+            .establish(
+                &authorization,
+                RemoteMcpHttpRequest {
+                    authorization: Some("Bearer workspace-one"),
+                    host: Some("attacker.example.test"),
+                    origin: None,
+                    session_id: Some("session_0123456789abcdef"),
+                },
+                1_000,
+            )
+            .expect_err("untrusted host must fail before session creation");
+        assert_eq!(hostile_host.status, 403);
     }
 }
