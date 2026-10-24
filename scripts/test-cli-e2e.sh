@@ -114,6 +114,14 @@ printf '%s\n' "$generic_config" | jq -e \
         and (.requiredEnvironment | index("REMBRANE_WORKSPACE_KEY_HEX"))' \
     >/dev/null
 
+provider_registry=$("$rembrane_binary" providers list)
+printf '%s\n' "$provider_registry" | jq -e \
+    '.schemaVersion == 1
+        and (.providers | length >= 1)
+        and ([.providers[].id] | index("rembrane.native"))
+        and all(.providers[]; has("plaintextProcessing"))
+        and all(.providers[]; has("conformance"))' >/dev/null
+
 "$rembrane_binary" restore \
     --input "$backup" \
     --database "$restored_database" \

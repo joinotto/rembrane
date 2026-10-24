@@ -42,6 +42,7 @@ fn run(arguments: Vec<String>) -> Result<(), String> {
         Some("restore") => restore(&arguments[1..]),
         Some("fingerprint-git") => fingerprint_git(&arguments[1..]),
         Some("mcp-config") => print_mcp_config(&arguments[1..]),
+        Some("providers") => providers(&arguments[1..]),
         Some("remember") => remember(&arguments[1..]),
         Some("recall") => recall(&arguments[1..]),
         Some("correct") => correct(&arguments[1..]),
@@ -50,6 +51,20 @@ fn run(arguments: Vec<String>) -> Result<(), String> {
             print_help();
             Ok(())
         }
+    }
+}
+
+const PROVIDER_REGISTRY: &str = include_str!("../../../spec/provider-registry.json");
+
+fn providers(arguments: &[String]) -> Result<(), String> {
+    match arguments.first().map(String::as_str) {
+        Some("list") if arguments.len() == 1 => {
+            print!("{PROVIDER_REGISTRY}");
+            Ok(())
+        }
+        Some("list") => Err("providers list does not accept additional arguments".to_owned()),
+        Some(command) => Err(format!("unknown providers command: {command}")),
+        None => Err("providers requires a command; supported command: list".to_owned()),
     }
 }
 
@@ -976,6 +991,7 @@ fn print_help() {
            rembrane restore --input <path> --database <new-path> \
              --principal <id> --workspace <id>\n\
            rembrane fingerprint-git --repository <path>\n\
+           rembrane providers list\n\
            rembrane mcp-config --client <codex|claude-code|generic> \
              --server-binary <path>\n\
            rembrane remember --database <path> --principal <id> \
@@ -1000,7 +1016,7 @@ mod tests {
 
     use super::{
         EXPORT_MAGIC, claude_mcp_config, codex_mcp_config, format_read_scopes, generic_mcp_config,
-        option, positive_u64, read_export, recall_scope_context, redact_endpoint,
+        option, positive_u64, providers, read_export, recall_scope_context, redact_endpoint,
         requested_memory_scope, write_export,
     };
 
@@ -1028,6 +1044,13 @@ mod tests {
             option(&arguments, "--database").expect("option exists"),
             "memory.db"
         );
+    }
+
+    #[test]
+    fn provider_registry_command_rejects_ambiguous_arguments() {
+        assert!(providers(&[]).is_err());
+        assert!(providers(&["unknown".to_owned()]).is_err());
+        assert!(providers(&["list".to_owned(), "--extra".to_owned()]).is_err());
     }
 
     #[test]

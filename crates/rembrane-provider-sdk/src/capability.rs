@@ -52,15 +52,11 @@ impl ProviderManifest {
     pub fn validate_structure(&self) -> Result<(), ProviderError> {
         if self.id.len() < 2
             || self.id.len() > 255
-            || !self
-                .id
-                .bytes()
-                .enumerate()
-                .all(|(index, byte)| {
-                    byte.is_ascii_lowercase()
-                        || byte.is_ascii_digit()
-                        || (index > 0 && matches!(byte, b'.' | b'_' | b'-'))
-                })
+            || !self.id.bytes().enumerate().all(|(index, byte)| {
+                byte.is_ascii_lowercase()
+                    || byte.is_ascii_digit()
+                    || (index > 0 && matches!(byte, b'.' | b'_' | b'-'))
+            })
         {
             return Err(ProviderError::InvalidConfiguration(
                 "provider id must match ^[a-z0-9][a-z0-9._-]+$".to_owned(),

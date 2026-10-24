@@ -48,6 +48,16 @@ jq -e '
     )
 ' spec/provider-registry.json >/dev/null
 
+if ! rg -F 'include_str!("../../../spec/provider-registry.json")' \
+    apps/rembrane-cli/src/main.rs >/dev/null ||
+    ! rg -F 'Some("providers") => providers(&arguments[1..])' \
+        apps/rembrane-cli/src/main.rs >/dev/null ||
+    ! rg -F 'rembrane providers list' apps/rembrane-cli/src/main.rs >/dev/null
+then
+    echo "CLI provider registry command is inconsistent with the registry artifact" >&2
+    exit 1
+fi
+
 implemented_tools=$(
     sed -n 's/^[[:space:]]*name = "\(rembrane_[a-z_]*\)",$/\1/p' \
         apps/rembrane-mcp/src/main.rs

@@ -52,6 +52,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Structural validation parity between Rust provider manifests and the public
   JSON Schema, including provider IDs, versions, unique capabilities, and
   non-zero limits.
+- `rembrane providers list` for emitting the exact versioned, evidence-backed
+  compatibility registry embedded in a CLI build without resolving or printing
+  provider credentials.
 - Versioned discovery, OpenAPI, and MCP protocol specifications.
 - Tenant-isolated SQLite canonical schema with encrypted-payload metadata.
 - Versioned SQLite initialization with legacy-schema adoption, idempotent

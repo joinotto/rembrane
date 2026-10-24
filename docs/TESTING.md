@@ -39,6 +39,12 @@ disposable provider tenant:
 verify_semantic_provider(&mut provider, "unique-test-namespace")
 ```
 
+Inspect the exact compatibility registry compiled into the local CLI:
+
+```sh
+target/debug/rembrane providers list | jq .
+```
+
 The harness writes and deletes one fixture while checking protocol
 compatibility, exact record versions, workspace isolation, result limits, and
 deletion propagation.

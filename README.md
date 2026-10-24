@@ -171,6 +171,12 @@ target/debug/rembrane mcp-config \
   --server-binary "$PWD/target/debug/rembrane-mcp"
 ```
 
+Inspect the compatibility evidence embedded in this CLI build:
+
+```sh
+target/debug/rembrane providers list | jq .
+```
+
 The generated configuration references protected environment-variable names;
 it never prints their values. The generic output follows the versioned
 `spec/stdio-connection-manifest.schema.json` contract for other apps, bots,
