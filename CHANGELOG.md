@@ -27,6 +27,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Owned propagation of validated content type, response negotiation, and MCP
   protocol version through the same authorization proof as tenant identity and
   exact request bytes.
+- Forward-compatible but bounded `YYYY-MM-DD` validation for optional
+  `MCP-Protocol-Version` values before OAuth work and SDK dispatch.
 - A transport-injectable Mem0 OSS semantic adapter mapping authorized
   projections into HMAC-pseudonymous workspace partitions while preserving
   canonical memory IDs, versions, replacement, bounded ranking, and

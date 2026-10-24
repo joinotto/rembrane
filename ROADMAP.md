@@ -162,6 +162,8 @@ This roadmap describes sequencing, not release dates.
         version headers before authorizing the request body.
       - [x] Require JSON request content and explicit JSON plus event-stream
         response negotiation before OAuth evaluation.
+      - [x] Restrict optional MCP protocol versions to bounded date-shaped
+        tokens before preserving them for SDK dispatch.
     - [x] Provide an owned Axum authorization service that reconstructs
       borrowing authenticators per request and preserves verified tenant
       identity through an in-memory HTTP router.

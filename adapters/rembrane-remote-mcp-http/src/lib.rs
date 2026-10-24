@@ -314,15 +314,29 @@ fn protocol_headers_from_axum(
     require_mcp_accept(accept)?;
     if content_type.is_some_and(|value| value.len() > 256)
         || accept.is_some_and(|value| value.len() > 1_024)
-        || protocol_version.is_some_and(|value| value.len() > 64)
     {
         return Err(RemoteMcpHttpGate::forbidden());
+    }
+    if protocol_version.is_some_and(|value| !valid_protocol_version(value)) {
+        return Err(RemoteMcpHttpRejection {
+            status: 400,
+            www_authenticate: None,
+            retry_after_seconds: None,
+        });
     }
     Ok(RemoteMcpProtocolHeaders {
         content_type: content_type.unwrap_or_default().to_owned(),
         accept: accept.unwrap_or_default().to_owned(),
         protocol_version: protocol_version.map(str::to_owned),
     })
+}
+
+fn valid_protocol_version(value: &str) -> bool {
+    value.len() == 10
+        && value.bytes().enumerate().all(|(index, byte)| match index {
+            4 | 7 => byte == b'-',
+            _ => byte.is_ascii_digit(),
+        })
 }
 
 fn require_json_content_type(value: Option<&str>) -> Result<(), RemoteMcpHttpRejection> {
@@ -1280,6 +1294,21 @@ mod tests {
                 .status,
             406
         );
+
+        headers.insert(
+            ACCEPT,
+            HeaderValue::from_static("application/json, text/event-stream"),
+        );
+        headers.insert(
+            MCP_PROTOCOL_VERSION_HEADER_NAME,
+            HeaderValue::from_static("future-version"),
+        );
+        assert_eq!(
+            request_from_axum_headers(&headers)
+                .expect_err("arbitrary protocol version text must fail")
+                .status,
+            400
+        );
     }
 
     #[test]
@@ -1304,6 +1333,10 @@ mod tests {
         headers.insert(
             ACCEPT,
             HeaderValue::from_static("application/json, text/event-stream"),
+        );
+        headers.insert(
+            MCP_PROTOCOL_VERSION_HEADER_NAME,
+            HeaderValue::from_static("2025-03-26"),
         );
         headers.insert(
             AUTHORIZATION,
@@ -1334,6 +1367,7 @@ mod tests {
             protocol_headers.accept(),
             "application/json, text/event-stream"
         );
+        assert_eq!(protocol_headers.protocol_version(), Some("2025-03-26"));
         assert_eq!(dispatched_body.as_slice(), body);
 
         headers.insert(
