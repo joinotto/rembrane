@@ -9,6 +9,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- Fail-closed REST and local MCP generated-identifier exhaustion handling,
+  preventing saturated counters from reusing memory, event, checkpoint,
+  travel, or disclosure identities.
 - Fail-closed Graphiti request-correlation exhaustion handling that prevents
   long-running provider connections from wrapping and reusing request IDs.
 - PostgreSQL authenticated channel replay, active-member sender bindings, and

@@ -126,6 +126,8 @@ This roadmap describes sequencing, not release dates.
   - [x] Wire configured cipher selection through CLI, REST, MCP, generated
     agent configuration, and privacy diagnostics.
 - [x] Retrieve minimal context through local stdio MCP.
+- [x] Fail closed when REST or local MCP generated-identifier sequences are
+  exhausted instead of reusing saturated memory, event, or disclosure IDs.
 - [x] Rank canonical context by deterministic local query relevance.
 - [x] Enforce administrator-configured connection read-scope allowlists.
 - [x] Bind write permissions to exact administrator-configured scopes.

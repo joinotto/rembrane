@@ -432,8 +432,7 @@ impl RembraneMcp {
             .state
             .lock()
             .map_err(|_| McpError::internal_error("state lock failed", None))?;
-        state.next_id = state.next_id.saturating_add(1);
-        let suffix = state.next_id;
+        let suffix = next_id(&mut state)?;
         let requested_scopes = request_scopes(
             &state.read_scopes,
             parameters.domain.as_deref(),
@@ -504,7 +503,7 @@ impl RembraneMcp {
             vec![WritePermission::CreateMemory],
         )?;
         let previous_sequence = current_sequence(&state)?;
-        let suffix = next_id(&mut state);
+        let suffix = next_id(&mut state)?;
         let memory = RememberPreferenceService::new(&mut state.store)
             .execute(RememberPreferenceCommand {
                 grant: grants.write,
@@ -552,7 +551,7 @@ impl RembraneMcp {
             vec![WritePermission::ReviseMemory],
         )?;
         let previous_sequence = current_sequence(&state)?;
-        let suffix = next_id(&mut state);
+        let suffix = next_id(&mut state)?;
         let memory = MemoryLifecycleService::new(&mut state.store)
             .revise(ReviseMemoryCommand {
                 grant: grants.write,
@@ -600,7 +599,7 @@ impl RembraneMcp {
             vec![WritePermission::DeleteMemory],
         )?;
         let previous_sequence = current_sequence(&state)?;
-        let suffix = next_id(&mut state);
+        let suffix = next_id(&mut state)?;
         let memory = MemoryLifecycleService::new(&mut state.store)
             .delete(DeleteMemoryCommand {
                 grant: grants.write,
@@ -643,7 +642,7 @@ impl RembraneMcp {
             vec![WritePermission::ProposeMemory],
         )?;
         let previous_sequence = current_sequence(&state)?;
-        let suffix = next_id(&mut state);
+        let suffix = next_id(&mut state)?;
         let content = if let Some(entity_id) = parameters.entity_id {
             format!("[entity:{entity_id}] {}", parameters.summary)
         } else {
@@ -695,7 +694,7 @@ impl RembraneMcp {
             vec![WritePermission::WriteCheckpoint],
         )?;
         let previous_sequence = current_sequence(&state)?;
-        let suffix = next_id(&mut state);
+        let suffix = next_id(&mut state)?;
         let next_steps = parameters.next_steps.unwrap_or_default();
         let blockers = parameters.blockers.unwrap_or_default();
         let checkpoint = if let Some(expected_version) = parameters.expected_version {
@@ -782,7 +781,7 @@ impl RembraneMcp {
             vec![WritePermission::CreateTrip],
         )?;
         let previous_sequence = current_sequence(&state)?;
-        let suffix = next_id(&mut state);
+        let suffix = next_id(&mut state)?;
         let date_window =
             TravelDateWindow::new(parameters.depart_not_before, parameters.return_not_after)
                 .map_err(|_| McpError::invalid_params("invalid trip date window", None))?;
@@ -843,7 +842,7 @@ impl RembraneMcp {
             vec![WritePermission::CaptureBookingResearch],
         )?;
         let previous_sequence = current_sequence(&state)?;
-        let suffix = next_id(&mut state);
+        let suffix = next_id(&mut state)?;
         let research = BookingResearch::new(
             BookingResearchId::new(format!("research_{suffix}")),
             state.workspace_id.clone(),
@@ -896,7 +895,7 @@ impl RembraneMcp {
             vec![WritePermission::ReviseTrip],
         )?;
         let previous_sequence = current_sequence(&state)?;
-        let suffix = next_id(&mut state);
+        let suffix = next_id(&mut state)?;
         let participant_id = TripParticipantId::new(format!("participant_{suffix}"));
         let participant = TripParticipant::new(participant_id.clone(), parameters.label)
             .map_err(|_| McpError::invalid_params("invalid trip participant", None))?;
@@ -946,7 +945,7 @@ impl RembraneMcp {
             vec![WritePermission::ReviseTrip],
         )?;
         let previous_sequence = current_sequence(&state)?;
-        let suffix = next_id(&mut state);
+        let suffix = next_id(&mut state)?;
         let constraint_id = TripConstraintId::new(format!("constraint_{suffix}"));
         let constraint = TripConstraint::new(
             constraint_id.clone(),
@@ -999,7 +998,7 @@ impl RembraneMcp {
             vec![WritePermission::ReviseTrip],
         )?;
         let previous_sequence = current_sequence(&state)?;
-        let suffix = next_id(&mut state);
+        let suffix = next_id(&mut state)?;
         let decision_id = TripDecisionId::new(format!("decision_{suffix}"));
         let decision = TripDecision::new(
             decision_id.clone(),
@@ -1048,7 +1047,8 @@ impl RembraneMcp {
             }],
             Vec::new(),
         )?;
-        let disclosure_id = DisclosureId::new(format!("disclosure_{}", next_id(&mut state)));
+        let disclosure_id =
+            DisclosureId::new(format!("disclosure_{}", next_id(&mut state)?));
         let context = TravelContextService::new(&mut state.store)
             .resolve(&ResolveTravelContextCommand {
                 grant: grants.read,
@@ -1100,7 +1100,8 @@ impl RembraneMcp {
             }],
             Vec::new(),
         )?;
-        let disclosure_id = DisclosureId::new(format!("disclosure_{}", next_id(&mut state)));
+        let disclosure_id =
+            DisclosureId::new(format!("disclosure_{}", next_id(&mut state)?));
         let checkpoint = CheckpointService::new(&mut state.store)
             .resume(&ResumeActivityCommand {
                 grant: grants.read,
@@ -1383,9 +1384,15 @@ fn current_sequence(state: &State) -> Result<u64, McpError> {
         .map_err(application_error)
 }
 
-fn next_id(state: &mut State) -> u128 {
-    state.next_id = state.next_id.saturating_add(1);
-    state.next_id
+fn next_id(state: &mut State) -> Result<u128, McpError> {
+    advance_identifier(&mut state.next_id)
+        .ok_or_else(|| McpError::internal_error("identifier sequence exhausted", None))
+}
+
+fn advance_identifier(current: &mut u128) -> Option<u128> {
+    let next = current.checked_add(1)?;
+    *current = next;
+    Some(next)
 }
 
 fn mutation_response(
@@ -1464,7 +1471,7 @@ pub async fn run_stdio() -> Result<()> {
 mod tests {
     use rembrane_domain::{EntityId, ReadScope};
 
-    use super::request_scopes;
+    use super::{advance_identifier, request_scopes};
 
     #[test]
     fn context_requests_do_not_gain_unconfigured_global_access() {
@@ -1476,5 +1483,14 @@ mod tests {
             request_scopes(&allowed, None, Some("project_01"), None),
             allowed
         );
+    }
+
+    #[test]
+    fn generated_identifier_sequence_fails_closed_at_exhaustion() {
+        let mut current = u128::MAX - 1;
+        assert_eq!(advance_identifier(&mut current), Some(u128::MAX));
+        assert_eq!(advance_identifier(&mut current), None);
+        assert_eq!(advance_identifier(&mut current), None);
+        assert_eq!(current, u128::MAX);
     }
 }

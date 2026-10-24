@@ -808,6 +808,16 @@ async fn oauth_protected_resource(
         .ok_or_else(ApiError::not_found)
 }
 
+fn next_id(runtime: &mut Runtime) -> Result<u128, ApiError> {
+    advance_identifier(&mut runtime.next_id).ok_or_else(ApiError::internal)
+}
+
+fn advance_identifier(current: &mut u128) -> Option<u128> {
+    let next = current.checked_add(1)?;
+    *current = next;
+    Some(next)
+}
+
 async fn create_trip(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -824,8 +834,7 @@ async fn create_trip(
     {
         return Err(ApiError::access_denied());
     }
-    runtime.next_id = runtime.next_id.saturating_add(1);
-    let suffix = runtime.next_id;
+    let suffix = next_id(&mut runtime)?;
     let date_window = TravelDateWindow::new(request.depart_not_before, request.return_not_after)
         .map_err(|_| ApiError::invalid_request())?;
     let trip = Trip::new(
@@ -886,8 +895,7 @@ async fn capture_booking_research(
     {
         return Err(ApiError::access_denied());
     }
-    runtime.next_id = runtime.next_id.saturating_add(1);
-    let suffix = runtime.next_id;
+    let suffix = next_id(&mut runtime)?;
     let research = BookingResearch::new(
         BookingResearchId::new(format!("research_{suffix}")),
         runtime.write_grant.workspace_id.clone(),
@@ -943,8 +951,7 @@ async fn add_trip_participant(
     {
         return Err(ApiError::access_denied());
     }
-    runtime.next_id = runtime.next_id.saturating_add(1);
-    let suffix = runtime.next_id;
+    let suffix = next_id(&mut runtime)?;
     let participant_id = TripParticipantId::new(format!("participant_{suffix}"));
     let participant = TripParticipant::new(participant_id.clone(), request.label)
         .map_err(|_| ApiError::invalid_request())?;
@@ -994,8 +1001,7 @@ async fn add_trip_constraint(
     {
         return Err(ApiError::access_denied());
     }
-    runtime.next_id = runtime.next_id.saturating_add(1);
-    let suffix = runtime.next_id;
+    let suffix = next_id(&mut runtime)?;
     let constraint_id = TripConstraintId::new(format!("constraint_{suffix}"));
     let constraint = TripConstraint::new(
         constraint_id.clone(),
@@ -1048,8 +1054,7 @@ async fn record_trip_decision(
     {
         return Err(ApiError::access_denied());
     }
-    runtime.next_id = runtime.next_id.saturating_add(1);
-    let suffix = runtime.next_id;
+    let suffix = next_id(&mut runtime)?;
     let decision_id = TripDecisionId::new(format!("decision_{suffix}"));
     let decision = TripDecision::new(
         decision_id.clone(),
@@ -1106,8 +1111,7 @@ async fn resolve_travel_context(
     }) {
         return Err(ApiError::access_denied());
     }
-    runtime.next_id = runtime.next_id.saturating_add(1);
-    let disclosure_id = DisclosureId::new(format!("disclosure_{}", runtime.next_id));
+    let disclosure_id = DisclosureId::new(format!("disclosure_{}", next_id(&mut runtime)?));
     let read_grant = runtime.read_grant.clone();
     let context = TravelContextService::new(&mut runtime.store)
         .resolve(&ResolveTravelContextCommand {
@@ -1166,8 +1170,7 @@ async fn resolve_context(
     {
         return Err(ApiError::access_denied());
     }
-    runtime.next_id = runtime.next_id.saturating_add(1);
-    let suffix = runtime.next_id;
+    let suffix = next_id(&mut runtime)?;
     let read_grant = runtime.read_grant.clone();
     if !request_is_within_grant(&request, &read_grant) {
         return Err(ApiError::access_denied());
@@ -1624,8 +1627,8 @@ mod tests {
     use rembrane_domain::{ClientId, EntityId, PrincipalId, ReadGrant, ReadScope, WorkspaceId};
 
     use super::{
-        ResolveRequest, request_is_within_grant, selected_api_token_reference, token_matches,
-        valid_api_token,
+        ResolveRequest, advance_identifier, request_is_within_grant, selected_api_token_reference,
+        token_matches, valid_api_token,
     };
 
     #[test]
@@ -1677,5 +1680,14 @@ mod tests {
         };
 
         assert!(!request_is_within_grant(&request, &grant));
+    }
+
+    #[test]
+    fn generated_identifier_sequence_fails_closed_at_exhaustion() {
+        let mut current = u128::MAX - 1;
+        assert_eq!(advance_identifier(&mut current), Some(u128::MAX));
+        assert_eq!(advance_identifier(&mut current), None);
+        assert_eq!(advance_identifier(&mut current), None);
+        assert_eq!(current, u128::MAX);
     }
 }
