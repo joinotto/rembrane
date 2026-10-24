@@ -15,17 +15,19 @@ use std::path::Path;
 use rembrane_application::{
     AdministrativeAuditRepository, ApplicationError, InvitationRepository, KeyRotationRepository,
     MAX_ADMINISTRATIVE_AUDIT_PAGE, MemberLifecycleRepository, MemberScopeGrantRepository,
-    MembershipRepository, MemoryRepository, ShareProposalRepository, WorkspaceRepository,
+    MembershipRepository, MemoryRepository, RetentionRepository, ShareProposalRepository,
+    WorkspaceRepository,
 };
 use rembrane_codec::decode_memory;
 use rembrane_crypto::{EncryptedPayload, EncryptionContext, PayloadPurpose, RecordCipher};
 use rembrane_domain::{
     ActivityId, AdministrativeAction, AdministrativeAuditEvent, AdministrativeAuditEventId,
     AdministrativeTargetKind, EntityId, Invitation, InvitationId, InvitationStatus, KeyRotationId,
-    KeyRotationReceipt, KeyRotationStatus, MemberScopeGrant, Membership, MembershipStatus,
-    MemoryId, MemoryRecord, MemoryScope, MemoryShareProposal, Principal, PrincipalId, ProviderId,
-    ReadScope, ShareProposalId, ShareProposalStatus, Workspace, WorkspaceId, WorkspaceKeyRotation,
-    WorkspaceKind, WorkspaceRole,
+    KeyRotationReceipt, KeyRotationStatus, LegalHoldId, LegalHoldStatus, MemberScopeGrant,
+    Membership, MembershipStatus, MemoryId, MemoryRecord, MemoryScope, MemoryShareProposal,
+    Principal, PrincipalId, ProviderId, ReadScope, RetentionPeriod, RetentionResource,
+    ShareProposalId, ShareProposalStatus, Workspace, WorkspaceId, WorkspaceKeyRotation,
+    WorkspaceKind, WorkspaceLegalHold, WorkspaceRetentionPolicy, WorkspaceRole,
 };
 use rusqlite::{Connection, ErrorCode, OptionalExtension, params};
 
@@ -57,7 +59,9 @@ const KEY_ROTATION_RECEIPT_MIGRATION: &str =
     include_str!("../../../migrations/sqlite/0014_key_rotation_receipts.sql");
 const ADMINISTRATIVE_AUDIT_MIGRATION: &str =
     include_str!("../../../migrations/sqlite/0015_administrative_audit.sql");
-const CURRENT_SCHEMA_VERSION: u32 = 15;
+const RETENTION_AND_LEGAL_HOLDS_MIGRATION: &str =
+    include_str!("../../../migrations/sqlite/0016_retention_and_legal_holds.sql");
+const CURRENT_SCHEMA_VERSION: u32 = 16;
 const CANONICAL_TABLES: [&str; 10] = [
     "activity_checkpoints",
     "disclosed_memories",
@@ -158,6 +162,252 @@ impl<C> AdministrativeAuditRepository for SqliteStore<C> {
             .map_err(|_| ApplicationError::StorageUnavailable)
         })
         .collect()
+    }
+}
+
+impl<C> RetentionRepository for SqliteStore<C> {
+    fn find_retention_policy(
+        &self,
+        workspace_id: &WorkspaceId,
+    ) -> Result<Option<WorkspaceRetentionPolicy>, ApplicationError> {
+        self.connection
+            .query_row(
+                "SELECT version, user_memory_days, activity_checkpoint_days,
+                        travel_research_days, disclosure_receipt_days,
+                        canonical_event_days, administrative_audit_days
+                 FROM workspace_retention_policies WHERE workspace_id = ?1",
+                [workspace_id.as_str()],
+                |row| {
+                    Ok((
+                        row.get::<_, u64>(0)?,
+                        row.get::<_, Option<u32>>(1)?,
+                        row.get::<_, Option<u32>>(2)?,
+                        row.get::<_, Option<u32>>(3)?,
+                        row.get::<_, Option<u32>>(4)?,
+                        row.get::<_, Option<u32>>(5)?,
+                        row.get::<_, Option<u32>>(6)?,
+                    ))
+                },
+            )
+            .optional()
+            .map_err(|_| ApplicationError::StorageUnavailable)?
+            .map(
+                |(version, memory, checkpoint, travel, disclosure, event, audit)| {
+                    WorkspaceRetentionPolicy::new(
+                        workspace_id.clone(),
+                        version,
+                        retention_period(memory)?,
+                        retention_period(checkpoint)?,
+                        retention_period(travel)?,
+                        retention_period(disclosure)?,
+                        retention_period(event)?,
+                        retention_period(audit)?,
+                    )
+                    .map_err(|_| ApplicationError::StorageUnavailable)
+                },
+            )
+            .transpose()
+    }
+
+    fn replace_retention_policy(
+        &mut self,
+        policy: WorkspaceRetentionPolicy,
+        expected_version: Option<u64>,
+    ) -> Result<(), ApplicationError> {
+        let values = [
+            policy.period(RetentionResource::UserMemory).days_value(),
+            policy
+                .period(RetentionResource::ActivityCheckpoint)
+                .days_value(),
+            policy
+                .period(RetentionResource::TravelResearch)
+                .days_value(),
+            policy
+                .period(RetentionResource::DisclosureReceipt)
+                .days_value(),
+            policy
+                .period(RetentionResource::CanonicalEvent)
+                .days_value(),
+            policy
+                .period(RetentionResource::AdministrativeAudit)
+                .days_value(),
+        ];
+        let changed = match expected_version {
+            None if policy.version() == 1 => self.connection.execute(
+                "INSERT INTO workspace_retention_policies VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                params![
+                    policy.workspace_id().as_str(),
+                    policy.version(),
+                    values[0],
+                    values[1],
+                    values[2],
+                    values[3],
+                    values[4],
+                    values[5]
+                ],
+            ),
+            Some(expected) if policy.version() == expected.saturating_add(1) => {
+                self.connection.execute(
+                    "UPDATE workspace_retention_policies SET version=?2, user_memory_days=?3,
+                 activity_checkpoint_days=?4, travel_research_days=?5,
+                 disclosure_receipt_days=?6, canonical_event_days=?7,
+                 administrative_audit_days=?8 WHERE workspace_id=?1 AND version=?9",
+                    params![
+                        policy.workspace_id().as_str(),
+                        policy.version(),
+                        values[0],
+                        values[1],
+                        values[2],
+                        values[3],
+                        values[4],
+                        values[5],
+                        expected
+                    ],
+                )
+            }
+            None | Some(_) => return Err(ApplicationError::VersionConflict),
+        }
+        .map_err(map_write_error)?;
+        if changed != 1 {
+            return Err(ApplicationError::VersionConflict);
+        }
+        Ok(())
+    }
+
+    fn find_legal_hold(
+        &self,
+        workspace_id: &WorkspaceId,
+        hold_id: &LegalHoldId,
+    ) -> Result<Option<WorkspaceLegalHold>, ApplicationError> {
+        self.connection
+            .query_row(
+                "SELECT placed_by, placed_at_epoch_seconds, status, version,
+                        released_by, released_at_epoch_seconds
+                 FROM workspace_legal_holds WHERE workspace_id=?1 AND id=?2",
+                params![workspace_id.as_str(), hold_id.as_str()],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, u64>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, u64>(3)?,
+                        row.get::<_, Option<String>>(4)?,
+                        row.get::<_, Option<u64>>(5)?,
+                    ))
+                },
+            )
+            .optional()
+            .map_err(|_| ApplicationError::StorageUnavailable)?
+            .map(
+                |(placed_by, placed_at, status, version, released_by, released_at)| {
+                    WorkspaceLegalHold::restore(
+                        hold_id.clone(),
+                        workspace_id.clone(),
+                        PrincipalId::new(placed_by),
+                        placed_at,
+                        legal_hold_status(&status)?,
+                        version,
+                        released_by.map(PrincipalId::new),
+                        released_at,
+                    )
+                    .map_err(|_| ApplicationError::StorageUnavailable)
+                },
+            )
+            .transpose()
+    }
+
+    fn list_active_legal_holds(
+        &self,
+        workspace_id: &WorkspaceId,
+    ) -> Result<Vec<WorkspaceLegalHold>, ApplicationError> {
+        let mut statement = self
+            .connection
+            .prepare(
+                "SELECT id FROM workspace_legal_holds
+             WHERE workspace_id=?1 AND status='active' ORDER BY id",
+            )
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        let ids = statement
+            .query_map([workspace_id.as_str()], |row| row.get::<_, String>(0))
+            .map_err(|_| ApplicationError::StorageUnavailable)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        ids.into_iter()
+            .map(|id| {
+                self.find_legal_hold(workspace_id, &LegalHoldId::new(id))?
+                    .ok_or(ApplicationError::StorageUnavailable)
+            })
+            .collect()
+    }
+
+    fn insert_legal_hold(&mut self, hold: WorkspaceLegalHold) -> Result<(), ApplicationError> {
+        self.connection
+            .execute(
+                "INSERT INTO workspace_legal_holds VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
+                params![
+                    hold.workspace_id().as_str(),
+                    hold.id().as_str(),
+                    hold.placed_by().as_str(),
+                    hold.placed_at_epoch_seconds(),
+                    legal_hold_status_label(hold.status()),
+                    hold.version(),
+                    hold.released_by().map(PrincipalId::as_str),
+                    hold.released_at_epoch_seconds()
+                ],
+            )
+            .map_err(map_write_error)?;
+        Ok(())
+    }
+
+    fn replace_legal_hold(
+        &mut self,
+        hold: WorkspaceLegalHold,
+        expected_version: u64,
+    ) -> Result<(), ApplicationError> {
+        if hold.version() != expected_version.saturating_add(1) {
+            return Err(ApplicationError::VersionConflict);
+        }
+        let changed = self
+            .connection
+            .execute(
+                "UPDATE workspace_legal_holds SET status=?3, version=?4, released_by=?5,
+             released_at_epoch_seconds=?6 WHERE workspace_id=?1 AND id=?2 AND version=?7",
+                params![
+                    hold.workspace_id().as_str(),
+                    hold.id().as_str(),
+                    legal_hold_status_label(hold.status()),
+                    hold.version(),
+                    hold.released_by().map(PrincipalId::as_str),
+                    hold.released_at_epoch_seconds(),
+                    expected_version
+                ],
+            )
+            .map_err(map_write_error)?;
+        if changed != 1 {
+            return Err(ApplicationError::VersionConflict);
+        }
+        Ok(())
+    }
+}
+
+fn retention_period(days: Option<u32>) -> Result<RetentionPeriod, ApplicationError> {
+    days.map_or(Ok(RetentionPeriod::Forever), |days| {
+        RetentionPeriod::days(days).map_err(|_| ApplicationError::StorageUnavailable)
+    })
+}
+
+fn legal_hold_status(value: &str) -> Result<LegalHoldStatus, ApplicationError> {
+    match value {
+        "active" => Ok(LegalHoldStatus::Active),
+        "released" => Ok(LegalHoldStatus::Released),
+        _ => Err(ApplicationError::StorageUnavailable),
+    }
+}
+
+const fn legal_hold_status_label(status: LegalHoldStatus) -> &'static str {
+    match status {
+        LegalHoldStatus::Active => "active",
+        LegalHoldStatus::Released => "released",
     }
 }
 
@@ -323,6 +573,12 @@ fn migrate(connection: &mut Connection) -> Result<(), ApplicationError> {
     if version == 14 {
         transaction
             .execute_batch(ADMINISTRATIVE_AUDIT_MIGRATION)
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        version = 15;
+    }
+    if version == 15 {
+        transaction
+            .execute_batch(RETENTION_AND_LEGAL_HOLDS_MIGRATION)
             .map_err(|_| ApplicationError::StorageUnavailable)?;
     }
     transaction

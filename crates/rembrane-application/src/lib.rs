@@ -46,8 +46,8 @@ pub use ports::{
     KnowledgeDirection, KnowledgeGraphMutationRepository, KnowledgeGraphRepository,
     MAX_ADMINISTRATIVE_AUDIT_PAGE, MAX_KNOWLEDGE_NEIGHBOURS, MemberLifecycleRepository,
     MemberScopeGrantRepository, MembershipRepository, MemoryRepository, ProjectionOutboxRepository,
-    ShareProposalMutationRepository, ShareProposalRepository, TravelDisclosureRepository,
-    TripMutationRepository, TripRepository, WorkspaceRepository,
+    RetentionRepository, ShareProposalMutationRepository, ShareProposalRepository,
+    TravelDisclosureRepository, TripMutationRepository, TripRepository, WorkspaceRepository,
 };
 pub use projection_worker::{ProjectionOutcome, ProjectionWorker};
 pub use propose_memory::{ConfirmMemoryCommand, MemoryProposalService, ProposeMemoryCommand};

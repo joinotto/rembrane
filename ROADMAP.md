@@ -324,7 +324,7 @@ This roadmap describes sequencing, not release dates.
     - [x] Define versioned resource-specific retention periods, bounded expiry
       calculation, minimum audit/disclosure relationship, and legal-hold purge
       override semantics.
-    - [ ] Persist policies and legal holds with optimistic versioning.
+    - [x] Persist policies and legal holds with optimistic versioning.
     - [ ] Execute bounded purge plans without deleting held resources or
       append-only security evidence prematurely.
   - [ ] Expose narrowly authorized audit and retention management APIs.

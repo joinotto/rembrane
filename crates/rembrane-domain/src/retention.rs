@@ -36,6 +36,14 @@ impl RetentionPeriod {
             None => false,
         }
     }
+
+    #[must_use]
+    pub const fn days_value(self) -> Option<u32> {
+        match self {
+            Self::Days(days) => Some(days),
+            Self::Forever => None,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

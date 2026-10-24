@@ -18,6 +18,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - A versioned per-workspace retention policy contract with separate periods
   for memory, checkpoints, travel research, disclosures, canonical events, and
   administrative audit, including bounded expiry and legal-hold overrides.
+- Optimistically versioned in-memory and SQLite retention-policy and legal-hold
+  storage with tenant-scoped active-hold lookup.
 - A provider-independent, content-free shared-workspace key-rotation
   aggregate with monotonic generations, removal provenance, explicit pending
   state, and opaque key-provider completion identity.

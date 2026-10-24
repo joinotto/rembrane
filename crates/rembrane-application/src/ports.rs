@@ -2,11 +2,11 @@ use rembrane_domain::{
     ActivityCheckpoint, ActivityId, AdministrativeAuditEvent, BookingResearch, BookingResearchId,
     CanonicalEvent, CheckpointDisclosureReceipt, DisclosureReceipt, EntityId, GraphProjectionJob,
     Invitation, InvitationId, InvitationStatus, KeyRotationId, KeyRotationReceipt, KnowledgeEdge,
-    KnowledgeEdgeId, KnowledgeNode, KnowledgeNodeId, MemberScopeGrant, Membership,
+    KnowledgeEdgeId, KnowledgeNode, KnowledgeNodeId, LegalHoldId, MemberScopeGrant, Membership,
     MembershipStatus, MemoryId, MemoryRecord, MemoryShareProposal, Principal, PrincipalId,
     ProjectionJob, ProjectionJobId, ProjectionStatus, ProviderId, ShareProposalId,
     ShareProposalStatus, TravelDisclosureReceipt, Trip, Workspace, WorkspaceId,
-    WorkspaceKeyRotation,
+    WorkspaceKeyRotation, WorkspaceLegalHold, WorkspaceRetentionPolicy,
 };
 
 use crate::ApplicationError;
@@ -25,6 +25,38 @@ pub trait AdministrativeAuditRepository {
         after_epoch_seconds: u64,
         limit: usize,
     ) -> Result<Vec<AdministrativeAuditEvent>, ApplicationError>;
+}
+
+pub trait RetentionRepository {
+    fn find_retention_policy(
+        &self,
+        workspace_id: &WorkspaceId,
+    ) -> Result<Option<WorkspaceRetentionPolicy>, ApplicationError>;
+
+    fn replace_retention_policy(
+        &mut self,
+        policy: WorkspaceRetentionPolicy,
+        expected_version: Option<u64>,
+    ) -> Result<(), ApplicationError>;
+
+    fn find_legal_hold(
+        &self,
+        workspace_id: &WorkspaceId,
+        hold_id: &LegalHoldId,
+    ) -> Result<Option<WorkspaceLegalHold>, ApplicationError>;
+
+    fn list_active_legal_holds(
+        &self,
+        workspace_id: &WorkspaceId,
+    ) -> Result<Vec<WorkspaceLegalHold>, ApplicationError>;
+
+    fn insert_legal_hold(&mut self, hold: WorkspaceLegalHold) -> Result<(), ApplicationError>;
+
+    fn replace_legal_hold(
+        &mut self,
+        hold: WorkspaceLegalHold,
+        expected_version: u64,
+    ) -> Result<(), ApplicationError>;
 }
 
 pub trait MemoryRepository {

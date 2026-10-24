@@ -8,18 +8,20 @@ use rembrane_application::{
     KeyRotationRepository, KnowledgeDirection, KnowledgeGraphMutationRepository,
     KnowledgeGraphRepository, MAX_ADMINISTRATIVE_AUDIT_PAGE, MAX_KNOWLEDGE_NEIGHBOURS,
     MemberLifecycleRepository, MemberScopeGrantRepository, MembershipRepository, MemoryRepository,
-    ProjectionOutboxRepository, ShareProposalMutationRepository, ShareProposalRepository,
-    TravelDisclosureRepository, TripMutationRepository, TripRepository, WorkspaceRepository,
+    ProjectionOutboxRepository, RetentionRepository, ShareProposalMutationRepository,
+    ShareProposalRepository, TravelDisclosureRepository, TripMutationRepository, TripRepository,
+    WorkspaceRepository,
 };
 use rembrane_domain::{
     ActivityCheckpoint, ActivityId, AdministrativeAuditEvent, BookingResearch, BookingResearchId,
     CanonicalEvent, CheckpointDisclosureReceipt, DisclosureReceipt, EntityId, EventPayload,
     GraphProjectionJob, GraphProjectionResource, Invitation, InvitationId, InvitationStatus,
     KeyRotationId, KeyRotationReceipt, KeyRotationStatus, KnowledgeEdge, KnowledgeEdgeId,
-    KnowledgeNode, KnowledgeNodeId, MemberScopeGrant, Membership, MemoryId, MemoryRecord,
-    MemoryShareProposal, MemoryStatus, Principal, PrincipalId, ProjectionJob, ProjectionJobId,
-    ProjectionOperation, ProjectionStatus, ProviderId, ShareProposalId, ShareProposalStatus,
-    TravelDisclosureReceipt, Trip, Workspace, WorkspaceId, WorkspaceKeyRotation, WorkspaceKind,
+    KnowledgeNode, KnowledgeNodeId, LegalHoldId, LegalHoldStatus, MemberScopeGrant, Membership,
+    MemoryId, MemoryRecord, MemoryShareProposal, MemoryStatus, Principal, PrincipalId,
+    ProjectionJob, ProjectionJobId, ProjectionOperation, ProjectionStatus, ProviderId,
+    ShareProposalId, ShareProposalStatus, TravelDisclosureReceipt, Trip, Workspace, WorkspaceId,
+    WorkspaceKeyRotation, WorkspaceKind, WorkspaceLegalHold, WorkspaceRetentionPolicy,
     WorkspaceRole,
 };
 
@@ -46,6 +48,107 @@ pub struct InMemoryStore {
     key_rotations: Vec<WorkspaceKeyRotation>,
     key_rotation_receipts: Vec<(KeyRotationId, KeyRotationReceipt)>,
     administrative_audit: Vec<AdministrativeAuditEvent>,
+    retention_policies: Vec<WorkspaceRetentionPolicy>,
+    legal_holds: Vec<WorkspaceLegalHold>,
+}
+
+impl RetentionRepository for InMemoryStore {
+    fn find_retention_policy(
+        &self,
+        workspace_id: &WorkspaceId,
+    ) -> Result<Option<WorkspaceRetentionPolicy>, ApplicationError> {
+        Ok(self
+            .retention_policies
+            .iter()
+            .find(|policy| policy.workspace_id() == workspace_id)
+            .cloned())
+    }
+
+    fn replace_retention_policy(
+        &mut self,
+        policy: WorkspaceRetentionPolicy,
+        expected_version: Option<u64>,
+    ) -> Result<(), ApplicationError> {
+        let position = self
+            .retention_policies
+            .iter()
+            .position(|stored| stored.workspace_id() == policy.workspace_id());
+        match (position, expected_version) {
+            (None, None) if policy.version() == 1 => self.retention_policies.push(policy),
+            (Some(index), Some(expected))
+                if self.retention_policies[index].version() == expected
+                    && policy.version() == expected.saturating_add(1) =>
+            {
+                self.retention_policies[index] = policy;
+            }
+            (None, Some(_)) | (Some(_), None | Some(_)) => {
+                return Err(ApplicationError::VersionConflict);
+            }
+            (None, None) => {
+                return Err(ApplicationError::Validation(
+                    "initial retention policy version must be one".to_owned(),
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    fn find_legal_hold(
+        &self,
+        workspace_id: &WorkspaceId,
+        hold_id: &LegalHoldId,
+    ) -> Result<Option<WorkspaceLegalHold>, ApplicationError> {
+        Ok(self
+            .legal_holds
+            .iter()
+            .find(|hold| hold.workspace_id() == workspace_id && hold.id() == hold_id)
+            .cloned())
+    }
+
+    fn list_active_legal_holds(
+        &self,
+        workspace_id: &WorkspaceId,
+    ) -> Result<Vec<WorkspaceLegalHold>, ApplicationError> {
+        Ok(self
+            .legal_holds
+            .iter()
+            .filter(|hold| {
+                hold.workspace_id() == workspace_id && hold.status() == LegalHoldStatus::Active
+            })
+            .cloned()
+            .collect())
+    }
+
+    fn insert_legal_hold(&mut self, hold: WorkspaceLegalHold) -> Result<(), ApplicationError> {
+        if self
+            .legal_holds
+            .iter()
+            .any(|stored| stored.workspace_id() == hold.workspace_id() && stored.id() == hold.id())
+        {
+            return Err(ApplicationError::AlreadyExists);
+        }
+        self.legal_holds.push(hold);
+        Ok(())
+    }
+
+    fn replace_legal_hold(
+        &mut self,
+        hold: WorkspaceLegalHold,
+        expected_version: u64,
+    ) -> Result<(), ApplicationError> {
+        let stored = self
+            .legal_holds
+            .iter_mut()
+            .find(|stored| stored.workspace_id() == hold.workspace_id() && stored.id() == hold.id())
+            .ok_or(ApplicationError::NotFound)?;
+        if stored.version() != expected_version
+            || hold.version() != expected_version.saturating_add(1)
+        {
+            return Err(ApplicationError::VersionConflict);
+        }
+        *stored = hold;
+        Ok(())
+    }
 }
 
 impl AdministrativeAuditRepository for InMemoryStore {
