@@ -248,6 +248,8 @@ This roadmap describes sequencing, not release dates.
     - [x] Add append-only disclosure receipt payloads containing exact memory
       revisions while deriving workspace, subject, and client identity solely
       from authenticated connection context.
+    - [x] Add exact-version idempotent deletion and bounded provenance
+      explanation payloads without caller-controlled authorization identity.
   - [ ] Publish a serialization schema and HTTP binding.
   - [ ] Add cross-implementation conformance fixtures.
 - [x] Versioned key-provider sidecar protocol for OS, HSM, and customer-KMS

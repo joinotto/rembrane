@@ -37,6 +37,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   bounded purpose, context-pack linkage, exact unique memory revisions,
   non-future timestamps, and no caller-controlled workspace, subject, or
   client identity fields.
+- Exact-version Memory Provider deletion payloads with optimistic concurrency,
+  idempotent tombstone creation, bounded audit reasons, and consecutive
+  revision validation, plus bounded explanation payloads tied to unique
+  immutable evidence references without exposing provider-internal reasoning.
 - Expiry-aware remote MCP session capacity reclamation so abandoned bindings
   cannot exhaust the bounded in-process registry indefinitely.
 - A transport-neutral remote MCP lifecycle boundary that composes strict HTTP

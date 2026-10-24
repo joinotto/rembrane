@@ -10,6 +10,7 @@ mod error;
 mod memory_checkpoint;
 mod memory_context;
 mod memory_disclosure;
+mod memory_lifecycle;
 mod memory_mutation;
 mod memory_protocol;
 mod semantic;
@@ -29,6 +30,11 @@ pub use memory_context::{
 pub use memory_disclosure::{
     MAX_DISCLOSED_MEMORIES, MAX_DISCLOSURE_PURPOSE_BYTES, MemoryProviderDisclosedMemory,
     RecordDisclosurePayload, RecordDisclosureResult,
+};
+pub use memory_lifecycle::{
+    DeleteMemoryPayload, DeleteMemoryResult, ExplainMemoryPayload, ExplainMemoryResult,
+    MAX_DELETE_REASON_BYTES, MAX_EXPLAIN_PURPOSE_BYTES, MAX_EXPLANATION_BYTES,
+    MAX_EXPLANATION_EVIDENCE,
 };
 pub use memory_mutation::{MAX_SOURCE_REFERENCE_BYTES, ProposeMemoryPayload, ProposeMemoryResult};
 pub use memory_protocol::{
