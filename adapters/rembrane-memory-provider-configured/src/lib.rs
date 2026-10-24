@@ -167,14 +167,13 @@ fn required_environment(name: &str) -> Result<String, ProviderError> {
 }
 
 fn validate_request_prefix(value: String) -> Result<String, ProviderError> {
-    if value.is_empty()
-        || value.len() > 80
+    if !(8..=64).contains(&value.len())
         || !value
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
     {
         return Err(ProviderError::InvalidConfiguration(
-            "REMBRANE_MEMORY_PROVIDER_REQUEST_PREFIX must contain 1 to 80 URL-safe characters"
+            "REMBRANE_MEMORY_PROVIDER_REQUEST_PREFIX must contain 8 to 64 URL-safe characters"
                 .to_owned(),
         ));
     }
@@ -199,6 +198,7 @@ mod tests {
             validate_request_prefix("coding-agent_01".to_owned()).expect("prefix"),
             "coding-agent_01"
         );
+        assert!(validate_request_prefix("short".to_owned()).is_err());
         assert!(validate_request_prefix("tenant/name".to_owned()).is_err());
         assert!(validate_request_prefix("token value".to_owned()).is_err());
         assert!(validate_request_prefix(String::new()).is_err());
@@ -208,7 +208,7 @@ mod tests {
     fn generates_safe_bounded_process_request_prefixes() {
         let prefix = default_request_prefix().expect("prefix");
         assert!(prefix.starts_with("rembrane-"));
-        assert!(prefix.len() <= 80);
+        assert!((8..=64).contains(&prefix.len()));
         assert!(
             prefix
                 .bytes()

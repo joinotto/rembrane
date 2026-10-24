@@ -15,7 +15,7 @@ injection mechanism:
 | `REMBRANE_MEMORY_PROVIDER` | No | Provider transport. Defaults to `http`. |
 | `REMBRANE_MEMORY_PROVIDER_BASE_URL` | Yes | HTTPS origin, or exact loopback HTTP for local development. |
 | `REMBRANE_MEMORY_PROVIDER_TOKEN` | Yes | OAuth access token or provider-issued bearer credential. |
-| `REMBRANE_MEMORY_PROVIDER_REQUEST_PREFIX` | No | Diagnostic prefix containing 1–80 URL-safe characters. |
+| `REMBRANE_MEMORY_PROVIDER_REQUEST_PREFIX` | No | Diagnostic prefix containing 8–64 URL-safe characters. |
 
 Do not commit tokens to `.env` files, Compose manifests, shell profiles, or
 application configuration. Inject them from an OS keychain, container secret,

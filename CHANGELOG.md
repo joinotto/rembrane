@@ -117,6 +117,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Provider-agnostic configured composition that negotiates discovery and
   policy through the common client boundary and owns any boxed transport
   implementation without application changes.
+- Unified configured and negotiated request-prefix validation at 8–64
+  URL-safe characters, preventing configuration accepted by one layer from
+  failing later during connection creation.
 - Canonical engine-neutral temporal knowledge graph aggregates with typed
   nodes, validated relationship types, strict workspace namespaces, separate
   validity and ingestion time, evidence provenance, bounded aliases, versions,
