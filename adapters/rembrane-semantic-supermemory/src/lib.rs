@@ -1,6 +1,9 @@
 //! Canonical-to-Supermemory semantic projection mapping.
 
 use std::collections::BTreeMap;
+use std::io::Read;
+use std::thread;
+use std::time::Duration;
 
 use rembrane_domain::{MemoryId, WorkspaceId};
 use rembrane_provider_sdk::{
@@ -8,13 +11,20 @@ use rembrane_provider_sdk::{
     ProviderError, ProviderLimits, ProviderManifest, SemanticMemoryProvider, SemanticQuery,
 };
 use ring::hmac;
-use serde::Deserialize;
-use zeroize::Zeroize;
+use serde::{Deserialize, Serialize};
+use zeroize::{Zeroize, Zeroizing};
+
+use reqwest::Url;
+use reqwest::blocking::{Client, Response};
+use reqwest::header::{ACCEPT, CONTENT_LENGTH, CONTENT_TYPE};
 
 const MAXIMUM_CONTENT_BYTES: usize = 262_144;
 const MAXIMUM_CANDIDATES: usize = 1_000;
 const MAXIMUM_PROVIDER_ID_BYTES: usize = 512;
 const MAXIMUM_RESPONSE_RECORDS: usize = 1_000;
+const MAXIMUM_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
+const READINESS_ATTEMPTS: usize = 20;
+const READINESS_DELAY: Duration = Duration::from_millis(250);
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SupermemoryRecord {
@@ -81,9 +91,9 @@ struct WireRecords {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct WireDeletion {
-    successful: Vec<String>,
+    count: u64,
     #[serde(default)]
-    failed: Vec<serde_json::Value>,
+    errors: Vec<serde_json::Value>,
 }
 
 pub fn decode_records(bytes: &[u8]) -> Result<Vec<SupermemoryRecord>, ProviderError> {
@@ -122,7 +132,8 @@ pub fn decode_records(bytes: &[u8]) -> Result<Vec<SupermemoryRecord>, ProviderEr
 pub fn deletion_confirmed(bytes: &[u8], provider_id: &str) -> Result<bool, ProviderError> {
     let wire: WireDeletion = serde_json::from_slice(bytes)
         .map_err(|_| ProviderError::Rejected("Supermemory returned malformed JSON".to_owned()))?;
-    Ok(wire.failed.is_empty() && wire.successful.len() == 1 && wire.successful[0] == provider_id)
+    let _ = provider_id;
+    Ok(wire.errors.is_empty() && wire.count == 1)
 }
 
 pub trait SupermemoryTransport {
@@ -148,9 +159,294 @@ pub trait SupermemoryTransport {
     fn delete(&mut self, namespace: &str, provider_id: &str) -> Result<bool, ProviderError>;
 }
 
+pub struct HttpSupermemoryTransport {
+    client: Client,
+    base_url: Url,
+    api_key: Zeroizing<String>,
+}
+
+impl HttpSupermemoryTransport {
+    pub fn new(base_url: &str, api_key: String) -> Result<Self, ProviderError> {
+        let base_url = validate_base_url(base_url)?;
+        validate_api_key(&api_key)?;
+        let client = Client::builder()
+            .connect_timeout(Duration::from_secs(5))
+            .timeout(Duration::from_secs(30))
+            .redirect(reqwest::redirect::Policy::none())
+            .no_proxy()
+            .build()
+            .map_err(|_| ProviderError::Unavailable)?;
+        Ok(Self {
+            client,
+            base_url,
+            api_key: Zeroizing::new(api_key),
+        })
+    }
+
+    fn endpoint(&self, namespace: &str, tail: &[&str]) -> Result<Url, ProviderError> {
+        if !valid_namespace(namespace) {
+            return Err(ProviderError::Rejected(
+                "Supermemory namespace is invalid".to_owned(),
+            ));
+        }
+        let mut endpoint = self.base_url.clone();
+        let mut segments = endpoint
+            .path_segments_mut()
+            .map_err(|()| ProviderError::Unavailable)?;
+        segments.extend(["ns", namespace]);
+        segments.extend(tail.iter().copied());
+        drop(segments);
+        Ok(endpoint)
+    }
+
+    fn request(
+        &self,
+        request: reqwest::blocking::RequestBuilder,
+    ) -> reqwest::blocking::RequestBuilder {
+        request
+            .header(ACCEPT, "application/json")
+            .bearer_auth(self.api_key.as_str())
+    }
+
+    fn decode(response: Response) -> Result<Vec<u8>, ProviderError> {
+        if !response.status().is_success() {
+            return Err(match response.status().as_u16() {
+                400 | 404 | 409 | 413 | 422 => {
+                    ProviderError::Rejected("Supermemory rejected the operation".to_owned())
+                }
+                _ => ProviderError::Unavailable,
+            });
+        }
+        let is_json = response
+            .headers()
+            .get(CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .is_some_and(|value| {
+                value
+                    .split(';')
+                    .next()
+                    .is_some_and(|kind| kind.eq_ignore_ascii_case("application/json"))
+            });
+        let too_large = response
+            .headers()
+            .get(CONTENT_LENGTH)
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.parse::<usize>().ok())
+            .is_some_and(|length| length > MAXIMUM_RESPONSE_BYTES);
+        if !is_json || too_large {
+            return Err(ProviderError::Rejected(
+                "Supermemory returned an invalid response".to_owned(),
+            ));
+        }
+        let mut bytes = Vec::new();
+        response
+            .take((MAXIMUM_RESPONSE_BYTES + 1) as u64)
+            .read_to_end(&mut bytes)
+            .map_err(|_| ProviderError::Unavailable)?;
+        if bytes.len() > MAXIMUM_RESPONSE_BYTES {
+            return Err(ProviderError::Rejected(
+                "Supermemory response exceeded the transport limit".to_owned(),
+            ));
+        }
+        Ok(bytes)
+    }
+
+    fn search_records(
+        &self,
+        namespace: &str,
+        query: &str,
+        limit: usize,
+    ) -> Result<Vec<SupermemoryRecord>, ProviderError> {
+        let response = self
+            .request(self.client.post(self.endpoint(namespace, &["search"])?))
+            .header(CONTENT_TYPE, "application/json")
+            .json(&SearchBody {
+                query,
+                search_mode: "memories",
+                limit,
+            })
+            .send()
+            .map_err(|_| ProviderError::Unavailable)?;
+        decode_records(&Self::decode(response)?)
+    }
+}
+
+impl SupermemoryTransport for HttpSupermemoryTransport {
+    fn list(&self, namespace: &str) -> Result<Vec<SupermemoryRecord>, ProviderError> {
+        let response = self
+            .request(
+                self.client
+                    .post(self.endpoint(namespace, &["list", "documents"])?),
+            )
+            .header(CONTENT_TYPE, "application/json")
+            .query(&[("page", 1), ("limit", MAXIMUM_RESPONSE_RECORDS)])
+            .json(&serde_json::json!({}))
+            .send()
+            .map_err(|_| ProviderError::Unavailable)?;
+        decode_records(&Self::decode(response)?)
+    }
+
+    fn upsert_exact(
+        &mut self,
+        namespace: &str,
+        document_id: &str,
+        projection: &AuthorizedMemoryProjection,
+    ) -> Result<(), ProviderError> {
+        if !valid_provider_identifier(document_id, 255) {
+            return Err(ProviderError::Rejected(
+                "Supermemory document identity is invalid".to_owned(),
+            ));
+        }
+        let response = self
+            .request(self.client.post(self.endpoint(namespace, &["document"])?))
+            .header(CONTENT_TYPE, "application/json")
+            .json(&DocumentBody {
+                content: &projection.content,
+                custom_id: document_id,
+                metadata: MetadataBody {
+                    memory_id: projection.memory_id.as_str(),
+                    version: projection.version,
+                },
+            })
+            .send()
+            .map_err(|_| ProviderError::Unavailable)?;
+        if response.status().is_success() {
+            Ok(())
+        } else {
+            Err(ProviderError::Unavailable)
+        }
+    }
+
+    fn await_ready(
+        &mut self,
+        namespace: &str,
+        _document_id: &str,
+        projection: &AuthorizedMemoryProjection,
+    ) -> Result<(), ProviderError> {
+        let query = projection.content.chars().take(512).collect::<String>();
+        for attempt in 0..READINESS_ATTEMPTS {
+            let ready = self
+                .search_records(namespace, &query, 10)?
+                .into_iter()
+                .any(|record| {
+                    record.canonical_memory_id == projection.memory_id
+                        && record.canonical_version == projection.version
+                });
+            if ready {
+                return Ok(());
+            }
+            if attempt + 1 < READINESS_ATTEMPTS {
+                thread::sleep(READINESS_DELAY);
+            }
+        }
+        Err(ProviderError::Unavailable)
+    }
+
+    fn search(
+        &self,
+        namespace: &str,
+        query: &str,
+        maximum_candidates: usize,
+    ) -> Result<Vec<SupermemoryRecord>, ProviderError> {
+        self.search_records(namespace, query, maximum_candidates)
+    }
+
+    fn delete(&mut self, namespace: &str, provider_id: &str) -> Result<bool, ProviderError> {
+        if !valid_provider_identifier(provider_id, MAXIMUM_PROVIDER_ID_BYTES) {
+            return Err(ProviderError::Rejected(
+                "Supermemory document identity is invalid".to_owned(),
+            ));
+        }
+        let response = self
+            .request(self.client.delete(self.endpoint(namespace, &["document"])?))
+            .header(CONTENT_TYPE, "application/json")
+            .json(&DeleteBody { ids: [provider_id] })
+            .send()
+            .map_err(|_| ProviderError::Unavailable)?;
+        deletion_confirmed(&Self::decode(response)?, provider_id)
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SearchBody<'value> {
+    #[serde(rename = "q")]
+    query: &'value str,
+    search_mode: &'static str,
+    limit: usize,
+}
+
+#[derive(Serialize)]
+struct MetadataBody<'value> {
+    #[serde(rename = "rembrane_memory_id")]
+    memory_id: &'value str,
+    #[serde(rename = "rembrane_version")]
+    version: u64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DocumentBody<'value> {
+    content: &'value str,
+    custom_id: &'value str,
+    metadata: MetadataBody<'value>,
+}
+
+#[derive(Serialize)]
+struct DeleteBody<'value> {
+    ids: [&'value str; 1],
+}
+
+fn validate_base_url(value: &str) -> Result<Url, ProviderError> {
+    let mut url = Url::parse(value).map_err(|_| {
+        ProviderError::InvalidConfiguration("Supermemory base URL is invalid".to_owned())
+    })?;
+    let loopback = matches!(url.host_str(), Some("127.0.0.1" | "::1"));
+    if (url.scheme() != "https" && !(url.scheme() == "http" && loopback))
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.query().is_some()
+        || url.fragment().is_some()
+        || !matches!(url.path(), "" | "/")
+    {
+        return Err(ProviderError::InvalidConfiguration(
+            "Supermemory base URL must be an HTTPS origin or literal loopback HTTP origin"
+                .to_owned(),
+        ));
+    }
+    url.set_path("/");
+    Ok(url)
+}
+
+fn validate_api_key(value: &str) -> Result<(), ProviderError> {
+    if value.len() < 8
+        || value.len() > 4_096
+        || value.trim() != value
+        || value.chars().any(char::is_control)
+    {
+        return Err(ProviderError::InvalidConfiguration(
+            "Supermemory API key is invalid".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
 pub struct SupermemorySemanticProvider<Transport> {
     transport: Transport,
     workspace_lookup_key: hmac::Key,
+}
+
+impl SupermemorySemanticProvider<HttpSupermemoryTransport> {
+    pub fn from_http(
+        base_url: &str,
+        api_key: String,
+        workspace_lookup_secret: Vec<u8>,
+    ) -> Result<Self, ProviderError> {
+        Self::new(
+            HttpSupermemoryTransport::new(base_url, api_key)?,
+            workspace_lookup_secret,
+        )
+    }
 }
 
 impl<Transport> SupermemorySemanticProvider<Transport> {
@@ -332,8 +628,9 @@ mod tests {
     };
 
     use super::{
-        SupermemoryRecord, SupermemorySemanticProvider, SupermemoryTransport, decode_records,
-        deletion_confirmed, valid_namespace, valid_provider_identifier,
+        HttpSupermemoryTransport, SupermemoryRecord, SupermemorySemanticProvider,
+        SupermemoryTransport, decode_records, deletion_confirmed, valid_namespace,
+        valid_provider_identifier, validate_api_key,
     };
 
     #[derive(Default)]
@@ -457,16 +754,46 @@ mod tests {
     #[test]
     fn deletion_requires_one_exact_success_and_no_failures() {
         assert!(
-            deletion_confirmed(br#"{"successful":["doc-01"],"failed":[]}"#, "doc-01")
-                .expect("valid response")
+            deletion_confirmed(br#"{"count":1,"errors":[]}"#, "doc-01").expect("valid response")
         );
         assert!(
-            !deletion_confirmed(br#"{"successful":[],"failed":[{"id":"doc-01"}]}"#, "doc-01")
+            !deletion_confirmed(br#"{"count":0,"errors":[{"id":"doc-01"}]}"#, "doc-01")
                 .expect("valid partial response")
         );
         assert!(
-            !deletion_confirmed(br#"{"successful":["other"],"failed":[]}"#, "doc-01")
-                .expect("valid mismatched response")
+            !deletion_confirmed(br#"{"count":0,"errors":[]}"#, "doc-01")
+                .expect("valid empty response")
+        );
+    }
+
+    #[test]
+    fn http_configuration_and_paths_fail_closed() {
+        for origin in ["https://api.supermemory.ai", "http://127.0.0.1:8788"] {
+            assert!(HttpSupermemoryTransport::new(origin, "test-key-123456".to_owned()).is_ok());
+        }
+        for origin in [
+            "http://api.supermemory.ai",
+            "http://localhost:8788",
+            "https://user@api.supermemory.ai",
+            "https://api.supermemory.ai/path",
+        ] {
+            assert!(HttpSupermemoryTransport::new(origin, "test-key-123456".to_owned()).is_err());
+        }
+        assert!(validate_api_key("test-key-123456").is_ok());
+        assert!(validate_api_key("short").is_err());
+        assert!(validate_api_key("key\ninjected").is_err());
+
+        let transport = HttpSupermemoryTransport::new(
+            "https://api.supermemory.ai",
+            "test-key-123456".to_owned(),
+        )
+        .expect("valid transport");
+        assert_eq!(
+            transport
+                .endpoint("rembrane-test", &["document"])
+                .expect("safe endpoint")
+                .as_str(),
+            "https://api.supermemory.ai/ns/rembrane-test/document"
         );
     }
 

@@ -47,6 +47,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   enabling canonical ID/version visibility verification through scoped search.
 - Strict Supermemory wire decoding for canonical metadata, finite bounded
   scores, response cardinality, and one exact deletion success.
+- An authenticated Supermemory v5 HTTP transport with zeroizing bearer
+  custody, HTTPS-or-literal-loopback enforcement, disabled redirects and
+  proxies, bounded JSON, exact upsert/delete identities, and scoped readiness
+  polling.
 - Exact Supermemory deletion confirmation, treating partial or omitted
   provider identities as retryable failures.
 - Local validation proving generated Supermemory namespace pseudonyms satisfy

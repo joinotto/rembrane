@@ -59,8 +59,7 @@ The provider adapter must:
 6. poll bounded processing status before reporting an index operation ready;
 7. collapse search results to the newest canonical version;
 8. perform exact-ID deletion rather than semantic deletion;
-9. verify partial-delete responses and fail if the requested identity was not
-   removed;
+9. require a one-item deletion count with no per-item errors;
 10. never delegate authorization, tenant identity, or canonical truth to
     Supermemory.
 

@@ -714,6 +714,8 @@ This roadmap describes sequencing, not release dates.
           for scoped search convergence.
       - [x] Strictly decode bounded list/search records and exact partial-
         deletion outcomes before connecting the HTTP client.
+    - [x] Add an authenticated, redirect-free, proxy-free, bounded HTTP
+      transport with scoped convergence polling and confirmed deletion.
       - [x] Require exact provider-identity confirmation before replacement or
         deletion can complete.
   - [x] Generate a secret-reference-only local MCP configuration for OpenCode
