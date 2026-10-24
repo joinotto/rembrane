@@ -361,6 +361,7 @@ impl SupermemoryTransport for HttpSupermemoryTransport {
             .json(&UpdateDocumentBody {
                 content: &projection.content,
                 metadata,
+                dreaming: "instant",
             })
             .send()
         } else {
@@ -370,6 +371,7 @@ impl SupermemoryTransport for HttpSupermemoryTransport {
                     content: &projection.content,
                     id: document_id,
                     metadata,
+                    dreaming: "instant",
                 })
                 .send()
         }
@@ -455,12 +457,14 @@ struct DocumentBody<'value> {
     content: &'value str,
     id: &'value str,
     metadata: MetadataBody<'value>,
+    dreaming: &'static str,
 }
 
 #[derive(Serialize)]
 struct UpdateDocumentBody<'value> {
     content: &'value str,
     metadata: MetadataBody<'value>,
+    dreaming: &'static str,
 }
 
 #[derive(Serialize)]
@@ -870,9 +874,11 @@ mod tests {
                 memory_id: "memory-01",
                 version: 1,
             },
+            dreaming: "instant",
         })
         .expect("serializable ingestion body");
         assert_eq!(body["id"], "doc-01");
+        assert_eq!(body["dreaming"], "instant");
         assert!(body.get("customId").is_none());
     }
 
@@ -884,10 +890,12 @@ mod tests {
                 memory_id: "memory-01",
                 version: 2,
             },
+            dreaming: "instant",
         })
         .expect("serializable update body");
         assert_eq!(body["content"], "Call me Hippo");
         assert_eq!(body["metadata"]["rembrane_version"], 2);
+        assert_eq!(body["dreaming"], "instant");
         assert!(body.get("id").is_none());
         assert!(body.get("customId").is_none());
     }

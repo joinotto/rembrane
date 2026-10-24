@@ -726,6 +726,8 @@ This roadmap describes sequencing, not release dates.
           for scoped search convergence.
         - [x] Serialize the current v5 `query` field for readiness and recall
           rather than the legacy `q` spelling.
+        - [x] Request v5 instant processing for create and replacement so the
+          bounded convergence window does not depend on dynamic batching.
       - [x] Strictly decode bounded search records and exact partial-
         deletion outcomes before connecting the HTTP client.
         - [x] Decode internal and caller-defined document identities

@@ -76,6 +76,10 @@ Supermemory ingestion may be asynchronous. The adapter first requires a
 bounded JSON acceptance response containing the exact requested `id` and a
 recognized non-failed processing status. Even that acceptance is not proof
 that the new version is searchable or that the old version disappeared.
+Both create and replacement explicitly request `dreaming: "instant"` because
+the default dynamic mode can batch extraction for minutes and cannot satisfy
+the adapter's bounded readiness contract. Operators must account for
+Supermemory billing one additional operation per instant-processed document.
 The adapter must model indexing as retryable derived work:
 
 1. upsert the deterministic document ID;
