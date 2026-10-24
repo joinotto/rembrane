@@ -2,22 +2,23 @@
 
 use rembrane_application::{
     ApplicationError, BookingResearchMutationRepository, BookingResearchRepository,
-    CanonicalMutationRepository, CheckpointDisclosureRepository, CheckpointMutationRepository,
-    CheckpointRepository, DisclosureRepository, EventRepository, GraphProjectionOutboxRepository,
-    InvitationRepository, KnowledgeDirection, KnowledgeGraphMutationRepository,
-    KnowledgeGraphRepository, MAX_KNOWLEDGE_NEIGHBOURS, MemberLifecycleRepository,
-    MemberScopeGrantRepository, MembershipRepository, MemoryRepository, ProjectionOutboxRepository,
-    ShareProposalMutationRepository, ShareProposalRepository, TravelDisclosureRepository,
-    TripMutationRepository, TripRepository, WorkspaceRepository,
+    CanonicalGraphMutationRepository, CanonicalMutationRepository, CheckpointDisclosureRepository,
+    CheckpointMutationRepository, CheckpointRepository, DisclosureRepository, EventRepository,
+    GraphProjectionOutboxRepository, InvitationRepository, KnowledgeDirection,
+    KnowledgeGraphMutationRepository, KnowledgeGraphRepository, MAX_KNOWLEDGE_NEIGHBOURS,
+    MemberLifecycleRepository, MemberScopeGrantRepository, MembershipRepository, MemoryRepository,
+    ProjectionOutboxRepository, ShareProposalMutationRepository, ShareProposalRepository,
+    TravelDisclosureRepository, TripMutationRepository, TripRepository, WorkspaceRepository,
 };
 use rembrane_domain::{
     ActivityCheckpoint, ActivityId, BookingResearch, BookingResearchId, CanonicalEvent,
     CheckpointDisclosureReceipt, DisclosureReceipt, EntityId, EventPayload, GraphProjectionJob,
-    Invitation, InvitationId, InvitationStatus, KnowledgeEdge, KnowledgeEdgeId, KnowledgeNode,
-    KnowledgeNodeId, MemberScopeGrant, Membership, MemoryId, MemoryRecord, MemoryShareProposal,
-    MemoryStatus, Principal, PrincipalId, ProjectionJob, ProjectionJobId, ProjectionOperation,
-    ProjectionStatus, ProviderId, ShareProposalId, ShareProposalStatus, TravelDisclosureReceipt,
-    Trip, Workspace, WorkspaceId, WorkspaceKind, WorkspaceRole,
+    GraphProjectionResource, Invitation, InvitationId, InvitationStatus, KnowledgeEdge,
+    KnowledgeEdgeId, KnowledgeNode, KnowledgeNodeId, MemberScopeGrant, Membership, MemoryId,
+    MemoryRecord, MemoryShareProposal, MemoryStatus, Principal, PrincipalId, ProjectionJob,
+    ProjectionJobId, ProjectionOperation, ProjectionStatus, ProviderId, ShareProposalId,
+    ShareProposalStatus, TravelDisclosureReceipt, Trip, Workspace, WorkspaceId, WorkspaceKind,
+    WorkspaceRole,
 };
 
 #[derive(Debug, Default)]
@@ -250,7 +251,111 @@ impl KnowledgeGraphMutationRepository for InMemoryStore {
     }
 }
 
+impl CanonicalGraphMutationRepository for InMemoryStore {
+    fn insert_knowledge_node_with_projections(
+        &mut self,
+        node: KnowledgeNode,
+        projections: Vec<GraphProjectionJob>,
+    ) -> Result<(), ApplicationError> {
+        self.validate_graph_projection_batch(
+            node.workspace_id(),
+            &GraphProjectionResource::Node(node.id().clone()),
+            node.version(),
+            &projections,
+        )?;
+        self.insert_knowledge_node(node)?;
+        self.graph_projections.extend(projections);
+        Ok(())
+    }
+
+    fn replace_knowledge_node_with_projections(
+        &mut self,
+        node: KnowledgeNode,
+        expected_version: u64,
+        projections: Vec<GraphProjectionJob>,
+    ) -> Result<(), ApplicationError> {
+        self.validate_graph_projection_batch(
+            node.workspace_id(),
+            &GraphProjectionResource::Node(node.id().clone()),
+            node.version(),
+            &projections,
+        )?;
+        self.replace_knowledge_node(node, expected_version)?;
+        self.graph_projections.extend(projections);
+        Ok(())
+    }
+
+    fn insert_knowledge_edge_with_projections(
+        &mut self,
+        edge: KnowledgeEdge,
+        projections: Vec<GraphProjectionJob>,
+    ) -> Result<(), ApplicationError> {
+        self.validate_graph_projection_batch(
+            edge.workspace_id(),
+            &GraphProjectionResource::Edge(edge.id().clone()),
+            edge.version(),
+            &projections,
+        )?;
+        self.insert_knowledge_edge(edge)?;
+        self.graph_projections.extend(projections);
+        Ok(())
+    }
+
+    fn replace_knowledge_edge_with_projections(
+        &mut self,
+        edge: KnowledgeEdge,
+        expected_version: u64,
+        projections: Vec<GraphProjectionJob>,
+    ) -> Result<(), ApplicationError> {
+        self.validate_graph_projection_batch(
+            edge.workspace_id(),
+            &GraphProjectionResource::Edge(edge.id().clone()),
+            edge.version(),
+            &projections,
+        )?;
+        self.replace_knowledge_edge(edge, expected_version)?;
+        self.graph_projections.extend(projections);
+        Ok(())
+    }
+}
+
 impl InMemoryStore {
+    fn validate_graph_projection_batch(
+        &self,
+        workspace_id: &WorkspaceId,
+        resource: &GraphProjectionResource,
+        resource_version: u64,
+        projections: &[GraphProjectionJob],
+    ) -> Result<(), ApplicationError> {
+        for (index, job) in projections.iter().enumerate() {
+            if job.workspace_id() != workspace_id
+                || job.resource() != resource
+                || job.resource_version() != resource_version
+                || job.operation() != ProjectionOperation::Upsert
+                || job.status() != ProjectionStatus::Pending
+                || job.attempts() != 0
+            {
+                return Err(ApplicationError::Validation(
+                    "graph projection does not describe the canonical mutation".to_owned(),
+                ));
+            }
+            let conflicts = |stored: &GraphProjectionJob| {
+                stored.id() == job.id()
+                    || (stored.workspace_id() == job.workspace_id()
+                        && stored.resource() == job.resource()
+                        && stored.resource_version() == job.resource_version()
+                        && stored.provider_id() == job.provider_id()
+                        && stored.operation() == job.operation())
+            };
+            if self.graph_projections.iter().any(conflicts)
+                || projections[..index].iter().any(conflicts)
+            {
+                return Err(ApplicationError::AlreadyExists);
+            }
+        }
+        Ok(())
+    }
+
     fn validate_knowledge_edge(&self, edge: &KnowledgeEdge) -> Result<(), ApplicationError> {
         let endpoint_exists = |node_id: &KnowledgeNodeId| {
             self.knowledge_nodes
@@ -1567,14 +1672,16 @@ fn validate_share_approval_events(
 #[cfg(test)]
 mod tests {
     use rembrane_application::{
-        ApplicationError, CanonicalMutationRepository, EventRepository, KnowledgeDirection,
+        ApplicationError, CanonicalGraphMutationRepository, CanonicalMutationRepository,
+        EventRepository, GraphProjectionOutboxRepository, KnowledgeDirection,
         KnowledgeGraphMutationRepository, KnowledgeGraphRepository, MemoryRepository,
     };
     use rembrane_domain::{
         CanonicalEvent, EventId, EventPayload, EvidenceId, EvidenceReference, EvidenceSource,
-        KnowledgeEdge, KnowledgeEdgeId, KnowledgeNode, KnowledgeNodeId, KnowledgeNodeKind,
-        KnowledgeRelationType, MemoryId, MemoryRecord, MemoryScope, PrincipalId, TemporalValidity,
-        WorkspaceId,
+        GraphProjectionJob, GraphProjectionResource, KnowledgeEdge, KnowledgeEdgeId, KnowledgeNode,
+        KnowledgeNodeId, KnowledgeNodeKind, KnowledgeRelationType, MemoryId, MemoryRecord,
+        MemoryScope, PrincipalId, ProjectionJobId, ProjectionOperation, ProviderId,
+        TemporalValidity, WorkspaceId,
     };
 
     use super::InMemoryStore;
@@ -1610,6 +1717,70 @@ mod tests {
             None,
         )
         .expect("knowledge edge should be valid")
+    }
+
+    fn graph_projection(id: &str, workspace_id: &str, node_id: &str) -> GraphProjectionJob {
+        GraphProjectionJob::new(
+            ProjectionJobId::new(id),
+            WorkspaceId::new(workspace_id),
+            GraphProjectionResource::Node(KnowledgeNodeId::new(node_id)),
+            1,
+            ProviderId::new("graph.primary"),
+            ProjectionOperation::Upsert,
+        )
+        .expect("graph projection should be valid")
+    }
+
+    #[test]
+    fn atomic_graph_mutation_rejects_invalid_projection_without_partial_node() {
+        let mut store = InMemoryStore::new();
+        let node = knowledge_node("node_project", "workspace_one", 1);
+        let wrong_workspace = graph_projection("projection_01", "workspace_two", "node_project");
+
+        let error = store
+            .insert_knowledge_node_with_projections(node, vec![wrong_workspace])
+            .expect_err("mismatched projection should fail");
+
+        assert!(matches!(error, ApplicationError::Validation(_)));
+        assert!(
+            store
+                .find_knowledge_node(
+                    &WorkspaceId::new("workspace_one"),
+                    &KnowledgeNodeId::new("node_project"),
+                )
+                .expect("lookup should work")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn atomic_graph_mutation_commits_node_and_projection_together() {
+        let mut store = InMemoryStore::new();
+        let node = knowledge_node("node_project", "workspace_one", 1);
+        let projection = graph_projection("projection_01", "workspace_one", "node_project");
+
+        store
+            .insert_knowledge_node_with_projections(node, vec![projection])
+            .expect("atomic mutation should work");
+
+        assert!(
+            store
+                .find_knowledge_node(
+                    &WorkspaceId::new("workspace_one"),
+                    &KnowledgeNodeId::new("node_project"),
+                )
+                .expect("lookup should work")
+                .is_some()
+        );
+        assert!(
+            store
+                .find_graph_projection(
+                    &WorkspaceId::new("workspace_one"),
+                    &ProjectionJobId::new("projection_01"),
+                )
+                .expect("projection lookup should work")
+                .is_some()
+        );
     }
 
     #[test]

@@ -155,7 +155,8 @@ This roadmap describes sequencing, not release dates.
       retry/quarantine handling.
     - [ ] Commit canonical graph mutations and projection jobs atomically.
       - [x] Define the atomic application repository contract.
-      - [ ] Implement in-memory and SQLite transaction adapters.
+      - [x] Implement the in-memory transaction adapter.
+      - [ ] Implement the SQLite transaction adapter.
     - [ ] Add Graphiti projection adapter.
 
 - [x] Project entities and scoped preferences.
