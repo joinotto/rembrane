@@ -4,7 +4,7 @@ use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::fs;
 
-use rembrane_config::{SecretReference, SecretReferenceSource};
+use rembrane_config::{ProviderConnection, SecretReference, SecretReferenceSource};
 use zeroize::Zeroizing;
 
 pub const MAX_RESOLVED_SECRET_BYTES: usize = 65_536;
@@ -25,6 +25,30 @@ pub trait SecretResolver {
         &self,
         reference: &SecretReference,
     ) -> Result<Zeroizing<String>, SecretResolutionError>;
+}
+
+/// Resolves a validated provider profile's ordered credential references.
+///
+/// Every returned value retains its own zeroization guard. The function stops
+/// at the first failure and drops all values already resolved for that
+/// attempt, wiping them before returning the opaque error.
+///
+/// # Errors
+///
+/// Returns the resolver's opaque error for the first unavailable, unsupported,
+/// unsafe, or invalid reference.
+pub fn resolve_provider_credentials<Resolver>(
+    resolver: &Resolver,
+    connection: &ProviderConnection,
+) -> Result<Vec<Zeroizing<String>>, SecretResolutionError>
+where
+    Resolver: SecretResolver + ?Sized,
+{
+    connection
+        .credentials()
+        .iter()
+        .map(|reference| resolver.resolve(reference))
+        .collect()
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -127,9 +151,12 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use rembrane_config::SecretReference;
+    use rembrane_config::{ProviderConnection, ProviderKind, ProviderPlacement};
+    use zeroize::Zeroizing;
 
     use super::{
         LocalSecretResolver, MAX_RESOLVED_SECRET_BYTES, SecretResolutionError, SecretResolver,
+        resolve_provider_credentials,
     };
 
     #[test]
@@ -206,5 +233,38 @@ mod tests {
             LocalSecretResolver.resolve(&reference),
             Err(SecretResolutionError::UnsupportedSource)
         );
+    }
+
+    struct ExternalFixtureResolver;
+
+    impl SecretResolver for ExternalFixtureResolver {
+        fn resolve(
+            &self,
+            reference: &SecretReference,
+        ) -> Result<Zeroizing<String>, SecretResolutionError> {
+            let key = reference
+                .external_key()
+                .ok_or(SecretResolutionError::UnsupportedSource)?;
+            Ok(Zeroizing::new(format!("resolved:{key}")))
+        }
+    }
+
+    #[test]
+    fn resolves_validated_provider_credentials_in_declared_order() {
+        let connection = ProviderConnection::remote(
+            ProviderKind::Graphiti,
+            "https://graph.example",
+            vec![
+                SecretReference::external("vault", "graph/token").expect("token reference"),
+                SecretReference::external("vault", "graph/model-key").expect("model reference"),
+            ],
+            ProviderPlacement::External,
+        )
+        .expect("provider connection");
+
+        let values = resolve_provider_credentials(&ExternalFixtureResolver, &connection)
+            .expect("external resolver should compose");
+        assert_eq!(values[0].as_str(), "resolved:graph/token");
+        assert_eq!(values[1].as_str(), "resolved:graph/model-key");
     }
 }

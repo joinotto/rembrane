@@ -44,6 +44,8 @@ This roadmap describes sequencing, not release dates.
       accessors so integrations cannot construct unvalidated variants.
     - [x] Add a pluggable zeroizing resolver port plus a protected local
       environment and secret-file implementation.
+      - [x] Resolve validated provider credential lists atomically from the
+        caller's selected local or external resolver.
   - [x] Bound and deduplicate each provider profile's credential-reference
     list before any secret-manager resolution.
   - [x] Make validated provider profiles opaque so callers cannot bypass

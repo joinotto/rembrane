@@ -82,6 +82,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - A pluggable zeroizing secret-resolver port with a local environment and
   protected-file adapter that bounds values, rejects nulls, unsafe permissions,
   non-regular files, and symlinks, and leaves external managers replaceable.
+- Ordered all-or-error provider credential resolution through any secret
+  resolver, zeroizing already resolved values when a later reference fails.
 - A transport-injectable Mem0 OSS semantic adapter mapping authorized
   projections into HMAC-pseudonymous workspace partitions while preserving
   canonical memory IDs, versions, replacement, bounded ranking, and

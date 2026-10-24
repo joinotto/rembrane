@@ -31,3 +31,8 @@ Google Secret Manager, an OS keychain, or another system by implementing
 
 The resolver port does not cache values. Rotation can therefore take effect on
 the next application-owned resolution without rebuilding Rembrane.
+
+`resolve_provider_credentials` consumes a validated provider profile's
+duplicate-free ordered reference list through any `SecretResolver`. If one
+lookup fails, previously resolved values from that attempt are dropped through
+their zeroization guards and no partial credential set is returned.
