@@ -40,6 +40,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - A versioned encrypted channel-inbox schema and portable repository contracts
   for atomic durable admission, tenant-scoped recovery, and monotonic delivery
   completion without plaintext-at-rest fields.
+- SQLite durable channel admission that resolves active identity, reserves
+  replay, and AEAD-seals message text in one transaction, plus authenticated
+  tenant-scoped recovery and one-way completion.
 - Durable, content-free SQLite channel replay receipts with atomic cleanup,
   fail-closed capacity enforcement, per-platform namespaces, and
   cross-workspace duplicate denial for multi-process gateways.
