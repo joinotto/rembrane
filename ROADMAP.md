@@ -152,6 +152,12 @@ This roadmap describes sequencing, not release dates.
 - [x] Require workspace identity for internal projection-job lookups.
 - [ ] Prove cross-tenant denial across every future adapter read path.
 - [ ] Provide the hosted PostgreSQL adapter with row-level security.
+  - [x] Add deny-by-default forced RLS policy generation for every canonical
+    `workspace_id` table plus explicit workspace and share-proposal policies.
+  - [x] Document transaction-local tenant identity and non-owner,
+    non-`BYPASSRLS` runtime-role requirements.
+  - [ ] Implement the Rust PostgreSQL repository adapter and live two-tenant
+    integration suite.
 
 ## Phase 2 — Development continuity
 

@@ -75,6 +75,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   reject DNS-rebinding requests before bearer verification or SDK dispatch.
 - Derived the remote MCP Host allowlist and protected-resource challenge from
   one validated public resource profile, preventing deployment-policy drift.
+- Added a PostgreSQL forced-RLS foundation using transaction-local workspace
+  identity, deny-by-default policies, separate migration/runtime role
+  requirements, and static invariant verification.
 - A versioned per-workspace retention policy contract with separate periods
   for memory, checkpoints, travel research, disclosures, canonical events, and
   administrative audit, including bounded expiry and legal-hold overrides.
