@@ -168,8 +168,28 @@ openssl rand -hex 32 | /usr/bin/security add-generic-password \
 ```
 
 The final `-w` prompts through standard input, so key material is not placed in
-the process arguments. Do not use `-A`; retain Keychain access control. Windows,
-Linux, HSM, and customer-KMS resolvers remain roadmap work.
+the process arguments. Do not use `-A`; retain Keychain access control.
+
+On Linux desktops with Secret Service and `/usr/bin/secret-tool`, store the
+hex key through standard input and configure lookup metadata only:
+
+```text
+export REMBRANE_KEY_PROVIDER=linux-secret-service
+export REMBRANE_WORKSPACE_KEY_ID=local-key-v1
+export REMBRANE_SECRET_SERVICE_SERVICE=org.rembrane.workspace
+export REMBRANE_SECRET_SERVICE_ACCOUNT="$REMBRANE_WORKSPACE_ID:key_v1"
+export REMBRANE_SECRET_SERVICE_HISTORICAL_KEYS=
+
+openssl rand -hex 32 | /usr/bin/secret-tool store \
+  --label="Rembrane workspace key" \
+  rembrane-service "$REMBRANE_SECRET_SERVICE_SERVICE" \
+  rembrane-account "$REMBRANE_SECRET_SERVICE_ACCOUNT"
+```
+
+The desktop session must provide an unlocked Secret Service collection. Key
+output is captured into zeroizing process memory and never placed in command
+arguments. Windows DPAPI, HSM, and direct customer-KMS resolvers remain
+roadmap work.
 
 A customer-controlled Key Provider Protocol sidecar can keep raw workspace
 keys outside the Rembrane process:

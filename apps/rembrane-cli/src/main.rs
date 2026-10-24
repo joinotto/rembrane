@@ -664,6 +664,13 @@ fn mcp_environment_variables(key_provider: &str) -> Result<Vec<&'static str>, St
             "REMBRANE_KEYCHAIN_ACCOUNT",
             "REMBRANE_KEYCHAIN_HISTORICAL_KEYS",
         ]),
+        "linux-secret-service" => variables.extend([
+            "REMBRANE_KEY_PROVIDER",
+            "REMBRANE_WORKSPACE_KEY_ID",
+            "REMBRANE_SECRET_SERVICE_SERVICE",
+            "REMBRANE_SECRET_SERVICE_ACCOUNT",
+            "REMBRANE_SECRET_SERVICE_HISTORICAL_KEYS",
+        ]),
         "http" => variables.extend([
             "REMBRANE_KEY_PROVIDER",
             "REMBRANE_KEY_PROVIDER_BASE_URL",
@@ -671,7 +678,7 @@ fn mcp_environment_variables(key_provider: &str) -> Result<Vec<&'static str>, St
         ]),
         provider => {
             return Err(format!(
-                "unsupported --key-provider {provider}; expected environment, macos-keychain, or http"
+                "unsupported --key-provider {provider}; expected environment, macos-keychain, linux-secret-service, or http"
             ));
         }
     }
@@ -1116,6 +1123,7 @@ fn configured_secret_sources() -> Vec<&'static str> {
         .as_str()
     {
         "macos-keychain" => vec!["macOS Keychain"],
+        "linux-secret-service" => vec!["Linux Secret Service"],
         "http" => vec!["REMBRANE_KEY_PROVIDER_TOKEN"],
         _ => vec!["REMBRANE_WORKSPACE_KEY_ID", "REMBRANE_WORKSPACE_KEY_HEX"],
     };
@@ -1137,9 +1145,10 @@ fn configured_key_provider() -> Result<&'static str, String> {
     {
         "environment" => Ok("environment (development only)"),
         "macos-keychain" => Ok("macOS Keychain"),
+        "linux-secret-service" => Ok("Linux Secret Service"),
         "http" => Ok("authenticated HTTP key provider"),
         provider => Err(format!(
-            "unsupported REMBRANE_KEY_PROVIDER {provider}; expected environment, macos-keychain, or http"
+            "unsupported REMBRANE_KEY_PROVIDER {provider}; expected environment, macos-keychain, linux-secret-service, or http"
         )),
     }
 }
@@ -1733,7 +1742,7 @@ fn print_help() {
            rembrane mcp-config \
              --client <codex|claude-code|gemini-cli|cursor|vscode|zed|opencode|generic> \
              --server-binary <path> \
-             [--key-provider <environment|macos-keychain|http>]\n\
+             [--key-provider <environment|macos-keychain|linux-secret-service|http>]\n\
            rembrane remember --database <path> --principal <id> \
              --workspace <id> --content <preference> \
              [--domain <name> | --entity <id> | --activity <id>]\n\
@@ -2131,6 +2140,18 @@ mod tests {
         assert!(config.contains("\"REMBRANE_KEYCHAIN_SERVICE\""));
         assert!(config.contains("\"REMBRANE_KEYCHAIN_ACCOUNT\""));
         assert!(config.contains("\"REMBRANE_KEYCHAIN_HISTORICAL_KEYS\""));
+        assert!(!config.contains("REMBRANE_WORKSPACE_KEY_HEX"));
+    }
+
+    #[test]
+    fn linux_secret_service_config_passes_only_lookup_metadata() {
+        let environment = mcp_environment_variables("linux-secret-service")
+            .expect("Linux Secret Service provider should be valid");
+        let config = codex_mcp_config("/opt/rembrane-mcp", &environment);
+
+        assert!(config.contains("\"REMBRANE_SECRET_SERVICE_SERVICE\""));
+        assert!(config.contains("\"REMBRANE_SECRET_SERVICE_ACCOUNT\""));
+        assert!(config.contains("\"REMBRANE_SECRET_SERVICE_HISTORICAL_KEYS\""));
         assert!(!config.contains("REMBRANE_WORKSPACE_KEY_HEX"));
     }
 

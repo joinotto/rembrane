@@ -9,6 +9,11 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- Linux Secret Service workspace-key resolution through the fixed
+  `/usr/bin/secret-tool` client, including active/historical keyrings,
+  metadata-only agent configuration, and zeroized captured secrets.
+- Immediate zeroization guards around OS-keyring subprocess stdout and stderr,
+  including non-UTF-8, nonzero-exit, and unexpected-diagnostic failure paths.
 - Secret-safe OpenCode local MCP configuration generation using the documented
   command-array shape and environment-variable references without embedding
   credential values.

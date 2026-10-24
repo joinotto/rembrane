@@ -133,6 +133,24 @@ unset REMBRANE_WORKSPACE_KEY_HEX
 Use a disposable Keychain item for tests and delete it after testing. Never use
 the `security -A` option, which would permit unrestricted item access.
 
+On a Linux desktop with an unlocked Secret Service collection:
+
+```text
+export REMBRANE_KEY_PROVIDER=linux-secret-service
+export REMBRANE_WORKSPACE_KEY_ID=local-key-v1
+export REMBRANE_SECRET_SERVICE_SERVICE=org.rembrane.workspace.test
+export REMBRANE_SECRET_SERVICE_ACCOUNT="$REMBRANE_WORKSPACE_ID:key_v1"
+export REMBRANE_SECRET_SERVICE_HISTORICAL_KEYS=
+openssl rand -hex 32 | /usr/bin/secret-tool store \
+  --label="Disposable Rembrane test key" \
+  rembrane-service "$REMBRANE_SECRET_SERVICE_SERVICE" \
+  rembrane-account "$REMBRANE_SECRET_SERVICE_ACCOUNT"
+unset REMBRANE_WORKSPACE_KEY_HEX
+```
+
+Delete the item after testing using the desktop keyring manager or
+`secret-tool clear` with the same two attributes.
+
 To exercise a disposable customer-controlled key-provider sidecar instead:
 
 ```text

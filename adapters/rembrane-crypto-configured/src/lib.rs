@@ -82,7 +82,7 @@ impl ConfiguredRecordCipher {
     /// application configuration.
     ///
     /// Supported values for `REMBRANE_KEY_PROVIDER` are `environment`,
-    /// `macos-keychain`, and `http`. The HTTP provider requires
+    /// `macos-keychain`, `linux-secret-service`, and `http`. The HTTP provider requires
     /// `REMBRANE_KEY_PROVIDER_BASE_URL` and `REMBRANE_KEY_PROVIDER_TOKEN`.
     ///
     /// # Errors
@@ -93,7 +93,7 @@ impl ConfiguredRecordCipher {
         let provider =
             std::env::var("REMBRANE_KEY_PROVIDER").unwrap_or_else(|_| "environment".to_owned());
         match provider.as_str() {
-            "environment" | "macos-keychain" => {
+            "environment" | "macos-keychain" | "linux-secret-service" => {
                 RustCryptoKeyringCipher::from_configured_provider().map(Self::Local)
             }
             "http" => Self::http_from_environment(),

@@ -63,6 +63,9 @@ This roadmap describes sequencing, not release dates.
   - [x] Resolve active and historical rotating keyrings from macOS Keychain
     using metadata-only references.
   - [ ] Add Windows DPAPI and Linux Secret Service adapters.
+    - [x] Resolve active and historical Linux Secret Service keys through the
+      fixed `secret-tool` client with lookup metadata only and zeroized output.
+    - [ ] Add a Windows DPAPI adapter.
   - [x] Define a vendor-neutral authenticated key-provider operation protocol
     that never exports raw workspace keys.
     - [x] Negotiate optional workspace-rotation capability and validate

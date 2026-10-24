@@ -7,7 +7,7 @@
 use chacha20poly1305::aead::{Aead, KeyInit, Payload};
 use chacha20poly1305::{Key, XChaCha20Poly1305, XNonce};
 use rembrane_crypto::{CryptoError, EncryptedPayload, EncryptionContext, RecordCipher};
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 use std::process::Command;
 use zeroize::Zeroizing;
 
@@ -26,6 +26,13 @@ pub struct MacosKeychainKeyReference {
     account: String,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LinuxSecretServiceKeyReference {
+    key_id: String,
+    service: String,
+    account: String,
+}
+
 impl MacosKeychainKeyReference {
     pub fn new(
         key_id: impl Into<String>,
@@ -35,12 +42,37 @@ impl MacosKeychainKeyReference {
         let key_id = key_id.into();
         let service = service.into();
         let account = account.into();
-        if key_id.trim().is_empty()
-            || service.trim().is_empty()
-            || account.trim().is_empty()
-            || key_id.trim() != key_id
-            || service.trim() != service
-            || account.trim() != account
+        if !valid_key_metadata(&key_id)
+            || !valid_key_metadata(&service)
+            || !valid_key_metadata(&account)
+        {
+            return Err(CryptoError::KeyUnavailable);
+        }
+        Ok(Self {
+            key_id,
+            service,
+            account,
+        })
+    }
+
+    #[must_use]
+    pub fn key_id(&self) -> &str {
+        &self.key_id
+    }
+}
+
+impl LinuxSecretServiceKeyReference {
+    pub fn new(
+        key_id: impl Into<String>,
+        service: impl Into<String>,
+        account: impl Into<String>,
+    ) -> Result<Self, CryptoError> {
+        let key_id = key_id.into();
+        let service = service.into();
+        let account = account.into();
+        if !valid_key_metadata(&key_id)
+            || !valid_key_metadata(&service)
+            || !valid_key_metadata(&account)
         {
             return Err(CryptoError::KeyUnavailable);
         }
@@ -94,11 +126,14 @@ impl RustCryptoRecordCipher {
             .args(["find-generic-password", "-s", service, "-a", account, "-w"])
             .output()
             .map_err(|_| CryptoError::KeyUnavailable)?;
-        if !output.status.success() {
+        let status = output.status;
+        let stdout = Zeroizing::new(output.stdout);
+        let stderr = Zeroizing::new(output.stderr);
+        if !status.success() || !stderr.is_empty() {
             return Err(CryptoError::KeyUnavailable);
         }
-        let encoded = String::from_utf8(output.stdout).map_err(|_| CryptoError::KeyUnavailable)?;
-        let encoded = Zeroizing::new(encoded);
+        let encoded =
+            std::str::from_utf8(stdout.as_ref()).map_err(|_| CryptoError::KeyUnavailable)?;
         let key = decode_key(encoded.trim())?;
         Self::new(key_id, key)
     }
@@ -113,6 +148,58 @@ impl RustCryptoRecordCipher {
         )
     }
 
+    /// Resolves a hex-encoded workspace key from the current desktop session's
+    /// freedesktop Secret Service through the fixed `secret-tool` client.
+    #[cfg(target_os = "linux")]
+    pub fn from_linux_secret_service(
+        key_id: impl Into<String>,
+        service: &str,
+        account: &str,
+    ) -> Result<Self, CryptoError> {
+        if !valid_key_metadata(service) || !valid_key_metadata(account) {
+            return Err(CryptoError::KeyUnavailable);
+        }
+        let output = Command::new("/usr/bin/secret-tool")
+            .args([
+                "lookup",
+                "rembrane-service",
+                service,
+                "rembrane-account",
+                account,
+            ])
+            .output()
+            .map_err(|_| CryptoError::KeyUnavailable)?;
+        let status = output.status;
+        let stdout = Zeroizing::new(output.stdout);
+        let stderr = Zeroizing::new(output.stderr);
+        if !status.success() || !stderr.is_empty() {
+            return Err(CryptoError::KeyUnavailable);
+        }
+        let encoded =
+            std::str::from_utf8(stdout.as_ref()).map_err(|_| CryptoError::KeyUnavailable)?;
+        let key = decode_key(encoded.trim())?;
+        Self::new(key_id, key)
+    }
+
+    pub fn from_linux_secret_service_reference(
+        reference: &LinuxSecretServiceKeyReference,
+    ) -> Result<Self, CryptoError> {
+        Self::from_linux_secret_service(
+            reference.key_id.clone(),
+            &reference.service,
+            &reference.account,
+        )
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    pub fn from_linux_secret_service(
+        _key_id: impl Into<String>,
+        _service: &str,
+        _account: &str,
+    ) -> Result<Self, CryptoError> {
+        Err(CryptoError::KeyUnavailable)
+    }
+
     #[cfg(not(target_os = "macos"))]
     pub fn from_macos_keychain(
         _key_id: impl Into<String>,
@@ -125,8 +212,8 @@ impl RustCryptoRecordCipher {
     /// Selects the configured local key source without accepting key material
     /// through command-line arguments.
     ///
-    /// `environment` is the pre-alpha development mode. `macos-keychain`
-    /// resolves the value from the current user's login keychain.
+    /// `environment` is the pre-alpha development mode. OS keyring providers
+    /// resolve values from the current user's protected desktop session.
     pub fn from_configured_provider() -> Result<Self, CryptoError> {
         match std::env::var("REMBRANE_KEY_PROVIDER")
             .unwrap_or_else(|_| "environment".to_owned())
@@ -141,6 +228,15 @@ impl RustCryptoRecordCipher {
                 let account = std::env::var("REMBRANE_KEYCHAIN_ACCOUNT")
                     .map_err(|_| CryptoError::KeyUnavailable)?;
                 Self::from_macos_keychain(key_id, &service, &account)
+            }
+            "linux-secret-service" => {
+                let key_id = std::env::var("REMBRANE_WORKSPACE_KEY_ID")
+                    .map_err(|_| CryptoError::KeyUnavailable)?;
+                let service = std::env::var("REMBRANE_SECRET_SERVICE_SERVICE")
+                    .map_err(|_| CryptoError::KeyUnavailable)?;
+                let account = std::env::var("REMBRANE_SECRET_SERVICE_ACCOUNT")
+                    .map_err(|_| CryptoError::KeyUnavailable)?;
+                Self::from_linux_secret_service(key_id, &service, &account)
             }
             _ => Err(CryptoError::KeyUnavailable),
         }
@@ -198,6 +294,19 @@ impl RustCryptoKeyringCipher {
         Self::new(active, historical)
     }
 
+    pub fn from_linux_secret_service(
+        active: &LinuxSecretServiceKeyReference,
+        historical: &[LinuxSecretServiceKeyReference],
+    ) -> Result<Self, CryptoError> {
+        validate_linux_key_references(active, historical)?;
+        let active = RustCryptoRecordCipher::from_linux_secret_service_reference(active)?;
+        let historical = historical
+            .iter()
+            .map(RustCryptoRecordCipher::from_linux_secret_service_reference)
+            .collect::<Result<Vec<_>, _>>()?;
+        Self::new(active, historical)
+    }
+
     pub fn from_configured_provider() -> Result<Self, CryptoError> {
         match std::env::var("REMBRANE_KEY_PROVIDER")
             .unwrap_or_else(|_| "environment".to_owned())
@@ -220,6 +329,22 @@ impl RustCryptoKeyringCipher {
                     .unwrap_or_default();
                 Self::from_macos_keychain(&active, &historical)
             }
+            "linux-secret-service" => {
+                let key_id = std::env::var("REMBRANE_WORKSPACE_KEY_ID")
+                    .map_err(|_| CryptoError::KeyUnavailable)?;
+                let service = std::env::var("REMBRANE_SECRET_SERVICE_SERVICE")
+                    .map_err(|_| CryptoError::KeyUnavailable)?;
+                let account = std::env::var("REMBRANE_SECRET_SERVICE_ACCOUNT")
+                    .map_err(|_| CryptoError::KeyUnavailable)?;
+                let active = LinuxSecretServiceKeyReference::new(key_id, &service, account)?;
+                let historical = std::env::var("REMBRANE_SECRET_SERVICE_HISTORICAL_KEYS")
+                    .ok()
+                    .filter(|value| !value.trim().is_empty())
+                    .map(|value| parse_linux_key_history(&service, &value))
+                    .transpose()?
+                    .unwrap_or_default();
+                Self::from_linux_secret_service(&active, &historical)
+            }
             _ => Err(CryptoError::KeyUnavailable),
         }
     }
@@ -237,6 +362,23 @@ impl RustCryptoKeyringCipher {
             .iter()
             .find(|candidate| candidate.key_id() == key_id)
     }
+}
+
+fn parse_linux_key_history(
+    service: &str,
+    value: &str,
+) -> Result<Vec<LinuxSecretServiceKeyReference>, CryptoError> {
+    value
+        .split(',')
+        .map(str::trim)
+        .map(|entry| {
+            let (key_id, account) = entry.split_once('=').ok_or(CryptoError::KeyUnavailable)?;
+            if account.contains('=') {
+                return Err(CryptoError::KeyUnavailable);
+            }
+            LinuxSecretServiceKeyReference::new(key_id, service, account)
+        })
+        .collect()
 }
 
 fn parse_keychain_history(
@@ -275,6 +417,34 @@ fn validate_key_references(
         }
     }
     Ok(())
+}
+
+fn validate_linux_key_references(
+    active: &LinuxSecretServiceKeyReference,
+    historical: &[LinuxSecretServiceKeyReference],
+) -> Result<(), CryptoError> {
+    if historical
+        .iter()
+        .any(|candidate| candidate.key_id() == active.key_id())
+    {
+        return Err(CryptoError::KeyUnavailable);
+    }
+    for (index, candidate) in historical.iter().enumerate() {
+        if historical[..index]
+            .iter()
+            .any(|earlier| earlier.key_id() == candidate.key_id())
+        {
+            return Err(CryptoError::KeyUnavailable);
+        }
+    }
+    Ok(())
+}
+
+fn valid_key_metadata(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 256
+        && value.trim() == value
+        && !value.chars().any(char::is_control)
 }
 
 fn decode_key(encoded: &str) -> Result<[u8; 32], CryptoError> {
@@ -368,8 +538,9 @@ mod tests {
     use rembrane_domain::WorkspaceId;
 
     use super::{
-        MacosKeychainKeyReference, RustCryptoKeyringCipher, RustCryptoRecordCipher,
-        parse_keychain_history, validate_key_references,
+        LinuxSecretServiceKeyReference, MacosKeychainKeyReference, RustCryptoKeyringCipher,
+        RustCryptoRecordCipher, parse_keychain_history, parse_linux_key_history,
+        validate_key_references, validate_linux_key_references,
     };
 
     fn context(workspace: &str) -> EncryptionContext {
@@ -411,6 +582,32 @@ mod tests {
     #[test]
     fn rejects_invalid_encoded_key() {
         assert_eq!(super::decode_key("abcd"), Err(CryptoError::KeyUnavailable));
+    }
+
+    #[test]
+    fn linux_secret_service_history_is_bounded_and_duplicate_safe() {
+        let active = LinuxSecretServiceKeyReference::new(
+            "key_v2",
+            "org.rembrane.workspace",
+            "workspace_01:key_v2",
+        )
+        .expect("reference should validate");
+        let history =
+            parse_linux_key_history("org.rembrane.workspace", "key_v1=workspace_01:key_v1")
+                .expect("history should parse");
+        assert_eq!(history[0].key_id(), "key_v1");
+        validate_linux_key_references(&active, &history).expect("distinct history should validate");
+        assert!(
+            parse_linux_key_history("org.rembrane.workspace", "key_v1=workspace=invalid").is_err()
+        );
+        assert!(
+            LinuxSecretServiceKeyReference::new(
+                "key_v2\nunsafe",
+                "org.rembrane.workspace",
+                "workspace_01"
+            )
+            .is_err()
+        );
     }
 
     #[test]

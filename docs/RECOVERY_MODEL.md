@@ -18,9 +18,10 @@ A recoverable local deployment requires two independently protected assets:
 The database contains ciphertext, non-secret routing metadata, canonical event
 history, evidence references, checkpoints, disclosure receipts, membership
 records, deletion tombstones, and pending provider-projection work. The
-workspace key is intentionally not embedded in the database or backup. In the
-macOS Keychain profile, recovery therefore requires restoring or synchronizing
-the corresponding Keychain item; the SQLite backup alone is insufficient.
+workspace key is intentionally not embedded in the database or backup. In an
+OS keyring profile, recovery therefore requires restoring or synchronizing the
+corresponding macOS Keychain or Linux Secret Service item; the SQLite backup
+alone is insufficient.
 
 ## Backup
 
@@ -69,7 +70,7 @@ lost unless another synchronized replica contains them.
 
 Strict-E2EE content is unrecoverable. Maintainers and infrastructure providers
 must not have a hidden recovery key. Development environment variables are not
-a production recovery mechanism. Losing the macOS Keychain item and every
+a production recovery mechanism. Losing the OS keyring item and every
 separately protected recovery copy has the same irreversible result.
 
 ### Database available, wrong key
