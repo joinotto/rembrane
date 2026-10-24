@@ -322,6 +322,8 @@ This roadmap describes sequencing, not release dates.
           - [x] Keep Graphiti Neo4j and model-provider credentials out of
             Compose environment interpolation using protected file references
             and official Neo4j auth-file injection.
+          - [x] Reuse the container secret-staging boundary in the Graphiti
+            sidecar before dropping to its dedicated numeric service user.
         - [x] Add a configured encrypted SQLite graph-worker executable that
           drains provider-specific jobs through the canonical retry,
           supersession, completion, and quarantine state machine.

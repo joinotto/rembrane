@@ -63,7 +63,10 @@ symbolic links, non-regular files, files with group/other permission bits,
 empty values, and oversized values. The stock Compose overlay mounts the file
 selected by `REMBRANE_GRAPHITI_BEARER_TOKEN_FILE` read-only into both
 processes, so the matching credential is never interpolated into the Compose
-service environment.
+service environment. Each image stages its mounted secrets into a bounded
+private tmpfs, enforces runtime-user ownership and mode `0400`, and only then
+drops root privileges; strict resolution therefore does not depend on
+Compose preserving file-secret mode metadata.
 
 The Graphiti store also accepts `NEO4J_AUTH_REFERENCE`,
 `NEO4J_PASSWORD_REFERENCE`, and `OPENAI_API_KEY_REFERENCE`. A Neo4j auth

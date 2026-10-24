@@ -36,6 +36,7 @@ COPY --from=builder /source/target/release/rembrane-mobile-share-gateway \
 COPY --from=builder /source/target/release/rembrane-whatsapp-gateway \
     /usr/local/bin/rembrane-whatsapp-gateway
 COPY --chmod=755 docker/entrypoint.sh /usr/local/bin/rembrane-entrypoint
+COPY --chmod=755 docker/rembrane-stage-secrets /usr/local/bin/rembrane-stage-secrets
 
 ENV REMBRANE_DATABASE=/var/lib/rembrane/rembrane.db
 VOLUME ["/var/lib/rembrane"]

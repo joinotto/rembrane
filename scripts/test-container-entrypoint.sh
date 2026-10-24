@@ -50,6 +50,29 @@ test "$(sed -n '1p' "$invocation_log")" = \
     "rembrane rembrane init --database $temporary_directory/init/rembrane.db --principal principal_entrypoint_test --workspace workspace_entrypoint_test"
 test "$(sed -n '2p' "$invocation_log")" = "rembrane test-command"
 
+: >"$invocation_log"
+rm -rf "$secret_runtime"
+PATH="$temporary_directory:$PATH" \
+REMBRANE_ENTRYPOINT_TEST_LOG="$invocation_log" \
+REMBRANE_SECRET_STAGER="$repository_root/docker/rembrane-stage-secrets" \
+REMBRANE_SECRET_SOURCE_DIRECTORY="$secret_source" \
+REMBRANE_SECRET_RUNTIME_DIRECTORY="$secret_runtime" \
+    sh "$repository_root/sidecars/rembrane-graphiti/docker/entrypoint.sh" test-command
+
+test "$(sed -n '1p' "$invocation_log")" = "rembrane-graphiti test-command"
+test "$(sed -n '1p' "$secret_runtime/test_secret")" = "staged-secret-value"
+test "$(stat -f '%Lp' "$secret_runtime/test_secret" 2>/dev/null || stat -c '%a' "$secret_runtime/test_secret")" = "400"
+
+ln -s "$secret_source/test_secret" "$secret_source/linked_secret"
+if PATH="$temporary_directory:$PATH" \
+    REMBRANE_SECRET_SOURCE_DIRECTORY="$secret_source" \
+    REMBRANE_SECRET_RUNTIME_DIRECTORY="$temporary_directory/rejected-secrets" \
+        "$repository_root/docker/rembrane-stage-secrets" rembrane 2>/dev/null; then
+    echo "secret stager accepted a symbolic link" >&2
+    exit 1
+fi
+rm "$secret_source/linked_secret"
+
 if PATH="$temporary_directory:$PATH" \
     REMBRANE_ENTRYPOINT_TEST_LOG="$invocation_log" \
     REMBRANE_DATABASE="$temporary_directory/invalid/rembrane.db" \

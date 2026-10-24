@@ -9,6 +9,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- Shared protected-secret staging for the Graphiti sidecar, followed by an
+  explicit privilege drop to its dedicated service user.
 - Container-entrypoint staging of mounted secrets into a bounded owner-only
   runtime tmpfs before privilege drop, avoiding dependence on Compose
   implementations preserving requested file ownership and modes.

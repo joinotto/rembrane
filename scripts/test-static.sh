@@ -78,6 +78,8 @@ sh -n scripts/check-local-alpha.sh
 sh -n scripts/test-graphiti-http-e2e.sh
 sh -n scripts/test-graphiti-sidecar.sh
 sh -n scripts/test-container-entrypoint.sh
+sh -n docker/rembrane-stage-secrets
+sh -n sidecars/rembrane-graphiti/docker/entrypoint.sh
 sh -n scripts/test-swift-sdk.sh
 sh -n scripts/test-ios-share-extension.sh
 sh -n scripts/test-ios-imessage-extension.sh
@@ -118,11 +120,11 @@ rg -q 'REMBRANE_GRAPHITI_BEARER_TOKEN_REFERENCE' compose.graphiti.yaml
 rg -q 'REMBRANE_GRAPHITI_BEARER_TOKEN_FILE' compose.graphiti.yaml
 rg -q 'REMBRANE_GRAPHITI_NEO4J_AUTH_FILE' compose.graphiti.yaml
 rg -q 'REMBRANE_GRAPHITI_OPENAI_API_KEY_FILE' compose.graphiti.yaml
-rg -q 'file:/run/secrets/rembrane_graphiti_bearer_token' compose.graphiti.yaml
 rg -q 'file:/run/rembrane-secrets/rembrane_graphiti_bearer_token' compose.graphiti.yaml
 rg -q 'NEO4J_AUTH_FILE: /run/secrets/rembrane_graphiti_neo4j_auth' compose.graphiti.yaml
-rg -q 'OPENAI_API_KEY_REFERENCE: file:/run/secrets/rembrane_graphiti_openai_api_key' \
+rg -q 'OPENAI_API_KEY_REFERENCE: file:/run/rembrane-secrets/rembrane_graphiti_openai_api_key' \
     compose.graphiti.yaml
+rg -q '/run/rembrane-secrets:size=1m,mode=0700' compose.graphiti.yaml
 if rg -q '^[[:space:]]+REMBRANE_GRAPHITI_BEARER_TOKEN:' compose.graphiti.yaml; then
     echo "Graphiti Compose must not interpolate the raw bearer token" >&2
     exit 1
@@ -181,7 +183,10 @@ test "$(rg -c '/tmp:size=16m,mode=1777' compose.mobile-share.yaml)" -eq 1
 test "$(rg -c '/run/rembrane-secrets:size=1m,mode=0700' compose.mobile-share.yaml)" -eq 1
 test "$(rg 'REMBRANE_SKIP_WORKSPACE_INIT: \"1\"' \
     compose.whatsapp.yaml compose.mobile-share.yaml | wc -l | tr -d ' ')" -eq 3
-rg -q 'USER 10002:10002' sidecars/rembrane-graphiti/Dockerfile
+rg -q 'ENTRYPOINT \[\"rembrane-graphiti-entrypoint\"\]' \
+    sidecars/rembrane-graphiti/Dockerfile
+rg -q 'exec gosu rembrane-graphiti' sidecars/rembrane-graphiti/docker/entrypoint.sh
+rg -q 'rembrane-stage-secrets' Dockerfile sidecars/rembrane-graphiti/Dockerfile
 ./scripts/test-container-entrypoint.sh
 if command -v docker >/dev/null 2>&1; then
     REMBRANE_PRINCIPAL_ID=principal_static \
