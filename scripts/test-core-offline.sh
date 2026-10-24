@@ -16,7 +16,7 @@ for crate in \
 do
     cp -R "$repository_root/crates/$crate" "$test_directory/crates/"
 done
-for adapter in rembrane-semantic-native rembrane-store-memory; do
+for adapter in rembrane-oauth-introspection rembrane-semantic-native rembrane-store-memory; do
     cp -R "$repository_root/adapters/$adapter" "$test_directory/adapters/"
 done
 
@@ -24,6 +24,7 @@ cat >"$test_directory/Cargo.toml" <<'EOF'
 [workspace]
 members = [
     "adapters/rembrane-semantic-native",
+    "adapters/rembrane-oauth-introspection",
     "adapters/rembrane-store-memory",
     "crates/rembrane-application",
     "crates/rembrane-config",

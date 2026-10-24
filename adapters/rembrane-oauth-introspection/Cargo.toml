@@ -1,0 +1,16 @@
+[package]
+name = "rembrane-oauth-introspection"
+description = "Authenticated OAuth token-introspection adapter for Rembrane"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+rembrane-application = { path = "../../crates/rembrane-application" }
+rembrane-contracts = { path = "../../crates/rembrane-contracts" }
+rembrane-domain = { path = "../../crates/rembrane-domain" }
+
+[lints]
+workspace = true
