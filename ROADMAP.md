@@ -74,7 +74,8 @@ This roadmap describes sequencing, not release dates.
 - [ ] Add remote Streamable HTTP MCP with OAuth.
   - [x] Define HTTPS endpoints, RFC 9728 discovery metadata, bearer challenges,
     verified connection identity, scope ceilings, and session security rules.
-  - [ ] Add a verified-token contract and authorization middleware.
+  - [x] Add a fail-closed verified-token claims contract.
+  - [ ] Add authorization middleware backed by a signature-verifying adapter.
   - [ ] Serve Streamable HTTP through the official Rust MCP SDK.
   - [ ] Add OAuth and cross-tenant transport integration tests.
 - [x] Persist a disclosure receipt for every SQLite context response.

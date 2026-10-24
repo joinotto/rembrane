@@ -13,6 +13,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   protected-resource metadata, explicit OAuth scope ceilings, bearer challenge
   behavior, verified identity requirements, and per-request session
   reauthentication rules.
+- Transport-independent remote token claims validation for exact issuer,
+  resource audience, time validity, canonical subject/client/workspace binding,
+  and operation-specific OAuth scope ceilings.
 - Secret-safe Gemini CLI `settings.json` MCP configuration generation alongside
   the existing Codex, Claude Code, and vendor-neutral connection manifests.
 - Dedicated `travel` domain authorization for creating new trip entities,
