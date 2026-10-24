@@ -4,19 +4,20 @@ use std::io::Read;
 use std::time::Duration;
 
 use rembrane_domain::{
-    ActivityId, ContextPackId, DisclosureId, EntityId, EventId, EvidenceId, EvidenceReference,
-    EvidenceSource, MemoryId, MemoryKind, MemoryScope,
+    ActivityId, CheckpointId, ContextPackId, DisclosureId, EntityId, EventId, EvidenceId,
+    EvidenceReference, EvidenceSource, MemoryId, MemoryKind, MemoryScope,
 };
 use rembrane_provider_sdk::{
-    CURRENT_MEMORY_PROVIDER_PROTOCOL, DeleteMemoryPayload, DeleteMemoryResult,
-    ExplainMemoryPayload, ExplainMemoryResult, MEMORY_PROVIDER_DISCOVERY_PATH,
-    MemoryProviderCapability, MemoryProviderConnection, MemoryProviderContextItem,
-    MemoryProviderDisclosedMemory, MemoryProviderDisclosureConstraint, MemoryProviderEvent,
-    MemoryProviderLimits, MemoryProviderManifest, MemoryProviderPolicy, MemoryProviderPrivacyMode,
-    MemoryProviderRecordedEvent, MemoryProviderRequest, MemoryProviderResponse,
-    MemoryProviderSensitivity, MemoryProviderTransport, ProposeMemoryPayload, ProposeMemoryResult,
-    ProviderError, ProviderProtocolVersion, RecordEventPayload, RecordEventResult,
-    ResolveContextPayload, ResolveContextResult, ResolveQuestionPayload, ResolveQuestionResult,
+    CURRENT_MEMORY_PROVIDER_PROTOCOL, CheckpointActivityPayload, CheckpointActivityResult,
+    DeleteMemoryPayload, DeleteMemoryResult, ExplainMemoryPayload, ExplainMemoryResult,
+    MEMORY_PROVIDER_DISCOVERY_PATH, MemoryProviderCapability, MemoryProviderConnection,
+    MemoryProviderContextItem, MemoryProviderDisclosedMemory, MemoryProviderDisclosureConstraint,
+    MemoryProviderEvent, MemoryProviderLimits, MemoryProviderManifest, MemoryProviderPolicy,
+    MemoryProviderPrivacyMode, MemoryProviderRecordedEvent, MemoryProviderRequest,
+    MemoryProviderResponse, MemoryProviderSensitivity, MemoryProviderTransport,
+    ProposeMemoryPayload, ProposeMemoryResult, ProviderError, ProviderProtocolVersion,
+    RecordEventPayload, RecordEventResult, ResolveContextPayload, ResolveContextResult,
+    ResolveQuestionPayload, ResolveQuestionResult,
 };
 use reqwest::Url;
 use reqwest::blocking::{Client, Response};
@@ -206,6 +207,39 @@ impl HttpMemoryProviderClient {
         }
     }
 
+    pub fn checkpoint_activity(
+        &self,
+        request: &MemoryProviderRequest<CheckpointActivityPayload>,
+    ) -> Result<MemoryProviderResponse<CheckpointActivityResult>, ProviderError> {
+        let endpoint = activity_subresource_endpoint(
+            &self.base_url,
+            request.payload().activity_id().as_str(),
+            "checkpoint",
+        )?;
+        let body = RequestEnvelope {
+            request_id: request.request_id().as_str(),
+            protocol_version: "0.1",
+            operation: "checkpoint_activity",
+            payload: CheckpointActivityBody::from(request.payload()),
+        };
+        let response = self.post_json(endpoint, &body)?;
+        let status = response.status().as_u16();
+        let wire: ResponseEnvelope<CheckpointActivityResultBody> =
+            decode_json(response, MAXIMUM_OPERATION_BYTES)?;
+        validate_response_identity(request, &wire.request_id, &wire.protocol_version)?;
+        match (wire.result, wire.error) {
+            (Some(result), None) if (200..300).contains(&status) => {
+                Ok(request.success(result.into_domain(request.payload())?))
+            }
+            (None, Some(error)) if !(200..300).contains(&status) => {
+                Ok(request.error(parse_error_code(&error.code)?))
+            }
+            _ => Err(ProviderError::Rejected(
+                "memory provider response status and envelope disagree".to_owned(),
+            )),
+        }
+    }
+
     pub fn delete_memory(
         &self,
         request: &MemoryProviderRequest<DeleteMemoryPayload>,
@@ -368,6 +402,24 @@ fn memory_subresource_endpoint(
     Ok(endpoint)
 }
 
+fn activity_subresource_endpoint(
+    base_url: &Url,
+    activity_id: &str,
+    subresource: &str,
+) -> Result<Url, ProviderError> {
+    let mut endpoint = base_url
+        .join("v1/activities/")
+        .map_err(|_| ProviderError::Unavailable)?;
+    endpoint
+        .path_segments_mut()
+        .map_err(|_| {
+            ProviderError::InvalidConfiguration("memory provider URL cannot be a base".to_owned())
+        })?
+        .push(activity_id)
+        .push(subresource);
+    Ok(endpoint)
+}
+
 fn validate_base_url(value: &str) -> Result<Url, ProviderError> {
     let mut url = Url::parse(value).map_err(|_| {
         ProviderError::InvalidConfiguration("memory provider base URL is invalid".to_owned())
@@ -502,6 +554,36 @@ struct ProposeMemoryBody<'request> {
 struct RecordEventBody<'request> {
     idempotency_key: &'request str,
     events: Vec<MemoryEventBody<'request>>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CheckpointActivityBody<'request> {
+    idempotency_key: &'request str,
+    activity_id: &'request str,
+    entity_id: Option<&'request str>,
+    expected_version: Option<u64>,
+    goal: Option<&'request str>,
+    summary: &'request str,
+    next_steps: &'request [String],
+    blockers: &'request [String],
+    state_fingerprint: Option<&'request str>,
+}
+
+impl<'request> From<&'request CheckpointActivityPayload> for CheckpointActivityBody<'request> {
+    fn from(payload: &'request CheckpointActivityPayload) -> Self {
+        Self {
+            idempotency_key: payload.idempotency_key().as_str(),
+            activity_id: payload.activity_id().as_str(),
+            entity_id: payload.entity_id().map(EntityId::as_str),
+            expected_version: payload.expected_version(),
+            goal: payload.goal(),
+            summary: payload.summary(),
+            next_steps: payload.next_steps(),
+            blockers: payload.blockers(),
+            state_fingerprint: payload.state_fingerprint(),
+        }
+    }
 }
 
 impl<'request> From<&'request RecordEventPayload> for RecordEventBody<'request> {
@@ -697,6 +779,35 @@ struct ProposeMemoryResultBody {
 #[serde(deny_unknown_fields)]
 struct RecordEventResultBody {
     events: Vec<RecordedEventBody>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct CheckpointActivityResultBody {
+    checkpoint_id: String,
+    version: u64,
+}
+
+impl CheckpointActivityResultBody {
+    fn into_domain(
+        self,
+        request: &CheckpointActivityPayload,
+    ) -> Result<CheckpointActivityResult, ProviderError> {
+        let expected_result_version = request
+            .expected_version()
+            .map_or(Some(1), |version| version.checked_add(1))
+            .ok_or_else(|| {
+                ProviderError::Rejected(
+                    "memory provider checkpoint request version cannot advance".to_owned(),
+                )
+            })?;
+        if self.version != expected_result_version {
+            return Err(ProviderError::Rejected(
+                "memory provider checkpoint returned a non-consecutive version".to_owned(),
+            ));
+        }
+        CheckpointActivityResult::new(CheckpointId::new(self.checkpoint_id), self.version)
+    }
 }
 
 impl RecordEventResultBody {
@@ -1170,17 +1281,19 @@ fn invalid_discovery() -> ProviderError {
 mod tests {
     use rembrane_domain::{EntityId, MemoryScope};
     use rembrane_provider_sdk::{
-        CURRENT_MEMORY_PROVIDER_PROTOCOL, ExplainMemoryPayload, MemoryProviderCapability,
-        MemoryProviderConnection, MemoryProviderContextSelector, MemoryProviderEvent,
-        MemoryProviderIdempotencyKey, MemoryProviderLimits, MemoryProviderManifest,
-        MemoryProviderPolicy, MemoryProviderPrivacyMode, MemoryProviderTransport,
-        ProposeMemoryPayload, RecordEventPayload, ResolveContextPayload, ResolveQuestionPayload,
+        CURRENT_MEMORY_PROVIDER_PROTOCOL, CheckpointActivityPayload, ExplainMemoryPayload,
+        MemoryProviderCapability, MemoryProviderConnection, MemoryProviderContextSelector,
+        MemoryProviderEvent, MemoryProviderIdempotencyKey, MemoryProviderLimits,
+        MemoryProviderManifest, MemoryProviderPolicy, MemoryProviderPrivacyMode,
+        MemoryProviderTransport, ProposeMemoryPayload, RecordEventPayload, ResolveContextPayload,
+        ResolveQuestionPayload,
     };
 
     use super::{
-        DiscoveryBody, ExplainMemoryBody, ExplainMemoryResultBody, ProposeMemoryBody,
-        RecordEventBody, RecordEventResultBody, RequestEnvelope, ResolveContextBody,
-        ResolveContextResultBody, ResolveQuestionBody, ResolveQuestionResultBody, memory_endpoint,
+        CheckpointActivityBody, CheckpointActivityResultBody, DiscoveryBody, ExplainMemoryBody,
+        ExplainMemoryResultBody, ProposeMemoryBody, RecordEventBody, RecordEventResultBody,
+        RequestEnvelope, ResolveContextBody, ResolveContextResultBody, ResolveQuestionBody,
+        ResolveQuestionResultBody, activity_subresource_endpoint, memory_endpoint,
         memory_subresource_endpoint, validate_base_url, validate_bearer_token,
     };
 
@@ -1484,6 +1597,69 @@ mod tests {
         let mismatched: RecordEventResultBody =
             serde_json::from_str(r#"{"events":[]}"#).expect("result JSON");
         assert!(mismatched.into_domain(&payload).is_err());
+    }
+
+    #[test]
+    fn serializes_and_version_binds_activity_checkpoints() {
+        let create = CheckpointActivityPayload::create(
+            MemoryProviderIdempotencyKey::new("checkpoint_0123456789abcdef").expect("key"),
+            rembrane_domain::ActivityId::new("activity/rembrane"),
+            Some(EntityId::new("project_rembrane")),
+            "Ship the portable memory provider",
+            "Question and event transports are complete.",
+            vec!["Implement checkpoint transport.".to_owned()],
+            vec!["Dependency registry is unavailable.".to_owned()],
+            Some("git:4cdf31e".to_owned()),
+        )
+        .expect("checkpoint");
+        let encoded =
+            serde_json::to_value(CheckpointActivityBody::from(&create)).expect("request JSON");
+        assert_eq!(encoded["activityId"], "activity/rembrane");
+        assert_eq!(encoded["entityId"], "project_rembrane");
+        assert_eq!(encoded["expectedVersion"], serde_json::Value::Null);
+        assert_eq!(encoded["goal"], "Ship the portable memory provider");
+        assert!(encoded.get("workspaceId").is_none());
+        assert!(encoded.get("subjectId").is_none());
+
+        let result: CheckpointActivityResultBody =
+            serde_json::from_str(r#"{"checkpointId":"checkpoint_01","version":1}"#)
+                .expect("result JSON");
+        assert_eq!(
+            result
+                .into_domain(&create)
+                .expect("canonical result")
+                .version(),
+            1
+        );
+
+        let update = CheckpointActivityPayload::update(
+            MemoryProviderIdempotencyKey::new("checkpoint_1123456789abcdef").expect("key"),
+            rembrane_domain::ActivityId::new("activity/rembrane"),
+            Some(EntityId::new("project_rembrane")),
+            3,
+            "Checkpoint transport is complete.",
+            vec!["Implement disclosure transport.".to_owned()],
+            Vec::new(),
+            Some("git:pending".to_owned()),
+        )
+        .expect("checkpoint");
+        let stale: CheckpointActivityResultBody =
+            serde_json::from_str(r#"{"checkpointId":"checkpoint_01","version":3}"#)
+                .expect("result JSON");
+        assert!(stale.into_domain(&update).is_err());
+    }
+
+    #[test]
+    fn percent_encodes_activity_identity_before_checkpoint_subresource() {
+        let base = validate_base_url("https://memory.example.test").expect("base URL");
+        let endpoint =
+            activity_subresource_endpoint(&base, "activity/with?reserved#bytes", "checkpoint")
+                .expect("endpoint");
+        assert_eq!(
+            endpoint.as_str(),
+            "https://memory.example.test/v1/activities/activity%2Fwith%3Freserved%23bytes/checkpoint"
+        );
+        assert_eq!(endpoint.path_segments().expect("segments").count(), 4);
     }
 
     #[test]

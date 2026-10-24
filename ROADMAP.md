@@ -373,7 +373,10 @@ This roadmap describes sequencing, not release dates.
         identity.
       - [x] Record bounded idempotent event batches without caller-controlled
         tenant or actor identity and validate exact ordered result cardinality.
-      - [ ] Add checkpoint, disclosure, and sync operations.
+      - [x] Create or optimistically update resumable activity checkpoints
+        through a safely encoded activity path and require consecutive result
+        versions.
+      - [ ] Add disclosure and sync operations.
 - [x] Versioned key-provider sidecar protocol for OS, HSM, and customer-KMS
   adapters.
   - [x] Add transport-independent Rust manifest, negotiation, request, context,

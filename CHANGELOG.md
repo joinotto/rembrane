@@ -79,6 +79,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Typed Memory Provider event ingestion with idempotent bounded batches,
   scoped opaque event data, server-derived tenant and actor authority, and
   exact-cardinality strictly ordered canonical event results.
+- Typed Memory Provider activity checkpoints with safely encoded activity
+  paths, idempotent create and optimistic-update shapes, resumable goal and
+  work state, and fail-closed consecutive result-version validation.
 - Canonical engine-neutral temporal knowledge graph aggregates with typed
   nodes, validated relationship types, strict workspace namespaces, separate
   validity and ingestion time, evidence provenance, bounded aliases, versions,
