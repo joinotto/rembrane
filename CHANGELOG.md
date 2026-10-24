@@ -50,6 +50,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Hardened OAuth introspection HTTP transport validation with parsed HTTPS
   endpoints, bounded control-free credentials and bearer tokens, disabled
   environment proxies, and socket-free exact RFC 7662 request tests.
+- Fail-closed OAuth introspection claim bounds covering audience cardinality,
+  issuer and identity sizes, scope size, and control-character rejection
+  before claims become canonical tenant identity.
 - A transport-injectable Mem0 OSS semantic adapter mapping authorized
   projections into HMAC-pseudonymous workspace partitions while preserving
   canonical memory IDs, versions, replacement, bounded ranking, and

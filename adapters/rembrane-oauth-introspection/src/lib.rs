@@ -13,6 +13,12 @@ use rembrane_application::{RemoteTokenVerificationError, RemoteTokenVerifier};
 use rembrane_contracts::{RemoteAccessScope, RemoteTokenClaims};
 use rembrane_domain::{ClientId, PrincipalId, WorkspaceId};
 
+const MAXIMUM_ISSUER_BYTES: usize = 2_048;
+const MAXIMUM_AUDIENCES: usize = 16;
+const MAXIMUM_AUDIENCE_BYTES: usize = 2_048;
+const MAXIMUM_IDENTITY_BYTES: usize = 255;
+const MAXIMUM_SCOPE_BYTES: usize = 4_096;
+
 pub trait IntrospectionTransport {
     /// Performs an authenticated RFC 7662 introspection request.
     ///
@@ -81,18 +87,32 @@ where
         if !response.active {
             return Err(RemoteTokenVerificationError);
         }
-        let issuer = required(response.issuer)?;
-        let subject_id = PrincipalId::new(required(response.subject)?);
-        let client_id = ClientId::new(required(response.client_id)?);
-        let workspace_id = WorkspaceId::new(required(response.workspace_id)?);
+        let issuer = required_claim(response.issuer, MAXIMUM_ISSUER_BYTES)?;
+        let subject_id =
+            PrincipalId::new(required_claim(response.subject, MAXIMUM_IDENTITY_BYTES)?);
+        let client_id = ClientId::new(required_claim(response.client_id, MAXIMUM_IDENTITY_BYTES)?);
+        let workspace_id = WorkspaceId::new(required_claim(
+            response.workspace_id,
+            MAXIMUM_IDENTITY_BYTES,
+        )?);
         let expires_at_epoch_seconds = response
             .expires_at_epoch_seconds
             .filter(|expiry| *expiry > 0)
             .ok_or(RemoteTokenVerificationError)?;
-        if response.audience.is_empty() || response.audience.iter().any(String::is_empty) {
+        if response.audience.is_empty()
+            || response.audience.len() > MAXIMUM_AUDIENCES
+            || response
+                .audience
+                .iter()
+                .any(|audience| !valid_claim(audience, MAXIMUM_AUDIENCE_BYTES))
+        {
             return Err(RemoteTokenVerificationError);
         }
-        let scopes = parse_scopes(response.scope.as_deref().unwrap_or_default())?;
+        let scope = response.scope.as_deref().unwrap_or_default();
+        if scope.len() > MAXIMUM_SCOPE_BYTES || scope.chars().any(char::is_control) {
+            return Err(RemoteTokenVerificationError);
+        }
+        let scopes = parse_scopes(scope)?;
 
         Ok(RemoteTokenClaims {
             issuer,
@@ -107,10 +127,17 @@ where
     }
 }
 
-fn required(value: Option<String>) -> Result<String, RemoteTokenVerificationError> {
+fn required_claim(
+    value: Option<String>,
+    maximum_bytes: usize,
+) -> Result<String, RemoteTokenVerificationError> {
     value
-        .filter(|value| !value.is_empty())
+        .filter(|value| valid_claim(value, maximum_bytes))
         .ok_or(RemoteTokenVerificationError)
+}
+
+fn valid_claim(value: &str, maximum_bytes: usize) -> bool {
+    !value.is_empty() && value.len() <= maximum_bytes && !value.chars().any(char::is_control)
 }
 
 fn parse_scopes(value: &str) -> Result<BTreeSet<RemoteAccessScope>, RemoteTokenVerificationError> {
@@ -137,7 +164,8 @@ fn parse_scopes(value: &str) -> Result<BTreeSet<RemoteAccessScope>, RemoteTokenV
 mod tests {
     use super::{
         IntrospectionResponse, IntrospectionTokenVerifier, IntrospectionTransport,
-        IntrospectionTransportError,
+        IntrospectionTransportError, MAXIMUM_AUDIENCE_BYTES, MAXIMUM_AUDIENCES,
+        MAXIMUM_IDENTITY_BYTES, MAXIMUM_SCOPE_BYTES,
     };
     use rembrane_application::RemoteTokenVerifier;
     use rembrane_contracts::RemoteAccessScope;
@@ -217,5 +245,37 @@ mod tests {
             .verify("wrong-token")
             .is_err()
         );
+    }
+
+    #[test]
+    fn rejects_oversized_control_bearing_and_excessive_claims() {
+        let verify = |response| {
+            IntrospectionTokenVerifier::new(FixtureTransport { response })
+                .verify("opaque-access-token")
+        };
+
+        let mut oversized_identity = active_response();
+        oversized_identity.subject = Some("x".repeat(MAXIMUM_IDENTITY_BYTES + 1));
+        assert!(verify(oversized_identity).is_err());
+
+        let mut control_identity = active_response();
+        control_identity.workspace_id = Some("workspace\ninjected".to_owned());
+        assert!(verify(control_identity).is_err());
+
+        let mut excessive_audiences = active_response();
+        excessive_audiences.audience = vec!["audience".to_owned(); MAXIMUM_AUDIENCES + 1];
+        assert!(verify(excessive_audiences).is_err());
+
+        let mut oversized_audience = active_response();
+        oversized_audience.audience = vec!["x".repeat(MAXIMUM_AUDIENCE_BYTES + 1)];
+        assert!(verify(oversized_audience).is_err());
+
+        let mut oversized_scope = active_response();
+        oversized_scope.scope = Some("x".repeat(MAXIMUM_SCOPE_BYTES + 1));
+        assert!(verify(oversized_scope).is_err());
+
+        let mut control_scope = active_response();
+        control_scope.scope = Some("rembrane:context:read\ninjected".to_owned());
+        assert!(verify(control_scope).is_err());
     }
 }
