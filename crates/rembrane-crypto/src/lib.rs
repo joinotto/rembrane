@@ -22,6 +22,7 @@ pub enum PayloadPurpose {
     CanonicalEvent,
     MemoryContent,
     TripEntity,
+    BookingResearch,
 }
 
 impl PayloadPurpose {
@@ -32,6 +33,7 @@ impl PayloadPurpose {
             Self::CanonicalEvent => "canonical-event",
             Self::MemoryContent => "memory-content",
             Self::TripEntity => "trip-entity",
+            Self::BookingResearch => "booking-research",
         }
     }
 }

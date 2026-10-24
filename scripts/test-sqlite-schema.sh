@@ -17,7 +17,9 @@ sqlite3 "$database" < \
     "$repository_root/migrations/sqlite/0005_memory_share_proposals.sql"
 sqlite3 "$database" < \
     "$repository_root/migrations/sqlite/0006_trips.sql"
-sqlite3 "$database" "PRAGMA user_version = 6;"
+sqlite3 "$database" < \
+    "$repository_root/migrations/sqlite/0007_booking_research.sql"
+sqlite3 "$database" "PRAGMA user_version = 7;"
 
 sqlite3 "$database" <<'SQL'
 PRAGMA foreign_keys = ON;
@@ -183,6 +185,39 @@ INSERT INTO trips (
         'trip_01',
         'principal_02',
         X'02',
+        'key_02',
+        'xchacha20poly1305',
+        zeroblob(24),
+        1
+    );
+INSERT INTO booking_research (
+    workspace_id,
+    id,
+    trip_id,
+    observed_by,
+    research_ciphertext,
+    encryption_key_id,
+    encryption_algorithm,
+    encryption_nonce,
+    version
+) VALUES
+    (
+        'workspace_01',
+        'research_01',
+        'trip_01',
+        'principal_01',
+        X'03',
+        'key_01',
+        'xchacha20poly1305',
+        zeroblob(24),
+        1
+    ),
+    (
+        'workspace_02',
+        'research_01',
+        'trip_01',
+        'principal_02',
+        X'04',
         'key_02',
         'xchacha20poly1305',
         zeroblob(24),
@@ -385,7 +420,7 @@ table_count=$(
 )
 
 test "$table_count" -ge 9
-test "$(sqlite3 "$database" "PRAGMA user_version;")" -eq 6
+test "$(sqlite3 "$database" "PRAGMA user_version;")" -eq 7
 test "$(
     sqlite3 "$database" \
         "SELECT count(*) FROM checkpoint_disclosures;"
@@ -393,6 +428,10 @@ test "$(
 test "$(
     sqlite3 "$database" \
         "SELECT count(*) FROM trips WHERE id = 'trip_01';"
+)" -eq 2
+test "$(
+    sqlite3 "$database" \
+        "SELECT count(*) FROM booking_research WHERE id = 'research_01';"
 )" -eq 2
 test "$(
     sqlite3 "$database" \

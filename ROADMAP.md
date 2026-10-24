@@ -115,7 +115,8 @@ This roadmap describes sequencing, not release dates.
   - [x] Versioned provider-independent booking-research codec.
   - [x] Exact trip-scoped capture authorization and atomic in-memory reference
     repository.
-  - [ ] Encrypted repository and external capture API.
+  - [x] Workspace-bound encrypted SQLite repository with atomic audit events.
+  - [ ] External capture API.
 - [ ] Cross-agent activity continuation.
 - [ ] Sensitive travel-data permissions.
 

@@ -1,5 +1,6 @@
 //! Persistent tenant-isolated SQLite adapter.
 
+mod booking_research;
 mod canonical;
 mod checkpoint;
 mod disclosure;
@@ -33,7 +34,9 @@ const MEMBER_SCOPE_GRANT_MIGRATION: &str =
 const MEMORY_SHARE_PROPOSAL_MIGRATION: &str =
     include_str!("../../../migrations/sqlite/0005_memory_share_proposals.sql");
 const TRIP_MIGRATION: &str = include_str!("../../../migrations/sqlite/0006_trips.sql");
-const CURRENT_SCHEMA_VERSION: u32 = 6;
+const BOOKING_RESEARCH_MIGRATION: &str =
+    include_str!("../../../migrations/sqlite/0007_booking_research.sql");
+const CURRENT_SCHEMA_VERSION: u32 = 7;
 const CANONICAL_TABLES: [&str; 10] = [
     "activity_checkpoints",
     "disclosed_memories",
@@ -136,6 +139,12 @@ fn migrate(connection: &mut Connection) -> Result<(), ApplicationError> {
     if version == 5 {
         transaction
             .execute_batch(TRIP_MIGRATION)
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        version = 6;
+    }
+    if version == 6 {
+        transaction
+            .execute_batch(BOOKING_RESEARCH_MIGRATION)
             .map_err(|_| ApplicationError::StorageUnavailable)?;
     }
     transaction

@@ -31,6 +31,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Explicit booking-research capture permission, exact trip-scope enforcement,
   versioned audit events, and atomic in-memory capture with sequence-conflict
   rollback.
+- Schema version 7 encrypted booking-research storage bound to canonical trips,
+  with a distinct encryption purpose, tenant-scoped reads, and atomic event
+  persistence.
 - Rust modular-monolith workspace with provider-independent domain and
   application layers.
 - Canonical memory, provenance, event, disclosure, membership, grant,
