@@ -686,6 +686,8 @@ This roadmap describes sequencing, not release dates.
       transport for Mem0 OSS exact add, list, search, and deletion operations.
     - [x] Expose disposable Mem0 conformance through the CLI with environment
       secret custody and an explicit plaintext-processing acknowledgement.
+      - [x] Require a bounded safe external namespace with enough room for a
+        fresh random suffix before any provider credential is resolved.
   - [x] Generate a secret-reference-only local MCP configuration for OpenCode
     using its command-array and environment-substitution contract.
   - [x] Enforce one bounded control-free executable-command contract before

@@ -45,4 +45,5 @@ cloud secret manager. Never reuse the API key as the workspace lookup secret.
 The CLI can execute the destructive shared conformance suite against an
 operator-owned disposable Mem0 instance. It requires `MEM0_BASE_URL`,
 `MEM0_API_KEY`, `MEM0_WORKSPACE_LOOKUP_SECRET`, a unique namespace, and the
-explicit `--allow-provider-plaintext` acknowledgement. See `docs/TESTING.md`.
+explicit `--allow-provider-plaintext` acknowledgement. The CLI rejects short,
+unbounded, or unsafe external namespaces. See `docs/TESTING.md`.

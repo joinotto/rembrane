@@ -619,6 +619,7 @@ fn test_provider(arguments: &[String]) -> Result<String, String> {
                      --allow-provider-plaintext after verifying the target"
                     .to_owned());
             }
+            validate_external_conformance_namespace(namespace)?;
             let base_url = secret_environment("MEM0_BASE_URL")?;
             let api_key = std::env::var("MEM0_API_KEY")
                 .map_err(|_| "MEM0_API_KEY is required in the environment".to_owned())?;
@@ -641,6 +642,21 @@ fn test_provider(arguments: &[String]) -> Result<String, String> {
             "provider {provider_id} is not installed in this CLI build"
         )),
     }
+}
+
+fn validate_external_conformance_namespace(namespace: &str) -> Result<(), String> {
+    if !(16..=80).contains(&namespace.len())
+        || namespace
+            .bytes()
+            .any(|byte| !byte.is_ascii_alphanumeric() && !matches!(byte, b'.' | b'_' | b'-'))
+    {
+        return Err(
+            "external provider namespace must contain 16-80 ASCII letters, digits, '.', '_', or \
+             '-' and should include a freshly generated random suffix"
+                .to_owned(),
+        );
+    }
+    Ok(())
 }
 
 const MCP_BASE_ENVIRONMENT_VARIABLES: [&str; 6] = [
@@ -1812,8 +1828,8 @@ mod tests {
         gemini_mcp_config, generic_mcp_config, mcp_environment_variables, memory_privacy_mode_name,
         memory_provider_check_policy, opencode_mcp_config, option, positive_u64, providers,
         read_export, recall_scope_context, redact_endpoint, requested_memory_privacy,
-        requested_memory_scope, test_provider, validate_mcp_server_binary, vscode_mcp_config,
-        write_export, zed_mcp_config,
+        requested_memory_scope, test_provider, validate_external_conformance_namespace,
+        validate_mcp_server_binary, vscode_mcp_config, write_export, zed_mcp_config,
     };
 
     fn temporary_path(name: &str) -> std::path::PathBuf {
@@ -1997,6 +2013,20 @@ mod tests {
         .expect_err("Mem0 test must fail before reading credentials");
 
         assert!(error.contains("--allow-provider-plaintext"));
+    }
+
+    #[test]
+    fn external_provider_namespace_is_bounded_and_shell_safe() {
+        assert!(validate_external_conformance_namespace("mem0-20261024-a8f21c").is_ok());
+        for invalid in [
+            "predictable",
+            "contains whitespace 123",
+            "contains/slash/1234",
+            "contains\ncontrol-1234",
+            "this-name-is-deliberately-made-longer-than-eighty-characters-to-prevent-unbounded-provider-identifiers",
+        ] {
+            assert!(validate_external_conformance_namespace(invalid).is_err());
+        }
     }
 
     #[test]
