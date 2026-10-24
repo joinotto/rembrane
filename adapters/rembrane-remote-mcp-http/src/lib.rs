@@ -13,8 +13,8 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use rembrane_application::{
-    RemoteHttpAuthorization, RemoteHttpAuthorizationError, RemoteSessionHttpError,
-    RemoteSessionRegistry, RemoteTokenVerifier,
+    RemoteAccessAuthenticator, RemoteHttpAuthorization, RemoteHttpAuthorizationError,
+    RemoteSessionHttpError, RemoteSessionRegistry, RemoteTokenVerifier,
 };
 use rembrane_config::RemoteMcpConfig;
 use rembrane_contracts::{RemoteMcpRequestAuthorization, RemoteSessionId, VerifiedRemoteAccess};
@@ -196,6 +196,68 @@ where
         body,
         now_epoch_seconds,
     )
+}
+
+/// Owned authorization service suitable for Axum router state.
+///
+/// It owns the verifier and validated deployment values, then creates the
+/// short-lived borrowing authentication objects for each request. This avoids
+/// self-referential state while preserving per-request token verification.
+pub struct RemoteMcpAxumAuthorization<Verifier> {
+    gate: RemoteMcpHttpGate,
+    verifier: Verifier,
+    issuer: String,
+    resource: String,
+    trusted_origins: Vec<String>,
+}
+
+impl<Verifier> RemoteMcpAxumAuthorization<Verifier>
+where
+    Verifier: RemoteTokenVerifier,
+{
+    /// Builds an owned Axum authorization service from one validated remote
+    /// MCP deployment profile.
+    ///
+    /// # Errors
+    ///
+    /// Returns an HTTP-ready rejection when the configured session capacity
+    /// or derived HTTP gate is invalid.
+    pub fn from_config(
+        maximum_sessions: usize,
+        config: &RemoteMcpConfig,
+        verifier: Verifier,
+    ) -> Result<Self, RemoteMcpHttpRejection> {
+        Ok(Self {
+            gate: RemoteMcpHttpGate::from_config(maximum_sessions, config)?,
+            verifier,
+            issuer: config.issuer().to_owned(),
+            resource: config.resource().to_owned(),
+            trusted_origins: config.trusted_origins().to_vec(),
+        })
+    }
+
+    /// Authorizes one stateless Axum request and its exact JSON-RPC bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns a fail-closed HTTP rejection when headers, body,
+    /// authentication, origin, host, or operation scope are invalid.
+    pub fn authorize_stateless_body(
+        &self,
+        headers: &HeaderMap,
+        body: &[u8],
+        now_epoch_seconds: u64,
+    ) -> Result<(VerifiedRemoteAccess, RemoteMcpInvocation), RemoteMcpHttpRejection> {
+        let authenticator =
+            RemoteAccessAuthenticator::new(&self.verifier, &self.issuer, &self.resource);
+        let trusted_origins = self
+            .trusted_origins
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>();
+        let authorization = RemoteHttpAuthorization::new(&authenticator, &trusted_origins);
+        authorize_axum_stateless_body(&self.gate, &authorization, headers, body, now_epoch_seconds)
+    }
 }
 
 pub struct RemoteMcpHttpGate {
@@ -506,14 +568,18 @@ impl RemoteMcpHttpGate {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeSet;
+    use std::{collections::BTreeSet, sync::Arc};
 
     use axum::{
+        Router,
+        body::{Body, Bytes, to_bytes},
+        extract::State,
         http::{
-            HeaderMap, HeaderValue,
+            HeaderMap, HeaderValue, Request,
             header::{AUTHORIZATION, HOST, ORIGIN, RETRY_AFTER, WWW_AUTHENTICATE},
         },
         response::IntoResponse,
+        routing::post,
     };
     use rembrane_application::{
         RemoteAccessAuthenticator, RemoteHttpAuthorization, RemoteTokenVerificationError,
@@ -522,10 +588,12 @@ mod tests {
     use rembrane_config::{RemoteMcpConfig, SecretReference};
     use rembrane_contracts::{RemoteAccessScope, RemoteTokenClaims};
     use rembrane_domain::{ClientId, PrincipalId, WorkspaceId};
+    use tower::ServiceExt;
 
     use super::{
-        MCP_SESSION_HEADER_NAME, RemoteMcpHttpGate, RemoteMcpHttpRequest,
-        authorize_axum_stateless_body, classify_remote_mcp_request, request_from_axum_headers,
+        MCP_SESSION_HEADER_NAME, RemoteMcpAxumAuthorization, RemoteMcpHttpGate,
+        RemoteMcpHttpRejection, RemoteMcpHttpRequest, authorize_axum_stateless_body,
+        classify_remote_mcp_request, request_from_axum_headers,
     };
 
     struct Verifier;
@@ -922,5 +990,72 @@ mod tests {
         assert_eq!(response.status(), 401);
         assert!(response.headers().contains_key(WWW_AUTHENTICATE));
         assert!(!response.headers().contains_key(RETRY_AFTER));
+    }
+
+    async fn authorized_workspace(
+        State(authorization): State<Arc<RemoteMcpAxumAuthorization<Verifier>>>,
+        headers: HeaderMap,
+        body: Bytes,
+    ) -> Result<String, RemoteMcpHttpRejection> {
+        authorization
+            .authorize_stateless_body(&headers, &body, 1_000)
+            .map(|(access, _)| access.workspace_id().to_string())
+    }
+
+    #[tokio::test]
+    async fn owned_axum_service_preserves_verified_tenant_identity() {
+        let config = RemoteMcpConfig::new(
+            "https://memory.example.test/mcp".to_owned(),
+            "https://identity.example.test".to_owned(),
+            "https://identity.example.test/introspect".to_owned(),
+            "rembrane".to_owned(),
+            SecretReference::environment("OAUTH_SECRET").expect("reference should be valid"),
+            vec!["https://agent.example.test".to_owned()],
+        )
+        .expect("remote profile should be valid");
+        let authorization = Arc::new(
+            RemoteMcpAxumAuthorization::from_config(16, &config, Verifier)
+                .expect("owned authorization service should initialize"),
+        );
+        let app = Router::new()
+            .route("/mcp", post(authorized_workspace))
+            .with_state(authorization);
+        let body = r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"rembrane_resolve_context","arguments":{}}}"#;
+
+        for (token, expected_workspace) in [
+            ("workspace-one", "workspace_01"),
+            ("workspace-two", "workspace_02"),
+        ] {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::post("/mcp")
+                        .header(HOST, "memory.example.test")
+                        .header(AUTHORIZATION, format!("Bearer {token}"))
+                        .header(ORIGIN, "https://agent.example.test")
+                        .body(Body::from(body))
+                        .expect("request should build"),
+                )
+                .await
+                .expect("in-memory router should respond");
+            assert_eq!(response.status(), 200);
+            let response_body = to_bytes(response.into_body(), 128)
+                .await
+                .expect("bounded response should read");
+            assert_eq!(response_body.as_ref(), expected_workspace.as_bytes());
+        }
+
+        let denied = app
+            .oneshot(
+                Request::post("/mcp")
+                    .header(HOST, "memory.example.test")
+                    .header(AUTHORIZATION, "Bearer workspace-one")
+                    .header(ORIGIN, "https://attacker.example.test")
+                    .body(Body::from(body))
+                    .expect("request should build"),
+            )
+            .await
+            .expect("in-memory router should respond");
+        assert_eq!(denied.status(), 403);
     }
 }

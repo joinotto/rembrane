@@ -154,6 +154,9 @@ This roadmap describes sequencing, not release dates.
       method, tool, or scope.
     - [x] Adapt Axum header maps and HTTP rejection responses at the outer
       boundary, rejecting duplicate security headers before SDK dispatch.
+    - [x] Provide an owned Axum authorization service that reconstructs
+      borrowing authenticators per request and preserves verified tenant
+      identity through an in-memory HTTP router.
   - [x] Allow the shared MCP handler service to initialize canonical
     subject/client/workspace identity exclusively from verified remote claims.
   - [x] Bind remote sessions to issuer, resource, canonical identity,
@@ -165,6 +168,8 @@ This roadmap describes sequencing, not release dates.
   - [ ] Add OAuth and cross-tenant transport integration tests.
     - [x] Prove verified remote identity is still constrained by canonical
       workspace membership, audience, expiry, and token validity.
+    - [x] Prove the Axum boundary preserves distinct verified workspace
+      identities and rejects an untrusted browser origin over HTTP routing.
   - [x] Add a hardened Cloudflare Tunnel Compose overlay that keeps persistent
     memory and encryption credentials on the operator-controlled origin.
 - [x] Persist a disclosure receipt for every SQLite context response.

@@ -17,6 +17,8 @@ serde_json = "1"
 
 [dev-dependencies]
 rembrane-domain = { path = "../../crates/rembrane-domain" }
+tokio = { version = "1", features = ["macros", "rt"] }
+tower = "0.5"
 
 [lints]
 workspace = true

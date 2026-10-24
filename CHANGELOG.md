@@ -13,6 +13,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   credential, host, origin, and session headers, authorizes the exact bounded
   JSON-RPC body, and maps 401/403/503 outcomes into safe HTTP responses before
   official SDK dispatch.
+- An owned Axum remote-authorization service that safely reconstructs
+  short-lived borrowing authenticators for every request, with an in-memory
+  router proof that distinct OAuth tokens retain distinct workspace identity
+  and untrusted browser origins fail closed.
 - Linux Secret Service workspace-key resolution through the fixed
   `/usr/bin/secret-tool` client, including active/historical keyrings,
   metadata-only agent configuration, and zeroized captured secrets.
