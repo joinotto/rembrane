@@ -111,6 +111,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - A self-hosting guide for portable Memory Provider configuration, secret
   injection, fail-closed policy negotiation, provider obligations, and
   cross-tenant black-box conformance testing.
+- An object-safe transport-neutral Memory Provider client trait spanning all
+  typed operations, implemented by the authenticated HTTP adapter and exposed
+  by configured composition for future MCP, local, and community transports.
 - Canonical engine-neutral temporal knowledge graph aggregates with typed
   nodes, validated relationship types, strict workspace namespaces, separate
   validity and ingestion time, evidence provenance, bounded aliases, versions,

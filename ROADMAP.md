@@ -400,6 +400,9 @@ This roadmap describes sequencing, not release dates.
       before transport.
     - [x] Document secret-safe self-hosted configuration, connection policy,
       provider requirements, and conformance execution.
+  - [x] Define an object-safe transport-neutral Rust client boundary covering
+    every portable operation and implement it for the authenticated HTTP
+    transport.
 - [x] Versioned key-provider sidecar protocol for OS, HSM, and customer-KMS
   adapters.
   - [x] Add transport-independent Rust manifest, negotiation, request, context,

@@ -5,11 +5,11 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use rembrane_memory_provider_http::HttpMemoryProviderClient;
 use rembrane_provider_sdk::{
     CheckpointActivityPayload, CheckpointActivityResult, DeleteMemoryPayload, DeleteMemoryResult,
-    ExplainMemoryPayload, ExplainMemoryResult, MemoryProviderConnection, MemoryProviderPolicy,
-    MemoryProviderResponse, ProposeMemoryPayload, ProposeMemoryResult, ProviderError,
-    RecordDisclosurePayload, RecordDisclosureResult, RecordEventPayload, RecordEventResult,
-    ResolveContextPayload, ResolveContextResult, ResolveQuestionPayload, ResolveQuestionResult,
-    SyncPullPayload, SyncPullResult, SyncPushPayload, SyncPushResult,
+    ExplainMemoryPayload, ExplainMemoryResult, MemoryProviderClient, MemoryProviderConnection,
+    MemoryProviderPolicy, MemoryProviderResponse, ProposeMemoryPayload, ProposeMemoryResult,
+    ProviderError, RecordDisclosurePayload, RecordDisclosureResult, RecordEventPayload,
+    RecordEventResult, ResolveContextPayload, ResolveContextResult, ResolveQuestionPayload,
+    ResolveQuestionResult, SyncPullPayload, SyncPullResult, SyncPushPayload, SyncPushResult,
 };
 
 pub struct ConfiguredMemoryProvider {
@@ -54,7 +54,7 @@ impl ConfiguredMemoryProvider {
     }
 
     #[must_use]
-    pub const fn client(&self) -> &HttpMemoryProviderClient {
+    pub fn client(&self) -> &dyn MemoryProviderClient {
         &self.client
     }
 

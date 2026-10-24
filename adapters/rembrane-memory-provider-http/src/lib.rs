@@ -11,9 +11,9 @@ use rembrane_provider_sdk::{
     CURRENT_MEMORY_PROVIDER_PROTOCOL, CheckpointActivityPayload, CheckpointActivityResult,
     DeleteMemoryPayload, DeleteMemoryResult, ExplainMemoryPayload, ExplainMemoryResult,
     MEMORY_PROVIDER_DISCOVERY_PATH, MemoryProviderAcceptedMutation, MemoryProviderCapability,
-    MemoryProviderConnection, MemoryProviderContextItem, MemoryProviderDisclosedMemory,
-    MemoryProviderDisclosureConstraint, MemoryProviderEvent, MemoryProviderLimits,
-    MemoryProviderManifest, MemoryProviderPolicy, MemoryProviderPrivacyMode,
+    MemoryProviderClient, MemoryProviderConnection, MemoryProviderContextItem,
+    MemoryProviderDisclosedMemory, MemoryProviderDisclosureConstraint, MemoryProviderEvent,
+    MemoryProviderLimits, MemoryProviderManifest, MemoryProviderPolicy, MemoryProviderPrivacyMode,
     MemoryProviderPulledChange, MemoryProviderPushMutation, MemoryProviderRecordedEvent,
     MemoryProviderRequest, MemoryProviderResponse, MemoryProviderSensitivity,
     MemoryProviderSyncCursor, MemoryProviderSyncOperation, MemoryProviderSyncResource,
@@ -298,6 +298,78 @@ impl HttpMemoryProviderClient {
             .body(encoded)
             .send()
             .map_err(|_| ProviderError::Unavailable)
+    }
+}
+
+impl MemoryProviderClient for HttpMemoryProviderClient {
+    fn resolve_context(
+        &self,
+        request: &MemoryProviderRequest<ResolveContextPayload>,
+    ) -> Result<MemoryProviderResponse<ResolveContextResult>, ProviderError> {
+        Self::resolve_context(self, request)
+    }
+
+    fn resolve_question(
+        &self,
+        request: &MemoryProviderRequest<ResolveQuestionPayload>,
+    ) -> Result<MemoryProviderResponse<ResolveQuestionResult>, ProviderError> {
+        Self::resolve_question(self, request)
+    }
+
+    fn propose_memory(
+        &self,
+        request: &MemoryProviderRequest<ProposeMemoryPayload>,
+    ) -> Result<MemoryProviderResponse<ProposeMemoryResult>, ProviderError> {
+        Self::propose_memory(self, request)
+    }
+
+    fn record_events(
+        &self,
+        request: &MemoryProviderRequest<RecordEventPayload>,
+    ) -> Result<MemoryProviderResponse<RecordEventResult>, ProviderError> {
+        Self::record_events(self, request)
+    }
+
+    fn checkpoint_activity(
+        &self,
+        request: &MemoryProviderRequest<CheckpointActivityPayload>,
+    ) -> Result<MemoryProviderResponse<CheckpointActivityResult>, ProviderError> {
+        Self::checkpoint_activity(self, request)
+    }
+
+    fn record_disclosure(
+        &self,
+        request: &MemoryProviderRequest<RecordDisclosurePayload>,
+    ) -> Result<MemoryProviderResponse<RecordDisclosureResult>, ProviderError> {
+        Self::record_disclosure(self, request)
+    }
+
+    fn delete_memory(
+        &self,
+        request: &MemoryProviderRequest<DeleteMemoryPayload>,
+    ) -> Result<MemoryProviderResponse<DeleteMemoryResult>, ProviderError> {
+        Self::delete_memory(self, request)
+    }
+
+    fn explain_memory(
+        &self,
+        request: &MemoryProviderRequest<ExplainMemoryPayload>,
+    ) -> Result<MemoryProviderResponse<ExplainMemoryResult>, ProviderError> {
+        Self::explain_memory(self, request)
+    }
+
+    fn sync_pull(
+        &self,
+        request: &MemoryProviderRequest<SyncPullPayload>,
+    ) -> Result<MemoryProviderResponse<SyncPullResult>, ProviderError> {
+        Self::sync_pull(self, request)
+    }
+
+    fn sync_push(
+        &self,
+        request: &MemoryProviderRequest<SyncPushPayload>,
+    ) -> Result<MemoryProviderResponse<SyncPushResult>, ProviderError> {
+        Self::sync_push(self, request)
     }
 }
 

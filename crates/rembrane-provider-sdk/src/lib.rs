@@ -11,6 +11,7 @@ mod graph_conformance;
 mod graphiti_protocol;
 mod knowledge_graph;
 mod memory_checkpoint;
+mod memory_client;
 mod memory_context;
 mod memory_disclosure;
 mod memory_event;
@@ -39,6 +40,7 @@ pub use knowledge_graph::{
     MAX_GRAPH_CANDIDATES, validate_graph_candidates,
 };
 pub use memory_checkpoint::{CheckpointActivityPayload, CheckpointActivityResult};
+pub use memory_client::MemoryProviderClient;
 pub use memory_context::{
     MAX_CONTEXT_PURPOSE_BYTES, MAX_CONTEXT_QUERY_BYTES, MemoryProviderContextItem,
     MemoryProviderContextSelector, MemoryProviderDisclosureConstraint, MemoryProviderSensitivity,
