@@ -28,6 +28,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - A customer-KMS deployment contract mapping the operation-only key-provider
   boundary to AWS KMS, Azure Key Vault/Managed HSM, and Google Cloud KMS while
   keeping cloud identity and key material inside the customer sidecar.
+- A Supermemory v5 adapter decision defining pseudonymous namespace mapping,
+  asynchronous projection convergence, exact deletion, plaintext boundaries,
+  and the evidence required before compatibility promotion.
 - A public-API-only iMessage app extension reference with explicit text entry,
   review, confirmation, Keychain-held enrollment material, narrow signed
   gateway submission, and an iPhone Simulator type-check gate.
