@@ -30,6 +30,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   content and source references, provenance class, non-future observation
   time, and canonical proposed-record identity—without a client-controlled
   confirmed-status field.
+- Bounded Memory Provider activity-checkpoint payloads with separate create and
+  optimistic-update shapes, idempotency keys, entity linkage, resumable
+  fingerprints, and canonical checkpoint result identities.
 - Expiry-aware remote MCP session capacity reclamation so abandoned bindings
   cannot exhaust the bounded in-process registry indefinitely.
 - A transport-neutral remote MCP lifecycle boundary that composes strict HTTP

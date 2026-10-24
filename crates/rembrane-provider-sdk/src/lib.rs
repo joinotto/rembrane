@@ -7,6 +7,7 @@
 mod capability;
 mod conformance;
 mod error;
+mod memory_checkpoint;
 mod memory_context;
 mod memory_mutation;
 mod memory_protocol;
@@ -18,6 +19,7 @@ pub use capability::{
 };
 pub use conformance::{ConformanceFailure, verify_semantic_provider};
 pub use error::ProviderError;
+pub use memory_checkpoint::{CheckpointActivityPayload, CheckpointActivityResult};
 pub use memory_context::{
     MAX_CONTEXT_PURPOSE_BYTES, MAX_CONTEXT_QUERY_BYTES, MemoryProviderContextItem,
     MemoryProviderContextSelector, MemoryProviderDisclosureConstraint, MemoryProviderSensitivity,

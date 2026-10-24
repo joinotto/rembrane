@@ -243,6 +243,8 @@ This roadmap describes sequencing, not release dates.
     - [x] Add idempotent memory-proposal payloads that preserve validated
       scope, memory kind, provenance source, and observation time without
       allowing clients to assert confirmed status.
+    - [x] Add bounded idempotent activity-checkpoint create/update payloads
+      with explicit optimistic versions and canonical checkpoint identities.
   - [ ] Publish a serialization schema and HTTP binding.
   - [ ] Add cross-implementation conformance fixtures.
 - [x] Versioned key-provider sidecar protocol for OS, HSM, and customer-KMS
