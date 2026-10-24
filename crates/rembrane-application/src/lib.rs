@@ -5,6 +5,7 @@
 
 mod authorize_client;
 mod booking_research;
+mod channel_gateway;
 mod checkpoint;
 mod error;
 mod graph_projection_worker;
@@ -27,6 +28,7 @@ mod trip;
 
 pub use authorize_client::{AuthorizeClientCommand, AuthorizeClientService, ClientGrantBundle};
 pub use booking_research::{CaptureBookingResearchCommand, CaptureBookingResearchService};
+pub use channel_gateway::ChannelReplayGuard;
 pub use checkpoint::{
     CheckpointService, CreateCheckpointCommand, ResumeActivityCommand, UpdateCheckpointCommand,
 };

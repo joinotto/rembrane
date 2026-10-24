@@ -6,7 +6,7 @@ use rembrane_domain::{ClientId, PrincipalId, WorkspaceId};
 pub const MAX_CHANNEL_EVENT_ID_BYTES: usize = 256;
 pub const MAX_CHANNEL_TEXT_BYTES: usize = 16_384;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum ChannelKind {
     WhatsAppBusiness,
     IMessageExtension,

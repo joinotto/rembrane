@@ -549,6 +549,8 @@ This roadmap describes sequencing, not release dates.
   - [x] Define a bounded authenticated-channel message contract whose
     canonical workspace, principal, and client identity must come from a
     deployment-owned sender binding rather than webhook payload claims.
+  - [x] Add bounded per-channel replay protection with future-time rejection,
+    capacity limits, expiry, and cross-platform event-ID namespaces.
 - [ ] Mobile share flows and iMessage extension.
   - [x] Reuse the authenticated-channel contract for explicit iMessage
     extension and mobile-share ingestion without claiming conversation

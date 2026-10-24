@@ -97,6 +97,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Added a bounded verified-channel message contract for WhatsApp Business,
   explicit iMessage extensions, and mobile share flows that derives canonical
   tenant identity only from authenticated deployment-owned sender bindings.
+- Added bounded channel-event replay protection with future-time rejection,
+  fail-closed capacity, expiry, and per-platform event namespaces.
 - A versioned per-workspace retention policy contract with separate periods
   for memory, checkpoints, travel research, disclosures, canonical events, and
   administrative audit, including bounded expiry and legal-hold overrides.
