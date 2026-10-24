@@ -118,7 +118,7 @@ This roadmap describes sequencing, not release dates.
     reauthentication.
     - [x] Authenticate initialize, discovery, event-stream, and session-delete
       requests without granting a tool scope they did not request.
-  - [ ] Integrate the authorization middleware with the HTTP server adapter.
+  - [x] Integrate the authorization middleware with the HTTP server adapter.
     - [x] Validate complete remote profiles before startup, including exact
       HTTPS endpoints, referenced client secrets, and exact browser origins.
       - [x] Reject non-ASCII, whitespace, controls, quotes, and malformed
