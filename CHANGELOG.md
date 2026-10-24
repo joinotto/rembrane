@@ -9,6 +9,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- Fail-closed Graphiti request-correlation exhaustion handling that prevents
+  long-running provider connections from wrapping and reusing request IDs.
 - PostgreSQL authenticated channel replay, active-member sender bindings, and
   an encrypted leased inbox with immutable identity and monotonic delivery,
   retry, quarantine, and requeue transitions, plus a static table-inventory

@@ -333,6 +333,8 @@ This roadmap describes sequencing, not release dates.
           - [x] Resolve the Graphiti sidecar bearer credential through the
             same protected local locator grammar and mount one mode-restricted
             Compose secret into both worker and sidecar.
+          - [x] Fail closed when the Graphiti request-correlation sequence is
+            exhausted instead of wrapping and reusing request identifiers.
           - [x] Keep Graphiti Neo4j and model-provider credentials out of
             Compose environment interpolation using protected file references
             and official Neo4j auth-file injection.

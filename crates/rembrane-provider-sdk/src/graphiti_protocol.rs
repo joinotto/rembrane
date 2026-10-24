@@ -282,13 +282,29 @@ impl GraphitiConnection {
         idempotency_key: Option<GraphitiIdempotencyKey>,
         payload: Payload,
     ) -> Result<GraphitiRequest<Payload>, ProviderError> {
-        let sequence = self.next_request.fetch_add(1, Ordering::Relaxed);
+        let sequence = self.next_sequence()?;
         GraphitiRequest::new(
             GraphitiRequestId::new(format!("{}_{sequence:016x}", self.request_prefix))?,
             workspace_id,
             idempotency_key,
             payload,
         )
+    }
+
+    fn next_sequence(&self) -> Result<u64, ProviderError> {
+        let mut current = self.next_request.load(Ordering::Relaxed);
+        loop {
+            let next = current.checked_add(1).ok_or(ProviderError::Unavailable)?;
+            match self.next_request.compare_exchange_weak(
+                current,
+                next,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => return Ok(current),
+                Err(observed) => current = observed,
+            }
+        }
     }
 }
 
@@ -345,5 +361,31 @@ mod tests {
             .expect("second request");
         let response = GraphitiResponse::success(&second, ());
         assert!(first.validate_response(&response).is_err());
+    }
+
+    #[test]
+    fn never_wraps_or_reuses_exhausted_request_ids() {
+        let connection = GraphitiConnection::new("graphiti-test").expect("connection");
+        connection
+            .next_request
+            .store(u64::MAX - 1, std::sync::atomic::Ordering::Relaxed);
+        let workspace = WorkspaceId::new("workspace-a");
+        let key = || GraphitiIdempotencyKey::new("projection.node.0001").expect("key");
+
+        let last = connection
+            .request(&workspace, Some(key()), Mutation)
+            .expect("last available request id should be issued");
+        assert_eq!(
+            last.request_id().as_str(),
+            format!("graphiti-test_{:016x}", u64::MAX - 1)
+        );
+        assert_eq!(
+            connection.request(&workspace, Some(key()), Mutation),
+            Err(ProviderError::Unavailable)
+        );
+        assert_eq!(
+            connection.request(&workspace, Some(key()), Mutation),
+            Err(ProviderError::Unavailable)
+        );
     }
 }
