@@ -11,6 +11,7 @@ rust-version.workspace = true
 rembrane-crypto = { path = "../../crates/rembrane-crypto" }
 rembrane-crypto-rustcrypto = { path = "../rembrane-crypto-rustcrypto" }
 rembrane-key-provider-http = { path = "../rembrane-key-provider-http" }
+zeroize = "1"
 
 [lints]
 workspace = true

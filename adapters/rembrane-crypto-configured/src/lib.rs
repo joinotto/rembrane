@@ -8,6 +8,7 @@ use rembrane_crypto::{
 };
 use rembrane_crypto_rustcrypto::RustCryptoKeyringCipher;
 use rembrane_key_provider_http::HttpKeyProviderTransport;
+use zeroize::Zeroize;
 
 const DEFAULT_ALGORITHM: &str = "xchacha20poly1305-ietf";
 const DEFAULT_MINIMUM_PLAINTEXT_BYTES: usize = 262_144;
@@ -15,6 +16,64 @@ const DEFAULT_MINIMUM_PLAINTEXT_BYTES: usize = 262_144;
 pub enum ConfiguredRecordCipher {
     Local(RustCryptoKeyringCipher),
     Http(KeyProviderCipher<HttpKeyProviderTransport>),
+}
+
+/// Deployment-owned values for a customer-controlled HTTP key provider.
+///
+/// This consumed type intentionally omits cloning, debug formatting, and
+/// serialization. Its bearer credential is wiped when construction succeeds
+/// or fails.
+pub struct KeyProviderHttpConfig {
+    base_url: String,
+    bearer_token: String,
+    algorithm: String,
+    minimum_plaintext_bytes: usize,
+    require_historical_keys: bool,
+    request_prefix: Option<String>,
+}
+
+impl KeyProviderHttpConfig {
+    #[must_use]
+    pub fn new(base_url: impl Into<String>, bearer_token: impl Into<String>) -> Self {
+        Self {
+            base_url: base_url.into(),
+            bearer_token: bearer_token.into(),
+            algorithm: DEFAULT_ALGORITHM.to_owned(),
+            minimum_plaintext_bytes: DEFAULT_MINIMUM_PLAINTEXT_BYTES,
+            require_historical_keys: true,
+            request_prefix: None,
+        }
+    }
+
+    #[must_use]
+    pub fn with_algorithm(mut self, algorithm: impl Into<String>) -> Self {
+        self.algorithm = algorithm.into();
+        self
+    }
+
+    #[must_use]
+    pub const fn with_minimum_plaintext_bytes(mut self, minimum_plaintext_bytes: usize) -> Self {
+        self.minimum_plaintext_bytes = minimum_plaintext_bytes;
+        self
+    }
+
+    #[must_use]
+    pub const fn require_historical_keys(mut self, required: bool) -> Self {
+        self.require_historical_keys = required;
+        self
+    }
+
+    #[must_use]
+    pub fn with_request_prefix(mut self, request_prefix: impl Into<String>) -> Self {
+        self.request_prefix = Some(request_prefix.into());
+        self
+    }
+}
+
+impl Drop for KeyProviderHttpConfig {
+    fn drop(&mut self) {
+        self.bearer_token.zeroize();
+    }
 }
 
 impl ConfiguredRecordCipher {
@@ -69,17 +128,47 @@ impl ConfiguredRecordCipher {
                 _ => return Err(CryptoError::KeyUnavailable),
             };
         let request_prefix = match std::env::var("REMBRANE_KEY_PROVIDER_REQUEST_PREFIX") {
-            Ok(value) => value,
-            Err(_) => default_request_prefix()?,
+            Ok(value) => Some(value),
+            Err(_) => None,
         };
-        let transport = HttpKeyProviderTransport::new(&endpoint, token)?;
+        let config = KeyProviderHttpConfig::new(endpoint, token)
+            .with_algorithm(algorithm)
+            .with_minimum_plaintext_bytes(minimum_plaintext_bytes)
+            .require_historical_keys(require_historical_keys);
+        let config = match request_prefix {
+            Some(value) => config.with_request_prefix(value),
+            None => config,
+        };
+        Self::from_http_config(config)
+    }
+
+    /// Connects to a customer-controlled key provider using values resolved by
+    /// application-owned configuration and secret-management code.
+    ///
+    /// # Errors
+    ///
+    /// Returns key-unavailable when configuration, transport construction,
+    /// discovery, or policy negotiation fails.
+    pub fn from_http_config(mut config: KeyProviderHttpConfig) -> Result<Self, CryptoError> {
+        if config.algorithm.trim().is_empty()
+            || config.algorithm.trim() != config.algorithm
+            || config.minimum_plaintext_bytes == 0
+        {
+            return Err(CryptoError::KeyUnavailable);
+        }
+        let request_prefix = match config.request_prefix.take() {
+            Some(value) => value,
+            None => default_request_prefix()?,
+        };
+        let token = std::mem::take(&mut config.bearer_token);
+        let transport = HttpKeyProviderTransport::new(&config.base_url, token)?;
         let cipher = KeyProviderCipher::connect(
             transport,
             KeyProviderPolicy {
                 minimum_protocol_version: CURRENT_KEY_PROVIDER_PROTOCOL,
-                required_algorithm: algorithm,
-                minimum_plaintext_bytes,
-                require_historical_keys,
+                required_algorithm: config.algorithm.clone(),
+                minimum_plaintext_bytes: config.minimum_plaintext_bytes,
+                require_historical_keys: config.require_historical_keys,
             },
             request_prefix,
         )?;
@@ -128,7 +217,10 @@ fn default_request_prefix() -> Result<String, CryptoError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{DEFAULT_MINIMUM_PLAINTEXT_BYTES, default_request_prefix};
+    use super::{
+        ConfiguredRecordCipher, DEFAULT_MINIMUM_PLAINTEXT_BYTES, KeyProviderHttpConfig,
+        default_request_prefix,
+    };
 
     #[test]
     fn generated_request_prefix_is_nonempty_and_bounded() {
@@ -145,5 +237,29 @@ mod tests {
     #[test]
     fn default_plaintext_policy_covers_canonical_records() {
         assert_eq!(DEFAULT_MINIMUM_PLAINTEXT_BYTES, 262_144);
+    }
+
+    #[test]
+    fn explicit_http_configuration_rejects_invalid_policy_before_discovery() {
+        let result = ConfiguredRecordCipher::from_http_config(
+            KeyProviderHttpConfig::new("https://keys.example.test", "synthetic-token")
+                .with_minimum_plaintext_bytes(0),
+        );
+        assert!(matches!(
+            result,
+            Err(rembrane_crypto::CryptoError::KeyUnavailable)
+        ));
+    }
+
+    #[test]
+    fn explicit_http_configuration_reuses_secure_endpoint_validation() {
+        let result = ConfiguredRecordCipher::from_http_config(
+            KeyProviderHttpConfig::new("http://keys.example.test", "synthetic-token")
+                .with_request_prefix("safe-client-01"),
+        );
+        assert!(matches!(
+            result,
+            Err(rembrane_crypto::CryptoError::KeyUnavailable)
+        ));
     }
 }

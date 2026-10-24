@@ -68,6 +68,11 @@ This roadmap describes sequencing, not release dates.
   - [ ] Resolve or unwrap keyring material through customer KMS adapters.
   - [x] Add a provider-agnostic configured cipher that dispatches to local
     environment/macOS keyrings or a policy-negotiated HTTP key provider.
+    - [x] Accept consumed customer key-provider configuration from
+      application-owned vault and cloud-secret resolvers without fixed
+      environment-variable names.
+    - [x] Zeroize key-provider bearer credentials across configuration,
+      validation failure, transport construction, and teardown.
   - [x] Wire configured cipher selection through CLI, REST, MCP, generated
     agent configuration, and privacy diagnostics.
 - [x] Retrieve minimal context through local stdio MCP.

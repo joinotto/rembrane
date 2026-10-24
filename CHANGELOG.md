@@ -9,12 +9,17 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- Consumed customer key-provider HTTP configuration for application-owned
+  vault, keychain, cloud-secret, and deployment integrations without fixed
+  Rembrane environment-variable names.
 - A consumed, non-serializable Memory Provider HTTP configuration API for
   applications that resolve endpoint and bearer credentials through their own
   keychains, vaults, cloud secret managers, or deployment systems.
 - Zeroization of portable Memory Provider bearer credentials across explicit
   configuration, validation failures, transport construction, and client
   teardown.
+- Zeroization of customer key-provider bearer credentials before endpoint
+  validation and throughout explicit configuration and transport lifecycles.
 - Fail-closed Memory Provider CLI privacy negotiation that requires
   end-to-end encryption by default and accepts weaker provider modes only
   through an explicit operator flag.

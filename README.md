@@ -185,6 +185,12 @@ Exact loopback HTTP is accepted for a same-machine sidecar; non-loopback
 deployments require HTTPS. The client disables redirects and environment
 proxies, bounds responses, authenticates every operation, and negotiates
 protocol, algorithm, plaintext size, and historical-key support before use.
+Applications may instead construct `KeyProviderHttpConfig` and pass it to
+`ConfiguredRecordCipher::from_http_config`. This supports credentials resolved
+from any application-owned keychain, vault, cloud secret manager, or injected
+file without copying them into fixed Rembrane environment variables. The
+consumed configuration and transport zeroize the bearer credential on both
+success and failure paths.
 
 After rotating to a new active item, retain old items only while historical
 ciphertext still references them and list their metadata as comma-separated

@@ -37,6 +37,7 @@ impl HttpKeyProviderTransport {
     /// Returns an opaque key-unavailable error when endpoint, credential, or
     /// HTTP-client configuration is invalid.
     pub fn new(base_url: &str, bearer_token: String) -> Result<Self, CryptoError> {
+        let bearer_token = Zeroizing::new(bearer_token);
         let base = validate_base_url(base_url)?;
         if bearer_token.is_empty()
             || bearer_token.len() > 8192
@@ -65,7 +66,7 @@ impl HttpKeyProviderTransport {
             open_endpoint: base
                 .join("v0.1/open")
                 .map_err(|_| CryptoError::KeyUnavailable)?,
-            bearer_token: Zeroizing::new(bearer_token),
+            bearer_token,
         })
     }
 
