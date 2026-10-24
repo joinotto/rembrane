@@ -501,7 +501,6 @@ impl TravelDisclosureRepository for InMemoryStore {
         let trip_exists = self.trips.iter().any(|trip| {
             trip.workspace_id() == &receipt.workspace_id
                 && trip.id() == &receipt.trip_id
-                && trip.owner_subject_id() == &receipt.subject_id
                 && trip.version() == receipt.trip_version
         });
         let research_exists = receipt.research.iter().all(|disclosed| {

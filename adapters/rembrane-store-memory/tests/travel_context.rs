@@ -92,14 +92,38 @@ fn seeded_store() -> InMemoryStore {
 }
 
 fn grant(trip_id: &str) -> ReadGrant {
+    grant_for_subject(trip_id, "principal_01")
+}
+
+fn grant_for_subject(trip_id: &str, subject_id: &str) -> ReadGrant {
     ReadGrant {
         client_id: ClientId::new("assistant_02"),
         workspace_id: WorkspaceId::new("workspace_01"),
-        subject_id: PrincipalId::new("principal_01"),
+        subject_id: PrincipalId::new(subject_id),
         scopes: vec![ReadScope::Entity {
             id: EntityId::new(trip_id),
         }],
     }
+}
+
+#[test]
+fn exact_scope_allows_a_shared_workspace_reader_without_changing_trip_ownership() {
+    let mut store = seeded_store();
+    let context = TravelContextService::new(&mut store)
+        .resolve(&ResolveTravelContextCommand {
+            grant: grant_for_subject("trip_01", "principal_02"),
+            disclosure_id: DisclosureId::new("disclosure_shared_reader"),
+            trip_id: EntityId::new("trip_01"),
+            purpose: "continue shared trip planning".to_owned(),
+            as_of: "2026-10-24T10:00:00Z".to_owned(),
+        })
+        .expect("an exact entity grant should authorize the shared reader");
+
+    assert_eq!(context.trip.owner_subject_id().as_str(), "principal_01");
+    assert_eq!(
+        store.travel_disclosures()[0].subject_id.as_str(),
+        "principal_02"
+    );
 }
 
 #[test]

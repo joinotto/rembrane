@@ -187,13 +187,8 @@ impl<C> TravelDisclosureRepository for SqliteStore<C> {
                 "SELECT version
                  FROM trips
                  WHERE workspace_id = ?1
-                   AND id = ?2
-                   AND owner_subject_id = ?3",
-                params![
-                    receipt.workspace_id.as_str(),
-                    receipt.trip_id.as_str(),
-                    receipt.subject_id.as_str()
-                ],
+                   AND id = ?2",
+                params![receipt.workspace_id.as_str(), receipt.trip_id.as_str()],
                 |row| row.get(0),
             )
             .optional()
