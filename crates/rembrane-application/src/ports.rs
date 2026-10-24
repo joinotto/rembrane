@@ -132,6 +132,12 @@ pub trait WorkspaceRepository {
         owner_membership: Membership,
     ) -> Result<(), ApplicationError>;
 
+    fn initialize_shared_workspace(
+        &mut self,
+        workspace: Workspace,
+        owner_membership: Membership,
+    ) -> Result<(), ApplicationError>;
+
     fn find_principal(
         &self,
         principal_id: &PrincipalId,

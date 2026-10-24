@@ -78,6 +78,12 @@ Database / graph / vector / memory providers
 
 Every boundary crossing requires an explicit data classification, purpose, authorization decision, and documented plaintext exposure.
 
+Workspace identifiers, principal identifiers, membership roles, invitation
+roles/statuses, timestamps, and similar authorization metadata remain visible
+to the local database or hosted control plane that enforces access. Strict E2EE
+protects memory, event, checkpoint, artifact, and synchronization payloads; it
+does not imply that all routing and authorization metadata is hidden.
+
 ## 5. Primary threats and controls
 
 ### T1. Cross-tenant data access

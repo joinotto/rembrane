@@ -45,6 +45,13 @@ where
         }
         if self
             .repository
+            .find_principal(&command.invited_principal_id)?
+            .is_none()
+        {
+            return Err(ApplicationError::NotFound);
+        }
+        if self
+            .repository
             .find_membership(&command.workspace_id, &command.invited_principal_id)?
             .is_some()
         {

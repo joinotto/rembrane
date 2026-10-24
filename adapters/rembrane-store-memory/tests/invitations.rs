@@ -1,14 +1,36 @@
 use rembrane_application::{
     ApplicationError, CreateInvitationCommand, InvitationRepository, InvitationService,
-    MembershipRepository,
+    MembershipRepository, WorkspaceRepository,
 };
 use rembrane_domain::{
-    InvitationId, Membership, PrincipalId, Workspace, WorkspaceId, WorkspaceRole,
+    InvitationId, Membership, Principal, PrincipalId, Workspace, WorkspaceId, WorkspaceRole,
 };
 use rembrane_store_memory::InMemoryStore;
 
 fn shared_store() -> InMemoryStore {
     let mut store = InMemoryStore::new();
+    store
+        .initialize_personal_workspace(
+            Principal::new(PrincipalId::new("owner")),
+            Workspace::personal(WorkspaceId::new("owner-personal")),
+            Membership::new(
+                WorkspaceId::new("owner-personal"),
+                PrincipalId::new("owner"),
+                WorkspaceRole::Owner,
+            ),
+        )
+        .expect("owner identity should initialize");
+    store
+        .initialize_personal_workspace(
+            Principal::new(PrincipalId::new("guest")),
+            Workspace::personal(WorkspaceId::new("guest-personal")),
+            Membership::new(
+                WorkspaceId::new("guest-personal"),
+                PrincipalId::new("guest"),
+                WorkspaceRole::Owner,
+            ),
+        )
+        .expect("guest identity should initialize");
     store
         .initialize_shared_workspace(
             Workspace::shared(WorkspaceId::new("team")),

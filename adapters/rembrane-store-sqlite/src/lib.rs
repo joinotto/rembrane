@@ -8,20 +8,23 @@ mod projection;
 use std::path::Path;
 
 use rembrane_application::{
-    ApplicationError, MembershipRepository, MemoryRepository, WorkspaceRepository,
+    ApplicationError, InvitationRepository, MembershipRepository, MemoryRepository,
+    WorkspaceRepository,
 };
 use rembrane_codec::decode_memory;
 use rembrane_crypto::{EncryptedPayload, EncryptionContext, PayloadPurpose, RecordCipher};
 use rembrane_domain::{
-    Membership, MembershipStatus, MemoryId, MemoryRecord, Principal, PrincipalId, Workspace,
-    WorkspaceId, WorkspaceKind, WorkspaceRole,
+    Invitation, InvitationId, InvitationStatus, Membership, MembershipStatus, MemoryId,
+    MemoryRecord, Principal, PrincipalId, Workspace, WorkspaceId, WorkspaceKind, WorkspaceRole,
 };
 use rusqlite::{Connection, ErrorCode, OptionalExtension, params};
 
 const CANONICAL_SCHEMA: &str = include_str!("../../../migrations/sqlite/0001_canonical_schema.sql");
 const CHECKPOINT_DISCLOSURE_MIGRATION: &str =
     include_str!("../../../migrations/sqlite/0002_checkpoint_disclosures.sql");
-const CURRENT_SCHEMA_VERSION: u32 = 2;
+const WORKSPACE_INVITATION_MIGRATION: &str =
+    include_str!("../../../migrations/sqlite/0003_workspace_invitations.sql");
+const CURRENT_SCHEMA_VERSION: u32 = 3;
 const CANONICAL_TABLES: [&str; 10] = [
     "activity_checkpoints",
     "disclosed_memories",
@@ -100,6 +103,12 @@ fn migrate(connection: &mut Connection) -> Result<(), ApplicationError> {
     if version == 1 {
         transaction
             .execute_batch(CHECKPOINT_DISCLOSURE_MIGRATION)
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        version = 2;
+    }
+    if version == 2 {
+        transaction
+            .execute_batch(WORKSPACE_INVITATION_MIGRATION)
             .map_err(|_| ApplicationError::StorageUnavailable)?;
     }
     transaction
@@ -270,7 +279,7 @@ mod migration_tests {
     }
 
     #[test]
-    fn upgrades_version_one_with_checkpoint_disclosures() {
+    fn upgrades_version_one_through_all_migrations() {
         let database = database_path("schema-v1-upgrade");
         let connection = Connection::open(&database).expect("database should open");
         connection
@@ -299,6 +308,18 @@ mod migration_tests {
             )
             .expect("migration table should be inspectable");
         assert!(table_exists);
+        let invitations_exist: bool = connection
+            .query_row(
+                "SELECT EXISTS (
+                    SELECT 1 FROM sqlite_schema
+                    WHERE type = 'table'
+                      AND name = 'workspace_invitations'
+                )",
+                [],
+                |row| row.get(0),
+            )
+            .expect("invitation migration should be inspectable");
+        assert!(invitations_exist);
         drop(connection);
         fs::remove_file(database).expect("temporary database should be removed");
     }
@@ -487,6 +508,48 @@ impl<C> WorkspaceRepository for SqliteStore<C> {
             .map_err(|_| ApplicationError::StorageUnavailable)
     }
 
+    fn initialize_shared_workspace(
+        &mut self,
+        workspace: Workspace,
+        owner_membership: Membership,
+    ) -> Result<(), ApplicationError> {
+        validate_shared_bootstrap(&workspace, &owner_membership)?;
+        let transaction = self
+            .connection
+            .transaction()
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        let owner_exists: bool = transaction
+            .query_row(
+                "SELECT EXISTS (SELECT 1 FROM principals WHERE id = ?1)",
+                [owner_membership.principal_id().as_str()],
+                |row| row.get(0),
+            )
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        if !owner_exists {
+            return Err(ApplicationError::NotFound);
+        }
+        transaction
+            .execute(
+                "INSERT INTO workspaces (id, kind) VALUES (?1, 'shared')",
+                [workspace.id().as_str()],
+            )
+            .map_err(map_write_error)?;
+        transaction
+            .execute(
+                "INSERT INTO memberships (
+                    workspace_id, principal_id, role, status
+                ) VALUES (?1, ?2, 'owner', 'active')",
+                params![
+                    owner_membership.workspace_id().as_str(),
+                    owner_membership.principal_id().as_str()
+                ],
+            )
+            .map_err(map_write_error)?;
+        transaction
+            .commit()
+            .map_err(|_| ApplicationError::StorageUnavailable)
+    }
+
     fn find_principal(
         &self,
         principal_id: &PrincipalId,
@@ -583,6 +646,113 @@ impl<C> MembershipRepository for SqliteStore<C> {
     }
 }
 
+impl<C> InvitationRepository for SqliteStore<C> {
+    fn insert_invitation(&mut self, invitation: Invitation) -> Result<(), ApplicationError> {
+        self.connection
+            .execute(
+                "INSERT INTO workspace_invitations (
+                    workspace_id, id, invited_principal_id, invited_by, role, status
+                ) VALUES (?1, ?2, ?3, ?4, ?5, 'pending')",
+                params![
+                    invitation.workspace_id().as_str(),
+                    invitation.id().as_str(),
+                    invitation.invited_principal_id().as_str(),
+                    invitation.invited_by().as_str(),
+                    encode_role(invitation.role())
+                ],
+            )
+            .map(|_| ())
+            .map_err(map_write_error)
+    }
+
+    fn find_invitation(
+        &self,
+        workspace_id: &WorkspaceId,
+        invitation_id: &InvitationId,
+    ) -> Result<Option<Invitation>, ApplicationError> {
+        self.connection
+            .query_row(
+                "SELECT invited_principal_id, invited_by, role, status
+                 FROM workspace_invitations
+                 WHERE workspace_id = ?1 AND id = ?2",
+                params![workspace_id.as_str(), invitation_id.as_str()],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, String>(3)?,
+                    ))
+                },
+            )
+            .optional()
+            .map_err(|_| ApplicationError::StorageUnavailable)?
+            .map(|(invited, inviter, role, status)| {
+                decode_invitation(
+                    invitation_id.clone(),
+                    workspace_id.clone(),
+                    PrincipalId::new(invited),
+                    PrincipalId::new(inviter),
+                    &role,
+                    &status,
+                )
+            })
+            .transpose()
+    }
+
+    fn accept_invitation_with_membership(
+        &mut self,
+        invitation: Invitation,
+        membership: Membership,
+    ) -> Result<(), ApplicationError> {
+        if invitation.status() != InvitationStatus::Accepted
+            || invitation.workspace_id() != membership.workspace_id()
+            || invitation.invited_principal_id() != membership.principal_id()
+            || invitation.role() != membership.role()
+        {
+            return Err(ApplicationError::Validation(
+                "accepted invitation and membership must agree".to_owned(),
+            ));
+        }
+        let transaction = self
+            .connection
+            .transaction()
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        let changed = transaction
+            .execute(
+                "UPDATE workspace_invitations
+                 SET status = 'accepted', updated_at = CURRENT_TIMESTAMP
+                 WHERE workspace_id = ?1 AND id = ?2 AND status = 'pending'
+                   AND invited_principal_id = ?3 AND role = ?4",
+                params![
+                    invitation.workspace_id().as_str(),
+                    invitation.id().as_str(),
+                    invitation.invited_principal_id().as_str(),
+                    encode_role(invitation.role())
+                ],
+            )
+            .map_err(map_write_error)?;
+        if changed != 1 {
+            return Err(ApplicationError::VersionConflict);
+        }
+        transaction
+            .execute(
+                "INSERT INTO memberships (
+                    workspace_id, principal_id, role, status
+                ) VALUES (?1, ?2, ?3, 'active')",
+                params![
+                    membership.workspace_id().as_str(),
+                    membership.principal_id().as_str(),
+                    encode_role(membership.role())
+                ],
+            )
+            .map_err(map_write_error)?;
+        transaction
+            .commit()
+            .map_err(|_| ApplicationError::StorageUnavailable)
+    }
+}
+
 fn validate_personal_bootstrap(
     principal: &Principal,
     workspace: &Workspace,
@@ -601,6 +771,51 @@ fn validate_personal_bootstrap(
     Ok(())
 }
 
+fn validate_shared_bootstrap(
+    workspace: &Workspace,
+    membership: &Membership,
+) -> Result<(), ApplicationError> {
+    if workspace.kind() != WorkspaceKind::Shared
+        || membership.workspace_id() != workspace.id()
+        || membership.role() != WorkspaceRole::Owner
+        || !membership.is_active()
+    {
+        return Err(ApplicationError::Validation(
+            "shared workspace bootstrap records must agree".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+fn decode_invitation(
+    invitation_id: InvitationId,
+    workspace_id: WorkspaceId,
+    invited_principal_id: PrincipalId,
+    invited_by: PrincipalId,
+    role: &str,
+    status: &str,
+) -> Result<Invitation, ApplicationError> {
+    let role = decode_role(role)?;
+    let invitation = Invitation::new(
+        invitation_id,
+        workspace_id,
+        invited_principal_id,
+        invited_by,
+        role,
+    )
+    .map_err(|_| ApplicationError::StorageUnavailable)?;
+    match status {
+        "pending" => Ok(invitation),
+        "accepted" => invitation
+            .accept()
+            .map_err(|_| ApplicationError::StorageUnavailable),
+        "revoked" => invitation
+            .revoke()
+            .map_err(|_| ApplicationError::StorageUnavailable),
+        _ => Err(ApplicationError::StorageUnavailable),
+    }
+}
+
 fn decode_workspace(id: String, kind: &str) -> Result<Workspace, ApplicationError> {
     match kind {
         "personal" => Ok(Workspace::personal(WorkspaceId::new(id))),
@@ -615,13 +830,7 @@ fn decode_membership(
     role: &str,
     status: &str,
 ) -> Result<Membership, ApplicationError> {
-    let role = match role {
-        "owner" => WorkspaceRole::Owner,
-        "admin" => WorkspaceRole::Admin,
-        "member" => WorkspaceRole::Member,
-        "viewer" => WorkspaceRole::Viewer,
-        _ => return Err(ApplicationError::StorageUnavailable),
-    };
+    let role = decode_role(role)?;
     let membership = Membership::new(workspace_id, principal_id, role);
     match status {
         "active" => Ok(membership),
@@ -629,6 +838,16 @@ fn decode_membership(
         "removed" => Ok(membership.remove()),
         _ => Err(ApplicationError::StorageUnavailable),
     }
+}
+
+fn decode_role(role: &str) -> Result<WorkspaceRole, ApplicationError> {
+    Ok(match role {
+        "owner" => WorkspaceRole::Owner,
+        "admin" => WorkspaceRole::Admin,
+        "member" => WorkspaceRole::Member,
+        "viewer" => WorkspaceRole::Viewer,
+        _ => return Err(ApplicationError::StorageUnavailable),
+    })
 }
 
 const fn encode_role(role: WorkspaceRole) -> &'static str {

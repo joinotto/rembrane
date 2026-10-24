@@ -65,6 +65,35 @@ impl WorkspaceRepository for InMemoryStore {
         Ok(())
     }
 
+    fn initialize_shared_workspace(
+        &mut self,
+        workspace: Workspace,
+        owner_membership: Membership,
+    ) -> Result<(), ApplicationError> {
+        validate_shared_bootstrap(&workspace, &owner_membership)?;
+        if !self
+            .principals
+            .iter()
+            .any(|principal| principal.id() == owner_membership.principal_id())
+        {
+            return Err(ApplicationError::NotFound);
+        }
+        if self
+            .workspaces
+            .iter()
+            .any(|stored| stored.id() == workspace.id())
+            || self.memberships.iter().any(|stored| {
+                stored.workspace_id() == workspace.id()
+                    && stored.principal_id() == owner_membership.principal_id()
+            })
+        {
+            return Err(ApplicationError::AlreadyExists);
+        }
+        self.workspaces.push(workspace);
+        self.memberships.push(owner_membership);
+        Ok(())
+    }
+
     fn find_principal(
         &self,
         principal_id: &PrincipalId,
@@ -103,36 +132,22 @@ impl InMemoryStore {
     pub fn checkpoint_disclosure_count(&self) -> usize {
         self.checkpoint_disclosures.len()
     }
+}
 
-    pub fn initialize_shared_workspace(
-        &mut self,
-        workspace: Workspace,
-        owner_membership: Membership,
-    ) -> Result<(), ApplicationError> {
-        if workspace.kind() != WorkspaceKind::Shared
-            || owner_membership.workspace_id() != workspace.id()
-            || owner_membership.role() != WorkspaceRole::Owner
-            || !owner_membership.is_active()
-        {
-            return Err(ApplicationError::Validation(
-                "shared workspace bootstrap records must agree".to_owned(),
-            ));
-        }
-        if self
-            .workspaces
-            .iter()
-            .any(|stored| stored.id() == workspace.id())
-            || self.memberships.iter().any(|stored| {
-                stored.workspace_id() == workspace.id()
-                    && stored.principal_id() == owner_membership.principal_id()
-            })
-        {
-            return Err(ApplicationError::AlreadyExists);
-        }
-        self.workspaces.push(workspace);
-        self.memberships.push(owner_membership);
-        Ok(())
+fn validate_shared_bootstrap(
+    workspace: &Workspace,
+    owner_membership: &Membership,
+) -> Result<(), ApplicationError> {
+    if workspace.kind() != WorkspaceKind::Shared
+        || owner_membership.workspace_id() != workspace.id()
+        || owner_membership.role() != WorkspaceRole::Owner
+        || !owner_membership.is_active()
+    {
+        return Err(ApplicationError::Validation(
+            "shared workspace bootstrap records must agree".to_owned(),
+        ));
     }
+    Ok(())
 }
 
 impl MemoryRepository for InMemoryStore {

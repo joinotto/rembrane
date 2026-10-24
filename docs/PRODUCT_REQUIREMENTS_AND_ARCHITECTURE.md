@@ -966,6 +966,13 @@ This is not strict E2EE.
 
 Hosted vector and graph services cannot directly search encrypted content without weakening the E2EE claim. E2EE mode therefore requires local or customer-controlled searchable indexes.
 
+E2EE mode does not conceal every operational field. Workspace and principal
+identifiers, membership and invitation state, roles, key identifiers, record
+versions, timestamps, and other minimum routing/authorization metadata may be
+visible to the component enforcing access. Deployments requiring metadata
+confidentiality must keep that component local or inside the customer-controlled
+boundary and may additionally use whole-database encryption.
+
 #### Enterprise-private mode
 
 - Customer-owned cloud/VPC or on-premises deployment.
