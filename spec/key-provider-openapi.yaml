@@ -65,6 +65,30 @@ paths:
           description: Provider authentication failed.
         "422":
           description: Envelope, context, algorithm, or key is invalid.
+  /v0.1/rotate:
+    post:
+      operationId: rotateWorkspaceKey
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RotateKeyRequest"
+      responses:
+        "200":
+          description: Correlated, content-free workspace-key rotation receipt.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KeyRotationReceipt"
+        "401":
+          description: Provider authentication failed.
+        "409":
+          description: Generation is stale, repeated, or conflicts with provider state.
+        "422":
+          description: Workspace, generation, request, or recipient set is invalid.
 components:
   securitySchemes:
     bearerAuth:
@@ -167,3 +191,56 @@ components:
         plaintextBase64:
           type: string
           contentEncoding: base64
+    RotateKeyRequest:
+      type: object
+      additionalProperties: false
+      required: [requestId, workspaceId, generation, recipientIds]
+      properties:
+        requestId:
+          type: string
+          minLength: 1
+          maxLength: 255
+        workspaceId:
+          type: string
+          minLength: 1
+        generation:
+          type: integer
+          minimum: 1
+        recipientIds:
+          type: array
+          minItems: 1
+          maxItems: 10000
+          uniqueItems: true
+          items:
+            type: string
+            minLength: 1
+    KeyRotationReceipt:
+      type: object
+      additionalProperties: false
+      required:
+        [providerId, requestId, workspaceId, generation, keyId, recipientIds]
+      properties:
+        providerId:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9._-]+$"
+        requestId:
+          type: string
+          minLength: 1
+          maxLength: 255
+        workspaceId:
+          type: string
+          minLength: 1
+        generation:
+          type: integer
+          minimum: 1
+        keyId:
+          type: string
+          minLength: 1
+        recipientIds:
+          type: array
+          minItems: 1
+          maxItems: 10000
+          uniqueItems: true
+          items:
+            type: string
+            minLength: 1

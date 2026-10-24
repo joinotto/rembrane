@@ -68,6 +68,8 @@ This roadmap describes sequencing, not release dates.
     - [x] Negotiate optional workspace-rotation capability and validate
       transport receipts against exact request, provider, workspace,
       generation, and recipient correlation.
+    - [x] Bind rotation to the authenticated HTTP protocol and black-box
+      provider conformance runner without exposing key material.
   - [ ] Resolve or unwrap keyring material through customer KMS adapters.
   - [x] Add a provider-agnostic configured cipher that dispatches to local
     environment/macOS keyrings or a policy-negotiated HTTP key provider.
@@ -302,6 +304,10 @@ This roadmap describes sequencing, not release dates.
       canonical active-recipient equality before completing rotation.
     - [x] Persist validated provider/request/key metadata and exact recipients
       atomically with rotation completion.
+    - [x] Transport rotation requests and strictly decoded receipts over the
+      authenticated bounded HTTP adapter with replay conformance coverage.
+    - [ ] Orchestrate provider rotation and completion through the management
+      API and CLI.
 - [ ] Organizational audit and retention controls.
 
 ## Phase 5 — Integration ecosystem

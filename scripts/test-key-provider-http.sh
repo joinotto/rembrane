@@ -58,6 +58,7 @@ jq -e '
     and .maximumPlaintextBytes >= 262144
     and .maximumPlaintextBytes <= 1048576
     and (.supportsHistoricalKeys | type == "boolean")
+    and .supportsRotation == true
 ' "$response" >/dev/null
 maximum_plaintext_bytes=$(jq -r '.maximumPlaintextBytes' "$response")
 
@@ -169,6 +170,54 @@ oversized_status=$(
 )
 case "$oversized_status" in
     413 | 422) ;;
+    *) exit 1 ;;
+esac
+
+rotate_request=$(
+    jq -cn \
+        --arg requestId "rotate-$namespace" \
+        --arg workspaceId "$workspace" \
+        '{
+            requestId: $requestId,
+            workspaceId: $workspaceId,
+            generation: 2,
+            recipientIds: ["principal-b", "principal-a"]
+        }'
+)
+printf '%s' "$rotate_request" |
+    request POST /v0.1/rotate \
+        --header "Content-Type: application/json" \
+        --data-binary @- >"$response"
+jq -e \
+    --arg requestId "rotate-$namespace" \
+    --arg workspaceId "$workspace" '
+    (keys | sort) == [
+        "generation",
+        "keyId",
+        "providerId",
+        "recipientIds",
+        "requestId",
+        "workspaceId"
+    ]
+    and .providerId == "rembrane.mock-key-provider"
+    and .requestId == $requestId
+    and .workspaceId == $workspaceId
+    and .generation == 2
+    and (.keyId | type == "string" and length > 0)
+    and .recipientIds == ["principal-a", "principal-b"]
+' "$response" >/dev/null
+
+repeated_rotation_status=$(
+    printf '%s' "$rotate_request" |
+        curl --silent --output /dev/null --write-out '%{http_code}' \
+            --request POST \
+            --header "@$auth_header" \
+            --header "Content-Type: application/json" \
+            --data-binary @- \
+            "${base_url%/}/v0.1/rotate"
+)
+case "$repeated_rotation_status" in
+    409 | 422) ;;
     *) exit 1 ;;
 esac
 

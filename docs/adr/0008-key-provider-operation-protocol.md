@@ -14,8 +14,9 @@ and defeat hardware-backed or non-exportable key guarantees.
 ## Decision
 
 External key providers implement the versioned Key Provider Protocol and expose
-authenticated `seal` and `open` operations. They never return raw workspace key
-material. Every request carries the complete canonical encryption context:
+authenticated `seal` and `open` operations. Providers may also advertise a
+`rotate` operation for shared workspaces. They never return raw workspace key
+material. Record requests carry the complete canonical encryption context:
 workspace, record, version, and payload purpose.
 
 The provider is part of the plaintext trusted boundary. It may run:
@@ -38,6 +39,14 @@ uses a bounded, deployment-unique request namespace plus a monotonic suffix;
 deployments should generate the namespace with enough entropy to avoid replay
 collisions across process restarts.
 
+A rotation request binds a deployment-unique request identifier, workspace,
+monotonic generation, and exact canonical active-recipient set. Its response
+contains only the provider identity, the same correlation fields, an opaque
+key identifier, and the same canonical recipient set. Clients reject missing,
+duplicate, additional, or mismatched recipients and any provider, request,
+workspace, or generation mismatch before recording completion. Providers must
+reject stale or replayed generations.
+
 ## Consequences
 
 - Raw keys can remain non-exportable inside an HSM, KMS gateway, or keychain
@@ -46,5 +55,5 @@ collisions across process restarts.
 - Plaintext crosses the provider boundary, so deployment placement and channel
   security are part of the E2EE claim.
 - Provider conformance must test context substitution, unknown keys, size
-  limits, authentication, and the absence of key material in responses or
-  logs.
+  limits, authentication, rotation replay, exact receipt correlation, and the
+  absence of key material in responses or logs.

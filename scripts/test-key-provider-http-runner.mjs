@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 const token = "key-provider-runner-secret";
 const keyId = "mock-key-v1";
 const sealed = new Map();
+const workspaceGenerations = new Map();
 
 function json(response, status, value) {
   response.writeHead(status, { "content-type": "application/json" });
@@ -53,6 +54,7 @@ const server = http.createServer(async (request, response) => {
       algorithms: ["mock-aead"],
       maximumPlaintextBytes: 262144,
       supportsHistoricalKeys: true,
+      supportsRotation: true,
     });
     return;
   }
@@ -89,6 +91,32 @@ const server = http.createServer(async (request, response) => {
       return;
     }
     json(response, 200, { plaintextBase64: record.plaintextBase64 });
+    return;
+  }
+  if (request.method === "POST" && url.pathname === "/v0.1/rotate") {
+    const input = await readJson(request);
+    const previousGeneration = workspaceGenerations.get(input.workspaceId) ?? 0;
+    if (
+      !input.requestId ||
+      !input.workspaceId ||
+      !Number.isSafeInteger(input.generation) ||
+      input.generation <= previousGeneration ||
+      !Array.isArray(input.recipientIds) ||
+      input.recipientIds.length === 0 ||
+      new Set(input.recipientIds).size !== input.recipientIds.length
+    ) {
+      json(response, 409, { title: "invalid rotation", status: 409 });
+      return;
+    }
+    workspaceGenerations.set(input.workspaceId, input.generation);
+    json(response, 200, {
+      providerId: "rembrane.mock-key-provider",
+      requestId: input.requestId,
+      workspaceId: input.workspaceId,
+      generation: input.generation,
+      keyId: `mock-key-v${input.generation}`,
+      recipientIds: [...input.recipientIds].sort(),
+    });
     return;
   }
   json(response, 404, { title: "not found", status: 404 });

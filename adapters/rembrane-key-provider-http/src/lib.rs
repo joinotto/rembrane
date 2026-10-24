@@ -7,8 +7,9 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use rembrane_crypto::{
     CryptoError, EncryptedPayload, EncryptionContext, KeyProviderManifest,
-    KeyProviderProtocolVersion, KeyProviderTransport, OpenRequest, SealRequest,
+    KeyProviderProtocolVersion, KeyProviderTransport, OpenRequest, RotateKeyRequest, SealRequest,
 };
+use rembrane_domain::{KeyRotationReceipt, PrincipalId, ProviderId, WorkspaceId};
 use reqwest::Url;
 use reqwest::blocking::{Client, Response};
 use reqwest::header::{ACCEPT, CONTENT_TYPE};
@@ -23,6 +24,7 @@ pub struct HttpKeyProviderTransport {
     manifest_endpoint: Url,
     seal_endpoint: Url,
     open_endpoint: Url,
+    rotate_endpoint: Url,
     bearer_token: Zeroizing<String>,
 }
 
@@ -65,6 +67,9 @@ impl HttpKeyProviderTransport {
                 .map_err(|_| CryptoError::KeyUnavailable)?,
             open_endpoint: base
                 .join("v0.1/open")
+                .map_err(|_| CryptoError::KeyUnavailable)?,
+            rotate_endpoint: base
+                .join("v0.1/rotate")
                 .map_err(|_| CryptoError::KeyUnavailable)?,
             bearer_token,
         })
@@ -162,6 +167,26 @@ impl KeyProviderTransport for HttpKeyProviderTransport {
             .decode(wire.plaintext_base64)
             .map_err(|_| CryptoError::InvalidEnvelope)
     }
+
+    fn rotate(&self, request: &RotateKeyRequest) -> Result<KeyRotationReceipt, CryptoError> {
+        let body = RotateBody {
+            request_id: request.request_id(),
+            workspace_id: request.workspace_id().as_str(),
+            generation: request.generation(),
+            recipient_ids: request
+                .recipient_ids()
+                .iter()
+                .map(PrincipalId::as_str)
+                .collect(),
+        };
+        let response = self
+            .request(self.rotate_endpoint.clone())
+            .json(&body)
+            .send()
+            .map_err(|_| CryptoError::KeyUnavailable)?;
+        let wire: RotationReceiptResponse = Self::decode_response(response)?;
+        wire.into_domain()
+    }
 }
 
 fn validate_base_url(value: &str) -> Result<Url, CryptoError> {
@@ -257,6 +282,15 @@ struct OpenBody<'value> {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+struct RotateBody<'value> {
+    request_id: &'value str,
+    workspace_id: &'value str,
+    generation: u64,
+    recipient_ids: Vec<&'value str>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct EnvelopeBody<'value> {
     ciphertext_base64: String,
     key_id: &'value str,
@@ -307,11 +341,39 @@ struct PlaintextResponse {
     plaintext_base64: String,
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct RotationReceiptResponse {
+    provider_id: String,
+    request_id: String,
+    workspace_id: String,
+    generation: u64,
+    key_id: String,
+    recipient_ids: Vec<String>,
+}
+
+impl RotationReceiptResponse {
+    fn into_domain(self) -> Result<KeyRotationReceipt, CryptoError> {
+        KeyRotationReceipt::new(
+            ProviderId::new(self.provider_id),
+            self.request_id,
+            WorkspaceId::new(self.workspace_id),
+            self.generation,
+            self.key_id,
+            self.recipient_ids
+                .into_iter()
+                .map(PrincipalId::new)
+                .collect(),
+        )
+        .map_err(|_| CryptoError::InvalidEnvelope)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         EnvelopeResponse, HttpKeyProviderTransport, ManifestResponse, PlaintextResponse,
-        validate_base_url,
+        RotationReceiptResponse, validate_base_url,
     };
     use rembrane_crypto::{CryptoError, EncryptedPayload, KeyProviderManifest};
 
@@ -367,6 +429,7 @@ mod tests {
         })
         .expect("manifest should validate");
         assert_eq!(manifest.maximum_plaintext_bytes, 262_144);
+        assert!(!manifest.supports_rotation);
 
         assert_eq!(
             KeyProviderManifest::try_from(ManifestResponse {
@@ -400,6 +463,35 @@ mod tests {
             serde_json::from_str::<PlaintextResponse>(
                 r#"{"plaintextBase64":"cGxhaW50ZXh0","extra":true}"#
             )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn validates_rotation_receipt_shape_and_recipient_uniqueness() {
+        let receipt = RotationReceiptResponse {
+            provider_id: "rembrane.test-key-provider".to_owned(),
+            request_id: "rotate-01".to_owned(),
+            workspace_id: "workspace-01".to_owned(),
+            generation: 2,
+            key_id: "key-v2".to_owned(),
+            recipient_ids: vec!["member-b".to_owned(), "member-a".to_owned()],
+        }
+        .into_domain()
+        .expect("receipt should validate");
+        assert_eq!(receipt.generation(), 2);
+        assert_eq!(receipt.recipient_ids()[0].as_str(), "member-a");
+
+        assert!(
+            RotationReceiptResponse {
+                provider_id: "rembrane.test-key-provider".to_owned(),
+                request_id: "rotate-02".to_owned(),
+                workspace_id: "workspace-01".to_owned(),
+                generation: 2,
+                key_id: "key-v2".to_owned(),
+                recipient_ids: vec!["member-a".to_owned(), "member-a".to_owned()],
+            }
+            .into_domain()
             .is_err()
         );
     }

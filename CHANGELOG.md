@@ -31,6 +31,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Optional Key Provider Protocol rotation capability with bounded canonical
   requests and fail-closed provider, request, workspace, generation, and
   recipient receipt correlation.
+- Authenticated `/v0.1/rotate` key-provider HTTP transport with strict
+  content-free receipt decoding and black-box replay/correlation conformance
+  coverage.
 - Consumed customer key-provider HTTP configuration for application-owned
   vault, keychain, cloud-secret, and deployment integrations without fixed
   Rembrane environment-variable names.

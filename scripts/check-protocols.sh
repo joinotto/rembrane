@@ -249,7 +249,8 @@ done
 for key_provider_route in \
     '/v0.1/manifest:' \
     '/v0.1/seal:' \
-    '/v0.1/open:'
+    '/v0.1/open:' \
+    '/v0.1/rotate:'
 do
     if ! rg -F "$key_provider_route" spec/key-provider-openapi.yaml >/dev/null; then
         echo "key provider protocol route is missing: $key_provider_route" >&2
