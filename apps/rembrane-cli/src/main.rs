@@ -440,9 +440,15 @@ fn print_mcp_config(arguments: &[String]) -> Result<(), String> {
         "codex" => codex_mcp_config(server_binary, &environment),
         "claude-code" => claude_mcp_config(server_binary, &environment),
         "gemini-cli" => gemini_mcp_config(server_binary, &environment),
+        "cursor" => cursor_mcp_config(server_binary, &environment),
+        "vscode" => vscode_mcp_config(server_binary, &environment),
+        "zed" => zed_mcp_config(server_binary),
         "generic" => generic_mcp_config(server_binary, &environment),
         _ => {
-            return Err("--client must be codex, claude-code, gemini-cli, or generic".to_owned());
+            return Err(
+                "--client must be codex, claude-code, gemini-cli, cursor, vscode, zed, or generic"
+                    .to_owned(),
+            );
         }
     };
     println!("{config}");
@@ -526,6 +532,40 @@ fn gemini_mcp_config(server_binary: &str, variables: &[&str]) -> String {
         "{{\"mcpServers\":{{\"rembrane\":{{\
          \"command\":\"{}\",\"args\":[],\"env\":{{{environment}}},\
          \"description\":\"Encrypted central memory through local Rembrane MCP\"}}}}}}}}",
+        escape_config_string(server_binary)
+    )
+}
+
+fn cursor_mcp_config(server_binary: &str, variables: &[&str]) -> String {
+    let environment = variables
+        .iter()
+        .map(|variable| format!("\"{variable}\":\"${{env:{variable}}}\""))
+        .collect::<Vec<_>>()
+        .join(",");
+    format!(
+        "{{\"mcpServers\":{{\"rembrane\":{{\"type\":\"stdio\",\
+         \"command\":\"{}\",\"args\":[],\"env\":{{{environment}}}}}}}}}}",
+        escape_config_string(server_binary)
+    )
+}
+
+fn vscode_mcp_config(server_binary: &str, variables: &[&str]) -> String {
+    let environment = variables
+        .iter()
+        .map(|variable| format!("\"{variable}\":\"${{env:{variable}}}\""))
+        .collect::<Vec<_>>()
+        .join(",");
+    format!(
+        "{{\"servers\":{{\"rembrane\":{{\"type\":\"stdio\",\
+         \"command\":\"{}\",\"args\":[],\"env\":{{{environment}}}}}}}}}}",
+        escape_config_string(server_binary)
+    )
+}
+
+fn zed_mcp_config(server_binary: &str) -> String {
+    format!(
+        "{{\"context_servers\":{{\"rembrane\":{{\
+         \"command\":\"{}\",\"args\":[],\"env\":{{}}}}}}}}",
         escape_config_string(server_binary)
     )
 }
@@ -1432,7 +1472,8 @@ fn print_help() {
            rembrane legal-hold <place|release> --database <path> \
              --principal <owner-or-admin-id> --workspace <id> \
              --hold <id> --request <id>\n\
-           rembrane mcp-config --client <codex|claude-code|gemini-cli|generic> \
+           rembrane mcp-config \
+             --client <codex|claude-code|gemini-cli|cursor|vscode|zed|generic> \
              --server-binary <path> \
              [--key-provider <environment|macos-keychain|http>]\n\
            rembrane remember --database <path> --principal <id> \
@@ -1456,10 +1497,11 @@ mod tests {
     use rembrane_domain::{EntityId, MemoryScope, ReadScope};
 
     use super::{
-        EXPORT_MAGIC, claude_mcp_config, codex_mcp_config, format_read_scopes, gemini_mcp_config,
-        generic_mcp_config, memory_privacy_mode_name, memory_provider_check_policy, option,
-        positive_u64, providers, read_export, recall_scope_context, redact_endpoint,
-        requested_memory_privacy, requested_memory_scope, test_provider, write_export,
+        EXPORT_MAGIC, claude_mcp_config, codex_mcp_config, cursor_mcp_config, format_read_scopes,
+        gemini_mcp_config, generic_mcp_config, memory_privacy_mode_name,
+        memory_provider_check_policy, option, positive_u64, providers, read_export,
+        recall_scope_context, redact_endpoint, requested_memory_privacy, requested_memory_scope,
+        test_provider, vscode_mcp_config, write_export, zed_mcp_config,
     };
 
     fn temporary_path(name: &str) -> std::path::PathBuf {
@@ -1771,6 +1813,21 @@ mod tests {
             gemini.contains("\"REMBRANE_WORKSPACE_KEY_HEX\":\"${REMBRANE_WORKSPACE_KEY_HEX}\"")
         );
         assert!(!gemini.contains("00010203"));
+
+        let cursor = cursor_mcp_config("/opt/rembrane-mcp", &environment);
+        assert!(cursor.contains("\"mcpServers\":{\"rembrane\""));
+        assert!(cursor.contains("\"${env:REMBRANE_WORKSPACE_KEY_HEX}\""));
+        assert!(!cursor.contains("00010203"));
+
+        let vscode = vscode_mcp_config("/opt/rembrane-mcp", &environment);
+        assert!(vscode.contains("\"servers\":{\"rembrane\""));
+        assert!(vscode.contains("\"${env:REMBRANE_WORKSPACE_KEY_HEX}\""));
+        assert!(!vscode.contains("00010203"));
+
+        let zed = zed_mcp_config("/opt/rembrane-mcp");
+        assert!(zed.contains("\"context_servers\":{\"rembrane\""));
+        assert!(zed.contains("\"env\":{}"));
+        assert!(!zed.contains("REMBRANE_WORKSPACE_KEY_HEX"));
 
         let generic = generic_mcp_config("/opt/rembrane-mcp", &environment);
         assert!(generic.contains("\"schemaVersion\":1"));

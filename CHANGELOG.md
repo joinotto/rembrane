@@ -31,6 +31,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   resource-specific cutoffs, a global deletion cap, active legal-hold
   blocking, referential-safety checks, and permanent exclusion of append-only
   administrative audit evidence.
+- Secret-safe native stdio MCP configuration generators for Cursor, VS Code,
+  and Zed alongside the existing Codex, Claude Code, and Gemini CLI formats.
 - A versioned per-workspace retention policy contract with separate periods
   for memory, checkpoints, travel research, disclosures, canonical events, and
   administrative audit, including bounded expiry and legal-hold overrides.
