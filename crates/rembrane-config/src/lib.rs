@@ -8,6 +8,12 @@ use rembrane_domain::{ActivityId, EntityId, ReadPermission, ReadScope};
 use rembrane_provider_sdk::{CURRENT_PROVIDER_PROTOCOL, Capability, ProviderPolicy};
 use std::error::Error;
 use std::fmt::{self, Display};
+use url::{Position, Url};
+
+pub const MAX_REMOTE_ENDPOINT_BYTES: usize = 2_048;
+pub const MAX_REMOTE_CLIENT_ID_BYTES: usize = 255;
+pub const MAX_REMOTE_TRUSTED_ORIGINS: usize = 64;
+pub const MAX_REMOTE_ORIGIN_BYTES: usize = 2_048;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ProcessingMode {
@@ -248,8 +254,13 @@ impl RemoteMcpConfig {
         if introspection_client_id.trim().is_empty() {
             return Err(RemoteMcpConfigError::EmptyClientId);
         }
-        if contains_unsafe_http_value_char(&introspection_client_id) {
+        if introspection_client_id.len() > MAX_REMOTE_CLIENT_ID_BYTES
+            || contains_unsafe_http_value_char(&introspection_client_id)
+        {
             return Err(RemoteMcpConfigError::InvalidClientId);
+        }
+        if trusted_origins.len() > MAX_REMOTE_TRUSTED_ORIGINS {
+            return Err(RemoteMcpConfigError::InvalidOrigin);
         }
         let mut normalized_origins = Vec::new();
         for origin in trusted_origins {
@@ -258,7 +269,7 @@ impl RemoteMcpConfig {
                 normalized_origins.push(origin);
             }
         }
-        let resource_authority = remote_endpoint_authority(&resource)?.to_owned();
+        let resource_authority = remote_endpoint_authority(&resource)?;
         Ok(Self {
             resource,
             resource_authority,
@@ -339,42 +350,58 @@ impl RemoteMcpConfig {
 }
 
 fn validate_remote_https_endpoint(endpoint: &str) -> Result<(), RemoteMcpConfigError> {
-    if contains_unsafe_http_value_char(endpoint) {
+    if endpoint.len() > MAX_REMOTE_ENDPOINT_BYTES || contains_unsafe_http_value_char(endpoint) {
         return Err(RemoteMcpConfigError::InsecureEndpoint);
     }
     if endpoint.contains('@') || endpoint.contains('?') || endpoint.contains('#') {
         return Err(RemoteMcpConfigError::CredentialBearingEndpoint);
     }
-    let authority = remote_endpoint_authority(endpoint)?;
-    if authority.is_empty()
-        || authority.starts_with('.')
-        || authority.ends_with('.')
-        || authority.contains('\\')
+    if endpoint.contains('\\') {
+        return Err(RemoteMcpConfigError::InsecureEndpoint);
+    }
+    let parsed = Url::parse(endpoint).map_err(|_| RemoteMcpConfigError::InsecureEndpoint)?;
+    let canonical_endpoint = parsed.as_str();
+    let canonical_root_without_slash =
+        parsed.path() == "/" && canonical_endpoint.strip_suffix('/') == Some(endpoint);
+    if parsed.scheme() != "https"
+        || parsed.host_str().is_none()
+        || !parsed.username().is_empty()
+        || parsed.password().is_some()
+        || parsed.query().is_some()
+        || parsed.fragment().is_some()
+        || (canonical_endpoint != endpoint && !canonical_root_without_slash)
     {
+        return Err(RemoteMcpConfigError::InsecureEndpoint);
+    }
+    let authority = &parsed[Position::BeforeHost..Position::AfterPort];
+    if authority.starts_with('.') || authority.ends_with('.') {
         return Err(RemoteMcpConfigError::InsecureEndpoint);
     }
     Ok(())
 }
 
-fn remote_endpoint_authority(endpoint: &str) -> Result<&str, RemoteMcpConfigError> {
-    let Some(remainder) = endpoint.strip_prefix("https://") else {
-        return Err(RemoteMcpConfigError::InsecureEndpoint);
-    };
-    Ok(remainder.split('/').next().unwrap_or_default())
+fn remote_endpoint_authority(endpoint: &str) -> Result<String, RemoteMcpConfigError> {
+    let parsed = Url::parse(endpoint).map_err(|_| RemoteMcpConfigError::InsecureEndpoint)?;
+    Ok(parsed[Position::BeforeHost..Position::AfterPort].to_owned())
 }
 
 fn validate_exact_https_origin(origin: &str) -> Result<(), RemoteMcpConfigError> {
-    if origin == "*" || origin.ends_with('/') || contains_unsafe_http_value_char(origin) {
+    if origin.len() > MAX_REMOTE_ORIGIN_BYTES
+        || origin == "*"
+        || origin.ends_with('/')
+        || contains_unsafe_http_value_char(origin)
+    {
         return Err(RemoteMcpConfigError::InvalidOrigin);
     }
-    let Some(authority) = origin.strip_prefix("https://") else {
-        return Err(RemoteMcpConfigError::InvalidOrigin);
-    };
-    if authority.is_empty()
-        || authority.contains('/')
-        || authority.contains('@')
-        || authority.contains('?')
-        || authority.contains('#')
+    let parsed = Url::parse(origin).map_err(|_| RemoteMcpConfigError::InvalidOrigin)?;
+    if parsed.scheme() != "https"
+        || parsed.host_str().is_none()
+        || !parsed.username().is_empty()
+        || parsed.password().is_some()
+        || parsed.query().is_some()
+        || parsed.fragment().is_some()
+        || parsed.path() != "/"
+        || parsed.origin().ascii_serialization() != origin
     {
         return Err(RemoteMcpConfigError::InvalidOrigin);
     }
@@ -475,9 +502,11 @@ mod tests {
     use rembrane_provider_sdk::Capability;
 
     use super::{
-        DeploymentPolicy, ProcessingMode, ProviderConnection, ProviderConnectionError,
-        ProviderKind, ProviderPlacement, RemoteMcpConfig, RemoteMcpConfigError, SecretReference,
-        SecretReferenceError, parse_read_permissions, parse_read_scopes,
+        DeploymentPolicy, MAX_REMOTE_CLIENT_ID_BYTES, MAX_REMOTE_ENDPOINT_BYTES,
+        MAX_REMOTE_ORIGIN_BYTES, MAX_REMOTE_TRUSTED_ORIGINS, ProcessingMode, ProviderConnection,
+        ProviderConnectionError, ProviderKind, ProviderPlacement, RemoteMcpConfig,
+        RemoteMcpConfigError, SecretReference, SecretReferenceError, parse_read_permissions,
+        parse_read_scopes,
     };
 
     #[test]
@@ -758,5 +787,77 @@ mod tests {
             ),
             Err(RemoteMcpConfigError::InvalidClientId)
         );
+    }
+
+    #[test]
+    fn remote_mcp_profile_bounds_and_canonicalizes_deployment_values() {
+        let profile = |resource: String, client_id: String, origins: Vec<String>| {
+            RemoteMcpConfig::new(
+                resource,
+                "https://identity.example".to_owned(),
+                "https://identity.example/oauth/introspect".to_owned(),
+                client_id,
+                SecretReference::environment("SECRET").expect("reference should be valid"),
+                origins,
+            )
+        };
+
+        for malformed in [
+            "https://memory.example:invalid/mcp".to_owned(),
+            "HTTPS://memory.example/mcp".to_owned(),
+            "https://MEMORY.example/mcp".to_owned(),
+            "https://memory.example:443/mcp".to_owned(),
+            format!(
+                "https://memory.example/{}",
+                "x".repeat(MAX_REMOTE_ENDPOINT_BYTES)
+            ),
+        ] {
+            assert_eq!(
+                profile(malformed, "client".to_owned(), Vec::new()),
+                Err(RemoteMcpConfigError::InsecureEndpoint)
+            );
+        }
+
+        assert_eq!(
+            profile(
+                "https://memory.example/mcp".to_owned(),
+                "x".repeat(MAX_REMOTE_CLIENT_ID_BYTES + 1),
+                Vec::new(),
+            ),
+            Err(RemoteMcpConfigError::InvalidClientId)
+        );
+        assert_eq!(
+            profile(
+                "https://memory.example/mcp".to_owned(),
+                "client".to_owned(),
+                vec!["https://app.example".to_owned(); MAX_REMOTE_TRUSTED_ORIGINS + 1],
+            ),
+            Err(RemoteMcpConfigError::InvalidOrigin)
+        );
+        assert_eq!(
+            profile(
+                "https://memory.example/mcp".to_owned(),
+                "client".to_owned(),
+                vec![format!(
+                    "https://{}.example",
+                    "x".repeat(MAX_REMOTE_ORIGIN_BYTES)
+                )],
+            ),
+            Err(RemoteMcpConfigError::InvalidOrigin)
+        );
+        for noncanonical_origin in [
+            "https://APP.example",
+            "https://app.example:443",
+            "https://app.example/",
+        ] {
+            assert_eq!(
+                profile(
+                    "https://memory.example/mcp".to_owned(),
+                    "client".to_owned(),
+                    vec![noncanonical_origin.to_owned()],
+                ),
+                Err(RemoteMcpConfigError::InvalidOrigin)
+            );
+        }
     }
 }

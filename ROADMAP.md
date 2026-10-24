@@ -125,6 +125,8 @@ This roadmap describes sequencing, not release dates.
   - [x] Integrate the authorization middleware with the HTTP server adapter.
     - [x] Validate complete remote profiles before startup, including exact
       HTTPS endpoints, referenced client secrets, and exact browser origins.
+      - [x] Parse and canonicalize deployment URLs while bounding endpoint,
+        OAuth client, and trusted-origin list sizes.
       - [x] Reject non-ASCII, whitespace, controls, quotes, and malformed
         authorities before configuration values can reach HTTP headers.
       - [x] Derive one canonical RFC 9728 metadata URL and bearer challenge

@@ -61,6 +61,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - An 8 KiB outer remote-MCP header ceiling applied uniformly to credential,
   Host, Origin, session, content-negotiation, and protocol-version headers
   before parsing or authentication.
+- Parsed and canonically serialized remote-MCP deployment URLs with bounded
+  endpoint, OAuth client ID, trusted-origin count, and individual-origin sizes,
+  rejecting malformed ports and normalization ambiguity before startup.
 - A transport-injectable Mem0 OSS semantic adapter mapping authorized
   projections into HMAC-pseudonymous workspace partitions while preserving
   canonical memory IDs, versions, replacement, bounded ranking, and

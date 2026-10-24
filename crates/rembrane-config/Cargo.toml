@@ -10,6 +10,7 @@ rust-version.workspace = true
 [dependencies]
 rembrane-domain = { path = "../rembrane-domain" }
 rembrane-provider-sdk = { path = "../rembrane-provider-sdk" }
+url = "2"
 
 [lints]
 workspace = true
