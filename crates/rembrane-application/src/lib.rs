@@ -40,11 +40,11 @@ pub use ports::{
     BookingResearchMutationRepository, BookingResearchRepository, CanonicalGraphMutationRepository,
     CanonicalMutationRepository, CheckpointDisclosureRepository, CheckpointMutationRepository,
     CheckpointRepository, DisclosureRepository, EventRepository, GraphProjectionOutboxRepository,
-    InvitationRepository, KnowledgeDirection, KnowledgeGraphMutationRepository,
-    KnowledgeGraphRepository, MAX_KNOWLEDGE_NEIGHBOURS, MemberLifecycleRepository,
-    MemberScopeGrantRepository, MembershipRepository, MemoryRepository, ProjectionOutboxRepository,
-    ShareProposalMutationRepository, ShareProposalRepository, TravelDisclosureRepository,
-    TripMutationRepository, TripRepository, WorkspaceRepository,
+    InvitationRepository, KeyRotationRepository, KnowledgeDirection,
+    KnowledgeGraphMutationRepository, KnowledgeGraphRepository, MAX_KNOWLEDGE_NEIGHBOURS,
+    MemberLifecycleRepository, MemberScopeGrantRepository, MembershipRepository, MemoryRepository,
+    ProjectionOutboxRepository, ShareProposalMutationRepository, ShareProposalRepository,
+    TravelDisclosureRepository, TripMutationRepository, TripRepository, WorkspaceRepository,
 };
 pub use projection_worker::{ProjectionOutcome, ProjectionWorker};
 pub use propose_memory::{ConfirmMemoryCommand, MemoryProposalService, ProposeMemoryCommand};

@@ -1,5 +1,5 @@
 use rembrane_application::{
-    AuthorizeClientCommand, AuthorizeClientService, GrantMemberScopeCommand,
+    AuthorizeClientCommand, AuthorizeClientService, GrantMemberScopeCommand, KeyRotationRepository,
     MemberLifecycleService, MemberScopeGrantRepository, MemberScopeGrantService,
     MembershipRepository, RemoveMemberCommand, RevokeMemberScopeCommand, WorkspaceRepository,
 };
@@ -126,6 +126,7 @@ fn persisted_member_removal_deletes_grants_and_denies_authorization() {
             workspace_id: WorkspaceId::new("team"),
             principal_id: PrincipalId::new("member"),
             removed_by: PrincipalId::new("owner"),
+            rotation_id: rembrane_domain::KeyRotationId::new("rotation_01"),
         })
         .expect("owner should remove member");
 
@@ -135,6 +136,13 @@ fn persisted_member_removal_deletes_grants_and_denies_authorization() {
             .expect("scope lookup should succeed"),
         Vec::new()
     );
+    let rotation = store
+        .latest_key_rotation(&WorkspaceId::new("team"))
+        .expect("rotation lookup should succeed")
+        .expect("member removal must require rotation");
+    assert_eq!(rotation.generation(), 1);
+    assert_eq!(rotation.removed_principal_id().as_str(), "member");
+    assert_eq!(rotation.requested_by().as_str(), "owner");
     let error = AuthorizeClientService::new(&store)
         .execute(AuthorizeClientCommand {
             client_id: ClientId::new("assistant"),

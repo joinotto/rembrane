@@ -1,10 +1,11 @@
 use rembrane_domain::{
     ActivityCheckpoint, ActivityId, BookingResearch, BookingResearchId, CanonicalEvent,
     CheckpointDisclosureReceipt, DisclosureReceipt, EntityId, GraphProjectionJob, Invitation,
-    InvitationId, InvitationStatus, KnowledgeEdge, KnowledgeEdgeId, KnowledgeNode, KnowledgeNodeId,
-    MemberScopeGrant, Membership, MembershipStatus, MemoryId, MemoryRecord, MemoryShareProposal,
-    Principal, PrincipalId, ProjectionJob, ProjectionJobId, ProjectionStatus, ProviderId,
-    ShareProposalId, ShareProposalStatus, TravelDisclosureReceipt, Trip, Workspace, WorkspaceId,
+    InvitationId, InvitationStatus, KeyRotationId, KnowledgeEdge, KnowledgeEdgeId, KnowledgeNode,
+    KnowledgeNodeId, MemberScopeGrant, Membership, MembershipStatus, MemoryId, MemoryRecord,
+    MemoryShareProposal, Principal, PrincipalId, ProjectionJob, ProjectionJobId, ProjectionStatus,
+    ProviderId, ShareProposalId, ShareProposalStatus, TravelDisclosureReceipt, Trip, Workspace,
+    WorkspaceId, WorkspaceKeyRotation,
 };
 
 use crate::ApplicationError;
@@ -345,7 +346,16 @@ pub trait MemberLifecycleRepository {
         &mut self,
         membership: Membership,
         expected_status: MembershipStatus,
+        rotation_id: KeyRotationId,
+        requested_by: PrincipalId,
     ) -> Result<(), ApplicationError>;
+}
+
+pub trait KeyRotationRepository {
+    fn latest_key_rotation(
+        &self,
+        workspace_id: &WorkspaceId,
+    ) -> Result<Option<WorkspaceKeyRotation>, ApplicationError>;
 }
 
 pub trait WorkspaceRepository {

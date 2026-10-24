@@ -29,7 +29,9 @@ sqlite3 "$database" < \
     "$repository_root/migrations/sqlite/0011_knowledge_graph.sql"
 sqlite3 "$database" < \
     "$repository_root/migrations/sqlite/0012_graph_projection_outbox.sql"
-sqlite3 "$database" "PRAGMA user_version = 12;"
+sqlite3 "$database" < \
+    "$repository_root/migrations/sqlite/0013_workspace_key_rotations.sql"
+sqlite3 "$database" "PRAGMA user_version = 13;"
 
 sqlite3 "$database" <<'SQL'
 PRAGMA foreign_keys = ON;
@@ -532,13 +534,38 @@ then
     exit 1
 fi
 
+sqlite3 "$database" <<'SQL'
+PRAGMA foreign_keys = ON;
+INSERT INTO workspace_key_rotations (
+    workspace_id, id, generation, removed_principal_id, requested_by, status
+) VALUES (
+    'workspace_shared', 'rotation_01', 1,
+    'principal_02', 'principal_01', 'required'
+);
+SQL
+
+if sqlite3 "$database" <<'SQL'
+.bail on
+PRAGMA foreign_keys = ON;
+INSERT INTO workspace_key_rotations (
+    workspace_id, id, generation, removed_principal_id, requested_by, status
+) VALUES (
+    'workspace_shared', 'rotation_02', 2,
+    'principal_02', 'principal_01', 'required'
+);
+SQL
+then
+    echo "second required workspace key rotation unexpectedly succeeded" >&2
+    exit 1
+fi
+
 table_count=$(
     sqlite3 "$database" \
         "SELECT count(*) FROM sqlite_schema WHERE type = 'table';"
 )
 
 test "$table_count" -ge 9
-test "$(sqlite3 "$database" "PRAGMA user_version;")" -eq 12
+test "$(sqlite3 "$database" "PRAGMA user_version;")" -eq 13
 test "$(
     sqlite3 "$database" \
         "SELECT count(*) FROM graph_projection_outbox WHERE provider_id = 'graph.primary' AND status = 'pending';"
@@ -615,5 +642,9 @@ test "$(
 test "$(
     sqlite3 "$database" \
         "SELECT count(*) FROM memory_share_proposals WHERE source_workspace_id = 'workspace_01' AND id = 'share_01' AND status = 'pending';"
+)" -eq 1
+test "$(
+    sqlite3 "$database" \
+        "SELECT count(*) FROM workspace_key_rotations WHERE workspace_id = 'workspace_shared' AND generation = 1 AND status = 'required';"
 )" -eq 1
 echo "sqlite schema checks passed"

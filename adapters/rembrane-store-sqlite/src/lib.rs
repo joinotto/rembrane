@@ -13,16 +13,18 @@ mod trip;
 use std::path::Path;
 
 use rembrane_application::{
-    ApplicationError, InvitationRepository, MemberLifecycleRepository, MemberScopeGrantRepository,
-    MembershipRepository, MemoryRepository, ShareProposalRepository, WorkspaceRepository,
+    ApplicationError, InvitationRepository, KeyRotationRepository, MemberLifecycleRepository,
+    MemberScopeGrantRepository, MembershipRepository, MemoryRepository, ShareProposalRepository,
+    WorkspaceRepository,
 };
 use rembrane_codec::decode_memory;
 use rembrane_crypto::{EncryptedPayload, EncryptionContext, PayloadPurpose, RecordCipher};
 use rembrane_domain::{
-    ActivityId, EntityId, Invitation, InvitationId, InvitationStatus, MemberScopeGrant, Membership,
-    MembershipStatus, MemoryId, MemoryRecord, MemoryScope, MemoryShareProposal, Principal,
-    PrincipalId, ReadScope, ShareProposalId, ShareProposalStatus, Workspace, WorkspaceId,
-    WorkspaceKind, WorkspaceRole,
+    ActivityId, EntityId, Invitation, InvitationId, InvitationStatus, KeyRotationId,
+    KeyRotationStatus, MemberScopeGrant, Membership, MembershipStatus, MemoryId, MemoryRecord,
+    MemoryScope, MemoryShareProposal, Principal, PrincipalId, ReadScope, ShareProposalId,
+    ShareProposalStatus, Workspace, WorkspaceId, WorkspaceKeyRotation, WorkspaceKind,
+    WorkspaceRole,
 };
 use rusqlite::{Connection, ErrorCode, OptionalExtension, params};
 
@@ -48,7 +50,9 @@ const KNOWLEDGE_GRAPH_MIGRATION: &str =
     include_str!("../../../migrations/sqlite/0011_knowledge_graph.sql");
 const GRAPH_PROJECTION_OUTBOX_MIGRATION: &str =
     include_str!("../../../migrations/sqlite/0012_graph_projection_outbox.sql");
-const CURRENT_SCHEMA_VERSION: u32 = 12;
+const WORKSPACE_KEY_ROTATION_MIGRATION: &str =
+    include_str!("../../../migrations/sqlite/0013_workspace_key_rotations.sql");
+const CURRENT_SCHEMA_VERSION: u32 = 13;
 const CANONICAL_TABLES: [&str; 10] = [
     "activity_checkpoints",
     "disclosed_memories",
@@ -187,6 +191,12 @@ fn migrate(connection: &mut Connection) -> Result<(), ApplicationError> {
     if version == 11 {
         transaction
             .execute_batch(GRAPH_PROJECTION_OUTBOX_MIGRATION)
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        version = 12;
+    }
+    if version == 12 {
+        transaction
+            .execute_batch(WORKSPACE_KEY_ROTATION_MIGRATION)
             .map_err(|_| ApplicationError::StorageUnavailable)?;
     }
     transaction
@@ -1156,6 +1166,8 @@ impl<C> MemberLifecycleRepository for SqliteStore<C> {
         &mut self,
         membership: Membership,
         expected_status: MembershipStatus,
+        rotation_id: KeyRotationId,
+        requested_by: PrincipalId,
     ) -> Result<(), ApplicationError> {
         if membership.status() != MembershipStatus::Removed {
             return Err(ApplicationError::Validation(
@@ -1166,6 +1178,23 @@ impl<C> MemberLifecycleRepository for SqliteStore<C> {
             .connection
             .transaction()
             .map_err(|_| ApplicationError::StorageUnavailable)?;
+        let generation = transaction
+            .query_row(
+                "SELECT COALESCE(MAX(generation), 0) + 1
+                 FROM workspace_key_rotations
+                 WHERE workspace_id = ?1",
+                [membership.workspace_id().as_str()],
+                |row| row.get::<_, u64>(0),
+            )
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        WorkspaceKeyRotation::required(
+            rotation_id.clone(),
+            membership.workspace_id().clone(),
+            generation,
+            membership.principal_id().clone(),
+            requested_by.clone(),
+        )
+        .map_err(|error| ApplicationError::Validation(error.to_string()))?;
         let changed = transaction
             .execute(
                 "UPDATE memberships
@@ -1194,7 +1223,61 @@ impl<C> MemberLifecycleRepository for SqliteStore<C> {
             )
             .map_err(map_write_error)?;
         transaction
+            .execute(
+                "INSERT INTO workspace_key_rotations (
+                    workspace_id, id, generation, removed_principal_id,
+                    requested_by, status
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, 'required')",
+                params![
+                    membership.workspace_id().as_str(),
+                    rotation_id.as_str(),
+                    generation,
+                    membership.principal_id().as_str(),
+                    requested_by.as_str()
+                ],
+            )
+            .map_err(map_write_error)?;
+        transaction
             .commit()
+            .map_err(|_| ApplicationError::StorageUnavailable)
+    }
+}
+
+impl<C> KeyRotationRepository for SqliteStore<C> {
+    fn latest_key_rotation(
+        &self,
+        workspace_id: &WorkspaceId,
+    ) -> Result<Option<WorkspaceKeyRotation>, ApplicationError> {
+        self.connection
+            .query_row(
+                "SELECT id, generation, removed_principal_id, requested_by,
+                        status, completed_key_id, completed_by
+                 FROM workspace_key_rotations
+                 WHERE workspace_id = ?1
+                 ORDER BY generation DESC
+                 LIMIT 1",
+                [workspace_id.as_str()],
+                |row| {
+                    let status: String = row.get(4)?;
+                    let status = match status.as_str() {
+                        "required" => KeyRotationStatus::Required,
+                        "completed" => KeyRotationStatus::Completed,
+                        _ => return Err(rusqlite::Error::InvalidQuery),
+                    };
+                    WorkspaceKeyRotation::restore(
+                        KeyRotationId::new(row.get::<_, String>(0)?),
+                        workspace_id.clone(),
+                        row.get(1)?,
+                        PrincipalId::new(row.get::<_, String>(2)?),
+                        PrincipalId::new(row.get::<_, String>(3)?),
+                        status,
+                        row.get(5)?,
+                        row.get::<_, Option<String>>(6)?.map(PrincipalId::new),
+                    )
+                    .map_err(|_| rusqlite::Error::InvalidQuery)
+                },
+            )
+            .optional()
             .map_err(|_| ApplicationError::StorageUnavailable)
     }
 }

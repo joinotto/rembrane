@@ -4,21 +4,22 @@ use rembrane_application::{
     ApplicationError, BookingResearchMutationRepository, BookingResearchRepository,
     CanonicalGraphMutationRepository, CanonicalMutationRepository, CheckpointDisclosureRepository,
     CheckpointMutationRepository, CheckpointRepository, DisclosureRepository, EventRepository,
-    GraphProjectionOutboxRepository, InvitationRepository, KnowledgeDirection,
-    KnowledgeGraphMutationRepository, KnowledgeGraphRepository, MAX_KNOWLEDGE_NEIGHBOURS,
-    MemberLifecycleRepository, MemberScopeGrantRepository, MembershipRepository, MemoryRepository,
-    ProjectionOutboxRepository, ShareProposalMutationRepository, ShareProposalRepository,
-    TravelDisclosureRepository, TripMutationRepository, TripRepository, WorkspaceRepository,
+    GraphProjectionOutboxRepository, InvitationRepository, KeyRotationRepository,
+    KnowledgeDirection, KnowledgeGraphMutationRepository, KnowledgeGraphRepository,
+    MAX_KNOWLEDGE_NEIGHBOURS, MemberLifecycleRepository, MemberScopeGrantRepository,
+    MembershipRepository, MemoryRepository, ProjectionOutboxRepository,
+    ShareProposalMutationRepository, ShareProposalRepository, TravelDisclosureRepository,
+    TripMutationRepository, TripRepository, WorkspaceRepository,
 };
 use rembrane_domain::{
     ActivityCheckpoint, ActivityId, BookingResearch, BookingResearchId, CanonicalEvent,
     CheckpointDisclosureReceipt, DisclosureReceipt, EntityId, EventPayload, GraphProjectionJob,
-    GraphProjectionResource, Invitation, InvitationId, InvitationStatus, KnowledgeEdge,
-    KnowledgeEdgeId, KnowledgeNode, KnowledgeNodeId, MemberScopeGrant, Membership, MemoryId,
-    MemoryRecord, MemoryShareProposal, MemoryStatus, Principal, PrincipalId, ProjectionJob,
-    ProjectionJobId, ProjectionOperation, ProjectionStatus, ProviderId, ShareProposalId,
-    ShareProposalStatus, TravelDisclosureReceipt, Trip, Workspace, WorkspaceId, WorkspaceKind,
-    WorkspaceRole,
+    GraphProjectionResource, Invitation, InvitationId, InvitationStatus, KeyRotationId,
+    KeyRotationStatus, KnowledgeEdge, KnowledgeEdgeId, KnowledgeNode, KnowledgeNodeId,
+    MemberScopeGrant, Membership, MemoryId, MemoryRecord, MemoryShareProposal, MemoryStatus,
+    Principal, PrincipalId, ProjectionJob, ProjectionJobId, ProjectionOperation, ProjectionStatus,
+    ProviderId, ShareProposalId, ShareProposalStatus, TravelDisclosureReceipt, Trip, Workspace,
+    WorkspaceId, WorkspaceKeyRotation, WorkspaceKind, WorkspaceRole,
 };
 
 #[derive(Debug, Default)]
@@ -41,6 +42,7 @@ pub struct InMemoryStore {
     booking_research: Vec<BookingResearch>,
     knowledge_nodes: Vec<KnowledgeNode>,
     knowledge_edges: Vec<KnowledgeEdge>,
+    key_rotations: Vec<WorkspaceKeyRotation>,
 }
 
 impl GraphProjectionOutboxRepository for InMemoryStore {
@@ -1282,12 +1284,37 @@ impl MemberLifecycleRepository for InMemoryStore {
         &mut self,
         membership: Membership,
         expected_status: rembrane_domain::MembershipStatus,
+        rotation_id: KeyRotationId,
+        requested_by: PrincipalId,
     ) -> Result<(), ApplicationError> {
         if membership.status() != rembrane_domain::MembershipStatus::Removed {
             return Err(ApplicationError::Validation(
                 "member lifecycle transition must end in removed status".to_owned(),
             ));
         }
+        if self.key_rotations.iter().any(|rotation| {
+            rotation.workspace_id() == membership.workspace_id()
+                && rotation.status() == KeyRotationStatus::Required
+        }) {
+            return Err(ApplicationError::VersionConflict);
+        }
+        let generation = self
+            .key_rotations
+            .iter()
+            .filter(|rotation| rotation.workspace_id() == membership.workspace_id())
+            .map(WorkspaceKeyRotation::generation)
+            .max()
+            .unwrap_or(0)
+            .checked_add(1)
+            .ok_or(ApplicationError::VersionConflict)?;
+        let rotation = WorkspaceKeyRotation::required(
+            rotation_id,
+            membership.workspace_id().clone(),
+            generation,
+            membership.principal_id().clone(),
+            requested_by,
+        )
+        .map_err(|error| ApplicationError::Validation(error.to_string()))?;
         let stored = self
             .memberships
             .iter_mut()
@@ -1304,7 +1331,22 @@ impl MemberLifecycleRepository for InMemoryStore {
             grant.workspace_id() != membership.workspace_id()
                 || grant.principal_id() != membership.principal_id()
         });
+        self.key_rotations.push(rotation);
         Ok(())
+    }
+}
+
+impl KeyRotationRepository for InMemoryStore {
+    fn latest_key_rotation(
+        &self,
+        workspace_id: &WorkspaceId,
+    ) -> Result<Option<WorkspaceKeyRotation>, ApplicationError> {
+        Ok(self
+            .key_rotations
+            .iter()
+            .filter(|rotation| rotation.workspace_id() == workspace_id)
+            .max_by_key(|rotation| rotation.generation())
+            .cloned())
     }
 }
 

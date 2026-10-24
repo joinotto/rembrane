@@ -1,7 +1,8 @@
 use rembrane_application::{
     ApplicationError, AuthorizeClientCommand, AuthorizeClientService, GrantMemberScopeCommand,
-    MemberLifecycleService, MemberScopeGrantRepository, MemberScopeGrantService,
-    MembershipRepository, RemoveMemberCommand, RevokeMemberScopeCommand, WorkspaceRepository,
+    KeyRotationRepository, MemberLifecycleService, MemberScopeGrantRepository,
+    MemberScopeGrantService, MembershipRepository, RemoveMemberCommand, RevokeMemberScopeCommand,
+    WorkspaceRepository,
 };
 use rembrane_domain::{
     ClientId, EntityId, Membership, Principal, PrincipalId, ReadScope, Workspace, WorkspaceId,
@@ -116,6 +117,7 @@ fn owner_removal_revokes_membership_and_all_scope_grants() {
             workspace_id: WorkspaceId::new("team"),
             principal_id: PrincipalId::new("member"),
             removed_by: PrincipalId::new("owner"),
+            rotation_id: rembrane_domain::KeyRotationId::new("rotation_01"),
         })
         .expect("owner should remove member");
 
@@ -132,6 +134,13 @@ fn owner_removal_revokes_membership_and_all_scope_grants() {
             .expect("scope lookup should succeed"),
         Vec::new()
     );
+    let rotation = store
+        .latest_key_rotation(&WorkspaceId::new("team"))
+        .expect("rotation lookup should succeed")
+        .expect("member removal must require rotation");
+    assert_eq!(rotation.generation(), 1);
+    assert_eq!(rotation.removed_principal_id().as_str(), "member");
+    assert_eq!(rotation.requested_by().as_str(), "owner");
     let error = AuthorizeClientService::new(&store)
         .execute(AuthorizeClientCommand {
             client_id: ClientId::new("assistant"),
@@ -156,6 +165,7 @@ fn owner_membership_cannot_be_removed() {
             workspace_id: WorkspaceId::new("team"),
             principal_id: PrincipalId::new("owner"),
             removed_by: PrincipalId::new("owner"),
+            rotation_id: rembrane_domain::KeyRotationId::new("rotation_owner"),
         })
         .expect_err("ownership requires an explicit transfer");
 

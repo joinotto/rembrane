@@ -1,4 +1,4 @@
-use rembrane_domain::{Membership, PrincipalId, WorkspaceId, WorkspaceRole};
+use rembrane_domain::{KeyRotationId, Membership, PrincipalId, WorkspaceId, WorkspaceRole};
 
 use crate::{ApplicationError, MemberLifecycleRepository, MembershipRepository};
 
@@ -7,6 +7,7 @@ pub struct RemoveMemberCommand {
     pub workspace_id: WorkspaceId,
     pub principal_id: PrincipalId,
     pub removed_by: PrincipalId,
+    pub rotation_id: KeyRotationId,
 }
 
 pub struct MemberLifecycleService<'repository, Repository> {
@@ -26,6 +27,7 @@ where
             workspace_id,
             principal_id,
             removed_by,
+            rotation_id,
         } = command;
         let actor = self
             .repository
@@ -44,8 +46,12 @@ where
 
         let expected_status = target.status();
         let removed = target.remove();
-        self.repository
-            .remove_member_and_scope_grants(removed.clone(), expected_status)?;
+        self.repository.remove_member_and_scope_grants(
+            removed.clone(),
+            expected_status,
+            rotation_id,
+            removed_by,
+        )?;
         Ok(removed)
     }
 }
