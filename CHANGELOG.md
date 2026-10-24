@@ -23,6 +23,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Encrypted SQLite trip adapter tests covering duplicate opaque identifiers
   across tenants, owner-scoped reads, atomic sequence-conflict rollback, and
   optimistic revision conflicts.
+- Canonical booking-research records tied to trips with evidence provenance,
+  bounded opaque source references, strict UTC timestamps, and deterministic
+  fresh/expired evaluation.
 - Rust modular-monolith workspace with provider-independent domain and
   application layers.
 - Canonical memory, provenance, event, disclosure, membership, grant,

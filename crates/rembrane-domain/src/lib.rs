@@ -5,6 +5,7 @@
 //! adapters.
 
 mod activity;
+mod booking_research;
 mod disclosure;
 mod event;
 mod grant;
@@ -20,13 +21,16 @@ mod trip;
 mod workspace;
 
 pub use activity::{ActivityCheckpoint, CheckpointError, MAX_CHECKPOINT_PAYLOAD_BYTES};
+pub use booking_research::{
+    BookingResearch, BookingResearchError, BookingResearchKind, ResearchFreshness,
+};
 pub use disclosure::{CheckpointDisclosureReceipt, DisclosedMemory, DisclosureReceipt};
 pub use event::{CanonicalEvent, EventError, EventPayload};
 pub use grant::{ReadGrant, ReadScope, WriteGrant, WritePermission};
 pub use identifier::{
-    ActivityId, CheckpointId, ClientId, ContextPackId, DisclosureId, EntityId, EventId, EvidenceId,
-    InvitationId, MemoryId, PrincipalId, ProjectionJobId, ProviderId, ShareProposalId,
-    TripConstraintId, TripDecisionId, TripParticipantId, WorkspaceId,
+    ActivityId, BookingResearchId, CheckpointId, ClientId, ContextPackId, DisclosureId, EntityId,
+    EventId, EvidenceId, InvitationId, MemoryId, PrincipalId, ProjectionJobId, ProviderId,
+    ShareProposalId, TripConstraintId, TripDecisionId, TripParticipantId, WorkspaceId,
 };
 pub use invitation::{Invitation, InvitationError, InvitationStatus};
 pub use member_scope::MemberScopeGrant;

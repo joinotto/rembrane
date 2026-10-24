@@ -110,6 +110,9 @@ This roadmap describes sequencing, not release dates.
     - [x] Executable encrypted tenant-isolation, optimistic revision, and
       rollback adapter tests.
 - [ ] Booking-research evidence and expiry.
+  - [x] Canonical evidence-backed booking-research record with strict UTC
+    observation and expiry semantics.
+  - [ ] Versioned codec, encrypted repository, authorization, and capture API.
 - [ ] Cross-agent activity continuation.
 - [ ] Sensitive travel-data permissions.
 
