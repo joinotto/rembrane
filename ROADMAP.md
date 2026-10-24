@@ -376,7 +376,10 @@ This roadmap describes sequencing, not release dates.
       - [x] Create or optimistically update resumable activity checkpoints
         through a safely encoded activity path and require consecutive result
         versions.
-      - [ ] Add disclosure and sync operations.
+      - [x] Append purpose-bound disclosure receipts for exact memory
+        revisions without caller-controlled workspace, subject, or client
+        identity.
+      - [ ] Add sync pull and push operations.
 - [x] Versioned key-provider sidecar protocol for OS, HSM, and customer-KMS
   adapters.
   - [x] Add transport-independent Rust manifest, negotiation, request, context,

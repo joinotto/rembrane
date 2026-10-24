@@ -16,8 +16,8 @@ use rembrane_provider_sdk::{
     MemoryProviderPrivacyMode, MemoryProviderRecordedEvent, MemoryProviderRequest,
     MemoryProviderResponse, MemoryProviderSensitivity, MemoryProviderTransport,
     ProposeMemoryPayload, ProposeMemoryResult, ProviderError, ProviderProtocolVersion,
-    RecordEventPayload, RecordEventResult, ResolveContextPayload, ResolveContextResult,
-    ResolveQuestionPayload, ResolveQuestionResult,
+    RecordDisclosurePayload, RecordDisclosureResult, RecordEventPayload, RecordEventResult,
+    ResolveContextPayload, ResolveContextResult, ResolveQuestionPayload, ResolveQuestionResult,
 };
 use reqwest::Url;
 use reqwest::blocking::{Client, Response};
@@ -231,6 +231,38 @@ impl HttpMemoryProviderClient {
             (Some(result), None) if (200..300).contains(&status) => {
                 Ok(request.success(result.into_domain(request.payload())?))
             }
+            (None, Some(error)) if !(200..300).contains(&status) => {
+                Ok(request.error(parse_error_code(&error.code)?))
+            }
+            _ => Err(ProviderError::Rejected(
+                "memory provider response status and envelope disagree".to_owned(),
+            )),
+        }
+    }
+
+    pub fn record_disclosure(
+        &self,
+        request: &MemoryProviderRequest<RecordDisclosurePayload>,
+    ) -> Result<MemoryProviderResponse<RecordDisclosureResult>, ProviderError> {
+        let endpoint = self
+            .base_url
+            .join("v1/disclosures/receipt")
+            .map_err(|_| ProviderError::Unavailable)?;
+        let body = RequestEnvelope {
+            request_id: request.request_id().as_str(),
+            protocol_version: "0.1",
+            operation: "record_disclosure",
+            payload: RecordDisclosureBody::from(request.payload()),
+        };
+        let response = self.post_json(endpoint, &body)?;
+        let status = response.status().as_u16();
+        let wire: ResponseEnvelope<RecordDisclosureResultBody> =
+            decode_json(response, MAXIMUM_OPERATION_BYTES)?;
+        validate_response_identity(request, &wire.request_id, &wire.protocol_version)?;
+        match (wire.result, wire.error) {
+            (Some(result), None) if (200..300).contains(&status) => Ok(request.success(
+                RecordDisclosureResult::new(DisclosureId::new(result.disclosure_id))?,
+            )),
             (None, Some(error)) if !(200..300).contains(&status) => {
                 Ok(request.error(parse_error_code(&error.code)?))
             }
@@ -570,6 +602,50 @@ struct CheckpointActivityBody<'request> {
     state_fingerprint: Option<&'request str>,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RecordDisclosureBody<'request> {
+    idempotency_key: &'request str,
+    context_pack_id: &'request str,
+    purpose: &'request str,
+    memories: Vec<ExactMemoryRevisionRequestBody<'request>>,
+    disclosed_at_epoch_seconds: u64,
+}
+
+impl<'request> From<&'request RecordDisclosurePayload> for RecordDisclosureBody<'request> {
+    fn from(payload: &'request RecordDisclosurePayload) -> Self {
+        Self {
+            idempotency_key: payload.idempotency_key().as_str(),
+            context_pack_id: payload.context_pack_id().as_str(),
+            purpose: payload.purpose(),
+            memories: payload
+                .memories()
+                .iter()
+                .map(ExactMemoryRevisionRequestBody::from)
+                .collect(),
+            disclosed_at_epoch_seconds: payload.disclosed_at_epoch_seconds(),
+        }
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ExactMemoryRevisionRequestBody<'request> {
+    memory_id: &'request str,
+    version: u64,
+}
+
+impl<'request> From<&'request MemoryProviderDisclosedMemory>
+    for ExactMemoryRevisionRequestBody<'request>
+{
+    fn from(memory: &'request MemoryProviderDisclosedMemory) -> Self {
+        Self {
+            memory_id: memory.memory_id().as_str(),
+            version: memory.version(),
+        }
+    }
+}
+
 impl<'request> From<&'request CheckpointActivityPayload> for CheckpointActivityBody<'request> {
     fn from(payload: &'request CheckpointActivityPayload) -> Self {
         Self {
@@ -786,6 +862,12 @@ struct RecordEventResultBody {
 struct CheckpointActivityResultBody {
     checkpoint_id: String,
     version: u64,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct RecordDisclosureResultBody {
+    disclosure_id: String,
 }
 
 impl CheckpointActivityResultBody {
@@ -1283,16 +1365,17 @@ mod tests {
     use rembrane_provider_sdk::{
         CURRENT_MEMORY_PROVIDER_PROTOCOL, CheckpointActivityPayload, ExplainMemoryPayload,
         MemoryProviderCapability, MemoryProviderConnection, MemoryProviderContextSelector,
-        MemoryProviderEvent, MemoryProviderIdempotencyKey, MemoryProviderLimits,
-        MemoryProviderManifest, MemoryProviderPolicy, MemoryProviderPrivacyMode,
-        MemoryProviderTransport, ProposeMemoryPayload, RecordEventPayload, ResolveContextPayload,
-        ResolveQuestionPayload,
+        MemoryProviderDisclosedMemory, MemoryProviderEvent, MemoryProviderIdempotencyKey,
+        MemoryProviderLimits, MemoryProviderManifest, MemoryProviderPolicy,
+        MemoryProviderPrivacyMode, MemoryProviderTransport, ProposeMemoryPayload,
+        RecordDisclosurePayload, RecordEventPayload, ResolveContextPayload, ResolveQuestionPayload,
     };
 
     use super::{
         CheckpointActivityBody, CheckpointActivityResultBody, DiscoveryBody, ExplainMemoryBody,
-        ExplainMemoryResultBody, ProposeMemoryBody, RecordEventBody, RecordEventResultBody,
-        RequestEnvelope, ResolveContextBody, ResolveContextResultBody, ResolveQuestionBody,
+        ExplainMemoryResultBody, ProposeMemoryBody, RecordDisclosureBody,
+        RecordDisclosureResultBody, RecordEventBody, RecordEventResultBody, RequestEnvelope,
+        ResolveContextBody, ResolveContextResultBody, ResolveQuestionBody,
         ResolveQuestionResultBody, activity_subresource_endpoint, memory_endpoint,
         memory_subresource_endpoint, validate_base_url, validate_bearer_token,
     };
@@ -1660,6 +1743,41 @@ mod tests {
             "https://memory.example.test/v1/activities/activity%2Fwith%3Freserved%23bytes/checkpoint"
         );
         assert_eq!(endpoint.path_segments().expect("segments").count(), 4);
+    }
+
+    #[test]
+    fn serializes_append_only_disclosure_receipts_without_caller_identity() {
+        let payload = RecordDisclosurePayload::new(
+            MemoryProviderIdempotencyKey::new("disclosure_0123456789abcdef").expect("key"),
+            rembrane_domain::ContextPackId::new("context_pack_01"),
+            "continue development work",
+            vec![
+                MemoryProviderDisclosedMemory::new(rembrane_domain::MemoryId::new("memory_01"), 3)
+                    .expect("revision"),
+                MemoryProviderDisclosedMemory::new(rembrane_domain::MemoryId::new("memory_02"), 1)
+                    .expect("revision"),
+            ],
+            100,
+            100,
+        )
+        .expect("payload");
+        let encoded =
+            serde_json::to_value(RecordDisclosureBody::from(&payload)).expect("request JSON");
+        assert_eq!(encoded["contextPackId"], "context_pack_01");
+        assert_eq!(encoded["memories"][0]["memoryId"], "memory_01");
+        assert_eq!(encoded["memories"][0]["version"], 3);
+        assert_eq!(encoded["disclosedAtEpochSeconds"], 100);
+        assert!(encoded.get("workspaceId").is_none());
+        assert!(encoded.get("subjectId").is_none());
+        assert!(encoded.get("clientId").is_none());
+
+        let result: RecordDisclosureResultBody =
+            serde_json::from_str(r#"{"disclosureId":"disclosure_01"}"#).expect("result JSON");
+        let canonical = rembrane_provider_sdk::RecordDisclosureResult::new(
+            rembrane_domain::DisclosureId::new(result.disclosure_id),
+        )
+        .expect("canonical result");
+        assert_eq!(canonical.disclosure_id().as_str(), "disclosure_01");
     }
 
     #[test]

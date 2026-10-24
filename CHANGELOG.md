@@ -82,6 +82,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Typed Memory Provider activity checkpoints with safely encoded activity
   paths, idempotent create and optimistic-update shapes, resumable goal and
   work state, and fail-closed consecutive result-version validation.
+- Typed Memory Provider disclosure receipt writes with idempotency,
+  purpose-bound exact revisions, caller-independent authenticated identity,
+  bounded timestamps, and canonical append-only receipt IDs.
 - Canonical engine-neutral temporal knowledge graph aggregates with typed
   nodes, validated relationship types, strict workspace namespaces, separate
   validity and ingestion time, evidence provenance, bounded aliases, versions,
