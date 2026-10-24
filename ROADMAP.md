@@ -651,6 +651,8 @@ This roadmap describes sequencing, not release dates.
     secrets through any deployment-selected secret resolver.
     - [x] Make the shipped gateway startup consume the local resolver rather
       than reading and copying raw secret strings itself.
+    - [x] Let self-hosted operators select validated environment or protected
+      file references without placing secret values in gateway configuration.
   - [x] Package the gateway as an opt-in hardened Compose overlay with a
     loopback-only host port and documented TLS proxy boundary.
   - [x] Add administrator-only sender onboarding that consumes raw identifiers

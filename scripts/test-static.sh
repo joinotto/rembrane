@@ -106,8 +106,11 @@ rg -q -- '--package rembrane-channel-worker' Dockerfile
 rg -q -- '--package rembrane-whatsapp-gateway' Dockerfile
 rg -q '127\.0\.0\.1:8790:8790' compose.whatsapp.yaml
 rg -q 'REMBRANE_WHATSAPP_APP_SECRET' compose.whatsapp.yaml
+rg -q 'REMBRANE_WHATSAPP_APP_SECRET_REFERENCE' compose.whatsapp.yaml
 rg -q 'REMBRANE_WHATSAPP_BINDING_LOOKUP_SECRET' compose.whatsapp.yaml
+rg -q 'REMBRANE_WHATSAPP_BINDING_LOOKUP_SECRET_REFERENCE' compose.whatsapp.yaml
 rg -q 'REMBRANE_WHATSAPP_WEBHOOK_VERIFICATION_TOKEN' compose.whatsapp.yaml
+rg -q 'REMBRANE_WHATSAPP_WEBHOOK_VERIFICATION_TOKEN_REFERENCE' compose.whatsapp.yaml
 rg -q 'REMBRANE_CHANNEL_PROCESSOR_URL' compose.whatsapp.yaml
 rg -q 'REMBRANE_CHANNEL_PROCESSOR_TOKEN' compose.whatsapp.yaml
 rg -q 'rembrane-channel-worker' compose.whatsapp.yaml

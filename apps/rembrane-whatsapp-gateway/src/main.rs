@@ -63,9 +63,18 @@ impl AppState<ConfiguredRecordCipher> {
     fn from_environment() -> Result<Self> {
         let database = required_environment("REMBRANE_DATABASE")?;
         let verifiers = WhatsAppCredentialReferences::new(
-            environment_reference("REMBRANE_WHATSAPP_APP_SECRET")?,
-            environment_reference("REMBRANE_WHATSAPP_BINDING_LOOKUP_SECRET")?,
-            environment_reference("REMBRANE_WHATSAPP_WEBHOOK_VERIFICATION_TOKEN")?,
+            configured_secret_reference(
+                "REMBRANE_WHATSAPP_APP_SECRET_REFERENCE",
+                "REMBRANE_WHATSAPP_APP_SECRET",
+            )?,
+            configured_secret_reference(
+                "REMBRANE_WHATSAPP_BINDING_LOOKUP_SECRET_REFERENCE",
+                "REMBRANE_WHATSAPP_BINDING_LOOKUP_SECRET",
+            )?,
+            configured_secret_reference(
+                "REMBRANE_WHATSAPP_WEBHOOK_VERIFICATION_TOKEN_REFERENCE",
+                "REMBRANE_WHATSAPP_WEBHOOK_VERIFICATION_TOKEN",
+            )?,
         )
         .and_then(|references| references.resolve(&LocalSecretResolver))
         .map_err(|_| anyhow::anyhow!("invalid or unavailable WhatsApp credentials"))?;
@@ -164,9 +173,27 @@ fn required_environment(name: &str) -> Result<String> {
     std::env::var(name).with_context(|| format!("{name} is required"))
 }
 
-fn environment_reference(name: &str) -> Result<SecretReference> {
-    SecretReference::environment(name)
-        .map_err(|_| anyhow::anyhow!("invalid WhatsApp environment secret reference"))
+fn configured_secret_reference(
+    locator_name: &str,
+    default_variable: &str,
+) -> Result<SecretReference> {
+    match std::env::var(locator_name) {
+        Ok(locator) => selected_secret_reference(&locator, default_variable)
+            .with_context(|| format!("invalid secret reference in {locator_name}")),
+        Err(std::env::VarError::NotPresent) => selected_secret_reference("", default_variable),
+        Err(error) => Err(error).with_context(|| format!("failed to read {locator_name}")),
+    }
+}
+
+fn selected_secret_reference(locator: &str, default_variable: &str) -> Result<SecretReference> {
+    if locator.is_empty() {
+        SecretReference::environment(default_variable)
+            .map_err(|_| anyhow::anyhow!("invalid default secret reference"))
+    } else {
+        locator
+            .parse()
+            .map_err(|_| anyhow::anyhow!("invalid secret reference"))
+    }
 }
 
 fn positive_environment_u64(name: &str, default: u64) -> Result<u64> {
@@ -250,7 +277,9 @@ mod tests {
     use rembrane_store_sqlite::SqliteStore;
     use ring::hmac;
 
-    use super::{AppState, Inner, Runtime, receive_webhook, status_code};
+    use super::{
+        AppState, Inner, Runtime, receive_webhook, selected_secret_reference, status_code,
+    };
 
     fn encode_hex(bytes: &[u8]) -> String {
         const HEX: &[u8; 16] = b"0123456789abcdef";
@@ -288,6 +317,25 @@ mod tests {
         assert_eq!(
             status_code(WhatsAppHttpStatus::ServiceUnavailable),
             StatusCode::SERVICE_UNAVAILABLE
+        );
+    }
+
+    #[test]
+    fn secret_locator_defaults_without_accepting_inline_values() {
+        let default = selected_secret_reference("", "REMBRANE_WHATSAPP_APP_SECRET")
+            .expect("default environment reference");
+        assert_eq!(
+            default.environment_variable(),
+            Some("REMBRANE_WHATSAPP_APP_SECRET")
+        );
+
+        let file =
+            selected_secret_reference("file:/run/secrets/meta-app", "REMBRANE_WHATSAPP_APP_SECRET")
+                .expect("file reference");
+        assert_eq!(file.file_path(), Some("/run/secrets/meta-app"));
+
+        assert!(
+            selected_secret_reference("inline-secret", "REMBRANE_WHATSAPP_APP_SECRET").is_err()
         );
     }
 

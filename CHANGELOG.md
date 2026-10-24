@@ -74,6 +74,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Shipped WhatsApp gateway startup through reference-only configuration and
   the protected local secret resolver, removing direct raw-secret handling
   from the executable.
+- Portable `env:`, `file:`, and `external:` secret-reference parsing, with
+  optional WhatsApp gateway locator variables and environment-backed defaults.
 - Fail-closed OAuth introspection claim bounds covering audience cardinality,
   issuer and identity sizes, scope size, and control-character rejection
   before claims become canonical tenant identity.

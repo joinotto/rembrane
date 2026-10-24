@@ -8,6 +8,7 @@ use rembrane_domain::{ActivityId, EntityId, ReadPermission, ReadScope};
 use rembrane_provider_sdk::{CURRENT_PROVIDER_PROTOCOL, Capability, ProviderPolicy};
 use std::error::Error;
 use std::fmt::{self, Display};
+use std::str::FromStr;
 use url::{Host, Position, Url};
 
 pub const MAX_PROVIDER_ENDPOINT_BYTES: usize = 2_048;
@@ -336,6 +337,27 @@ impl SecretReference {
         match &self.kind {
             SecretReferenceKind::External { key, .. } => Some(key),
             SecretReferenceKind::Environment { .. } | SecretReferenceKind::File { .. } => None,
+        }
+    }
+}
+
+impl FromStr for SecretReference {
+    type Err = SecretReferenceError;
+
+    fn from_str(reference: &str) -> Result<Self, Self::Err> {
+        let (source, target) = reference
+            .split_once(':')
+            .ok_or(SecretReferenceError::InlineValueForbidden)?;
+        match source {
+            "env" => Self::environment(target),
+            "file" => Self::file(target),
+            "external" => {
+                let (provider, key) = target
+                    .split_once(':')
+                    .ok_or(SecretReferenceError::InvalidField)?;
+                Self::external(provider, key)
+            }
+            _ => Err(SecretReferenceError::InvalidField),
         }
     }
 }
@@ -754,6 +776,47 @@ mod tests {
             Err(SecretReferenceError::InvalidField)
         );
         assert!(SecretReference::external("vault", "secret/data/rembrane").is_ok());
+    }
+
+    #[test]
+    fn parses_only_explicit_secret_reference_locators() {
+        let environment = "env:REMBRANE_API_TOKEN"
+            .parse::<SecretReference>()
+            .expect("environment reference");
+        assert_eq!(
+            environment.environment_variable(),
+            Some("REMBRANE_API_TOKEN")
+        );
+
+        let file = "file:/run/secrets/rembrane-token"
+            .parse::<SecretReference>()
+            .expect("file reference");
+        assert_eq!(file.file_path(), Some("/run/secrets/rembrane-token"));
+
+        let external = "external:vault:secret/data/rembrane:token"
+            .parse::<SecretReference>()
+            .expect("external reference");
+        assert_eq!(external.external_provider(), Some("vault"));
+        assert_eq!(external.external_key(), Some("secret/data/rembrane:token"));
+
+        assert_eq!(
+            "raw-secret".parse::<SecretReference>(),
+            Err(SecretReferenceError::InlineValueForbidden)
+        );
+        for invalid in [
+            "value:raw-secret",
+            "ENV:REMBRANE_API_TOKEN",
+            "external:vault",
+        ] {
+            assert_eq!(
+                invalid.parse::<SecretReference>(),
+                Err(SecretReferenceError::InvalidField)
+            );
+        }
+        assert_eq!(
+            "external::secret".parse::<SecretReference>(),
+            Err(SecretReferenceError::EmptyField)
+        );
     }
 
     #[test]

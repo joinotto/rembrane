@@ -268,11 +268,29 @@ The three secrets must be distinct, at least 32 bytes each, and supplied by a
 deployment secret manager. Never store them in canonical memory, sender
 bindings, committed Compose files, or URLs.
 
-Deployments using a keychain, protected secret file, Vault, or cloud secret
-manager can construct `WhatsAppCredentialReferences` instead. Its three
-purpose-specific references are resolved through any deployment-selected
-`SecretResolver`; resolved strings are zeroized and only derived HMAC keys are
-retained.
+The gateway defaults to the value variables shown above. A self-hosted
+deployment can instead point each credential at an environment variable or a
+protected regular file:
+
+```sh
+export REMBRANE_WHATSAPP_APP_SECRET_REFERENCE='file:/run/secrets/meta-app'
+export REMBRANE_WHATSAPP_BINDING_LOOKUP_SECRET_REFERENCE='file:/run/secrets/whatsapp-lookup'
+export REMBRANE_WHATSAPP_WEBHOOK_VERIFICATION_TOKEN_REFERENCE='env:META_VERIFY_TOKEN'
+```
+
+Reference values are metadata, not credentials. Supported locator syntax is
+`env:VARIABLE`, `file:/absolute/or/deployment/path`, and
+`external:provider:key`. The shipped local resolver supports `env:` and
+protected `file:` references and fails closed for `external:`. Deployments
+using Keychain, Vault, or a cloud secret manager can supply a resolver for the
+external provider. Resolved strings are zeroized and only derived HMAC keys
+are retained.
+
+When using file references in Compose, add a deployment-owned read-only volume
+mount that exposes the referenced files inside the gateway container. Each
+file must be a regular, non-symlink file readable by the container process and
+must not grant group or other permission bits. Do not commit the source
+directory or file contents.
 
 The gateway acknowledges a new message only after active sender resolution,
 replay reservation, and authenticated encryption into the tenant inbox commit
