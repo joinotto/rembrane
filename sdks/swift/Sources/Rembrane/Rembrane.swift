@@ -224,9 +224,23 @@ public struct RembraneMobileShareEnrollment: Sendable {
     }
 }
 
+private struct StoredMobileShareEnrollment: Codable {
+    let version: Int
+    let accountID: String
+    let deviceID: String
+    let signingSecret: Data
+}
+
 /// Reads mobile-share enrollment material from generic-password Keychain
-/// items shared by a companion app and its explicitly entitled extensions.
+/// storage shared by a companion app and its explicitly entitled extensions.
 public struct KeychainMobileShareEnrollmentStore: Sendable {
+    private static let bundleAccount = "rembrane.enrollment-v1"
+    private static let maximumBundleBytes = 4_096
+    private static let legacyAccounts = [
+        "rembrane.account-id",
+        "rembrane.device-id",
+        "rembrane.signing-secret",
+    ]
     private let service: String
     private let accessGroup: String?
 
@@ -268,58 +282,68 @@ public struct KeychainMobileShareEnrollmentStore: Sendable {
     }
 
     public func load() throws -> RembraneMobileShareEnrollment {
+        if let bundle = try readDataIfPresent(account: Self.bundleAccount) {
+            guard bundle.count <= Self.maximumBundleBytes,
+                  let stored = try? PropertyListDecoder().decode(
+                    StoredMobileShareEnrollment.self,
+                    from: bundle
+                  ),
+                  stored.version == 1 else {
+                throw unavailable()
+            }
+            return try validatedEnrollment(
+                accountID: stored.accountID,
+                deviceID: stored.deviceID,
+                signingSecret: stored.signingSecret
+            )
+        }
+
+        // Read compatibility for pre-alpha installations that provisioned
+        // three independent items. The next successful save migrates them to
+        // the atomic bundle.
         let accountID = try readUTF8(account: "rembrane.account-id")
         let deviceID = try readUTF8(account: "rembrane.device-id")
         let signingSecret = try readData(account: "rembrane.signing-secret")
-        guard signingSecret.count >= 32 else {
-            throw RembraneAPIError(
-                status: 0,
-                code: "invalid_signing_key",
-                message: "Mobile-share signing keys require at least 32 bytes"
-            )
-        }
-        return RembraneMobileShareEnrollment(
+        return try validatedEnrollment(
             accountID: accountID,
             deviceID: deviceID,
             signingSecret: signingSecret
         )
     }
 
-    /// Stores or replaces enrollment items under this service and optional
-    /// access group. Items are available only while the device is unlocked
-    /// and do not migrate to another device backup.
+    /// Atomically stores or replaces one versioned enrollment bundle under
+    /// this service and optional access group. It is available only while the
+    /// device is unlocked and does not migrate to another device backup.
     public func save(_ enrollment: RembraneMobileShareEnrollment) throws {
-        guard Self.validMetadata(enrollment.accountID),
-              Self.validMetadata(enrollment.deviceID),
-              enrollment.signingSecret.count >= 32 else {
-            throw RembraneAPIError(
-                status: 0,
-                code: "invalid_enrollment",
-                message: "Enrollment identifiers and signing key are invalid"
-            )
+        let validated = try validatedEnrollment(
+            accountID: enrollment.accountID,
+            deviceID: enrollment.deviceID,
+            signingSecret: enrollment.signingSecret
+        )
+        let stored = StoredMobileShareEnrollment(
+            version: 1,
+            accountID: validated.accountID,
+            deviceID: validated.deviceID,
+            signingSecret: validated.signingSecret
+        )
+        let encoder = PropertyListEncoder()
+        encoder.outputFormat = .binary
+        let bundle = try encoder.encode(stored)
+        guard bundle.count <= Self.maximumBundleBytes else {
+            throw keychainFailure()
         }
-        try upsert(
-            account: "rembrane.account-id",
-            data: Data(enrollment.accountID.utf8)
-        )
-        try upsert(
-            account: "rembrane.device-id",
-            data: Data(enrollment.deviceID.utf8)
-        )
-        try upsert(
-            account: "rembrane.signing-secret",
-            data: enrollment.signingSecret
-        )
+        try upsert(account: Self.bundleAccount, data: bundle)
+        try removeAccounts(Self.legacyAccounts)
     }
 
-    /// Removes all enrollment items for this service and optional access
-    /// group. Missing items are treated as already revoked.
+    /// Removes the atomic bundle and any pre-alpha legacy items. Missing items
+    /// are treated as already revoked.
     public func remove() throws {
-        for account in [
-            "rembrane.account-id",
-            "rembrane.device-id",
-            "rembrane.signing-secret",
-        ] {
+        try removeAccounts([Self.bundleAccount] + Self.legacyAccounts)
+    }
+
+    private func removeAccounts(_ accounts: [String]) throws {
+        for account in accounts {
             let status = SecItemDelete(baseQuery(account: account) as CFDictionary)
             guard status == errSecSuccess || status == errSecItemNotFound else {
                 throw keychainFailure()
@@ -337,13 +361,23 @@ public struct KeychainMobileShareEnrollmentStore: Sendable {
     }
 
     private func readData(account: String) throws -> Data {
+        guard let data = try readDataIfPresent(account: account) else {
+            throw unavailable()
+        }
+        return data
+    }
+
+    private func readDataIfPresent(account: String) throws -> Data? {
         var query = baseQuery(account: account)
         query[kSecReturnData] = true
         query[kSecMatchLimit] = kSecMatchLimitOne
         var result: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
-              let data = result as? Data,
-              !data.isEmpty else {
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        if status == errSecItemNotFound {
+            return nil
+        }
+        guard status == errSecSuccess,
+              let data = result as? Data, !data.isEmpty else {
             throw unavailable()
         }
         return data
@@ -393,6 +427,27 @@ public struct KeychainMobileShareEnrollmentStore: Sendable {
             && value.unicodeScalars.allSatisfy {
                 $0.properties.generalCategory != .control
             }
+    }
+
+    private func validatedEnrollment(
+        accountID: String,
+        deviceID: String,
+        signingSecret: Data
+    ) throws -> RembraneMobileShareEnrollment {
+        guard Self.validMetadata(accountID),
+              Self.validMetadata(deviceID),
+              (32...64).contains(signingSecret.count) else {
+            throw RembraneAPIError(
+                status: 0,
+                code: "invalid_enrollment",
+                message: "Enrollment identifiers and signing key are invalid"
+            )
+        }
+        return RembraneMobileShareEnrollment(
+            accountID: accountID,
+            deviceID: deviceID,
+            signingSecret: signingSecret
+        )
     }
 
     private func unavailable() -> RembraneAPIError {

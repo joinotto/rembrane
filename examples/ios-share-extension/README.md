@@ -12,12 +12,10 @@ content into unrelated conversations.
 3. Copy `ShareViewController.swift` into that target.
 4. Set `RembraneGatewayURL` in the extension `Info.plist` to the HTTPS mobile
    share gateway. Loopback HTTP is accepted only for simulator development.
-5. Provision these generic-password items into a Keychain access group shared
-   by the containing app and extension:
-
-   - service `org.rembrane.mobile-share`, account `rembrane.account-id`;
-   - service `org.rembrane.mobile-share`, account `rembrane.device-id`;
-   - service `org.rembrane.mobile-share`, account `rembrane.signing-secret`.
+5. From the containing app, save a `RembraneMobileShareEnrollment` through
+   `KeychainMobileShareEnrollmentStore`. It writes one versioned
+   generic-password bundle using service `org.rembrane.mobile-share` and
+   account `rembrane.enrollment-v1`.
 
 6. Give both targets the same Keychain Sharing entitlement. If the deployment
    uses an explicit access group, set the non-secret
@@ -39,6 +37,8 @@ flow and `remove()` during device revocation. Stored items use
 `WhenUnlockedThisDeviceOnly` accessibility. Generate a new secret on the
 device with `KeychainMobileShareEnrollmentStore.generateSigningSecret()`
 rather than transporting one through logs, pasteboards, or shell commands.
+Pre-alpha three-item enrollment remains readable and is removed after the next
+successful atomic bundle save.
 
 The controller deliberately cancels when more than one text provider is
 present. Product UI may show a confirmation screen before submission, but

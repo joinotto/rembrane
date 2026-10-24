@@ -22,6 +22,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Bounded on-device mobile-share signing-key generation through
   `SecRandomCopyBytes`, preventing companion setup flows from requiring secret
   creation or transfer through a shell or pasteboard.
+- Atomic versioned mobile enrollment bundles in Keychain, with bounded binary
+  property-list decoding plus read migration and revocation cleanup for the
+  earlier independently stored account, device, and signing-key items.
 - An Axum-facing remote MCP authorization boundary that rejects duplicate
   credential, host, origin, and session headers, authorizes the exact bounded
   JSON-RPC body, and maps 401/403/503 outcomes into safe HTTP responses before
