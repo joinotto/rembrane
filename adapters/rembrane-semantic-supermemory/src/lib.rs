@@ -348,19 +348,32 @@ impl SupermemoryTransport for HttpSupermemoryTransport {
                 "Supermemory document identity is invalid".to_owned(),
             ));
         }
-        let response = self
-            .request(self.client.post(self.endpoint(namespace, &["document"])?))
+        let metadata = MetadataBody {
+            memory_id: projection.memory_id.as_str(),
+            version: projection.version,
+        };
+        let response = if self.get(namespace, document_id)?.is_some() {
+            self.request(
+                self.client
+                    .patch(self.endpoint(namespace, &["document", document_id])?),
+            )
             .header(CONTENT_TYPE, "application/json")
-            .json(&DocumentBody {
+            .json(&UpdateDocumentBody {
                 content: &projection.content,
-                id: document_id,
-                metadata: MetadataBody {
-                    memory_id: projection.memory_id.as_str(),
-                    version: projection.version,
-                },
+                metadata,
             })
             .send()
-            .map_err(|_| ProviderError::Unavailable)?;
+        } else {
+            self.request(self.client.post(self.endpoint(namespace, &["document"])?))
+                .header(CONTENT_TYPE, "application/json")
+                .json(&DocumentBody {
+                    content: &projection.content,
+                    id: document_id,
+                    metadata,
+                })
+                .send()
+        }
+        .map_err(|_| ProviderError::Unavailable)?;
         if ingest_accepted(&Self::decode(response)?, document_id)? {
             Ok(())
         } else {
@@ -441,6 +454,12 @@ struct MetadataBody<'value> {
 struct DocumentBody<'value> {
     content: &'value str,
     id: &'value str,
+    metadata: MetadataBody<'value>,
+}
+
+#[derive(Serialize)]
+struct UpdateDocumentBody<'value> {
+    content: &'value str,
     metadata: MetadataBody<'value>,
 }
 
@@ -858,6 +877,22 @@ mod tests {
     }
 
     #[test]
+    fn replacement_serializes_identity_only_in_the_patch_path() {
+        let body = serde_json::to_value(super::UpdateDocumentBody {
+            content: "Call me Hippo",
+            metadata: super::MetadataBody {
+                memory_id: "memory-01",
+                version: 2,
+            },
+        })
+        .expect("serializable update body");
+        assert_eq!(body["content"], "Call me Hippo");
+        assert_eq!(body["metadata"]["rembrane_version"], 2);
+        assert!(body.get("id").is_none());
+        assert!(body.get("customId").is_none());
+    }
+
+    #[test]
     fn search_serializes_the_v5_query_field() {
         let body = serde_json::to_value(super::SearchBody {
             query: "preferred name",
@@ -899,6 +934,13 @@ mod tests {
                 .expect("safe endpoint")
                 .as_str(),
             "https://api.supermemory.ai/ns/rembrane-test/document"
+        );
+        assert_eq!(
+            transport
+                .endpoint("rembrane-test", &["document", "rembrane-document"])
+                .expect("safe update endpoint")
+                .as_str(),
+            "https://api.supermemory.ai/ns/rembrane-test/document/rembrane-document"
         );
     }
 

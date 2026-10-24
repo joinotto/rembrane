@@ -10,7 +10,8 @@ disposable-namespace conformance run passes.
 The adapter targets Supermemory's stable v5 namespace API rather than the
 legacy v3/v4 container-tag API:
 
-- ingest: `POST /ns/{namespace}/document`;
+- create: `POST /ns/{namespace}/document`;
+- replace: `PATCH /ns/{namespace}/document/{id}`;
 - search: `POST /ns/{namespace}/search`;
 - exact forgetting: `DELETE /ns/{namespace}/memories`;
 - source deletion: `DELETE /ns/{namespace}/document`.
@@ -86,8 +87,11 @@ Timeout, rate limiting, partial deletion, or non-terminal processing leave the
 canonical outbox job retryable. Canonical memory is never rolled back.
 
 Replacement uses Supermemory's create-or-update behavior for the deterministic
-document `id`; it does not scan a bounded document page and delete first. This
-keeps replacement correct regardless of namespace cardinality.
+document identity without scanning a bounded document page. The transport
+performs exact retrieval first: an absent document is created with `POST`,
+while an existing document is replaced with `PATCH /document/{id}`. This also
+prevents a projection retry from using v5's append-on-reused-ID create
+semantics and retaining stale canonical content.
 
 Version-bounded deletion retrieves the deterministic document ID through the
 exact document endpoint before removal. It never searches paginated namespace

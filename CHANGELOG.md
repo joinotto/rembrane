@@ -75,6 +75,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   `id` field, with strict bounded response status and identity confirmation.
 - Current Supermemory v5 search compatibility using the `query` request field
   for both readiness convergence and semantic recall.
+- Correct Supermemory replacement semantics: exact retrieval selects PATCH for
+  existing deterministic documents, while POST is limited to first creation
+  so retries and corrections do not append stale canonical content.
 - A public-API-only iMessage app extension reference with explicit text entry,
   review, confirmation, Keychain-held enrollment material, narrow signed
   gateway submission, and an iPhone Simulator type-check gate.

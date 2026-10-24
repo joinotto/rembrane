@@ -712,6 +712,8 @@ This roadmap describes sequencing, not release dates.
         bounded pre-delete list scan.
         - [x] Serialize the current v5 caller-defined `id` field and require a
           bounded, exact-identity, non-failed ingestion acceptance response.
+        - [x] Use exact retrieval followed by v5 PATCH for existing documents,
+          reserving append-capable POST for first creation.
       - [x] Use exact deterministic document lookup for version-bounded
         deletion instead of scanning paginated namespace lists.
         - [x] Lock the no-list lifecycle invariant with regression coverage
