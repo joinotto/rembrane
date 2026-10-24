@@ -1,8 +1,8 @@
 use rembrane_domain::{
     ActivityCheckpoint, ActivityId, CanonicalEvent, CheckpointDisclosureReceipt, DisclosureReceipt,
-    Invitation, InvitationId, InvitationStatus, Membership, MemoryId, MemoryRecord, Principal,
-    PrincipalId, ProjectionJob, ProjectionJobId, ProjectionStatus, ProviderId, Workspace,
-    WorkspaceId,
+    Invitation, InvitationId, InvitationStatus, MemberScopeGrant, Membership, MemoryId,
+    MemoryRecord, Principal, PrincipalId, ProjectionJob, ProjectionJobId, ProjectionStatus,
+    ProviderId, Workspace, WorkspaceId,
 };
 
 use crate::ApplicationError;
@@ -129,6 +129,19 @@ pub trait InvitationRepository {
         invitation: Invitation,
         expected_status: InvitationStatus,
     ) -> Result<(), ApplicationError>;
+}
+
+pub trait MemberScopeGrantRepository {
+    fn insert_member_scope_grant(
+        &mut self,
+        grant: MemberScopeGrant,
+    ) -> Result<(), ApplicationError>;
+
+    fn list_member_scope_grants(
+        &self,
+        workspace_id: &WorkspaceId,
+        principal_id: &PrincipalId,
+    ) -> Result<Vec<MemberScopeGrant>, ApplicationError>;
 }
 
 pub trait WorkspaceRepository {

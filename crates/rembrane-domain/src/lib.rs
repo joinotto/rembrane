@@ -10,6 +10,7 @@ mod event;
 mod grant;
 mod identifier;
 mod invitation;
+mod member_scope;
 mod memory;
 mod projection;
 mod provenance;
@@ -25,6 +26,7 @@ pub use identifier::{
     InvitationId, MemoryId, PrincipalId, ProjectionJobId, ProviderId, WorkspaceId,
 };
 pub use invitation::{Invitation, InvitationError, InvitationStatus};
+pub use member_scope::MemberScopeGrant;
 pub use memory::{
     MAX_MEMORY_CONTENT_BYTES, MemoryKind, MemoryLifecycleError, MemoryRecord, MemoryStatus,
 };

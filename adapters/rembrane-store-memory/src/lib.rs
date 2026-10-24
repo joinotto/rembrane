@@ -3,14 +3,14 @@
 use rembrane_application::{
     ApplicationError, CanonicalMutationRepository, CheckpointDisclosureRepository,
     CheckpointMutationRepository, CheckpointRepository, DisclosureRepository, EventRepository,
-    InvitationRepository, MembershipRepository, MemoryRepository, ProjectionOutboxRepository,
-    WorkspaceRepository,
+    InvitationRepository, MemberScopeGrantRepository, MembershipRepository, MemoryRepository,
+    ProjectionOutboxRepository, WorkspaceRepository,
 };
 use rembrane_domain::{
     ActivityCheckpoint, ActivityId, CanonicalEvent, CheckpointDisclosureReceipt, DisclosureReceipt,
-    Invitation, InvitationId, InvitationStatus, Membership, MemoryId, MemoryRecord, Principal,
-    PrincipalId, ProjectionJob, ProjectionJobId, ProjectionOperation, ProjectionStatus, ProviderId,
-    Workspace, WorkspaceId, WorkspaceKind, WorkspaceRole,
+    Invitation, InvitationId, InvitationStatus, MemberScopeGrant, Membership, MemoryId,
+    MemoryRecord, Principal, PrincipalId, ProjectionJob, ProjectionJobId, ProjectionOperation,
+    ProjectionStatus, ProviderId, Workspace, WorkspaceId, WorkspaceKind, WorkspaceRole,
 };
 
 #[derive(Debug, Default)]
@@ -23,6 +23,7 @@ pub struct InMemoryStore {
     events: Vec<CanonicalEvent>,
     checkpoints: Vec<ActivityCheckpoint>,
     invitations: Vec<Invitation>,
+    member_scope_grants: Vec<MemberScopeGrant>,
     memberships: Vec<Membership>,
     projections: Vec<ProjectionJob>,
 }
@@ -496,6 +497,38 @@ impl InvitationRepository for InMemoryStore {
         }
         *stored = invitation;
         Ok(())
+    }
+}
+
+impl MemberScopeGrantRepository for InMemoryStore {
+    fn insert_member_scope_grant(
+        &mut self,
+        grant: MemberScopeGrant,
+    ) -> Result<(), ApplicationError> {
+        if self.member_scope_grants.iter().any(|stored| {
+            stored.workspace_id() == grant.workspace_id()
+                && stored.principal_id() == grant.principal_id()
+                && stored.scope() == grant.scope()
+        }) {
+            return Err(ApplicationError::AlreadyExists);
+        }
+        self.member_scope_grants.push(grant);
+        Ok(())
+    }
+
+    fn list_member_scope_grants(
+        &self,
+        workspace_id: &WorkspaceId,
+        principal_id: &PrincipalId,
+    ) -> Result<Vec<MemberScopeGrant>, ApplicationError> {
+        Ok(self
+            .member_scope_grants
+            .iter()
+            .filter(|grant| {
+                grant.workspace_id() == workspace_id && grant.principal_id() == principal_id
+            })
+            .cloned()
+            .collect())
     }
 }
 

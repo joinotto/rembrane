@@ -22,6 +22,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Owner/admin invitation revocation with optimistic pending-state enforcement
   across in-memory and SQLite adapters; revoked invitations cannot later create
   memberships.
+- Administrator-managed member scope grants with SQLite schema v4 persistence.
+  Member and viewer client scopes are now the exact intersection of requested
+  scopes and persisted workspace grants; owners and administrators retain
+  unrestricted workspace scope administration.
 - Atomic canonical mutation ports and an in-memory reference adapter.
 - Native semantic baseline with authorization revalidation.
 - Provider capability verification and retry/quarantine projection worker.

@@ -8,14 +8,15 @@ mod projection;
 use std::path::Path;
 
 use rembrane_application::{
-    ApplicationError, InvitationRepository, MembershipRepository, MemoryRepository,
-    WorkspaceRepository,
+    ApplicationError, InvitationRepository, MemberScopeGrantRepository, MembershipRepository,
+    MemoryRepository, WorkspaceRepository,
 };
 use rembrane_codec::decode_memory;
 use rembrane_crypto::{EncryptedPayload, EncryptionContext, PayloadPurpose, RecordCipher};
 use rembrane_domain::{
-    Invitation, InvitationId, InvitationStatus, Membership, MembershipStatus, MemoryId,
-    MemoryRecord, Principal, PrincipalId, Workspace, WorkspaceId, WorkspaceKind, WorkspaceRole,
+    ActivityId, EntityId, Invitation, InvitationId, InvitationStatus, MemberScopeGrant, Membership,
+    MembershipStatus, MemoryId, MemoryRecord, Principal, PrincipalId, ReadScope, Workspace,
+    WorkspaceId, WorkspaceKind, WorkspaceRole,
 };
 use rusqlite::{Connection, ErrorCode, OptionalExtension, params};
 
@@ -24,7 +25,9 @@ const CHECKPOINT_DISCLOSURE_MIGRATION: &str =
     include_str!("../../../migrations/sqlite/0002_checkpoint_disclosures.sql");
 const WORKSPACE_INVITATION_MIGRATION: &str =
     include_str!("../../../migrations/sqlite/0003_workspace_invitations.sql");
-const CURRENT_SCHEMA_VERSION: u32 = 3;
+const MEMBER_SCOPE_GRANT_MIGRATION: &str =
+    include_str!("../../../migrations/sqlite/0004_member_scope_grants.sql");
+const CURRENT_SCHEMA_VERSION: u32 = 4;
 const CANONICAL_TABLES: [&str; 10] = [
     "activity_checkpoints",
     "disclosed_memories",
@@ -109,6 +112,12 @@ fn migrate(connection: &mut Connection) -> Result<(), ApplicationError> {
     if version == 2 {
         transaction
             .execute_batch(WORKSPACE_INVITATION_MIGRATION)
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        version = 3;
+    }
+    if version == 3 {
+        transaction
+            .execute_batch(MEMBER_SCOPE_GRANT_MIGRATION)
             .map_err(|_| ApplicationError::StorageUnavailable)?;
     }
     transaction
@@ -320,6 +329,18 @@ mod migration_tests {
             )
             .expect("invitation migration should be inspectable");
         assert!(invitations_exist);
+        let member_scope_grants_exist: bool = connection
+            .query_row(
+                "SELECT EXISTS (
+                    SELECT 1 FROM sqlite_schema
+                    WHERE type = 'table'
+                      AND name = 'member_scope_grants'
+                )",
+                [],
+                |row| row.get(0),
+            )
+            .expect("member scope migration should be inspectable");
+        assert!(member_scope_grants_exist);
         drop(connection);
         fs::remove_file(database).expect("temporary database should be removed");
     }
@@ -783,6 +804,62 @@ impl<C> InvitationRepository for SqliteStore<C> {
     }
 }
 
+impl<C> MemberScopeGrantRepository for SqliteStore<C> {
+    fn insert_member_scope_grant(
+        &mut self,
+        grant: MemberScopeGrant,
+    ) -> Result<(), ApplicationError> {
+        let (scope_type, scope_value) = encode_read_scope(grant.scope());
+        self.connection
+            .execute(
+                "INSERT INTO member_scope_grants (
+                    workspace_id, principal_id, scope_type, scope_value
+                ) VALUES (?1, ?2, ?3, ?4)",
+                params![
+                    grant.workspace_id().as_str(),
+                    grant.principal_id().as_str(),
+                    scope_type,
+                    scope_value
+                ],
+            )
+            .map(|_| ())
+            .map_err(map_write_error)
+    }
+
+    fn list_member_scope_grants(
+        &self,
+        workspace_id: &WorkspaceId,
+        principal_id: &PrincipalId,
+    ) -> Result<Vec<MemberScopeGrant>, ApplicationError> {
+        let mut statement = self
+            .connection
+            .prepare(
+                "SELECT scope_type, scope_value
+                 FROM member_scope_grants
+                 WHERE workspace_id = ?1 AND principal_id = ?2
+                 ORDER BY scope_type, scope_value",
+            )
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        let rows = statement
+            .query_map(
+                params![workspace_id.as_str(), principal_id.as_str()],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+            )
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        let mut grants = Vec::new();
+        for row in rows {
+            let (scope_type, scope_value) =
+                row.map_err(|_| ApplicationError::StorageUnavailable)?;
+            grants.push(MemberScopeGrant::new(
+                workspace_id.clone(),
+                principal_id.clone(),
+                decode_read_scope(&scope_type, &scope_value)?,
+            ));
+        }
+        Ok(grants)
+    }
+}
+
 fn validate_personal_bootstrap(
     principal: &Principal,
     workspace: &Workspace,
@@ -878,6 +955,31 @@ fn decode_role(role: &str) -> Result<WorkspaceRole, ApplicationError> {
         "viewer" => WorkspaceRole::Viewer,
         _ => return Err(ApplicationError::StorageUnavailable),
     })
+}
+
+fn encode_read_scope(scope: &ReadScope) -> (&'static str, &str) {
+    match scope {
+        ReadScope::Global => ("global", ""),
+        ReadScope::Domain { name } => ("domain", name),
+        ReadScope::Entity { id } => ("entity", id.as_str()),
+        ReadScope::Activity { id } => ("activity", id.as_str()),
+    }
+}
+
+fn decode_read_scope(scope_type: &str, scope_value: &str) -> Result<ReadScope, ApplicationError> {
+    match scope_type {
+        "global" if scope_value.is_empty() => Ok(ReadScope::Global),
+        "domain" if !scope_value.is_empty() => Ok(ReadScope::Domain {
+            name: scope_value.to_owned(),
+        }),
+        "entity" if !scope_value.is_empty() => Ok(ReadScope::Entity {
+            id: EntityId::new(scope_value),
+        }),
+        "activity" if !scope_value.is_empty() => Ok(ReadScope::Activity {
+            id: ActivityId::new(scope_value),
+        }),
+        _ => Err(ApplicationError::StorageUnavailable),
+    }
 }
 
 const fn encode_role(role: WorkspaceRole) -> &'static str {

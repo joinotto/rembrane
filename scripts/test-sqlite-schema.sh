@@ -11,7 +11,9 @@ sqlite3 "$database" < \
     "$repository_root/migrations/sqlite/0002_checkpoint_disclosures.sql"
 sqlite3 "$database" < \
     "$repository_root/migrations/sqlite/0003_workspace_invitations.sql"
-sqlite3 "$database" "PRAGMA user_version = 3;"
+sqlite3 "$database" < \
+    "$repository_root/migrations/sqlite/0004_member_scope_grants.sql"
+sqlite3 "$database" "PRAGMA user_version = 4;"
 
 sqlite3 "$database" <<'SQL'
 PRAGMA foreign_keys = ON;
@@ -197,6 +199,17 @@ WHERE workspace_id = 'workspace_shared'
   AND status = 'pending';
 INSERT INTO memberships (workspace_id, principal_id, role, status)
 VALUES ('workspace_shared', 'principal_02', 'member', 'active');
+INSERT INTO member_scope_grants (
+    workspace_id,
+    principal_id,
+    scope_type,
+    scope_value
+) VALUES (
+    'workspace_shared',
+    'principal_02',
+    'entity',
+    'project_01'
+);
 COMMIT;
 SQL
 
@@ -281,7 +294,7 @@ table_count=$(
 )
 
 test "$table_count" -ge 9
-test "$(sqlite3 "$database" "PRAGMA user_version;")" -eq 3
+test "$(sqlite3 "$database" "PRAGMA user_version;")" -eq 4
 test "$(
     sqlite3 "$database" \
         "SELECT count(*) FROM checkpoint_disclosures;"
@@ -297,5 +310,9 @@ test "$(
 test "$(
     sqlite3 "$database" \
         "SELECT count(*) FROM memberships WHERE workspace_id = 'workspace_shared' AND principal_id = 'principal_02' AND role = 'member' AND status = 'active';"
+)" -eq 1
+test "$(
+    sqlite3 "$database" \
+        "SELECT count(*) FROM member_scope_grants WHERE workspace_id = 'workspace_shared' AND principal_id = 'principal_02' AND scope_type = 'entity' AND scope_value = 'project_01';"
 )" -eq 1
 echo "sqlite schema checks passed"

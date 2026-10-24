@@ -1,6 +1,6 @@
 use rembrane_domain::{ClientId, ReadGrant, ReadScope, WorkspaceRole, WriteGrant, WritePermission};
 
-use crate::{ApplicationError, MembershipRepository};
+use crate::{ApplicationError, MemberScopeGrantRepository, MembershipRepository};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AuthorizeClientCommand {
@@ -23,7 +23,7 @@ pub struct AuthorizeClientService<'repository, Repository> {
 
 impl<'repository, Repository> AuthorizeClientService<'repository, Repository>
 where
-    Repository: MembershipRepository,
+    Repository: MemberScopeGrantRepository + MembershipRepository,
 {
     pub const fn new(repository: &'repository Repository) -> Self {
         Self { repository }
@@ -41,6 +41,19 @@ where
             return Err(ApplicationError::AccessDenied);
         }
 
+        let read_scopes = match membership.role() {
+            WorkspaceRole::Owner | WorkspaceRole::Admin => command.requested_read_scopes,
+            WorkspaceRole::Member | WorkspaceRole::Viewer => {
+                let allowed = self
+                    .repository
+                    .list_member_scope_grants(&command.workspace_id, &command.principal_id)?;
+                command
+                    .requested_read_scopes
+                    .into_iter()
+                    .filter(|requested| allowed.iter().any(|grant| grant.scope() == requested))
+                    .collect()
+            }
+        };
         let write_permissions = command
             .requested_write_permissions
             .into_iter()
@@ -52,13 +65,13 @@ where
                 client_id: command.client_id.clone(),
                 workspace_id: command.workspace_id.clone(),
                 subject_id: command.principal_id.clone(),
-                scopes: command.requested_read_scopes.clone(),
+                scopes: read_scopes.clone(),
             },
             write: WriteGrant {
                 client_id: command.client_id,
                 workspace_id: command.workspace_id,
                 subject_id: command.principal_id,
-                scopes: command.requested_read_scopes,
+                scopes: read_scopes,
                 permissions: write_permissions,
             },
         })
@@ -79,14 +92,40 @@ const fn role_allows(role: WorkspaceRole, permission: WritePermission) -> bool {
 #[cfg(test)]
 mod tests {
     use rembrane_domain::{
-        Membership, PrincipalId, ReadScope, WorkspaceId, WorkspaceRole, WritePermission,
+        EntityId, MemberScopeGrant, Membership, PrincipalId, ReadScope, WorkspaceId, WorkspaceRole,
+        WritePermission,
     };
 
     use super::{AuthorizeClientCommand, AuthorizeClientService};
-    use crate::{ApplicationError, MembershipRepository};
+    use crate::{ApplicationError, MemberScopeGrantRepository, MembershipRepository};
 
     struct Memberships {
         membership: Membership,
+        scopes: Vec<MemberScopeGrant>,
+    }
+
+    impl MemberScopeGrantRepository for Memberships {
+        fn insert_member_scope_grant(
+            &mut self,
+            _grant: MemberScopeGrant,
+        ) -> Result<(), ApplicationError> {
+            unreachable!("not used by authorization tests")
+        }
+
+        fn list_member_scope_grants(
+            &self,
+            workspace_id: &WorkspaceId,
+            principal_id: &PrincipalId,
+        ) -> Result<Vec<MemberScopeGrant>, ApplicationError> {
+            Ok(self
+                .scopes
+                .iter()
+                .filter(|grant| {
+                    grant.workspace_id() == workspace_id && grant.principal_id() == principal_id
+                })
+                .cloned()
+                .collect())
+        }
     }
 
     impl MembershipRepository for Memberships {
@@ -138,6 +177,7 @@ mod tests {
                 PrincipalId::new("principal_01"),
                 WorkspaceRole::Member,
             ),
+            scopes: Vec::new(),
         };
 
         let grants = AuthorizeClientService::new(&repository)
@@ -151,6 +191,43 @@ mod tests {
                 WritePermission::WriteCheckpoint
             ]
         );
+        assert_eq!(grants.read.scopes, Vec::<ReadScope>::new());
+        assert_eq!(grants.write.scopes, Vec::<ReadScope>::new());
+    }
+
+    #[test]
+    fn member_receives_only_persistently_granted_entity_scope() {
+        let workspace_id = WorkspaceId::new("workspace_01");
+        let principal_id = PrincipalId::new("principal_01");
+        let allowed = ReadScope::Entity {
+            id: EntityId::new("project_allowed"),
+        };
+        let repository = Memberships {
+            membership: Membership::new(
+                workspace_id.clone(),
+                principal_id.clone(),
+                WorkspaceRole::Member,
+            ),
+            scopes: vec![MemberScopeGrant::new(
+                workspace_id,
+                principal_id,
+                allowed.clone(),
+            )],
+        };
+        let mut requested = command();
+        requested.requested_read_scopes = vec![
+            allowed.clone(),
+            ReadScope::Entity {
+                id: EntityId::new("project_denied"),
+            },
+        ];
+
+        let grants = AuthorizeClientService::new(&repository)
+            .execute(requested)
+            .expect("active member should authorize");
+
+        assert_eq!(grants.read.scopes, vec![allowed.clone()]);
+        assert_eq!(grants.write.scopes, vec![allowed]);
     }
 
     #[test]
@@ -162,6 +239,7 @@ mod tests {
                 WorkspaceRole::Owner,
             )
             .remove(),
+            scopes: Vec::new(),
         };
 
         let error = AuthorizeClientService::new(&repository)

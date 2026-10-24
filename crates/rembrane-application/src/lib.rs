@@ -7,6 +7,7 @@ mod authorize_client;
 mod checkpoint;
 mod error;
 mod invitation;
+mod member_scope;
 mod ports;
 mod projection_worker;
 mod propose_memory;
@@ -21,10 +22,12 @@ pub use checkpoint::{
 };
 pub use error::ApplicationError;
 pub use invitation::{CreateInvitationCommand, InvitationService, RevokeInvitationCommand};
+pub use member_scope::{GrantMemberScopeCommand, MemberScopeGrantService};
 pub use ports::{
     CanonicalMutationRepository, CheckpointDisclosureRepository, CheckpointMutationRepository,
     CheckpointRepository, DisclosureRepository, EventRepository, InvitationRepository,
-    MembershipRepository, MemoryRepository, ProjectionOutboxRepository, WorkspaceRepository,
+    MemberScopeGrantRepository, MembershipRepository, MemoryRepository, ProjectionOutboxRepository,
+    WorkspaceRepository,
 };
 pub use projection_worker::{ProjectionOutcome, ProjectionWorker};
 pub use propose_memory::{ConfirmMemoryCommand, MemoryProposalService, ProposeMemoryCommand};
