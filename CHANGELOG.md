@@ -98,6 +98,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Socket-level Memory Provider client integration tests that inspect direct
   request bodies, bearer and correlation headers, percent-encoded resource
   paths, query parameters, bodyless GET requests, and correlated responses.
+- Dedicated Memory Provider CI execution of the independent black-box mock
+  conformance proof before dependency-enabled Rust client tests and clippy,
+  with a bounded job timeout.
 - Canonical engine-neutral temporal knowledge graph aggregates with typed
   nodes, validated relationship types, strict workspace namespaces, separate
   validity and ingestion time, evidence provenance, bounded aliases, versions,

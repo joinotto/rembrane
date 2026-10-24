@@ -349,7 +349,8 @@ This roadmap describes sequencing, not release dates.
       and a pass record for every case in the selected profile.
     - [x] Add a secret-safe black-box HTTPS conformance runner.
     - [ ] Prove the runner against an independent local mock implementation.
-      - [x] Add the independent mock and opt-in loopback CI execution hook.
+      - [x] Add the independent mock and run it unconditionally in the
+        dedicated Memory Provider CI job.
       - [ ] Execute the loopback proof in a socket-enabled environment.
   - [x] Add an authenticated Rust HTTP client adapter.
     - [x] Add bounded redirect-free, proxy-free HTTPS/loopback discovery with

@@ -74,11 +74,13 @@ jobs:
 
   memory-provider-http:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.88.0
         with:
           components: clippy
+      - run: node scripts/test-memory-provider-http-runner.mjs
       - run: cargo test --package rembrane-memory-provider-http
       - run: >-
           cargo clippy
