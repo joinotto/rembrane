@@ -20,6 +20,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - A framework-neutral WhatsApp HTTP policy with constant-time bounded
   subscription verification and non-enumerating status mapping for unknown or
   revoked senders.
+- A standalone least-privileged WhatsApp gateway binary with bounded GET
+  subscription and POST event endpoints, loopback-safe defaults, configurable
+  replay limits, and no access to workspace encryption keys.
 - Durable, content-free SQLite channel replay receipts with atomic cleanup,
   fail-closed capacity enforcement, per-platform namespaces, and
   cross-workspace duplicate denial for multi-process gateways.

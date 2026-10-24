@@ -1333,6 +1333,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "rembrane-whatsapp-gateway"
+version = "0.1.0-alpha.1"
+dependencies = [
+ "anyhow",
+ "axum",
+ "rembrane-channel-whatsapp",
+ "rembrane-store-sqlite",
+ "serde",
+ "tokio",
+ "zeroize",
+]
+
+[[package]]
 name = "reqwest"
 version = "0.12.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"

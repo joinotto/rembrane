@@ -20,6 +20,7 @@ members = [
     "apps/rembrane-cli",
     "apps/rembrane-graph-worker",
     "apps/rembrane-mcp",
+    "apps/rembrane-whatsapp-gateway",
     "crates/rembrane-application",
     "crates/rembrane-codec",
     "crates/rembrane-contracts",

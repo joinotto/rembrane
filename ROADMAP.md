@@ -555,6 +555,9 @@ This roadmap describes sequencing, not release dates.
   - [x] Define a framework-neutral webhook HTTP policy with constant-time
     subscription verification, bounded challenges, and non-enumerating sender
     rejection outcomes.
+  - [x] Ship a least-privileged Axum gateway binary that needs only the
+    channel database and deployment-owned WhatsApp secrets, not workspace
+    encryption keys.
   - [x] Define a bounded authenticated-channel message contract whose
     canonical workspace, principal, and client identity must come from a
     deployment-owned sender binding rather than webhook payload claims.
