@@ -591,6 +591,8 @@ This roadmap describes sequencing, not release dates.
     random lease owner so stale workers cannot finalize reclaimed messages.
   - [x] Require every channel processor to declare a hard call-time bound and
     size leases for the entire claimed batch before any delivery begins.
+  - [x] Expose administrator-authorized content-free inbox health counts through
+    the CLI without granting message-content access.
   - [x] Define a bounded authenticated-channel message contract whose
     canonical workspace, principal, and client identity must come from a
     deployment-owned sender binding rather than webhook payload claims.

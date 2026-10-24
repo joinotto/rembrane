@@ -1,8 +1,9 @@
 use rembrane_application::{
     AdministrativeAuditRepository, ApplicationError, AuthorizeClientCommand,
     AuthorizeClientService, CanonicalMutationRepository, ChannelBindingService,
-    CheckpointRepository, ClientGrantBundle, CreateChannelBindingCommand, DeleteMemoryCommand,
-    EventRepository, ExecuteRetentionPurgeCommand, MemberLifecycleService, MembershipRepository,
+    ChannelInboxAdministrationService, CheckpointRepository, ClientGrantBundle,
+    CreateChannelBindingCommand, DeleteMemoryCommand, EventRepository,
+    ExecuteRetentionPurgeCommand, MemberLifecycleService, MembershipRepository,
     MemoryLifecycleService, MemoryRepository, PlaceLegalHoldCommand, ReleaseLegalHoldCommand,
     RememberPreferenceCommand, RememberPreferenceService, ResolveContextCommand,
     ResolveContextService, RetentionService, ReviseMemoryCommand, RevokeChannelBindingCommand,
@@ -76,6 +77,9 @@ fn run(arguments: &[String]) -> Result<(), String> {
 }
 
 fn channel(arguments: &[String]) -> Result<(), String> {
+    if arguments.first().map(String::as_str) == Some("status") {
+        return channel_status(&arguments[1..]);
+    }
     let (operation, channel_kind, channel_label) = match arguments.first().map(String::as_str) {
         Some("bind-whatsapp") => ("bound", ChannelKind::WhatsAppBusiness, "whatsapp-business"),
         Some("unbind-whatsapp") => (
@@ -168,6 +172,27 @@ fn channel(arguments: &[String]) -> Result<(), String> {
             "principalId": subject_id.as_str(),
             "clientId": client_id.as_str(),
             "status": operation
+        })
+    );
+    Ok(())
+}
+
+fn channel_status(arguments: &[String]) -> Result<(), String> {
+    let database = option(arguments, "--database")?;
+    let principal_id = PrincipalId::new(option(arguments, "--principal")?);
+    let workspace_id = WorkspaceId::new(option(arguments, "--workspace")?);
+    let store =
+        SqliteStore::open(database).map_err(|error| format!("cannot open database: {error}"))?;
+    let summary = ChannelInboxAdministrationService::new(&store)
+        .summary(&workspace_id, &principal_id)
+        .map_err(|error| format!("cannot inspect channel inbox: {error}"))?;
+    println!(
+        "{}",
+        serde_json::json!({
+            "workspaceId": workspace_id.as_str(),
+            "pending": summary.pending(),
+            "processing": summary.processing(),
+            "quarantined": summary.quarantined()
         })
     );
     Ok(())
@@ -1617,6 +1642,8 @@ fn print_help() {
            rembrane legal-hold <place|release> --database <path> \
              --principal <owner-or-admin-id> --workspace <id> \
              --hold <id> --request <id>\n\
+           rembrane channel status --database <path> --principal <owner-or-admin-id> \
+             --workspace <id>\n\
            rembrane channel <bind-whatsapp|unbind-whatsapp|bind-mobile-share|unbind-mobile-share> --database <path> \
              --principal <owner-or-admin-id> --workspace <id> \
              --subject <active-member-id> --client <id> --request <id>\n\

@@ -1,4 +1,6 @@
-use rembrane_contracts::{ChannelKind, ChannelSenderBinding, VerifiedChannelMessage};
+use rembrane_contracts::{
+    ChannelInboxSummary, ChannelKind, ChannelSenderBinding, VerifiedChannelMessage,
+};
 use rembrane_domain::{
     ActivityCheckpoint, ActivityId, AdministrativeAuditEvent, BookingResearch, BookingResearchId,
     CanonicalEvent, CheckpointDisclosureReceipt, DisclosureReceipt, EntityId, GraphProjectionJob,
@@ -122,6 +124,13 @@ pub trait ChannelInboxRepository {
         retry_at_epoch_seconds: u64,
         maximum_attempts: u32,
     ) -> Result<bool, ApplicationError>;
+}
+
+pub trait ChannelInboxAdministrationRepository {
+    fn channel_inbox_summary(
+        &self,
+        workspace_id: &WorkspaceId,
+    ) -> Result<ChannelInboxSummary, ApplicationError>;
 }
 
 /// Pluggable trusted-boundary handler for one authenticated channel message.

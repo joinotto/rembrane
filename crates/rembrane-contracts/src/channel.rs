@@ -53,6 +53,39 @@ pub struct ChannelSenderBinding {
     client_id: ClientId,
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct ChannelInboxSummary {
+    pending: u64,
+    processing: u64,
+    quarantined: u64,
+}
+
+impl ChannelInboxSummary {
+    #[must_use]
+    pub const fn new(pending: u64, processing: u64, quarantined: u64) -> Self {
+        Self {
+            pending,
+            processing,
+            quarantined,
+        }
+    }
+
+    #[must_use]
+    pub const fn pending(self) -> u64 {
+        self.pending
+    }
+
+    #[must_use]
+    pub const fn processing(self) -> u64 {
+        self.processing
+    }
+
+    #[must_use]
+    pub const fn quarantined(self) -> u64 {
+        self.quarantined
+    }
+}
+
 impl VerifiedChannelMessage {
     /// Constructs an inbound event only after a transport adapter has
     /// authenticated the platform signature and resolved the external sender

@@ -1,8 +1,11 @@
 use rembrane_application::{
-    ApplicationError, ChannelInboxRepository, ChannelIngressRepository, ChannelReplayRepository,
-    ChannelSenderBindingRepository, DurableChannelIngressRepository, MAX_CHANNEL_INBOX_PAGE,
+    ApplicationError, ChannelInboxAdministrationRepository, ChannelInboxRepository,
+    ChannelIngressRepository, ChannelReplayRepository, ChannelSenderBindingRepository,
+    DurableChannelIngressRepository, MAX_CHANNEL_INBOX_PAGE,
 };
-use rembrane_contracts::{ChannelKind, ChannelSenderBinding, VerifiedChannelMessage};
+use rembrane_contracts::{
+    ChannelInboxSummary, ChannelKind, ChannelSenderBinding, VerifiedChannelMessage,
+};
 use rembrane_crypto::{EncryptedPayload, EncryptionContext, PayloadPurpose, RecordCipher};
 use rembrane_domain::{
     AdministrativeAction, AdministrativeAuditEvent, AdministrativeTargetKind, ClientId,
@@ -441,6 +444,32 @@ impl<C: RecordCipher> DurableChannelIngressRepository for SqliteStore<C> {
     }
 }
 
+impl<C> ChannelInboxAdministrationRepository for SqliteStore<C> {
+    fn channel_inbox_summary(
+        &self,
+        workspace_id: &WorkspaceId,
+    ) -> Result<ChannelInboxSummary, ApplicationError> {
+        self.connection
+            .query_row(
+                "SELECT
+                    count(*) FILTER (WHERE status = 'pending'),
+                    count(*) FILTER (WHERE status = 'processing'),
+                    count(*) FILTER (WHERE status = 'quarantined')
+                 FROM channel_inbox
+                 WHERE workspace_id = ?1",
+                [workspace_id.as_str()],
+                |row| {
+                    Ok(ChannelInboxSummary::new(
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                    ))
+                },
+            )
+            .map_err(|_| ApplicationError::StorageUnavailable)
+    }
+}
+
 impl<C: RecordCipher> ChannelInboxRepository for SqliteStore<C> {
     fn claim_channel_messages(
         &mut self,
@@ -807,8 +836,8 @@ fn validate_binding_audit(
 mod tests {
     use rembrane_application::{
         AdministrativeAuditRepository, ApplicationError, ChannelBindingService,
-        ChannelInboxRepository, ChannelIngressRepository, ChannelReplayRepository,
-        ChannelSenderBindingRepository, CreateChannelBindingCommand,
+        ChannelInboxAdministrationService, ChannelInboxRepository, ChannelIngressRepository,
+        ChannelReplayRepository, ChannelSenderBindingRepository, CreateChannelBindingCommand,
         DurableChannelIngressRepository, MembershipRepository, RevokeChannelBindingCommand,
         WorkspaceRepository,
     };
@@ -1319,6 +1348,24 @@ mod tests {
                 )
                 .expect_err("quarantine must be terminal"),
             ApplicationError::NotFound
+        );
+        let summary = ChannelInboxAdministrationService::new(&store)
+            .summary(
+                &WorkspaceId::new("workspace_01"),
+                &PrincipalId::new("principal_01"),
+            )
+            .expect("summary should load");
+        assert_eq!(summary.pending(), 0);
+        assert_eq!(summary.processing(), 0);
+        assert_eq!(summary.quarantined(), 1);
+        assert_eq!(
+            ChannelInboxAdministrationService::new(&store)
+                .summary(
+                    &WorkspaceId::new("workspace_01"),
+                    &PrincipalId::new("principal_02"),
+                )
+                .expect_err("non-member must not inspect another tenant"),
+            ApplicationError::AccessDenied
         );
     }
 

@@ -87,6 +87,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Processor-declared hard execution bounds and batch-aware lease validation,
   rejecting configurations that could expire while a claimed batch is still
   being delivered.
+- Administrator-only content-free channel inbox summaries and a CLI status
+  command exposing pending, processing, and quarantined counts without
+  decrypting or returning message content.
 - Durable, content-free SQLite channel replay receipts with atomic cleanup,
   fail-closed capacity enforcement, per-platform namespaces, and
   cross-workspace duplicate denial for multi-process gateways.
