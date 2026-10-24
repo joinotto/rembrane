@@ -200,3 +200,125 @@ private struct Problem: Decodable {
     let code: String
     let message: String
 }
+
+public protocol RembraneMobileShareSigner: Sendable {
+    func signatureHeader(for body: Data) throws -> String
+}
+
+public struct RembraneMobileShareEnvelope: Encodable, Sendable {
+    public let accountID: String
+    public let deviceID: String
+    public let eventID: String
+    public let text: String
+    public let sharedAtEpochSeconds: UInt64
+
+    enum CodingKeys: String, CodingKey {
+        case accountID = "account_id"
+        case deviceID = "device_id"
+        case eventID = "event_id"
+        case text
+        case sharedAtEpochSeconds = "shared_at_epoch_seconds"
+    }
+
+    public init(
+        accountID: String,
+        deviceID: String,
+        eventID: String,
+        text: String,
+        sharedAtEpochSeconds: UInt64
+    ) {
+        self.accountID = accountID
+        self.deviceID = deviceID
+        self.eventID = eventID
+        self.text = text
+        self.sharedAtEpochSeconds = sharedAtEpochSeconds
+    }
+}
+
+public struct RembraneMobileShareClient<
+    Transport: RembraneTransport,
+    Signer: RembraneMobileShareSigner
+>: Sendable {
+    private let baseURL: URL
+    private let transport: Transport
+    private let signer: Signer
+    private let maximumResponseBytes: Int
+
+    public init(
+        baseURL: URL,
+        transport: Transport,
+        signer: Signer,
+        maximumResponseBytes: Int = 4_096
+    ) throws {
+        let loopback = ["localhost", "127.0.0.1", "::1"].contains(baseURL.host ?? "")
+        guard baseURL.scheme == "https" || (baseURL.scheme == "http" && loopback) else {
+            throw RembraneAPIError(
+                status: 0,
+                code: "invalid_endpoint",
+                message: "Mobile share requires HTTPS or an explicit loopback URL"
+            )
+        }
+        guard baseURL.user == nil, baseURL.password == nil,
+              baseURL.query == nil, baseURL.fragment == nil,
+              maximumResponseBytes > 0 else {
+            throw RembraneAPIError(
+                status: 0,
+                code: "invalid_configuration",
+                message: "Safe endpoint and positive response limit are required"
+            )
+        }
+        self.baseURL = baseURL
+        self.transport = transport
+        self.signer = signer
+        self.maximumResponseBytes = maximumResponseBytes
+    }
+
+    public func share(_ envelope: RembraneMobileShareEnvelope) async throws {
+        let body = try JSONEncoder().encode(envelope)
+        let signature = try signer.signatureHeader(for: body)
+        let encodedSignature = signature.dropFirst("sha256=".count)
+        let lowercaseHex = encodedSignature.allSatisfy {
+            ("0"..."9").contains($0) || ("a"..."f").contains($0)
+        }
+        guard signature.hasPrefix("sha256="), signature.count == 71, lowercaseHex else {
+            throw RembraneAPIError(
+                status: 0,
+                code: "invalid_signature",
+                message: "Signer must return a sha256 lowercase-hex header"
+            )
+        }
+        let root = baseURL.absoluteString.trimmingCharacters(
+            in: CharacterSet(charactersIn: "/")
+        )
+        guard let url = URL(string: root + "/v1/shares") else {
+            throw RembraneAPIError(
+                status: 0,
+                code: "invalid_endpoint",
+                message: "Invalid mobile-share URL"
+            )
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.httpBody = body
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(signature, forHTTPHeaderField: "X-Rembrane-Signature-256")
+        let response = try await transport.send(
+            request,
+            maximumResponseBytes: maximumResponseBytes
+        )
+        guard response.body.count <= maximumResponseBytes else {
+            throw RembraneAPIError(
+                status: response.status,
+                code: "response_too_large",
+                message: "Response exceeded limit"
+            )
+        }
+        guard (200..<300).contains(response.status) else {
+            throw RembraneAPIError(
+                status: response.status,
+                code: "share_rejected",
+                message: "Rembrane rejected the explicit share"
+            )
+        }
+    }
+}

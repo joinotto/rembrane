@@ -21,6 +21,13 @@ private struct AuditResponse: Decodable {
     let events: [String]
 }
 
+private struct MockShareSigner: RembraneMobileShareSigner {
+    func signatureHeader(for body: Data) throws -> String {
+        precondition(!body.isEmpty)
+        return "sha256=" + String(repeating: "a", count: 64)
+    }
+}
+
 @main
 private struct RembraneSmoke {
     static func main() async throws {
@@ -54,5 +61,34 @@ private struct RembraneSmoke {
         } catch is RembraneAPIError {
             // Expected.
         }
+
+        let shareTransport = MockTransport()
+        let shareClient = try RembraneMobileShareClient(
+            baseURL: URL(string: "http://127.0.0.1:8791")!,
+            transport: shareTransport,
+            signer: MockShareSigner()
+        )
+        try await shareClient.share(
+            RembraneMobileShareEnvelope(
+                accountID: "account_01",
+                deviceID: "device_01",
+                eventID: "share_01",
+                text: "Continue in another assistant",
+                sharedAtEpochSeconds: 1_792_867_200
+            )
+        )
+        let shareRequest = await shareTransport.request
+        precondition(shareRequest?.httpMethod == "POST")
+        precondition(
+            shareRequest?.url?.absoluteString == "http://127.0.0.1:8791/v1/shares"
+        )
+        precondition(
+            shareRequest?.value(forHTTPHeaderField: "X-Rembrane-Signature-256")
+                == "sha256=" + String(repeating: "a", count: 64)
+        )
+        precondition(
+            String(data: shareRequest?.httpBody ?? Data(), encoding: .utf8)?
+                .contains(#""device_id":"device_01""#) == true
+        )
     }
 }

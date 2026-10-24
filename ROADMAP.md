@@ -612,6 +612,9 @@ This roadmap describes sequencing, not release dates.
     companion HTTP service.
   - [x] Package the mobile-share gateway in a loopback-only hardened Compose
     overlay with no broad memory API credential or default principal.
+  - [x] Extend the Swift package with an injectable device-held signer and
+    explicit-share client that targets the narrow gateway without a memory API
+    bearer token.
 - [ ] Community provider and agent adapters.
 
 ## Release gates
