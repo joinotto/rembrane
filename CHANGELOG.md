@@ -67,6 +67,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   namespaces.
 - Exact Supermemory document retrieval before version-bounded deletion,
   removing the remaining pagination dependency from lifecycle operations.
+- Regression coverage proving Supermemory version-bounded deletion never
+  falls back to namespace listing.
 - A public-API-only iMessage app extension reference with explicit text entry,
   review, confirmation, Keychain-held enrollment material, narrow signed
   gateway submission, and an iPhone Simulator type-check gate.

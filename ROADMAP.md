@@ -712,6 +712,8 @@ This roadmap describes sequencing, not release dates.
         bounded pre-delete list scan.
       - [x] Use exact deterministic document lookup for version-bounded
         deletion instead of scanning paginated namespace lists.
+        - [x] Lock the no-list lifecycle invariant with regression coverage
+          across preserved and deleted version bounds.
       - [x] Require bounded readiness confirmation after ingestion before an
         adapter may report projection success.
         - [x] Bind readiness verification to the exact authorized projection

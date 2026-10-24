@@ -675,10 +675,16 @@ mod tests {
         next_id: u64,
         fail_readiness: bool,
         fail_deletion_confirmation: bool,
+        reject_list: bool,
     }
 
     impl SupermemoryTransport for FakeSupermemory {
         fn list(&self, namespace: &str) -> Result<Vec<SupermemoryRecord>, ProviderError> {
+            if self.reject_list {
+                return Err(ProviderError::Rejected(
+                    "namespace listing was not expected".to_owned(),
+                ));
+            }
             Ok(self
                 .records
                 .get(namespace)
@@ -896,6 +902,57 @@ mod tests {
         assert_eq!(
             provider.delete(&WorkspaceId::new("workspace"), &MemoryId::new("memory"), 1),
             Err(ProviderError::Unavailable)
+        );
+    }
+
+    #[test]
+    fn version_bounded_deletion_never_scans_the_namespace() {
+        use rembrane_domain::{MemoryId, MemoryKind, MemoryScope, WorkspaceId};
+        use rembrane_provider_sdk::{AuthorizedMemoryProjection, SemanticMemoryProvider};
+
+        let workspace_id = WorkspaceId::new("workspace");
+        let memory_id = MemoryId::new("memory");
+        let mut provider =
+            SupermemorySemanticProvider::new(FakeSupermemory::default(), vec![10; 32])
+                .expect("valid lookup secret");
+        provider
+            .index(AuthorizedMemoryProjection {
+                workspace_id: workspace_id.clone(),
+                memory_id: memory_id.clone(),
+                version: 2,
+                scope: MemoryScope::Global,
+                kind: MemoryKind::Semantic,
+                content: "Call me Hippo".to_owned(),
+            })
+            .expect("initial projection");
+        provider.transport.reject_list = true;
+
+        provider
+            .delete(&workspace_id, &memory_id, 1)
+            .expect("older bound must preserve the current projection");
+        assert!(
+            provider
+                .transport
+                .get(
+                    &provider.namespace(&workspace_id),
+                    &provider.document_id(&memory_id)
+                )
+                .expect("exact lookup")
+                .is_some()
+        );
+
+        provider
+            .delete(&workspace_id, &memory_id, 2)
+            .expect("matching bound must delete by exact identity");
+        assert!(
+            provider
+                .transport
+                .get(
+                    &provider.namespace(&workspace_id),
+                    &provider.document_id(&memory_id)
+                )
+                .expect("exact lookup")
+                .is_none()
         );
     }
 }
