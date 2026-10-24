@@ -54,6 +54,10 @@ This roadmap describes sequencing, not release dates.
 - [x] Package the local REST service for loopback-only Docker Compose
   self-hosting with persistent encrypted storage.
 - [ ] Add production OS-keychain and customer-KMS key providers.
+  - [x] Support active-key writes and historical-key reads through a
+    duplicate-safe versioned record-cipher keyring.
+  - [ ] Resolve keyring material from OS keychains without environment secrets.
+  - [ ] Resolve or unwrap keyring material through customer KMS adapters.
 - [x] Retrieve minimal context through local stdio MCP.
 - [x] Rank canonical context by deterministic local query relevance.
 - [x] Enforce administrator-configured connection read-scope allowlists.

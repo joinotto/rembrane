@@ -38,6 +38,59 @@ impl RustCryptoRecordCipher {
         let key = decode_key(&encoded_key)?;
         Self::new(key_id, key)
     }
+
+    #[must_use]
+    pub fn key_id(&self) -> &str {
+        &self.key_id
+    }
+}
+
+/// In-process keyring for staged key rotation.
+///
+/// New records are sealed with the active key. Existing records are opened
+/// only by the key whose opaque identifier is stored in their envelope.
+/// Key-provider adapters can construct this keyring after resolving key
+/// material from an OS keychain, HSM, or customer-controlled KMS.
+pub struct RustCryptoKeyringCipher {
+    active: RustCryptoRecordCipher,
+    historical: Vec<RustCryptoRecordCipher>,
+}
+
+impl RustCryptoKeyringCipher {
+    pub fn new(
+        active: RustCryptoRecordCipher,
+        historical: Vec<RustCryptoRecordCipher>,
+    ) -> Result<Self, CryptoError> {
+        if historical
+            .iter()
+            .any(|candidate| candidate.key_id() == active.key_id())
+        {
+            return Err(CryptoError::KeyUnavailable);
+        }
+        for (index, candidate) in historical.iter().enumerate() {
+            if historical[..index]
+                .iter()
+                .any(|earlier| earlier.key_id() == candidate.key_id())
+            {
+                return Err(CryptoError::KeyUnavailable);
+            }
+        }
+        Ok(Self { active, historical })
+    }
+
+    #[must_use]
+    pub fn active_key_id(&self) -> &str {
+        self.active.key_id()
+    }
+
+    fn cipher_for_key(&self, key_id: &str) -> Option<&RustCryptoRecordCipher> {
+        if self.active.key_id() == key_id {
+            return Some(&self.active);
+        }
+        self.historical
+            .iter()
+            .find(|candidate| candidate.key_id() == key_id)
+    }
 }
 
 fn decode_key(encoded: &str) -> Result<[u8; 32], CryptoError> {
@@ -105,12 +158,32 @@ impl RecordCipher for RustCryptoRecordCipher {
     }
 }
 
+impl RecordCipher for RustCryptoKeyringCipher {
+    fn seal(
+        &self,
+        context: &EncryptionContext,
+        plaintext: &[u8],
+    ) -> Result<EncryptedPayload, CryptoError> {
+        self.active.seal(context, plaintext)
+    }
+
+    fn open(
+        &self,
+        context: &EncryptionContext,
+        payload: &EncryptedPayload,
+    ) -> Result<Vec<u8>, CryptoError> {
+        self.cipher_for_key(payload.key_id())
+            .ok_or(CryptoError::KeyUnavailable)?
+            .open(context, payload)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use rembrane_crypto::{CryptoError, EncryptionContext, PayloadPurpose, RecordCipher};
     use rembrane_domain::WorkspaceId;
 
-    use super::RustCryptoRecordCipher;
+    use super::{RustCryptoKeyringCipher, RustCryptoRecordCipher};
 
     fn context(workspace: &str) -> EncryptionContext {
         EncryptionContext::new(
@@ -151,5 +224,56 @@ mod tests {
     #[test]
     fn rejects_invalid_encoded_key() {
         assert_eq!(super::decode_key("abcd"), Err(CryptoError::KeyUnavailable));
+    }
+
+    #[test]
+    fn keyring_writes_active_key_and_reads_historical_ciphertext() {
+        let old = RustCryptoRecordCipher::new("key_v1", [1; 32]).expect("old key should be valid");
+        let old_payload = old
+            .seal(&context("workspace_01"), b"historical")
+            .expect("old key should seal");
+        let keyring = RustCryptoKeyringCipher::new(
+            RustCryptoRecordCipher::new("key_v2", [2; 32]).expect("active key should be valid"),
+            vec![old],
+        )
+        .expect("distinct keyring should be valid");
+
+        assert_eq!(
+            keyring
+                .open(&context("workspace_01"), &old_payload)
+                .expect("historical key should remain readable"),
+            b"historical"
+        );
+        let current = keyring
+            .seal(&context("workspace_01"), b"current")
+            .expect("active key should seal");
+        assert_eq!(current.key_id(), "key_v2");
+        assert_eq!(keyring.active_key_id(), "key_v2");
+    }
+
+    #[test]
+    fn keyring_rejects_duplicate_and_unknown_key_ids() {
+        let duplicate = RustCryptoKeyringCipher::new(
+            RustCryptoRecordCipher::new("key_v2", [2; 32]).expect("active key should be valid"),
+            vec![
+                RustCryptoRecordCipher::new("key_v2", [3; 32])
+                    .expect("historical key should be structurally valid"),
+            ],
+        );
+        assert!(matches!(duplicate, Err(CryptoError::KeyUnavailable)));
+
+        let foreign = RustCryptoRecordCipher::new("foreign", [4; 32])
+            .expect("foreign key should be valid")
+            .seal(&context("workspace_01"), b"foreign")
+            .expect("foreign key should seal");
+        let keyring = RustCryptoKeyringCipher::new(
+            RustCryptoRecordCipher::new("key_v2", [2; 32]).expect("active key should be valid"),
+            Vec::new(),
+        )
+        .expect("keyring should be valid");
+        assert_eq!(
+            keyring.open(&context("workspace_01"), &foreign),
+            Err(CryptoError::KeyUnavailable)
+        );
     }
 }
