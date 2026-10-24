@@ -76,6 +76,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Typed Memory Provider question resolution with scoped queries, caller-bound
   answer and support ceilings, exact supporting memory revisions, and
   context-pack plus disclosure receipt identity.
+- Typed Memory Provider event ingestion with idempotent bounded batches,
+  scoped opaque event data, server-derived tenant and actor authority, and
+  exact-cardinality strictly ordered canonical event results.
 - Canonical engine-neutral temporal knowledge graph aggregates with typed
   nodes, validated relationship types, strict workspace namespaces, separate
   validity and ingestion time, evidence provenance, bounded aliases, versions,

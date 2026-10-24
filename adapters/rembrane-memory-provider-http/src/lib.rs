@@ -4,17 +4,18 @@ use std::io::Read;
 use std::time::Duration;
 
 use rembrane_domain::{
-    ActivityId, ContextPackId, DisclosureId, EntityId, EvidenceId, EvidenceReference,
+    ActivityId, ContextPackId, DisclosureId, EntityId, EventId, EvidenceId, EvidenceReference,
     EvidenceSource, MemoryId, MemoryKind, MemoryScope,
 };
 use rembrane_provider_sdk::{
     CURRENT_MEMORY_PROVIDER_PROTOCOL, DeleteMemoryPayload, DeleteMemoryResult,
     ExplainMemoryPayload, ExplainMemoryResult, MEMORY_PROVIDER_DISCOVERY_PATH,
     MemoryProviderCapability, MemoryProviderConnection, MemoryProviderContextItem,
-    MemoryProviderDisclosedMemory, MemoryProviderDisclosureConstraint, MemoryProviderLimits,
-    MemoryProviderManifest, MemoryProviderPolicy, MemoryProviderPrivacyMode, MemoryProviderRequest,
-    MemoryProviderResponse, MemoryProviderSensitivity, MemoryProviderTransport,
-    ProposeMemoryPayload, ProposeMemoryResult, ProviderError, ProviderProtocolVersion,
+    MemoryProviderDisclosedMemory, MemoryProviderDisclosureConstraint, MemoryProviderEvent,
+    MemoryProviderLimits, MemoryProviderManifest, MemoryProviderPolicy, MemoryProviderPrivacyMode,
+    MemoryProviderRecordedEvent, MemoryProviderRequest, MemoryProviderResponse,
+    MemoryProviderSensitivity, MemoryProviderTransport, ProposeMemoryPayload, ProposeMemoryResult,
+    ProviderError, ProviderProtocolVersion, RecordEventPayload, RecordEventResult,
     ResolveContextPayload, ResolveContextResult, ResolveQuestionPayload, ResolveQuestionResult,
 };
 use reqwest::Url;
@@ -164,6 +165,38 @@ impl HttpMemoryProviderClient {
             (Some(result), None) if (200..300).contains(&status) => Ok(request.success(
                 ProposeMemoryResult::new(MemoryId::new(result.memory_id), result.version)?,
             )),
+            (None, Some(error)) if !(200..300).contains(&status) => {
+                Ok(request.error(parse_error_code(&error.code)?))
+            }
+            _ => Err(ProviderError::Rejected(
+                "memory provider response status and envelope disagree".to_owned(),
+            )),
+        }
+    }
+
+    pub fn record_events(
+        &self,
+        request: &MemoryProviderRequest<RecordEventPayload>,
+    ) -> Result<MemoryProviderResponse<RecordEventResult>, ProviderError> {
+        let endpoint = self
+            .base_url
+            .join("v1/events")
+            .map_err(|_| ProviderError::Unavailable)?;
+        let body = RequestEnvelope {
+            request_id: request.request_id().as_str(),
+            protocol_version: "0.1",
+            operation: "record_event",
+            payload: RecordEventBody::from(request.payload()),
+        };
+        let response = self.post_json(endpoint, &body)?;
+        let status = response.status().as_u16();
+        let wire: ResponseEnvelope<RecordEventResultBody> =
+            decode_json(response, MAXIMUM_OPERATION_BYTES)?;
+        validate_response_identity(request, &wire.request_id, &wire.protocol_version)?;
+        match (wire.result, wire.error) {
+            (Some(result), None) if (200..300).contains(&status) => {
+                Ok(request.success(result.into_domain(request.payload())?))
+            }
             (None, Some(error)) if !(200..300).contains(&status) => {
                 Ok(request.error(parse_error_code(&error.code)?))
             }
@@ -464,6 +497,44 @@ struct ProposeMemoryBody<'request> {
     observed_at_epoch_seconds: u64,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RecordEventBody<'request> {
+    idempotency_key: &'request str,
+    events: Vec<MemoryEventBody<'request>>,
+}
+
+impl<'request> From<&'request RecordEventPayload> for RecordEventBody<'request> {
+    fn from(payload: &'request RecordEventPayload) -> Self {
+        Self {
+            idempotency_key: payload.idempotency_key().as_str(),
+            events: payload.events().iter().map(MemoryEventBody::from).collect(),
+        }
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MemoryEventBody<'request> {
+    event_type: &'request str,
+    selector: SelectorBody<'request>,
+    data: &'request str,
+    source_reference: Option<&'request str>,
+    observed_at_epoch_seconds: u64,
+}
+
+impl<'request> From<&'request MemoryProviderEvent> for MemoryEventBody<'request> {
+    fn from(event: &'request MemoryProviderEvent) -> Self {
+        Self {
+            event_type: event.event_type(),
+            selector: SelectorBody::from(event.selector().scope()),
+            data: event.data(),
+            source_reference: event.source_reference(),
+            observed_at_epoch_seconds: event.observed_at_epoch_seconds(),
+        }
+    }
+}
+
 impl<'request> From<&'request ProposeMemoryPayload> for ProposeMemoryBody<'request> {
     fn from(payload: &'request ProposeMemoryPayload) -> Self {
         Self {
@@ -620,6 +691,47 @@ impl ExactMemoryRevisionBody {
 struct ProposeMemoryResultBody {
     memory_id: String,
     version: u64,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RecordEventResultBody {
+    events: Vec<RecordedEventBody>,
+}
+
+impl RecordEventResultBody {
+    fn into_domain(self, request: &RecordEventPayload) -> Result<RecordEventResult, ProviderError> {
+        if self.events.len() != request.events().len() {
+            return Err(ProviderError::Rejected(
+                "memory provider event result does not match the submitted batch".to_owned(),
+            ));
+        }
+        RecordEventResult::new(
+            self.events
+                .into_iter()
+                .map(RecordedEventBody::into_domain)
+                .collect::<Result<Vec<_>, _>>()?,
+            MemoryProviderLimits {
+                maximum_context_items: 1,
+                maximum_context_bytes: 1,
+                maximum_event_batch_items: request.events().len(),
+                maximum_sync_batch_items: 1,
+            },
+        )
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct RecordedEventBody {
+    event_id: String,
+    sequence: u64,
+}
+
+impl RecordedEventBody {
+    fn into_domain(self) -> Result<MemoryProviderRecordedEvent, ProviderError> {
+        MemoryProviderRecordedEvent::new(EventId::new(self.event_id), self.sequence)
+    }
 }
 
 #[derive(Deserialize)]
@@ -1059,17 +1171,17 @@ mod tests {
     use rembrane_domain::{EntityId, MemoryScope};
     use rembrane_provider_sdk::{
         CURRENT_MEMORY_PROVIDER_PROTOCOL, ExplainMemoryPayload, MemoryProviderCapability,
-        MemoryProviderConnection, MemoryProviderContextSelector, MemoryProviderIdempotencyKey,
-        MemoryProviderLimits, MemoryProviderManifest, MemoryProviderPolicy,
-        MemoryProviderPrivacyMode, MemoryProviderTransport, ProposeMemoryPayload,
-        ResolveContextPayload, ResolveQuestionPayload,
+        MemoryProviderConnection, MemoryProviderContextSelector, MemoryProviderEvent,
+        MemoryProviderIdempotencyKey, MemoryProviderLimits, MemoryProviderManifest,
+        MemoryProviderPolicy, MemoryProviderPrivacyMode, MemoryProviderTransport,
+        ProposeMemoryPayload, RecordEventPayload, ResolveContextPayload, ResolveQuestionPayload,
     };
 
     use super::{
         DiscoveryBody, ExplainMemoryBody, ExplainMemoryResultBody, ProposeMemoryBody,
-        RequestEnvelope, ResolveContextBody, ResolveContextResultBody, ResolveQuestionBody,
-        ResolveQuestionResultBody, memory_endpoint, memory_subresource_endpoint, validate_base_url,
-        validate_bearer_token,
+        RecordEventBody, RecordEventResultBody, RequestEnvelope, ResolveContextBody,
+        ResolveContextResultBody, ResolveQuestionBody, ResolveQuestionResultBody, memory_endpoint,
+        memory_subresource_endpoint, validate_base_url, validate_bearer_token,
     };
 
     const DISCOVERY: &str = r#"{
@@ -1325,6 +1437,53 @@ mod tests {
         assert!(encoded.get("workspaceId").is_none());
         assert!(encoded.get("subjectId").is_none());
         assert!(encoded.get("confirmed").is_none());
+    }
+
+    #[test]
+    fn serializes_and_validates_ordered_event_batches() {
+        let limits = MemoryProviderLimits {
+            maximum_context_items: 1,
+            maximum_context_bytes: 1,
+            maximum_event_batch_items: 2,
+            maximum_sync_batch_items: 1,
+        };
+        let event = MemoryProviderEvent::new(
+            "development.work-trace",
+            MemoryProviderContextSelector::entity(EntityId::new("project_rembrane"))
+                .expect("selector"),
+            r#"{"summary":"implemented event transport"}"#,
+            Some("git:d93d621".to_owned()),
+            100,
+            100,
+        )
+        .expect("event");
+        let payload = RecordEventPayload::new(
+            MemoryProviderIdempotencyKey::new("events_0123456789abcdef").expect("key"),
+            vec![event],
+            limits,
+        )
+        .expect("payload");
+        let encoded = serde_json::to_value(RecordEventBody::from(&payload)).expect("request JSON");
+        assert_eq!(encoded["events"][0]["eventType"], "development.work-trace");
+        assert_eq!(encoded["events"][0]["selector"]["scope"], "entity");
+        assert_eq!(
+            encoded["events"][0]["selector"]["entityId"],
+            "project_rembrane"
+        );
+        assert!(encoded.get("workspaceId").is_none());
+        assert!(encoded.get("subjectId").is_none());
+        assert!(encoded["events"][0].get("actorId").is_none());
+
+        let wire: RecordEventResultBody =
+            serde_json::from_str(r#"{"events":[{"eventId":"event_01","sequence":41}]}"#)
+                .expect("result JSON");
+        let result = wire.into_domain(&payload).expect("canonical result");
+        assert_eq!(result.events()[0].event_id().as_str(), "event_01");
+        assert_eq!(result.events()[0].sequence(), 41);
+
+        let mismatched: RecordEventResultBody =
+            serde_json::from_str(r#"{"events":[]}"#).expect("result JSON");
+        assert!(mismatched.into_domain(&payload).is_err());
     }
 
     #[test]

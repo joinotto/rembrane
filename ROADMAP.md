@@ -371,7 +371,9 @@ This roadmap describes sequencing, not release dates.
       - [x] Resolve bounded questions into evidence-grounded answers carrying
         exact supporting revisions, context-pack identity, and disclosure
         identity.
-      - [ ] Add event, checkpoint, disclosure, and sync operations.
+      - [x] Record bounded idempotent event batches without caller-controlled
+        tenant or actor identity and validate exact ordered result cardinality.
+      - [ ] Add checkpoint, disclosure, and sync operations.
 - [x] Versioned key-provider sidecar protocol for OS, HSM, and customer-KMS
   adapters.
   - [x] Add transport-independent Rust manifest, negotiation, request, context,
