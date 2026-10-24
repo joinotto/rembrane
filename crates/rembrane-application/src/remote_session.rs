@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use rembrane_contracts::{RemoteSessionBinding, RemoteSessionId, VerifiedRemoteAccess};
 
-use crate::ApplicationError;
+use crate::{ApplicationError, RemoteHttpAuthorization, RemoteTokenVerifier};
 
 pub struct RemoteSessionRegistry {
     sessions: BTreeMap<RemoteSessionId, RemoteSessionBinding>,
@@ -48,6 +48,112 @@ impl RemoteSessionRegistry {
         }
         self.sessions.insert(session_id, access.session_binding());
         Ok(())
+    }
+
+    /// Authenticates an initialize request and establishes its session.
+    ///
+    /// # Errors
+    ///
+    /// Returns a non-enumerating authorization error for invalid origin or
+    /// bearer credentials, and the normal bounded-registry errors for a
+    /// duplicate identifier or exhausted live-session capacity.
+    pub fn authorize_and_establish<Verifier>(
+        &mut self,
+        authorization: &RemoteHttpAuthorization<'_, '_, Verifier>,
+        session_id: RemoteSessionId,
+        authorization_header: Option<&str>,
+        origin_header: Option<&str>,
+        now_epoch_seconds: u64,
+    ) -> Result<VerifiedRemoteAccess, ApplicationError>
+    where
+        Verifier: RemoteTokenVerifier,
+    {
+        let access = authorization.authorize_connection(
+            authorization_header,
+            origin_header,
+            now_epoch_seconds,
+        )?;
+        self.establish(session_id, &access, now_epoch_seconds)?;
+        Ok(access)
+    }
+
+    /// Reauthenticates a tool invocation and its existing session binding.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AccessDenied` for invalid request authorization, unknown tools,
+    /// unknown sessions, expired sessions, or authorization substitution.
+    pub fn authorize_tool<Verifier>(
+        &mut self,
+        authorization: &RemoteHttpAuthorization<'_, '_, Verifier>,
+        session_id: &RemoteSessionId,
+        authorization_header: Option<&str>,
+        origin_header: Option<&str>,
+        tool_name: &str,
+        now_epoch_seconds: u64,
+    ) -> Result<VerifiedRemoteAccess, ApplicationError>
+    where
+        Verifier: RemoteTokenVerifier,
+    {
+        let access = authorization.authorize_tool(
+            authorization_header,
+            origin_header,
+            tool_name,
+            now_epoch_seconds,
+        )?;
+        self.revalidate(session_id, &access, now_epoch_seconds)?;
+        Ok(access)
+    }
+
+    /// Reauthenticates a non-tool protocol request and its session binding.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AccessDenied` for invalid request authorization, an unknown or
+    /// expired session, or any authorization substitution.
+    pub fn authorize_connection<Verifier>(
+        &mut self,
+        authorization: &RemoteHttpAuthorization<'_, '_, Verifier>,
+        session_id: &RemoteSessionId,
+        authorization_header: Option<&str>,
+        origin_header: Option<&str>,
+        now_epoch_seconds: u64,
+    ) -> Result<VerifiedRemoteAccess, ApplicationError>
+    where
+        Verifier: RemoteTokenVerifier,
+    {
+        let access = authorization.authorize_connection(
+            authorization_header,
+            origin_header,
+            now_epoch_seconds,
+        )?;
+        self.revalidate(session_id, &access, now_epoch_seconds)?;
+        Ok(access)
+    }
+
+    /// Reauthenticates and deletes a remote session.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AccessDenied` without revealing whether request authorization
+    /// or the session binding failed.
+    pub fn authorize_and_terminate<Verifier>(
+        &mut self,
+        authorization: &RemoteHttpAuthorization<'_, '_, Verifier>,
+        session_id: &RemoteSessionId,
+        authorization_header: Option<&str>,
+        origin_header: Option<&str>,
+        now_epoch_seconds: u64,
+    ) -> Result<(), ApplicationError>
+    where
+        Verifier: RemoteTokenVerifier,
+    {
+        let access = authorization.authorize_connection(
+            authorization_header,
+            origin_header,
+            now_epoch_seconds,
+        )?;
+        self.terminate(session_id, &access, now_epoch_seconds)
     }
 
     /// Removes bindings whose non-extending authorization lifetime elapsed.
@@ -116,9 +222,39 @@ mod tests {
     use rembrane_domain::{ClientId, PrincipalId, WorkspaceId};
 
     use super::RemoteSessionRegistry;
-    use crate::ApplicationError;
+    use crate::{
+        ApplicationError, RemoteAccessAuthenticator, RemoteHttpAuthorization,
+        RemoteTokenVerificationError, RemoteTokenVerifier,
+    };
 
-    fn access(workspace: &str, scopes: &[RemoteAccessScope]) -> VerifiedRemoteAccess {
+    struct FixtureVerifier;
+
+    impl RemoteTokenVerifier for FixtureVerifier {
+        fn verify(
+            &self,
+            bearer_token: &str,
+        ) -> Result<RemoteTokenClaims, RemoteTokenVerificationError> {
+            match bearer_token {
+                "workspace-one" => Ok(claims(
+                    "workspace_01",
+                    &[
+                        RemoteAccessScope::ContextRead,
+                        RemoteAccessScope::MemoryWrite,
+                    ],
+                )),
+                "workspace-two" => Ok(claims(
+                    "workspace_02",
+                    &[
+                        RemoteAccessScope::ContextRead,
+                        RemoteAccessScope::MemoryWrite,
+                    ],
+                )),
+                _ => Err(RemoteTokenVerificationError),
+            }
+        }
+    }
+
+    fn claims(workspace: &str, scopes: &[RemoteAccessScope]) -> RemoteTokenClaims {
         RemoteTokenClaims {
             issuer: "https://identity.example.test".to_owned(),
             audience: vec!["https://memory.example.test/mcp".to_owned()],
@@ -129,12 +265,16 @@ mod tests {
             expires_at_epoch_seconds: 2_000,
             not_before_epoch_seconds: None,
         }
-        .validate_connection(
-            "https://identity.example.test",
-            "https://memory.example.test/mcp",
-            1_000,
-        )
-        .expect("fixture access should validate")
+    }
+
+    fn access(workspace: &str, scopes: &[RemoteAccessScope]) -> VerifiedRemoteAccess {
+        claims(workspace, scopes)
+            .validate_connection(
+                "https://identity.example.test",
+                "https://memory.example.test/mcp",
+                1_000,
+            )
+            .expect("fixture access should validate")
     }
 
     #[test]
@@ -233,5 +373,80 @@ mod tests {
         registry
             .revalidate(&replacement, &access, 1_999)
             .expect("replacement session should remain available");
+    }
+
+    #[test]
+    fn lifecycle_reauthenticates_every_request_and_denies_tenant_substitution() {
+        let verifier = FixtureVerifier;
+        let authenticator = RemoteAccessAuthenticator::new(
+            &verifier,
+            "https://identity.example.test",
+            "https://memory.example.test/mcp",
+        );
+        let trusted_origins = ["https://agent.example.test"];
+        let authorization = RemoteHttpAuthorization::new(&authenticator, &trusted_origins);
+        let mut registry = RemoteSessionRegistry::new(2).expect("capacity should be valid");
+        let session =
+            RemoteSessionId::new("session_0123456789abcdef").expect("session id should be valid");
+
+        let established = registry
+            .authorize_and_establish(
+                &authorization,
+                session.clone(),
+                Some("Bearer workspace-one"),
+                Some("https://agent.example.test"),
+                1_000,
+            )
+            .expect("initialize should authenticate");
+        assert_eq!(established.workspace_id().as_str(), "workspace_01");
+
+        let tool_access = registry
+            .authorize_tool(
+                &authorization,
+                &session,
+                Some("Bearer workspace-one"),
+                Some("https://agent.example.test"),
+                "rembrane_remember_preference",
+                1_100,
+            )
+            .expect("bound tool request should authenticate");
+        assert_eq!(tool_access.workspace_id().as_str(), "workspace_01");
+
+        assert_eq!(
+            registry
+                .authorize_connection(
+                    &authorization,
+                    &session,
+                    Some("Bearer workspace-two"),
+                    Some("https://agent.example.test"),
+                    1_100,
+                )
+                .expect_err("tenant substitution must fail"),
+            ApplicationError::AccessDenied
+        );
+        assert_eq!(
+            registry
+                .authorize_tool(
+                    &authorization,
+                    &session,
+                    Some("Bearer workspace-one"),
+                    Some("https://evil.example.test"),
+                    "rembrane.resolve_context",
+                    1_100,
+                )
+                .expect_err("origin substitution must fail"),
+            ApplicationError::AccessDenied
+        );
+
+        registry
+            .authorize_and_terminate(
+                &authorization,
+                &session,
+                Some("Bearer workspace-one"),
+                Some("https://agent.example.test"),
+                1_200,
+            )
+            .expect("bound delete should authenticate");
+        assert!(registry.is_empty());
     }
 }

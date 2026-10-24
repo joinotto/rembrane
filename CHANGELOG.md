@@ -11,6 +11,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 - Expiry-aware remote MCP session capacity reclamation so abandoned bindings
   cannot exhaust the bounded in-process registry indefinitely.
+- A transport-neutral remote MCP lifecycle boundary that composes strict HTTP
+  request authorization with session establishment, per-request binding
+  revalidation, narrow tool scopes, and authenticated session deletion.
 - Pre-alpha remote Streamable HTTP MCP security contract with RFC 9728
   protected-resource metadata, explicit OAuth scope ceilings, bearer challenge
   behavior, verified identity requirements, and per-request session

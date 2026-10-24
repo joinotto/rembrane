@@ -93,6 +93,9 @@ This roadmap describes sequencing, not release dates.
   - [ ] Integrate the authorization middleware with the HTTP server adapter.
     - [x] Validate complete remote profiles before startup, including exact
       HTTPS endpoints, referenced client secrets, and exact browser origins.
+    - [x] Provide one transport-neutral lifecycle boundary that composes
+      per-request HTTP authorization with session establish, revalidation,
+      tool-scope enforcement, and authenticated deletion.
   - [x] Allow the shared MCP handler service to initialize canonical
     subject/client/workspace identity exclusively from verified remote claims.
   - [x] Bind remote sessions to issuer, resource, canonical identity,
