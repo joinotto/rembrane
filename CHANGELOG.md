@@ -42,6 +42,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Remote session bindings now reject issuer, resource, principal, client,
   workspace, or scope substitution on reauthentication and never extend the
   session beyond the shortest verified token expiry.
+- Bounded remote session registry with strict URL-safe identifiers,
+  duplicate/capacity protection, non-enumerating revalidation, and
+  authorization-checked session deletion.
 - Hardened Cloudflare Tunnel Compose overlay and operator guide for
   outbound-only self-hosted access without mounting the memory database or
   workspace encryption credentials into the tunnel container.

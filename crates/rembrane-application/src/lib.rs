@@ -15,6 +15,7 @@ mod projection_worker;
 mod propose_memory;
 mod remember_preference;
 mod remote_access;
+mod remote_session;
 mod resolve_context;
 mod revise_memory;
 mod semantic_context;
@@ -48,6 +49,7 @@ pub use remote_access::{
     RemoteAccessAuthenticator, RemoteHttpAuthorization, RemoteTokenVerificationError,
     RemoteTokenVerifier,
 };
+pub use remote_session::RemoteSessionRegistry;
 pub use resolve_context::{ResolveContextCommand, ResolveContextService};
 pub use revise_memory::{DeleteMemoryCommand, MemoryLifecycleService, ReviseMemoryCommand};
 pub use semantic_context::SemanticContextService;

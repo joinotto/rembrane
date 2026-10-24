@@ -97,6 +97,9 @@ This roadmap describes sequencing, not release dates.
     subject/client/workspace identity exclusively from verified remote claims.
   - [x] Bind remote sessions to issuer, resource, canonical identity,
     workspace, exact OAuth scope ceiling, and a non-extending expiry.
+  - [x] Add a bounded session registry with URL-safe identifiers,
+    duplicate/capacity controls, per-request revalidation, and authenticated
+    deletion.
   - [ ] Serve Streamable HTTP through the official Rust MCP SDK.
   - [ ] Add OAuth and cross-tenant transport integration tests.
     - [x] Prove verified remote identity is still constrained by canonical

@@ -150,6 +150,35 @@ pub struct RemoteSessionBinding {
     maximum_token_expiry_epoch_seconds: u64,
 }
 
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct RemoteSessionId(String);
+
+impl RemoteSessionId {
+    /// Creates an opaque MCP session identifier.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error unless the value is 16-128 URL-safe ASCII
+    /// characters. Session identifiers are routing capabilities, not
+    /// authentication credentials.
+    pub fn new(value: impl Into<String>) -> Result<Self, RemoteAccessError> {
+        let value = value.into();
+        if !(16..=128).contains(&value.len())
+            || !value
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+        {
+            return Err(RemoteAccessError::SessionIdentifier);
+        }
+        Ok(Self(value))
+    }
+
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
 impl RemoteTokenClaims {
     /// Validates a remote MCP protocol connection after cryptographic token
     /// verification or authenticated introspection.
@@ -337,6 +366,7 @@ pub enum RemoteAccessError {
     Identity,
     Scope,
     SessionBinding,
+    SessionIdentifier,
 }
 
 impl Display for RemoteAccessError {
@@ -349,6 +379,7 @@ impl Display for RemoteAccessError {
             Self::Identity => "token identity binding is incomplete",
             Self::Scope => "token does not grant the required scope",
             Self::SessionBinding => "token does not match the remote MCP session",
+            Self::SessionIdentifier => "remote MCP session identifier is invalid",
         })
     }
 }
@@ -359,7 +390,7 @@ impl Error for RemoteAccessError {}
 mod tests {
     use super::{
         ClientId, PrincipalId, RemoteAccessError, RemoteAccessScope, RemoteMcpOperation,
-        RemoteTokenClaims, WorkspaceId,
+        RemoteSessionId, RemoteTokenClaims, WorkspaceId,
     };
 
     fn claims(scopes: &[RemoteAccessScope]) -> RemoteTokenClaims {
@@ -543,6 +574,32 @@ mod tests {
                 .revalidate(&reduced_scope, 1_100)
                 .expect_err("scope substitution must fail"),
             RemoteAccessError::SessionBinding
+        );
+    }
+
+    #[test]
+    fn session_identifier_accepts_only_bounded_url_safe_values() {
+        assert!(
+            RemoteSessionId::new("session_0123456789abcdef")
+                .expect("valid opaque id should parse")
+                .as_str()
+                .starts_with("session_")
+        );
+        for invalid in [
+            "",
+            "short",
+            "session with spaces",
+            "session/with/path",
+            "session?query=value",
+        ] {
+            assert_eq!(
+                RemoteSessionId::new(invalid).expect_err("invalid id must fail"),
+                RemoteAccessError::SessionIdentifier
+            );
+        }
+        assert_eq!(
+            RemoteSessionId::new("x".repeat(129)).expect_err("oversized id must fail"),
+            RemoteAccessError::SessionIdentifier
         );
     }
 
