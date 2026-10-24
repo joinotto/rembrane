@@ -68,6 +68,24 @@ impl AuthorizedRemoteMcpRequest {
     pub fn body(&self) -> &[u8] {
         self.body.as_slice()
     }
+
+    /// Consumes the authorization proof and transfers its coupled identity,
+    /// classified invocation, and exact zeroizing body to the transport
+    /// dispatcher.
+    ///
+    /// Consuming the object prevents an adapter from retaining an
+    /// authorization decision while independently replacing its request
+    /// buffer before official SDK dispatch.
+    #[must_use]
+    pub fn into_dispatch_parts(
+        self,
+    ) -> (
+        VerifiedRemoteAccess,
+        RemoteMcpInvocation,
+        Zeroizing<Vec<u8>>,
+    ) {
+        (self.access, self.invocation, self.body)
+    }
 }
 
 #[derive(Deserialize)]
@@ -1012,6 +1030,11 @@ mod tests {
             Some("rembrane_resolve_context")
         );
         assert_eq!(authorized.body(), body);
+        let (access, invocation, dispatched_body) = authorized.into_dispatch_parts();
+        assert_eq!(access.workspace_id().as_str(), "workspace_01");
+        assert_eq!(invocation.method(), "tools/call");
+        assert_eq!(invocation.tool_name(), Some("rembrane_resolve_context"));
+        assert_eq!(dispatched_body.as_slice(), body);
 
         headers.insert(
             MCP_SESSION_HEADER_NAME,
