@@ -52,6 +52,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   corresponding provider projection jobs to share one transaction boundary.
 - In-memory atomic graph mutation implementation with projection identity,
   state, version, and idempotency preflight checks before canonical writes.
+- SQLite atomic graph mutation implementation that seals canonical aggregates,
+  validates exact projection batches, and commits graph records plus outbox
+  work in one transaction.
 - Authenticated key-provider HTTP adapter using Rustls, bounded response reads,
   disabled redirects and environment proxies, zeroized bearer credentials,
   strict JSON/base64 decoding, and HTTPS except for exact loopback origins.

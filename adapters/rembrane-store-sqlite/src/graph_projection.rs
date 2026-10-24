@@ -3,7 +3,7 @@ use rembrane_domain::{
     GraphProjectionJob, GraphProjectionResource, KnowledgeEdgeId, KnowledgeNodeId, ProjectionJobId,
     ProjectionOperation, ProjectionStatus, ProviderId, WorkspaceId,
 };
-use rusqlite::{OptionalExtension, params};
+use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::{SqliteStore, map_write_error};
 
@@ -12,28 +12,7 @@ impl<C> GraphProjectionOutboxRepository for SqliteStore<C> {
         &mut self,
         job: GraphProjectionJob,
     ) -> Result<(), ApplicationError> {
-        let (resource_type, node_id, edge_id) = encode_resource(job.resource());
-        self.connection
-            .execute(
-                "INSERT INTO graph_projection_outbox (
-                    id, workspace_id, resource_type, node_id, edge_id,
-                    resource_version, provider_id, operation, status, attempts
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
-                params![
-                    job.id().as_str(),
-                    job.workspace_id().as_str(),
-                    resource_type,
-                    node_id,
-                    edge_id,
-                    to_i64(job.resource_version())?,
-                    job.provider_id().as_str(),
-                    encode_operation(job.operation()),
-                    encode_status(job.status()),
-                    i64::from(job.attempts())
-                ],
-            )
-            .map(|_| ())
-            .map_err(map_write_error)
+        insert_graph_projection(&self.connection, &job)
     }
 
     fn pending_graph_projections(
@@ -142,6 +121,34 @@ impl<C> GraphProjectionOutboxRepository for SqliteStore<C> {
             .map(GraphProjectionJob::try_from)
             .transpose()
     }
+}
+
+pub(super) fn insert_graph_projection(
+    connection: &Connection,
+    job: &GraphProjectionJob,
+) -> Result<(), ApplicationError> {
+    let (resource_type, node_id, edge_id) = encode_resource(job.resource());
+    connection
+        .execute(
+            "INSERT INTO graph_projection_outbox (
+                id, workspace_id, resource_type, node_id, edge_id,
+                resource_version, provider_id, operation, status, attempts
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            params![
+                job.id().as_str(),
+                job.workspace_id().as_str(),
+                resource_type,
+                node_id,
+                edge_id,
+                to_i64(job.resource_version())?,
+                job.provider_id().as_str(),
+                encode_operation(job.operation()),
+                encode_status(job.status()),
+                i64::from(job.attempts())
+            ],
+        )
+        .map(|_| ())
+        .map_err(map_write_error)
 }
 
 struct GraphProjectionRow {

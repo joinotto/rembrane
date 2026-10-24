@@ -1,16 +1,18 @@
 use rembrane_application::{
-    ApplicationError, KnowledgeDirection, KnowledgeGraphMutationRepository,
-    KnowledgeGraphRepository, MAX_KNOWLEDGE_NEIGHBOURS,
+    ApplicationError, CanonicalGraphMutationRepository, KnowledgeDirection,
+    KnowledgeGraphMutationRepository, KnowledgeGraphRepository, MAX_KNOWLEDGE_NEIGHBOURS,
 };
 use rembrane_codec::{
     decode_knowledge_edge, decode_knowledge_node, encode_knowledge_edge, encode_knowledge_node,
 };
 use rembrane_crypto::{EncryptedPayload, EncryptionContext, PayloadPurpose, RecordCipher};
 use rembrane_domain::{
-    KnowledgeEdge, KnowledgeEdgeId, KnowledgeNode, KnowledgeNodeId, WorkspaceId,
+    GraphProjectionJob, GraphProjectionResource, KnowledgeEdge, KnowledgeEdgeId, KnowledgeNode,
+    KnowledgeNodeId, ProjectionOperation, ProjectionStatus, WorkspaceId,
 };
-use rusqlite::{OptionalExtension, params};
+use rusqlite::{Connection, OptionalExtension, params};
 
+use crate::graph_projection::insert_graph_projection;
 use crate::{SqliteStore, map_write_error};
 
 type EncryptedNodeRow = (String, i64, Vec<u8>, String, String, Vec<u8>);
@@ -277,6 +279,102 @@ impl<C: RecordCipher> KnowledgeGraphMutationRepository for SqliteStore<C> {
     }
 }
 
+impl<C: RecordCipher> CanonicalGraphMutationRepository for SqliteStore<C> {
+    fn insert_knowledge_node_with_projections(
+        &mut self,
+        node: KnowledgeNode,
+        projections: Vec<GraphProjectionJob>,
+    ) -> Result<(), ApplicationError> {
+        validate_projection_batch(
+            node.workspace_id(),
+            &GraphProjectionResource::Node(node.id().clone()),
+            node.version(),
+            &projections,
+        )?;
+        let encrypted = seal_node(&self.cipher, &node)?;
+        let transaction = self
+            .connection
+            .transaction()
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        insert_node(&transaction, &node, &encrypted)?;
+        insert_projection_batch(&transaction, &projections)?;
+        transaction.commit().map_err(map_write_error)
+    }
+
+    fn replace_knowledge_node_with_projections(
+        &mut self,
+        node: KnowledgeNode,
+        expected_version: u64,
+        projections: Vec<GraphProjectionJob>,
+    ) -> Result<(), ApplicationError> {
+        if node.version() != expected_version.saturating_add(1) {
+            return Err(ApplicationError::VersionConflict);
+        }
+        validate_projection_batch(
+            node.workspace_id(),
+            &GraphProjectionResource::Node(node.id().clone()),
+            node.version(),
+            &projections,
+        )?;
+        let encrypted = seal_node(&self.cipher, &node)?;
+        let transaction = self
+            .connection
+            .transaction()
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        replace_node(&transaction, &node, expected_version, &encrypted)?;
+        insert_projection_batch(&transaction, &projections)?;
+        transaction.commit().map_err(map_write_error)
+    }
+
+    fn insert_knowledge_edge_with_projections(
+        &mut self,
+        edge: KnowledgeEdge,
+        projections: Vec<GraphProjectionJob>,
+    ) -> Result<(), ApplicationError> {
+        self.validate_edge_lineage(&edge, None)?;
+        validate_projection_batch(
+            edge.workspace_id(),
+            &GraphProjectionResource::Edge(edge.id().clone()),
+            edge.version(),
+            &projections,
+        )?;
+        let encrypted = seal_edge(&self.cipher, &edge)?;
+        let transaction = self
+            .connection
+            .transaction()
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        insert_edge(&transaction, &edge, &encrypted)?;
+        insert_projection_batch(&transaction, &projections)?;
+        transaction.commit().map_err(map_write_error)
+    }
+
+    fn replace_knowledge_edge_with_projections(
+        &mut self,
+        edge: KnowledgeEdge,
+        expected_version: u64,
+        projections: Vec<GraphProjectionJob>,
+    ) -> Result<(), ApplicationError> {
+        if edge.version() != expected_version.saturating_add(1) {
+            return Err(ApplicationError::VersionConflict);
+        }
+        self.validate_edge_lineage(&edge, Some(expected_version))?;
+        validate_projection_batch(
+            edge.workspace_id(),
+            &GraphProjectionResource::Edge(edge.id().clone()),
+            edge.version(),
+            &projections,
+        )?;
+        let encrypted = seal_edge(&self.cipher, &edge)?;
+        let transaction = self
+            .connection
+            .transaction()
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        replace_edge(&transaction, &edge, expected_version, &encrypted)?;
+        insert_projection_batch(&transaction, &projections)?;
+        transaction.commit().map_err(map_write_error)
+    }
+}
+
 impl<C: RecordCipher> SqliteStore<C> {
     fn decrypt_node(
         &self,
@@ -440,6 +538,178 @@ fn seal(
     cipher
         .seal(&context, plaintext)
         .map_err(|_| ApplicationError::StorageUnavailable)
+}
+
+fn validate_projection_batch(
+    workspace_id: &WorkspaceId,
+    resource: &GraphProjectionResource,
+    resource_version: u64,
+    projections: &[GraphProjectionJob],
+) -> Result<(), ApplicationError> {
+    if projections.iter().any(|job| {
+        job.workspace_id() != workspace_id
+            || job.resource() != resource
+            || job.resource_version() != resource_version
+            || job.operation() != ProjectionOperation::Upsert
+            || job.status() != ProjectionStatus::Pending
+            || job.attempts() != 0
+    }) {
+        return Err(ApplicationError::Validation(
+            "graph projection does not describe the canonical mutation".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+fn insert_projection_batch(
+    connection: &Connection,
+    projections: &[GraphProjectionJob],
+) -> Result<(), ApplicationError> {
+    for projection in projections {
+        insert_graph_projection(connection, projection)?;
+    }
+    Ok(())
+}
+
+fn insert_node(
+    connection: &Connection,
+    node: &KnowledgeNode,
+    encrypted: &EncryptedPayload,
+) -> Result<(), ApplicationError> {
+    connection
+        .execute(
+            "INSERT INTO knowledge_nodes (
+                workspace_id, id, node_ciphertext, encryption_key_id,
+                encryption_algorithm, encryption_nonce, version,
+                valid_from, valid_until, recorded_at
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            params![
+                node.workspace_id().as_str(),
+                node.id().as_str(),
+                encrypted.ciphertext(),
+                encrypted.key_id(),
+                encrypted.algorithm(),
+                encrypted.nonce(),
+                to_i64(node.version())?,
+                to_i64(node.validity().valid_from_epoch_seconds())?,
+                optional_i64(node.validity().valid_until_epoch_seconds())?,
+                to_i64(node.validity().recorded_at_epoch_seconds())?
+            ],
+        )
+        .map(|_| ())
+        .map_err(map_write_error)
+}
+
+fn replace_node(
+    connection: &Connection,
+    node: &KnowledgeNode,
+    expected_version: u64,
+    encrypted: &EncryptedPayload,
+) -> Result<(), ApplicationError> {
+    let changed = connection
+        .execute(
+            "UPDATE knowledge_nodes
+             SET node_ciphertext = ?3,
+                 encryption_key_id = ?4,
+                 encryption_algorithm = ?5,
+                 encryption_nonce = ?6,
+                 version = ?7,
+                 valid_from = ?8,
+                 valid_until = ?9,
+                 recorded_at = ?10,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE workspace_id = ?1 AND id = ?2 AND version = ?11",
+            params![
+                node.workspace_id().as_str(),
+                node.id().as_str(),
+                encrypted.ciphertext(),
+                encrypted.key_id(),
+                encrypted.algorithm(),
+                encrypted.nonce(),
+                to_i64(node.version())?,
+                to_i64(node.validity().valid_from_epoch_seconds())?,
+                optional_i64(node.validity().valid_until_epoch_seconds())?,
+                to_i64(node.validity().recorded_at_epoch_seconds())?,
+                to_i64(expected_version)?
+            ],
+        )
+        .map_err(map_write_error)?;
+    changed_or_conflict(changed)
+}
+
+fn insert_edge(
+    connection: &Connection,
+    edge: &KnowledgeEdge,
+    encrypted: &EncryptedPayload,
+) -> Result<(), ApplicationError> {
+    connection
+        .execute(
+            "INSERT INTO knowledge_edges (
+                workspace_id, id, source_id, target_id, supersedes_id,
+                edge_ciphertext, encryption_key_id, encryption_algorithm,
+                encryption_nonce, version, valid_from, valid_until, recorded_at
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+            params![
+                edge.workspace_id().as_str(),
+                edge.id().as_str(),
+                edge.source_id().as_str(),
+                edge.target_id().as_str(),
+                edge.supersedes().map(KnowledgeEdgeId::as_str),
+                encrypted.ciphertext(),
+                encrypted.key_id(),
+                encrypted.algorithm(),
+                encrypted.nonce(),
+                to_i64(edge.version())?,
+                to_i64(edge.validity().valid_from_epoch_seconds())?,
+                optional_i64(edge.validity().valid_until_epoch_seconds())?,
+                to_i64(edge.validity().recorded_at_epoch_seconds())?
+            ],
+        )
+        .map(|_| ())
+        .map_err(map_write_error)
+}
+
+fn replace_edge(
+    connection: &Connection,
+    edge: &KnowledgeEdge,
+    expected_version: u64,
+    encrypted: &EncryptedPayload,
+) -> Result<(), ApplicationError> {
+    let changed = connection
+        .execute(
+            "UPDATE knowledge_edges
+             SET source_id = ?3,
+                 target_id = ?4,
+                 supersedes_id = ?5,
+                 edge_ciphertext = ?6,
+                 encryption_key_id = ?7,
+                 encryption_algorithm = ?8,
+                 encryption_nonce = ?9,
+                 version = ?10,
+                 valid_from = ?11,
+                 valid_until = ?12,
+                 recorded_at = ?13,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE workspace_id = ?1 AND id = ?2 AND version = ?14",
+            params![
+                edge.workspace_id().as_str(),
+                edge.id().as_str(),
+                edge.source_id().as_str(),
+                edge.target_id().as_str(),
+                edge.supersedes().map(KnowledgeEdgeId::as_str),
+                encrypted.ciphertext(),
+                encrypted.key_id(),
+                encrypted.algorithm(),
+                encrypted.nonce(),
+                to_i64(edge.version())?,
+                to_i64(edge.validity().valid_from_epoch_seconds())?,
+                optional_i64(edge.validity().valid_until_epoch_seconds())?,
+                to_i64(edge.validity().recorded_at_epoch_seconds())?,
+                to_i64(expected_version)?
+            ],
+        )
+        .map_err(map_write_error)?;
+    changed_or_conflict(changed)
 }
 
 fn encrypted_node_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<EncryptedNodeRow> {
