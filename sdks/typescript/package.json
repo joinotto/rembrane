@@ -1,0 +1,16 @@
+{
+  "name": "@rembrane/sdk",
+  "version": "0.1.0-alpha.1",
+  "description": "Zero-dependency TypeScript client for the Rembrane API",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./index.js"
+    }
+  },
+  "scripts": {
+    "test": "node test.mjs"
+  },
+  "license": "Apache-2.0"
+}

@@ -20,6 +20,8 @@ done
 ./scripts/check-protocols.sh
 ./scripts/test-sqlite-schema.sh
 ./scripts/test-sqlite-atomicity.sh
+node sdks/typescript/test.mjs
+node --check sdks/typescript/index.js
 
 for deployment_file in \
     Dockerfile \
