@@ -46,8 +46,8 @@ pub use projection_worker::{ProjectionOutcome, ProjectionWorker};
 pub use propose_memory::{ConfirmMemoryCommand, MemoryProposalService, ProposeMemoryCommand};
 pub use remember_preference::{RememberPreferenceCommand, RememberPreferenceService};
 pub use remote_access::{
-    RemoteAccessAuthenticator, RemoteHttpAuthorization, RemoteTokenVerificationError,
-    RemoteTokenVerifier,
+    RemoteAccessAuthenticator, RemoteHttpAuthorization, RemoteHttpAuthorizationError,
+    RemoteTokenVerificationError, RemoteTokenVerifier,
 };
 pub use remote_session::RemoteSessionRegistry;
 pub use resolve_context::{ResolveContextCommand, ResolveContextService};

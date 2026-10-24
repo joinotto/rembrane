@@ -114,6 +114,12 @@ pub struct RemoteHttpAuthorization<'authenticator, 'verifier, Verifier> {
     trusted_origins: &'authenticator [&'authenticator str],
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RemoteHttpAuthorizationError {
+    Unauthorized,
+    Forbidden,
+}
+
 impl<'authenticator, 'verifier, Verifier>
     RemoteHttpAuthorization<'authenticator, 'verifier, Verifier>
 where
@@ -147,14 +153,44 @@ where
         tool_name: &str,
         now_epoch_seconds: u64,
     ) -> Result<VerifiedRemoteAccess, ApplicationError> {
-        self.require_trusted_origin(origin_header)?;
-        let operation =
-            RemoteMcpOperation::from_tool_name(tool_name).ok_or(ApplicationError::AccessDenied)?;
+        self.authorize_tool_for_http(
+            authorization_header,
+            origin_header,
+            tool_name,
+            now_epoch_seconds,
+        )
+        .map_err(|_| ApplicationError::AccessDenied)
+    }
+
+    /// Authorizes a tool request while preserving the HTTP authentication
+    /// outcome required to produce a correct bearer response.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Unauthorized` for missing, malformed, unverifiable, or invalid
+    /// bearer credentials. Returns `Forbidden` only after credentials validate
+    /// but the browser origin, tool, or required scope is not authorized.
+    pub fn authorize_tool_for_http(
+        &self,
+        authorization_header: Option<&str>,
+        origin_header: Option<&str>,
+        tool_name: &str,
+        now_epoch_seconds: u64,
+    ) -> Result<VerifiedRemoteAccess, RemoteHttpAuthorizationError> {
         let bearer_token = authorization_header
             .and_then(parse_bearer_token)
-            .ok_or(ApplicationError::AccessDenied)?;
-        self.authenticator
-            .authenticate(bearer_token, now_epoch_seconds, operation.required_scope())
+            .ok_or(RemoteHttpAuthorizationError::Unauthorized)?;
+        let access = self
+            .authenticator
+            .authenticate_connection(bearer_token, now_epoch_seconds)
+            .map_err(|_| RemoteHttpAuthorizationError::Unauthorized)?;
+        self.require_trusted_origin_for_http(origin_header)?;
+        let operation = RemoteMcpOperation::from_tool_name(tool_name)
+            .ok_or(RemoteHttpAuthorizationError::Forbidden)?;
+        if !access.allows(operation.required_scope()) {
+            return Err(RemoteHttpAuthorizationError::Forbidden);
+        }
+        Ok(access)
     }
 
     /// Authorizes a non-tool MCP protocol request with the same bearer and
@@ -169,19 +205,41 @@ where
         origin_header: Option<&str>,
         now_epoch_seconds: u64,
     ) -> Result<VerifiedRemoteAccess, ApplicationError> {
-        self.require_trusted_origin(origin_header)?;
-        let bearer_token = authorization_header
-            .and_then(parse_bearer_token)
-            .ok_or(ApplicationError::AccessDenied)?;
-        self.authenticator
-            .authenticate_connection(bearer_token, now_epoch_seconds)
+        self.authorize_connection_for_http(authorization_header, origin_header, now_epoch_seconds)
+            .map_err(|_| ApplicationError::AccessDenied)
     }
 
-    fn require_trusted_origin(&self, origin_header: Option<&str>) -> Result<(), ApplicationError> {
+    /// Authorizes protocol traffic while preserving HTTP 401/403 semantics.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Unauthorized` for invalid credentials and `Forbidden` for an
+    /// authenticated request from an untrusted browser origin.
+    pub fn authorize_connection_for_http(
+        &self,
+        authorization_header: Option<&str>,
+        origin_header: Option<&str>,
+        now_epoch_seconds: u64,
+    ) -> Result<VerifiedRemoteAccess, RemoteHttpAuthorizationError> {
+        let bearer_token = authorization_header
+            .and_then(parse_bearer_token)
+            .ok_or(RemoteHttpAuthorizationError::Unauthorized)?;
+        let access = self
+            .authenticator
+            .authenticate_connection(bearer_token, now_epoch_seconds)
+            .map_err(|_| RemoteHttpAuthorizationError::Unauthorized)?;
+        self.require_trusted_origin_for_http(origin_header)?;
+        Ok(access)
+    }
+
+    fn require_trusted_origin_for_http(
+        &self,
+        origin_header: Option<&str>,
+    ) -> Result<(), RemoteHttpAuthorizationError> {
         if origin_header
             .is_some_and(|origin| origin.is_empty() || !self.trusted_origins.contains(&origin))
         {
-            Err(ApplicationError::AccessDenied)
+            Err(RemoteHttpAuthorizationError::Forbidden)
         } else {
             Ok(())
         }
@@ -209,8 +267,8 @@ mod tests {
     use rembrane_domain::{ClientId, PrincipalId, WorkspaceId};
 
     use super::{
-        RemoteAccessAuthenticator, RemoteHttpAuthorization, RemoteTokenVerificationError,
-        RemoteTokenVerifier, parse_bearer_token,
+        RemoteAccessAuthenticator, RemoteHttpAuthorization, RemoteHttpAuthorizationError,
+        RemoteTokenVerificationError, RemoteTokenVerifier, parse_bearer_token,
     };
     use crate::ApplicationError;
 
@@ -350,5 +408,40 @@ mod tests {
             .authorize_connection(Some("Bearer signed-token"), None, 1_000)
             .expect("protocol requests should require a valid scoped token");
         assert_eq!(protocol_access.client_id().as_str(), "client_01");
+    }
+
+    #[test]
+    fn http_boundary_preserves_bearer_unauthorized_and_forbidden_outcomes() {
+        let authenticator = authenticator();
+        let trusted_origins = ["https://app.example.test"];
+        let http = RemoteHttpAuthorization::new(&authenticator, &trusted_origins);
+
+        for authorization_header in [None, Some("Basic signed-token"), Some("Bearer invalid")] {
+            assert_eq!(
+                http.authorize_connection_for_http(authorization_header, None, 1_000)
+                    .expect_err("invalid credentials must be unauthorized"),
+                RemoteHttpAuthorizationError::Unauthorized
+            );
+        }
+        assert_eq!(
+            http.authorize_tool_for_http(
+                Some("Bearer signed-token"),
+                None,
+                "rembrane_remember_preference",
+                1_000,
+            )
+            .expect_err("valid token without required scope must be forbidden"),
+            RemoteHttpAuthorizationError::Forbidden
+        );
+        assert_eq!(
+            http.authorize_tool_for_http(
+                Some("Bearer signed-token"),
+                Some("https://evil.example.test"),
+                "rembrane_resolve_context",
+                1_000,
+            )
+            .expect_err("authenticated untrusted origin must be forbidden"),
+            RemoteHttpAuthorizationError::Forbidden
+        );
     }
 }

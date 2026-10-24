@@ -99,6 +99,9 @@ This roadmap describes sequencing, not release dates.
     - [x] Classify the exact supported MCP JSON-RPC method surface and reject
       unknown methods, missing tool names, and method/tool mismatches before
       dispatch.
+    - [x] Preserve transport-facing bearer outcomes so adapters return 401 for
+      invalid credentials and 403 only for authenticated but forbidden
+      origins, tools, or scopes.
   - [x] Allow the shared MCP handler service to initialize canonical
     subject/client/workspace identity exclusively from verified remote claims.
   - [x] Bind remote sessions to issuer, resource, canonical identity,
