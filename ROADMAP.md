@@ -160,6 +160,8 @@ This roadmap describes sequencing, not release dates.
       boundary, rejecting duplicate security headers before SDK dispatch.
       - [x] Reject ambiguous duplicate content negotiation and MCP protocol
         version headers before authorizing the request body.
+      - [x] Require JSON request content and explicit JSON plus event-stream
+        response negotiation before OAuth evaluation.
     - [x] Provide an owned Axum authorization service that reconstructs
       borrowing authenticators per request and preserves verified tenant
       identity through an in-memory HTTP router.

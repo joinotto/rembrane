@@ -244,15 +244,67 @@ impl IntoResponse for RemoteMcpHttpRejection {
 pub fn request_from_axum_headers(
     headers: &HeaderMap,
 ) -> Result<RemoteMcpHttpRequest<'_>, RemoteMcpHttpRejection> {
-    unique_header(headers, &CONTENT_TYPE)?;
-    unique_header(headers, &ACCEPT)?;
+    let authorization = unique_header(headers, &AUTHORIZATION)?;
+    let host = unique_header(headers, &HOST)?;
+    let origin = unique_header(headers, &ORIGIN)?;
+    let session_id = unique_header(headers, &MCP_SESSION_HEADER_NAME)?;
     unique_header(headers, &MCP_PROTOCOL_VERSION_HEADER_NAME)?;
+    let content_type = unique_header(headers, &CONTENT_TYPE)?;
+    let accept = unique_header(headers, &ACCEPT)?;
+    require_json_content_type(content_type)?;
+    require_mcp_accept(accept)?;
     Ok(RemoteMcpHttpRequest {
-        authorization: unique_header(headers, &AUTHORIZATION)?,
-        host: unique_header(headers, &HOST)?,
-        origin: unique_header(headers, &ORIGIN)?,
-        session_id: unique_header(headers, &MCP_SESSION_HEADER_NAME)?,
+        authorization,
+        host,
+        origin,
+        session_id,
     })
+}
+
+fn require_json_content_type(value: Option<&str>) -> Result<(), RemoteMcpHttpRejection> {
+    let Some(value) = value else {
+        return Err(RemoteMcpHttpRejection {
+            status: 415,
+            www_authenticate: None,
+            retry_after_seconds: None,
+        });
+    };
+    let media_type = value.split(';').next().unwrap_or_default().trim();
+    if media_type.eq_ignore_ascii_case("application/json") {
+        Ok(())
+    } else {
+        Err(RemoteMcpHttpRejection {
+            status: 415,
+            www_authenticate: None,
+            retry_after_seconds: None,
+        })
+    }
+}
+
+fn require_mcp_accept(value: Option<&str>) -> Result<(), RemoteMcpHttpRejection> {
+    let Some(value) = value else {
+        return Err(RemoteMcpHttpRejection {
+            status: 406,
+            www_authenticate: None,
+            retry_after_seconds: None,
+        });
+    };
+    let mut accepts_json = false;
+    let mut accepts_events = false;
+    for media_range in value.split(',') {
+        let media_type = media_range.split(';').next().unwrap_or_default().trim();
+        accepts_json |= media_type.eq_ignore_ascii_case("application/json");
+        accepts_events |= media_type.eq_ignore_ascii_case("text/event-stream");
+    }
+    if accepts_json && accepts_events {
+        Ok(())
+    } else {
+        Err(RemoteMcpHttpRejection {
+            status: 406,
+            www_authenticate: None,
+            retry_after_seconds: None,
+        })
+    }
 }
 
 fn unique_header<'headers>(
@@ -1118,6 +1170,27 @@ mod tests {
             );
             headers.clear();
         }
+
+        headers.insert(CONTENT_TYPE, HeaderValue::from_static("text/plain"));
+        headers.insert(
+            ACCEPT,
+            HeaderValue::from_static("application/json, text/event-stream"),
+        );
+        assert_eq!(
+            request_from_axum_headers(&headers)
+                .expect_err("non-JSON requests must fail")
+                .status,
+            415
+        );
+
+        headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+        headers.insert(ACCEPT, HeaderValue::from_static("application/json"));
+        assert_eq!(
+            request_from_axum_headers(&headers)
+                .expect_err("MCP clients must accept event streams")
+                .status,
+            406
+        );
     }
 
     #[test]
@@ -1138,6 +1211,11 @@ mod tests {
         .expect("gate should be valid");
         let mut headers = HeaderMap::new();
         headers.insert(HOST, HeaderValue::from_static("memory.example.test"));
+        headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+        headers.insert(
+            ACCEPT,
+            HeaderValue::from_static("application/json, text/event-stream"),
+        );
         headers.insert(
             AUTHORIZATION,
             HeaderValue::from_static("Bearer workspace-one"),
@@ -1224,6 +1302,8 @@ mod tests {
                 .oneshot(
                     Request::post("/mcp")
                         .header(HOST, "memory.example.test")
+                        .header(CONTENT_TYPE, "application/json")
+                        .header(ACCEPT, "application/json, text/event-stream")
                         .header(AUTHORIZATION, format!("Bearer {token}"))
                         .header(ORIGIN, "https://agent.example.test")
                         .body(Body::from(body))
@@ -1242,6 +1322,8 @@ mod tests {
             .oneshot(
                 Request::post("/mcp")
                     .header(HOST, "memory.example.test")
+                    .header(CONTENT_TYPE, "application/json")
+                    .header(ACCEPT, "application/json, text/event-stream")
                     .header(AUTHORIZATION, "Bearer workspace-one")
                     .header(ORIGIN, "https://attacker.example.test")
                     .body(Body::from(body))
@@ -1267,6 +1349,11 @@ mod tests {
             .expect("owned authorization service should initialize");
         let mut headers = HeaderMap::new();
         headers.insert(HOST, HeaderValue::from_static("memory.example.test"));
+        headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+        headers.insert(
+            ACCEPT,
+            HeaderValue::from_static("application/json, text/event-stream"),
+        );
         headers.insert(
             AUTHORIZATION,
             HeaderValue::from_static("Bearer workspace-two"),
