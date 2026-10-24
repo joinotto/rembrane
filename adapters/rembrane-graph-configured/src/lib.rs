@@ -2,6 +2,7 @@
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use rembrane_config::{ProviderConnection, ProviderKind};
 use rembrane_domain::{
     KnowledgeEdge, KnowledgeEdgeId, KnowledgeNode, KnowledgeNodeId, WorkspaceId,
 };
@@ -12,6 +13,7 @@ use rembrane_provider_sdk::{
     CandidateKnowledgeEdge, GraphNeighbourQuery, KnowledgeGraphProvider, ProviderError,
     ProviderManifest,
 };
+use rembrane_secret_local::{SecretResolver, resolve_provider_credentials};
 
 pub enum ConfiguredGraphProvider {
     Native(NativeGraphProvider),
@@ -45,6 +47,54 @@ impl ConfiguredGraphProvider {
                 "REMBRANE_GRAPH_PROVIDER must be native or graphiti".to_owned(),
             )),
         }
+    }
+
+    /// Connects Graphiti from a validated provider profile and a
+    /// deployment-selected secret resolver.
+    ///
+    /// # Errors
+    ///
+    /// Returns a provider error unless the profile selects Graphiti with one
+    /// credential reference and the operator explicitly permits provider
+    /// plaintext processing.
+    pub fn from_connection<Resolver>(
+        connection: &ProviderConnection,
+        resolver: &Resolver,
+        allow_provider_plaintext: bool,
+    ) -> Result<Self, ProviderError>
+    where
+        Resolver: SecretResolver + ?Sized,
+    {
+        if connection.kind() != ProviderKind::Graphiti
+            || connection.endpoint().is_none()
+            || connection.credentials().len() != 1
+        {
+            return Err(ProviderError::InvalidConfiguration(
+                "Graphiti requires one endpoint and one credential reference".to_owned(),
+            ));
+        }
+        if !allow_provider_plaintext {
+            return Err(ProviderError::InvalidConfiguration(
+                "Graphiti provider plaintext processing was not explicitly allowed".to_owned(),
+            ));
+        }
+        let mut credentials = resolve_provider_credentials(resolver, connection).map_err(|_| {
+            ProviderError::InvalidConfiguration("Graphiti credential unavailable".to_owned())
+        })?;
+        let bearer_token = credentials.pop().ok_or_else(|| {
+            ProviderError::InvalidConfiguration("Graphiti credential unavailable".to_owned())
+        })?;
+        let transport = HttpGraphitiTransport::new_with_secret(
+            connection.endpoint().ok_or_else(|| {
+                ProviderError::InvalidConfiguration("Graphiti endpoint unavailable".to_owned())
+            })?,
+            bearer_token,
+        )?;
+        Ok(Self::Graphiti(Box::new(GraphitiProvider::connect(
+            transport,
+            request_prefix()?,
+            true,
+        )?)))
     }
 }
 
@@ -128,9 +178,23 @@ fn request_prefix() -> Result<String, ProviderError> {
 
 #[cfg(test)]
 mod tests {
+    use rembrane_config::{ProviderConnection, ProviderKind, ProviderPlacement, SecretReference};
     use rembrane_provider_sdk::KnowledgeGraphProvider;
+    use rembrane_secret_local::{SecretResolutionError, SecretResolver};
+    use zeroize::Zeroizing;
 
     use super::{ConfiguredGraphProvider, request_prefix};
+
+    struct RejectingResolver;
+
+    impl SecretResolver for RejectingResolver {
+        fn resolve(
+            &self,
+            _reference: &SecretReference,
+        ) -> Result<Zeroizing<String>, SecretResolutionError> {
+            Err(SecretResolutionError::Unavailable)
+        }
+    }
 
     #[test]
     fn native_provider_is_a_complete_default_without_configuration() {
@@ -148,6 +212,38 @@ mod tests {
             prefix
                 .bytes()
                 .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+        );
+    }
+
+    #[test]
+    fn validates_profile_and_plaintext_policy_before_secret_resolution() {
+        let mem0 = ProviderConnection::remote(
+            ProviderKind::Mem0,
+            "https://memory.example.test",
+            vec![SecretReference::environment("MEMORY_TOKEN").expect("reference")],
+            ProviderPlacement::External,
+        )
+        .expect("profile");
+        assert!(ConfiguredGraphProvider::from_connection(&mem0, &RejectingResolver, true).is_err());
+
+        let graphiti = ProviderConnection::remote(
+            ProviderKind::Graphiti,
+            "https://graph.example.test",
+            vec![SecretReference::external("vault", "graph/token").expect("reference")],
+            ProviderPlacement::External,
+        )
+        .expect("profile");
+        assert!(
+            ConfiguredGraphProvider::from_connection(&graphiti, &RejectingResolver, false).is_err()
+        );
+        let error =
+            match ConfiguredGraphProvider::from_connection(&graphiti, &RejectingResolver, true) {
+                Ok(_) => panic!("resolver failure must remain opaque"),
+                Err(error) => error,
+            };
+        assert_eq!(
+            error.to_string(),
+            "invalid provider configuration: Graphiti credential unavailable"
         );
     }
 }

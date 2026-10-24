@@ -53,6 +53,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - OAuth introspection transport construction from validated remote MCP
   profiles through any deployment-selected secret resolver, retaining the
   resolved client secret in zeroizing storage across every failure path.
+- Graphiti composition from validated provider profiles through pluggable
+  secret resolvers, with provider-kind, credential-cardinality, and explicit
+  plaintext-policy checks before resolution.
 - Fail-closed OAuth introspection claim bounds covering audience cardinality,
   issuer and identity sizes, scope size, and control-character rejection
   before claims become canonical tenant identity.

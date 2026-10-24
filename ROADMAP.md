@@ -252,6 +252,8 @@ This roadmap describes sequencing, not release dates.
   - [x] Add tenant-isolated mutation and neighbourhood repository contracts
     with bounded temporal traversal and optimistic version checks.
   - [x] Add local SQLite graph persistence and Graphiti projection adapter.
+    - [x] Construct Graphiti from validated provider profiles through any
+      deployment-selected secret resolver without fixed credential names.
     - [x] Persist tenant-isolated temporal graph aggregates as authenticated
       ciphertext with bounded indexed neighbourhood traversal.
     - [x] Define an engine-neutral graph provider contract and conformance

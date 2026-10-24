@@ -41,3 +41,9 @@ their zeroization guards and no partial credential set is returned.
 reference from a validated remote MCP profile through the same boundary. The
 resolved value remains zeroizing through validation, HTTP-client construction,
 use, and teardown; resolver failures are mapped to an opaque transport error.
+
+`ConfiguredGraphProvider::from_connection` applies the same pattern to a
+validated Graphiti provider profile. It checks provider kind, credential
+cardinality, and the explicit plaintext-processing policy before resolving the
+bearer credential, then transfers the zeroizing value directly into the HTTP
+transport.

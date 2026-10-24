@@ -1206,11 +1206,14 @@ version = "0.1.0-alpha.1"
 name = "rembrane-graph-configured"
 version = "0.1.0-alpha.1"
 dependencies = [
+ "rembrane-config",
  "rembrane-domain",
  "rembrane-graph-graphiti",
  "rembrane-graph-graphiti-http",
  "rembrane-graph-native",
  "rembrane-provider-sdk",
+ "rembrane-secret-local",
+ "zeroize",
 ]
 
 [[package]]
