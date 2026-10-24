@@ -99,6 +99,8 @@ This roadmap describes sequencing, not release dates.
 - [ ] Private-to-shared memory proposals.
   - [x] Content-free, exact-source-version proposal aggregate with source-owner
     approval, rejection, and pre-approval revocation.
+  - [x] Tenant-scoped SQLite persistence with exact-source and workspace-kind
+    constraints.
   - [ ] Atomic persisted approval and target-workspace copy.
 - [x] Authorized member removal with atomic scope-grant cleanup.
 - [ ] Group key rotation after membership changes.

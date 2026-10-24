@@ -9,14 +9,15 @@ use std::path::Path;
 
 use rembrane_application::{
     ApplicationError, InvitationRepository, MemberLifecycleRepository, MemberScopeGrantRepository,
-    MembershipRepository, MemoryRepository, WorkspaceRepository,
+    MembershipRepository, MemoryRepository, ShareProposalRepository, WorkspaceRepository,
 };
 use rembrane_codec::decode_memory;
 use rembrane_crypto::{EncryptedPayload, EncryptionContext, PayloadPurpose, RecordCipher};
 use rembrane_domain::{
     ActivityId, EntityId, Invitation, InvitationId, InvitationStatus, MemberScopeGrant, Membership,
-    MembershipStatus, MemoryId, MemoryRecord, Principal, PrincipalId, ReadScope, Workspace,
-    WorkspaceId, WorkspaceKind, WorkspaceRole,
+    MembershipStatus, MemoryId, MemoryRecord, MemoryScope, MemoryShareProposal, Principal,
+    PrincipalId, ReadScope, ShareProposalId, ShareProposalStatus, Workspace, WorkspaceId,
+    WorkspaceKind, WorkspaceRole,
 };
 use rusqlite::{Connection, ErrorCode, OptionalExtension, params};
 
@@ -27,7 +28,9 @@ const WORKSPACE_INVITATION_MIGRATION: &str =
     include_str!("../../../migrations/sqlite/0003_workspace_invitations.sql");
 const MEMBER_SCOPE_GRANT_MIGRATION: &str =
     include_str!("../../../migrations/sqlite/0004_member_scope_grants.sql");
-const CURRENT_SCHEMA_VERSION: u32 = 4;
+const MEMORY_SHARE_PROPOSAL_MIGRATION: &str =
+    include_str!("../../../migrations/sqlite/0005_memory_share_proposals.sql");
+const CURRENT_SCHEMA_VERSION: u32 = 5;
 const CANONICAL_TABLES: [&str; 10] = [
     "activity_checkpoints",
     "disclosed_memories",
@@ -118,6 +121,12 @@ fn migrate(connection: &mut Connection) -> Result<(), ApplicationError> {
     if version == 3 {
         transaction
             .execute_batch(MEMBER_SCOPE_GRANT_MIGRATION)
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        version = 4;
+    }
+    if version == 4 {
+        transaction
+            .execute_batch(MEMORY_SHARE_PROPOSAL_MIGRATION)
             .map_err(|_| ApplicationError::StorageUnavailable)?;
     }
     transaction
@@ -341,6 +350,18 @@ mod migration_tests {
             )
             .expect("member scope migration should be inspectable");
         assert!(member_scope_grants_exist);
+        let share_proposals_exist: bool = connection
+            .query_row(
+                "SELECT EXISTS (
+                    SELECT 1 FROM sqlite_schema
+                    WHERE type = 'table'
+                      AND name = 'memory_share_proposals'
+                )",
+                [],
+                |row| row.get(0),
+            )
+            .expect("share proposal migration should be inspectable");
+        assert!(share_proposals_exist);
         drop(connection);
         fs::remove_file(database).expect("temporary database should be removed");
     }
@@ -804,6 +825,192 @@ impl<C> InvitationRepository for SqliteStore<C> {
     }
 }
 
+impl<C> ShareProposalRepository for SqliteStore<C> {
+    fn insert_share_proposal(
+        &mut self,
+        proposal: MemoryShareProposal,
+    ) -> Result<(), ApplicationError> {
+        let (scope_type, scope_value) = encode_memory_scope(proposal.target_scope());
+        self.connection
+            .execute(
+                "INSERT INTO memory_share_proposals (
+                    source_workspace_id, id, source_memory_id,
+                    source_memory_version, source_subject_id,
+                    target_workspace_id, target_scope_type, target_scope_value,
+                    proposed_by, status
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'pending')",
+                params![
+                    proposal.source_workspace_id().as_str(),
+                    proposal.id().as_str(),
+                    proposal.source_memory_id().as_str(),
+                    proposal.source_memory_version(),
+                    proposal.source_subject_id().as_str(),
+                    proposal.target_workspace_id().as_str(),
+                    scope_type,
+                    scope_value,
+                    proposal.proposed_by().as_str()
+                ],
+            )
+            .map(|_| ())
+            .map_err(map_write_error)
+    }
+
+    fn find_share_proposal(
+        &self,
+        source_workspace_id: &WorkspaceId,
+        proposal_id: &ShareProposalId,
+    ) -> Result<Option<MemoryShareProposal>, ApplicationError> {
+        self.connection
+            .query_row(
+                "SELECT source_memory_id, source_memory_version,
+                        source_subject_id, target_workspace_id,
+                        target_scope_type, target_scope_value,
+                        proposed_by, status
+                 FROM memory_share_proposals
+                 WHERE source_workspace_id = ?1 AND id = ?2",
+                params![source_workspace_id.as_str(), proposal_id.as_str()],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, u64>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, String>(3)?,
+                        row.get::<_, String>(4)?,
+                        row.get::<_, String>(5)?,
+                        row.get::<_, String>(6)?,
+                        row.get::<_, String>(7)?,
+                    ))
+                },
+            )
+            .optional()
+            .map_err(|_| ApplicationError::StorageUnavailable)?
+            .map(
+                |(
+                    memory_id,
+                    memory_version,
+                    subject_id,
+                    target_workspace,
+                    scope_type,
+                    scope_value,
+                    proposed_by,
+                    status,
+                )| {
+                    decode_share_proposal(
+                        proposal_id.clone(),
+                        source_workspace_id.clone(),
+                        MemoryId::new(memory_id),
+                        memory_version,
+                        PrincipalId::new(subject_id),
+                        WorkspaceId::new(target_workspace),
+                        &scope_type,
+                        &scope_value,
+                        PrincipalId::new(proposed_by),
+                        &status,
+                    )
+                },
+            )
+            .transpose()
+    }
+
+    fn list_share_proposals_for_source(
+        &self,
+        source_workspace_id: &WorkspaceId,
+        source_subject_id: &PrincipalId,
+    ) -> Result<Vec<MemoryShareProposal>, ApplicationError> {
+        let mut statement = self
+            .connection
+            .prepare(
+                "SELECT id, source_memory_id, source_memory_version,
+                        target_workspace_id, target_scope_type,
+                        target_scope_value, proposed_by, status
+                 FROM memory_share_proposals
+                 WHERE source_workspace_id = ?1 AND source_subject_id = ?2
+                 ORDER BY created_at, id",
+            )
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        let rows = statement
+            .query_map(
+                params![source_workspace_id.as_str(), source_subject_id.as_str()],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, u64>(2)?,
+                        row.get::<_, String>(3)?,
+                        row.get::<_, String>(4)?,
+                        row.get::<_, String>(5)?,
+                        row.get::<_, String>(6)?,
+                        row.get::<_, String>(7)?,
+                    ))
+                },
+            )
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        let mut proposals = Vec::new();
+        for row in rows {
+            let (
+                id,
+                memory_id,
+                memory_version,
+                target_workspace,
+                scope_type,
+                scope_value,
+                proposed_by,
+                status,
+            ) = row.map_err(|_| ApplicationError::StorageUnavailable)?;
+            proposals.push(decode_share_proposal(
+                ShareProposalId::new(id),
+                source_workspace_id.clone(),
+                MemoryId::new(memory_id),
+                memory_version,
+                source_subject_id.clone(),
+                WorkspaceId::new(target_workspace),
+                &scope_type,
+                &scope_value,
+                PrincipalId::new(proposed_by),
+                &status,
+            )?);
+        }
+        Ok(proposals)
+    }
+
+    fn replace_share_proposal(
+        &mut self,
+        proposal: MemoryShareProposal,
+        expected_status: ShareProposalStatus,
+    ) -> Result<(), ApplicationError> {
+        let (scope_type, scope_value) = encode_memory_scope(proposal.target_scope());
+        let changed = self
+            .connection
+            .execute(
+                "UPDATE memory_share_proposals
+                 SET status = ?10, updated_at = CURRENT_TIMESTAMP
+                 WHERE source_workspace_id = ?1 AND id = ?2
+                   AND source_memory_id = ?3 AND source_memory_version = ?4
+                   AND source_subject_id = ?5 AND target_workspace_id = ?6
+                   AND target_scope_type = ?7 AND target_scope_value = ?8
+                   AND proposed_by = ?9 AND status = ?11",
+                params![
+                    proposal.source_workspace_id().as_str(),
+                    proposal.id().as_str(),
+                    proposal.source_memory_id().as_str(),
+                    proposal.source_memory_version(),
+                    proposal.source_subject_id().as_str(),
+                    proposal.target_workspace_id().as_str(),
+                    scope_type,
+                    scope_value,
+                    proposal.proposed_by().as_str(),
+                    encode_share_proposal_status(proposal.status()),
+                    encode_share_proposal_status(expected_status)
+                ],
+            )
+            .map_err(map_write_error)?;
+        if changed != 1 {
+            return Err(ApplicationError::VersionConflict);
+        }
+        Ok(())
+    }
+}
+
 impl<C> MemberScopeGrantRepository for SqliteStore<C> {
     fn insert_member_scope_grant(
         &mut self,
@@ -1039,6 +1246,67 @@ fn encode_read_scope(scope: &ReadScope) -> (&'static str, &str) {
     }
 }
 
+fn encode_memory_scope(scope: &MemoryScope) -> (&'static str, &str) {
+    match scope {
+        MemoryScope::Global => ("global", ""),
+        MemoryScope::Domain { name } => ("domain", name),
+        MemoryScope::Entity { id } => ("entity", id.as_str()),
+        MemoryScope::Activity { id } => ("activity", id.as_str()),
+    }
+}
+
+fn decode_memory_scope(
+    scope_type: &str,
+    scope_value: &str,
+) -> Result<MemoryScope, ApplicationError> {
+    match scope_type {
+        "global" if scope_value.is_empty() => Ok(MemoryScope::Global),
+        "domain" if !scope_value.is_empty() => Ok(MemoryScope::Domain {
+            name: scope_value.to_owned(),
+        }),
+        "entity" if !scope_value.is_empty() => Ok(MemoryScope::Entity {
+            id: EntityId::new(scope_value),
+        }),
+        "activity" if !scope_value.is_empty() => Ok(MemoryScope::Activity {
+            id: ActivityId::new(scope_value),
+        }),
+        _ => Err(ApplicationError::StorageUnavailable),
+    }
+}
+
+fn decode_share_proposal(
+    id: ShareProposalId,
+    source_workspace_id: WorkspaceId,
+    source_memory_id: MemoryId,
+    source_memory_version: u64,
+    source_subject_id: PrincipalId,
+    target_workspace_id: WorkspaceId,
+    target_scope_type: &str,
+    target_scope_value: &str,
+    proposed_by: PrincipalId,
+    status: &str,
+) -> Result<MemoryShareProposal, ApplicationError> {
+    let status = match status {
+        "pending" => ShareProposalStatus::Pending,
+        "approved" => ShareProposalStatus::Approved,
+        "rejected" => ShareProposalStatus::Rejected,
+        "revoked" => ShareProposalStatus::Revoked,
+        _ => return Err(ApplicationError::StorageUnavailable),
+    };
+    MemoryShareProposal::restore(
+        id,
+        source_workspace_id,
+        source_memory_id,
+        source_memory_version,
+        source_subject_id,
+        target_workspace_id,
+        decode_memory_scope(target_scope_type, target_scope_value)?,
+        proposed_by,
+        status,
+    )
+    .map_err(|_| ApplicationError::StorageUnavailable)
+}
+
 fn decode_read_scope(scope_type: &str, scope_value: &str) -> Result<ReadScope, ApplicationError> {
     match scope_type {
         "global" if scope_value.is_empty() => Ok(ReadScope::Global),
@@ -1080,12 +1348,26 @@ const fn encode_invitation_status(status: InvitationStatus) -> &'static str {
     }
 }
 
+const fn encode_share_proposal_status(status: ShareProposalStatus) -> &'static str {
+    match status {
+        ShareProposalStatus::Pending => "pending",
+        ShareProposalStatus::Approved => "approved",
+        ShareProposalStatus::Rejected => "rejected",
+        ShareProposalStatus::Revoked => "revoked",
+    }
+}
+
 fn map_write_error(error: rusqlite::Error) -> ApplicationError {
     match error {
         rusqlite::Error::SqliteFailure(_, Some(message))
             if message == "workspace event sequence conflict" =>
         {
             ApplicationError::SequenceConflict
+        }
+        rusqlite::Error::SqliteFailure(_, Some(message))
+            if message == "share proposal source conflict" =>
+        {
+            ApplicationError::VersionConflict
         }
         rusqlite::Error::SqliteFailure(failure, _)
             if failure.code == ErrorCode::ConstraintViolation =>

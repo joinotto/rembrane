@@ -77,6 +77,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Repository contract and in-memory reference persistence for tenant-scoped
   share proposals, including exact confirmed-source validation, immutable
   identity fields, and optimistic status transitions.
+- SQLite schema version 5 and repository persistence for content-free memory
+  share proposals, with personal-to-shared workspace constraints, exact
+  confirmed-source validation, scoped indexes, and optimistic status updates.
 - Versioned discovery, OpenAPI, and MCP protocol specifications.
 - Tenant-isolated SQLite canonical schema with encrypted-payload metadata.
 - Versioned SQLite initialization with legacy-schema adoption, idempotent

@@ -528,14 +528,16 @@ impl ShareProposalRepository for InMemoryStore {
         {
             return Err(ApplicationError::VersionConflict);
         }
-        if !self
-            .workspaces
+        if !self.workspaces.iter().any(|workspace| {
+            workspace.id() == proposal.source_workspace_id()
+                && workspace.kind() == WorkspaceKind::Personal
+        }) || !self.workspaces.iter().any(|workspace| {
+            workspace.id() == proposal.target_workspace_id()
+                && workspace.kind() == WorkspaceKind::Shared
+        }) || !self
+            .principals
             .iter()
-            .any(|workspace| workspace.id() == proposal.target_workspace_id())
-            || !self
-                .principals
-                .iter()
-                .any(|principal| principal.id() == proposal.proposed_by())
+            .any(|principal| principal.id() == proposal.proposed_by())
         {
             return Err(ApplicationError::NotFound);
         }
