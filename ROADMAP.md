@@ -272,6 +272,8 @@ This roadmap describes sequencing, not release dates.
       deletion, and ordered workspace-scoped sync.
     - [x] Add a secret-safe black-box HTTPS conformance runner.
     - [ ] Prove the runner against an independent local mock implementation.
+      - [x] Add the independent mock and opt-in loopback CI execution hook.
+      - [ ] Execute the loopback proof in a socket-enabled environment.
 - [x] Versioned key-provider sidecar protocol for OS, HSM, and customer-KMS
   adapters.
   - [x] Add transport-independent Rust manifest, negotiation, request, context,

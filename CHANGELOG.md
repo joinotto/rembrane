@@ -39,6 +39,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   proposal idempotency, cross-workspace non-disclosure, stale-version
   conflicts, exact tombstones, content removal, and isolated ordered sync,
   with loopback-only plaintext and deterministic fixture cleanup.
+- Independent dependency-free local Memory Provider HTTP mock designed to
+  execute the black-box conformance client across separate workspace and
+  permission identities, verify fixture cleanup, and assert bearer credentials
+  never appear in runner output, with opt-in loopback execution in CI.
 - Initial full Memory Provider Protocol discovery contract with a versioned
   well-known manifest, HTTPS/MCP transports, portable memory capabilities,
   explicit privacy modes, supported domains, and bounded operation limits.

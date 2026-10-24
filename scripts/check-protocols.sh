@@ -169,9 +169,11 @@ node --check scripts/test-provider-http-runner.mjs
 sh -n scripts/test-key-provider-http.sh
 node --check scripts/test-key-provider-http-runner.mjs
 sh -n scripts/test-memory-provider-http.sh
+node --check scripts/test-memory-provider-http-runner.mjs
 if [ "${REMBRANE_RUN_LOOPBACK_TESTS:-0}" = "1" ]; then
     node scripts/test-provider-http-runner.mjs
     node scripts/test-key-provider-http-runner.mjs
+    node scripts/test-memory-provider-http-runner.mjs
 fi
 if REMBRANE_PROVIDER_BASE_URL=http://provider.example \
     REMBRANE_PROVIDER_TOKEN=test-token \
