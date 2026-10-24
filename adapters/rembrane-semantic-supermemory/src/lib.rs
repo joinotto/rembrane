@@ -69,8 +69,12 @@ impl SupermemoryRecord {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct WireRecord {
-    #[serde(alias = "documentId", alias = "customId")]
-    id: String,
+    #[serde(default)]
+    id: Option<String>,
+    #[serde(default)]
+    document_id: Option<String>,
+    #[serde(default)]
+    custom_id: Option<String>,
     metadata: WireMetadata,
     #[serde(default)]
     score: Option<f64>,
@@ -107,6 +111,13 @@ pub fn decode_records(bytes: &[u8]) -> Result<Vec<SupermemoryRecord>, ProviderEr
     wire.results
         .into_iter()
         .map(|record| {
+            let provider_id = record
+                .custom_id
+                .or(record.document_id)
+                .or(record.id)
+                .ok_or_else(|| {
+                    ProviderError::Rejected("Supermemory record identity is missing".to_owned())
+                })?;
             let score = record
                 .score
                 .map(|score| {
@@ -120,7 +131,7 @@ pub fn decode_records(bytes: &[u8]) -> Result<Vec<SupermemoryRecord>, ProviderEr
                 })
                 .transpose()?;
             SupermemoryRecord::new(
-                record.id,
+                provider_id,
                 MemoryId::new(record.metadata.rembrane_memory_id),
                 record.metadata.rembrane_version,
                 score,
@@ -748,6 +759,11 @@ mod tests {
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].canonical_version, 2);
         assert_eq!(records[0].score_millionths, Some(750_000));
+        let records = decode_records(
+            br#"{"documents":[{"id":"internal-01","customId":"rembrane-caller-01","metadata":{"rembrane_memory_id":"memory-01","rembrane_version":2}}]}"#,
+        )
+        .expect("document response with both identities");
+        assert_eq!(records[0].provider_id(), "rembrane-caller-01");
         assert!(decode_records(br#"{"results":[{"id":"x","metadata":{},"score":2}]}"#).is_err());
     }
 

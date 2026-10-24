@@ -714,6 +714,8 @@ This roadmap describes sequencing, not release dates.
           for scoped search convergence.
       - [x] Strictly decode bounded list/search records and exact partial-
         deletion outcomes before connecting the HTTP client.
+        - [x] Decode internal and caller-defined document identities
+          independently and prefer the deterministic caller ID.
     - [x] Add an authenticated, redirect-free, proxy-free, bounded HTTP
       transport with scoped convergence polling and confirmed deletion.
     - [x] Expose disposable Supermemory conformance through the CLI with

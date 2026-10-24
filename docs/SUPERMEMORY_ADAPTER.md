@@ -46,6 +46,9 @@ letters, digits, underscore, colon, and hyphen alphabet before transport use.
 It applies the same path-safe alphabet to deterministic document IDs, so
 canonical memory identifiers never enter provider URLs or request identity
 fields.
+When list responses contain both an internal provider ID and `customId`, the
+adapter retains the deterministic caller ID for exact replacement and
+deletion.
 
 ## Required behavior
 
