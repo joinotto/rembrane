@@ -30,6 +30,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   ten operations with exact OAuth scopes, correlation/version headers,
   operation-specific JSON schemas, closed errors, authenticated identity
   derivation, GET query mappings, and path/body identity equality rules.
+- Versioned machine-readable Memory Provider core conformance profile covering
+  public discovery, missing and insufficient credentials, proposal
+  idempotency, cross-workspace isolation, optimistic deletion conflicts,
+  content removal, and workspace-scoped strictly ordered synchronization.
 - Initial full Memory Provider Protocol discovery contract with a versioned
   well-known manifest, HTTPS/MCP transports, portable memory capabilities,
   explicit privacy modes, supported domains, and bounded operation limits.

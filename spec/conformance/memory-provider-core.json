@@ -1,0 +1,78 @@
+{
+  "profileId": "rembrane.memory-provider.core",
+  "protocolVersion": "0.1",
+  "requiredCapabilities": [
+    "resolve_context",
+    "propose_memory",
+    "delete_memory",
+    "sync_pull"
+  ],
+  "cases": [
+    {
+      "id": "discovery.public",
+      "requirement": "The well-known discovery document is readable without credentials and advertises protocol 0.1 plus every capability required by this profile.",
+      "operation": "discovery",
+      "expected": "success"
+    },
+    {
+      "id": "protected.missing-token",
+      "requirement": "A protected operation without a bearer token returns HTTP 401 and discloses no memory content.",
+      "operation": "resolve_context",
+      "expected": "unauthorized"
+    },
+    {
+      "id": "scope.insufficient",
+      "requirement": "An authenticated connection lacking memory:proposal:write receives HTTP 403 when proposing memory.",
+      "operation": "propose_memory",
+      "expected": "forbidden"
+    },
+    {
+      "id": "proposal.accepted",
+      "requirement": "An authorized evidence-bearing proposal receives a canonical opaque memory ID and positive version without becoming caller-confirmed.",
+      "operation": "propose_memory",
+      "expected": "success"
+    },
+    {
+      "id": "proposal.idempotent",
+      "requirement": "Repeating the same proposal with the same idempotency key returns the same memory ID and version and creates no second record.",
+      "operation": "propose_memory",
+      "expected": "idempotent"
+    },
+    {
+      "id": "context.exact-workspace",
+      "requirement": "Context resolution returns the primary workspace proposal to its authorized connection.",
+      "operation": "resolve_context",
+      "expected": "success"
+    },
+    {
+      "id": "context.cross-workspace",
+      "requirement": "A different authenticated workspace cannot discover the primary workspace memory ID or unique content through context resolution.",
+      "operation": "resolve_context",
+      "expected": "isolated"
+    },
+    {
+      "id": "delete.stale-version",
+      "requirement": "Deletion with an expected version that is not current returns HTTP 409 and preserves the current record.",
+      "operation": "delete_memory",
+      "expected": "conflict"
+    },
+    {
+      "id": "delete.exact-version",
+      "requirement": "Deletion at the exact current version returns a consecutive tombstone revision and removes the content from context results.",
+      "operation": "delete_memory",
+      "expected": "success"
+    },
+    {
+      "id": "sync.workspace-isolation",
+      "requirement": "A sync pull returns changes only for the authenticated workspace and never includes another workspace fixture ID.",
+      "operation": "sync_pull",
+      "expected": "isolated"
+    },
+    {
+      "id": "sync.sequence-order",
+      "requirement": "Every non-empty sync page has unique change IDs and strictly increasing positive canonical sequences.",
+      "operation": "sync_pull",
+      "expected": "ordered"
+    }
+  ]
+}

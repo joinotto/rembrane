@@ -22,6 +22,8 @@ ruby -e 'require "yaml"; YAML.load_file(ARGV.fetch(0))' spec/memory-provider-ope
 jq empty \
     spec/discovery.schema.json \
     spec/memory-provider.schema.json \
+    spec/memory-provider-conformance.schema.json \
+    spec/conformance/memory-provider-core.json \
     spec/examples/discovery.json \
     spec/examples/memory-provider-discovery.json \
     spec/examples/memory-provider-context-request.json \
@@ -127,6 +129,19 @@ jq -e '
     and (.payload.mutations[1].operation == "delete")
     and (.payload.mutations[1] | has("payload") | not)
 ' spec/examples/memory-provider-sync-push-request.json >/dev/null
+
+jq -e '
+    .protocolVersion == "0.1"
+    and (.requiredCapabilities | length == 4 and length == (unique | length))
+    and (.cases | length >= 10)
+    and ([.cases[].id] | length == (unique | length))
+    and any(.cases[]; .expected == "unauthorized")
+    and any(.cases[]; .expected == "forbidden")
+    and any(.cases[]; .expected == "conflict")
+    and any(.cases[]; .expected == "isolated")
+    and any(.cases[]; .expected == "idempotent")
+    and any(.cases[]; .expected == "ordered")
+' spec/conformance/memory-provider-core.json >/dev/null
 
 jq -e '
     (.resource | startswith("https://"))
