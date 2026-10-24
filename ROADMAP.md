@@ -431,6 +431,8 @@ This roadmap describes sequencing, not release dates.
 
 - [x] Versioned pre-alpha provider manifest with capability, privacy, and
   request-limit negotiation.
+- [x] Canonically parse and bound bring-your-own provider endpoints, allowing
+  plaintext loopback only inside a declared trusted boundary.
 - [x] Enforce provider protocol and declared limits at projection and retrieval
   boundaries.
 - [x] Versioned HTTP sidecar contract for external semantic providers.

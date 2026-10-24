@@ -64,6 +64,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Parsed and canonically serialized remote-MCP deployment URLs with bounded
   endpoint, OAuth client ID, trusted-origin count, and individual-origin sizes,
   rejecting malformed ports and normalization ambiguity before startup.
+- Canonically parsed and bounded bring-your-own provider endpoints that reject
+  stored whitespace and URL normalization ambiguity while permitting literal
+  loopback HTTP only for providers declared inside the trusted boundary.
 - A transport-injectable Mem0 OSS semantic adapter mapping authorized
   projections into HMAC-pseudonymous workspace partitions while preserving
   canonical memory IDs, versions, replacement, bounded ranking, and

@@ -8,8 +8,9 @@ use rembrane_domain::{ActivityId, EntityId, ReadPermission, ReadScope};
 use rembrane_provider_sdk::{CURRENT_PROVIDER_PROTOCOL, Capability, ProviderPolicy};
 use std::error::Error;
 use std::fmt::{self, Display};
-use url::{Position, Url};
+use url::{Host, Position, Url};
 
+pub const MAX_PROVIDER_ENDPOINT_BYTES: usize = 2_048;
 pub const MAX_REMOTE_ENDPOINT_BYTES: usize = 2_048;
 pub const MAX_REMOTE_CLIENT_ID_BYTES: usize = 255;
 pub const MAX_REMOTE_TRUSTED_ORIGINS: usize = 64;
@@ -91,7 +92,7 @@ impl ProviderConnection {
             return Err(ProviderConnectionError::NativeProviderMustBeLocal);
         }
         let endpoint = endpoint.into();
-        validate_provider_endpoint(&endpoint)?;
+        validate_provider_endpoint(&endpoint, placement)?;
         Ok(Self {
             kind,
             endpoint: Some(endpoint),
@@ -101,29 +102,49 @@ impl ProviderConnection {
     }
 }
 
-fn validate_provider_endpoint(endpoint: &str) -> Result<(), ProviderConnectionError> {
-    let endpoint = endpoint.trim();
+fn validate_provider_endpoint(
+    endpoint: &str,
+    placement: ProviderPlacement,
+) -> Result<(), ProviderConnectionError> {
     if endpoint.is_empty() {
         return Err(ProviderConnectionError::EmptyEndpoint);
+    }
+    if endpoint.len() > MAX_PROVIDER_ENDPOINT_BYTES
+        || endpoint.trim() != endpoint
+        || contains_unsafe_http_value_char(endpoint)
+        || endpoint.contains('\\')
+    {
+        return Err(ProviderConnectionError::InsecureRemoteEndpoint);
     }
     if endpoint.contains('@') || endpoint.contains('?') || endpoint.contains('#') {
         return Err(ProviderConnectionError::CredentialBearingEndpoint);
     }
-    let Some((scheme, remainder)) = endpoint.split_once("://") else {
-        return Err(ProviderConnectionError::InsecureRemoteEndpoint);
-    };
-    let authority = remainder.split('/').next().unwrap_or_default();
-    if authority.is_empty() {
+    let parsed =
+        Url::parse(endpoint).map_err(|_| ProviderConnectionError::InsecureRemoteEndpoint)?;
+    if parsed.host().is_none()
+        || !parsed.username().is_empty()
+        || parsed.password().is_some()
+        || parsed.query().is_some()
+        || parsed.fragment().is_some()
+    {
         return Err(ProviderConnectionError::InsecureRemoteEndpoint);
     }
-    let secure = scheme == "https";
-    let loopback = scheme == "http"
-        && (authority == "127.0.0.1"
-            || authority.starts_with("127.0.0.1:")
-            || authority == "[::1]"
-            || authority.starts_with("[::1]:"));
-    if !secure && !loopback {
+    let canonical_endpoint = parsed.as_str();
+    let canonical_root_without_slash =
+        parsed.path() == "/" && canonical_endpoint.strip_suffix('/') == Some(endpoint);
+    if canonical_endpoint != endpoint && !canonical_root_without_slash {
         return Err(ProviderConnectionError::InsecureRemoteEndpoint);
+    }
+    match parsed.scheme() {
+        "https" => {}
+        "http"
+            if placement == ProviderPlacement::TrustedBoundary
+                && parsed.host().is_some_and(|host| match host {
+                    Host::Ipv4(address) => address.is_loopback(),
+                    Host::Ipv6(address) => address.is_loopback(),
+                    Host::Domain(_) => false,
+                }) => {}
+        _ => return Err(ProviderConnectionError::InsecureRemoteEndpoint),
     }
     Ok(())
 }
@@ -502,11 +523,11 @@ mod tests {
     use rembrane_provider_sdk::Capability;
 
     use super::{
-        DeploymentPolicy, MAX_REMOTE_CLIENT_ID_BYTES, MAX_REMOTE_ENDPOINT_BYTES,
-        MAX_REMOTE_ORIGIN_BYTES, MAX_REMOTE_TRUSTED_ORIGINS, ProcessingMode, ProviderConnection,
-        ProviderConnectionError, ProviderKind, ProviderPlacement, RemoteMcpConfig,
-        RemoteMcpConfigError, SecretReference, SecretReferenceError, parse_read_permissions,
-        parse_read_scopes,
+        DeploymentPolicy, MAX_PROVIDER_ENDPOINT_BYTES, MAX_REMOTE_CLIENT_ID_BYTES,
+        MAX_REMOTE_ENDPOINT_BYTES, MAX_REMOTE_ORIGIN_BYTES, MAX_REMOTE_TRUSTED_ORIGINS,
+        ProcessingMode, ProviderConnection, ProviderConnectionError, ProviderKind,
+        ProviderPlacement, RemoteMcpConfig, RemoteMcpConfigError, SecretReference,
+        SecretReferenceError, parse_read_permissions, parse_read_scopes,
     };
 
     #[test]
@@ -663,6 +684,45 @@ mod tests {
                 ProviderPlacement::TrustedBoundary,
             )
             .is_err()
+        );
+        for endpoint in [
+            " https://memory.example",
+            "https://memory.example ",
+            "HTTPS://memory.example",
+            "https://MEMORY.example",
+            "https://memory.example:443",
+            "https://memory.example:invalid",
+        ] {
+            assert_eq!(
+                ProviderConnection::remote(
+                    ProviderKind::Mem0,
+                    endpoint,
+                    Vec::new(),
+                    ProviderPlacement::External,
+                ),
+                Err(ProviderConnectionError::InsecureRemoteEndpoint)
+            );
+        }
+        assert_eq!(
+            ProviderConnection::remote(
+                ProviderKind::Mem0,
+                format!(
+                    "https://memory.example/{}",
+                    "x".repeat(MAX_PROVIDER_ENDPOINT_BYTES)
+                ),
+                Vec::new(),
+                ProviderPlacement::External,
+            ),
+            Err(ProviderConnectionError::InsecureRemoteEndpoint)
+        );
+        assert_eq!(
+            ProviderConnection::remote(
+                ProviderKind::Graphiti,
+                "http://127.0.0.1:8000",
+                Vec::new(),
+                ProviderPlacement::External,
+            ),
+            Err(ProviderConnectionError::InsecureRemoteEndpoint)
         );
     }
 
