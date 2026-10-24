@@ -8,6 +8,13 @@ use std::fmt::{self, Display};
 
 use rembrane_domain::WorkspaceId;
 
+mod provider_protocol;
+
+pub use provider_protocol::{
+    CURRENT_KEY_PROVIDER_PROTOCOL, KeyProviderManifest, KeyProviderPolicy,
+    KeyProviderProtocolError, KeyProviderProtocolVersion, OpenRequest, SealRequest,
+};
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PayloadPurpose {
     ActivityCheckpoint,
@@ -91,7 +98,7 @@ impl EncryptionContext {
         let mut encoded = Vec::new();
 
         for field in fields {
-            let length = u64::try_from(field.len()).expect("field length fits in u64");
+            let length = u64::try_from(field.len()).unwrap_or(u64::MAX);
             encoded.extend_from_slice(&length.to_be_bytes());
             encoded.extend_from_slice(field);
         }

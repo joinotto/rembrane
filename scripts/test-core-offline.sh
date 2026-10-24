@@ -10,6 +10,7 @@ for crate in \
     rembrane-application \
     rembrane-config \
     rembrane-contracts \
+    rembrane-crypto \
     rembrane-domain \
     rembrane-provider-sdk
 do
@@ -27,6 +28,7 @@ members = [
     "crates/rembrane-application",
     "crates/rembrane-config",
     "crates/rembrane-contracts",
+    "crates/rembrane-crypto",
     "crates/rembrane-domain",
     "crates/rembrane-provider-sdk",
 ]

@@ -130,6 +130,10 @@ This roadmap describes sequencing, not release dates.
 - [ ] Stable Memory Provider Protocol.
 - [x] Versioned key-provider sidecar protocol for OS, HSM, and customer-KMS
   adapters.
+  - [x] Add transport-independent Rust manifest, negotiation, request, context,
+    and response-limit contracts to the offline verification gate.
+  - [ ] Add an authenticated HTTP client adapter and black-box conformance
+    runner.
 - [ ] TypeScript, Python, Rust, Swift, and Kotlin SDKs.
 - [x] Reusable semantic-provider conformance suite.
 - [x] Evidence-backed provider compatibility registry schema and initial

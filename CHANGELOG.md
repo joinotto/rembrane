@@ -108,6 +108,11 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Key Provider Protocol v0.1 OpenAPI contract and architecture decision for
   authenticated `seal`/`open` operations that keep raw workspace keys inside
   OS-keychain, HSM, or customer-KMS provider boundaries.
+- Transport-independent Rust key-provider contracts for protocol negotiation,
+  algorithm and historical-key capabilities, complete encryption contexts,
+  bounded plaintext requests, and bounded open responses.
+- Expanded dependency-free core verification to compile, test, and lint the
+  cryptographic boundary and key-provider contracts.
 - Versioned discovery, OpenAPI, and MCP protocol specifications.
 - Tenant-isolated SQLite canonical schema with encrypted-payload metadata.
 - Versioned SQLite initialization with legacy-schema adoption, idempotent
