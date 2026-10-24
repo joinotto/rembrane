@@ -619,6 +619,7 @@ const MCP_BASE_ENVIRONMENT_VARIABLES: [&str; 6] = [
 fn print_mcp_config(arguments: &[String]) -> Result<(), String> {
     let client = option(arguments, "--client")?;
     let server_binary = option(arguments, "--server-binary")?;
+    validate_mcp_server_binary(server_binary)?;
     let key_provider = optional_option(arguments, "--key-provider").unwrap_or("environment");
     let environment = mcp_environment_variables(key_provider)?;
     let config = match client {
@@ -637,6 +638,16 @@ fn print_mcp_config(arguments: &[String]) -> Result<(), String> {
         }
     };
     println!("{config}");
+    Ok(())
+}
+
+fn validate_mcp_server_binary(server_binary: &str) -> Result<(), String> {
+    if server_binary.trim().is_empty() || server_binary.len() > 4_096 {
+        return Err("--server-binary must contain a bounded executable command".to_owned());
+    }
+    if server_binary.chars().any(char::is_control) {
+        return Err("--server-binary must not contain control characters".to_owned());
+    }
     Ok(())
 }
 
@@ -1748,7 +1759,8 @@ mod tests {
         gemini_mcp_config, generic_mcp_config, mcp_environment_variables, memory_privacy_mode_name,
         memory_provider_check_policy, opencode_mcp_config, option, positive_u64, providers,
         read_export, recall_scope_context, redact_endpoint, requested_memory_privacy,
-        requested_memory_scope, test_provider, vscode_mcp_config, write_export, zed_mcp_config,
+        requested_memory_scope, test_provider, validate_mcp_server_binary, vscode_mcp_config,
+        write_export, zed_mcp_config,
     };
 
     fn temporary_path(name: &str) -> std::path::PathBuf {
@@ -2091,6 +2103,23 @@ mod tests {
         assert!(generic.contains("\"transport\":\"stdio\""));
         assert!(generic.contains("\"requiredEnvironment\""));
         assert!(!generic.contains("00010203"));
+    }
+
+    #[test]
+    fn mcp_config_rejects_unsafe_or_unbounded_executable_commands() {
+        for command in [
+            "",
+            "   ",
+            "/opt/rembrane\n[mcp_servers.attacker]",
+            "bad\0path",
+        ] {
+            assert!(
+                validate_mcp_server_binary(command).is_err(),
+                "unsafe executable command must be rejected"
+            );
+        }
+        assert!(validate_mcp_server_binary(&"x".repeat(4_097)).is_err());
+        assert!(validate_mcp_server_binary("/opt/Rembrane MCP/bin/rembrane-mcp").is_ok());
     }
 
     #[test]

@@ -649,6 +649,8 @@ This roadmap describes sequencing, not release dates.
 - [ ] Community provider and agent adapters.
   - [x] Generate a secret-reference-only local MCP configuration for OpenCode
     using its command-array and environment-substitution contract.
+  - [x] Enforce one bounded control-free executable-command contract before
+    rendering any supported agent's TOML or JSON MCP configuration.
 
 ## Release gates
 
