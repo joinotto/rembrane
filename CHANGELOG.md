@@ -17,6 +17,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   short-lived borrowing authenticators for every request, with an in-memory
   router proof that distinct OAuth tokens retain distinct workspace identity
   and untrusted browser origins fail closed.
+- An opaque authorized remote-MCP request object that keeps verified identity,
+  classified operation, and the exact bounded JSON-RPC bytes together through
+  dispatch, zeroizing the copied request body when released.
 - Linux Secret Service workspace-key resolution through the fixed
   `/usr/bin/secret-tool` client, including active/historical keyrings,
   metadata-only agent configuration, and zeroized captured secrets.

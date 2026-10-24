@@ -1365,6 +1365,7 @@ dependencies = [
  "serde_json",
  "tokio",
  "tower",
+ "zeroize",
 ]
 
 [[package]]

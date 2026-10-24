@@ -152,6 +152,8 @@ This roadmap describes sequencing, not release dates.
     - [x] Couple stateless body classification and OAuth authorization in one
       gate operation so dispatched bytes cannot drift from the authorized
       method, tool, or scope.
+      - [x] Return one opaque authorized-request object carrying verified
+        access, operation classification, and the exact zeroizing body buffer.
     - [x] Adapt Axum header maps and HTTP rejection responses at the outer
       boundary, rejecting duplicate security headers before SDK dispatch.
     - [x] Provide an owned Axum authorization service that reconstructs

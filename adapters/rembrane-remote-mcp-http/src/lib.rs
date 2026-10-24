@@ -19,6 +19,7 @@ use rembrane_application::{
 use rembrane_config::RemoteMcpConfig;
 use rembrane_contracts::{RemoteMcpRequestAuthorization, RemoteSessionId, VerifiedRemoteAccess};
 use serde::Deserialize;
+use zeroize::Zeroizing;
 
 pub const MCP_SESSION_HEADER: &str = "Mcp-Session-Id";
 pub const MAX_REMOTE_MCP_REQUEST_BYTES: usize = 1_048_576;
@@ -39,6 +40,33 @@ impl RemoteMcpInvocation {
     #[must_use]
     pub fn tool_name(&self) -> Option<&str> {
         self.tool_name.as_deref()
+    }
+}
+
+/// One authorized MCP request whose identity, operation classification, and
+/// exact bounded body remain coupled until dispatch.
+pub struct AuthorizedRemoteMcpRequest {
+    access: VerifiedRemoteAccess,
+    invocation: RemoteMcpInvocation,
+    body: Zeroizing<Vec<u8>>,
+}
+
+impl AuthorizedRemoteMcpRequest {
+    #[must_use]
+    pub const fn access(&self) -> &VerifiedRemoteAccess {
+        &self.access
+    }
+
+    #[must_use]
+    pub const fn invocation(&self) -> &RemoteMcpInvocation {
+        &self.invocation
+    }
+
+    /// Returns only the exact bytes that passed classification and OAuth
+    /// authorization. The backing buffer is zeroized when this object drops.
+    #[must_use]
+    pub fn body(&self) -> &[u8] {
+        self.body.as_slice()
     }
 }
 
@@ -186,7 +214,7 @@ pub fn authorize_axum_stateless_body<Verifier>(
     headers: &HeaderMap,
     body: &[u8],
     now_epoch_seconds: u64,
-) -> Result<(VerifiedRemoteAccess, RemoteMcpInvocation), RemoteMcpHttpRejection>
+) -> Result<AuthorizedRemoteMcpRequest, RemoteMcpHttpRejection>
 where
     Verifier: RemoteTokenVerifier,
 {
@@ -247,7 +275,7 @@ where
         headers: &HeaderMap,
         body: &[u8],
         now_epoch_seconds: u64,
-    ) -> Result<(VerifiedRemoteAccess, RemoteMcpInvocation), RemoteMcpHttpRejection> {
+    ) -> Result<AuthorizedRemoteMcpRequest, RemoteMcpHttpRejection> {
         let authenticator =
             RemoteAccessAuthenticator::new(&self.verifier, &self.issuer, &self.resource);
         let trusted_origins = self
@@ -449,7 +477,7 @@ impl RemoteMcpHttpGate {
         request: RemoteMcpHttpRequest<'_>,
         body: &[u8],
         now_epoch_seconds: u64,
-    ) -> Result<(VerifiedRemoteAccess, RemoteMcpInvocation), RemoteMcpHttpRejection>
+    ) -> Result<AuthorizedRemoteMcpRequest, RemoteMcpHttpRejection>
     where
         Verifier: RemoteTokenVerifier,
     {
@@ -461,7 +489,11 @@ impl RemoteMcpHttpGate {
             invocation.tool_name(),
             now_epoch_seconds,
         )?;
-        Ok((access, invocation))
+        Ok(AuthorizedRemoteMcpRequest {
+            access,
+            invocation,
+            body: Zeroizing::new(body.to_vec()),
+        })
     }
 
     /// Reauthenticates and removes one established MCP session.
@@ -894,16 +926,21 @@ mod tests {
             session_id: None,
         };
         let body = br#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"rembrane_resolve_context","arguments":{}}}"#;
-        let (access, invocation) = gate
+        let authorized = gate
             .authorize_stateless_body(&authorization, request, body, 1_000)
             .expect("body and its exact scope should authorize together");
-        assert_eq!(access.workspace_id().as_str(), "workspace_01");
-        assert_eq!(invocation.tool_name(), Some("rembrane_resolve_context"));
+        assert_eq!(authorized.access().workspace_id().as_str(), "workspace_01");
+        assert_eq!(
+            authorized.invocation().tool_name(),
+            Some("rembrane_resolve_context")
+        );
+        assert_eq!(authorized.body(), body);
 
         let travel_body = br#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"rembrane_create_trip","arguments":{}}}"#;
         assert_eq!(
             gate.authorize_stateless_body(&authorization, request, travel_body, 1_000)
-                .expect_err("body requiring an absent scope must fail")
+                .err()
+                .expect("body requiring an absent scope must fail")
                 .status,
             403
         );
@@ -966,18 +1003,23 @@ mod tests {
         );
         let body = br#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"rembrane_resolve_context","arguments":{}}}"#;
 
-        let (access, invocation) =
+        let authorized =
             authorize_axum_stateless_body(&gate, &authorization, &headers, body, 1_000)
                 .expect("Axum request should authorize before dispatch");
-        assert_eq!(access.workspace_id().as_str(), "workspace_01");
-        assert_eq!(invocation.tool_name(), Some("rembrane_resolve_context"));
+        assert_eq!(authorized.access().workspace_id().as_str(), "workspace_01");
+        assert_eq!(
+            authorized.invocation().tool_name(),
+            Some("rembrane_resolve_context")
+        );
+        assert_eq!(authorized.body(), body);
 
         headers.insert(
             MCP_SESSION_HEADER_NAME,
             HeaderValue::from_static("session_0123456789abcdef"),
         );
         let rejection = authorize_axum_stateless_body(&gate, &authorization, &headers, body, 1_000)
-            .expect_err("stateless endpoint must reject session ambiguity");
+            .err()
+            .expect("stateless endpoint must reject session ambiguity");
         let response = rejection.into_response();
         assert_eq!(response.status(), 403);
         assert!(!response.headers().contains_key(WWW_AUTHENTICATE));
@@ -985,7 +1027,8 @@ mod tests {
         headers.remove(MCP_SESSION_HEADER_NAME);
         headers.insert(AUTHORIZATION, HeaderValue::from_static("Bearer invalid"));
         let rejection = authorize_axum_stateless_body(&gate, &authorization, &headers, body, 1_000)
-            .expect_err("invalid credential must produce a bearer challenge");
+            .err()
+            .expect("invalid credential must produce a bearer challenge");
         let response = rejection.into_response();
         assert_eq!(response.status(), 401);
         assert!(response.headers().contains_key(WWW_AUTHENTICATE));
@@ -999,7 +1042,7 @@ mod tests {
     ) -> Result<String, RemoteMcpHttpRejection> {
         authorization
             .authorize_stateless_body(&headers, &body, 1_000)
-            .map(|(access, _)| access.workspace_id().to_string())
+            .map(|authorized| authorized.access().workspace_id().to_string())
     }
 
     #[tokio::test]
