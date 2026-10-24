@@ -22,6 +22,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   evidence-bearing proposals, create/update activity checkpoints, and
   append-only disclosure receipts, including a proposal example proving
   workspace, subject, and confirmation authority are absent from client data.
+- Strict Memory Provider sync schemas with opaque bounded cursors, closed
+  resource and operation enums, distinct server-ordered pull changes and
+  sequence-free optimistic push mutations, atomic batch semantics, bounded
+  ciphertext payloads, and lowercase SHA-256 integrity digests.
 - Initial full Memory Provider Protocol discovery contract with a versioned
   well-known manifest, HTTPS/MCP transports, portable memory capabilities,
   explicit privacy modes, supported domains, and bounded operation limits.

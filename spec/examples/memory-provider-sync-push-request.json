@@ -1,0 +1,27 @@
+{
+  "requestId": "request_sync_0123456789",
+  "protocolVersion": "0.1",
+  "operation": "sync_push",
+  "payload": {
+    "idempotencyKey": "syncpush_0123456789",
+    "baseCursor": "cursor_0123456789_base",
+    "mutations": [
+      {
+        "mutationId": "mutation_01",
+        "resource": "memory",
+        "resourceId": "memory_01",
+        "expectedVersion": 3,
+        "operation": "upsert",
+        "payload": "eyJjaXBoZXJ0ZXh0IjoiLi4uIn0",
+        "payloadSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      {
+        "mutationId": "mutation_02",
+        "resource": "evidence",
+        "resourceId": "evidence_09",
+        "expectedVersion": 1,
+        "operation": "delete"
+      }
+    ]
+  }
+}

@@ -982,6 +982,288 @@
         }
       }
     },
+    "syncCursor": {
+      "type": "string",
+      "minLength": 16,
+      "maxLength": 512,
+      "pattern": "^[A-Za-z0-9_-]+$"
+    },
+    "syncResource": {
+      "type": "string",
+      "enum": [
+        "memory",
+        "evidence",
+        "activity_checkpoint",
+        "disclosure_receipt",
+        "entity",
+        "event"
+      ]
+    },
+    "syncPayload": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 262144,
+      "pattern": "^[^\\u0000]+$"
+    },
+    "sha256Hex": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "pulledSyncChange": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "changeId",
+            "sequence",
+            "resource",
+            "resourceId",
+            "version",
+            "operation",
+            "payload",
+            "payloadSha256"
+          ],
+          "properties": {
+            "changeId": {
+              "$ref": "#/$defs/safeOpaqueId"
+            },
+            "sequence": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "resource": {
+              "$ref": "#/$defs/syncResource"
+            },
+            "resourceId": {
+              "$ref": "#/$defs/safeOpaqueId"
+            },
+            "version": {
+              "$ref": "#/$defs/positiveVersion"
+            },
+            "operation": {
+              "const": "upsert"
+            },
+            "payload": {
+              "$ref": "#/$defs/syncPayload"
+            },
+            "payloadSha256": {
+              "$ref": "#/$defs/sha256Hex"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "changeId",
+            "sequence",
+            "resource",
+            "resourceId",
+            "version",
+            "operation"
+          ],
+          "properties": {
+            "changeId": {
+              "$ref": "#/$defs/safeOpaqueId"
+            },
+            "sequence": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "resource": {
+              "$ref": "#/$defs/syncResource"
+            },
+            "resourceId": {
+              "$ref": "#/$defs/safeOpaqueId"
+            },
+            "version": {
+              "$ref": "#/$defs/positiveVersion"
+            },
+            "operation": {
+              "const": "delete"
+            }
+          }
+        }
+      ]
+    },
+    "syncPullPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "maximumItems"
+      ],
+      "properties": {
+        "cursor": {
+          "$ref": "#/$defs/syncCursor"
+        },
+        "maximumItems": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "syncPullResult": {
+      "description": "The combined payload byte length must not exceed 4194304 bytes. Changes must have unique IDs and strictly increasing sequences. hasMore cannot be true for an empty page.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "changes",
+        "nextCursor",
+        "hasMore"
+      ],
+      "properties": {
+        "changes": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/pulledSyncChange"
+          }
+        },
+        "nextCursor": {
+          "$ref": "#/$defs/syncCursor"
+        },
+        "hasMore": {
+          "type": "boolean"
+        }
+      }
+    },
+    "pushSyncMutation": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mutationId",
+            "resource",
+            "resourceId",
+            "operation",
+            "payload",
+            "payloadSha256"
+          ],
+          "properties": {
+            "mutationId": {
+              "$ref": "#/$defs/safeOpaqueId"
+            },
+            "resource": {
+              "$ref": "#/$defs/syncResource"
+            },
+            "resourceId": {
+              "$ref": "#/$defs/safeOpaqueId"
+            },
+            "expectedVersion": {
+              "$ref": "#/$defs/positiveVersion"
+            },
+            "operation": {
+              "const": "upsert"
+            },
+            "payload": {
+              "$ref": "#/$defs/syncPayload"
+            },
+            "payloadSha256": {
+              "$ref": "#/$defs/sha256Hex"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mutationId",
+            "resource",
+            "resourceId",
+            "expectedVersion",
+            "operation"
+          ],
+          "properties": {
+            "mutationId": {
+              "$ref": "#/$defs/safeOpaqueId"
+            },
+            "resource": {
+              "$ref": "#/$defs/syncResource"
+            },
+            "resourceId": {
+              "$ref": "#/$defs/safeOpaqueId"
+            },
+            "expectedVersion": {
+              "$ref": "#/$defs/positiveVersion"
+            },
+            "operation": {
+              "const": "delete"
+            }
+          }
+        }
+      ]
+    },
+    "syncPushPayload": {
+      "description": "The mutation batch is applied atomically and its combined payload byte length must not exceed 4194304 bytes.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "idempotencyKey",
+        "baseCursor",
+        "mutations"
+      ],
+      "properties": {
+        "idempotencyKey": {
+          "$ref": "#/$defs/idempotencyKey"
+        },
+        "baseCursor": {
+          "$ref": "#/$defs/syncCursor"
+        },
+        "mutations": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/pushSyncMutation"
+          }
+        }
+      }
+    },
+    "acceptedSyncMutation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mutationId",
+        "version",
+        "sequence"
+      ],
+      "properties": {
+        "mutationId": {
+          "$ref": "#/$defs/safeOpaqueId"
+        },
+        "version": {
+          "$ref": "#/$defs/positiveVersion"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "syncPushResult": {
+      "description": "Accepted mutations correspond one-for-one and in order with the push request, with strictly increasing canonical sequences.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "accepted",
+        "nextCursor"
+      ],
+      "properties": {
+        "accepted": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/acceptedSyncMutation"
+          }
+        },
+        "nextCursor": {
+          "$ref": "#/$defs/syncCursor"
+        }
+      }
+    },
     "requestEnvelope": {
       "type": "object",
       "additionalProperties": false,

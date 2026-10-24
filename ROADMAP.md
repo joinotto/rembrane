@@ -260,11 +260,11 @@ This roadmap describes sequencing, not release dates.
   - [ ] Publish a serialization schema and HTTP binding.
     - [x] Publish strict canonical JSON primitives, discovery manifest, closed
       enums, selectors, and transport-neutral envelope schemas.
-    - [ ] Bind every operation payload and result to its canonical JSON schema.
+    - [x] Bind every operation payload and result to its canonical JSON schema.
       - [x] Bind context resolution, grounded questions, exact-version
         deletion, and provenance explanation payloads and results.
       - [x] Bind event, proposal, checkpoint, and disclosure payloads/results.
-      - [ ] Bind cursor-based sync pull/push payloads and results.
+      - [x] Bind cursor-based sync pull/push payloads and results.
     - [ ] Publish and verify the complete HTTPS OpenAPI surface.
   - [ ] Add cross-implementation conformance fixtures.
 - [x] Versioned key-provider sidecar protocol for OS, HSM, and customer-KMS

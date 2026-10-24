@@ -26,6 +26,7 @@ jq empty \
     spec/examples/memory-provider-context-request.json \
     spec/examples/memory-provider-context-response.json \
     spec/examples/memory-provider-proposal-request.json \
+    spec/examples/memory-provider-sync-push-request.json \
     spec/examples/oauth-protected-resource.json \
     spec/examples/provider-manifest.json \
     spec/examples/provider-projection.json \
@@ -62,6 +63,13 @@ jq -e '
     and ."$defs".checkpointActivityPayload.oneOf[1].additionalProperties == false
     and ."$defs".recordDisclosurePayload.additionalProperties == false
     and ."$defs".recordDisclosureResult.additionalProperties == false
+    and ."$defs".syncPullPayload.additionalProperties == false
+    and ."$defs".syncPullResult.additionalProperties == false
+    and ."$defs".syncPushPayload.additionalProperties == false
+    and ."$defs".syncPushResult.additionalProperties == false
+    and ."$defs".pulledSyncChange.oneOf[0].properties.sequence.minimum == 1
+    and (."$defs".pushSyncMutation.oneOf[0].properties | has("sequence") | not)
+    and (."$defs".pushSyncMutation.oneOf[1].required | index("expectedVersion") != null)
 ' spec/memory-provider.schema.json >/dev/null
 
 jq -e '
@@ -107,6 +115,17 @@ jq -e '
     and (.payload | has("subjectId") | not)
     and (.payload | has("confirmed") | not)
 ' spec/examples/memory-provider-proposal-request.json >/dev/null
+
+jq -e '
+    .protocolVersion == "0.1"
+    and .operation == "sync_push"
+    and (.payload.mutations | length == 2)
+    and all(.payload.mutations[]; has("sequence") | not)
+    and (.payload | has("workspaceId") | not)
+    and (.payload.mutations[0].payloadSha256 | test("^[0-9a-f]{64}$"))
+    and (.payload.mutations[1].operation == "delete")
+    and (.payload.mutations[1] | has("payload") | not)
+' spec/examples/memory-provider-sync-push-request.json >/dev/null
 
 jq -e '
     (.resource | startswith("https://"))
