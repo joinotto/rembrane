@@ -123,7 +123,8 @@ This roadmap describes sequencing, not release dates.
   - [x] REST/Postman and MCP protocol tests reject capture without a canonical
     trip.
   - [x] Successful MCP trip creation and booking-research capture lifecycle.
-  - [ ] Successful REST lifecycle after public trip creation.
+  - [x] Authenticated REST trip-creation contract and server route.
+  - [x] Successful REST/Postman encrypted trip-to-research lifecycle test.
 - [ ] Cross-agent activity continuation.
 - [ ] Sensitive travel-data permissions.
   - [x] MCP trip creation uses a dedicated travel-domain capability and

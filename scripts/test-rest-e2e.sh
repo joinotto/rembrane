@@ -28,7 +28,7 @@ export REMBRANE_DATABASE="$database"
 export REMBRANE_PRINCIPAL_ID="principal_rest_e2e"
 export REMBRANE_WORKSPACE_ID="workspace_rest_e2e"
 export REMBRANE_CLIENT_ID="client_rest_e2e"
-export REMBRANE_READ_SCOPES="global,entity:project_rest_e2e,entity:trip_missing"
+export REMBRANE_READ_SCOPES="global,domain:travel,entity:project_rest_e2e,entity:trip_missing"
 export REMBRANE_API_TOKEN="rest-e2e-token"
 export REMBRANE_LISTEN="${REMBRANE_TEST_LISTEN:-127.0.0.1:18787}"
 
@@ -111,5 +111,13 @@ disclosure_count=$(
         "SELECT count(*) FROM disclosure_receipts WHERE workspace_id = '$REMBRANE_WORKSPACE_ID';"
 )
 test "$disclosure_count" = "2"
+test "$(
+    sqlite3 "$database" \
+        "SELECT count(*) FROM trips WHERE workspace_id = '$REMBRANE_WORKSPACE_ID';"
+)" = "1"
+test "$(
+    sqlite3 "$database" \
+        "SELECT count(*) FROM booking_research WHERE workspace_id = '$REMBRANE_WORKSPACE_ID';"
+)" = "1"
 
 echo "REST end-to-end checks passed"

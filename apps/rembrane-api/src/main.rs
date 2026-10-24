@@ -10,8 +10,8 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use rembrane_application::{
     ApplicationError, AuthorizeClientCommand, AuthorizeClientService,
-    CaptureBookingResearchCommand, CaptureBookingResearchService, ResolveContextCommand,
-    ResolveContextService,
+    CaptureBookingResearchCommand, CaptureBookingResearchService, CreateTripCommand,
+    ResolveContextCommand, ResolveContextService, TripService,
 };
 use rembrane_config::parse_read_scopes;
 use rembrane_contracts::ResolveContextRequest;
@@ -19,7 +19,8 @@ use rembrane_crypto_rustcrypto::RustCryptoRecordCipher;
 use rembrane_domain::{
     ActivityId, BookingResearch, BookingResearchId, BookingResearchKind, ClientId, ContextPackId,
     DisclosureId, EntityId, EventId, EvidenceId, EvidenceReference, EvidenceSource, MemoryKind,
-    MemoryScope, MemoryStatus, PrincipalId, ReadGrant, WorkspaceId, WriteGrant, WritePermission,
+    MemoryScope, MemoryStatus, PrincipalId, ReadGrant, TravelDateWindow, Trip, WorkspaceId,
+    WriteGrant, WritePermission,
 };
 use rembrane_store_sqlite::SqliteStore;
 use serde::{Deserialize, Serialize};
@@ -71,6 +72,28 @@ struct CaptureBookingResearchRequest {
     observed_at: String,
     expires_at: String,
     expected_previous_sequence: u64,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct CreateTripRequest {
+    workspace_id: String,
+    subject_id: String,
+    title: String,
+    origin: String,
+    destinations: Vec<String>,
+    depart_not_before: String,
+    return_not_after: String,
+    expected_previous_sequence: u64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TripResponse {
+    trip_id: String,
+    workspace_id: String,
+    owner_subject_id: String,
+    version: u64,
 }
 
 #[derive(Serialize)]
@@ -176,7 +199,10 @@ impl AppState {
                 workspace_id,
                 principal_id,
                 requested_read_scopes: read_scopes,
-                requested_write_permissions: vec![WritePermission::CaptureBookingResearch],
+                requested_write_permissions: vec![
+                    WritePermission::CreateTrip,
+                    WritePermission::CaptureBookingResearch,
+                ],
             })
             .context("failed to authorize API connection")?;
         let next_id = SystemTime::now()
@@ -196,6 +222,65 @@ impl AppState {
             }),
         })
     }
+}
+
+async fn create_trip(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<CreateTripRequest>,
+) -> Result<(StatusCode, Json<TripResponse>), ApiError> {
+    authorize_bearer(&state, &headers)?;
+    let mut runtime = state
+        .inner
+        .runtime
+        .lock()
+        .map_err(|_| ApiError::internal())?;
+    if request.workspace_id != runtime.write_grant.workspace_id.as_str()
+        || request.subject_id != runtime.write_grant.subject_id.as_str()
+    {
+        return Err(ApiError::access_denied());
+    }
+    runtime.next_id = runtime.next_id.saturating_add(1);
+    let suffix = runtime.next_id;
+    let date_window = TravelDateWindow::new(request.depart_not_before, request.return_not_after)
+        .map_err(|_| ApiError::invalid_request())?;
+    let trip = Trip::new(
+        EntityId::new(format!("trip_{suffix}")),
+        runtime.write_grant.workspace_id.clone(),
+        runtime.write_grant.subject_id.clone(),
+        request.title,
+        request.origin,
+        request.destinations,
+        date_window,
+    )
+    .map_err(|_| ApiError::invalid_request())?;
+    let write_grant = runtime.write_grant.clone();
+    let created = TripService::new(&mut runtime.store)
+        .create(CreateTripCommand {
+            grant: write_grant,
+            trip,
+            event_id: EventId::new(format!("event_{suffix}")),
+            expected_previous_sequence: request.expected_previous_sequence,
+        })
+        .map_err(ApiError::from_application)?;
+    let created_scope = rembrane_domain::ReadScope::Entity {
+        id: created.id().clone(),
+    };
+    if !runtime.read_grant.scopes.contains(&created_scope) {
+        runtime.read_grant.scopes.push(created_scope.clone());
+    }
+    if !runtime.write_grant.scopes.contains(&created_scope) {
+        runtime.write_grant.scopes.push(created_scope);
+    }
+    Ok((
+        StatusCode::CREATED,
+        Json(TripResponse {
+            trip_id: created.id().to_string(),
+            workspace_id: created.workspace_id().to_string(),
+            owner_subject_id: created.owner_subject_id().to_string(),
+            version: created.version(),
+        }),
+    ))
 }
 
 async fn capture_booking_research(
@@ -526,6 +611,7 @@ async fn main() -> Result<()> {
     let app = Router::new()
         .route("/health", get(health))
         .route("/v1/context/resolve", post(resolve_context))
+        .route("/v1/travel/trips", post(create_trip))
         .route(
             "/v1/travel/booking-research",
             post(capture_booking_research),

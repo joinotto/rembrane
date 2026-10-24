@@ -16,6 +16,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   encrypted atomic persistence, and travel-domain authorization.
 - Exact entity authority derived for the creating MCP connection after trip
   creation, plus an end-to-end encrypted trip-to-research capture lifecycle.
+- Authenticated `POST /v1/travel/trips` contract and server route with
+  travel-domain creation authority and exact entity capability derivation.
+- REST/Postman end-to-end coverage for creating an encrypted trip, deriving
+  its entity authority, and capturing expiring research against it.
 - Explicit trip create/revise permissions, exact entity-scoped authorization,
   versioned trip audit events, and atomic in-memory trip/event mutations.
 - Member trip revisions through persisted entity grants while trip creation

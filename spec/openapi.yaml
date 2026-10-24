@@ -87,6 +87,34 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
+  /travel/trips:
+    post:
+      operationId: createTrip
+      summary: Create an encrypted trip
+      description: |
+        Creates a trip under the authenticated connection's travel-domain
+        capability and derives exact entity authority for subsequent calls.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTripRequest"
+      responses:
+        "201":
+          description: Trip created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TripResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/AccessDenied"
+        "409":
+          $ref: "#/components/responses/Conflict"
 components:
   securitySchemes:
     bearerAuth:
@@ -247,6 +275,66 @@ components:
         expectedPreviousSequence:
           type: integer
           minimum: 0
+    CreateTripRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - workspaceId
+        - subjectId
+        - title
+        - origin
+        - destinations
+        - departNotBefore
+        - returnNotAfter
+        - expectedPreviousSequence
+      properties:
+        workspaceId:
+          $ref: "#/components/schemas/OpaqueId"
+        subjectId:
+          $ref: "#/components/schemas/OpaqueId"
+        title:
+          type: string
+          minLength: 1
+          maxLength: 4096
+        origin:
+          type: string
+          minLength: 1
+          maxLength: 4096
+        destinations:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            type: string
+            minLength: 1
+            maxLength: 4096
+        departNotBefore:
+          type: string
+          format: date
+        returnNotAfter:
+          type: string
+          format: date
+        expectedPreviousSequence:
+          type: integer
+          minimum: 0
+    TripResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - tripId
+        - workspaceId
+        - ownerSubjectId
+        - version
+      properties:
+        tripId:
+          $ref: "#/components/schemas/OpaqueId"
+        workspaceId:
+          $ref: "#/components/schemas/OpaqueId"
+        ownerSubjectId:
+          $ref: "#/components/schemas/OpaqueId"
+        version:
+          type: integer
+          minimum: 1
     BookingResearchResponse:
       type: object
       additionalProperties: false

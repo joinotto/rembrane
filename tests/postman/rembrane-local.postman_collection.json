@@ -161,6 +161,79 @@
           }
         }
       ]
+    },
+    {
+      "name": "Create encrypted trip",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{apiToken}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"workspaceId\":\"{{workspaceId}}\",\"subjectId\":\"{{principalId}}\",\"title\":\"Kyoto continuity test\",\"origin\":\"Bengaluru\",\"destinations\":[\"Kyoto\"],\"departNotBefore\":\"2026-11-01\",\"returnNotAfter\":\"2026-11-12\",\"expectedPreviousSequence\":2}"
+        },
+        "url": "{{baseUrl}}/v1/travel/trips"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('encrypted trip is created', function () {",
+              "  pm.response.to.have.status(201);",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.tripId).to.be.a('string');",
+              "  pm.expect(body.version).to.eql(1);",
+              "  pm.collectionVariables.set('createdTripId', body.tripId);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Capture research for created trip",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{apiToken}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"workspaceId\":\"{{workspaceId}}\",\"subjectId\":\"{{principalId}}\",\"tripId\":\"{{createdTripId}}\",\"kind\":\"flight\",\"provider\":\"postman-search\",\"summary\":\"Nonstop morning option\",\"sourceReference\":\"opaque-result-success\",\"evidenceSource\":\"tool-result\",\"observedAt\":\"2026-10-25T10:00:00Z\",\"expiresAt\":\"2026-10-25T10:30:00Z\",\"expectedPreviousSequence\":3}"
+        },
+        "url": "{{baseUrl}}/v1/travel/booking-research"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('research is captured for the created trip', function () {",
+              "  pm.response.to.have.status(201);",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.tripId).to.eql(pm.collectionVariables.get('createdTripId'));",
+              "  pm.expect(body.version).to.eql(1);",
+              "});"
+            ]
+          }
+        }
+      ]
     }
   ]
 }
