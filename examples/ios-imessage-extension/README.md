@@ -26,3 +26,6 @@ background listener and does not silently insert content into a conversation.
 The extension intentionally requires a second confirmation after text entry.
 Do not replace that flow with transcript scraping, accessibility automation,
 private frameworks, automatic send behavior, or hidden background capture.
+Provision and revoke the shared items from the containing companion app with
+`KeychainMobileShareEnrollmentStore.save(_:)` and `remove()` rather than
+putting credentials in the extension bundle.

@@ -264,6 +264,48 @@ public struct KeychainMobileShareEnrollmentStore: Sendable {
         )
     }
 
+    /// Stores or replaces enrollment items under this service and optional
+    /// access group. Items are available only while the device is unlocked
+    /// and do not migrate to another device backup.
+    public func save(_ enrollment: RembraneMobileShareEnrollment) throws {
+        guard Self.validMetadata(enrollment.accountID),
+              Self.validMetadata(enrollment.deviceID),
+              enrollment.signingSecret.count >= 32 else {
+            throw RembraneAPIError(
+                status: 0,
+                code: "invalid_enrollment",
+                message: "Enrollment identifiers and signing key are invalid"
+            )
+        }
+        try upsert(
+            account: "rembrane.account-id",
+            data: Data(enrollment.accountID.utf8)
+        )
+        try upsert(
+            account: "rembrane.device-id",
+            data: Data(enrollment.deviceID.utf8)
+        )
+        try upsert(
+            account: "rembrane.signing-secret",
+            data: enrollment.signingSecret
+        )
+    }
+
+    /// Removes all enrollment items for this service and optional access
+    /// group. Missing items are treated as already revoked.
+    public func remove() throws {
+        for account in [
+            "rembrane.account-id",
+            "rembrane.device-id",
+            "rembrane.signing-secret",
+        ] {
+            let status = SecItemDelete(baseQuery(account: account) as CFDictionary)
+            guard status == errSecSuccess || status == errSecItemNotFound else {
+                throw keychainFailure()
+            }
+        }
+    }
+
     private func readUTF8(account: String) throws -> String {
         let data = try readData(account: account)
         guard let value = String(data: data, encoding: .utf8),
@@ -274,16 +316,9 @@ public struct KeychainMobileShareEnrollmentStore: Sendable {
     }
 
     private func readData(account: String) throws -> Data {
-        var query: [CFString: Any] = [
-            kSecClass: kSecClassGenericPassword,
-            kSecAttrService: service,
-            kSecAttrAccount: account,
-            kSecReturnData: true,
-            kSecMatchLimit: kSecMatchLimitOne,
-        ]
-        if let accessGroup {
-            query[kSecAttrAccessGroup] = accessGroup
-        }
+        var query = baseQuery(account: account)
+        query[kSecReturnData] = true
+        query[kSecMatchLimit] = kSecMatchLimitOne
         var result: CFTypeRef?
         guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
               let data = result as? Data,
@@ -291,6 +326,43 @@ public struct KeychainMobileShareEnrollmentStore: Sendable {
             throw unavailable()
         }
         return data
+    }
+
+    private func upsert(account: String, data: Data) throws {
+        let query = baseQuery(account: account)
+        let attributes: [CFString: Any] = [
+            kSecValueData: data,
+            kSecAttrAccessible: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
+        ]
+        let updateStatus = SecItemUpdate(
+            query as CFDictionary,
+            attributes as CFDictionary
+        )
+        if updateStatus == errSecSuccess {
+            return
+        }
+        guard updateStatus == errSecItemNotFound else {
+            throw keychainFailure()
+        }
+        var item = query
+        for (key, value) in attributes {
+            item[key] = value
+        }
+        guard SecItemAdd(item as CFDictionary, nil) == errSecSuccess else {
+            throw keychainFailure()
+        }
+    }
+
+    private func baseQuery(account: String) -> [CFString: Any] {
+        var query: [CFString: Any] = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: service,
+            kSecAttrAccount: account,
+        ]
+        if let accessGroup {
+            query[kSecAttrAccessGroup] = accessGroup
+        }
+        return query
     }
 
     private static func validMetadata(_ value: String) -> Bool {
@@ -307,6 +379,14 @@ public struct KeychainMobileShareEnrollmentStore: Sendable {
             status: 0,
             code: "keychain_item_unavailable",
             message: "Required mobile-share enrollment is unavailable"
+        )
+    }
+
+    private func keychainFailure() -> RembraneAPIError {
+        RembraneAPIError(
+            status: 0,
+            code: "keychain_operation_failed",
+            message: "Mobile-share enrollment could not be updated"
         )
     }
 }

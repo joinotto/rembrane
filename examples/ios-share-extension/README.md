@@ -33,6 +33,10 @@ The signing secret and binding lookup secret are distinct values. The lookup
 secret remains on the gateway/operator side; only the signing secret is
 provisioned to the device Keychain. Never store either secret in source,
 `Info.plist`, `UserDefaults`, app logs, crash metadata, or canonical memory.
+The containing companion app can call
+`KeychainMobileShareEnrollmentStore.save(_:)` during an explicit enrollment
+flow and `remove()` during device revocation. Stored items use
+`WhenUnlockedThisDeviceOnly` accessibility.
 
 The controller deliberately cancels when more than one text provider is
 present. Product UI may show a confirmation screen before submission, but

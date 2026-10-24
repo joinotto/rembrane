@@ -662,6 +662,8 @@ This roadmap describes sequencing, not release dates.
   - [x] Provide one reusable bounded Swift Keychain enrollment store with
     optional explicit access-group support for companion and extension
     targets.
+    - [x] Support validated device-only upsert and idempotent local revocation
+      for companion-app enrollment flows.
   - [x] Provide a reusable Swift explicit-share coordinator that preflights
     selected text and opaque identifiers, generates event IDs, and submits only
     user-confirmed envelopes through the narrow signed gateway client.

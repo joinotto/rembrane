@@ -133,5 +133,14 @@ private struct RembraneSmoke {
         precondition(signature.hasPrefix("sha256="))
         precondition(signature.count == 71)
         #endif
+
+        #if canImport(Security)
+        do {
+            _ = try KeychainMobileShareEnrollmentStore(service: " invalid ")
+            preconditionFailure("unsafe Keychain metadata must be rejected")
+        } catch let error as RembraneAPIError {
+            precondition(error.code == "invalid_keychain_configuration")
+        }
+        #endif
     }
 }

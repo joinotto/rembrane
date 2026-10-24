@@ -16,6 +16,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   metadata, minimum signing-key enforcement, generic failure reporting, and
   optional explicit access-group lookup shared by companion and extension
   targets.
+- Validated mobile enrollment upsert and idempotent revocation APIs using
+  `WhenUnlockedThisDeviceOnly` Keychain accessibility, enabling companion-app
+  setup without credentials in shell commands or extension bundles.
 - An Axum-facing remote MCP authorization boundary that rejects duplicate
   credential, host, origin, and session headers, authorizes the exact bounded
   JSON-RPC body, and maps 401/403/503 outcomes into safe HTTP responses before
