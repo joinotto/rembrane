@@ -284,7 +284,7 @@ This roadmap describes sequencing, not release dates.
   - [x] SQLite atomic approval and target-workspace copy implementation.
   - [ ] Verify the dependency-enabled SQLite integration suite in CI.
 - [x] Authorized member removal with atomic scope-grant cleanup.
-- [ ] Group key rotation after membership changes.
+- [x] Group key rotation after membership changes.
   - [x] Define a content-free canonical rotation requirement with monotonic
     workspace generation and opaque completed-key identity.
   - [x] Create the requirement atomically with membership removal and scope
@@ -293,7 +293,7 @@ This roadmap describes sequencing, not release dates.
   - [x] Complete exactly one pending generation through an owner/admin command
     after deployment-owned key-provider orchestration returns an opaque key
     identity.
-  - [ ] Extend the key-provider protocol with a verifiable rotation receipt
+  - [x] Extend the key-provider protocol with a verifiable rotation receipt
     binding generation and authorized recipients.
     - [x] Define a bounded content-free provider receipt with provider,
       correlation, workspace, generation, opaque key, and canonical recipient
