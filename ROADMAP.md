@@ -95,6 +95,8 @@ This roadmap describes sequencing, not release dates.
       HTTPS endpoints, referenced client secrets, and exact browser origins.
   - [x] Allow the shared MCP handler service to initialize canonical
     subject/client/workspace identity exclusively from verified remote claims.
+  - [x] Bind remote sessions to issuer, resource, canonical identity,
+    workspace, exact OAuth scope ceiling, and a non-extending expiry.
   - [ ] Serve Streamable HTTP through the official Rust MCP SDK.
   - [ ] Add OAuth and cross-tenant transport integration tests.
     - [x] Prove verified remote identity is still constrained by canonical

@@ -139,6 +139,17 @@ pub struct VerifiedRemoteAccess {
     expires_at_epoch_seconds: u64,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RemoteSessionBinding {
+    issuer: String,
+    resource: String,
+    subject_id: PrincipalId,
+    client_id: ClientId,
+    workspace_id: WorkspaceId,
+    scopes: BTreeSet<RemoteAccessScope>,
+    maximum_token_expiry_epoch_seconds: u64,
+}
+
 impl RemoteTokenClaims {
     /// Validates a remote MCP protocol connection after cryptographic token
     /// verification or authenticated introspection.
@@ -258,6 +269,63 @@ impl VerifiedRemoteAccess {
     pub const fn expires_at_epoch_seconds(&self) -> u64 {
         self.expires_at_epoch_seconds
     }
+
+    #[must_use]
+    pub fn session_binding(&self) -> RemoteSessionBinding {
+        RemoteSessionBinding {
+            issuer: self.issuer.clone(),
+            resource: self.resource.clone(),
+            subject_id: self.subject_id.clone(),
+            client_id: self.client_id.clone(),
+            workspace_id: self.workspace_id.clone(),
+            scopes: self.scopes.clone(),
+            maximum_token_expiry_epoch_seconds: self.expires_at_epoch_seconds,
+        }
+    }
+}
+
+impl RemoteSessionBinding {
+    /// Validates that a reauthenticated request still belongs to this exact
+    /// session authorization context.
+    ///
+    /// A refreshed token may expire later, but it cannot change issuer,
+    /// resource, canonical identity, workspace, or the exact OAuth scope
+    /// ceiling. A token whose expiry is shorter than the original session
+    /// ceiling narrows the remaining session lifetime.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the session has expired or any bound
+    /// authorization field differs.
+    pub fn revalidate(
+        &mut self,
+        access: &VerifiedRemoteAccess,
+        now_epoch_seconds: u64,
+    ) -> Result<(), RemoteAccessError> {
+        if self.maximum_token_expiry_epoch_seconds <= now_epoch_seconds
+            || access.expires_at_epoch_seconds <= now_epoch_seconds
+        {
+            return Err(RemoteAccessError::Expired);
+        }
+        if self.issuer != access.issuer
+            || self.resource != access.resource
+            || self.subject_id != access.subject_id
+            || self.client_id != access.client_id
+            || self.workspace_id != access.workspace_id
+            || self.scopes != access.scopes
+        {
+            return Err(RemoteAccessError::SessionBinding);
+        }
+        self.maximum_token_expiry_epoch_seconds = self
+            .maximum_token_expiry_epoch_seconds
+            .min(access.expires_at_epoch_seconds);
+        Ok(())
+    }
+
+    #[must_use]
+    pub const fn maximum_token_expiry_epoch_seconds(&self) -> u64 {
+        self.maximum_token_expiry_epoch_seconds
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -268,6 +336,7 @@ pub enum RemoteAccessError {
     NotYetValid,
     Identity,
     Scope,
+    SessionBinding,
 }
 
 impl Display for RemoteAccessError {
@@ -279,6 +348,7 @@ impl Display for RemoteAccessError {
             Self::NotYetValid => "token is not yet valid",
             Self::Identity => "token identity binding is incomplete",
             Self::Scope => "token does not grant the required scope",
+            Self::SessionBinding => "token does not match the remote MCP session",
         })
     }
 }
@@ -407,6 +477,72 @@ mod tests {
                 )
                 .expect_err("scope-free connection must fail"),
             RemoteAccessError::Scope
+        );
+    }
+
+    #[test]
+    fn session_binding_rejects_tenant_or_scope_substitution() {
+        let access = claims(&[
+            RemoteAccessScope::ContextRead,
+            RemoteAccessScope::TravelRead,
+        ])
+        .validate_connection(
+            "https://identity.example.test",
+            "https://memory.example.test/mcp",
+            1_000,
+        )
+        .expect("initial access should validate");
+        let mut binding = access.session_binding();
+
+        let mut refreshed_claims = claims(&[
+            RemoteAccessScope::ContextRead,
+            RemoteAccessScope::TravelRead,
+        ]);
+        refreshed_claims.expires_at_epoch_seconds = 1_900;
+        let refreshed = refreshed_claims
+            .validate_connection(
+                "https://identity.example.test",
+                "https://memory.example.test/mcp",
+                1_100,
+            )
+            .expect("refresh should validate");
+        binding
+            .revalidate(&refreshed, 1_100)
+            .expect("same authorization context should remain bound");
+        assert_eq!(binding.maximum_token_expiry_epoch_seconds(), 1_900);
+
+        let other_tenant = RemoteTokenClaims {
+            workspace_id: WorkspaceId::new("workspace_other"),
+            ..claims(&[
+                RemoteAccessScope::ContextRead,
+                RemoteAccessScope::TravelRead,
+            ])
+        }
+        .validate_connection(
+            "https://identity.example.test",
+            "https://memory.example.test/mcp",
+            1_100,
+        )
+        .expect("other tenant claims are structurally valid");
+        assert_eq!(
+            binding
+                .revalidate(&other_tenant, 1_100)
+                .expect_err("tenant substitution must fail"),
+            RemoteAccessError::SessionBinding
+        );
+
+        let reduced_scope = claims(&[RemoteAccessScope::ContextRead])
+            .validate_connection(
+                "https://identity.example.test",
+                "https://memory.example.test/mcp",
+                1_100,
+            )
+            .expect("reduced token is structurally valid");
+        assert_eq!(
+            binding
+                .revalidate(&reduced_scope, 1_100)
+                .expect_err("scope substitution must fail"),
+            RemoteAccessError::SessionBinding
         );
     }
 

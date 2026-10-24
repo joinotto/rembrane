@@ -39,6 +39,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Remote MCP protocol requests now authenticate through a scoped connection
   path, allowing initialize, discovery, event-stream, and session deletion
   without incorrectly substituting a tool-specific OAuth permission.
+- Remote session bindings now reject issuer, resource, principal, client,
+  workspace, or scope substitution on reauthentication and never extend the
+  session beyond the shortest verified token expiry.
 - Hardened Cloudflare Tunnel Compose overlay and operator guide for
   outbound-only self-hosted access without mounting the memory database or
   workspace encryption credentials into the tunnel container.
