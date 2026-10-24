@@ -21,6 +21,7 @@ ruby -e 'require "yaml"; YAML.load_file(ARGV.fetch(0))' spec/key-provider-openap
 jq empty \
     spec/discovery.schema.json \
     spec/examples/discovery.json \
+    spec/examples/oauth-protected-resource.json \
     spec/examples/provider-manifest.json \
     spec/examples/provider-projection.json \
     spec/examples/provider-search-request.json \
@@ -29,8 +30,30 @@ jq empty \
     spec/provider-manifest.schema.json \
     spec/provider-registry.json \
     spec/provider-registry.schema.json \
+    spec/oauth-protected-resource.schema.json \
     spec/stdio-connection-manifest.schema.json \
     tests/postman/rembrane-local.postman_collection.json
+
+jq -e '
+    (.resource | startswith("https://"))
+    and (.authorization_servers | length > 0)
+    and all(.authorization_servers[]; startswith("https://"))
+    and (.scopes_supported | length > 0)
+    and all(.scopes_supported[]; test("^rembrane:[a-z][a-z0-9:_-]*$"))
+    and .bearer_methods_supported == ["header"]
+' spec/examples/oauth-protected-resource.json >/dev/null
+
+for remote_mcp_invariant in \
+    'Authorization: Bearer <access-token>' \
+    'WWW-Authenticate: Bearer resource_metadata=' \
+    'Every request is reauthenticated' \
+    'Workspace, subject, and client identifiers are derived from verified claims'
+do
+    if ! rg -F "$remote_mcp_invariant" spec/remote-mcp.md >/dev/null; then
+        echo "remote MCP security invariant is missing: $remote_mcp_invariant" >&2
+        exit 1
+    fi
+done
 node --check scripts/test-mcp-e2e.mjs
 sh -n scripts/test-provider-http.sh
 node --check scripts/test-provider-http-runner.mjs

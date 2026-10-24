@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rembrane.dev/spec/oauth-protected-resource.schema.json",
+  "title": "Rembrane OAuth Protected Resource Metadata",
+  "description": "RFC 9728 metadata advertised by a remote Rembrane MCP endpoint.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "resource",
+    "authorization_servers",
+    "scopes_supported",
+    "bearer_methods_supported"
+  ],
+  "properties": {
+    "resource": {
+      "type": "string",
+      "format": "uri",
+      "pattern": "^https://"
+    },
+    "authorization_servers": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "format": "uri",
+        "pattern": "^https://"
+      }
+    },
+    "scopes_supported": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^rembrane:[a-z][a-z0-9:_-]*$"
+      }
+    },
+    "bearer_methods_supported": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "enum": ["header"]
+      }
+    },
+    "resource_name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255
+    },
+    "resource_documentation": {
+      "type": "string",
+      "format": "uri",
+      "pattern": "^https://"
+    },
+    "tls_client_certificate_bound_access_tokens": {
+      "type": "boolean"
+    },
+    "dpop_bound_access_tokens_required": {
+      "type": "boolean"
+    }
+  }
+}

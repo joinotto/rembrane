@@ -9,6 +9,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- Pre-alpha remote Streamable HTTP MCP security contract with RFC 9728
+  protected-resource metadata, explicit OAuth scope ceilings, bearer challenge
+  behavior, verified identity requirements, and per-request session
+  reauthentication rules.
 - Secret-safe Gemini CLI `settings.json` MCP configuration generation alongside
   the existing Codex, Claude Code, and vendor-neutral connection manifests.
 - Dedicated `travel` domain authorization for creating new trip entities,

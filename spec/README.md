@@ -24,6 +24,12 @@ The response must validate against `discovery.schema.json`. Discovery describes 
 
 `mcp.md` maps application use cases to tools, resources, prompts, connection identity, permissions, and safety annotations. MCP parameters deliberately exclude canonical workspace and subject identity.
 
+`remote-mcp.md` defines the authenticated Streamable HTTP boundary.
+`oauth-protected-resource.schema.json` describes the RFC 9728 metadata used by
+clients to discover the authorization server and narrowly scoped Rembrane
+permissions. OAuth is an outer authorization ceiling; canonical Rembrane
+authorization remains mandatory for every operation.
+
 ## Local stdio connection manifest
 
 `stdio-connection-manifest.schema.json` defines the secret-free local process

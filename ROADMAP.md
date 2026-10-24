@@ -72,6 +72,11 @@ This roadmap describes sequencing, not release dates.
 - [x] Create, update, and resume encrypted activity checkpoints through MCP.
 - [x] Retrieve minimal context through authenticated local REST.
 - [ ] Add remote Streamable HTTP MCP with OAuth.
+  - [x] Define HTTPS endpoints, RFC 9728 discovery metadata, bearer challenges,
+    verified connection identity, scope ceilings, and session security rules.
+  - [ ] Add a verified-token contract and authorization middleware.
+  - [ ] Serve Streamable HTTP through the official Rust MCP SDK.
+  - [ ] Add OAuth and cross-tenant transport integration tests.
 - [x] Persist a disclosure receipt for every SQLite context response.
 - [ ] Persist disclosure receipts in every future storage adapter.
 - [x] Prove cross-tenant denial across SQLite user-facing read paths.

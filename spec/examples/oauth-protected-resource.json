@@ -1,0 +1,20 @@
+{
+  "resource": "https://memory.example.test/mcp",
+  "authorization_servers": [
+    "https://identity.example.test"
+  ],
+  "scopes_supported": [
+    "rembrane:context:read",
+    "rembrane:memory:write",
+    "rembrane:checkpoint:write",
+    "rembrane:travel:read",
+    "rembrane:travel:write"
+  ],
+  "bearer_methods_supported": [
+    "header"
+  ],
+  "resource_name": "Rembrane remote MCP",
+  "resource_documentation": "https://memory.example.test/docs/mcp",
+  "tls_client_certificate_bound_access_tokens": false,
+  "dpop_bound_access_tokens_required": false
+}
