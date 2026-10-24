@@ -682,6 +682,8 @@ This roadmap describes sequencing, not release dates.
   - [x] Add a transport-injectable Mem0 OSS semantic mapping layer with
     pseudonymous workspace partitions, exact canonical ID/version metadata,
     replacement, bounded search, and version-aware deletion semantics.
+    - [x] Add an authenticated, redirect-free, proxy-free, bounded HTTP
+      transport for Mem0 OSS exact add, list, search, and deletion operations.
   - [x] Generate a secret-reference-only local MCP configuration for OpenCode
     using its command-array and environment-substitution contract.
   - [x] Enforce one bounded control-free executable-command contract before

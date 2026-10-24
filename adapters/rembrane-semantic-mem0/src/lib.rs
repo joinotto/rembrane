@@ -4,6 +4,8 @@
 //! Rembrane authorization or canonical identity to Mem0.
 
 use std::collections::BTreeMap;
+use std::io::Read;
+use std::time::Duration;
 
 use rembrane_domain::{MemoryId, WorkspaceId};
 use rembrane_provider_sdk::{
@@ -11,11 +13,18 @@ use rembrane_provider_sdk::{
     ProviderError, ProviderLimits, ProviderManifest, SemanticMemoryProvider, SemanticQuery,
 };
 use ring::hmac;
-use zeroize::Zeroize;
+use serde::{Deserialize, Serialize};
+use zeroize::{Zeroize, Zeroizing};
+
+use reqwest::Url;
+use reqwest::blocking::{Client, Response};
+use reqwest::header::{ACCEPT, CONTENT_LENGTH, CONTENT_TYPE, HeaderName};
 
 const MAXIMUM_CONTENT_BYTES: usize = 262_144;
 const MAXIMUM_CANDIDATES: usize = 1_000;
 const MAXIMUM_PROVIDER_ID_BYTES: usize = 512;
+const MAXIMUM_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
+const MEM0_API_KEY_HEADER: HeaderName = HeaderName::from_static("x-api-key");
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Mem0Record {
@@ -76,9 +85,328 @@ pub trait Mem0Transport {
     fn delete(&mut self, provider_id: &str) -> Result<(), ProviderError>;
 }
 
+pub struct HttpMem0Transport {
+    client: Client,
+    memories_endpoint: Url,
+    search_endpoint: Url,
+    api_key: Zeroizing<String>,
+}
+
+impl HttpMem0Transport {
+    pub fn new(base_url: &str, api_key: String) -> Result<Self, ProviderError> {
+        let base = validate_base_url(base_url)?;
+        validate_api_key(&api_key)?;
+        let client = Client::builder()
+            .connect_timeout(Duration::from_secs(5))
+            .timeout(Duration::from_secs(30))
+            .redirect(reqwest::redirect::Policy::none())
+            .no_proxy()
+            .build()
+            .map_err(|_| ProviderError::Unavailable)?;
+        Ok(Self {
+            client,
+            memories_endpoint: base
+                .join("memories")
+                .map_err(|_| ProviderError::Unavailable)?,
+            search_endpoint: base
+                .join("search")
+                .map_err(|_| ProviderError::Unavailable)?,
+            api_key: Zeroizing::new(api_key),
+        })
+    }
+
+    fn decode_records(response: Response) -> Result<Vec<Mem0Record>, ProviderError> {
+        let bytes = decode_json_bytes(response)?;
+        let collection: WireCollection = serde_json::from_slice(&bytes).map_err(|_| {
+            ProviderError::Rejected("Mem0 returned malformed record JSON".to_owned())
+        })?;
+        collection
+            .into_records()
+            .into_iter()
+            .map(WireMemory::try_into_record)
+            .collect()
+    }
+
+    fn delete_endpoint(&self, provider_id: &str) -> Result<Url, ProviderError> {
+        let mut endpoint = self.memories_endpoint.clone();
+        endpoint
+            .path_segments_mut()
+            .map_err(|()| ProviderError::Unavailable)?
+            .push(provider_id);
+        Ok(endpoint)
+    }
+
+    fn authenticated(
+        &self,
+        request: reqwest::blocking::RequestBuilder,
+    ) -> reqwest::blocking::RequestBuilder {
+        request
+            .header(ACCEPT, "application/json")
+            .header(MEM0_API_KEY_HEADER, self.api_key.as_str())
+    }
+}
+
+impl Mem0Transport for HttpMem0Transport {
+    fn list(&self, user_id: &str) -> Result<Vec<Mem0Record>, ProviderError> {
+        let response = self
+            .authenticated(
+                self.client
+                    .get(self.memories_endpoint.clone())
+                    .query(&[("user_id", user_id)]),
+            )
+            .send()
+            .map_err(|_| ProviderError::Unavailable)?;
+        Self::decode_records(response)
+    }
+
+    fn add_exact(
+        &mut self,
+        user_id: &str,
+        projection: &AuthorizedMemoryProjection,
+    ) -> Result<(), ProviderError> {
+        let body = AddMemoryBody {
+            messages: [MemoryMessage {
+                role: "user",
+                content: &projection.content,
+            }],
+            user_id,
+            metadata: ProjectionMetadata {
+                memory_id: projection.memory_id.as_str(),
+                version: projection.version,
+            },
+            infer: false,
+        };
+        let response = self
+            .authenticated(self.client.post(self.memories_endpoint.clone()))
+            .header(CONTENT_TYPE, "application/json")
+            .json(&body)
+            .send()
+            .map_err(|_| ProviderError::Unavailable)?;
+        require_success(&response)
+    }
+
+    fn search(
+        &self,
+        user_id: &str,
+        query: &str,
+        maximum_candidates: usize,
+    ) -> Result<Vec<Mem0Record>, ProviderError> {
+        let response = self
+            .authenticated(self.client.post(self.search_endpoint.clone()))
+            .header(CONTENT_TYPE, "application/json")
+            .json(&SearchBody {
+                query,
+                user_id,
+                top_k: maximum_candidates,
+            })
+            .send()
+            .map_err(|_| ProviderError::Unavailable)?;
+        Self::decode_records(response)
+    }
+
+    fn delete(&mut self, provider_id: &str) -> Result<(), ProviderError> {
+        let response = self
+            .authenticated(self.client.delete(self.delete_endpoint(provider_id)?))
+            .send()
+            .map_err(|_| ProviderError::Unavailable)?;
+        require_success(&response)
+    }
+}
+
+#[derive(Serialize)]
+struct MemoryMessage<'value> {
+    role: &'static str,
+    content: &'value str,
+}
+
+#[derive(Serialize)]
+struct ProjectionMetadata<'value> {
+    #[serde(rename = "rembrane_memory_id")]
+    memory_id: &'value str,
+    #[serde(rename = "rembrane_version")]
+    version: u64,
+}
+
+#[derive(Serialize)]
+struct AddMemoryBody<'value> {
+    messages: [MemoryMessage<'value>; 1],
+    user_id: &'value str,
+    metadata: ProjectionMetadata<'value>,
+    infer: bool,
+}
+
+#[derive(Serialize)]
+struct SearchBody<'value> {
+    query: &'value str,
+    user_id: &'value str,
+    top_k: usize,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum WireCollection {
+    Array(Vec<WireMemory>),
+    Object {
+        #[serde(default)]
+        results: Vec<WireMemory>,
+        #[serde(default)]
+        memories: Vec<WireMemory>,
+    },
+}
+
+impl WireCollection {
+    fn into_records(self) -> Vec<WireMemory> {
+        match self {
+            Self::Array(records) => records,
+            Self::Object {
+                mut results,
+                memories,
+            } => {
+                results.extend(memories);
+                results
+            }
+        }
+    }
+}
+
+#[derive(Deserialize)]
+struct WireMemory {
+    id: String,
+    metadata: ProjectionMetadataWire,
+    #[serde(default)]
+    score: Option<f64>,
+}
+
+#[derive(Deserialize)]
+struct ProjectionMetadataWire {
+    rembrane_memory_id: String,
+    rembrane_version: u64,
+}
+
+impl WireMemory {
+    fn try_into_record(self) -> Result<Mem0Record, ProviderError> {
+        let score_millionths = self
+            .score
+            .map(|score| {
+                if !score.is_finite() || !(0.0..=1.0).contains(&score) {
+                    return Err(ProviderError::Rejected(
+                        "Mem0 returned an invalid similarity score".to_owned(),
+                    ));
+                }
+                #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                Ok((score * 1_000_000.0).round() as u32)
+            })
+            .transpose()?;
+        Mem0Record::new(
+            self.id,
+            MemoryId::new(self.metadata.rembrane_memory_id),
+            self.metadata.rembrane_version,
+            score_millionths,
+        )
+    }
+}
+
+fn validate_base_url(value: &str) -> Result<Url, ProviderError> {
+    let mut url = Url::parse(value)
+        .map_err(|_| ProviderError::InvalidConfiguration("Mem0 base URL is invalid".to_owned()))?;
+    let loopback = url
+        .host_str()
+        .is_some_and(|host| matches!(host, "localhost" | "127.0.0.1" | "::1"));
+    if (url.scheme() != "https" && !(url.scheme() == "http" && loopback))
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.query().is_some()
+        || url.fragment().is_some()
+        || !matches!(url.path(), "" | "/")
+    {
+        return Err(ProviderError::InvalidConfiguration(
+            "Mem0 base URL must be an HTTPS origin or exact loopback HTTP origin".to_owned(),
+        ));
+    }
+    url.set_path("/");
+    Ok(url)
+}
+
+fn validate_api_key(value: &str) -> Result<(), ProviderError> {
+    if value.len() < 8
+        || value.len() > 4_096
+        || value.trim() != value
+        || value.chars().any(char::is_control)
+    {
+        return Err(ProviderError::InvalidConfiguration(
+            "Mem0 API key is invalid".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+fn require_success(response: &Response) -> Result<(), ProviderError> {
+    if response.status().is_success() {
+        return Ok(());
+    }
+    Err(
+        if matches!(response.status().as_u16(), 400 | 404 | 409 | 413 | 422) {
+            ProviderError::Rejected("Mem0 rejected the operation".to_owned())
+        } else {
+            ProviderError::Unavailable
+        },
+    )
+}
+
+fn decode_json_bytes(response: Response) -> Result<Vec<u8>, ProviderError> {
+    if !response.status().is_success() {
+        return require_success(&response).map(|()| Vec::new());
+    }
+    let is_json = response
+        .headers()
+        .get(CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| {
+            value
+                .split(';')
+                .next()
+                .is_some_and(|kind| kind.eq_ignore_ascii_case("application/json"))
+        });
+    let too_large = response
+        .headers()
+        .get(CONTENT_LENGTH)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse::<usize>().ok())
+        .is_some_and(|length| length > MAXIMUM_RESPONSE_BYTES);
+    if !is_json || too_large {
+        return Err(ProviderError::Rejected(
+            "Mem0 returned an invalid response".to_owned(),
+        ));
+    }
+    let mut bytes = Vec::new();
+    response
+        .take((MAXIMUM_RESPONSE_BYTES + 1) as u64)
+        .read_to_end(&mut bytes)
+        .map_err(|_| ProviderError::Unavailable)?;
+    if bytes.len() > MAXIMUM_RESPONSE_BYTES {
+        return Err(ProviderError::Rejected(
+            "Mem0 response exceeded the transport limit".to_owned(),
+        ));
+    }
+    Ok(bytes)
+}
+
 pub struct Mem0SemanticProvider<Transport> {
     transport: Transport,
     workspace_lookup_key: hmac::Key,
+}
+
+impl Mem0SemanticProvider<HttpMem0Transport> {
+    pub fn from_http(
+        base_url: &str,
+        api_key: String,
+        workspace_lookup_secret: Vec<u8>,
+    ) -> Result<Self, ProviderError> {
+        Self::new(
+            HttpMem0Transport::new(base_url, api_key)?,
+            workspace_lookup_secret,
+        )
+    }
 }
 
 impl<Transport> Mem0SemanticProvider<Transport> {
@@ -224,7 +552,10 @@ mod tests {
         verify_semantic_provider,
     };
 
-    use super::{Mem0Record, Mem0SemanticProvider, Mem0Transport};
+    use super::{
+        Mem0Record, Mem0SemanticProvider, Mem0Transport, WireCollection, validate_api_key,
+        validate_base_url,
+    };
 
     #[derive(Default)]
     struct FakeMem0 {
@@ -335,5 +666,53 @@ mod tests {
             .expect("search should succeed");
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].version, 2);
+    }
+
+    #[test]
+    fn decodes_mem0_result_metadata_and_rejects_invalid_scores() {
+        let collection: WireCollection = serde_json::from_str(
+            r#"{"results":[{"id":"provider-01","memory":"Call me Hippo","metadata":{"rembrane_memory_id":"memory_01","rembrane_version":2},"score":0.75}]}"#,
+        )
+        .expect("wire result should decode");
+        let record = collection
+            .into_records()
+            .pop()
+            .expect("record should exist")
+            .try_into_record()
+            .expect("canonical metadata should validate");
+        assert_eq!(record.canonical_memory_id.as_str(), "memory_01");
+        assert_eq!(record.canonical_version, 2);
+        assert_eq!(record.score_millionths, Some(750_000));
+
+        let collection: WireCollection = serde_json::from_str(
+            r#"[{"id":"provider-01","metadata":{"rembrane_memory_id":"memory_01","rembrane_version":2},"score":1.1}]"#,
+        )
+        .expect("wire shape should decode");
+        assert!(
+            collection
+                .into_records()
+                .into_iter()
+                .next()
+                .expect("record should exist")
+                .try_into_record()
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn http_configuration_requires_safe_origin_and_bounded_key() {
+        assert!(validate_base_url("https://mem0.example").is_ok());
+        assert!(validate_base_url("http://127.0.0.1:8888").is_ok());
+        for unsafe_url in [
+            "http://mem0.example",
+            "https://user:secret@mem0.example",
+            "https://mem0.example/path",
+            "https://mem0.example?token=secret",
+        ] {
+            assert!(validate_base_url(unsafe_url).is_err());
+        }
+        assert!(validate_api_key("test-key-123456").is_ok());
+        assert!(validate_api_key("short").is_err());
+        assert!(validate_api_key("key\ninjected").is_err());
     }
 }

@@ -13,6 +13,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   projections into HMAC-pseudonymous workspace partitions while preserving
   canonical memory IDs, versions, replacement, bounded ranking, and
   version-aware deletion semantics.
+- An authenticated Mem0 OSS HTTP transport with `X-API-Key` custody in
+  zeroizing memory, HTTPS-or-loopback enforcement, disabled redirects and
+  environment proxies, strict timeouts, bounded JSON, exact non-inferred
+  projection writes, and safely encoded deletion paths.
 - A public-API-only iMessage app extension reference with explicit text entry,
   review, confirmation, Keychain-held enrollment material, narrow signed
   gateway submission, and an iPhone Simulator type-check gate.

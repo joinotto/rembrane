@@ -13,9 +13,14 @@ Search returns bounded canonical candidates and collapses duplicate provider
 records to the newest version. Deletion removes only matching versions up to
 the requested bound.
 
-The current slice exposes an injectable `Mem0Transport` and passes the shared
-semantic-provider conformance harness. The authenticated HTTP transport and a
-real disposable Mem0 conformance run remain required before the adapter can
+`HttpMem0Transport` connects to an HTTPS origin, or exact loopback HTTP for
+local development, using the Mem0 OSS `X-API-Key` header. It disables
+redirects and environment proxies, applies strict timeouts, bounds JSON
+responses, stores the credential in zeroizing memory, uses `infer=false` for
+exact projections, and percent-encodes provider record IDs before deletion.
+
+The mapping layer passes the shared semantic-provider conformance harness. A
+real disposable Mem0 conformance run remains required before the adapter can
 appear as compatible in the provider registry.
 
 Deployments using hosted or self-hosted Mem0 process plaintext within that
@@ -23,3 +28,16 @@ provider boundary. They must explicitly permit plaintext processing, keep the
 workspace lookup secret and Mem0 credential in their own secret manager, and
 use an authenticated endpoint. Strict-E2EE deployments must not send
 plaintext projections to a remote Mem0 service.
+
+Applications can construct the provider without fixed configuration names:
+
+```rust
+let provider = Mem0SemanticProvider::from_http(
+    mem0_origin,
+    resolved_api_key,
+    resolved_workspace_lookup_secret,
+)?;
+```
+
+Resolve both secrets from the operator's keychain, vault, container secret, or
+cloud secret manager. Never reuse the API key as the workspace lookup secret.
