@@ -43,6 +43,9 @@ pseudonyms use distinct HMAC domain labels.
 
 The adapter validates generated namespaces against the documented ASCII
 letters, digits, underscore, colon, and hyphen alphabet before transport use.
+It applies the same path-safe alphabet to deterministic document IDs, so
+canonical memory identifiers never enter provider URLs or request identity
+fields.
 
 ## Required behavior
 

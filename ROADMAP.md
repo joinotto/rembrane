@@ -706,6 +706,8 @@ This roadmap describes sequencing, not release dates.
       - [x] Domain-separate workspace and document HMAC pseudonyms.
       - [x] Validate generated namespaces against Supermemory's documented
         length and character contract.
+      - [x] Keep canonical memory IDs out of provider paths by validating
+        deterministic keyed document pseudonyms.
       - [x] Require bounded readiness confirmation after ingestion before an
         adapter may report projection success.
       - [x] Require exact provider-identity confirmation before replacement or

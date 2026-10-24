@@ -119,6 +119,7 @@ impl<Transport> SupermemorySemanticProvider<Transport> {
             use std::fmt::Write;
             let _ = write!(document_id, "{byte:02x}");
         }
+        debug_assert!(valid_provider_identifier(&document_id, 255));
         document_id
     }
 
@@ -133,8 +134,12 @@ impl<Transport> SupermemorySemanticProvider<Transport> {
 }
 
 fn valid_namespace(value: &str) -> bool {
+    valid_provider_identifier(value, 100)
+}
+
+fn valid_provider_identifier(value: &str, maximum_bytes: usize) -> bool {
     !value.is_empty()
-        && value.len() <= 100
+        && value.len() <= maximum_bytes
         && value
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b':' | b'-'))
@@ -257,6 +262,7 @@ mod tests {
 
     use super::{
         SupermemoryRecord, SupermemorySemanticProvider, SupermemoryTransport, valid_namespace,
+        valid_provider_identifier,
     };
 
     #[derive(Default)]
@@ -357,6 +363,12 @@ mod tests {
         assert!(valid_namespace(&namespace));
         assert!(!namespace.contains("workspace"));
         assert_eq!(namespace.len(), 73);
+
+        let document_id =
+            provider.document_id(&rembrane_domain::MemoryId::new("../canonical?memory#id"));
+        assert!(valid_provider_identifier(&document_id, 255));
+        assert!(!document_id.contains("canonical"));
+        assert_eq!(document_id.len(), 73);
     }
 
     #[test]
