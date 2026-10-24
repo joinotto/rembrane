@@ -33,6 +33,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   administrative audit evidence.
 - Secret-safe native stdio MCP configuration generators for Cursor, VS Code,
   and Zed alongside the existing Codex, Claude Code, and Gemini CLI formats.
+- Complete OpenAPI bindings for administrative-audit reads, retention-policy
+  mutation, legal-hold placement and release, and bounded retention purge.
 - A versioned per-workspace retention policy contract with separate periods
   for memory, checkpoints, travel research, disclosures, canonical events, and
   administrative audit, including bounded expiry and legal-hold overrides.

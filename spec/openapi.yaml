@@ -88,6 +88,143 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
+  /administrative-audit:
+    get:
+      operationId: listAdministrativeAudit
+      summary: List bounded content-free administrative audit evidence
+      parameters:
+        - name: workspaceId
+          in: query
+          required: true
+          schema:
+            $ref: "#/components/schemas/OpaqueId"
+        - name: afterEpochSeconds
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 100
+      responses:
+        "200":
+          description: Tenant-scoped administrative audit page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdministrativeAuditResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/AccessDenied"
+  /retention/policy:
+    post:
+      operationId: setRetentionPolicy
+      summary: Create or optimistically replace a workspace retention policy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetRetentionPolicyRequest"
+      responses:
+        "200":
+          description: Retention policy stored
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RetentionPolicyResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/AccessDenied"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /retention/legal-holds:
+    post:
+      operationId: placeLegalHold
+      summary: Place a workspace legal hold
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LegalHoldRequest"
+      responses:
+        "201":
+          description: Legal hold placed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LegalHoldResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/AccessDenied"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /retention/legal-holds/release:
+    post:
+      operationId: releaseLegalHold
+      summary: Release one active workspace legal hold
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LegalHoldRequest"
+      responses:
+        "200":
+          description: Legal hold released
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LegalHoldResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/AccessDenied"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /retention/purge:
+    post:
+      operationId: executeRetentionPurge
+      summary: Execute one bounded hold-aware retention purge
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExecuteRetentionPurgeRequest"
+      responses:
+        "200":
+          description: Bounded purge result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RetentionPurgeResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/AccessDenied"
+        "404":
+          $ref: "#/components/responses/NotFound"
   /travel/booking-research:
     post:
       operationId: captureBookingResearch
@@ -319,6 +456,164 @@ components:
           minLength: 1
         status:
           const: completed
+    AdministrativeAuditResponse:
+      type: object
+      additionalProperties: false
+      required: [events]
+      properties:
+        events:
+          type: array
+          maxItems: 1000
+          items:
+            $ref: "#/components/schemas/AdministrativeAuditEvent"
+    AdministrativeAuditEvent:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - workspaceId
+        - actorId
+        - action
+        - targetKind
+        - targetId
+        - requestId
+        - occurredAtEpochSeconds
+      properties:
+        id:
+          $ref: "#/components/schemas/OpaqueId"
+        workspaceId:
+          $ref: "#/components/schemas/OpaqueId"
+        actorId:
+          $ref: "#/components/schemas/OpaqueId"
+        action:
+          enum:
+            - member-removed
+            - key-rotation-required
+            - key-rotation-completed
+            - scope-grant-changed
+            - retention-policy-changed
+            - legal-hold-placed
+            - legal-hold-released
+        targetKind:
+          enum: [principal, key-rotation, scope-grant, retention-policy, legal-hold]
+        targetId:
+          $ref: "#/components/schemas/OpaqueId"
+        requestId:
+          $ref: "#/components/schemas/OpaqueId"
+        occurredAtEpochSeconds:
+          type: integer
+          minimum: 1
+    SetRetentionPolicyRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - workspaceId
+        - requestId
+      properties:
+        workspaceId:
+          $ref: "#/components/schemas/OpaqueId"
+        expectedVersion:
+          type:
+            - integer
+            - "null"
+          minimum: 1
+        userMemoryDays:
+          $ref: "#/components/schemas/RetentionDays"
+        activityCheckpointDays:
+          $ref: "#/components/schemas/RetentionDays"
+        travelResearchDays:
+          $ref: "#/components/schemas/RetentionDays"
+        disclosureReceiptDays:
+          $ref: "#/components/schemas/RetentionDays"
+        canonicalEventDays:
+          $ref: "#/components/schemas/RetentionDays"
+        administrativeAuditDays:
+          $ref: "#/components/schemas/RetentionDays"
+        requestId:
+          $ref: "#/components/schemas/OpaqueId"
+    RetentionDays:
+      description: A null value retains the resource forever.
+      type:
+        - integer
+        - "null"
+      minimum: 1
+      maximum: 36500
+    RetentionPolicyResponse:
+      type: object
+      additionalProperties: false
+      required: [workspaceId, version]
+      properties:
+        workspaceId:
+          $ref: "#/components/schemas/OpaqueId"
+        version:
+          type: integer
+          minimum: 1
+    LegalHoldRequest:
+      type: object
+      additionalProperties: false
+      required: [workspaceId, holdId, requestId]
+      properties:
+        workspaceId:
+          $ref: "#/components/schemas/OpaqueId"
+        holdId:
+          $ref: "#/components/schemas/OpaqueId"
+        requestId:
+          $ref: "#/components/schemas/OpaqueId"
+    LegalHoldResponse:
+      type: object
+      additionalProperties: false
+      required: [workspaceId, holdId, version, status]
+      properties:
+        workspaceId:
+          $ref: "#/components/schemas/OpaqueId"
+        holdId:
+          $ref: "#/components/schemas/OpaqueId"
+        version:
+          type: integer
+          minimum: 1
+        status:
+          enum: [active, released]
+    ExecuteRetentionPurgeRequest:
+      type: object
+      additionalProperties: false
+      required: [workspaceId, maximumItems]
+      properties:
+        workspaceId:
+          $ref: "#/components/schemas/OpaqueId"
+        maximumItems:
+          type: integer
+          minimum: 1
+          maximum: 1000
+    RetentionPurgeResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - memories
+        - checkpoints
+        - travelResearch
+        - disclosures
+        - canonicalEvents
+        - total
+      properties:
+        memories:
+          type: integer
+          minimum: 0
+        checkpoints:
+          type: integer
+          minimum: 0
+        travelResearch:
+          type: integer
+          minimum: 0
+        disclosures:
+          type: integer
+          minimum: 0
+        canonicalEvents:
+          type: integer
+          minimum: 0
+        total:
+          type: integer
+          minimum: 0
+          maximum: 1000
     OpaqueId:
       type: string
       minLength: 1
