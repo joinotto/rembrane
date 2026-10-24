@@ -544,6 +544,31 @@ test "$(
         "SELECT count(*) FROM graph_projection_outbox WHERE provider_id = 'graph.primary' AND status = 'pending';"
 )" -eq 2
 test "$(
+    sqlite3 "$database" "
+        UPDATE graph_projection_outbox
+        SET status = 'processing', attempts = 1
+        WHERE id = 'graph_projection_node'
+          AND workspace_id = 'workspace_01'
+          AND resource_type = 'node'
+          AND node_id IS 'node_project'
+          AND edge_id IS NULL
+          AND resource_version = 1
+          AND provider_id = 'graph.primary'
+          AND operation = 'upsert'
+          AND status = 'pending'
+          AND attempts = 0;
+        SELECT changes();
+    "
+)" -eq 1
+test "$(
+    sqlite3 "$database" \
+        "SELECT count(*) FROM graph_projection_outbox WHERE id = 'graph_projection_node' AND status = 'processing' AND attempts = 1;"
+)" -eq 1
+test "$(
+    sqlite3 "$database" \
+        "SELECT count(*) FROM graph_projection_outbox WHERE workspace_id = 'workspace_02' AND id = 'graph_projection_node';"
+)" -eq 0
+test "$(
     sqlite3 "$database" \
         "SELECT count(*) FROM knowledge_nodes WHERE workspace_id = 'workspace_01';"
 )" -eq 2

@@ -43,6 +43,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - SQLite graph projection outbox repository with provider-scoped polling,
   tenant-bound lookups, strict row decoding, and optimistic status/attempt
   transitions.
+- Static SQLite evidence for graph-outbox optimistic claims and cross-workspace
+  lookup denial.
 - Graph projection worker that re-reads exact canonical node/edge versions,
   skips stale jobs, and applies retry, quarantine, and completion transitions
   to replaceable providers.
