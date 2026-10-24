@@ -59,6 +59,18 @@ A compatible provider must:
 6. Enforce protocol idempotency, optimistic versions, ordered sync, and
    response limits.
 
+First, perform a content-free discovery and negotiation check:
+
+```sh
+rembrane memory-provider check
+```
+
+The command prints provider identity, version, privacy mode, capabilities,
+domains, and limits as JSON. It never prints the bearer token or memory
+content. Because discovery is intentionally public, this check validates token
+format but does not prove that the provider will authorize that token; the
+black-box conformance test below verifies authenticated operations.
+
 Before production use, run the black-box conformance client:
 
 ```sh

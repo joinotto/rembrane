@@ -13,7 +13,12 @@ use rembrane_domain::{
     EvidenceReference, EvidenceSource, Membership, MemoryId, MemoryRecord, MemoryScope, Principal,
     PrincipalId, ReadGrant, ReadScope, Workspace, WorkspaceId, WorkspaceRole, WritePermission,
 };
-use rembrane_provider_sdk::verify_semantic_provider;
+use rembrane_memory_provider_configured::ConfiguredMemoryProvider;
+use rembrane_provider_sdk::{
+    CURRENT_MEMORY_PROVIDER_PROTOCOL, MemoryProviderCapability, MemoryProviderLimits,
+    MemoryProviderPolicy, MemoryProviderPrivacyMode, MemoryProviderTransport,
+    verify_semantic_provider,
+};
 use rembrane_semantic_native::NativeSemanticProvider;
 use rembrane_store_memory::InMemoryStore;
 use rembrane_store_sqlite::SqliteStore;
@@ -45,6 +50,7 @@ fn run(arguments: Vec<String>) -> Result<(), String> {
         Some("fingerprint-git") => fingerprint_git(&arguments[1..]),
         Some("mcp-config") => print_mcp_config(&arguments[1..]),
         Some("providers") => providers(&arguments[1..]),
+        Some("memory-provider") => memory_provider(&arguments[1..]),
         Some("remember") => remember(&arguments[1..]),
         Some("recall") => recall(&arguments[1..]),
         Some("correct") => correct(&arguments[1..]),
@@ -53,6 +59,82 @@ fn run(arguments: Vec<String>) -> Result<(), String> {
             print_help();
             Ok(())
         }
+    }
+}
+
+fn memory_provider(arguments: &[String]) -> Result<(), String> {
+    if arguments.len() != 1 || arguments[0] != "check" {
+        return Err("usage: rembrane memory-provider check".to_owned());
+    }
+    let provider = ConfiguredMemoryProvider::from_environment(&memory_provider_check_policy()?)
+        .map_err(|error| format!("memory provider check failed: {error}"))?;
+    let manifest = provider.connection().manifest();
+    let limits = manifest.limits();
+    println!(
+        "{}",
+        serde_json::json!({
+            "providerId": manifest.id(),
+            "providerVersion": manifest.version(),
+            "protocolVersion": format!(
+                "{}.{}",
+                manifest.protocol_version().major,
+                manifest.protocol_version().minor
+            ),
+            "privacyMode": memory_privacy_mode_name(manifest.privacy_mode()),
+            "capabilities": manifest
+                .capabilities()
+                .iter()
+                .map(|capability| capability.as_str())
+                .collect::<Vec<_>>(),
+            "supportedDomains": manifest.supported_domains(),
+            "limits": {
+                "maximumContextItems": limits.maximum_context_items,
+                "maximumContextBytes": limits.maximum_context_bytes,
+                "maximumEventBatchItems": limits.maximum_event_batch_items,
+                "maximumSyncBatchItems": limits.maximum_sync_batch_items
+            },
+            "result": "pass"
+        })
+    );
+    Ok(())
+}
+
+fn memory_provider_check_policy() -> Result<MemoryProviderPolicy, String> {
+    MemoryProviderPolicy::new(
+        CURRENT_MEMORY_PROVIDER_PROTOCOL,
+        MemoryProviderTransport::Https,
+        vec![
+            MemoryProviderCapability::ResolveContext,
+            MemoryProviderCapability::ResolveQuestion,
+            MemoryProviderCapability::RecordEvent,
+            MemoryProviderCapability::ProposeMemory,
+            MemoryProviderCapability::CheckpointActivity,
+            MemoryProviderCapability::RecordDisclosure,
+            MemoryProviderCapability::DeleteMemory,
+            MemoryProviderCapability::ExplainMemory,
+            MemoryProviderCapability::SyncPull,
+            MemoryProviderCapability::SyncPush,
+        ],
+        vec![
+            MemoryProviderPrivacyMode::EndToEndEncrypted,
+            MemoryProviderPrivacyMode::TrustedBoundary,
+            MemoryProviderPrivacyMode::ProviderPlaintext,
+        ],
+        MemoryProviderLimits {
+            maximum_context_items: 1,
+            maximum_context_bytes: 1,
+            maximum_event_batch_items: 1,
+            maximum_sync_batch_items: 1,
+        },
+    )
+    .map_err(|error| format!("cannot construct memory provider check policy: {error}"))
+}
+
+const fn memory_privacy_mode_name(mode: MemoryProviderPrivacyMode) -> &'static str {
+    match mode {
+        MemoryProviderPrivacyMode::EndToEndEncrypted => "end_to_end_encrypted",
+        MemoryProviderPrivacyMode::TrustedBoundary => "trusted_boundary",
+        MemoryProviderPrivacyMode::ProviderPlaintext => "provider_plaintext",
     }
 }
 
@@ -1091,6 +1173,7 @@ fn print_help() {
            rembrane fingerprint-git --repository <path>\n\
            rembrane providers list\n\
            rembrane providers test --provider <id> --namespace <unique-name>\n\
+           rembrane memory-provider check\n\
            rembrane mcp-config --client <codex|claude-code|gemini-cli|generic> \
              --server-binary <path> \
              [--key-provider <environment|macos-keychain|http>]\n\
@@ -1116,8 +1199,9 @@ mod tests {
 
     use super::{
         EXPORT_MAGIC, claude_mcp_config, codex_mcp_config, format_read_scopes, gemini_mcp_config,
-        generic_mcp_config, option, positive_u64, providers, read_export, recall_scope_context,
-        redact_endpoint, requested_memory_scope, test_provider, write_export,
+        generic_mcp_config, memory_privacy_mode_name, memory_provider_check_policy, option,
+        positive_u64, providers, read_export, recall_scope_context, redact_endpoint,
+        requested_memory_scope, test_provider, write_export,
     };
 
     fn temporary_path(name: &str) -> std::path::PathBuf {
@@ -1151,6 +1235,37 @@ mod tests {
         assert!(providers(&[]).is_err());
         assert!(providers(&["unknown".to_owned()]).is_err());
         assert!(providers(&["list".to_owned(), "--extra".to_owned()]).is_err());
+    }
+
+    #[test]
+    fn memory_provider_check_requires_the_complete_portable_surface() {
+        let policy = memory_provider_check_policy().expect("policy");
+        let manifest = rembrane_provider_sdk::MemoryProviderManifest::new(
+            "incomplete.provider".to_owned(),
+            "test".to_owned(),
+            rembrane_provider_sdk::CURRENT_MEMORY_PROVIDER_PROTOCOL,
+            vec![rembrane_provider_sdk::MemoryProviderTransport::Https],
+            vec![rembrane_provider_sdk::MemoryProviderCapability::ResolveContext],
+            rembrane_provider_sdk::MemoryProviderPrivacyMode::EndToEndEncrypted,
+            Vec::new(),
+            rembrane_provider_sdk::MemoryProviderLimits {
+                maximum_context_items: 1,
+                maximum_context_bytes: 1,
+                maximum_event_batch_items: 1,
+                maximum_sync_batch_items: 1,
+            },
+        )
+        .expect("manifest");
+        let error = policy
+            .validate(&manifest)
+            .expect_err("incomplete provider must fail");
+        assert!(error.to_string().contains("every required capability"));
+        assert_eq!(
+            memory_privacy_mode_name(
+                rembrane_provider_sdk::MemoryProviderPrivacyMode::TrustedBoundary
+            ),
+            "trusted_boundary"
+        );
     }
 
     #[test]

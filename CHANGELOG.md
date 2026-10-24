@@ -120,6 +120,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Unified configured and negotiated request-prefix validation at 8–64
   URL-safe characters, preventing configuration accepted by one layer from
   failing later during connection creation.
+- A content-free `rembrane memory-provider check` command that validates the
+  complete portable discovery and capability surface and prints only safe
+  negotiated provider metadata, privacy mode, domains, and limits.
 - Canonical engine-neutral temporal knowledge graph aggregates with typed
   nodes, validated relationship types, strict workspace namespaces, separate
   validity and ingestion time, evidence provenance, bounded aliases, versions,
