@@ -5,7 +5,7 @@ use rembrane_domain::{
 };
 use std::collections::BTreeSet;
 
-use crate::{ApplicationError, DisclosureRepository, MemoryRepository};
+use crate::{ApplicationError, ContextReadRepository};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ResolveContextCommand {
@@ -21,7 +21,7 @@ pub struct ResolveContextService<'repository, Repository> {
 
 impl<'repository, Repository> ResolveContextService<'repository, Repository>
 where
-    Repository: DisclosureRepository + MemoryRepository,
+    Repository: ContextReadRepository,
 {
     pub fn new(repository: &'repository mut Repository) -> Self {
         Self { repository }

@@ -81,6 +81,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Added a live PostgreSQL 17 CI proof for tenant-scoped reads, denied
   cross-tenant writes, source-workspace proposal isolation, and unscoped
   fail-closed behavior.
+- Added composite repository capabilities that prevent context, checkpoint,
+  and travel read adapters from compiling unless they also implement their
+  corresponding disclosure-receipt persistence port.
 - A versioned per-workspace retention policy contract with separate periods
   for memory, checkpoints, travel research, disclosures, canonical events, and
   administrative audit, including bounded expiry and legal-hold overrides.

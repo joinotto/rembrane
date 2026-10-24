@@ -171,6 +171,14 @@ pub trait DisclosureRepository {
     fn append(&mut self, receipt: DisclosureReceipt) -> Result<(), ApplicationError>;
 }
 
+/// Compile-time repository capability required by every context read path.
+///
+/// Adapters cannot be used for context resolution unless they also persist
+/// the exact disclosure receipt produced by that operation.
+pub trait ContextReadRepository: MemoryRepository + DisclosureRepository {}
+
+impl<T> ContextReadRepository for T where T: MemoryRepository + DisclosureRepository {}
+
 pub trait CheckpointDisclosureRepository {
     fn append_checkpoint_disclosure(
         &mut self,
@@ -178,11 +186,31 @@ pub trait CheckpointDisclosureRepository {
     ) -> Result<(), ApplicationError>;
 }
 
+pub trait CheckpointReadRepository:
+    CheckpointMutationRepository + CheckpointDisclosureRepository
+{
+}
+
+impl<T> CheckpointReadRepository for T where
+    T: CheckpointMutationRepository + CheckpointDisclosureRepository
+{
+}
+
 pub trait TravelDisclosureRepository {
     fn append_travel_disclosure(
         &mut self,
         receipt: TravelDisclosureReceipt,
     ) -> Result<(), ApplicationError>;
+}
+
+pub trait TravelContextRepository:
+    TripRepository + BookingResearchRepository + TravelDisclosureRepository
+{
+}
+
+impl<T> TravelContextRepository for T where
+    T: TripRepository + BookingResearchRepository + TravelDisclosureRepository
+{
 }
 
 pub trait EventRepository {

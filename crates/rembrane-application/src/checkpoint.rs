@@ -3,7 +3,7 @@ use rembrane_domain::{
     EventId, EventPayload, MemoryScope, ReadGrant, WriteGrant, WritePermission,
 };
 
-use crate::{ApplicationError, CheckpointDisclosureRepository, CheckpointMutationRepository};
+use crate::{ApplicationError, CheckpointReadRepository};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CreateCheckpointCommand {
@@ -36,7 +36,7 @@ pub struct CheckpointService<'repository, Repository> {
 
 impl<'repository, Repository> CheckpointService<'repository, Repository>
 where
-    Repository: CheckpointDisclosureRepository + CheckpointMutationRepository,
+    Repository: CheckpointReadRepository,
 {
     pub fn new(repository: &'repository mut Repository) -> Self {
         Self { repository }

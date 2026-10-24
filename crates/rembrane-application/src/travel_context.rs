@@ -5,9 +5,7 @@ use rembrane_domain::{
     TripParticipant,
 };
 
-use crate::{
-    ApplicationError, BookingResearchRepository, TravelDisclosureRepository, TripRepository,
-};
+use crate::{ApplicationError, TravelContextRepository};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ResolveTravelContextCommand {
@@ -66,7 +64,7 @@ pub struct TravelContextService<'repository, Repository> {
 
 impl<'repository, Repository> TravelContextService<'repository, Repository>
 where
-    Repository: TripRepository + BookingResearchRepository + TravelDisclosureRepository,
+    Repository: TravelContextRepository,
 {
     pub const fn new(repository: &'repository mut Repository) -> Self {
         Self { repository }

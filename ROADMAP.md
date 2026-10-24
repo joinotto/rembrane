@@ -147,7 +147,8 @@ This roadmap describes sequencing, not release dates.
   - [x] Add a hardened Cloudflare Tunnel Compose overlay that keeps persistent
     memory and encryption credentials on the operator-controlled origin.
 - [x] Persist a disclosure receipt for every SQLite context response.
-- [ ] Persist disclosure receipts in every future storage adapter.
+- [x] Require every future context storage adapter to implement disclosure
+  persistence through compile-time composite repository capabilities.
 - [x] Prove cross-tenant denial across SQLite user-facing read paths.
 - [x] Require workspace identity for internal projection-job lookups.
 - [ ] Prove cross-tenant denial across every future adapter read path.
