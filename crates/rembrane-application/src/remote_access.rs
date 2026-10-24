@@ -82,6 +82,31 @@ where
             )
             .map_err(|_| ApplicationError::AccessDenied)
     }
+
+    /// Authenticates a non-tool MCP protocol request.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AccessDenied` for an empty, unverifiable, invalid, expired, or
+    /// scope-free token.
+    pub fn authenticate_connection(
+        &self,
+        bearer_token: &str,
+        now_epoch_seconds: u64,
+    ) -> Result<VerifiedRemoteAccess, ApplicationError> {
+        if bearer_token.is_empty() {
+            return Err(ApplicationError::AccessDenied);
+        }
+        self.verifier
+            .verify(bearer_token)
+            .map_err(|_| ApplicationError::AccessDenied)?
+            .validate_connection(
+                self.expected_issuer,
+                self.expected_resource,
+                now_epoch_seconds,
+            )
+            .map_err(|_| ApplicationError::AccessDenied)
+    }
 }
 
 pub struct RemoteHttpAuthorization<'authenticator, 'verifier, Verifier> {
@@ -122,11 +147,7 @@ where
         tool_name: &str,
         now_epoch_seconds: u64,
     ) -> Result<VerifiedRemoteAccess, ApplicationError> {
-        if origin_header
-            .is_some_and(|origin| origin.is_empty() || !self.trusted_origins.contains(&origin))
-        {
-            return Err(ApplicationError::AccessDenied);
-        }
+        self.require_trusted_origin(origin_header)?;
         let operation =
             RemoteMcpOperation::from_tool_name(tool_name).ok_or(ApplicationError::AccessDenied)?;
         let bearer_token = authorization_header
@@ -134,6 +155,36 @@ where
             .ok_or(ApplicationError::AccessDenied)?;
         self.authenticator
             .authenticate(bearer_token, now_epoch_seconds, operation.required_scope())
+    }
+
+    /// Authorizes a non-tool MCP protocol request with the same bearer and
+    /// browser-origin policy used for tool requests.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AccessDenied` when the origin or token is invalid.
+    pub fn authorize_connection(
+        &self,
+        authorization_header: Option<&str>,
+        origin_header: Option<&str>,
+        now_epoch_seconds: u64,
+    ) -> Result<VerifiedRemoteAccess, ApplicationError> {
+        self.require_trusted_origin(origin_header)?;
+        let bearer_token = authorization_header
+            .and_then(parse_bearer_token)
+            .ok_or(ApplicationError::AccessDenied)?;
+        self.authenticator
+            .authenticate_connection(bearer_token, now_epoch_seconds)
+    }
+
+    fn require_trusted_origin(&self, origin_header: Option<&str>) -> Result<(), ApplicationError> {
+        if origin_header
+            .is_some_and(|origin| origin.is_empty() || !self.trusted_origins.contains(&origin))
+        {
+            Err(ApplicationError::AccessDenied)
+        } else {
+            Ok(())
+        }
     }
 }
 
@@ -294,5 +345,10 @@ mod tests {
             .expect_err("operation scope is checked on every request"),
             ApplicationError::AccessDenied
         );
+
+        let protocol_access = http
+            .authorize_connection(Some("Bearer signed-token"), None, 1_000)
+            .expect("protocol requests should require a valid scoped token");
+        assert_eq!(protocol_access.client_id().as_str(), "client_01");
     }
 }

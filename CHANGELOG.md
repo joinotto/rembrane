@@ -36,6 +36,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Typed remote MCP deployment profiles reject plaintext, partial,
   credential-bearing, or wildcard-origin OAuth configuration before startup
   while retaining the introspection secret only as a provider reference.
+- Remote MCP protocol requests now authenticate through a scoped connection
+  path, allowing initialize, discovery, event-stream, and session deletion
+  without incorrectly substituting a tool-specific OAuth permission.
 - Hardened Cloudflare Tunnel Compose overlay and operator guide for
   outbound-only self-hosted access without mounting the memory database or
   workspace encryption credentials into the tunnel container.

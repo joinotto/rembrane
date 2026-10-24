@@ -140,6 +140,25 @@ pub struct VerifiedRemoteAccess {
 }
 
 impl RemoteTokenClaims {
+    /// Validates a remote MCP protocol connection after cryptographic token
+    /// verification or authenticated introspection.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for invalid issuer, audience, time, identity,
+    /// workspace binding, or an empty recognized scope set.
+    pub fn validate_connection(
+        self,
+        expected_issuer: &str,
+        expected_resource: &str,
+        now_epoch_seconds: u64,
+    ) -> Result<VerifiedRemoteAccess, RemoteAccessError> {
+        if self.scopes.is_empty() {
+            return Err(RemoteAccessError::Scope);
+        }
+        self.validate_common(expected_issuer, expected_resource, now_epoch_seconds)
+    }
+
     /// Validates authorization semantics after a transport adapter has already
     /// verified the token signature and decoded trusted claims.
     ///
@@ -153,6 +172,18 @@ impl RemoteTokenClaims {
         expected_resource: &str,
         now_epoch_seconds: u64,
         required_scope: RemoteAccessScope,
+    ) -> Result<VerifiedRemoteAccess, RemoteAccessError> {
+        if !self.scopes.contains(&required_scope) {
+            return Err(RemoteAccessError::Scope);
+        }
+        self.validate_common(expected_issuer, expected_resource, now_epoch_seconds)
+    }
+
+    fn validate_common(
+        self,
+        expected_issuer: &str,
+        expected_resource: &str,
+        now_epoch_seconds: u64,
     ) -> Result<VerifiedRemoteAccess, RemoteAccessError> {
         if expected_issuer.is_empty() || self.issuer != expected_issuer {
             return Err(RemoteAccessError::Issuer);
@@ -180,10 +211,6 @@ impl RemoteTokenClaims {
         {
             return Err(RemoteAccessError::Identity);
         }
-        if !self.scopes.contains(&required_scope) {
-            return Err(RemoteAccessError::Scope);
-        }
-
         Ok(VerifiedRemoteAccess {
             issuer: self.issuer,
             resource: expected_resource.to_owned(),
@@ -357,6 +384,29 @@ mod tests {
                 )
                 .expect_err("issuer confusion must fail"),
             RemoteAccessError::Issuer
+        );
+    }
+
+    #[test]
+    fn protocol_connection_requires_a_recognized_scope() {
+        let access = claims(&[RemoteAccessScope::CheckpointRead])
+            .validate_connection(
+                "https://identity.example.test",
+                "https://memory.example.test/mcp",
+                1_000,
+            )
+            .expect("scoped protocol connection should validate");
+        assert!(access.allows(RemoteAccessScope::CheckpointRead));
+
+        assert_eq!(
+            claims(&[])
+                .validate_connection(
+                    "https://identity.example.test",
+                    "https://memory.example.test/mcp",
+                    1_000,
+                )
+                .expect_err("scope-free connection must fail"),
+            RemoteAccessError::Scope
         );
     }
 
