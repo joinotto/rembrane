@@ -10,13 +10,12 @@ use std::error::Error;
 use std::fmt::{Display, Formatter};
 
 use rembrane_application::{RemoteTokenVerificationError, RemoteTokenVerifier};
-use rembrane_contracts::{RemoteAccessScope, RemoteTokenClaims};
+use rembrane_contracts::{
+    MAX_REMOTE_AUDIENCE_BYTES, MAX_REMOTE_AUDIENCES, MAX_REMOTE_IDENTITY_BYTES,
+    MAX_REMOTE_ISSUER_BYTES, RemoteAccessScope, RemoteTokenClaims,
+};
 use rembrane_domain::{ClientId, PrincipalId, WorkspaceId};
 
-const MAXIMUM_ISSUER_BYTES: usize = 2_048;
-const MAXIMUM_AUDIENCES: usize = 16;
-const MAXIMUM_AUDIENCE_BYTES: usize = 2_048;
-const MAXIMUM_IDENTITY_BYTES: usize = 255;
 const MAXIMUM_SCOPE_BYTES: usize = 4_096;
 
 pub trait IntrospectionTransport {
@@ -87,24 +86,27 @@ where
         if !response.active {
             return Err(RemoteTokenVerificationError);
         }
-        let issuer = required_claim(response.issuer, MAXIMUM_ISSUER_BYTES)?;
+        let issuer = required_claim(response.issuer, MAX_REMOTE_ISSUER_BYTES)?;
         let subject_id =
-            PrincipalId::new(required_claim(response.subject, MAXIMUM_IDENTITY_BYTES)?);
-        let client_id = ClientId::new(required_claim(response.client_id, MAXIMUM_IDENTITY_BYTES)?);
+            PrincipalId::new(required_claim(response.subject, MAX_REMOTE_IDENTITY_BYTES)?);
+        let client_id = ClientId::new(required_claim(
+            response.client_id,
+            MAX_REMOTE_IDENTITY_BYTES,
+        )?);
         let workspace_id = WorkspaceId::new(required_claim(
             response.workspace_id,
-            MAXIMUM_IDENTITY_BYTES,
+            MAX_REMOTE_IDENTITY_BYTES,
         )?);
         let expires_at_epoch_seconds = response
             .expires_at_epoch_seconds
             .filter(|expiry| *expiry > 0)
             .ok_or(RemoteTokenVerificationError)?;
         if response.audience.is_empty()
-            || response.audience.len() > MAXIMUM_AUDIENCES
+            || response.audience.len() > MAX_REMOTE_AUDIENCES
             || response
                 .audience
                 .iter()
-                .any(|audience| !valid_claim(audience, MAXIMUM_AUDIENCE_BYTES))
+                .any(|audience| !valid_claim(audience, MAX_REMOTE_AUDIENCE_BYTES))
         {
             return Err(RemoteTokenVerificationError);
         }
@@ -164,11 +166,13 @@ fn parse_scopes(value: &str) -> Result<BTreeSet<RemoteAccessScope>, RemoteTokenV
 mod tests {
     use super::{
         IntrospectionResponse, IntrospectionTokenVerifier, IntrospectionTransport,
-        IntrospectionTransportError, MAXIMUM_AUDIENCE_BYTES, MAXIMUM_AUDIENCES,
-        MAXIMUM_IDENTITY_BYTES, MAXIMUM_SCOPE_BYTES,
+        IntrospectionTransportError, MAXIMUM_SCOPE_BYTES,
     };
     use rembrane_application::RemoteTokenVerifier;
-    use rembrane_contracts::RemoteAccessScope;
+    use rembrane_contracts::{
+        MAX_REMOTE_AUDIENCE_BYTES, MAX_REMOTE_AUDIENCES, MAX_REMOTE_IDENTITY_BYTES,
+        RemoteAccessScope,
+    };
 
     struct FixtureTransport {
         response: IntrospectionResponse,
@@ -255,7 +259,7 @@ mod tests {
         };
 
         let mut oversized_identity = active_response();
-        oversized_identity.subject = Some("x".repeat(MAXIMUM_IDENTITY_BYTES + 1));
+        oversized_identity.subject = Some("x".repeat(MAX_REMOTE_IDENTITY_BYTES + 1));
         assert!(verify(oversized_identity).is_err());
 
         let mut control_identity = active_response();
@@ -263,11 +267,11 @@ mod tests {
         assert!(verify(control_identity).is_err());
 
         let mut excessive_audiences = active_response();
-        excessive_audiences.audience = vec!["audience".to_owned(); MAXIMUM_AUDIENCES + 1];
+        excessive_audiences.audience = vec!["audience".to_owned(); MAX_REMOTE_AUDIENCES + 1];
         assert!(verify(excessive_audiences).is_err());
 
         let mut oversized_audience = active_response();
-        oversized_audience.audience = vec!["x".repeat(MAXIMUM_AUDIENCE_BYTES + 1)];
+        oversized_audience.audience = vec!["x".repeat(MAX_REMOTE_AUDIENCE_BYTES + 1)];
         assert!(verify(oversized_audience).is_err());
 
         let mut oversized_scope = active_response();

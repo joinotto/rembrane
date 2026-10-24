@@ -53,6 +53,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Fail-closed OAuth introspection claim bounds covering audience cardinality,
   issuer and identity sizes, scope size, and control-character rejection
   before claims become canonical tenant identity.
+- Transport-neutral remote-token claim limits shared by every verifier,
+  including duplicate-audience rejection and bounded issuer, resource, subject,
+  client, and workspace identities before verified access is constructed.
 - A transport-injectable Mem0 OSS semantic adapter mapping authorized
   projections into HMAC-pseudonymous workspace partitions while preserving
   canonical memory IDs, versions, replacement, bounded ranking, and

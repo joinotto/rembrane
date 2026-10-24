@@ -9,6 +9,11 @@ use rembrane_domain::{
     PrincipalId, WorkspaceId,
 };
 
+pub const MAX_REMOTE_ISSUER_BYTES: usize = 2_048;
+pub const MAX_REMOTE_AUDIENCES: usize = 16;
+pub const MAX_REMOTE_AUDIENCE_BYTES: usize = 2_048;
+pub const MAX_REMOTE_IDENTITY_BYTES: usize = 255;
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ResolveContextRequest {
     pub workspace_id: WorkspaceId,
@@ -276,10 +281,24 @@ impl RemoteTokenClaims {
         expected_resource: &str,
         now_epoch_seconds: u64,
     ) -> Result<VerifiedRemoteAccess, RemoteAccessError> {
-        if expected_issuer.is_empty() || self.issuer != expected_issuer {
+        if !valid_remote_claim(expected_issuer, MAX_REMOTE_ISSUER_BYTES)
+            || !valid_remote_claim(&self.issuer, MAX_REMOTE_ISSUER_BYTES)
+            || self.issuer != expected_issuer
+        {
             return Err(RemoteAccessError::Issuer);
         }
-        if expected_resource.is_empty()
+        if !valid_remote_claim(expected_resource, MAX_REMOTE_AUDIENCE_BYTES)
+            || self.audience.is_empty()
+            || self.audience.len() > MAX_REMOTE_AUDIENCES
+            || self
+                .audience
+                .iter()
+                .any(|audience| !valid_remote_claim(audience, MAX_REMOTE_AUDIENCE_BYTES))
+            || self
+                .audience
+                .iter()
+                .enumerate()
+                .any(|(index, audience)| self.audience[..index].contains(audience))
             || !self
                 .audience
                 .iter()
@@ -296,9 +315,9 @@ impl RemoteTokenClaims {
         {
             return Err(RemoteAccessError::NotYetValid);
         }
-        if self.subject_id.as_str().is_empty()
-            || self.client_id.as_str().is_empty()
-            || self.workspace_id.as_str().is_empty()
+        if !valid_remote_claim(self.subject_id.as_str(), MAX_REMOTE_IDENTITY_BYTES)
+            || !valid_remote_claim(self.client_id.as_str(), MAX_REMOTE_IDENTITY_BYTES)
+            || !valid_remote_claim(self.workspace_id.as_str(), MAX_REMOTE_IDENTITY_BYTES)
         {
             return Err(RemoteAccessError::Identity);
         }
@@ -312,6 +331,10 @@ impl RemoteTokenClaims {
             expires_at_epoch_seconds: self.expires_at_epoch_seconds,
         })
     }
+}
+
+fn valid_remote_claim(value: &str, maximum_bytes: usize) -> bool {
+    !value.is_empty() && value.len() <= maximum_bytes && !value.chars().any(char::is_control)
 }
 
 impl VerifiedRemoteAccess {
@@ -445,8 +468,10 @@ impl Error for RemoteAccessError {}
 #[cfg(test)]
 mod tests {
     use super::{
-        ClientId, PrincipalId, RemoteAccessError, RemoteAccessScope, RemoteMcpOperation,
-        RemoteMcpRequestAuthorization, RemoteSessionId, RemoteTokenClaims, WorkspaceId,
+        ClientId, MAX_REMOTE_AUDIENCE_BYTES, MAX_REMOTE_AUDIENCES, MAX_REMOTE_IDENTITY_BYTES,
+        MAX_REMOTE_ISSUER_BYTES, PrincipalId, RemoteAccessError, RemoteAccessScope,
+        RemoteMcpOperation, RemoteMcpRequestAuthorization, RemoteSessionId, RemoteTokenClaims,
+        WorkspaceId,
     };
 
     fn claims(scopes: &[RemoteAccessScope]) -> RemoteTokenClaims {
@@ -541,6 +566,62 @@ mod tests {
                 )
                 .expect_err("issuer confusion must fail"),
             RemoteAccessError::Issuer
+        );
+    }
+
+    #[test]
+    fn transport_neutral_claims_reject_oversized_ambiguous_or_control_bearing_values() {
+        let validate = |claims: RemoteTokenClaims| {
+            claims.validate_connection(
+                "https://identity.example.test",
+                "https://memory.example.test/mcp",
+                1_000,
+            )
+        };
+
+        let mut oversized_issuer = claims(&[RemoteAccessScope::ContextRead]);
+        oversized_issuer.issuer = "x".repeat(MAX_REMOTE_ISSUER_BYTES + 1);
+        assert_eq!(
+            validate(oversized_issuer).expect_err("oversized issuer must fail"),
+            RemoteAccessError::Issuer
+        );
+
+        let mut excessive_audiences = claims(&[RemoteAccessScope::ContextRead]);
+        excessive_audiences.audience =
+            vec!["https://memory.example.test/mcp".to_owned(); MAX_REMOTE_AUDIENCES + 1];
+        assert_eq!(
+            validate(excessive_audiences).expect_err("excessive audiences must fail"),
+            RemoteAccessError::Audience
+        );
+
+        let mut duplicate_audiences = claims(&[RemoteAccessScope::ContextRead]);
+        duplicate_audiences
+            .audience
+            .push("https://memory.example.test/mcp".to_owned());
+        assert_eq!(
+            validate(duplicate_audiences).expect_err("duplicate audiences must fail"),
+            RemoteAccessError::Audience
+        );
+
+        let mut oversized_audience = claims(&[RemoteAccessScope::ContextRead]);
+        oversized_audience.audience = vec!["x".repeat(MAX_REMOTE_AUDIENCE_BYTES + 1)];
+        assert_eq!(
+            validate(oversized_audience).expect_err("oversized audience must fail"),
+            RemoteAccessError::Audience
+        );
+
+        let mut control_identity = claims(&[RemoteAccessScope::ContextRead]);
+        control_identity.workspace_id = WorkspaceId::new("workspace\ninjected");
+        assert_eq!(
+            validate(control_identity).expect_err("control-bearing identity must fail"),
+            RemoteAccessError::Identity
+        );
+
+        let mut oversized_identity = claims(&[RemoteAccessScope::ContextRead]);
+        oversized_identity.subject_id = PrincipalId::new("x".repeat(MAX_REMOTE_IDENTITY_BYTES + 1));
+        assert_eq!(
+            validate(oversized_identity).expect_err("oversized identity must fail"),
+            RemoteAccessError::Identity
         );
     }
 
