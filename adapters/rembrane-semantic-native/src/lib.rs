@@ -187,7 +187,7 @@ mod tests {
     }
 
     #[test]
-    fn newer projection_replaces_old_version() {
+    fn newer_projection_replaces_old_version() {
         let mut provider = NativeSemanticProvider::new();
         provider
             .index(projection(
