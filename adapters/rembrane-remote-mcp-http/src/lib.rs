@@ -5,6 +5,13 @@
 //! protocol execution, while this gate ensures every accepted request has
 //! already passed bearer, origin, method/tool, session, and tenant checks.
 
+use axum::{
+    http::{
+        HeaderMap, HeaderName, HeaderValue, StatusCode,
+        header::{AUTHORIZATION, HOST, ORIGIN, RETRY_AFTER, WWW_AUTHENTICATE},
+    },
+    response::{IntoResponse, Response},
+};
 use rembrane_application::{
     RemoteHttpAuthorization, RemoteHttpAuthorizationError, RemoteSessionHttpError,
     RemoteSessionRegistry, RemoteTokenVerifier,
@@ -15,6 +22,7 @@ use serde::Deserialize;
 
 pub const MCP_SESSION_HEADER: &str = "Mcp-Session-Id";
 pub const MAX_REMOTE_MCP_REQUEST_BYTES: usize = 1_048_576;
+const MCP_SESSION_HEADER_NAME: HeaderName = HeaderName::from_static("mcp-session-id");
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RemoteMcpInvocation {
@@ -112,6 +120,82 @@ pub struct RemoteMcpHttpRejection {
     pub status: u16,
     pub www_authenticate: Option<String>,
     pub retry_after_seconds: Option<u64>,
+}
+
+impl IntoResponse for RemoteMcpHttpRejection {
+    fn into_response(self) -> Response {
+        let status = StatusCode::from_u16(self.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+        let mut response = status.into_response();
+        if let Some(challenge) = self.www_authenticate
+            && let Ok(value) = HeaderValue::from_str(&challenge)
+        {
+            response.headers_mut().insert(WWW_AUTHENTICATE, value);
+        }
+        if let Some(seconds) = self.retry_after_seconds
+            && let Ok(value) = HeaderValue::from_str(&seconds.to_string())
+        {
+            response.headers_mut().insert(RETRY_AFTER, value);
+        }
+        response
+    }
+}
+
+/// Converts Axum's parsed header map into the transport-neutral request
+/// contract without accepting ambiguous duplicate security headers.
+///
+/// # Errors
+///
+/// Returns a fail-closed forbidden response for duplicate or non-text
+/// authorization, host, origin, or session headers.
+pub fn request_from_axum_headers(
+    headers: &HeaderMap,
+) -> Result<RemoteMcpHttpRequest<'_>, RemoteMcpHttpRejection> {
+    Ok(RemoteMcpHttpRequest {
+        authorization: unique_header(headers, &AUTHORIZATION)?,
+        host: unique_header(headers, &HOST)?,
+        origin: unique_header(headers, &ORIGIN)?,
+        session_id: unique_header(headers, &MCP_SESSION_HEADER_NAME)?,
+    })
+}
+
+fn unique_header<'headers>(
+    headers: &'headers HeaderMap,
+    name: &HeaderName,
+) -> Result<Option<&'headers str>, RemoteMcpHttpRejection> {
+    let mut values = headers.get_all(name).iter();
+    let first = values.next();
+    if values.next().is_some() {
+        return Err(RemoteMcpHttpGate::forbidden());
+    }
+    first
+        .map(|value| value.to_str().map_err(|_| RemoteMcpHttpGate::forbidden()))
+        .transpose()
+}
+
+/// Performs exact-body OAuth authorization for an Axum request before the
+/// same bytes are dispatched to the official MCP SDK service.
+///
+/// # Errors
+///
+/// Returns an HTTP-ready rejection for malformed or ambiguous headers,
+/// malformed JSON-RPC, invalid credentials, untrusted host/origin, or missing
+/// operation scope.
+pub fn authorize_axum_stateless_body<Verifier>(
+    gate: &RemoteMcpHttpGate,
+    authorization: &RemoteHttpAuthorization<'_, '_, Verifier>,
+    headers: &HeaderMap,
+    body: &[u8],
+    now_epoch_seconds: u64,
+) -> Result<(VerifiedRemoteAccess, RemoteMcpInvocation), RemoteMcpHttpRejection>
+where
+    Verifier: RemoteTokenVerifier,
+{
+    gate.authorize_stateless_body(
+        authorization,
+        request_from_axum_headers(headers)?,
+        body,
+        now_epoch_seconds,
+    )
 }
 
 pub struct RemoteMcpHttpGate {
@@ -424,6 +508,13 @@ impl RemoteMcpHttpGate {
 mod tests {
     use std::collections::BTreeSet;
 
+    use axum::{
+        http::{
+            HeaderMap, HeaderValue,
+            header::{AUTHORIZATION, HOST, ORIGIN, RETRY_AFTER, WWW_AUTHENTICATE},
+        },
+        response::IntoResponse,
+    };
     use rembrane_application::{
         RemoteAccessAuthenticator, RemoteHttpAuthorization, RemoteTokenVerificationError,
         RemoteTokenVerifier,
@@ -432,7 +523,10 @@ mod tests {
     use rembrane_contracts::{RemoteAccessScope, RemoteTokenClaims};
     use rembrane_domain::{ClientId, PrincipalId, WorkspaceId};
 
-    use super::{RemoteMcpHttpGate, RemoteMcpHttpRequest, classify_remote_mcp_request};
+    use super::{
+        MCP_SESSION_HEADER_NAME, RemoteMcpHttpGate, RemoteMcpHttpRequest,
+        authorize_axum_stateless_body, classify_remote_mcp_request, request_from_axum_headers,
+    };
 
     struct Verifier;
 
@@ -745,5 +839,88 @@ mod tests {
                 .status,
             403
         );
+    }
+
+    #[test]
+    fn axum_boundary_rejects_duplicate_security_headers() {
+        let mut headers = HeaderMap::new();
+        headers.insert(HOST, HeaderValue::from_static("memory.example.test"));
+        headers.append(
+            AUTHORIZATION,
+            HeaderValue::from_static("Bearer workspace-one"),
+        );
+        headers.append(
+            AUTHORIZATION,
+            HeaderValue::from_static("Bearer workspace-two"),
+        );
+        assert!(
+            request_from_axum_headers(&headers).is_err(),
+            "multiple credentials must never be collapsed by the HTTP adapter"
+        );
+
+        headers.remove(AUTHORIZATION);
+        headers.insert(
+            AUTHORIZATION,
+            HeaderValue::from_static("Bearer workspace-one"),
+        );
+        headers.append(HOST, HeaderValue::from_static("attacker.example.test"));
+        assert!(
+            request_from_axum_headers(&headers).is_err(),
+            "multiple host authorities must fail closed"
+        );
+    }
+
+    #[test]
+    fn axum_boundary_authorizes_the_exact_body_and_maps_rejections() {
+        let verifier = Verifier;
+        let authenticator = RemoteAccessAuthenticator::new(
+            &verifier,
+            "https://identity.example.test",
+            "https://memory.example.test/mcp",
+        );
+        let origins = ["https://agent.example.test"];
+        let authorization = RemoteHttpAuthorization::new(&authenticator, &origins);
+        let gate = RemoteMcpHttpGate::new(
+            1,
+            "https://memory.example.test/.well-known/oauth-protected-resource/mcp",
+            &["memory.example.test"],
+        )
+        .expect("gate should be valid");
+        let mut headers = HeaderMap::new();
+        headers.insert(HOST, HeaderValue::from_static("memory.example.test"));
+        headers.insert(
+            AUTHORIZATION,
+            HeaderValue::from_static("Bearer workspace-one"),
+        );
+        headers.insert(
+            ORIGIN,
+            HeaderValue::from_static("https://agent.example.test"),
+        );
+        let body = br#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"rembrane_resolve_context","arguments":{}}}"#;
+
+        let (access, invocation) =
+            authorize_axum_stateless_body(&gate, &authorization, &headers, body, 1_000)
+                .expect("Axum request should authorize before dispatch");
+        assert_eq!(access.workspace_id().as_str(), "workspace_01");
+        assert_eq!(invocation.tool_name(), Some("rembrane_resolve_context"));
+
+        headers.insert(
+            MCP_SESSION_HEADER_NAME,
+            HeaderValue::from_static("session_0123456789abcdef"),
+        );
+        let rejection = authorize_axum_stateless_body(&gate, &authorization, &headers, body, 1_000)
+            .expect_err("stateless endpoint must reject session ambiguity");
+        let response = rejection.into_response();
+        assert_eq!(response.status(), 403);
+        assert!(!response.headers().contains_key(WWW_AUTHENTICATE));
+
+        headers.remove(MCP_SESSION_HEADER_NAME);
+        headers.insert(AUTHORIZATION, HeaderValue::from_static("Bearer invalid"));
+        let rejection = authorize_axum_stateless_body(&gate, &authorization, &headers, body, 1_000)
+            .expect_err("invalid credential must produce a bearer challenge");
+        let response = rejection.into_response();
+        assert_eq!(response.status(), 401);
+        assert!(response.headers().contains_key(WWW_AUTHENTICATE));
+        assert!(!response.headers().contains_key(RETRY_AFTER));
     }
 }

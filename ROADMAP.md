@@ -152,6 +152,8 @@ This roadmap describes sequencing, not release dates.
     - [x] Couple stateless body classification and OAuth authorization in one
       gate operation so dispatched bytes cannot drift from the authorized
       method, tool, or scope.
+    - [x] Adapt Axum header maps and HTTP rejection responses at the outer
+      boundary, rejecting duplicate security headers before SDK dispatch.
   - [x] Allow the shared MCP handler service to initialize canonical
     subject/client/workspace identity exclusively from verified remote claims.
   - [x] Bind remote sessions to issuer, resource, canonical identity,

@@ -8,6 +8,7 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+axum = "0.8"
 rembrane-application = { path = "../../crates/rembrane-application" }
 rembrane-config = { path = "../../crates/rembrane-config" }
 rembrane-contracts = { path = "../../crates/rembrane-contracts" }
