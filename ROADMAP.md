@@ -284,7 +284,7 @@ This roadmap describes sequencing, not release dates.
     workspace generation and opaque completed-key identity.
   - [x] Create the requirement atomically with membership removal and scope
     revocation in in-memory and SQLite repositories.
-  - [ ] Deny new shared-workspace access while rotation is required.
+  - [x] Deny new shared-workspace client grants while rotation is required.
   - [ ] Complete rotation only after a key provider confirms the new
     generation and authorized recipients.
 - [ ] Organizational audit and retention controls.

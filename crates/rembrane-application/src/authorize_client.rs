@@ -1,8 +1,11 @@
 use rembrane_domain::{
-    ClientId, ReadGrant, ReadPermission, ReadScope, WorkspaceRole, WriteGrant, WritePermission,
+    ClientId, KeyRotationStatus, ReadGrant, ReadPermission, ReadScope, WorkspaceRole, WriteGrant,
+    WritePermission,
 };
 
-use crate::{ApplicationError, MemberScopeGrantRepository, MembershipRepository};
+use crate::{
+    ApplicationError, KeyRotationRepository, MemberScopeGrantRepository, MembershipRepository,
+};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AuthorizeClientCommand {
@@ -26,7 +29,7 @@ pub struct AuthorizeClientService<'repository, Repository> {
 
 impl<'repository, Repository> AuthorizeClientService<'repository, Repository>
 where
-    Repository: MemberScopeGrantRepository + MembershipRepository,
+    Repository: KeyRotationRepository + MemberScopeGrantRepository + MembershipRepository,
 {
     pub const fn new(repository: &'repository Repository) -> Self {
         Self { repository }
@@ -41,6 +44,13 @@ where
             .find_membership(&command.workspace_id, &command.principal_id)?
             .ok_or(ApplicationError::AccessDenied)?;
         if !membership.is_active() {
+            return Err(ApplicationError::AccessDenied);
+        }
+        if self
+            .repository
+            .latest_key_rotation(&command.workspace_id)?
+            .is_some_and(|rotation| rotation.status() == KeyRotationStatus::Required)
+        {
             return Err(ApplicationError::AccessDenied);
         }
 
@@ -113,16 +123,19 @@ const fn role_allows(role: WorkspaceRole, permission: WritePermission) -> bool {
 #[cfg(test)]
 mod tests {
     use rembrane_domain::{
-        EntityId, MemberScopeGrant, Membership, PrincipalId, ReadPermission, ReadScope,
-        WorkspaceId, WorkspaceRole, WritePermission,
+        EntityId, KeyRotationId, MemberScopeGrant, Membership, PrincipalId, ReadPermission,
+        ReadScope, WorkspaceId, WorkspaceKeyRotation, WorkspaceRole, WritePermission,
     };
 
     use super::{AuthorizeClientCommand, AuthorizeClientService};
-    use crate::{ApplicationError, MemberScopeGrantRepository, MembershipRepository};
+    use crate::{
+        ApplicationError, KeyRotationRepository, MemberScopeGrantRepository, MembershipRepository,
+    };
 
     struct Memberships {
         membership: Membership,
         scopes: Vec<MemberScopeGrant>,
+        rotation: Option<WorkspaceKeyRotation>,
     }
 
     impl MemberScopeGrantRepository for Memberships {
@@ -180,6 +193,19 @@ mod tests {
         }
     }
 
+    impl KeyRotationRepository for Memberships {
+        fn latest_key_rotation(
+            &self,
+            workspace_id: &WorkspaceId,
+        ) -> Result<Option<WorkspaceKeyRotation>, ApplicationError> {
+            Ok(self
+                .rotation
+                .as_ref()
+                .filter(|rotation| rotation.workspace_id() == workspace_id)
+                .cloned())
+        }
+    }
+
     fn command() -> AuthorizeClientCommand {
         AuthorizeClientCommand {
             client_id: rembrane_domain::ClientId::new("client_01"),
@@ -213,6 +239,7 @@ mod tests {
                 WorkspaceRole::Member,
             ),
             scopes: Vec::new(),
+            rotation: None,
         };
 
         let grants = AuthorizeClientService::new(&repository)
@@ -241,6 +268,7 @@ mod tests {
                 WorkspaceRole::Owner,
             ),
             scopes: Vec::new(),
+            rotation: None,
         };
 
         let grants = AuthorizeClientService::new(&repository)
@@ -282,6 +310,7 @@ mod tests {
                 principal_id,
                 allowed.clone(),
             )],
+            rotation: None,
         };
         let mut requested = command();
         requested.requested_read_scopes = vec![
@@ -309,11 +338,41 @@ mod tests {
             )
             .remove(),
             scopes: Vec::new(),
+            rotation: None,
         };
 
         let error = AuthorizeClientService::new(&repository)
             .execute(command())
             .expect_err("removed member should be denied");
+
+        assert_eq!(error, ApplicationError::AccessDenied);
+    }
+
+    #[test]
+    fn pending_workspace_key_rotation_denies_new_client_grants() {
+        let workspace_id = WorkspaceId::new("workspace_01");
+        let repository = Memberships {
+            membership: Membership::new(
+                workspace_id.clone(),
+                PrincipalId::new("principal_01"),
+                WorkspaceRole::Owner,
+            ),
+            scopes: Vec::new(),
+            rotation: Some(
+                WorkspaceKeyRotation::required(
+                    KeyRotationId::new("rotation_01"),
+                    workspace_id,
+                    1,
+                    PrincipalId::new("removed_01"),
+                    PrincipalId::new("principal_01"),
+                )
+                .expect("rotation"),
+            ),
+        };
+
+        let error = AuthorizeClientService::new(&repository)
+            .execute(command())
+            .expect_err("pending rotation must deny new client authority");
 
         assert_eq!(error, ApplicationError::AccessDenied);
     }

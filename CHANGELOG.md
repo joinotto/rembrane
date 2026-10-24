@@ -15,6 +15,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Atomic in-memory and SQLite member removal that revokes scope grants and
   creates the next tenant-scoped key-rotation generation in the same
   transaction.
+- Fail-closed client authorization while a workspace has a required,
+  incomplete encryption-key rotation.
 - Consumed customer key-provider HTTP configuration for application-owned
   vault, keychain, cloud-secret, and deployment integrations without fixed
   Rembrane environment-variable names.
