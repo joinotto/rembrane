@@ -1400,6 +1400,8 @@ dependencies = [
  "rembrane-domain",
  "rembrane-provider-sdk",
  "ring",
+ "serde",
+ "serde_json",
  "zeroize",
 ]
 

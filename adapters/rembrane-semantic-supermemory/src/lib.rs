@@ -8,11 +8,13 @@ use rembrane_provider_sdk::{
     ProviderError, ProviderLimits, ProviderManifest, SemanticMemoryProvider, SemanticQuery,
 };
 use ring::hmac;
+use serde::Deserialize;
 use zeroize::Zeroize;
 
 const MAXIMUM_CONTENT_BYTES: usize = 262_144;
 const MAXIMUM_CANDIDATES: usize = 1_000;
 const MAXIMUM_PROVIDER_ID_BYTES: usize = 512;
+const MAXIMUM_RESPONSE_RECORDS: usize = 1_000;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SupermemoryRecord {
@@ -52,6 +54,75 @@ impl SupermemoryRecord {
     pub fn provider_id(&self) -> &str {
         &self.provider_id
     }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WireRecord {
+    #[serde(alias = "documentId", alias = "customId")]
+    id: String,
+    metadata: WireMetadata,
+    #[serde(default)]
+    score: Option<f64>,
+}
+
+#[derive(Deserialize)]
+struct WireMetadata {
+    rembrane_memory_id: String,
+    rembrane_version: u64,
+}
+
+#[derive(Deserialize)]
+struct WireRecords {
+    #[serde(default, alias = "documents")]
+    results: Vec<WireRecord>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WireDeletion {
+    successful: Vec<String>,
+    #[serde(default)]
+    failed: Vec<serde_json::Value>,
+}
+
+pub fn decode_records(bytes: &[u8]) -> Result<Vec<SupermemoryRecord>, ProviderError> {
+    let wire: WireRecords = serde_json::from_slice(bytes)
+        .map_err(|_| ProviderError::Rejected("Supermemory returned malformed JSON".to_owned()))?;
+    if wire.results.len() > MAXIMUM_RESPONSE_RECORDS {
+        return Err(ProviderError::Rejected(
+            "Supermemory returned too many records".to_owned(),
+        ));
+    }
+    wire.results
+        .into_iter()
+        .map(|record| {
+            let score = record
+                .score
+                .map(|score| {
+                    if !score.is_finite() || !(0.0..=1.0).contains(&score) {
+                        return Err(ProviderError::Rejected(
+                            "Supermemory returned an invalid score".to_owned(),
+                        ));
+                    }
+                    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                    Ok((score * 1_000_000.0).round() as u32)
+                })
+                .transpose()?;
+            SupermemoryRecord::new(
+                record.id,
+                MemoryId::new(record.metadata.rembrane_memory_id),
+                record.metadata.rembrane_version,
+                score,
+            )
+        })
+        .collect()
+}
+
+pub fn deletion_confirmed(bytes: &[u8], provider_id: &str) -> Result<bool, ProviderError> {
+    let wire: WireDeletion = serde_json::from_slice(bytes)
+        .map_err(|_| ProviderError::Rejected("Supermemory returned malformed JSON".to_owned()))?;
+    Ok(wire.failed.is_empty() && wire.successful.len() == 1 && wire.successful[0] == provider_id)
 }
 
 pub trait SupermemoryTransport {
@@ -261,8 +332,8 @@ mod tests {
     };
 
     use super::{
-        SupermemoryRecord, SupermemorySemanticProvider, SupermemoryTransport, valid_namespace,
-        valid_provider_identifier,
+        SupermemoryRecord, SupermemorySemanticProvider, SupermemoryTransport, decode_records,
+        deletion_confirmed, valid_namespace, valid_provider_identifier,
     };
 
     #[derive(Default)]
@@ -369,6 +440,34 @@ mod tests {
         assert!(valid_provider_identifier(&document_id, 255));
         assert!(!document_id.contains("canonical"));
         assert_eq!(document_id.len(), 73);
+    }
+
+    #[test]
+    fn wire_records_require_canonical_metadata_and_valid_scores() {
+        let records = decode_records(
+            br#"{"results":[{"documentId":"provider-01","metadata":{"rembrane_memory_id":"memory-01","rembrane_version":2},"score":0.75}]}"#,
+        )
+        .expect("valid response");
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].canonical_version, 2);
+        assert_eq!(records[0].score_millionths, Some(750_000));
+        assert!(decode_records(br#"{"results":[{"id":"x","metadata":{},"score":2}]}"#).is_err());
+    }
+
+    #[test]
+    fn deletion_requires_one_exact_success_and_no_failures() {
+        assert!(
+            deletion_confirmed(br#"{"successful":["doc-01"],"failed":[]}"#, "doc-01")
+                .expect("valid response")
+        );
+        assert!(
+            !deletion_confirmed(br#"{"successful":[],"failed":[{"id":"doc-01"}]}"#, "doc-01")
+                .expect("valid partial response")
+        );
+        assert!(
+            !deletion_confirmed(br#"{"successful":["other"],"failed":[]}"#, "doc-01")
+                .expect("valid mismatched response")
+        );
     }
 
     #[test]

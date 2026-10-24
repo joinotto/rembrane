@@ -45,6 +45,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   projection completion.
 - Supermemory readiness checks bound to the exact authorized projection,
   enabling canonical ID/version visibility verification through scoped search.
+- Strict Supermemory wire decoding for canonical metadata, finite bounded
+  scores, response cardinality, and one exact deletion success.
 - Exact Supermemory deletion confirmation, treating partial or omitted
   provider identities as retryable failures.
 - Local validation proving generated Supermemory namespace pseudonyms satisfy
