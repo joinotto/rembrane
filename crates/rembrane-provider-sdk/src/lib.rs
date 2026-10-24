@@ -7,6 +7,8 @@
 mod capability;
 mod conformance;
 mod error;
+mod graph_conformance;
+mod knowledge_graph;
 mod memory_checkpoint;
 mod memory_context;
 mod memory_disclosure;
@@ -24,6 +26,11 @@ pub use capability::{
 };
 pub use conformance::{ConformanceFailure, verify_semantic_provider};
 pub use error::ProviderError;
+pub use graph_conformance::verify_knowledge_graph_provider;
+pub use knowledge_graph::{
+    CandidateKnowledgeEdge, GraphDirection, GraphNeighbourQuery, KnowledgeGraphProvider,
+    MAX_GRAPH_CANDIDATES, validate_graph_candidates,
+};
 pub use memory_checkpoint::{CheckpointActivityPayload, CheckpointActivityResult};
 pub use memory_context::{
     MAX_CONTEXT_PURPOSE_BYTES, MAX_CONTEXT_QUERY_BYTES, MemoryProviderContextItem,

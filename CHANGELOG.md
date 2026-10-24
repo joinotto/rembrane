@@ -25,6 +25,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Encrypted SQLite knowledge graph repository with optimistic replacement,
   ciphertext/metadata binding checks, tenant-scoped temporal traversal, and
   validated supersession lineage.
+- Engine-neutral temporal graph provider contract and conformance harness
+  covering workspace isolation, validity windows, bounded candidates, and
+  deletion semantics.
 - Authenticated key-provider HTTP adapter using Rustls, bounded response reads,
   disabled redirects and environment proxies, zeroized bearer credentials,
   strict JSON/base64 decoding, and HTTPS except for exact loopback origins.

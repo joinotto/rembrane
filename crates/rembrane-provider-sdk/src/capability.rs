@@ -29,6 +29,8 @@ pub enum Capability {
     VersionedRecords,
     HealthCheck,
     Export,
+    GraphTraverse,
+    GraphUpsert,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

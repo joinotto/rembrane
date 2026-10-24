@@ -143,6 +143,8 @@ This roadmap describes sequencing, not release dates.
   - [ ] Add local SQLite graph persistence and Graphiti projection adapter.
     - [x] Persist tenant-isolated temporal graph aggregates as authenticated
       ciphertext with bounded indexed neighbourhood traversal.
+    - [x] Define an engine-neutral graph provider contract and conformance
+      harness for workspace isolation, validity windows, and deletion.
     - [ ] Add Graphiti projection adapter.
 
 - [x] Project entities and scoped preferences.
