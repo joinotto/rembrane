@@ -333,10 +333,10 @@ This roadmap describes sequencing, not release dates.
     - [x] Persist policies and legal holds with optimistic versioning.
     - [ ] Execute bounded purge plans without deleting held resources or
       append-only security evidence prematurely.
-  - [ ] Expose narrowly authorized audit and retention management APIs.
+  - [x] Expose narrowly authorized audit and retention management APIs.
     - [x] Add owner/admin-only application services for retention-policy and
       legal-hold mutation.
-    - [ ] Expose authenticated management HTTP and CLI operations.
+    - [x] Expose authenticated management HTTP and CLI operations.
 
 ## Phase 5 — Integration ecosystem
 

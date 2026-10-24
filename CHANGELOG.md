@@ -24,6 +24,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Owner/admin-only retention-policy and legal-hold application services with
   optimistic mutation and request-correlated audit evidence committed in the
   same in-memory or SQLite transaction.
+- Tenant-bound authenticated management HTTP endpoints and CLI commands for
+  bounded administrative-audit reads, retention-policy updates, and legal-hold
+  placement or release.
 - A versioned per-workspace retention policy contract with separate periods
   for memory, checkpoints, travel research, disclosures, canonical events, and
   administrative audit, including bounded expiry and legal-hold overrides.

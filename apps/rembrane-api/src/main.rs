@@ -3,28 +3,31 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
 use axum::extract::DefaultBodyLimit;
-use axum::extract::State;
+use axum::extract::{Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use rembrane_application::{
-    AddTripConstraintCommand, AddTripParticipantCommand, ApplicationError, AuthorizeClientCommand,
-    AuthorizeClientService, CaptureBookingResearchCommand, CaptureBookingResearchService,
-    ClientGrantBundle, CreateTripCommand, KeyRotationRepository, MemberLifecycleService,
-    MembershipRepository, RecordTripDecisionCommand, ResolveContextCommand, ResolveContextService,
-    ResolveTravelContextCommand, TravelContextResearch, TravelContextService, TravelContextTrip,
+    AddTripConstraintCommand, AddTripParticipantCommand, AdministrativeAuditRepository,
+    ApplicationError, AuthorizeClientCommand, AuthorizeClientService,
+    CaptureBookingResearchCommand, CaptureBookingResearchService, ClientGrantBundle,
+    CreateTripCommand, KeyRotationRepository, MemberLifecycleService, MembershipRepository,
+    PlaceLegalHoldCommand, RecordTripDecisionCommand, ReleaseLegalHoldCommand,
+    ResolveContextCommand, ResolveContextService, ResolveTravelContextCommand, RetentionService,
+    SetRetentionPolicyCommand, TravelContextResearch, TravelContextService, TravelContextTrip,
     TravelSensitiveProfile, TripService,
 };
 use rembrane_config::{parse_read_permissions, parse_read_scopes};
 use rembrane_contracts::ResolveContextRequest;
 use rembrane_crypto_configured::ConfiguredRecordCipher;
 use rembrane_domain::{
-    ActivityId, BookingResearch, BookingResearchId, BookingResearchKind, ClientId, ContextPackId,
-    DecisionStatus, DisclosureId, EntityId, EventId, EvidenceId, EvidenceReference, EvidenceSource,
-    KeyRotationStatus, MemoryKind, MemoryScope, MemoryStatus, PrincipalId, ReadGrant,
-    TravelDateWindow, Trip, TripConstraint, TripConstraintId, TripConstraintKind, TripDecision,
-    TripDecisionId, TripParticipant, TripParticipantId, WorkspaceId, WorkspaceRole, WriteGrant,
+    ActivityId, AdministrativeAuditEvent, BookingResearch, BookingResearchId, BookingResearchKind,
+    ClientId, ContextPackId, DecisionStatus, DisclosureId, EntityId, EventId, EvidenceId,
+    EvidenceReference, EvidenceSource, KeyRotationStatus, LegalHoldId, MemoryKind, MemoryScope,
+    MemoryStatus, PrincipalId, ReadGrant, RetentionPeriod, TravelDateWindow, Trip, TripConstraint,
+    TripConstraintId, TripConstraintKind, TripDecision, TripDecisionId, TripParticipant,
+    TripParticipantId, WorkspaceId, WorkspaceRetentionPolicy, WorkspaceRole, WriteGrant,
     WritePermission,
 };
 use rembrane_store_sqlite::SqliteStore;
@@ -69,6 +72,36 @@ struct ResolveRequest {
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct RotateWorkspaceKeyRequest {
     workspace_id: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct AuditQuery {
+    workspace_id: String,
+    after_epoch_seconds: Option<u64>,
+    limit: Option<usize>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct SetRetentionPolicyRequest {
+    workspace_id: String,
+    expected_version: Option<u64>,
+    user_memory_days: Option<u32>,
+    activity_checkpoint_days: Option<u32>,
+    travel_research_days: Option<u32>,
+    disclosure_receipt_days: Option<u32>,
+    canonical_event_days: Option<u32>,
+    administrative_audit_days: Option<u32>,
+    request_id: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct LegalHoldRequest {
+    workspace_id: String,
+    hold_id: String,
+    request_id: String,
 }
 
 #[derive(Deserialize)]
@@ -316,6 +349,41 @@ struct RotateWorkspaceKeyResponse {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+struct AdministrativeAuditResponse {
+    events: Vec<AdministrativeAuditOutput>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AdministrativeAuditOutput {
+    id: String,
+    workspace_id: String,
+    actor_id: String,
+    action: &'static str,
+    target_kind: &'static str,
+    target_id: String,
+    request_id: String,
+    occurred_at_epoch_seconds: u64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RetentionPolicyResponse {
+    workspace_id: String,
+    version: u64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LegalHoldResponse {
+    workspace_id: String,
+    hold_id: String,
+    version: u64,
+    status: &'static str,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct Problem {
     code: &'static str,
     message: &'static str,
@@ -495,6 +563,147 @@ async fn rotate_workspace_key(
         key_id,
         status: "completed",
     }))
+}
+
+async fn list_administrative_audit(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<AuditQuery>,
+) -> Result<Json<AdministrativeAuditResponse>, ApiError> {
+    authorize_bearer(&state, &headers)?;
+    let runtime = state
+        .inner
+        .runtime
+        .lock()
+        .map_err(|_| ApiError::internal())?;
+    authorize_management_workspace(&runtime, &query.workspace_id)?;
+    let events = runtime
+        .store
+        .list_administrative_audit(
+            &runtime.write_grant.workspace_id,
+            query.after_epoch_seconds.unwrap_or(0),
+            query.limit.unwrap_or(100),
+        )
+        .map_err(ApiError::from_application)?;
+    Ok(Json(AdministrativeAuditResponse {
+        events: events.iter().map(AdministrativeAuditOutput::from).collect(),
+    }))
+}
+
+async fn set_retention_policy(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<SetRetentionPolicyRequest>,
+) -> Result<Json<RetentionPolicyResponse>, ApiError> {
+    authorize_bearer(&state, &headers)?;
+    let mut runtime = state
+        .inner
+        .runtime
+        .lock()
+        .map_err(|_| ApiError::internal())?;
+    authorize_management_workspace(&runtime, &request.workspace_id)?;
+    let version = request
+        .expected_version
+        .map_or(1, |version| version.saturating_add(1));
+    let policy = WorkspaceRetentionPolicy::new(
+        runtime.write_grant.workspace_id.clone(),
+        version,
+        retention_period(request.user_memory_days)?,
+        retention_period(request.activity_checkpoint_days)?,
+        retention_period(request.travel_research_days)?,
+        retention_period(request.disclosure_receipt_days)?,
+        retention_period(request.canonical_event_days)?,
+        retention_period(request.administrative_audit_days)?,
+    )
+    .map_err(|_| ApiError::invalid_request())?;
+    let actor = runtime.write_grant.subject_id.clone();
+    let policy = RetentionService::new(&mut runtime.store)
+        .set_policy(SetRetentionPolicyCommand {
+            policy,
+            expected_version: request.expected_version,
+            changed_by: actor,
+            request_id: request.request_id,
+        })
+        .map_err(ApiError::from_application)?;
+    Ok(Json(RetentionPolicyResponse {
+        workspace_id: policy.workspace_id().to_string(),
+        version: policy.version(),
+    }))
+}
+
+async fn place_legal_hold(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<LegalHoldRequest>,
+) -> Result<(StatusCode, Json<LegalHoldResponse>), ApiError> {
+    authorize_bearer(&state, &headers)?;
+    let mut runtime = state
+        .inner
+        .runtime
+        .lock()
+        .map_err(|_| ApiError::internal())?;
+    authorize_management_workspace(&runtime, &request.workspace_id)?;
+    let actor = runtime.write_grant.subject_id.clone();
+    let workspace_id = runtime.write_grant.workspace_id.clone();
+    let hold = RetentionService::new(&mut runtime.store)
+        .place_legal_hold(PlaceLegalHoldCommand {
+            workspace_id,
+            hold_id: LegalHoldId::new(request.hold_id),
+            placed_by: actor,
+            request_id: request.request_id,
+        })
+        .map_err(ApiError::from_application)?;
+    Ok((StatusCode::CREATED, Json(LegalHoldResponse::from(&hold))))
+}
+
+async fn release_legal_hold(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<LegalHoldRequest>,
+) -> Result<Json<LegalHoldResponse>, ApiError> {
+    authorize_bearer(&state, &headers)?;
+    let mut runtime = state
+        .inner
+        .runtime
+        .lock()
+        .map_err(|_| ApiError::internal())?;
+    authorize_management_workspace(&runtime, &request.workspace_id)?;
+    let actor = runtime.write_grant.subject_id.clone();
+    let workspace_id = runtime.write_grant.workspace_id.clone();
+    let hold = RetentionService::new(&mut runtime.store)
+        .release_legal_hold(ReleaseLegalHoldCommand {
+            workspace_id,
+            hold_id: LegalHoldId::new(request.hold_id),
+            released_by: actor,
+            request_id: request.request_id,
+        })
+        .map_err(ApiError::from_application)?;
+    Ok(Json(LegalHoldResponse::from(&hold)))
+}
+
+fn authorize_management_workspace(runtime: &Runtime, workspace_id: &str) -> Result<(), ApiError> {
+    if workspace_id != runtime.write_grant.workspace_id.as_str() {
+        return Err(ApiError::access_denied());
+    }
+    let membership = runtime
+        .store
+        .find_membership(
+            &runtime.write_grant.workspace_id,
+            &runtime.write_grant.subject_id,
+        )
+        .map_err(ApiError::from_application)?
+        .filter(|membership| membership.is_active() && membership.can_manage_members())
+        .ok_or_else(ApiError::access_denied)?;
+    if membership.principal_id() != &runtime.write_grant.subject_id {
+        return Err(ApiError::access_denied());
+    }
+    Ok(())
+}
+
+fn retention_period(days: Option<u32>) -> Result<RetentionPeriod, ApiError> {
+    days.map_or(Ok(RetentionPeriod::Forever), |days| {
+        RetentionPeriod::days(days).map_err(|_| ApiError::invalid_request())
+    })
 }
 
 async fn oauth_protected_resource(
@@ -1144,6 +1353,35 @@ impl From<&TravelContextResearch> for TravelResearchOutput {
     }
 }
 
+impl From<&AdministrativeAuditEvent> for AdministrativeAuditOutput {
+    fn from(event: &AdministrativeAuditEvent) -> Self {
+        Self {
+            id: event.id().to_string(),
+            workspace_id: event.workspace_id().to_string(),
+            actor_id: event.actor_id().to_string(),
+            action: event.action().label(),
+            target_kind: event.target_kind().label(),
+            target_id: event.target_id().to_owned(),
+            request_id: event.request_id().to_owned(),
+            occurred_at_epoch_seconds: event.occurred_at_epoch_seconds(),
+        }
+    }
+}
+
+impl From<&rembrane_domain::WorkspaceLegalHold> for LegalHoldResponse {
+    fn from(hold: &rembrane_domain::WorkspaceLegalHold) -> Self {
+        Self {
+            workspace_id: hold.workspace_id().to_string(),
+            hold_id: hold.id().to_string(),
+            version: hold.version(),
+            status: match hold.status() {
+                rembrane_domain::LegalHoldStatus::Active => "active",
+                rembrane_domain::LegalHoldStatus::Released => "released",
+            },
+        }
+    }
+}
+
 fn parse_evidence_source(value: &str) -> Option<EvidenceSource> {
     match value {
         "user-statement" => Some(EvidenceSource::UserStatement),
@@ -1274,6 +1512,13 @@ async fn main() -> Result<()> {
         )
         .route("/v1/context/resolve", post(resolve_context))
         .route("/v1/workspaces/key-rotation", post(rotate_workspace_key))
+        .route("/v1/administrative-audit", get(list_administrative_audit))
+        .route("/v1/retention/policy", post(set_retention_policy))
+        .route("/v1/retention/legal-holds", post(place_legal_hold))
+        .route(
+            "/v1/retention/legal-holds/release",
+            post(release_legal_hold),
+        )
         .route("/v1/travel/trips", post(create_trip))
         .route("/v1/travel/trip-participants", post(add_trip_participant))
         .route("/v1/travel/trip-constraints", post(add_trip_constraint))

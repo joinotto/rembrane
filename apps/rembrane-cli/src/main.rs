@@ -1,17 +1,20 @@
 use rembrane_application::{
-    ApplicationError, AuthorizeClientCommand, AuthorizeClientService, CanonicalMutationRepository,
-    CheckpointRepository, ClientGrantBundle, DeleteMemoryCommand, EventRepository,
-    MemberLifecycleService, MembershipRepository, MemoryLifecycleService, MemoryRepository,
+    AdministrativeAuditRepository, ApplicationError, AuthorizeClientCommand,
+    AuthorizeClientService, CanonicalMutationRepository, CheckpointRepository, ClientGrantBundle,
+    DeleteMemoryCommand, EventRepository, MemberLifecycleService, MembershipRepository,
+    MemoryLifecycleService, MemoryRepository, PlaceLegalHoldCommand, ReleaseLegalHoldCommand,
     RememberPreferenceCommand, RememberPreferenceService, ResolveContextCommand,
-    ResolveContextService, ReviseMemoryCommand, WorkspaceRepository,
+    ResolveContextService, RetentionService, ReviseMemoryCommand, SetRetentionPolicyCommand,
+    WorkspaceRepository,
 };
 use rembrane_config::{ProviderConnection, ProviderKind, ProviderPlacement, SecretReference};
 use rembrane_contracts::ResolveContextRequest;
 use rembrane_crypto_configured::ConfiguredRecordCipher;
 use rembrane_domain::{
     CanonicalEvent, ClientId, ContextPackId, DisclosureId, EventId, EventPayload, EvidenceId,
-    EvidenceReference, EvidenceSource, Membership, MemoryId, MemoryRecord, MemoryScope, Principal,
-    PrincipalId, ReadGrant, ReadScope, Workspace, WorkspaceId, WorkspaceRole, WritePermission,
+    EvidenceReference, EvidenceSource, LegalHoldId, Membership, MemoryId, MemoryRecord,
+    MemoryScope, Principal, PrincipalId, ReadGrant, ReadScope, RetentionPeriod, Workspace,
+    WorkspaceId, WorkspaceRetentionPolicy, WorkspaceRole, WritePermission,
 };
 use rembrane_memory_provider_configured::ConfiguredMemoryProvider;
 use rembrane_provider_sdk::{
@@ -52,6 +55,9 @@ fn run(arguments: Vec<String>) -> Result<(), String> {
         Some("providers") => providers(&arguments[1..]),
         Some("memory-provider") => memory_provider(&arguments[1..]),
         Some("rotate-key") => rotate_key(&arguments[1..]),
+        Some("audit") => audit(&arguments[1..]),
+        Some("retention") => retention(&arguments[1..]),
+        Some("legal-hold") => legal_hold(&arguments[1..]),
         Some("remember") => remember(&arguments[1..]),
         Some("recall") => recall(&arguments[1..]),
         Some("correct") => correct(&arguments[1..]),
@@ -88,6 +94,164 @@ fn rotate_key(arguments: &[String]) -> Result<(), String> {
         })
     );
     Ok(())
+}
+
+fn audit(arguments: &[String]) -> Result<(), String> {
+    if arguments.first().map(String::as_str) != Some("list") {
+        return Err("usage: rembrane audit list --database <path> --principal <id> --workspace <id> [--after <epoch-seconds>] [--limit <items>]".to_owned());
+    }
+    let arguments = &arguments[1..];
+    let (store, principal_id, workspace_id) = encrypted_store(arguments)?;
+    require_workspace_administrator(&store, &workspace_id, &principal_id)?;
+    let after =
+        optional_option(arguments, "--after").map_or(Ok(0), |value| parse_u64(value, "--after"))?;
+    let limit = optional_option(arguments, "--limit")
+        .map_or(Ok(100), |value| parse_usize(value, "--limit"))?;
+    let events = store
+        .list_administrative_audit(&workspace_id, after, limit)
+        .map_err(|error| format!("cannot list administrative audit: {error}"))?;
+    println!(
+        "{}",
+        serde_json::Value::Array(
+            events
+                .iter()
+                .map(|event| {
+                    serde_json::json!({
+                        "id": event.id().as_str(),
+                        "workspaceId": event.workspace_id().as_str(),
+                        "actorId": event.actor_id().as_str(),
+                        "action": event.action().label(),
+                        "targetKind": event.target_kind().label(),
+                        "targetId": event.target_id(),
+                        "requestId": event.request_id(),
+                        "occurredAtEpochSeconds": event.occurred_at_epoch_seconds()
+                    })
+                })
+                .collect()
+        )
+    );
+    Ok(())
+}
+
+fn retention(arguments: &[String]) -> Result<(), String> {
+    if arguments.first().map(String::as_str) != Some("set") {
+        return Err("usage: rembrane retention set --database <path> --principal <id> --workspace <id> --request <id> --memory-days <days|forever> --checkpoint-days <days|forever> --travel-days <days|forever> --disclosure-days <days|forever> --event-days <days|forever> --audit-days <days|forever> [--expected-version <n>]".to_owned());
+    }
+    let arguments = &arguments[1..];
+    let (mut store, principal_id, workspace_id) = encrypted_store(arguments)?;
+    let expected_version = optional_option(arguments, "--expected-version")
+        .map(|value| parse_u64(value, "--expected-version"))
+        .transpose()?;
+    let version = expected_version.map_or(1, |value| value.saturating_add(1));
+    let policy = WorkspaceRetentionPolicy::new(
+        workspace_id,
+        version,
+        retention_period_option(arguments, "--memory-days")?,
+        retention_period_option(arguments, "--checkpoint-days")?,
+        retention_period_option(arguments, "--travel-days")?,
+        retention_period_option(arguments, "--disclosure-days")?,
+        retention_period_option(arguments, "--event-days")?,
+        retention_period_option(arguments, "--audit-days")?,
+    )
+    .map_err(|error| format!("invalid retention policy: {error}"))?;
+    let policy = RetentionService::new(&mut store)
+        .set_policy(SetRetentionPolicyCommand {
+            policy,
+            expected_version,
+            changed_by: principal_id,
+            request_id: option(arguments, "--request")?.to_owned(),
+        })
+        .map_err(|error| format!("cannot set retention policy: {error}"))?;
+    println!(
+        "{}",
+        serde_json::json!({
+            "workspaceId": policy.workspace_id().as_str(),
+            "version": policy.version()
+        })
+    );
+    Ok(())
+}
+
+fn legal_hold(arguments: &[String]) -> Result<(), String> {
+    let operation = arguments
+        .first()
+        .map(String::as_str)
+        .ok_or_else(|| "legal-hold operation is required".to_owned())?;
+    let arguments = &arguments[1..];
+    let (mut store, principal_id, workspace_id) = encrypted_store(arguments)?;
+    let hold_id = LegalHoldId::new(option(arguments, "--hold")?);
+    let request_id = option(arguments, "--request")?.to_owned();
+    let hold = match operation {
+        "place" => RetentionService::new(&mut store).place_legal_hold(PlaceLegalHoldCommand {
+            workspace_id,
+            hold_id,
+            placed_by: principal_id,
+            request_id,
+        }),
+        "release" => {
+            RetentionService::new(&mut store).release_legal_hold(ReleaseLegalHoldCommand {
+                workspace_id,
+                hold_id,
+                released_by: principal_id,
+                request_id,
+            })
+        }
+        _ => {
+            return Err("usage: rembrane legal-hold <place|release> --database <path> --principal <id> --workspace <id> --hold <id> --request <id>".to_owned());
+        }
+    }
+    .map_err(|error| format!("cannot {operation} legal hold: {error}"))?;
+    println!(
+        "{}",
+        serde_json::json!({
+            "workspaceId": hold.workspace_id().as_str(),
+            "holdId": hold.id().as_str(),
+            "version": hold.version(),
+            "status": match hold.status() {
+                rembrane_domain::LegalHoldStatus::Active => "active",
+                rembrane_domain::LegalHoldStatus::Released => "released"
+            }
+        })
+    );
+    Ok(())
+}
+
+fn require_workspace_administrator<C>(
+    store: &SqliteStore<C>,
+    workspace_id: &WorkspaceId,
+    principal_id: &PrincipalId,
+) -> Result<(), String> {
+    let membership = store
+        .find_membership(workspace_id, principal_id)
+        .map_err(|error| format!("cannot inspect membership: {error}"))?
+        .filter(|membership| membership.is_active() && membership.can_manage_members());
+    if membership.is_none() {
+        return Err("workspace administrator access is required".to_owned());
+    }
+    Ok(())
+}
+
+fn retention_period_option(arguments: &[String], name: &str) -> Result<RetentionPeriod, String> {
+    let value = option(arguments, name)?;
+    if value == "forever" {
+        return Ok(RetentionPeriod::Forever);
+    }
+    let days = value
+        .parse::<u32>()
+        .map_err(|_| format!("{name} must be a day count or forever"))?;
+    RetentionPeriod::days(days).map_err(|error| format!("invalid {name}: {error}"))
+}
+
+fn parse_u64(value: &str, name: &str) -> Result<u64, String> {
+    value
+        .parse::<u64>()
+        .map_err(|_| format!("{name} must be a non-negative integer"))
+}
+
+fn parse_usize(value: &str, name: &str) -> Result<usize, String> {
+    value
+        .parse::<usize>()
+        .map_err(|_| format!("{name} must be a non-negative integer"))
 }
 
 fn memory_provider(arguments: &[String]) -> Result<(), String> {
@@ -1225,6 +1389,17 @@ fn print_help() {
              [--privacy <end-to-end-encrypted|trusted-boundary|provider-plaintext>]\n\
            rembrane rotate-key --database <path> --principal <owner-or-admin-id> \
              --workspace <shared-workspace-id>\n\
+           rembrane audit list --database <path> --principal <owner-or-admin-id> \
+             --workspace <id> [--after <epoch-seconds>] [--limit <items>]\n\
+           rembrane retention set --database <path> --principal <owner-or-admin-id> \
+             --workspace <id> --request <id> \
+             --memory-days <days|forever> --checkpoint-days <days|forever> \
+             --travel-days <days|forever> --disclosure-days <days|forever> \
+             --event-days <days|forever> --audit-days <days|forever> \
+             [--expected-version <n>]\n\
+           rembrane legal-hold <place|release> --database <path> \
+             --principal <owner-or-admin-id> --workspace <id> \
+             --hold <id> --request <id>\n\
            rembrane mcp-config --client <codex|claude-code|gemini-cli|generic> \
              --server-binary <path> \
              [--key-provider <environment|macos-keychain|http>]\n\
