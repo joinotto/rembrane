@@ -28,6 +28,7 @@ for deployment_file in \
     docs/CLOUDFLARE_DEPLOYMENT.md \
     docker/entrypoint.sh \
     scripts/check-local-alpha.sh \
+    scripts/test-graphiti-sidecar.sh \
     scripts/test-core-offline.sh
 do
     test -s "$deployment_file" || {
@@ -36,6 +37,7 @@ do
     }
 done
 sh -n scripts/check-local-alpha.sh
+sh -n scripts/test-graphiti-sidecar.sh
 sh -n scripts/test-core-offline.sh
 rg -q '127\.0\.0\.1:8787:8787' compose.yaml
 rg -q 'no-new-privileges:true' compose.yaml

@@ -165,6 +165,12 @@ This roadmap describes sequencing, not release dates.
         credential, timeout, redirect, response-size, manifest, and response
         correlation validation.
       - [ ] Add executable Graphiti sidecar contract and integration tests.
+        - [x] Implement and test a dependency-free contract core for workspace
+          isolation, physical identity, idempotency, optimistic versions,
+          temporal traversal, and bounded deletion.
+        - [ ] Bind the contract core to authenticated FastAPI endpoints and a
+          Graphiti persistence driver.
+        - [ ] Exercise the Rust HTTP adapter against the live sidecar.
 
 - [x] Project entities and scoped preferences.
 - [x] Layer global, domain, entity, and activity context in one request.

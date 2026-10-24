@@ -30,6 +30,7 @@ cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 cargo build --workspace
+./scripts/test-graphiti-sidecar.sh
 ./scripts/test-cli-e2e.sh
 ./scripts/test-mcp-e2e.sh
 ./scripts/test-rest-e2e.sh

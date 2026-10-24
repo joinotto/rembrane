@@ -23,6 +23,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   manifests, and correlated sidecar responses.
 - Portable encoding for arbitrary canonical graph identifiers before they
   enter Graphiti mutation idempotency keys.
+- A dependency-free Graphiti sidecar contract core and test gate covering
+  deterministic tenant-scoped physical identifiers, cross-workspace endpoint
+  denial, idempotent retries, same-version conflicts, temporal traversal, and
+  version-bounded deletion.
 - Canonical engine-neutral temporal knowledge graph aggregates with typed
   nodes, validated relationship types, strict workspace namespaces, separate
   validity and ingestion time, evidence provenance, bounded aliases, versions,
