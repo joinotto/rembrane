@@ -17,6 +17,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   zeroizing memory, HTTPS-or-loopback enforcement, disabled redirects and
   environment proxies, strict timeouts, bounded JSON, exact non-inferred
   projection writes, and safely encoded deletion paths.
+- CLI execution of the shared semantic conformance suite against an
+  operator-owned disposable Mem0 instance, gated by explicit plaintext
+  acknowledgement and environment-only credentials.
 - A public-API-only iMessage app extension reference with explicit text entry,
   review, confirmation, Keychain-held enrollment material, narrow signed
   gateway submission, and an iPhone Simulator type-check gate.

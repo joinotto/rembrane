@@ -58,6 +58,23 @@ The harness writes two versions of one fixture and deletes it while checking
 protocol compatibility, exact replacement semantics, workspace isolation,
 result limits, version-bounded deletion, and deletion propagation.
 
+Run the same suite against a disposable Mem0 OSS instance only after verifying
+that the target contains no production records:
+
+```sh
+MEM0_BASE_URL=https://mem0.example \
+MEM0_API_KEY='replace-from-secret-store' \
+MEM0_WORKSPACE_LOOKUP_SECRET='independent-secret-at-least-32-bytes' \
+target/debug/rembrane providers test \
+  --provider mem0.oss \
+  --namespace unique-disposable-check \
+  --allow-provider-plaintext | jq .
+```
+
+The explicit acknowledgement is mandatory because semantic conformance sends
+plaintext fixtures to Mem0. Credentials are read from the process environment
+and are never accepted as command-line arguments.
+
 External HTTP sidecars can run the equivalent black-box suite. The bearer
 token is read from the environment and written only to a mode-0600 temporary
 header file, so it does not appear in the `curl` process arguments:

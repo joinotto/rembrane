@@ -684,6 +684,8 @@ This roadmap describes sequencing, not release dates.
     replacement, bounded search, and version-aware deletion semantics.
     - [x] Add an authenticated, redirect-free, proxy-free, bounded HTTP
       transport for Mem0 OSS exact add, list, search, and deletion operations.
+    - [x] Expose disposable Mem0 conformance through the CLI with environment
+      secret custody and an explicit plaintext-processing acknowledgement.
   - [x] Generate a secret-reference-only local MCP configuration for OpenCode
     using its command-array and environment-substitution contract.
   - [x] Enforce one bounded control-free executable-command contract before

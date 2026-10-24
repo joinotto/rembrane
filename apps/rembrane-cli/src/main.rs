@@ -26,6 +26,7 @@ use rembrane_provider_sdk::{
     MemoryProviderPolicy, MemoryProviderPrivacyMode, MemoryProviderTransport,
     verify_semantic_provider,
 };
+use rembrane_semantic_mem0::Mem0SemanticProvider;
 use rembrane_semantic_native::NativeSemanticProvider;
 use rembrane_store_memory::InMemoryStore;
 use rembrane_store_sqlite::SqliteStore;
@@ -584,19 +585,54 @@ fn providers(arguments: &[String]) -> Result<(), String> {
 }
 
 fn test_provider(arguments: &[String]) -> Result<String, String> {
-    if arguments.len() != 5 {
+    if arguments.len() < 5 {
         return Err(
-            "usage: rembrane providers test --provider <id> --namespace <unique-name>".to_owned(),
+            "usage: rembrane providers test --provider <id> --namespace <unique-name> \
+             [--allow-provider-plaintext]"
+                .to_owned(),
         );
     }
     let provider_id = option(arguments, "--provider")?;
     let namespace = option(arguments, "--namespace")?;
     match provider_id {
         "rembrane.native" => {
+            if arguments.len() != 5 {
+                return Err("rembrane.native accepts only --provider and --namespace".to_owned());
+            }
             verify_semantic_provider(&mut NativeSemanticProvider::new(), namespace)
                 .map_err(|error| format!("provider conformance failed: {error}"))?;
             Ok(format!(
                 "{{\"provider\":\"rembrane.native\",\"protocolVersion\":\"0.1\",\
+                 \"result\":\"pass\",\"suiteVersion\":\"{}\"}}",
+                env!("CARGO_PKG_VERSION")
+            ))
+        }
+        "mem0.oss" => {
+            if arguments.len() != 6
+                || arguments
+                    .iter()
+                    .filter(|argument| *argument == "--allow-provider-plaintext")
+                    .count()
+                    != 1
+            {
+                return Err("Mem0 conformance sends disposable plaintext; rerun with \
+                     --allow-provider-plaintext after verifying the target"
+                    .to_owned());
+            }
+            let base_url = secret_environment("MEM0_BASE_URL")?;
+            let api_key = std::env::var("MEM0_API_KEY")
+                .map_err(|_| "MEM0_API_KEY is required in the environment".to_owned())?;
+            let lookup_secret = secret_environment("MEM0_WORKSPACE_LOOKUP_SECRET")?;
+            let mut provider = Mem0SemanticProvider::from_http(
+                &base_url,
+                api_key,
+                lookup_secret.as_bytes().to_vec(),
+            )
+            .map_err(|error| format!("cannot configure Mem0 provider: {error}"))?;
+            verify_semantic_provider(&mut provider, namespace)
+                .map_err(|error| format!("provider conformance failed: {error}"))?;
+            Ok(format!(
+                "{{\"provider\":\"mem0.oss\",\"protocolVersion\":\"0.1\",\
                  \"result\":\"pass\",\"suiteVersion\":\"{}\"}}",
                 env!("CARGO_PKG_VERSION")
             ))
@@ -1947,6 +1983,20 @@ mod tests {
         .expect_err("missing adapter must fail explicitly");
 
         assert!(error.contains("is not installed in this CLI build"));
+    }
+
+    #[test]
+    fn mem0_provider_test_requires_explicit_plaintext_acknowledgement() {
+        let error = test_provider(&[
+            "test".to_owned(),
+            "--provider".to_owned(),
+            "mem0.oss".to_owned(),
+            "--namespace".to_owned(),
+            "cli-unit".to_owned(),
+        ])
+        .expect_err("Mem0 test must fail before reading credentials");
+
+        assert!(error.contains("--allow-provider-plaintext"));
     }
 
     #[test]
