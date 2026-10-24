@@ -4,6 +4,7 @@ mod booking_research;
 mod canonical;
 mod checkpoint;
 mod disclosure;
+mod knowledge_graph;
 mod projection;
 mod share;
 mod trip;

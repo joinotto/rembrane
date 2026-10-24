@@ -54,6 +54,10 @@ INSERT INTO knowledge_nodes (
     (
         'workspace_02', 'node_project', X'03', 'key_02',
         'xchacha20poly1305', zeroblob(24), 1, 100, NULL, 100
+    ),
+    (
+        'workspace_02', 'node_external', X'04', 'key_02',
+        'xchacha20poly1305', zeroblob(24), 1, 100, NULL, 100
     );
 INSERT INTO knowledge_edges (
     workspace_id, id, source_id, target_id, supersedes_id,
@@ -61,7 +65,7 @@ INSERT INTO knowledge_edges (
     encryption_nonce, version, valid_from, valid_until, recorded_at
 ) VALUES (
     'workspace_01', 'edge_uses', 'node_project', 'node_rust', NULL,
-    X'04', 'key_01', 'xchacha20poly1305', zeroblob(24),
+    X'05', 'key_01', 'xchacha20poly1305', zeroblob(24),
     1, 100, 200, 100
 );
 INSERT INTO workspace_events (
@@ -372,6 +376,23 @@ INSERT INTO memory_share_proposals (
 );
 COMMIT;
 SQL
+
+if sqlite3 "$database" <<'SQL'
+PRAGMA foreign_keys = ON;
+INSERT INTO knowledge_edges (
+    workspace_id, id, source_id, target_id, supersedes_id,
+    edge_ciphertext, encryption_key_id, encryption_algorithm,
+    encryption_nonce, version, valid_from, valid_until, recorded_at
+) VALUES (
+    'workspace_01', 'edge_cross_tenant', 'node_project', 'node_external', NULL,
+    X'06', 'key_01', 'xchacha20poly1305', zeroblob(24),
+    1, 100, NULL, 100
+);
+SQL
+then
+    echo "cross-workspace knowledge edge unexpectedly succeeded" >&2
+    exit 1
+fi
 
 if sqlite3 "$database" <<'SQL'
 PRAGMA foreign_keys = ON;

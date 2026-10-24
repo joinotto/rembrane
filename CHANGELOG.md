@@ -22,6 +22,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Versioned knowledge-node and knowledge-edge codecs plus distinct encryption
   purposes, keeping labels, aliases, relations, and evidence inside
   authenticated ciphertext.
+- Encrypted SQLite knowledge graph repository with optimistic replacement,
+  ciphertext/metadata binding checks, tenant-scoped temporal traversal, and
+  validated supersession lineage.
 - Authenticated key-provider HTTP adapter using Rustls, bounded response reads,
   disabled redirects and environment proxies, zeroized bearer credentials,
   strict JSON/base64 decoding, and HTTPS except for exact loopback origins.

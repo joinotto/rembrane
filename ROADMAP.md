@@ -141,6 +141,9 @@ This roadmap describes sequencing, not release dates.
   - [x] Add tenant-isolated mutation and neighbourhood repository contracts
     with bounded temporal traversal and optimistic version checks.
   - [ ] Add local SQLite graph persistence and Graphiti projection adapter.
+    - [x] Persist tenant-isolated temporal graph aggregates as authenticated
+      ciphertext with bounded indexed neighbourhood traversal.
+    - [ ] Add Graphiti projection adapter.
 
 - [x] Project entities and scoped preferences.
 - [x] Layer global, domain, entity, and activity context in one request.
