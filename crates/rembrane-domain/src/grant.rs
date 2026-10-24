@@ -22,6 +22,7 @@ pub struct ReadGrant {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ReadPermission {
     RevealTravelSourceReferences,
+    RevealTravelSensitiveProfile,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

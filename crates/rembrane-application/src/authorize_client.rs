@@ -89,7 +89,8 @@ where
 
 const fn read_role_allows(role: WorkspaceRole, permission: ReadPermission) -> bool {
     match permission {
-        ReadPermission::RevealTravelSourceReferences => {
+        ReadPermission::RevealTravelSourceReferences
+        | ReadPermission::RevealTravelSensitiveProfile => {
             matches!(role, WorkspaceRole::Owner | WorkspaceRole::Admin)
         }
     }
@@ -185,7 +186,10 @@ mod tests {
             workspace_id: WorkspaceId::new("workspace_01"),
             principal_id: PrincipalId::new("principal_01"),
             requested_read_scopes: vec![ReadScope::Global],
-            requested_read_permissions: vec![ReadPermission::RevealTravelSourceReferences],
+            requested_read_permissions: vec![
+                ReadPermission::RevealTravelSourceReferences,
+                ReadPermission::RevealTravelSensitiveProfile,
+            ],
             requested_write_permissions: vec![
                 WritePermission::CreateMemory,
                 WritePermission::ProposeMemory,
@@ -245,7 +249,10 @@ mod tests {
 
         assert_eq!(
             grants.read.permissions,
-            vec![ReadPermission::RevealTravelSourceReferences]
+            vec![
+                ReadPermission::RevealTravelSourceReferences,
+                ReadPermission::RevealTravelSensitiveProfile,
+            ]
         );
         let mut without_sensitive_permission = command();
         without_sensitive_permission

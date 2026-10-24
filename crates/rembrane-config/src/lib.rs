@@ -252,6 +252,7 @@ pub fn parse_read_permissions(value: &str) -> Result<Vec<ReadPermission>, String
     {
         let permission = match entry {
             "travel-source-references" => ReadPermission::RevealTravelSourceReferences,
+            "travel-sensitive-profile" => ReadPermission::RevealTravelSensitiveProfile,
             _ => return Err(format!("invalid read permission {entry}")),
         };
         if !permissions.contains(&permission) {
@@ -340,10 +341,11 @@ mod tests {
 
     #[test]
     fn parses_explicit_sensitive_read_permissions() {
-        let permissions =
-            parse_read_permissions("travel-source-references,travel-source-references")
-                .expect("permission configuration should parse");
-        assert_eq!(permissions.len(), 1);
+        let permissions = parse_read_permissions(
+            "travel-source-references,travel-sensitive-profile,travel-source-references",
+        )
+        .expect("permission configuration should parse");
+        assert_eq!(permissions.len(), 2);
         assert_eq!(
             parse_read_permissions("").expect("empty permissions should be valid"),
             []

@@ -42,6 +42,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Narrow REST and MCP mutations for evidence-backed trip constraints and
   authenticated trip decisions; decision attribution is server-bound and
   cannot be spoofed through model-controlled arguments.
+- Distinct `travel-sensitive-profile` read permission foundation for future
+  participant-label and sensitive-constraint disclosure, separate from opaque
+  provider source-reference authority.
 - Explicit trip create/revise permissions, exact entity-scoped authorization,
   versioned trip audit events, and atomic in-memory trip/event mutations.
 - Member trip revisions through persisted entity grants while trip creation
