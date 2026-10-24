@@ -4,8 +4,8 @@ info:
   version: 0.1.0
   description: |
     Provider-independent API for user-owned AI memory. This pre-alpha
-    contract currently covers capability discovery and scoped context
-    resolution.
+    contract currently covers capability discovery, scoped context resolution,
+    and authorized travel research capture.
   license:
     name: Apache-2.0
     identifier: Apache-2.0
@@ -57,6 +57,36 @@ paths:
           $ref: "#/components/responses/AccessDenied"
         "409":
           $ref: "#/components/responses/Conflict"
+  /travel/booking-research:
+    post:
+      operationId: captureBookingResearch
+      summary: Capture expiring evidence-backed research for a trip
+      description: |
+        Stores one encrypted research observation under an exact trip entity
+        grant and appends its canonical workspace event atomically.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CaptureBookingResearchRequest"
+      responses:
+        "201":
+          description: Research observation captured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BookingResearchResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/AccessDenied"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
 components:
   securitySchemes:
     bearerAuth:
@@ -84,6 +114,12 @@ components:
             $ref: "#/components/schemas/Problem"
     Conflict:
       description: A version or event sequence conflict occurred
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    NotFound:
+      description: The canonical trip was not found
       content:
         application/problem+json:
           schema:
@@ -156,6 +192,86 @@ components:
           maxItems: 100
           items:
             $ref: "#/components/schemas/Memory"
+    CaptureBookingResearchRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - workspaceId
+        - subjectId
+        - tripId
+        - kind
+        - provider
+        - summary
+        - sourceReference
+        - evidenceSource
+        - observedAt
+        - expiresAt
+        - expectedPreviousSequence
+      properties:
+        workspaceId:
+          $ref: "#/components/schemas/OpaqueId"
+        subjectId:
+          $ref: "#/components/schemas/OpaqueId"
+        tripId:
+          $ref: "#/components/schemas/OpaqueId"
+        kind:
+          enum: [flight, lodging, ground-transport, activity, other]
+        provider:
+          type: string
+          minLength: 1
+          maxLength: 16384
+        summary:
+          type: string
+          minLength: 1
+          maxLength: 16384
+        sourceReference:
+          type: string
+          minLength: 1
+          maxLength: 16384
+          description: Opaque provider result reference; clients should avoid credentials.
+        evidenceSource:
+          enum:
+            - user-statement
+            - agent-observation
+            - tool-result
+            - imported-record
+            - workspace-decision
+        observedAt:
+          type: string
+          format: date-time
+          pattern: "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+        expiresAt:
+          type: string
+          format: date-time
+          pattern: "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+        expectedPreviousSequence:
+          type: integer
+          minimum: 0
+    BookingResearchResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - workspaceId
+        - tripId
+        - observedBy
+        - version
+        - expiresAt
+      properties:
+        id:
+          $ref: "#/components/schemas/OpaqueId"
+        workspaceId:
+          $ref: "#/components/schemas/OpaqueId"
+        tripId:
+          $ref: "#/components/schemas/OpaqueId"
+        observedBy:
+          $ref: "#/components/schemas/OpaqueId"
+        version:
+          type: integer
+          minimum: 1
+        expiresAt:
+          type: string
+          format: date-time
     Memory:
       type: object
       additionalProperties: false

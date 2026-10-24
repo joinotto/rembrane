@@ -34,6 +34,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Schema version 7 encrypted booking-research storage bound to canonical trips,
   with a distinct encryption purpose, tenant-scoped reads, and atomic event
   persistence.
+- Authenticated `POST /v1/travel/booking-research` API contract and server
+  handler with connection-grant enforcement, strict research validation, and
+  conflict-aware responses.
 - Rust modular-monolith workspace with provider-independent domain and
   application layers.
 - Canonical memory, provenance, event, disclosure, membership, grant,

@@ -131,9 +131,11 @@ for tool in $implemented_tools; do
 done
 
 if ! rg -F '/context/resolve:' spec/openapi.yaml >/dev/null ||
-    ! rg -F '"/v1/context/resolve"' apps/rembrane-api/src/main.rs >/dev/null
+    ! rg -F '"/v1/context/resolve"' apps/rembrane-api/src/main.rs >/dev/null ||
+    ! rg -F '/travel/booking-research:' spec/openapi.yaml >/dev/null ||
+    ! rg -F '"/v1/travel/booking-research"' apps/rembrane-api/src/main.rs >/dev/null
 then
-    echo "REST context route and OpenAPI contract are inconsistent" >&2
+    echo "REST routes and OpenAPI contract are inconsistent" >&2
     exit 1
 fi
 

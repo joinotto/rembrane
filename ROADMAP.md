@@ -116,7 +116,8 @@ This roadmap describes sequencing, not release dates.
   - [x] Exact trip-scoped capture authorization and atomic in-memory reference
     repository.
   - [x] Workspace-bound encrypted SQLite repository with atomic audit events.
-  - [ ] External capture API.
+  - [x] Authenticated REST capture contract and server route.
+  - [ ] MCP capture tool and end-to-end protocol tests.
 - [ ] Cross-agent activity continuation.
 - [ ] Sensitive travel-data permissions.
 

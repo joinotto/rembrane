@@ -9,14 +9,17 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use rembrane_application::{
-    AuthorizeClientCommand, AuthorizeClientService, ResolveContextCommand, ResolveContextService,
+    ApplicationError, AuthorizeClientCommand, AuthorizeClientService,
+    CaptureBookingResearchCommand, CaptureBookingResearchService, ResolveContextCommand,
+    ResolveContextService,
 };
 use rembrane_config::parse_read_scopes;
 use rembrane_contracts::ResolveContextRequest;
 use rembrane_crypto_rustcrypto::RustCryptoRecordCipher;
 use rembrane_domain::{
-    ActivityId, ClientId, ContextPackId, DisclosureId, EntityId, MemoryKind, MemoryScope,
-    MemoryStatus, PrincipalId, ReadGrant, WorkspaceId,
+    ActivityId, BookingResearch, BookingResearchId, BookingResearchKind, ClientId, ContextPackId,
+    DisclosureId, EntityId, EventId, EvidenceId, EvidenceReference, EvidenceSource, MemoryKind,
+    MemoryScope, MemoryStatus, PrincipalId, ReadGrant, WorkspaceId, WriteGrant, WritePermission,
 };
 use rembrane_store_sqlite::SqliteStore;
 use serde::{Deserialize, Serialize};
@@ -36,6 +39,7 @@ struct Inner {
 struct Runtime {
     store: SqliteStore<RustCryptoRecordCipher>,
     read_grant: ReadGrant,
+    write_grant: WriteGrant,
     next_id: u128,
 }
 
@@ -51,6 +55,33 @@ struct ResolveRequest {
     query: String,
     maximum_items: usize,
     maximum_bytes: Option<usize>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct CaptureBookingResearchRequest {
+    workspace_id: String,
+    subject_id: String,
+    trip_id: String,
+    kind: String,
+    provider: String,
+    summary: String,
+    source_reference: String,
+    evidence_source: String,
+    observed_at: String,
+    expires_at: String,
+    expected_previous_sequence: u64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BookingResearchResponse {
+    id: String,
+    workspace_id: String,
+    trip_id: String,
+    observed_by: String,
+    version: u64,
+    expires_at: String,
 }
 
 #[derive(Serialize)]
@@ -139,16 +170,15 @@ impl AppState {
         let store = SqliteStore::open(database)
             .context("failed to open Rembrane database")?
             .with_cipher(cipher);
-        let read_grant = AuthorizeClientService::new(&store)
+        let grants = AuthorizeClientService::new(&store)
             .execute(AuthorizeClientCommand {
                 client_id,
                 workspace_id,
                 principal_id,
                 requested_read_scopes: read_scopes,
-                requested_write_permissions: Vec::new(),
+                requested_write_permissions: vec![WritePermission::CaptureBookingResearch],
             })
-            .context("failed to authorize API connection")?
-            .read;
+            .context("failed to authorize API connection")?;
         let next_id = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .context("system clock is before the Unix epoch")?
@@ -158,13 +188,74 @@ impl AppState {
             inner: Arc::new(Inner {
                 runtime: Mutex::new(Runtime {
                     store,
-                    read_grant,
+                    read_grant: grants.read,
+                    write_grant: grants.write,
                     next_id,
                 }),
                 bearer_token,
             }),
         })
     }
+}
+
+async fn capture_booking_research(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<CaptureBookingResearchRequest>,
+) -> Result<(StatusCode, Json<BookingResearchResponse>), ApiError> {
+    authorize_bearer(&state, &headers)?;
+    let kind = parse_research_kind(&request.kind).ok_or_else(ApiError::invalid_request)?;
+    let evidence_source =
+        parse_evidence_source(&request.evidence_source).ok_or_else(ApiError::invalid_request)?;
+    let mut runtime = state
+        .inner
+        .runtime
+        .lock()
+        .map_err(|_| ApiError::internal())?;
+    if request.workspace_id != runtime.write_grant.workspace_id.as_str()
+        || request.subject_id != runtime.write_grant.subject_id.as_str()
+    {
+        return Err(ApiError::access_denied());
+    }
+    runtime.next_id = runtime.next_id.saturating_add(1);
+    let suffix = runtime.next_id;
+    let research = BookingResearch::new(
+        BookingResearchId::new(format!("research_{suffix}")),
+        runtime.write_grant.workspace_id.clone(),
+        EntityId::new(request.trip_id),
+        runtime.write_grant.subject_id.clone(),
+        kind,
+        request.provider,
+        request.summary,
+        request.source_reference,
+        EvidenceReference::new(
+            EvidenceId::new(format!("evidence_{suffix}")),
+            evidence_source,
+        ),
+        request.observed_at,
+        request.expires_at,
+    )
+    .map_err(|_| ApiError::invalid_request())?;
+    let write_grant = runtime.write_grant.clone();
+    let captured = CaptureBookingResearchService::new(&mut runtime.store)
+        .execute(CaptureBookingResearchCommand {
+            grant: write_grant,
+            research,
+            event_id: EventId::new(format!("event_{suffix}")),
+            expected_previous_sequence: request.expected_previous_sequence,
+        })
+        .map_err(ApiError::from_application)?;
+    Ok((
+        StatusCode::CREATED,
+        Json(BookingResearchResponse {
+            id: captured.id().to_string(),
+            workspace_id: captured.workspace_id().to_string(),
+            trip_id: captured.trip_id().to_string(),
+            observed_by: captured.observed_by().to_string(),
+            version: captured.version(),
+            expires_at: captured.expires_at().to_owned(),
+        }),
+    ))
 }
 
 async fn health() -> Json<Health> {
@@ -300,6 +391,56 @@ impl ApiError {
             message: "request could not be completed",
         }
     }
+
+    const fn conflict() -> Self {
+        Self {
+            status: StatusCode::CONFLICT,
+            code: "conflict",
+            message: "a version or event sequence conflict occurred",
+        }
+    }
+
+    const fn not_found() -> Self {
+        Self {
+            status: StatusCode::NOT_FOUND,
+            code: "not_found",
+            message: "the requested canonical record was not found",
+        }
+    }
+
+    fn from_application(error: ApplicationError) -> Self {
+        match error {
+            ApplicationError::AccessDenied => Self::access_denied(),
+            ApplicationError::NotFound => Self::not_found(),
+            ApplicationError::AlreadyExists
+            | ApplicationError::SequenceConflict
+            | ApplicationError::VersionConflict => Self::conflict(),
+            ApplicationError::Validation(_) => Self::invalid_request(),
+            ApplicationError::StorageUnavailable => Self::internal(),
+        }
+    }
+}
+
+fn parse_research_kind(value: &str) -> Option<BookingResearchKind> {
+    match value {
+        "flight" => Some(BookingResearchKind::Flight),
+        "lodging" => Some(BookingResearchKind::Lodging),
+        "ground-transport" => Some(BookingResearchKind::GroundTransport),
+        "activity" => Some(BookingResearchKind::Activity),
+        "other" => Some(BookingResearchKind::Other),
+        _ => None,
+    }
+}
+
+fn parse_evidence_source(value: &str) -> Option<EvidenceSource> {
+    match value {
+        "user-statement" => Some(EvidenceSource::UserStatement),
+        "agent-observation" => Some(EvidenceSource::AgentObservation),
+        "tool-result" => Some(EvidenceSource::ToolResult),
+        "imported-record" => Some(EvidenceSource::ImportedRecord),
+        "workspace-decision" => Some(EvidenceSource::WorkspaceDecision),
+        _ => None,
+    }
 }
 
 impl From<&rembrane_domain::MemoryRecord> for MemoryOutput {
@@ -385,6 +526,10 @@ async fn main() -> Result<()> {
     let app = Router::new()
         .route("/health", get(health))
         .route("/v1/context/resolve", post(resolve_context))
+        .route(
+            "/v1/travel/booking-research",
+            post(capture_booking_research),
+        )
         .layer(DefaultBodyLimit::max(64 * 1024))
         .with_state(state);
     axum::serve(listener, app).await?;
