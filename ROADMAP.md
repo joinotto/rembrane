@@ -265,6 +265,8 @@ This roadmap describes sequencing, not release dates.
     retention, legal-hold, and append-only audit schemas under forced RLS.
   - [x] Add encrypted PostgreSQL trip, booking-research, checkpoint
     disclosure, and sensitive travel-disclosure schemas under forced RLS.
+  - [x] Add encrypted temporal knowledge-graph and idempotent graph-projection
+    PostgreSQL schemas under forced RLS.
   - [x] Document transaction-local tenant identity and non-owner,
     non-`BYPASSRLS` runtime-role requirements.
   - [x] Run a live PostgreSQL two-tenant CI proof covering scoped reads,

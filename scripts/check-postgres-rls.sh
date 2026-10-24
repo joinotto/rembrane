@@ -4,6 +4,7 @@ set -eu
 schema=migrations/postgres/0001_canonical_schema.sql
 administration=migrations/postgres/0002_workspace_administration.sql
 travel=migrations/postgres/0003_travel_continuity.sql
+graph=migrations/postgres/0004_knowledge_graph.sql
 migration=migrations/postgres/9999_tenant_rls.sql
 readme=migrations/postgres/README.md
 
@@ -22,6 +23,30 @@ for table in \
 do
     rg -q "^CREATE TABLE $table " "$schema" || {
         echo "PostgreSQL canonical table is missing: $table" >&2
+        exit 1
+    }
+done
+
+for table in \
+    knowledge_nodes \
+    knowledge_edges \
+    graph_projection_outbox
+do
+    rg -q "^CREATE TABLE $table " "$graph" || {
+        echo "PostgreSQL knowledge-graph table is missing: $table" >&2
+        exit 1
+    }
+done
+
+for invariant in \
+    'knowledge_nodes_by_validity' \
+    'knowledge_edges_by_source_validity' \
+    'knowledge_edges_by_target_validity' \
+    'graph_projection_outbox_node_idempotency' \
+    'graph_projection_outbox_edge_idempotency'
+do
+    rg -F "$invariant" "$graph" >/dev/null || {
+        echo "PostgreSQL knowledge-graph invariant is missing: $invariant" >&2
         exit 1
     }
 done

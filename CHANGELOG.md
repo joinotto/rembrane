@@ -9,6 +9,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- PostgreSQL encrypted temporal knowledge nodes and edges with validity
+  indexes and an idempotent provider projection outbox under forced RLS.
 - PostgreSQL travel-continuity tables for encrypted trips and booking research,
   checkpoint disclosures, and receipts that explicitly record sensitive
   source-reference and traveler-profile disclosure.

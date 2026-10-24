@@ -6,6 +6,9 @@ set -eu
 psql "$REMBRANE_POSTGRES_URL" -v ON_ERROR_STOP=1 <<'SQL'
 DROP SCHEMA IF EXISTS rembrane CASCADE;
 DROP TABLE IF EXISTS
+    graph_projection_outbox,
+    knowledge_edges,
+    knowledge_nodes,
     disclosed_booking_research,
     travel_disclosure_receipts,
     booking_research,
@@ -40,6 +43,8 @@ psql "$REMBRANE_POSTGRES_URL" -v ON_ERROR_STOP=1 \
     -f migrations/postgres/0002_workspace_administration.sql
 psql "$REMBRANE_POSTGRES_URL" -v ON_ERROR_STOP=1 \
     -f migrations/postgres/0003_travel_continuity.sql
+psql "$REMBRANE_POSTGRES_URL" -v ON_ERROR_STOP=1 \
+    -f migrations/postgres/0004_knowledge_graph.sql
 
 psql "$REMBRANE_POSTGRES_URL" -v ON_ERROR_STOP=1 <<'SQL'
 CREATE ROLE rembrane_runtime_test NOLOGIN NOSUPERUSER NOBYPASSRLS;
@@ -175,6 +180,51 @@ INSERT INTO disclosed_booking_research (
         'workspace_02', 'travel_disclosure_02', 'research_02', 1,
         'expired', 0
     );
+INSERT INTO knowledge_nodes (
+    workspace_id, id, node_ciphertext, encryption_key_id,
+    encryption_algorithm, encryption_nonce, version, valid_from, recorded_at
+) VALUES
+    (
+        'workspace_01', 'node_01a', '\x31', 'key_01',
+        'xchacha20poly1305-ietf', decode(repeat('31', 24), 'hex'), 1, 1, 1
+    ),
+    (
+        'workspace_01', 'node_01b', '\x32', 'key_01',
+        'xchacha20poly1305-ietf', decode(repeat('32', 24), 'hex'), 1, 1, 1
+    ),
+    (
+        'workspace_02', 'node_02a', '\x33', 'key_02',
+        'xchacha20poly1305-ietf', decode(repeat('33', 24), 'hex'), 1, 1, 1
+    ),
+    (
+        'workspace_02', 'node_02b', '\x34', 'key_02',
+        'xchacha20poly1305-ietf', decode(repeat('34', 24), 'hex'), 1, 1, 1
+    );
+INSERT INTO knowledge_edges (
+    workspace_id, id, source_id, target_id, edge_ciphertext,
+    encryption_key_id, encryption_algorithm, encryption_nonce, version,
+    valid_from, recorded_at
+) VALUES
+    (
+        'workspace_01', 'edge_01', 'node_01a', 'node_01b', '\x41', 'key_01',
+        'xchacha20poly1305-ietf', decode(repeat('41', 24), 'hex'), 1, 1, 1
+    ),
+    (
+        'workspace_02', 'edge_02', 'node_02a', 'node_02b', '\x42', 'key_02',
+        'xchacha20poly1305-ietf', decode(repeat('42', 24), 'hex'), 1, 1, 1
+    );
+INSERT INTO graph_projection_outbox (
+    id, workspace_id, resource_type, node_id, resource_version, provider_id,
+    operation, status
+) VALUES
+    (
+        'graph_job_01', 'workspace_01', 'node', 'node_01a', 1,
+        'provider_graph', 'upsert', 'pending'
+    ),
+    (
+        'graph_job_02', 'workspace_02', 'node', 'node_02a', 1,
+        'provider_graph', 'upsert', 'pending'
+    );
 SQL
 
 psql "$REMBRANE_POSTGRES_URL" -v ON_ERROR_STOP=1 \
@@ -217,11 +267,14 @@ SELECT
     (SELECT count(*) FROM trips),
     (SELECT count(*) FROM booking_research),
     (SELECT count(*) FROM travel_disclosure_receipts),
-    (SELECT count(*) FROM disclosed_booking_research);
+    (SELECT count(*) FROM disclosed_booking_research),
+    (SELECT count(*) FROM knowledge_nodes),
+    (SELECT count(*) FROM knowledge_edges),
+    (SELECT count(*) FROM graph_projection_outbox);
 ROLLBACK;
 SQL
 )
-test "$result" = "1|1|1|1|1|1|1|1|1|1|1|1|1"
+test "$result" = "1|1|1|1|1|1|1|1|1|1|1|1|1|2|1|1"
 
 if psql "$REMBRANE_POSTGRES_URL" -v ON_ERROR_STOP=1 >/dev/null 2>&1 <<'SQL'
 BEGIN;
@@ -260,10 +313,13 @@ SELECT
     (SELECT count(*) FROM trips),
     (SELECT count(*) FROM booking_research),
     (SELECT count(*) FROM travel_disclosure_receipts),
-    (SELECT count(*) FROM disclosed_booking_research);
+    (SELECT count(*) FROM disclosed_booking_research),
+    (SELECT count(*) FROM knowledge_nodes),
+    (SELECT count(*) FROM knowledge_edges),
+    (SELECT count(*) FROM graph_projection_outbox);
 ROLLBACK;
 SQL
 )
-test "$unscoped" = "0|0|0|0|0|0|0|0|0|0|0|0|0"
+test "$unscoped" = "0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0"
 
 echo "PostgreSQL two-tenant RLS test passed"

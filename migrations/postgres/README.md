@@ -7,6 +7,9 @@ invitations and scope grants, key-rotation state, append-only administrative
 audit, retention policies, and legal holds. `0003_travel_continuity.sql` adds
 encrypted trip and booking research records plus checkpoint and travel
 disclosure receipts, including explicit sensitive-data disclosure flags.
+`0004_knowledge_graph.sql` adds encrypted temporal nodes and edges plus a
+provider-specific projection outbox with partial unique indexes for exact
+node and edge idempotency.
 
 Apply numbered schema migrations in ascending order, then apply
 `9999_tenant_rls.sql` after every schema migration and before granting access
