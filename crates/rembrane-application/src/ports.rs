@@ -43,6 +43,25 @@ pub trait ChannelSenderBindingRepository {
     ) -> Result<(), ApplicationError>;
 }
 
+/// Atomic authenticated-channel admission.
+///
+/// Implementations resolve an active sender binding and reserve the platform
+/// event identifier in one transaction so revocation cannot race admission.
+pub trait ChannelIngressRepository {
+    fn accept_bound_channel_event(
+        &mut self,
+        channel: ChannelKind,
+        account_lookup_key: &str,
+        sender_lookup_key: &str,
+        event_id: &str,
+        text: &str,
+        received_at_epoch_seconds: u64,
+        now_epoch_seconds: u64,
+        replay_window_seconds: u64,
+        maximum_events: usize,
+    ) -> Result<VerifiedChannelMessage, ApplicationError>;
+}
+
 pub trait AdministrativeAuditRepository {
     fn append_administrative_audit(
         &mut self,

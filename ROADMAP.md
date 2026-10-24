@@ -557,6 +557,8 @@ This roadmap describes sequencing, not release dates.
     lookup identifiers instead of storing WhatsApp phone numbers.
   - [x] Require an active canonical membership for every sender binding and
     revoke bindings automatically when that membership becomes inactive.
+  - [x] Resolve active sender identity and reserve replay protection in one
+    atomic storage transaction to prevent membership-revocation races.
 - [ ] Mobile share flows and iMessage extension.
   - [x] Reuse the authenticated-channel contract for explicit iMessage
     extension and mobile-share ingestion without claiming conversation

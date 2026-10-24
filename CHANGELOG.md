@@ -18,6 +18,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Active-membership enforcement and automatic revocation for channel sender
   bindings, preventing suspended or removed principals from retaining gateway
   identity.
+- Atomic bound-channel admission that resolves canonical identity and reserves
+  replay protection in one transaction, closing membership-revocation races.
 
 ### Fixed
 
