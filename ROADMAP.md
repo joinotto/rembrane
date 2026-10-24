@@ -68,6 +68,8 @@ This roadmap describes sequencing, not release dates.
       - [x] Bind each lookup to service, account, and expected key ID to avoid
         cross-generation resolution through reused account metadata.
     - [ ] Add a Windows DPAPI adapter.
+      - [x] Define bounded generation-specific DPAPI blob references using
+        local absolute paths, traversal rejection, and a Windows CI gate.
   - [x] Define a vendor-neutral authenticated key-provider operation protocol
     that never exports raw workspace keys.
     - [x] Negotiate optional workspace-rotation capability and validate

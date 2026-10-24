@@ -33,6 +33,12 @@ pub struct LinuxSecretServiceKeyReference {
     account: String,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WindowsDpapiKeyReference {
+    key_id: String,
+    blob_path: String,
+}
+
 impl MacosKeychainKeyReference {
     pub fn new(
         key_id: impl Into<String>,
@@ -86,6 +92,30 @@ impl LinuxSecretServiceKeyReference {
     #[must_use]
     pub fn key_id(&self) -> &str {
         &self.key_id
+    }
+}
+
+impl WindowsDpapiKeyReference {
+    pub fn new(
+        key_id: impl Into<String>,
+        blob_path: impl Into<String>,
+    ) -> Result<Self, CryptoError> {
+        let key_id = key_id.into();
+        let blob_path = blob_path.into();
+        if !valid_key_metadata(&key_id) || !valid_windows_blob_path(&blob_path) {
+            return Err(CryptoError::KeyUnavailable);
+        }
+        Ok(Self { key_id, blob_path })
+    }
+
+    #[must_use]
+    pub fn key_id(&self) -> &str {
+        &self.key_id
+    }
+
+    #[must_use]
+    pub fn blob_path(&self) -> &str {
+        &self.blob_path
     }
 }
 
@@ -387,6 +417,18 @@ fn parse_linux_key_history(
         .collect()
 }
 
+#[cfg(any(test, target_os = "windows"))]
+fn parse_windows_dpapi_history(value: &str) -> Result<Vec<WindowsDpapiKeyReference>, CryptoError> {
+    value
+        .split(',')
+        .map(str::trim)
+        .map(|entry| {
+            let (key_id, blob_path) = entry.split_once('=').ok_or(CryptoError::KeyUnavailable)?;
+            WindowsDpapiKeyReference::new(key_id, blob_path)
+        })
+        .collect()
+}
+
 fn parse_keychain_history(
     service: &str,
     value: &str,
@@ -451,6 +493,17 @@ fn valid_key_metadata(value: &str) -> bool {
         && value.len() <= 256
         && value.trim() == value
         && !value.chars().any(char::is_control)
+}
+
+fn valid_windows_blob_path(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    value.len() >= 4
+        && value.len() <= 4_096
+        && bytes[0].is_ascii_alphabetic()
+        && bytes[1] == b':'
+        && bytes[2] == b'\\'
+        && !value.chars().any(char::is_control)
+        && !value.split('\\').any(|component| component == "..")
 }
 
 fn decode_key(encoded: &str) -> Result<[u8; 32], CryptoError> {
@@ -545,8 +598,9 @@ mod tests {
 
     use super::{
         LinuxSecretServiceKeyReference, MacosKeychainKeyReference, RustCryptoKeyringCipher,
-        RustCryptoRecordCipher, parse_keychain_history, parse_linux_key_history,
-        validate_key_references, validate_linux_key_references,
+        RustCryptoRecordCipher, WindowsDpapiKeyReference, parse_keychain_history,
+        parse_linux_key_history, parse_windows_dpapi_history, validate_key_references,
+        validate_linux_key_references,
     };
 
     fn context(workspace: &str) -> EncryptionContext {
@@ -614,6 +668,33 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn windows_dpapi_references_require_local_absolute_blob_paths() {
+        let reference =
+            WindowsDpapiKeyReference::new("key_v2", r"C:\Rembrane\workspace_01-key_v2.dpapi")
+                .expect("local absolute path should validate");
+        assert_eq!(reference.key_id(), "key_v2");
+        assert_eq!(
+            reference.blob_path(),
+            r"C:\Rembrane\workspace_01-key_v2.dpapi"
+        );
+        let history = parse_windows_dpapi_history(r"key_v1=C:\Rembrane\workspace_01-key_v1.dpapi")
+            .expect("history should parse");
+        assert_eq!(history[0].key_id(), "key_v1");
+
+        for path in [
+            r"relative\key.dpapi",
+            r"\\server\share\key.dpapi",
+            r"C:\Rembrane\..\key.dpapi",
+            "C:\\Rembrane\\key.dpapi\n",
+        ] {
+            assert!(
+                WindowsDpapiKeyReference::new("key_v1", path).is_err(),
+                "unsafe DPAPI blob path must fail"
+            );
+        }
     }
 
     #[test]

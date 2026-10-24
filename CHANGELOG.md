@@ -17,6 +17,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Linux Secret Service lookups bound to service, account, and expected key ID
   so active and historical generations cannot cross-resolve through reused
   account metadata.
+- A Windows DPAPI blob-reference contract with generation-specific key IDs,
+  bounded local absolute paths, traversal rejection, historical parsing, and a
+  dedicated Windows warnings-as-errors CI job.
 - Secret-safe OpenCode local MCP configuration generation using the documented
   command-array shape and environment-variable references without embedding
   credential values.

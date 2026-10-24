@@ -64,6 +64,16 @@ jobs:
           --package rembrane-mcp
           --all-targets -- -D warnings
 
+  windows-keyring:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.88.0
+        with:
+          components: clippy
+      - run: cargo test --package rembrane-crypto-rustcrypto
+      - run: cargo clippy --package rembrane-crypto-rustcrypto --all-targets -- -D warnings
+
   graphiti-sidecar:
     runs-on: ubuntu-latest
     steps:
