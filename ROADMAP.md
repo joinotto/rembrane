@@ -199,6 +199,8 @@ This roadmap describes sequencing, not release dates.
       workspace membership, audience, expiry, and token validity.
     - [x] Prove the Axum boundary preserves distinct verified workspace
       identities and rejects an untrusted browser origin over HTTP routing.
+      - [x] Route both tenants through the owned asynchronous dispatcher and
+        prove dispatched workspace identity remains isolated per request.
   - [x] Add a hardened Cloudflare Tunnel Compose overlay that keeps persistent
     memory and encryption credentials on the operator-controlled origin.
 - [x] Persist a disclosure receipt for every SQLite context response.

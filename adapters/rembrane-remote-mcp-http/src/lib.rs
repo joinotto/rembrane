@@ -1600,13 +1600,18 @@ mod tests {
         headers: HeaderMap,
         body: Bytes,
     ) -> Result<String, RemoteMcpHttpRejection> {
-        authorization
-            .authorize_stateless_body(&headers, &body, 1_000)
-            .map(|authorized| authorized.access().workspace_id().to_string())
+        match authorization
+            .authorize_and_dispatch(&headers, &body, 1_000, &RecordingDispatcher)
+            .await
+        {
+            Ok(dispatched) => Ok(dispatched.workspace),
+            Err(RemoteMcpDispatchError::Authorization(rejection)) => Err(rejection),
+            Err(RemoteMcpDispatchError::Dispatch(infallible)) => match infallible {},
+        }
     }
 
     #[tokio::test]
-    async fn owned_axum_service_preserves_verified_tenant_identity() {
+    async fn owned_axum_service_preserves_dispatched_tenant_identity() {
         let config = RemoteMcpConfig::new(
             "https://memory.example.test/mcp".to_owned(),
             "https://identity.example.test".to_owned(),

@@ -38,6 +38,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   can open GET streams only from tenant-bound authorization proofs.
 - One owned Axum authorize-and-open operation for stateless MCP event streams,
   preserving typed HTTP authorization versus SDK stream-dispatch failures.
+- In-memory Axum integration coverage routing two OAuth workspaces through the
+  asynchronous dispatcher and proving dispatched tenant identity cannot bleed
+  across requests.
 - A transport-injectable Mem0 OSS semantic adapter mapping authorized
   projections into HMAC-pseudonymous workspace partitions while preserving
   canonical memory IDs, versions, replacement, bounded ranking, and
