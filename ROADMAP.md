@@ -133,6 +133,9 @@ This roadmap describes sequencing, not release dates.
     - [x] Derive the accepted public Host authority and RFC 9728 challenge from
       the same validated remote-resource profile so deployment values cannot
       drift independently.
+    - [x] Authorize modern stateless Streamable HTTP requests without accepting
+      a legacy session identifier, while preserving per-request bearer,
+      origin, host, method, tool, and scope enforcement.
   - [x] Allow the shared MCP handler service to initialize canonical
     subject/client/workspace identity exclusively from verified remote claims.
   - [x] Bind remote sessions to issuer, resource, canonical identity,

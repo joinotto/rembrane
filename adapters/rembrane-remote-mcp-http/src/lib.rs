@@ -6,10 +6,11 @@
 //! session, and tenant-binding checks.
 
 use rembrane_application::{
-    RemoteHttpAuthorization, RemoteSessionHttpError, RemoteSessionRegistry, RemoteTokenVerifier,
+    RemoteHttpAuthorization, RemoteHttpAuthorizationError, RemoteSessionHttpError,
+    RemoteSessionRegistry, RemoteTokenVerifier,
 };
 use rembrane_config::RemoteMcpConfig;
-use rembrane_contracts::{RemoteSessionId, VerifiedRemoteAccess};
+use rembrane_contracts::{RemoteMcpRequestAuthorization, RemoteSessionId, VerifiedRemoteAccess};
 
 pub const MCP_SESSION_HEADER: &str = "Mcp-Session-Id";
 
@@ -155,6 +156,54 @@ impl RemoteMcpHttpGate {
             .map_err(|error| self.rejection(error))
     }
 
+    /// Authorizes one stateless MCP request without accepting or creating a
+    /// transport session.
+    ///
+    /// This is the authorization boundary for modern Streamable HTTP requests
+    /// whose protocol version does not use `Mcp-Session-Id`. The bearer token
+    /// is still verified on every request, and method/tool classification,
+    /// host, origin, and narrow OAuth scope checks remain mandatory.
+    ///
+    /// # Errors
+    ///
+    /// Returns an HTTP-ready rejection for invalid credentials, host, origin,
+    /// method/tool classification, or OAuth scope.
+    pub fn authorize_stateless<Verifier>(
+        &self,
+        authorization: &RemoteHttpAuthorization<'_, '_, Verifier>,
+        request: RemoteMcpHttpRequest<'_>,
+        method: &str,
+        tool_name: Option<&str>,
+        now_epoch_seconds: u64,
+    ) -> Result<VerifiedRemoteAccess, RemoteMcpHttpRejection>
+    where
+        Verifier: RemoteTokenVerifier,
+    {
+        self.require_allowed_host(request.host)?;
+        if request.session_id.is_some() {
+            return Err(Self::forbidden());
+        }
+        match RemoteMcpRequestAuthorization::classify(method, tool_name)
+            .ok_or_else(Self::forbidden)?
+        {
+            RemoteMcpRequestAuthorization::Connection => authorization
+                .authorize_connection_for_http(
+                    request.authorization,
+                    request.origin,
+                    now_epoch_seconds,
+                )
+                .map_err(|error| self.authorization_rejection(error)),
+            RemoteMcpRequestAuthorization::Tool(operation) => authorization
+                .authorize_tool_for_http(
+                    request.authorization,
+                    request.origin,
+                    operation.tool_name(),
+                    now_epoch_seconds,
+                )
+                .map_err(|error| self.authorization_rejection(error)),
+        }
+    }
+
     /// Reauthenticates and removes one established MCP session.
     ///
     /// # Errors
@@ -225,6 +274,18 @@ impl RemoteMcpHttpGate {
                 retry_after_seconds: None,
             },
             RemoteSessionHttpError::CapacityExceeded => Self::capacity_exceeded(),
+        }
+    }
+
+    fn authorization_rejection(
+        &self,
+        error: RemoteHttpAuthorizationError,
+    ) -> RemoteMcpHttpRejection {
+        match error {
+            RemoteHttpAuthorizationError::Unauthorized => {
+                self.rejection(RemoteSessionHttpError::Unauthorized)
+            }
+            RemoteHttpAuthorizationError::Forbidden => Self::forbidden(),
         }
     }
 
@@ -436,5 +497,77 @@ mod tests {
         )
         .expect("remote profile should be valid");
         assert!(RemoteMcpHttpGate::from_config(10, &config).is_ok());
+    }
+
+    #[test]
+    fn stateless_gate_reauthenticates_without_transport_sessions() {
+        let verifier = Verifier;
+        let authenticator = RemoteAccessAuthenticator::new(
+            &verifier,
+            "https://identity.example.test",
+            "https://memory.example.test/mcp",
+        );
+        let origins = ["https://agent.example.test"];
+        let authorization = RemoteHttpAuthorization::new(&authenticator, &origins);
+        let gate = RemoteMcpHttpGate::new(
+            1,
+            "https://memory.example.test/.well-known/oauth-protected-resource/mcp",
+            &["memory.example.test"],
+        )
+        .expect("gate should be valid");
+        let request = |token| RemoteMcpHttpRequest {
+            authorization: Some(token),
+            host: Some("memory.example.test"),
+            origin: Some("https://agent.example.test"),
+            session_id: None,
+        };
+
+        let access = gate
+            .authorize_stateless(
+                &authorization,
+                request("Bearer workspace-one"),
+                "tools/call",
+                Some("rembrane_resolve_context"),
+                1_000,
+            )
+            .expect("scoped stateless request should authenticate");
+        assert_eq!(access.workspace_id().as_str(), "workspace_01");
+
+        let unauthorized = gate
+            .authorize_stateless(
+                &authorization,
+                request("Bearer invalid"),
+                "tools/list",
+                None,
+                1_000,
+            )
+            .expect_err("invalid token must be challenged");
+        assert_eq!(unauthorized.status, 401);
+        assert!(unauthorized.www_authenticate.is_some());
+
+        let insufficient_scope = gate
+            .authorize_stateless(
+                &authorization,
+                request("Bearer workspace-one"),
+                "tools/call",
+                Some("rembrane_create_trip"),
+                1_000,
+            )
+            .expect_err("missing tool scope must be forbidden");
+        assert_eq!(insufficient_scope.status, 403);
+
+        let stateful_header = gate
+            .authorize_stateless(
+                &authorization,
+                RemoteMcpHttpRequest {
+                    session_id: Some("session_0123456789abcdef"),
+                    ..request("Bearer workspace-one")
+                },
+                "tools/list",
+                None,
+                1_000,
+            )
+            .expect_err("stateless boundary must reject session ambiguity");
+        assert_eq!(stateful_header.status, 403);
     }
 }

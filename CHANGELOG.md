@@ -9,6 +9,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- A modern stateless remote-MCP authorization path that rejects legacy session
+  ambiguity while preserving per-request bearer verification, trusted Host and
+  Origin checks, strict method/tool classification, and narrow OAuth scopes.
 - A transport-neutral mobile-share verifier for explicit user-selected text,
   with raw-payload HMAC authentication, bounded strict envelopes,
   pseudonymous device binding, freshness enforcement, replay idempotency, and
