@@ -1,0 +1,19 @@
+[package]
+name = "rembrane-key-provider-http"
+description = "Authenticated bounded HTTP transport for Rembrane key providers"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+base64 = "0.22"
+rembrane-crypto = { path = "../../crates/rembrane-crypto" }
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+zeroize = "1"
+
+[lints]
+workspace = true
