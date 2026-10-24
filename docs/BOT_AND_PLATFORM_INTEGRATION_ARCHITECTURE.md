@@ -250,9 +250,18 @@ authorization. Prefer a customer-controlled HTTP key provider so raw workspace
 keys do not enter the gateway process.
 
 ```sh
-export REMBRANE_WHATSAPP_APP_SECRET='<Meta app secret>'
-export REMBRANE_WHATSAPP_BINDING_LOOKUP_SECRET='<stable random secret>'
-export REMBRANE_WHATSAPP_WEBHOOK_VERIFICATION_TOKEN='<random verification token>'
+install -m 600 /dev/null .rembrane-whatsapp-app-secret
+install -m 600 /dev/null .rembrane-whatsapp-binding-key
+install -m 600 /dev/null .rembrane-whatsapp-verification-token
+install -m 600 /dev/null .rembrane-channel-processor-token
+printf '%s\n' '<Meta app secret>' > .rembrane-whatsapp-app-secret
+openssl rand -hex 32 > .rembrane-whatsapp-binding-key
+openssl rand -hex 32 > .rembrane-whatsapp-verification-token
+printf '%s\n' '<processor bearer token>' > .rembrane-channel-processor-token
+export REMBRANE_WHATSAPP_APP_SECRET_FILE="$PWD/.rembrane-whatsapp-app-secret"
+export REMBRANE_WHATSAPP_BINDING_LOOKUP_SECRET_FILE="$PWD/.rembrane-whatsapp-binding-key"
+export REMBRANE_WHATSAPP_WEBHOOK_VERIFICATION_TOKEN_FILE="$PWD/.rembrane-whatsapp-verification-token"
+export REMBRANE_CHANNEL_PROCESSOR_TOKEN_FILE="$PWD/.rembrane-channel-processor-token"
 
 docker compose -f compose.yaml -f compose.whatsapp.yaml up -d \
   rembrane rembrane-whatsapp-gateway rembrane-channel-worker
@@ -286,11 +295,12 @@ using Keychain, Vault, or a cloud secret manager can supply a resolver for the
 external provider. Resolved strings are zeroized and only derived HMAC keys
 are retained.
 
-When using file references in Compose, add a deployment-owned read-only volume
-mount that exposes the referenced files inside the gateway container. Each
-file must be a regular, non-symlink file readable by the container process and
-must not grant group or other permission bits. Do not commit the source
-directory or file contents.
+The stock Compose overlay mounts all four channel credentials as owner-only
+secrets and supplies only their `file:` locators to the gateway and worker.
+For custom Compose or orchestrator deployments, expose each referenced file
+read-only inside the relevant process. Each file must be a regular,
+non-symlink file readable by the container process and must not grant group or
+other permission bits. Do not commit the source directory or file contents.
 
 The gateway acknowledges a new message only after active sender resolution,
 replay reservation, and authenticated encryption into the tenant inbox commit

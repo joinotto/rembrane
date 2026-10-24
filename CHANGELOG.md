@@ -9,6 +9,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- Owner-only WhatsApp and channel-processor Compose secrets for webhook
+  authentication, sender pseudonymization, subscription verification, and
+  downstream delivery credentials.
 - Protected local workspace-key references and owner-only Compose mounts for
   both the development encryption key and REST bearer token, removing their
   raw values from service environment interpolation.

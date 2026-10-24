@@ -7,12 +7,9 @@ services:
       - rembrane-whatsapp-gateway
     environment:
       REMBRANE_DATABASE: /var/lib/rembrane/rembrane.db
-      REMBRANE_WHATSAPP_APP_SECRET: ${REMBRANE_WHATSAPP_APP_SECRET:-}
-      REMBRANE_WHATSAPP_APP_SECRET_REFERENCE: ${REMBRANE_WHATSAPP_APP_SECRET_REFERENCE:-}
-      REMBRANE_WHATSAPP_BINDING_LOOKUP_SECRET: ${REMBRANE_WHATSAPP_BINDING_LOOKUP_SECRET:-}
-      REMBRANE_WHATSAPP_BINDING_LOOKUP_SECRET_REFERENCE: ${REMBRANE_WHATSAPP_BINDING_LOOKUP_SECRET_REFERENCE:-}
-      REMBRANE_WHATSAPP_WEBHOOK_VERIFICATION_TOKEN: ${REMBRANE_WHATSAPP_WEBHOOK_VERIFICATION_TOKEN:-}
-      REMBRANE_WHATSAPP_WEBHOOK_VERIFICATION_TOKEN_REFERENCE: ${REMBRANE_WHATSAPP_WEBHOOK_VERIFICATION_TOKEN_REFERENCE:-}
+      REMBRANE_WHATSAPP_APP_SECRET_REFERENCE: file:/run/secrets/rembrane_whatsapp_app_secret
+      REMBRANE_WHATSAPP_BINDING_LOOKUP_SECRET_REFERENCE: file:/run/secrets/rembrane_whatsapp_binding_lookup
+      REMBRANE_WHATSAPP_WEBHOOK_VERIFICATION_TOKEN_REFERENCE: file:/run/secrets/rembrane_whatsapp_verification_token
       REMBRANE_WHATSAPP_MAXIMUM_EVENT_AGE_SECONDS: ${REMBRANE_WHATSAPP_MAXIMUM_EVENT_AGE_SECONDS:-300}
       REMBRANE_WHATSAPP_REPLAY_WINDOW_SECONDS: ${REMBRANE_WHATSAPP_REPLAY_WINDOW_SECONDS:-604800}
       REMBRANE_WHATSAPP_MAXIMUM_REPLAY_EVENTS: ${REMBRANE_WHATSAPP_MAXIMUM_REPLAY_EVENTS:-1000000}
@@ -35,6 +32,21 @@ services:
         uid: "10001"
         gid: "10001"
         mode: 0400
+      - source: rembrane_whatsapp_app_secret
+        target: rembrane_whatsapp_app_secret
+        uid: "10001"
+        gid: "10001"
+        mode: 0400
+      - source: rembrane_whatsapp_binding_lookup
+        target: rembrane_whatsapp_binding_lookup
+        uid: "10001"
+        gid: "10001"
+        mode: 0400
+      - source: rembrane_whatsapp_verification_token
+        target: rembrane_whatsapp_verification_token
+        uid: "10001"
+        gid: "10001"
+        mode: 0400
     ports:
       - "127.0.0.1:8790:8790"
     volumes:
@@ -54,8 +66,7 @@ services:
       REMBRANE_DATABASE: /var/lib/rembrane/rembrane.db
       REMBRANE_WORKSPACE_ID: ${REMBRANE_WORKSPACE_ID:?required}
       REMBRANE_CHANNEL_PROCESSOR_URL: ${REMBRANE_CHANNEL_PROCESSOR_URL:?required}
-      REMBRANE_CHANNEL_PROCESSOR_TOKEN: ${REMBRANE_CHANNEL_PROCESSOR_TOKEN:-}
-      REMBRANE_CHANNEL_PROCESSOR_TOKEN_REFERENCE: ${REMBRANE_CHANNEL_PROCESSOR_TOKEN_REFERENCE:-}
+      REMBRANE_CHANNEL_PROCESSOR_TOKEN_REFERENCE: file:/run/secrets/rembrane_channel_processor_token
       REMBRANE_CHANNEL_WORKER_BATCH_SIZE: ${REMBRANE_CHANNEL_WORKER_BATCH_SIZE:-10}
       REMBRANE_CHANNEL_WORKER_POLL_MILLISECONDS: ${REMBRANE_CHANNEL_WORKER_POLL_MILLISECONDS:-1000}
       REMBRANE_CHANNEL_WORKER_MAXIMUM_ATTEMPTS: ${REMBRANE_CHANNEL_WORKER_MAXIMUM_ATTEMPTS:-5}
@@ -78,9 +89,24 @@ services:
         uid: "10001"
         gid: "10001"
         mode: 0400
+      - source: rembrane_channel_processor_token
+        target: rembrane_channel_processor_token
+        uid: "10001"
+        gid: "10001"
+        mode: 0400
     volumes:
       - rembrane-data:/var/lib/rembrane
     security_opt:
       - no-new-privileges:true
     cap_drop:
       - ALL
+
+secrets:
+  rembrane_whatsapp_app_secret:
+    file: ${REMBRANE_WHATSAPP_APP_SECRET_FILE:?required}
+  rembrane_whatsapp_binding_lookup:
+    file: ${REMBRANE_WHATSAPP_BINDING_LOOKUP_SECRET_FILE:?required}
+  rembrane_whatsapp_verification_token:
+    file: ${REMBRANE_WHATSAPP_WEBHOOK_VERIFICATION_TOKEN_FILE:?required}
+  rembrane_channel_processor_token:
+    file: ${REMBRANE_CHANNEL_PROCESSOR_TOKEN_FILE:?required}

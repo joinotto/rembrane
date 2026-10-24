@@ -677,6 +677,9 @@ This roadmap describes sequencing, not release dates.
       file references without placing secret values in gateway configuration.
   - [x] Package the gateway as an opt-in hardened Compose overlay with a
     loopback-only host port and documented TLS proxy boundary.
+    - [x] Mount WhatsApp authentication, binding, verification, and downstream
+      processor credentials as owner-only files without raw Compose
+      environment interpolation.
   - [x] Add administrator-only sender onboarding that consumes raw identifiers
     and the lookup secret from protected environment variables and persists
     only matching keyed pseudonyms.

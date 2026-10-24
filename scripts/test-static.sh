@@ -129,15 +129,20 @@ rg -q -- '--package rembrane-graph-worker' Dockerfile
 rg -q -- '--package rembrane-channel-worker' Dockerfile
 rg -q -- '--package rembrane-whatsapp-gateway' Dockerfile
 rg -q '127\.0\.0\.1:8790:8790' compose.whatsapp.yaml
-rg -q 'REMBRANE_WHATSAPP_APP_SECRET' compose.whatsapp.yaml
 rg -q 'REMBRANE_WHATSAPP_APP_SECRET_REFERENCE' compose.whatsapp.yaml
-rg -q 'REMBRANE_WHATSAPP_BINDING_LOOKUP_SECRET' compose.whatsapp.yaml
 rg -q 'REMBRANE_WHATSAPP_BINDING_LOOKUP_SECRET_REFERENCE' compose.whatsapp.yaml
-rg -q 'REMBRANE_WHATSAPP_WEBHOOK_VERIFICATION_TOKEN' compose.whatsapp.yaml
 rg -q 'REMBRANE_WHATSAPP_WEBHOOK_VERIFICATION_TOKEN_REFERENCE' compose.whatsapp.yaml
 rg -q 'REMBRANE_CHANNEL_PROCESSOR_URL' compose.whatsapp.yaml
-rg -q 'REMBRANE_CHANNEL_PROCESSOR_TOKEN' compose.whatsapp.yaml
 rg -q 'REMBRANE_CHANNEL_PROCESSOR_TOKEN_REFERENCE' compose.whatsapp.yaml
+rg -q 'REMBRANE_WHATSAPP_APP_SECRET_FILE' compose.whatsapp.yaml
+rg -q 'REMBRANE_WHATSAPP_BINDING_LOOKUP_SECRET_FILE' compose.whatsapp.yaml
+rg -q 'REMBRANE_WHATSAPP_WEBHOOK_VERIFICATION_TOKEN_FILE' compose.whatsapp.yaml
+rg -q 'REMBRANE_CHANNEL_PROCESSOR_TOKEN_FILE' compose.whatsapp.yaml
+if rg -q '^[[:space:]]+(REMBRANE_WHATSAPP_APP_SECRET|REMBRANE_WHATSAPP_BINDING_LOOKUP_SECRET|REMBRANE_WHATSAPP_WEBHOOK_VERIFICATION_TOKEN|REMBRANE_CHANNEL_PROCESSOR_TOKEN):' \
+    compose.whatsapp.yaml; then
+    echo "WhatsApp Compose must not interpolate raw channel credentials" >&2
+    exit 1
+fi
 rg -q 'REMBRANE_KEY_PROVIDER_TOKEN_REFERENCE' compose.whatsapp.yaml
 if rg -q '^[[:space:]]+REMBRANE_WORKSPACE_KEY_HEX:' \
     compose.graphiti.yaml compose.whatsapp.yaml compose.mobile-share.yaml; then
@@ -185,11 +190,11 @@ if command -v docker >/dev/null 2>&1; then
     REMBRANE_WORKSPACE_KEY_ID=key_static \
     REMBRANE_WORKSPACE_KEY_FILE=/tmp/rembrane-static-workspace-key \
     REMBRANE_API_TOKEN_FILE=/tmp/rembrane-static-api-token \
-    REMBRANE_WHATSAPP_APP_SECRET=whatsapp-static-app-secret-000000 \
-    REMBRANE_WHATSAPP_BINDING_LOOKUP_SECRET=whatsapp-static-lookup-secret-000 \
-    REMBRANE_WHATSAPP_WEBHOOK_VERIFICATION_TOKEN=whatsapp-static-verify-token-000 \
+    REMBRANE_WHATSAPP_APP_SECRET_FILE=/tmp/rembrane-static-whatsapp-app-secret \
+    REMBRANE_WHATSAPP_BINDING_LOOKUP_SECRET_FILE=/tmp/rembrane-static-whatsapp-binding-key \
+    REMBRANE_WHATSAPP_WEBHOOK_VERIFICATION_TOKEN_FILE=/tmp/rembrane-static-whatsapp-verification-token \
     REMBRANE_CHANNEL_PROCESSOR_URL=https://processor.example \
-    REMBRANE_CHANNEL_PROCESSOR_TOKEN=processor-static-token \
+    REMBRANE_CHANNEL_PROCESSOR_TOKEN_FILE=/tmp/rembrane-static-channel-processor-token \
         docker compose -f compose.yaml -f compose.whatsapp.yaml config --quiet
 fi
 
