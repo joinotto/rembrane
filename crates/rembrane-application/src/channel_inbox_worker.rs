@@ -39,11 +39,19 @@ where
         retry_delay_seconds: u64,
         lease_seconds: u64,
     ) -> Result<ChannelDispatchReport, ApplicationError> {
+        let maximum_processing_seconds = self.processor.maximum_processing_seconds();
+        let required_lease_seconds = maximum_processing_seconds
+            .checked_mul(u64::try_from(limit).unwrap_or(u64::MAX))
+            .and_then(|duration| duration.checked_add(5))
+            .ok_or_else(|| {
+                ApplicationError::Validation("channel lease requirement overflows".to_owned())
+            })?;
         if !(1..=MAX_CHANNEL_INBOX_PAGE).contains(&limit)
             || now_epoch_seconds == 0
             || maximum_attempts == 0
             || retry_delay_seconds == 0
-            || lease_seconds == 0
+            || maximum_processing_seconds == 0
+            || lease_seconds < required_lease_seconds
             || lease_id.is_empty()
         {
             return Err(ApplicationError::Validation(
@@ -168,6 +176,10 @@ mod tests {
     }
 
     impl ChannelMessageProcessor for Processor {
+        fn maximum_processing_seconds(&self) -> u64 {
+            1
+        }
+
         fn process_channel_message(
             &mut self,
             message: &VerifiedChannelMessage,
@@ -211,7 +223,7 @@ mod tests {
                 10,
                 3,
                 30,
-                60,
+                20,
             )
             .expect("batch should continue across handler failure");
         assert_eq!(report.attempted, 2);
@@ -240,9 +252,34 @@ mod tests {
                 MAX_CHANNEL_INBOX_PAGE + 1,
                 3,
                 30,
-                60,
+                20,
             ),
             Err(ApplicationError::Validation(_))
         ));
+    }
+
+    #[test]
+    fn rejects_a_lease_shorter_than_the_batch_processing_bound() {
+        let mut inbox = Inbox {
+            pending: vec![message("event_01")],
+            completed: Vec::new(),
+        };
+        let mut processor = Processor {
+            seen: Vec::new(),
+            fail_event: "",
+        };
+        assert!(matches!(
+            ChannelInboxWorker::new(&mut inbox, &mut processor).process_batch(
+                &WorkspaceId::new("workspace_01"),
+                "lease_01",
+                1_000,
+                10,
+                3,
+                30,
+                14,
+            ),
+            Err(ApplicationError::Validation(_))
+        ));
+        assert!(processor.seen.is_empty());
     }
 }

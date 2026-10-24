@@ -84,6 +84,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Cryptographically random per-process channel lease ownership, binding
   completion and retry transitions to the current claimant so a stale worker
   cannot mutate a message after another worker reclaims it.
+- Processor-declared hard execution bounds and batch-aware lease validation,
+  rejecting configurations that could expire while a claimed batch is still
+  being delivered.
 - Durable, content-free SQLite channel replay receipts with atomic cleanup,
   fail-closed capacity enforcement, per-platform namespaces, and
   cross-workspace duplicate denial for multi-process gateways.

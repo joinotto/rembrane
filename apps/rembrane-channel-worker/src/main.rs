@@ -13,7 +13,7 @@ const DEFAULT_BATCH_SIZE: usize = 10;
 const DEFAULT_POLL_MILLISECONDS: u64 = 1_000;
 const DEFAULT_MAXIMUM_ATTEMPTS: u32 = 5;
 const DEFAULT_RETRY_DELAY_SECONDS: u64 = 30;
-const DEFAULT_LEASE_SECONDS: u64 = 120;
+const DEFAULT_LEASE_SECONDS: u64 = 300;
 const HEX: &[u8; 16] = b"0123456789abcdef";
 
 struct Configuration {

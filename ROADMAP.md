@@ -589,6 +589,8 @@ This roadmap describes sequencing, not release dates.
     dispatch the same event, while expired claims are safely recoverable.
   - [x] Bind delivery completion, retry, and quarantine to a cryptographically
     random lease owner so stale workers cannot finalize reclaimed messages.
+  - [x] Require every channel processor to declare a hard call-time bound and
+    size leases for the entire claimed batch before any delivery begins.
   - [x] Define a bounded authenticated-channel message contract whose
     canonical workspace, principal, and client identity must come from a
     deployment-owned sender binding rather than webhook payload claims.

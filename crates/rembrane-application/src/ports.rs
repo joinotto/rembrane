@@ -130,6 +130,9 @@ pub trait ChannelInboxRepository {
 /// because a process can stop after handler success but before inbox
 /// completion is persisted.
 pub trait ChannelMessageProcessor {
+    /// Hard upper bound for one processor call, used to size inbox leases.
+    fn maximum_processing_seconds(&self) -> u64;
+
     fn process_channel_message(
         &mut self,
         message: &VerifiedChannelMessage,

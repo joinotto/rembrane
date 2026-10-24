@@ -14,6 +14,7 @@ use zeroize::Zeroizing;
 const MAXIMUM_RESPONSE_BYTES: u64 = 4_096;
 const MAXIMUM_BEARER_BYTES: usize = 8_192;
 const PROTOCOL_VERSION: &str = "0.1";
+const PROCESSING_TIMEOUT_SECONDS: u64 = 20;
 
 pub struct HttpChannelMessageProcessor {
     client: Client,
@@ -35,7 +36,7 @@ impl HttpChannelMessageProcessor {
             .map_err(|_| invalid_configuration())?;
         let client = Client::builder()
             .connect_timeout(Duration::from_secs(5))
-            .timeout(Duration::from_secs(20))
+            .timeout(Duration::from_secs(PROCESSING_TIMEOUT_SECONDS))
             .redirect(reqwest::redirect::Policy::none())
             .no_proxy()
             .build()
@@ -49,6 +50,10 @@ impl HttpChannelMessageProcessor {
 }
 
 impl ChannelMessageProcessor for HttpChannelMessageProcessor {
+    fn maximum_processing_seconds(&self) -> u64 {
+        PROCESSING_TIMEOUT_SECONDS
+    }
+
     fn process_channel_message(
         &mut self,
         message: &VerifiedChannelMessage,
