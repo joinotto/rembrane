@@ -29,6 +29,7 @@ pub enum WritePermission {
     WriteCheckpoint,
     CreateTrip,
     ReviseTrip,
+    CaptureBookingResearch,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

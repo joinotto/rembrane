@@ -2,8 +2,8 @@ use std::error::Error;
 use std::fmt::{self, Display};
 
 use crate::{
-    ActivityId, ContextPackId, DisclosureId, EntityId, EventId, EvidenceId, MemoryId, PrincipalId,
-    ShareProposalId, WorkspaceId,
+    ActivityId, BookingResearchId, ContextPackId, DisclosureId, EntityId, EventId, EvidenceId,
+    MemoryId, PrincipalId, ShareProposalId, WorkspaceId,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -65,6 +65,11 @@ pub enum EventPayload {
         version: u64,
     },
     TripRevised {
+        trip_id: EntityId,
+        version: u64,
+    },
+    BookingResearchCaptured {
+        research_id: BookingResearchId,
         trip_id: EntityId,
         version: u64,
     },

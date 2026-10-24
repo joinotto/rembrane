@@ -1,6 +1,6 @@
 use rembrane_domain::{
-    ActivityId, CanonicalEvent, ContextPackId, DisclosureId, EntityId, EventId, EventPayload,
-    EvidenceId, MemoryId, PrincipalId, ShareProposalId, WorkspaceId,
+    ActivityId, BookingResearchId, CanonicalEvent, ContextPackId, DisclosureId, EntityId, EventId,
+    EventPayload, EvidenceId, MemoryId, PrincipalId, ShareProposalId, WorkspaceId,
 };
 use serde::{Deserialize, Serialize};
 
@@ -10,6 +10,7 @@ const EVENT_FORMAT: &str = "rembrane.event";
 const EVENT_FORMAT_V1: u16 = 1;
 const EVENT_FORMAT_V2: u16 = 2;
 const EVENT_FORMAT_V3: u16 = 3;
+const EVENT_FORMAT_V4: u16 = 4;
 
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -86,6 +87,11 @@ enum EventPayloadDto {
         trip_id: String,
         version: u64,
     },
+    BookingResearchCaptured {
+        research_id: String,
+        trip_id: String,
+        version: u64,
+    },
     ObservationCaptured {
         evidence_id: String,
     },
@@ -117,9 +123,11 @@ pub fn decode_event(payload: &[u8]) -> Result<CanonicalEvent, CodecError> {
     }
     if !matches!(
         envelope.version,
-        EVENT_FORMAT_V1 | EVENT_FORMAT_V2 | EVENT_FORMAT_V3
+        EVENT_FORMAT_V1 | EVENT_FORMAT_V2 | EVENT_FORMAT_V3 | EVENT_FORMAT_V4
     ) || (envelope.version == EVENT_FORMAT_V1 && envelope.record.payload.is_share_event())
         || (envelope.version < EVENT_FORMAT_V3 && envelope.record.payload.is_trip_event())
+        || (envelope.version < EVENT_FORMAT_V4
+            && envelope.record.payload.is_booking_research_event())
     {
         return Err(CodecError::UnsupportedVersion);
     }
@@ -144,6 +152,7 @@ impl From<&CanonicalEvent> for EventDto {
 
 const fn event_format_version(payload: &EventPayload) -> u16 {
     match payload {
+        EventPayload::BookingResearchCaptured { .. } => EVENT_FORMAT_V4,
         EventPayload::TripCreated { .. } | EventPayload::TripRevised { .. } => EVENT_FORMAT_V3,
         EventPayload::MemoryShareProposed { .. }
         | EventPayload::MemoryShareApproved { .. }
@@ -168,6 +177,10 @@ impl EventPayloadDto {
 
     const fn is_trip_event(&self) -> bool {
         matches!(self, Self::TripCreated { .. } | Self::TripRevised { .. })
+    }
+
+    const fn is_booking_research_event(&self) -> bool {
+        matches!(self, Self::BookingResearchCaptured { .. })
     }
 }
 
@@ -256,6 +269,15 @@ impl From<&EventPayload> for EventPayloadDto {
                 version: *version,
             },
             EventPayload::TripRevised { trip_id, version } => Self::TripRevised {
+                trip_id: trip_id.as_str().to_owned(),
+                version: *version,
+            },
+            EventPayload::BookingResearchCaptured {
+                research_id,
+                trip_id,
+                version,
+            } => Self::BookingResearchCaptured {
+                research_id: research_id.as_str().to_owned(),
                 trip_id: trip_id.as_str().to_owned(),
                 version: *version,
             },
@@ -349,6 +371,15 @@ impl From<EventPayloadDto> for EventPayload {
                 version,
             },
             EventPayloadDto::TripRevised { trip_id, version } => Self::TripRevised {
+                trip_id: EntityId::new(trip_id),
+                version,
+            },
+            EventPayloadDto::BookingResearchCaptured {
+                research_id,
+                trip_id,
+                version,
+            } => Self::BookingResearchCaptured {
+                research_id: BookingResearchId::new(research_id),
                 trip_id: EntityId::new(trip_id),
                 version,
             },

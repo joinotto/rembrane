@@ -28,6 +28,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   fresh/expired evaluation.
 - Version 1 `rembrane.booking-research` wire encoding with strict domain
   reconstruction and provider-independent evidence representation.
+- Explicit booking-research capture permission, exact trip-scope enforcement,
+  versioned audit events, and atomic in-memory capture with sequence-conflict
+  rollback.
 - Rust modular-monolith workspace with provider-independent domain and
   application layers.
 - Canonical memory, provenance, event, disclosure, membership, grant,

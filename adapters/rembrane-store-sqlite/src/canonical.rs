@@ -499,6 +499,7 @@ fn event_describes_memory(payload: &EventPayload, memory: &MemoryRecord) -> bool
         | EventPayload::MemoryShareRevoked { .. }
         | EventPayload::TripCreated { .. }
         | EventPayload::TripRevised { .. }
+        | EventPayload::BookingResearchCaptured { .. }
         | EventPayload::ObservationCaptured { .. }
         | EventPayload::ActivityCheckpointed { .. }
         | EventPayload::DisclosureRecorded { .. } => return false,
@@ -576,6 +577,9 @@ fn event_type(event: &CanonicalEvent) -> &'static str {
         rembrane_domain::EventPayload::MemorySharedIn { .. } => "memory-shared-in",
         rembrane_domain::EventPayload::TripCreated { .. } => "trip-created",
         rembrane_domain::EventPayload::TripRevised { .. } => "trip-revised",
+        rembrane_domain::EventPayload::BookingResearchCaptured { .. } => {
+            "booking-research-captured"
+        }
         rembrane_domain::EventPayload::ObservationCaptured { .. } => "observation-captured",
         rembrane_domain::EventPayload::ActivityCheckpointed { .. } => "activity-checkpointed",
         rembrane_domain::EventPayload::DisclosureRecorded { .. } => "disclosure-recorded",

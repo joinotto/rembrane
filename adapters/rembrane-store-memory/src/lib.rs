@@ -1,20 +1,20 @@
 //! Volatile reference adapter used by tests, examples, and local prototypes.
 
 use rembrane_application::{
-    ApplicationError, CanonicalMutationRepository, CheckpointDisclosureRepository,
-    CheckpointMutationRepository, CheckpointRepository, DisclosureRepository, EventRepository,
-    InvitationRepository, MemberLifecycleRepository, MemberScopeGrantRepository,
-    MembershipRepository, MemoryRepository, ProjectionOutboxRepository,
-    ShareProposalMutationRepository, ShareProposalRepository, TripMutationRepository,
-    TripRepository, WorkspaceRepository,
+    ApplicationError, BookingResearchMutationRepository, BookingResearchRepository,
+    CanonicalMutationRepository, CheckpointDisclosureRepository, CheckpointMutationRepository,
+    CheckpointRepository, DisclosureRepository, EventRepository, InvitationRepository,
+    MemberLifecycleRepository, MemberScopeGrantRepository, MembershipRepository, MemoryRepository,
+    ProjectionOutboxRepository, ShareProposalMutationRepository, ShareProposalRepository,
+    TripMutationRepository, TripRepository, WorkspaceRepository,
 };
 use rembrane_domain::{
-    ActivityCheckpoint, ActivityId, CanonicalEvent, CheckpointDisclosureReceipt, DisclosureReceipt,
-    EventPayload, Invitation, InvitationId, InvitationStatus, MemberScopeGrant, Membership,
-    MemoryId, MemoryRecord, MemoryShareProposal, MemoryStatus, Principal, PrincipalId,
-    ProjectionJob, ProjectionJobId, ProjectionOperation, ProjectionStatus, ProviderId,
-    ShareProposalId, ShareProposalStatus, Trip, Workspace, WorkspaceId, WorkspaceKind,
-    WorkspaceRole,
+    ActivityCheckpoint, ActivityId, BookingResearch, BookingResearchId, CanonicalEvent,
+    CheckpointDisclosureReceipt, DisclosureReceipt, EntityId, EventPayload, Invitation,
+    InvitationId, InvitationStatus, MemberScopeGrant, Membership, MemoryId, MemoryRecord,
+    MemoryShareProposal, MemoryStatus, Principal, PrincipalId, ProjectionJob, ProjectionJobId,
+    ProjectionOperation, ProjectionStatus, ProviderId, ShareProposalId, ShareProposalStatus, Trip,
+    Workspace, WorkspaceId, WorkspaceKind, WorkspaceRole,
 };
 
 #[derive(Debug, Default)]
@@ -32,6 +32,75 @@ pub struct InMemoryStore {
     memberships: Vec<Membership>,
     projections: Vec<ProjectionJob>,
     trips: Vec<Trip>,
+    booking_research: Vec<BookingResearch>,
+}
+
+impl BookingResearchRepository for InMemoryStore {
+    fn find_booking_research(
+        &self,
+        workspace_id: &WorkspaceId,
+        research_id: &BookingResearchId,
+    ) -> Result<Option<BookingResearch>, ApplicationError> {
+        Ok(self
+            .booking_research
+            .iter()
+            .find(|research| {
+                research.workspace_id() == workspace_id && research.id() == research_id
+            })
+            .cloned())
+    }
+
+    fn list_booking_research_for_trip(
+        &self,
+        workspace_id: &WorkspaceId,
+        trip_id: &EntityId,
+    ) -> Result<Vec<BookingResearch>, ApplicationError> {
+        Ok(self
+            .booking_research
+            .iter()
+            .filter(|research| {
+                research.workspace_id() == workspace_id && research.trip_id() == trip_id
+            })
+            .cloned()
+            .collect())
+    }
+}
+
+impl BookingResearchMutationRepository for InMemoryStore {
+    fn insert_booking_research_with_event(
+        &mut self,
+        research: BookingResearch,
+        event: CanonicalEvent,
+        expected_previous_sequence: u64,
+    ) -> Result<(), ApplicationError> {
+        if self.booking_research.iter().any(|stored| {
+            stored.workspace_id() == research.workspace_id() && stored.id() == research.id()
+        }) {
+            return Err(ApplicationError::AlreadyExists);
+        }
+        let payload_matches = matches!(
+            event.payload(),
+            EventPayload::BookingResearchCaptured {
+                research_id,
+                trip_id,
+                version,
+            } if research_id == research.id()
+                && trip_id == research.trip_id()
+                && *version == research.version()
+        );
+        if event.workspace_id() != research.workspace_id()
+            || event.subject_id() != Some(research.observed_by())
+            || !payload_matches
+        {
+            return Err(ApplicationError::Validation(
+                "event does not describe booking research capture".to_owned(),
+            ));
+        }
+        self.validate_event(&event, expected_previous_sequence)?;
+        self.booking_research.push(research);
+        self.events.push(event);
+        Ok(())
+    }
 }
 
 impl TripRepository for InMemoryStore {

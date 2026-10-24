@@ -4,6 +4,7 @@
 //! depend on a concrete database, graph, vector store, or memory engine.
 
 mod authorize_client;
+mod booking_research;
 mod checkpoint;
 mod error;
 mod invitation;
@@ -20,6 +21,7 @@ mod share_memory;
 mod trip;
 
 pub use authorize_client::{AuthorizeClientCommand, AuthorizeClientService, ClientGrantBundle};
+pub use booking_research::{CaptureBookingResearchCommand, CaptureBookingResearchService};
 pub use checkpoint::{
     CheckpointService, CreateCheckpointCommand, ResumeActivityCommand, UpdateCheckpointCommand,
 };
@@ -30,11 +32,12 @@ pub use member_scope::{
     GrantMemberScopeCommand, MemberScopeGrantService, RevokeMemberScopeCommand,
 };
 pub use ports::{
-    CanonicalMutationRepository, CheckpointDisclosureRepository, CheckpointMutationRepository,
-    CheckpointRepository, DisclosureRepository, EventRepository, InvitationRepository,
-    MemberLifecycleRepository, MemberScopeGrantRepository, MembershipRepository, MemoryRepository,
-    ProjectionOutboxRepository, ShareProposalMutationRepository, ShareProposalRepository,
-    TripMutationRepository, TripRepository, WorkspaceRepository,
+    BookingResearchMutationRepository, BookingResearchRepository, CanonicalMutationRepository,
+    CheckpointDisclosureRepository, CheckpointMutationRepository, CheckpointRepository,
+    DisclosureRepository, EventRepository, InvitationRepository, MemberLifecycleRepository,
+    MemberScopeGrantRepository, MembershipRepository, MemoryRepository, ProjectionOutboxRepository,
+    ShareProposalMutationRepository, ShareProposalRepository, TripMutationRepository,
+    TripRepository, WorkspaceRepository,
 };
 pub use projection_worker::{ProjectionOutcome, ProjectionWorker};
 pub use propose_memory::{ConfirmMemoryCommand, MemoryProposalService, ProposeMemoryCommand};

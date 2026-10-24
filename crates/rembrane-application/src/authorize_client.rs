@@ -86,6 +86,7 @@ const fn role_allows(role: WorkspaceRole, permission: WritePermission) -> bool {
             WritePermission::ProposeMemory
                 | WritePermission::WriteCheckpoint
                 | WritePermission::ReviseTrip
+                | WritePermission::CaptureBookingResearch
         ),
         WorkspaceRole::Viewer => false,
     }

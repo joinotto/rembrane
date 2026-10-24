@@ -1,9 +1,9 @@
 use rembrane_domain::{
-    ActivityCheckpoint, ActivityId, CanonicalEvent, CheckpointDisclosureReceipt, DisclosureReceipt,
-    EntityId, Invitation, InvitationId, InvitationStatus, MemberScopeGrant, Membership,
-    MembershipStatus, MemoryId, MemoryRecord, MemoryShareProposal, Principal, PrincipalId,
-    ProjectionJob, ProjectionJobId, ProjectionStatus, ProviderId, ShareProposalId,
-    ShareProposalStatus, Trip, Workspace, WorkspaceId,
+    ActivityCheckpoint, ActivityId, BookingResearch, BookingResearchId, CanonicalEvent,
+    CheckpointDisclosureReceipt, DisclosureReceipt, EntityId, Invitation, InvitationId,
+    InvitationStatus, MemberScopeGrant, Membership, MembershipStatus, MemoryId, MemoryRecord,
+    MemoryShareProposal, Principal, PrincipalId, ProjectionJob, ProjectionJobId, ProjectionStatus,
+    ProviderId, ShareProposalId, ShareProposalStatus, Trip, Workspace, WorkspaceId,
 };
 
 use crate::ApplicationError;
@@ -124,6 +124,29 @@ pub trait TripMutationRepository: TripRepository + EventRepository {
         &mut self,
         trip: Trip,
         expected_trip_version: u64,
+        event: CanonicalEvent,
+        expected_previous_sequence: u64,
+    ) -> Result<(), ApplicationError>;
+}
+
+pub trait BookingResearchRepository {
+    fn find_booking_research(
+        &self,
+        workspace_id: &WorkspaceId,
+        research_id: &BookingResearchId,
+    ) -> Result<Option<BookingResearch>, ApplicationError>;
+
+    fn list_booking_research_for_trip(
+        &self,
+        workspace_id: &WorkspaceId,
+        trip_id: &EntityId,
+    ) -> Result<Vec<BookingResearch>, ApplicationError>;
+}
+
+pub trait BookingResearchMutationRepository: BookingResearchRepository + EventRepository {
+    fn insert_booking_research_with_event(
+        &mut self,
+        research: BookingResearch,
         event: CanonicalEvent,
         expected_previous_sequence: u64,
     ) -> Result<(), ApplicationError>;
