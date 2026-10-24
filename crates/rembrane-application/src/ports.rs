@@ -1,3 +1,4 @@
+use rembrane_contracts::VerifiedChannelMessage;
 use rembrane_domain::{
     ActivityCheckpoint, ActivityId, AdministrativeAuditEvent, BookingResearch, BookingResearchId,
     CanonicalEvent, CheckpointDisclosureReceipt, DisclosureReceipt, EntityId, GraphProjectionJob,
@@ -13,6 +14,20 @@ use crate::ApplicationError;
 use crate::{RetentionPurgePlan, RetentionPurgeResult};
 
 pub const MAX_ADMINISTRATIVE_AUDIT_PAGE: usize = 1_000;
+
+/// Durable replay protection for authenticated messaging-channel events.
+///
+/// Implementations must atomically reject duplicate `(channel, event_id)`
+/// pairs across every workspace and must not persist message content.
+pub trait ChannelReplayRepository {
+    fn accept_channel_event(
+        &mut self,
+        message: &VerifiedChannelMessage,
+        now_epoch_seconds: u64,
+        replay_window_seconds: u64,
+        maximum_events: usize,
+    ) -> Result<(), ApplicationError>;
+}
 
 pub trait AdministrativeAuditRepository {
     fn append_administrative_audit(

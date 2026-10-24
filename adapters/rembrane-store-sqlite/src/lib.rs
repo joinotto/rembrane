@@ -2,6 +2,7 @@
 
 mod booking_research;
 mod canonical;
+mod channel;
 mod checkpoint;
 mod disclosure;
 mod graph_projection;
@@ -61,7 +62,9 @@ const ADMINISTRATIVE_AUDIT_MIGRATION: &str =
     include_str!("../../../migrations/sqlite/0015_administrative_audit.sql");
 const RETENTION_AND_LEGAL_HOLDS_MIGRATION: &str =
     include_str!("../../../migrations/sqlite/0016_retention_and_legal_holds.sql");
-const CURRENT_SCHEMA_VERSION: u32 = 16;
+const CHANNEL_EVENT_RECEIPTS_MIGRATION: &str =
+    include_str!("../../../migrations/sqlite/0017_channel_event_receipts.sql");
+const CURRENT_SCHEMA_VERSION: u32 = 17;
 const CANONICAL_TABLES: [&str; 10] = [
     "activity_checkpoints",
     "disclosed_memories",
@@ -756,6 +759,12 @@ fn migrate(connection: &mut Connection) -> Result<(), ApplicationError> {
     if version == 15 {
         transaction
             .execute_batch(RETENTION_AND_LEGAL_HOLDS_MIGRATION)
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        version = 16;
+    }
+    if version == 16 {
+        transaction
+            .execute_batch(CHANNEL_EVENT_RECEIPTS_MIGRATION)
             .map_err(|_| ApplicationError::StorageUnavailable)?;
     }
     transaction

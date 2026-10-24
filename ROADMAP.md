@@ -551,6 +551,8 @@ This roadmap describes sequencing, not release dates.
     deployment-owned sender binding rather than webhook payload claims.
   - [x] Add bounded per-channel replay protection with future-time rejection,
     capacity limits, expiry, and cross-platform event-ID namespaces.
+  - [x] Persist content-free channel replay receipts in SQLite with atomic
+    multi-process capacity enforcement and cross-workspace replay denial.
 - [ ] Mobile share flows and iMessage extension.
   - [x] Reuse the authenticated-channel contract for explicit iMessage
     extension and mobile-share ingestion without claiming conversation

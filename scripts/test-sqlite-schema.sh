@@ -37,7 +37,9 @@ sqlite3 "$database" < \
     "$repository_root/migrations/sqlite/0015_administrative_audit.sql"
 sqlite3 "$database" < \
     "$repository_root/migrations/sqlite/0016_retention_and_legal_holds.sql"
-sqlite3 "$database" "PRAGMA user_version = 16;"
+sqlite3 "$database" < \
+    "$repository_root/migrations/sqlite/0017_channel_event_receipts.sql"
+sqlite3 "$database" "PRAGMA user_version = 17;"
 
 sqlite3 "$database" <<'SQL'
 PRAGMA foreign_keys = ON;
@@ -613,6 +615,32 @@ then
     echo "append-only administrative audit deletion unexpectedly succeeded" >&2
     exit 1
 fi
+sqlite3 "$database" "
+    INSERT INTO channel_event_receipts (
+        channel, event_id, workspace_id,
+        accepted_at_epoch_seconds, expires_at_epoch_seconds
+    ) VALUES (
+        'whatsapp-business', 'event_channel_01', 'workspace_01', 1000, 1100
+    );
+    INSERT INTO channel_event_receipts (
+        channel, event_id, workspace_id,
+        accepted_at_epoch_seconds, expires_at_epoch_seconds
+    ) VALUES (
+        'imessage-extension', 'event_channel_01', 'workspace_02', 1000, 1100
+    );
+"
+if sqlite3 "$database" "
+    INSERT INTO channel_event_receipts (
+        channel, event_id, workspace_id,
+        accepted_at_epoch_seconds, expires_at_epoch_seconds
+    ) VALUES (
+        'whatsapp-business', 'event_channel_01', 'workspace_02', 1001, 1101
+    );
+"
+then
+    echo "cross-workspace channel replay unexpectedly succeeded" >&2
+    exit 1
+fi
 
 table_count=$(
     sqlite3 "$database" \
@@ -620,7 +648,15 @@ table_count=$(
 )
 
 test "$table_count" -ge 9
-test "$(sqlite3 "$database" "PRAGMA user_version;")" -eq 16
+test "$(sqlite3 "$database" "PRAGMA user_version;")" -eq 17
+test "$(
+    sqlite3 "$database" \
+        "SELECT count(*) FROM channel_event_receipts WHERE event_id = 'event_channel_01';"
+)" -eq 2
+test "$(
+    sqlite3 "$database" \
+        "SELECT count(*) FROM pragma_table_info('channel_event_receipts') WHERE name IN ('text', 'content', 'principal_id', 'client_id');"
+)" -eq 0
 test "$(
     sqlite3 "$database" \
         "SELECT count(*) FROM graph_projection_outbox WHERE provider_id = 'graph.primary' AND status = 'pending';"

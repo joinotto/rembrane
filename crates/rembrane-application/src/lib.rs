@@ -43,16 +43,16 @@ pub use member_scope::{
 };
 pub use ports::{
     AdministrativeAuditRepository, BookingResearchMutationRepository, BookingResearchRepository,
-    CanonicalGraphMutationRepository, CanonicalMutationRepository, CheckpointDisclosureRepository,
-    CheckpointMutationRepository, CheckpointReadRepository, CheckpointRepository,
-    ContextReadRepository, DisclosureRepository, EventRepository, GraphProjectionOutboxRepository,
-    InvitationRepository, KeyRotationRepository, KnowledgeDirection,
-    KnowledgeGraphMutationRepository, KnowledgeGraphRepository, MAX_ADMINISTRATIVE_AUDIT_PAGE,
-    MAX_KNOWLEDGE_NEIGHBOURS, MemberLifecycleRepository, MemberScopeGrantRepository,
-    MembershipRepository, MemoryRepository, ProjectionOutboxRepository, RetentionPurgeRepository,
-    RetentionRepository, ShareProposalMutationRepository, ShareProposalRepository,
-    TravelContextRepository, TravelDisclosureRepository, TripMutationRepository, TripRepository,
-    WorkspaceRepository,
+    CanonicalGraphMutationRepository, CanonicalMutationRepository, ChannelReplayRepository,
+    CheckpointDisclosureRepository, CheckpointMutationRepository, CheckpointReadRepository,
+    CheckpointRepository, ContextReadRepository, DisclosureRepository, EventRepository,
+    GraphProjectionOutboxRepository, InvitationRepository, KeyRotationRepository,
+    KnowledgeDirection, KnowledgeGraphMutationRepository, KnowledgeGraphRepository,
+    MAX_ADMINISTRATIVE_AUDIT_PAGE, MAX_KNOWLEDGE_NEIGHBOURS, MemberLifecycleRepository,
+    MemberScopeGrantRepository, MembershipRepository, MemoryRepository, ProjectionOutboxRepository,
+    RetentionPurgeRepository, RetentionRepository, ShareProposalMutationRepository,
+    ShareProposalRepository, TravelContextRepository, TravelDisclosureRepository,
+    TripMutationRepository, TripRepository, WorkspaceRepository,
 };
 pub use projection_worker::{ProjectionOutcome, ProjectionWorker};
 pub use propose_memory::{ConfirmMemoryCommand, MemoryProposalService, ProposeMemoryCommand};

@@ -9,6 +9,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- Durable, content-free SQLite channel replay receipts with atomic cleanup,
+  fail-closed capacity enforcement, per-platform namespaces, and
+  cross-workspace duplicate denial for multi-process gateways.
 - An immutable, bounded, content-free administrative audit event contract with
   tenant, actor, closed action, opaque target, request correlation, and
   occurrence time while excluding memory content, secrets, and key material.
