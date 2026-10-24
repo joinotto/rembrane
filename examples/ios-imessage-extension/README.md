@@ -17,7 +17,9 @@ background listener and does not silently insert content into a conversation.
 4. Set `RembraneGatewayURL` in the extension `Info.plist` to the deployment's
    HTTPS mobile-share gateway.
 5. Provision the same Keychain service/accounts and Keychain Sharing
-   entitlement documented by the iOS Share Extension reference.
+   entitlement documented by the iOS Share Extension reference. Set the
+   optional non-secret `RembraneKeychainAccessGroup` `Info.plist` value when
+   the containing app and extension use an explicit shared access group.
 6. Enroll the exact opaque account/device pair with `rembrane channel
    bind-mobile-share`.
 

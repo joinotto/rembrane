@@ -20,8 +20,9 @@ content into unrelated conversations.
    - service `org.rembrane.mobile-share`, account `rembrane.signing-secret`.
 
 6. Give both targets the same Keychain Sharing entitlement. If the deployment
-   uses an explicit access group, add `kSecAttrAccessGroup` to the reference
-   queries using a build-time, non-secret configuration value.
+   uses an explicit access group, set the non-secret
+   `RembraneKeychainAccessGroup` `Info.plist` value. The shared SDK enrollment
+   store applies it to every lookup.
 7. Restrict the extension activation rule to text. Do not enable broad file,
    image, web-page, or unlimited attachment activation unless those formats
    receive separate bounded parsers.

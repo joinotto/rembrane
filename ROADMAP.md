@@ -659,6 +659,9 @@ This roadmap describes sequencing, not release dates.
     secret-free fixture for third-party companion apps and share extensions.
   - [x] Provide a CryptoKit HMAC signer compatible with Keychain-provisioned
     iOS companion and share-extension deployments.
+  - [x] Provide one reusable bounded Swift Keychain enrollment store with
+    optional explicit access-group support for companion and extension
+    targets.
   - [x] Provide a reusable Swift explicit-share coordinator that preflights
     selected text and opaque identifiers, generates event IDs, and submits only
     user-confirmed envelopes through the narrow signed gateway client.

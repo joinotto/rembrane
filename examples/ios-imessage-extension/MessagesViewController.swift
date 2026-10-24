@@ -1,7 +1,6 @@
 import Foundation
 import Messages
 import Rembrane
-import Security
 import UIKit
 
 @MainActor
@@ -114,43 +113,21 @@ private struct MessagesShareConfiguration {
               let gatewayURL = URL(string: rawURL) else {
             throw MessagesExtensionError.invalidConfiguration
         }
-        return try Self(
+        let accessGroup = Bundle.main.object(
+            forInfoDictionaryKey: "RembraneKeychainAccessGroup"
+        ) as? String
+        let enrollment = try KeychainMobileShareEnrollmentStore(
+            accessGroup: accessGroup
+        ).load()
+        return Self(
             gatewayURL: gatewayURL,
-            accountID: MessagesKeychain.readUTF8(account: "rembrane.account-id"),
-            deviceID: MessagesKeychain.readUTF8(account: "rembrane.device-id"),
-            signingSecret: MessagesKeychain.readData(account: "rembrane.signing-secret")
+            accountID: enrollment.accountID,
+            deviceID: enrollment.deviceID,
+            signingSecret: enrollment.signingSecret
         )
     }
 }
 
 private enum MessagesExtensionError: Error {
     case invalidConfiguration
-    case keychainItemUnavailable
-}
-
-private enum MessagesKeychain {
-    static func readUTF8(account: String) throws -> String {
-        let data = try readData(account: account)
-        guard let value = String(data: data, encoding: .utf8), !value.isEmpty else {
-            throw MessagesExtensionError.keychainItemUnavailable
-        }
-        return value
-    }
-
-    static func readData(account: String) throws -> Data {
-        let query: [CFString: Any] = [
-            kSecClass: kSecClassGenericPassword,
-            kSecAttrService: "org.rembrane.mobile-share",
-            kSecAttrAccount: account,
-            kSecReturnData: true,
-            kSecMatchLimit: kSecMatchLimitOne,
-        ]
-        var result: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
-              let data = result as? Data,
-              !data.isEmpty else {
-            throw MessagesExtensionError.keychainItemUnavailable
-        }
-        return data
-    }
 }

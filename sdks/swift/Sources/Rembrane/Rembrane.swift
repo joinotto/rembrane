@@ -5,6 +5,9 @@ import FoundationNetworking
 #if canImport(CryptoKit)
 import CryptoKit
 #endif
+#if canImport(Security)
+import Security
+#endif
 
 public struct RembraneHTTPResponse: Sendable {
     public let status: Int
@@ -207,6 +210,107 @@ private struct Problem: Decodable {
 public protocol RembraneMobileShareSigner: Sendable {
     func signatureHeader(for body: Data) throws -> String
 }
+
+#if canImport(Security)
+public struct RembraneMobileShareEnrollment: Sendable {
+    public let accountID: String
+    public let deviceID: String
+    public let signingSecret: Data
+
+    public init(accountID: String, deviceID: String, signingSecret: Data) {
+        self.accountID = accountID
+        self.deviceID = deviceID
+        self.signingSecret = signingSecret
+    }
+}
+
+/// Reads mobile-share enrollment material from generic-password Keychain
+/// items shared by a companion app and its explicitly entitled extensions.
+public struct KeychainMobileShareEnrollmentStore: Sendable {
+    private let service: String
+    private let accessGroup: String?
+
+    public init(
+        service: String = "org.rembrane.mobile-share",
+        accessGroup: String? = nil
+    ) throws {
+        guard Self.validMetadata(service),
+              accessGroup.map(Self.validMetadata) ?? true else {
+            throw RembraneAPIError(
+                status: 0,
+                code: "invalid_keychain_configuration",
+                message: "Keychain service and access group must be bounded metadata"
+            )
+        }
+        self.service = service
+        self.accessGroup = accessGroup
+    }
+
+    public func load() throws -> RembraneMobileShareEnrollment {
+        let accountID = try readUTF8(account: "rembrane.account-id")
+        let deviceID = try readUTF8(account: "rembrane.device-id")
+        let signingSecret = try readData(account: "rembrane.signing-secret")
+        guard signingSecret.count >= 32 else {
+            throw RembraneAPIError(
+                status: 0,
+                code: "invalid_signing_key",
+                message: "Mobile-share signing keys require at least 32 bytes"
+            )
+        }
+        return RembraneMobileShareEnrollment(
+            accountID: accountID,
+            deviceID: deviceID,
+            signingSecret: signingSecret
+        )
+    }
+
+    private func readUTF8(account: String) throws -> String {
+        let data = try readData(account: account)
+        guard let value = String(data: data, encoding: .utf8),
+              Self.validMetadata(value) else {
+            throw unavailable()
+        }
+        return value
+    }
+
+    private func readData(account: String) throws -> Data {
+        var query: [CFString: Any] = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: service,
+            kSecAttrAccount: account,
+            kSecReturnData: true,
+            kSecMatchLimit: kSecMatchLimitOne,
+        ]
+        if let accessGroup {
+            query[kSecAttrAccessGroup] = accessGroup
+        }
+        var result: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
+              let data = result as? Data,
+              !data.isEmpty else {
+            throw unavailable()
+        }
+        return data
+    }
+
+    private static func validMetadata(_ value: String) -> Bool {
+        !value.isEmpty
+            && value.utf8.count <= 256
+            && value == value.trimmingCharacters(in: .whitespacesAndNewlines)
+            && value.unicodeScalars.allSatisfy {
+                $0.properties.generalCategory != .control
+            }
+    }
+
+    private func unavailable() -> RembraneAPIError {
+        RembraneAPIError(
+            status: 0,
+            code: "keychain_item_unavailable",
+            message: "Required mobile-share enrollment is unavailable"
+        )
+    }
+}
+#endif
 
 #if canImport(CryptoKit)
 public struct CryptoKitMobileShareSigner: RembraneMobileShareSigner {

@@ -1,6 +1,5 @@
 import Foundation
 import Rembrane
-import Security
 import UIKit
 import UniformTypeIdentifiers
 
@@ -66,11 +65,17 @@ private struct ShareConfiguration {
               let gatewayURL = URL(string: rawURL) else {
             throw ShareExtensionError.invalidConfiguration
         }
-        return try Self(
+        let accessGroup = Bundle.main.object(
+            forInfoDictionaryKey: "RembraneKeychainAccessGroup"
+        ) as? String
+        let enrollment = try KeychainMobileShareEnrollmentStore(
+            accessGroup: accessGroup
+        ).load()
+        return Self(
             gatewayURL: gatewayURL,
-            accountID: Keychain.readUTF8(account: "rembrane.account-id"),
-            deviceID: Keychain.readUTF8(account: "rembrane.device-id"),
-            signingSecret: Keychain.readData(account: "rembrane.signing-secret")
+            accountID: enrollment.accountID,
+            deviceID: enrollment.deviceID,
+            signingSecret: enrollment.signingSecret
         )
     }
 }
@@ -78,32 +83,4 @@ private struct ShareConfiguration {
 private enum ShareExtensionError: Error {
     case invalidSelection
     case invalidConfiguration
-    case keychainItemUnavailable
-}
-
-private enum Keychain {
-    static func readUTF8(account: String) throws -> String {
-        let data = try readData(account: account)
-        guard let value = String(data: data, encoding: .utf8), !value.isEmpty else {
-            throw ShareExtensionError.keychainItemUnavailable
-        }
-        return value
-    }
-
-    static func readData(account: String) throws -> Data {
-        let query: [CFString: Any] = [
-            kSecClass: kSecClassGenericPassword,
-            kSecAttrService: "org.rembrane.mobile-share",
-            kSecAttrAccount: account,
-            kSecReturnData: true,
-            kSecMatchLimit: kSecMatchLimitOne,
-        ]
-        var result: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
-              let data = result as? Data,
-              !data.isEmpty else {
-            throw ShareExtensionError.keychainItemUnavailable
-        }
-        return data
-    }
 }
