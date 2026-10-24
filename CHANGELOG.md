@@ -59,6 +59,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Portable Mem0 and Supermemory composition from validated provider profiles
   through pluggable secret resolvers, retaining zeroizing credentials through
   HTTP construction and enforcing negotiated privacy policy at discovery.
+- Direct Mem0 and Supermemory HTTP constructors for already resolved
+  zeroizing API keys, with legacy string constructors entering zeroizing
+  custody before endpoint, credential, or client validation can fail.
 - Fail-closed OAuth introspection claim bounds covering audience cardinality,
   issuer and identity sizes, scope size, and control-character rejection
   before claims become canonical tenant identity.

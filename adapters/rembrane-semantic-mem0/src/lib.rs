@@ -94,6 +94,19 @@ pub struct HttpMem0Transport {
 
 impl HttpMem0Transport {
     pub fn new(base_url: &str, api_key: String) -> Result<Self, ProviderError> {
+        Self::new_with_secret(base_url, Zeroizing::new(api_key))
+    }
+
+    /// Builds a Mem0 transport from an already resolved zeroizing API key.
+    ///
+    /// # Errors
+    ///
+    /// Returns a provider error when the origin or credential is invalid or
+    /// the bounded HTTP client cannot be constructed.
+    pub fn new_with_secret(
+        base_url: &str,
+        api_key: Zeroizing<String>,
+    ) -> Result<Self, ProviderError> {
         let base = validate_base_url(base_url)?;
         validate_api_key(&api_key)?;
         let client = Client::builder()
@@ -111,7 +124,7 @@ impl HttpMem0Transport {
             search_endpoint: base
                 .join("search")
                 .map_err(|_| ProviderError::Unavailable)?,
-            api_key: Zeroizing::new(api_key),
+            api_key,
         })
     }
 

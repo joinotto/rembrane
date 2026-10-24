@@ -749,6 +749,8 @@ This roadmap describes sequencing, not release dates.
       secret custody and an explicit plaintext-processing acknowledgement.
       - [x] Require a bounded safe external namespace with enough room for a
         fresh random suffix before any provider credential is resolved.
+    - [x] Accept already resolved zeroizing API credentials without a
+      raw-string validation failure path.
   - [x] Add a Supermemory v5 semantic adapter with HMAC-derived namespaces,
     deterministic document identity, processing convergence, exact deletion,
     and shared disposable-provider conformance.
@@ -797,6 +799,8 @@ This roadmap describes sequencing, not release dates.
       environment-only secrets and explicit plaintext acknowledgement.
       - [x] Require exact provider-identity confirmation before replacement or
         deletion can complete.
+    - [x] Accept already resolved zeroizing API credentials without a
+      raw-string validation failure path.
   - [x] Generate a secret-reference-only local MCP configuration for OpenCode
     using its command-array and environment-substitution contract.
   - [x] Enforce one bounded control-free executable-command contract before

@@ -206,6 +206,20 @@ pub struct HttpSupermemoryTransport {
 
 impl HttpSupermemoryTransport {
     pub fn new(base_url: &str, api_key: String) -> Result<Self, ProviderError> {
+        Self::new_with_secret(base_url, Zeroizing::new(api_key))
+    }
+
+    /// Builds a Supermemory transport from an already resolved zeroizing API
+    /// key.
+    ///
+    /// # Errors
+    ///
+    /// Returns a provider error when the origin or credential is invalid or
+    /// the bounded HTTP client cannot be constructed.
+    pub fn new_with_secret(
+        base_url: &str,
+        api_key: Zeroizing<String>,
+    ) -> Result<Self, ProviderError> {
         let base_url = validate_base_url(base_url)?;
         validate_api_key(&api_key)?;
         let client = Client::builder()
@@ -218,7 +232,7 @@ impl HttpSupermemoryTransport {
         Ok(Self {
             client,
             base_url,
-            api_key: Zeroizing::new(api_key),
+            api_key,
         })
     }
 
