@@ -10,6 +10,7 @@ mod error;
 mod memory_checkpoint;
 mod memory_context;
 mod memory_disclosure;
+mod memory_event;
 mod memory_lifecycle;
 mod memory_mutation;
 mod memory_protocol;
@@ -30,6 +31,10 @@ pub use memory_context::{
 pub use memory_disclosure::{
     MAX_DISCLOSED_MEMORIES, MAX_DISCLOSURE_PURPOSE_BYTES, MemoryProviderDisclosedMemory,
     RecordDisclosurePayload, RecordDisclosureResult,
+};
+pub use memory_event::{
+    MAX_EVENT_DATA_BYTES, MAX_EVENT_SOURCE_REFERENCE_BYTES, MAX_EVENT_TYPE_BYTES,
+    MemoryProviderEvent, MemoryProviderRecordedEvent, RecordEventPayload, RecordEventResult,
 };
 pub use memory_lifecycle::{
     DeleteMemoryPayload, DeleteMemoryResult, ExplainMemoryPayload, ExplainMemoryResult,

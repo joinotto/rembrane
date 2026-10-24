@@ -41,6 +41,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   idempotent tombstone creation, bounded audit reasons, and consecutive
   revision validation, plus bounded explanation payloads tied to unique
   immutable evidence references without exposing provider-internal reasoning.
+- Idempotent Memory Provider event-batch payloads with validated portable event
+  types, sealed scopes, bounded opaque data and provenance references,
+  non-future observation times, provider-negotiated item limits, and unique
+  canonical event IDs with strictly increasing ledger sequences.
 - Expiry-aware remote MCP session capacity reclamation so abandoned bindings
   cannot exhaust the bounded in-process registry indefinitely.
 - A transport-neutral remote MCP lifecycle boundary that composes strict HTTP
