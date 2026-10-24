@@ -88,3 +88,15 @@ The full repository gate also runs this suite:
 Production integration additionally requires reachable Graphiti, Neo4j, and
 model-provider services. Use disposable workspaces and credentials for
 integration tests.
+
+CI also starts an explicitly gated in-memory sidecar and runs the Rust graph
+provider conformance suite through the real authenticated HTTP adapter:
+
+```text
+python -m pip install -e 'sidecars/rembrane-graphiti[dev]'
+./scripts/test-graphiti-http-e2e.sh
+```
+
+The in-memory server refuses startup unless
+`REMBRANE_GRAPHITI_ENABLE_IN_MEMORY_TEST_SERVER=1`; production startup always
+constructs the Graphiti/Neo4j store.

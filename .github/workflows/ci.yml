@@ -52,6 +52,26 @@ jobs:
           --package rembrane-mcp
           --all-targets -- -D warnings
 
+  graphiti-sidecar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.88.0
+        with:
+          components: clippy
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: python -m pip install -e 'sidecars/rembrane-graphiti[dev]'
+      - run: ./scripts/test-graphiti-sidecar.sh
+      - run: ./scripts/test-graphiti-http-e2e.sh
+      - run: >-
+          cargo clippy
+          --package rembrane-graph-graphiti
+          --package rembrane-graph-graphiti-http
+          --all-targets -- -D warnings
+
   container:
     runs-on: ubuntu-latest
     steps:

@@ -175,7 +175,10 @@ This roadmap describes sequencing, not release dates.
           projection semantics, and environment-only provider credentials.
         - [x] Package an unprivileged loopback-only sidecar and private Neo4j
           deployment overlay using operator-supplied environment secrets.
-        - [ ] Exercise the Rust HTTP adapter against the live sidecar.
+        - [x] Add a gated live-sidecar runner and exercise the Rust HTTP
+          adapter through the shared graph-provider conformance suite in CI.
+        - [ ] Wire configured Graphiti provider construction into the
+          projection-worker runtime.
 
 - [x] Project entities and scoped preferences.
 - [x] Layer global, domain, entity, and activity context in one request.

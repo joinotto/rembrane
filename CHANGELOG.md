@@ -38,6 +38,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - An optional hardened Compose deployment for an unprivileged loopback
   Graphiti sidecar and private persistent Neo4j service, plus an operator guide
   documenting its plaintext-processing trust boundary and secret ownership.
+- A cross-language Graphiti boundary gate that starts an explicitly enabled
+  in-memory FastAPI sidecar and runs the Rust HTTP provider through the shared
+  workspace-isolation, temporal, and deletion conformance suite in dedicated
+  CI.
 - Canonical engine-neutral temporal knowledge graph aggregates with typed
   nodes, validated relationship types, strict workspace namespaces, separate
   validity and ingestion time, evidence provenance, bounded aliases, versions,
