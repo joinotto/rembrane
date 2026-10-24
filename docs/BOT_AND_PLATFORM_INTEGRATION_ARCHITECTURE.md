@@ -281,6 +281,46 @@ channel and event ID form the downstream idempotency key. A processor must
 return success only after its own durable or idempotent handling succeeds.
 Failed calls remain pending in the encrypted inbox.
 
+### 7.4 Explicit mobile and iMessage shares
+
+Rembrane can accept text that a user explicitly selects in an iOS share
+extension or companion app. It does not read the Messages database, intercept
+iMessage traffic, or gain background access to conversations. The companion
+signs the exact JSON bytes with its deployment-provisioned secret and sends
+them to `POST /v1/shares` with `X-Rembrane-Signature-256:
+sha256=<lowercase-hex-hmac>`.
+
+```json
+{
+  "account_id": "opaque-account-id",
+  "device_id": "opaque-device-id",
+  "event_id": "unique-share-id",
+  "text": "user-selected text",
+  "shared_at_epoch_seconds": 1792867200
+}
+```
+
+Enroll the device using environment-only raw identifiers, then start the
+loopback-published gateway behind a deployment-owned HTTPS proxy:
+
+```sh
+export REMBRANE_MOBILE_SHARE_ACCOUNT_ID='<opaque account id>'
+export REMBRANE_MOBILE_SHARE_DEVICE_ID='<opaque device id>'
+export REMBRANE_MOBILE_SHARE_BINDING_LOOKUP_SECRET='<stable random secret>'
+rembrane channel bind-mobile-share --database ./rembrane.db \
+  --principal owner_01 --workspace workspace_01 --subject owner_01 \
+  --client ios_share_01 --request request_01
+
+export REMBRANE_MOBILE_SHARE_SIGNING_SECRET='<distinct random secret>'
+docker compose -f compose.yaml -f compose.mobile-share.yaml up -d \
+  rembrane rembrane-mobile-share-gateway
+```
+
+The signing and lookup secrets must be distinct and at least 32 bytes. The
+gateway has no memory-read token or default identity. It maps the authenticated
+account/device pseudonyms through an active membership and acknowledges only
+after replay reservation and encrypted durable admission commit atomically.
+
 An owner or administrator can bind an active member without placing raw phone
 identifiers in process arguments:
 

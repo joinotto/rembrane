@@ -21,6 +21,7 @@ members = [
     "apps/rembrane-api",
     "apps/rembrane-cli",
     "apps/rembrane-channel-worker",
+    "apps/rembrane-mobile-share-gateway",
     "apps/rembrane-graph-worker",
     "apps/rembrane-mcp",
     "apps/rembrane-whatsapp-gateway",

@@ -16,6 +16,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Audited mobile-device binding and revocation through the CLI, deriving
   pseudonymous account/device keys from environment-only raw identifiers and
   deployment secrets.
+- A least-privileged loopback-default mobile-share gateway and hardened
+  Compose overlay that acknowledge signed explicit shares only after atomic
+  encrypted-inbox admission, with a socket-free real-SQLite lifecycle test.
 - A Ring-backed WhatsApp Business webhook boundary that authenticates the raw
   bounded payload before parsing, extracts bounded text events, and derives
   domain-separated keyed account/sender lookup fingerprints.

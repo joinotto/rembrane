@@ -1305,6 +1305,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "rembrane-mobile-share-gateway"
+version = "0.1.0-alpha.1"
+dependencies = [
+ "anyhow",
+ "axum",
+ "rembrane-application",
+ "rembrane-channel-mobile-share",
+ "rembrane-contracts",
+ "rembrane-crypto",
+ "rembrane-crypto-configured",
+ "rembrane-crypto-rustcrypto",
+ "rembrane-domain",
+ "rembrane-store-sqlite",
+ "ring",
+ "tokio",
+ "zeroize",
+]
+
+[[package]]
 name = "rembrane-oauth-introspection"
 version = "0.1.0-alpha.1"
 dependencies = [

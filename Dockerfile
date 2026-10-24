@@ -10,6 +10,7 @@ RUN cargo build --release \
     --package rembrane-cli \
     --package rembrane-graph-worker \
     --package rembrane-mcp \
+    --package rembrane-mobile-share-gateway \
     --package rembrane-whatsapp-gateway
 
 FROM debian:bookworm-slim AS runtime
@@ -30,6 +31,8 @@ COPY --from=builder /source/target/release/rembrane-mcp \
     /usr/local/bin/rembrane-mcp
 COPY --from=builder /source/target/release/rembrane-graph-worker \
     /usr/local/bin/rembrane-graph-worker
+COPY --from=builder /source/target/release/rembrane-mobile-share-gateway \
+    /usr/local/bin/rembrane-mobile-share-gateway
 COPY --from=builder /source/target/release/rembrane-whatsapp-gateway \
     /usr/local/bin/rembrane-whatsapp-gateway
 COPY --chmod=755 docker/entrypoint.sh /usr/local/bin/rembrane-entrypoint
@@ -38,6 +41,7 @@ ENV REMBRANE_DATABASE=/var/lib/rembrane/rembrane.db
 VOLUME ["/var/lib/rembrane"]
 EXPOSE 8787
 EXPOSE 8790
+EXPOSE 8791
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
     CMD rembrane doctor \

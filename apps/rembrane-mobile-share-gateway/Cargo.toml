@@ -1,0 +1,32 @@
+[package]
+name = "rembrane-mobile-share-gateway"
+description = "Least-privileged explicit mobile-share gateway for Rembrane"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+anyhow = "1"
+axum = "0.8"
+rembrane-channel-mobile-share = { path = "../../adapters/rembrane-channel-mobile-share" }
+rembrane-crypto = { path = "../../crates/rembrane-crypto" }
+rembrane-crypto-configured = { path = "../../adapters/rembrane-crypto-configured" }
+rembrane-store-sqlite = { path = "../../adapters/rembrane-store-sqlite" }
+tokio = { version = "1", features = ["macros", "net", "rt-multi-thread"] }
+zeroize = "1"
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+rembrane-application = { path = "../../crates/rembrane-application" }
+rembrane-contracts = { path = "../../crates/rembrane-contracts" }
+rembrane-crypto-rustcrypto = { path = "../../adapters/rembrane-crypto-rustcrypto" }
+rembrane-domain = { path = "../../crates/rembrane-domain" }
+ring = "0.17"
+
+[[bin]]
+name = "rembrane-mobile-share-gateway"
+path = "src/main.rs"

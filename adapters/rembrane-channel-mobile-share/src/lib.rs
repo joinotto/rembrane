@@ -32,6 +32,16 @@ pub enum MobileShareError {
     Admission(ApplicationError),
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MobileShareHttpStatus {
+    Ok,
+    Accepted,
+    BadRequest,
+    Unauthorized,
+    PayloadTooLarge,
+    ServiceUnavailable,
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct MobileShareEnvelope {
@@ -212,6 +222,33 @@ impl MobileShareBindingLookupKeys {
     }
 }
 
+#[must_use]
+pub const fn mobile_share_http_status(
+    result: &Result<Option<VerifiedChannelMessage>, MobileShareError>,
+) -> MobileShareHttpStatus {
+    match result {
+        Ok(_) => MobileShareHttpStatus::Ok,
+        Err(MobileShareError::InvalidSignature) => MobileShareHttpStatus::Unauthorized,
+        Err(MobileShareError::InvalidPayload | MobileShareError::StaleEvent) => {
+            MobileShareHttpStatus::BadRequest
+        }
+        Err(MobileShareError::PayloadTooLarge) => MobileShareHttpStatus::PayloadTooLarge,
+        Err(MobileShareError::Admission(
+            ApplicationError::AccessDenied | ApplicationError::NotFound,
+        )) => MobileShareHttpStatus::Accepted,
+        Err(
+            MobileShareError::InvalidConfiguration
+            | MobileShareError::Admission(
+                ApplicationError::AlreadyExists
+                | ApplicationError::SequenceConflict
+                | ApplicationError::StorageUnavailable
+                | ApplicationError::Validation(_)
+                | ApplicationError::VersionConflict,
+            ),
+        ) => MobileShareHttpStatus::ServiceUnavailable,
+    }
+}
+
 struct BoundMobileShare {
     account_lookup_key: String,
     sender_lookup_key: String,
@@ -283,7 +320,10 @@ mod tests {
     use rembrane_domain::{ClientId, PrincipalId, WorkspaceId};
     use ring::hmac;
 
-    use super::{MobileShareError, MobileShareVerifier, derive_binding_lookup_keys, encode_hex};
+    use super::{
+        MobileShareError, MobileShareHttpStatus, MobileShareVerifier, derive_binding_lookup_keys,
+        encode_hex, mobile_share_http_status,
+    };
 
     #[derive(Default)]
     struct Repository {
@@ -410,5 +450,19 @@ mod tests {
         assert_eq!(lookup.device_lookup_key().len(), 64);
         assert!(!lookup.account_lookup_key().contains("account_01"));
         assert!(!lookup.device_lookup_key().contains("device_01"));
+    }
+
+    #[test]
+    fn maps_unknown_devices_without_exposing_binding_state() {
+        assert_eq!(
+            mobile_share_http_status(&Err(MobileShareError::Admission(
+                ApplicationError::NotFound
+            ))),
+            MobileShareHttpStatus::Accepted
+        );
+        assert_eq!(
+            mobile_share_http_status(&Err(MobileShareError::InvalidSignature)),
+            MobileShareHttpStatus::Unauthorized
+        );
     }
 }

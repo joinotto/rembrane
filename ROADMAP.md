@@ -608,8 +608,10 @@ This roadmap describes sequencing, not release dates.
   - [x] Add administrator-authorized CLI enrollment and revocation for mobile
     devices without persisting raw account identifiers, device identifiers, or
     lookup secrets.
-  - [ ] Expose the signed mobile-share boundary through a narrowly scoped
+  - [x] Expose the signed mobile-share boundary through a narrowly scoped
     companion HTTP service.
+  - [x] Package the mobile-share gateway in a loopback-only hardened Compose
+    overlay with no broad memory API credential or default principal.
 - [ ] Community provider and agent adapters.
 
 ## Release gates
