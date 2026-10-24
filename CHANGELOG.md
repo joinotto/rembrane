@@ -27,6 +27,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - RFC 7662 OAuth introspection adapter with an infrastructure-neutral
   authenticated transport port, strict active/identity/audience/expiry
   requirements, and narrow Rembrane scope conversion.
+- Concrete bounded HTTPS introspection transport using authenticated resource
+  server credentials, rustls, disabled redirects, strict timeouts, and
+  response-size rejection.
 - Hardened Cloudflare Tunnel Compose overlay and operator guide for
   outbound-only self-hosted access without mounting the memory database or
   workspace encryption credentials into the tunnel container.

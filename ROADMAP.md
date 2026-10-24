@@ -81,6 +81,8 @@ This roadmap describes sequencing, not release dates.
     signature-verifying or authenticated-introspection adapter.
   - [x] Add an RFC 7662 authenticated-introspection adapter with a
     replaceable bounded HTTP transport.
+    - [x] Provide a concrete HTTPS transport with authenticated client
+      credentials, strict timeouts, no redirects, and bounded responses.
   - [x] Map every current MCP tool to one narrow OAuth scope and fail closed
     for unknown tools.
   - [x] Add transport-neutral HTTP authorization middleware with strict bearer
