@@ -1,4 +1,4 @@
-use crate::ProviderError;
+use crate::{CandidateMemory, ProviderError};
 
 pub const CURRENT_PROVIDER_PROTOCOL: ProviderProtocolVersion = ProviderProtocolVersion::new(0, 1);
 
@@ -62,6 +62,36 @@ impl ProviderManifest {
     pub fn supports_all(&self, required: &[Capability]) -> bool {
         self.missing_capabilities(required).is_empty()
     }
+
+    pub fn bounded_candidate_limit(&self, requested: usize) -> Result<usize, ProviderError> {
+        if requested == 0 || self.limits.maximum_candidates == 0 {
+            return Err(ProviderError::InvalidConfiguration(
+                "candidate limits must be greater than zero".to_owned(),
+            ));
+        }
+        Ok(requested.min(self.limits.maximum_candidates))
+    }
+
+    pub fn validate_candidates(
+        &self,
+        candidates: &[CandidateMemory],
+        requested_limit: usize,
+    ) -> Result<(), ProviderError> {
+        if candidates.len() > requested_limit || candidates.len() > self.limits.maximum_candidates {
+            return Err(ProviderError::Rejected(
+                "provider returned more candidates than requested".to_owned(),
+            ));
+        }
+        if candidates
+            .iter()
+            .any(|candidate| candidate.version == 0 || candidate.score_millionths > 1_000_000)
+        {
+            return Err(ProviderError::Rejected(
+                "provider returned an invalid candidate".to_owned(),
+            ));
+        }
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -114,6 +144,7 @@ mod tests {
         ProviderProtocolVersion,
     };
     use crate::ProviderError;
+    use rembrane_domain::MemoryId;
 
     #[test]
     fn reports_missing_security_capability() {
@@ -227,6 +258,41 @@ mod tests {
                 offered_major: 1,
                 offered_minor: 0,
             })
+        );
+    }
+
+    #[test]
+    fn bounds_queries_and_rejects_invalid_candidates() {
+        let provider = ProviderManifest {
+            id: "bounded-provider".to_owned(),
+            version: "1.0".to_owned(),
+            protocol_version: CURRENT_PROVIDER_PROTOCOL,
+            capabilities: vec![Capability::Search],
+            plaintext_processing: false,
+            limits: ProviderLimits {
+                maximum_batch_items: 10,
+                maximum_content_bytes: 262_144,
+                maximum_candidates: 2,
+            },
+        };
+        assert_eq!(
+            provider
+                .bounded_candidate_limit(100)
+                .expect("limit should be bounded"),
+            2
+        );
+        assert_eq!(
+            provider.validate_candidates(
+                &[crate::CandidateMemory {
+                    memory_id: MemoryId::new("memory"),
+                    version: 1,
+                    score_millionths: 1_000_001,
+                }],
+                2,
+            ),
+            Err(ProviderError::Rejected(
+                "provider returned an invalid candidate".to_owned()
+            ))
         );
     }
 }

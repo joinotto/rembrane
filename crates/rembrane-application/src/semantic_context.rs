@@ -1,6 +1,8 @@
 use rembrane_contracts::{ResolveContextRequest, ResolveContextResponse};
 use rembrane_domain::{DisclosedMemory, DisclosureReceipt, MemoryScope, MemoryStatus};
-use rembrane_provider_sdk::{SemanticMemoryProvider, SemanticQuery};
+use rembrane_provider_sdk::{
+    CURRENT_PROVIDER_PROTOCOL, Capability, ProviderPolicy, SemanticMemoryProvider, SemanticQuery,
+};
 
 use crate::{
     ApplicationError, DisclosureRepository, MemoryRepository, ResolveContextCommand,
@@ -44,7 +46,27 @@ where
             return Err(ApplicationError::AccessDenied);
         }
 
-        let candidate_limit = command.request.maximum_items.saturating_mul(4);
+        let manifest = self.provider.manifest();
+        ProviderPolicy {
+            minimum_protocol_version: CURRENT_PROVIDER_PROTOCOL,
+            required_capabilities: vec![
+                Capability::Search,
+                Capability::WorkspaceFilter,
+                Capability::VersionedRecords,
+            ],
+            allow_plaintext_processing: true,
+        }
+        .validate(&manifest)
+        .map_err(|_| {
+            ApplicationError::Validation(
+                "provider does not satisfy semantic protocol requirements".to_owned(),
+            )
+        })?;
+        let candidate_limit = manifest
+            .bounded_candidate_limit(command.request.maximum_items.saturating_mul(4))
+            .map_err(|_| {
+                ApplicationError::Validation("provider candidate limits are invalid".to_owned())
+            })?;
         let candidates = self
             .provider
             .search(&SemanticQuery {
@@ -52,6 +74,9 @@ where
                 text: command.request.query.clone(),
                 maximum_candidates: candidate_limit,
             })
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        manifest
+            .validate_candidates(&candidates, candidate_limit)
             .map_err(|_| ApplicationError::StorageUnavailable)?;
 
         let mut items = Vec::new();

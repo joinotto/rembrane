@@ -1,7 +1,11 @@
 use rembrane_domain::{
-    MemoryStatus, ProjectionJob, ProjectionOperation, ProjectionStatus, ProviderId,
+    MAX_MEMORY_CONTENT_BYTES, MemoryStatus, ProjectionJob, ProjectionOperation, ProjectionStatus,
+    ProviderId,
 };
-use rembrane_provider_sdk::{AuthorizedMemoryProjection, Capability, SemanticMemoryProvider};
+use rembrane_provider_sdk::{
+    AuthorizedMemoryProjection, CURRENT_PROVIDER_PROTOCOL, Capability, ProviderPolicy,
+    SemanticMemoryProvider,
+};
 
 use crate::{ApplicationError, MemoryRepository, ProjectionOutboxRepository};
 
@@ -49,9 +53,19 @@ where
             Capability::WorkspaceFilter,
             Capability::VersionedRecords,
         ];
-        if !manifest.supports_all(&required) {
+        let policy = ProviderPolicy {
+            minimum_protocol_version: CURRENT_PROVIDER_PROTOCOL,
+            required_capabilities: required.to_vec(),
+            allow_plaintext_processing: true,
+        };
+        if policy.validate(&manifest).is_err() {
             return Err(ApplicationError::Validation(
-                "provider lacks required projection capabilities".to_owned(),
+                "provider does not satisfy projection protocol requirements".to_owned(),
+            ));
+        }
+        if manifest.limits.maximum_content_bytes < MAX_MEMORY_CONTENT_BYTES {
+            return Err(ApplicationError::Validation(
+                "provider content limit is below the canonical memory limit".to_owned(),
             ));
         }
         Ok(Self {

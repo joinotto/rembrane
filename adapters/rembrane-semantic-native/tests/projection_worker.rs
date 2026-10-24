@@ -226,3 +226,63 @@ fn provider_failures_retry_then_quarantine() {
     assert_eq!(stored.status(), ProjectionStatus::Quarantined);
     assert_eq!(stored.attempts(), 2);
 }
+
+#[derive(Default)]
+struct UndersizedProvider;
+
+impl SemanticMemoryProvider for UndersizedProvider {
+    fn manifest(&self) -> ProviderManifest {
+        ProviderManifest {
+            id: "undersized".to_owned(),
+            version: "test".to_owned(),
+            protocol_version: CURRENT_PROVIDER_PROTOCOL,
+            capabilities: vec![
+                Capability::Index,
+                Capability::Search,
+                Capability::Delete,
+                Capability::WorkspaceFilter,
+                Capability::VersionedRecords,
+            ],
+            plaintext_processing: true,
+            limits: ProviderLimits {
+                maximum_batch_items: 1,
+                maximum_content_bytes: 1,
+                maximum_candidates: 10,
+            },
+        }
+    }
+
+    fn index(&mut self, _projection: AuthorizedMemoryProjection) -> Result<(), ProviderError> {
+        unreachable!("worker construction must reject this provider")
+    }
+
+    fn search(&self, _query: &SemanticQuery) -> Result<Vec<CandidateMemory>, ProviderError> {
+        unreachable!("worker construction must reject this provider")
+    }
+
+    fn delete(
+        &mut self,
+        _workspace_id: &WorkspaceId,
+        _memory_id: &MemoryId,
+        _through_version: u64,
+    ) -> Result<(), ProviderError> {
+        unreachable!("worker construction must reject this provider")
+    }
+}
+
+#[test]
+fn worker_rejects_provider_below_canonical_content_limit() {
+    let mut store = seeded_store();
+    let mut provider = UndersizedProvider;
+
+    let error = ProjectionWorker::new(&mut store, &mut provider, ProviderId::new("undersized"), 3)
+        .err()
+        .expect("undersized provider must fail before processing");
+
+    assert_eq!(
+        error,
+        rembrane_application::ApplicationError::Validation(
+            "provider content limit is below the canonical memory limit".to_owned()
+        )
+    );
+}

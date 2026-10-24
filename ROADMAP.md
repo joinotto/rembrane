@@ -105,6 +105,8 @@ This roadmap describes sequencing, not release dates.
 
 - [x] Versioned pre-alpha provider manifest with capability, privacy, and
   request-limit negotiation.
+- [x] Enforce provider protocol and declared limits at projection and retrieval
+  boundaries.
 - [ ] Stable Memory Provider Protocol.
 - [ ] TypeScript, Python, Rust, Swift, and Kotlin SDKs.
 - [ ] Compatibility registry and conformance suite.

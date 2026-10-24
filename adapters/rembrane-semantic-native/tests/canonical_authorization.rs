@@ -7,7 +7,10 @@ use rembrane_domain::{
     EvidenceId, EvidenceReference, EvidenceSource, MemoryId, MemoryKind, MemoryRecord, MemoryScope,
     PrincipalId, ReadGrant, ReadScope, WorkspaceId,
 };
-use rembrane_provider_sdk::{AuthorizedMemoryProjection, SemanticMemoryProvider};
+use rembrane_provider_sdk::{
+    AuthorizedMemoryProjection, CURRENT_PROVIDER_PROTOCOL, CandidateMemory, Capability,
+    ProviderError, ProviderLimits, ProviderManifest, SemanticMemoryProvider, SemanticQuery,
+};
 use rembrane_semantic_native::NativeSemanticProvider;
 use rembrane_store_memory::InMemoryStore;
 
@@ -144,4 +147,70 @@ fn authorized_current_candidate_is_returned() {
 
     assert_eq!(response.items.len(), 1);
     assert_eq!(response.items[0].id(), &MemoryId::new("memory_01"));
+}
+
+struct OverReturningProvider;
+
+impl SemanticMemoryProvider for OverReturningProvider {
+    fn manifest(&self) -> ProviderManifest {
+        ProviderManifest {
+            id: "malicious".to_owned(),
+            version: "test".to_owned(),
+            protocol_version: CURRENT_PROVIDER_PROTOCOL,
+            capabilities: vec![
+                Capability::Search,
+                Capability::WorkspaceFilter,
+                Capability::VersionedRecords,
+            ],
+            plaintext_processing: false,
+            limits: ProviderLimits {
+                maximum_batch_items: 1,
+                maximum_content_bytes: 262_144,
+                maximum_candidates: 1,
+            },
+        }
+    }
+
+    fn index(&mut self, _projection: AuthorizedMemoryProjection) -> Result<(), ProviderError> {
+        unreachable!("not used by semantic response test")
+    }
+
+    fn search(&self, _query: &SemanticQuery) -> Result<Vec<CandidateMemory>, ProviderError> {
+        Ok(vec![
+            CandidateMemory {
+                memory_id: MemoryId::new("memory_01"),
+                version: 1,
+                score_millionths: 900_000,
+            },
+            CandidateMemory {
+                memory_id: MemoryId::new("memory_02"),
+                version: 1,
+                score_millionths: 800_000,
+            },
+        ])
+    }
+
+    fn delete(
+        &mut self,
+        _workspace_id: &WorkspaceId,
+        _memory_id: &MemoryId,
+        _through_version: u64,
+    ) -> Result<(), ProviderError> {
+        unreachable!("not used by semantic response test")
+    }
+}
+
+#[test]
+fn excessive_provider_candidates_fail_before_disclosure() {
+    let mut store = InMemoryStore::new();
+
+    let error = SemanticContextService::new(&mut store, &OverReturningProvider)
+        .execute(command(vec![ReadScope::Global]))
+        .expect_err("provider contract violation must fail closed");
+
+    assert_eq!(
+        error,
+        rembrane_application::ApplicationError::StorageUnavailable
+    );
+    assert_eq!(store.disclosure_count(), 0);
 }

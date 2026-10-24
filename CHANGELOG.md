@@ -38,6 +38,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Provider protocol `0.1` negotiation with explicit compatibility checks,
   plaintext-processing disclosure, non-zero request limits, and a
   vendor-neutral JSON Schema/example for external adapters.
+- Core-enforced provider conformance: projection workers reject incompatible
+  or undersized providers before processing, semantic queries are bounded by
+  declared limits, and excessive or malformed candidates fail before
+  disclosure auditing.
 - Versioned discovery, OpenAPI, and MCP protocol specifications.
 - Tenant-isolated SQLite canonical schema with encrypted-payload metadata.
 - Versioned SQLite initialization with legacy-schema adoption, idempotent
