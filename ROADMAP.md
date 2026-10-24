@@ -577,6 +577,8 @@ This roadmap describes sequencing, not release dates.
     encrypted durable admission succeeds.
   - [x] Define a bounded provider-neutral inbox worker that completes messages
     only after an idempotent bot or agent processor succeeds.
+  - [x] Add a strict authenticated HTTP processor adapter for pluggable bot and
+    agent endpoints with canonical identity and event idempotency metadata.
   - [x] Define a bounded authenticated-channel message contract whose
     canonical workspace, principal, and client identity must come from a
     deployment-owned sender binding rather than webhook payload claims.

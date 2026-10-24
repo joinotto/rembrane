@@ -49,6 +49,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - A provider-neutral bounded channel-inbox worker contract that passes
   authenticated messages to idempotent bot or agent processors, completes only
   successful deliveries, and leaves failures queued for retry.
+- A strict HTTPS-or-loopback channel processor adapter with bearer
+  authentication, canonical workspace/principal/client identity, exact event
+  idempotency headers, redirect rejection, and bounded responses.
 - Durable, content-free SQLite channel replay receipts with atomic cleanup,
   fail-closed capacity enforcement, per-platform namespaces, and
   cross-workspace duplicate denial for multi-process gateways.
