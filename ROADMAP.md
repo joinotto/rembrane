@@ -227,6 +227,8 @@ This roadmap describes sequencing, not release dates.
   - [x] Add an immutable, versioned discovery manifest with standard well-known
     path, transports, operation capabilities, privacy mode, supported domains,
     and bounded context/event/sync limits.
+  - [x] Register each portable operation with exactly one capability, narrow
+    OAuth scope, HTTP method, and stable path template.
   - [ ] Define canonical operation request and response envelopes.
   - [ ] Publish a serialization schema and HTTP binding.
   - [ ] Add cross-implementation conformance fixtures.

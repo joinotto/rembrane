@@ -24,6 +24,124 @@ pub enum MemoryProviderCapability {
     SyncPush,
 }
 
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum MemoryProviderScope {
+    ContextRead,
+    QuestionRead,
+    EventWrite,
+    ProposalWrite,
+    CheckpointWrite,
+    DisclosureWrite,
+    MemoryDelete,
+    MemoryExplain,
+    SyncRead,
+    SyncWrite,
+}
+
+impl MemoryProviderScope {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::ContextRead => "memory:context:read",
+            Self::QuestionRead => "memory:question:read",
+            Self::EventWrite => "memory:event:write",
+            Self::ProposalWrite => "memory:proposal:write",
+            Self::CheckpointWrite => "memory:checkpoint:write",
+            Self::DisclosureWrite => "memory:disclosure:write",
+            Self::MemoryDelete => "memory:memory:delete",
+            Self::MemoryExplain => "memory:memory:explain",
+            Self::SyncRead => "memory:sync:read",
+            Self::SyncWrite => "memory:sync:write",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum MemoryProviderHttpMethod {
+    Get,
+    Post,
+    Delete,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum MemoryProviderOperation {
+    ResolveContext,
+    ResolveQuestion,
+    RecordEvent,
+    ProposeMemory,
+    CheckpointActivity,
+    RecordDisclosure,
+    DeleteMemory,
+    ExplainMemory,
+    SyncPull,
+    SyncPush,
+}
+
+impl MemoryProviderOperation {
+    #[must_use]
+    pub const fn capability(self) -> MemoryProviderCapability {
+        match self {
+            Self::ResolveContext => MemoryProviderCapability::ResolveContext,
+            Self::ResolveQuestion => MemoryProviderCapability::ResolveQuestion,
+            Self::RecordEvent => MemoryProviderCapability::RecordEvent,
+            Self::ProposeMemory => MemoryProviderCapability::ProposeMemory,
+            Self::CheckpointActivity => MemoryProviderCapability::CheckpointActivity,
+            Self::RecordDisclosure => MemoryProviderCapability::RecordDisclosure,
+            Self::DeleteMemory => MemoryProviderCapability::DeleteMemory,
+            Self::ExplainMemory => MemoryProviderCapability::ExplainMemory,
+            Self::SyncPull => MemoryProviderCapability::SyncPull,
+            Self::SyncPush => MemoryProviderCapability::SyncPush,
+        }
+    }
+
+    #[must_use]
+    pub const fn required_scope(self) -> MemoryProviderScope {
+        match self {
+            Self::ResolveContext => MemoryProviderScope::ContextRead,
+            Self::ResolveQuestion => MemoryProviderScope::QuestionRead,
+            Self::RecordEvent => MemoryProviderScope::EventWrite,
+            Self::ProposeMemory => MemoryProviderScope::ProposalWrite,
+            Self::CheckpointActivity => MemoryProviderScope::CheckpointWrite,
+            Self::RecordDisclosure => MemoryProviderScope::DisclosureWrite,
+            Self::DeleteMemory => MemoryProviderScope::MemoryDelete,
+            Self::ExplainMemory => MemoryProviderScope::MemoryExplain,
+            Self::SyncPull => MemoryProviderScope::SyncRead,
+            Self::SyncPush => MemoryProviderScope::SyncWrite,
+        }
+    }
+
+    #[must_use]
+    pub const fn http_method(self) -> MemoryProviderHttpMethod {
+        match self {
+            Self::ExplainMemory | Self::SyncPull => MemoryProviderHttpMethod::Get,
+            Self::DeleteMemory => MemoryProviderHttpMethod::Delete,
+            Self::ResolveContext
+            | Self::ResolveQuestion
+            | Self::RecordEvent
+            | Self::ProposeMemory
+            | Self::CheckpointActivity
+            | Self::RecordDisclosure
+            | Self::SyncPush => MemoryProviderHttpMethod::Post,
+        }
+    }
+
+    #[must_use]
+    pub const fn path_template(self) -> &'static str {
+        match self {
+            Self::ResolveContext => "/v1/context/resolve",
+            Self::ResolveQuestion => "/v1/questions/resolve",
+            Self::RecordEvent => "/v1/events",
+            Self::ProposeMemory => "/v1/memory/proposals",
+            Self::CheckpointActivity => "/v1/activities/{activity_id}/checkpoint",
+            Self::RecordDisclosure => "/v1/disclosures/receipt",
+            Self::DeleteMemory => "/v1/memories/{memory_id}",
+            Self::ExplainMemory => "/v1/memories/{memory_id}/explain",
+            Self::SyncPull => "/v1/sync/pull",
+            Self::SyncPush => "/v1/sync/push",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MemoryProviderPrivacyMode {
     /// The provider stores and transports opaque end-to-end encrypted data.
@@ -211,7 +329,8 @@ fn validate_identifier(label: &str, value: &str) -> Result<(), ProviderError> {
 mod tests {
     use super::{
         CURRENT_MEMORY_PROVIDER_PROTOCOL, MEMORY_PROVIDER_DISCOVERY_PATH, MemoryProviderCapability,
-        MemoryProviderLimits, MemoryProviderManifest, MemoryProviderPrivacyMode,
+        MemoryProviderHttpMethod, MemoryProviderLimits, MemoryProviderManifest,
+        MemoryProviderOperation, MemoryProviderPrivacyMode, MemoryProviderScope,
         MemoryProviderTransport,
     };
     use crate::{ProviderError, ProviderProtocolVersion};
@@ -302,5 +421,89 @@ mod tests {
             invalid_domain,
             Err(ProviderError::InvalidConfiguration(_))
         ));
+    }
+
+    #[test]
+    fn every_operation_has_one_capability_scope_and_http_binding() {
+        let cases = [
+            (
+                MemoryProviderOperation::ResolveContext,
+                MemoryProviderCapability::ResolveContext,
+                MemoryProviderScope::ContextRead,
+                MemoryProviderHttpMethod::Post,
+                "/v1/context/resolve",
+            ),
+            (
+                MemoryProviderOperation::ResolveQuestion,
+                MemoryProviderCapability::ResolveQuestion,
+                MemoryProviderScope::QuestionRead,
+                MemoryProviderHttpMethod::Post,
+                "/v1/questions/resolve",
+            ),
+            (
+                MemoryProviderOperation::RecordEvent,
+                MemoryProviderCapability::RecordEvent,
+                MemoryProviderScope::EventWrite,
+                MemoryProviderHttpMethod::Post,
+                "/v1/events",
+            ),
+            (
+                MemoryProviderOperation::ProposeMemory,
+                MemoryProviderCapability::ProposeMemory,
+                MemoryProviderScope::ProposalWrite,
+                MemoryProviderHttpMethod::Post,
+                "/v1/memory/proposals",
+            ),
+            (
+                MemoryProviderOperation::CheckpointActivity,
+                MemoryProviderCapability::CheckpointActivity,
+                MemoryProviderScope::CheckpointWrite,
+                MemoryProviderHttpMethod::Post,
+                "/v1/activities/{activity_id}/checkpoint",
+            ),
+            (
+                MemoryProviderOperation::RecordDisclosure,
+                MemoryProviderCapability::RecordDisclosure,
+                MemoryProviderScope::DisclosureWrite,
+                MemoryProviderHttpMethod::Post,
+                "/v1/disclosures/receipt",
+            ),
+            (
+                MemoryProviderOperation::DeleteMemory,
+                MemoryProviderCapability::DeleteMemory,
+                MemoryProviderScope::MemoryDelete,
+                MemoryProviderHttpMethod::Delete,
+                "/v1/memories/{memory_id}",
+            ),
+            (
+                MemoryProviderOperation::ExplainMemory,
+                MemoryProviderCapability::ExplainMemory,
+                MemoryProviderScope::MemoryExplain,
+                MemoryProviderHttpMethod::Get,
+                "/v1/memories/{memory_id}/explain",
+            ),
+            (
+                MemoryProviderOperation::SyncPull,
+                MemoryProviderCapability::SyncPull,
+                MemoryProviderScope::SyncRead,
+                MemoryProviderHttpMethod::Get,
+                "/v1/sync/pull",
+            ),
+            (
+                MemoryProviderOperation::SyncPush,
+                MemoryProviderCapability::SyncPush,
+                MemoryProviderScope::SyncWrite,
+                MemoryProviderHttpMethod::Post,
+                "/v1/sync/push",
+            ),
+        ];
+
+        for (operation, capability, scope, method, path) in cases {
+            assert_eq!(operation.capability(), capability);
+            assert_eq!(operation.required_scope(), scope);
+            assert_eq!(operation.http_method(), method);
+            assert_eq!(operation.path_template(), path);
+            assert!(scope.as_str().starts_with("memory:"));
+        }
     }
 }
