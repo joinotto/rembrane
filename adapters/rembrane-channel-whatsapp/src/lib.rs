@@ -10,10 +10,16 @@ const MAXIMUM_WEBHOOK_BYTES: usize = 3 * 1024 * 1024;
 const MAXIMUM_MESSAGES: usize = 100;
 const MAXIMUM_IDENTIFIER_BYTES: usize = 256;
 const MAXIMUM_TEXT_BYTES: usize = 16_384;
+const MAXIMUM_CHALLENGE_BYTES: usize = 512;
+const MAXIMUM_VERIFICATION_TOKEN_BYTES: usize = 256;
 
 pub struct WhatsAppWebhookVerifier {
     signature_key: hmac::Key,
     lookup_key: hmac::Key,
+}
+
+pub struct WhatsAppSubscriptionVerifier {
+    verification_key: hmac::Key,
 }
 
 pub struct WhatsAppTextEvent {
@@ -33,6 +39,17 @@ pub enum WhatsAppWebhookError {
     TooManyMessages,
     StaleEvent,
     Admission(ApplicationError),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WhatsAppHttpStatus {
+    Ok,
+    Accepted,
+    BadRequest,
+    Unauthorized,
+    PayloadTooLarge,
+    TooManyRequests,
+    ServiceUnavailable,
 }
 
 impl WhatsAppWebhookVerifier {
@@ -159,6 +176,76 @@ impl WhatsAppWebhookVerifier {
             }
         }
         Ok(admitted)
+    }
+}
+
+impl WhatsAppSubscriptionVerifier {
+    pub fn new(mut verification_token: Vec<u8>) -> Result<Self, WhatsAppWebhookError> {
+        if verification_token.len() < 32
+            || verification_token.len() > MAXIMUM_VERIFICATION_TOKEN_BYTES
+        {
+            verification_token.zeroize();
+            return Err(WhatsAppWebhookError::InvalidConfiguration);
+        }
+        let verification_key = hmac::Key::new(hmac::HMAC_SHA256, &verification_token);
+        verification_token.zeroize();
+        Ok(Self { verification_key })
+    }
+
+    pub fn verify_challenge(
+        &self,
+        mode: &str,
+        supplied_token: &[u8],
+        challenge: &str,
+    ) -> Result<String, WhatsAppWebhookError> {
+        if supplied_token.len() < 32 || supplied_token.len() > MAXIMUM_VERIFICATION_TOKEN_BYTES {
+            return Err(WhatsAppWebhookError::InvalidSignature);
+        }
+        let supplied_key = hmac::Key::new(hmac::HMAC_SHA256, supplied_token);
+        let comparison_message = b"rembrane.whatsapp.subscription.v1";
+        let supplied_proof = hmac::sign(&supplied_key, comparison_message);
+        if mode != "subscribe"
+            || challenge.is_empty()
+            || challenge.len() > MAXIMUM_CHALLENGE_BYTES
+            || challenge.bytes().any(|byte| byte.is_ascii_control())
+            || hmac::verify(
+                &self.verification_key,
+                comparison_message,
+                supplied_proof.as_ref(),
+            )
+            .is_err()
+        {
+            return Err(WhatsAppWebhookError::InvalidSignature);
+        }
+        Ok(challenge.to_owned())
+    }
+}
+
+#[must_use]
+pub const fn webhook_http_status(
+    result: &Result<Vec<VerifiedChannelMessage>, WhatsAppWebhookError>,
+) -> WhatsAppHttpStatus {
+    match result {
+        Ok(_) => WhatsAppHttpStatus::Ok,
+        Err(WhatsAppWebhookError::InvalidSignature) => WhatsAppHttpStatus::Unauthorized,
+        Err(WhatsAppWebhookError::InvalidPayload | WhatsAppWebhookError::StaleEvent) => {
+            WhatsAppHttpStatus::BadRequest
+        }
+        Err(WhatsAppWebhookError::PayloadTooLarge) => WhatsAppHttpStatus::PayloadTooLarge,
+        Err(WhatsAppWebhookError::TooManyMessages) => WhatsAppHttpStatus::TooManyRequests,
+        Err(WhatsAppWebhookError::Admission(
+            ApplicationError::AccessDenied | ApplicationError::NotFound,
+        )) => WhatsAppHttpStatus::Accepted,
+        Err(
+            WhatsAppWebhookError::InvalidConfiguration
+            | WhatsAppWebhookError::Admission(
+                ApplicationError::AlreadyExists
+                | ApplicationError::SequenceConflict
+                | ApplicationError::StorageUnavailable
+                | ApplicationError::Validation(_)
+                | ApplicationError::VersionConflict,
+            ),
+        ) => WhatsAppHttpStatus::ServiceUnavailable,
     }
 }
 
@@ -292,7 +379,10 @@ mod tests {
     use rembrane_domain::{ClientId, PrincipalId, WorkspaceId};
     use ring::hmac;
 
-    use super::{MAXIMUM_WEBHOOK_BYTES, WhatsAppWebhookError, WhatsAppWebhookVerifier, encode_hex};
+    use super::{
+        MAXIMUM_WEBHOOK_BYTES, WhatsAppHttpStatus, WhatsAppSubscriptionVerifier,
+        WhatsAppWebhookError, WhatsAppWebhookVerifier, encode_hex, webhook_http_status,
+    };
 
     const PAYLOAD: &[u8] = br#"{
       "object":"whatsapp_business_account",
@@ -471,5 +561,47 @@ mod tests {
             Err(WhatsAppWebhookError::StaleEvent)
         ));
         assert_eq!(repository.calls, 1);
+    }
+
+    #[test]
+    fn verifies_subscription_challenges_without_exposing_the_token() {
+        let token = vec![11; 32];
+        let verifier =
+            WhatsAppSubscriptionVerifier::new(token.clone()).expect("test token should be valid");
+        assert_eq!(
+            verifier
+                .verify_challenge("subscribe", &token, "opaque-challenge")
+                .expect("matching challenge should pass"),
+            "opaque-challenge"
+        );
+        assert!(matches!(
+            verifier.verify_challenge("subscribe", &[12; 32], "opaque-challenge"),
+            Err(WhatsAppWebhookError::InvalidSignature)
+        ));
+        assert!(matches!(
+            verifier.verify_challenge("unsubscribe", &token, "opaque-challenge"),
+            Err(WhatsAppWebhookError::InvalidSignature)
+        ));
+    }
+
+    #[test]
+    fn maps_webhook_results_to_bounded_non_enumerating_http_outcomes() {
+        assert_eq!(webhook_http_status(&Ok(Vec::new())), WhatsAppHttpStatus::Ok);
+        assert_eq!(
+            webhook_http_status(&Err(WhatsAppWebhookError::InvalidSignature)),
+            WhatsAppHttpStatus::Unauthorized
+        );
+        assert_eq!(
+            webhook_http_status(&Err(WhatsAppWebhookError::Admission(
+                ApplicationError::NotFound
+            ))),
+            WhatsAppHttpStatus::Accepted
+        );
+        assert_eq!(
+            webhook_http_status(&Err(WhatsAppWebhookError::Admission(
+                ApplicationError::StorageUnavailable
+            ))),
+            WhatsAppHttpStatus::ServiceUnavailable
+        );
     }
 }

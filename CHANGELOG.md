@@ -17,6 +17,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   fails closed on every other repository error.
 - Pre-storage WhatsApp event-age enforcement that rejects stale signed
   deliveries before expired replay receipts could permit renewed admission.
+- A framework-neutral WhatsApp HTTP policy with constant-time bounded
+  subscription verification and non-enumerating status mapping for unknown or
+  revoked senders.
 - Durable, content-free SQLite channel replay receipts with atomic cleanup,
   fail-closed capacity enforcement, per-platform namespaces, and
   cross-workspace duplicate denial for multi-process gateways.
