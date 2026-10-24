@@ -398,6 +398,8 @@ This roadmap describes sequencing, not release dates.
     - [x] Expose every portable operation through a typed facade that always
       creates capability-checked requests from the negotiated connection
       before transport.
+    - [x] Document secret-safe self-hosted configuration, connection policy,
+      provider requirements, and conformance execution.
 - [x] Versioned key-provider sidecar protocol for OS, HSM, and customer-KMS
   adapters.
   - [x] Add transport-independent Rust manifest, negotiation, request, context,

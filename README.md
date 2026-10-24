@@ -50,6 +50,7 @@ The platform owns identity, workspaces, encryption orchestration, canonical even
 
 ## Documents
 
+- [Portable Memory Provider Client](docs/MEMORY_PROVIDER_CLIENT.md)
 - [Product Requirements and Architecture](docs/PRODUCT_REQUIREMENTS_AND_ARCHITECTURE.md)
 - [Rust Architecture Research](docs/RUST_ARCHITECTURE_RESEARCH.md)
 - [Bot and Platform Integration Architecture](docs/BOT_AND_PLATFORM_INTEGRATION_ARCHITECTURE.md)

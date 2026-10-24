@@ -108,6 +108,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - A typed configured-provider facade for context, questions, proposals,
   events, checkpoints, disclosures, lifecycle, and sync that always creates
   each request through the negotiated capability boundary before transport.
+- A self-hosting guide for portable Memory Provider configuration, secret
+  injection, fail-closed policy negotiation, provider obligations, and
+  cross-tenant black-box conformance testing.
 - Canonical engine-neutral temporal knowledge graph aggregates with typed
   nodes, validated relationship types, strict workspace namespaces, separate
   validity and ingestion time, evidence provenance, bounded aliases, versions,
