@@ -12,9 +12,12 @@ legacy v3/v4 container-tag API:
 
 - ingest: `POST /ns/{namespace}/document`;
 - search: `POST /ns/{namespace}/search`;
-- list: `POST /ns/{namespace}/list/memories`;
 - exact forgetting: `DELETE /ns/{namespace}/memories`;
 - source deletion: `DELETE /ns/{namespace}/document`.
+
+The trusted adapter intentionally does not expose namespace listing.
+Canonical lifecycle operations use deterministic exact document identity,
+while authorized retrieval uses bounded semantic search.
 
 References:
 
@@ -46,7 +49,7 @@ letters, digits, underscore, colon, and hyphen alphabet before transport use.
 It applies the same path-safe alphabet to deterministic document IDs, so
 canonical memory identifiers never enter provider URLs or request identity
 fields.
-When list responses contain both an internal provider ID and `customId`, the
+When search responses contain both an internal provider ID and `customId`, the
 adapter retains the deterministic caller ID for exact replacement and
 deletion.
 
@@ -74,7 +77,7 @@ The adapter must model indexing as retryable derived work:
 
 1. upsert the deterministic document ID;
 2. poll a bounded status endpoint until processing reaches a terminal state;
-3. verify the new canonical version through a scoped list or search;
+3. verify the new canonical version through scoped search;
 4. only then allow the projection job to complete.
 
 Timeout, rate limiting, partial deletion, or non-terminal processing leave the
@@ -82,8 +85,7 @@ canonical outbox job retryable. Canonical memory is never rolled back.
 
 Replacement uses Supermemory's create-or-update behavior for the deterministic
 `customId`; it does not scan a bounded document page and delete first. This
-keeps replacement correct when a namespace contains more documents than one
-list response.
+keeps replacement correct regardless of namespace cardinality.
 
 Version-bounded deletion retrieves the deterministic document ID through the
 exact document endpoint before removal. It never searches paginated namespace

@@ -714,11 +714,13 @@ This roadmap describes sequencing, not release dates.
         deletion instead of scanning paginated namespace lists.
         - [x] Lock the no-list lifecycle invariant with regression coverage
           across preserved and deleted version bounds.
+        - [x] Remove namespace enumeration from the trusted transport contract
+          once exact identity covers every lifecycle operation.
       - [x] Require bounded readiness confirmation after ingestion before an
         adapter may report projection success.
         - [x] Bind readiness verification to the exact authorized projection
           for scoped search convergence.
-      - [x] Strictly decode bounded list/search records and exact partial-
+      - [x] Strictly decode bounded search records and exact partial-
         deletion outcomes before connecting the HTTP client.
         - [x] Decode internal and caller-defined document identities
           independently and prefer the deterministic caller ID.

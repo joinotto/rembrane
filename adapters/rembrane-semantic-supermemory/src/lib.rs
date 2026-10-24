@@ -147,7 +147,6 @@ pub fn deletion_confirmed(bytes: &[u8], provider_id: &str) -> Result<bool, Provi
 }
 
 pub trait SupermemoryTransport {
-    fn list(&self, namespace: &str) -> Result<Vec<SupermemoryRecord>, ProviderError>;
     fn get(
         &self,
         namespace: &str,
@@ -287,20 +286,6 @@ impl HttpSupermemoryTransport {
 }
 
 impl SupermemoryTransport for HttpSupermemoryTransport {
-    fn list(&self, namespace: &str) -> Result<Vec<SupermemoryRecord>, ProviderError> {
-        let response = self
-            .request(
-                self.client
-                    .post(self.endpoint(namespace, &["list", "documents"])?),
-            )
-            .header(CONTENT_TYPE, "application/json")
-            .query(&[("page", 1), ("limit", MAXIMUM_RESPONSE_RECORDS)])
-            .json(&serde_json::json!({}))
-            .send()
-            .map_err(|_| ProviderError::Unavailable)?;
-        decode_records(&Self::decode(response)?)
-    }
-
     fn get(
         &self,
         namespace: &str,
@@ -675,25 +660,9 @@ mod tests {
         next_id: u64,
         fail_readiness: bool,
         fail_deletion_confirmation: bool,
-        reject_list: bool,
     }
 
     impl SupermemoryTransport for FakeSupermemory {
-        fn list(&self, namespace: &str) -> Result<Vec<SupermemoryRecord>, ProviderError> {
-            if self.reject_list {
-                return Err(ProviderError::Rejected(
-                    "namespace listing was not expected".to_owned(),
-                ));
-            }
-            Ok(self
-                .records
-                .get(namespace)
-                .into_iter()
-                .flatten()
-                .map(|(r, _)| r.clone())
-                .collect())
-        }
-
         fn get(
             &self,
             namespace: &str,
@@ -925,7 +894,6 @@ mod tests {
                 content: "Call me Hippo".to_owned(),
             })
             .expect("initial projection");
-        provider.transport.reject_list = true;
 
         provider
             .delete(&workspace_id, &memory_id, 1)
