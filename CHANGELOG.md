@@ -15,6 +15,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - A WhatsApp ingestion bridge into atomic canonical sender admission that
   verifies before storage, ignores authenticated duplicate deliveries, and
   fails closed on every other repository error.
+- Pre-storage WhatsApp event-age enforcement that rejects stale signed
+  deliveries before expired replay receipts could permit renewed admission.
 - Durable, content-free SQLite channel replay receipts with atomic cleanup,
   fail-closed capacity enforcement, per-platform namespaces, and
   cross-workspace duplicate denial for multi-process gateways.

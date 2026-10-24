@@ -550,6 +550,8 @@ This roadmap describes sequencing, not release dates.
     and derive keyed pseudonymous sender/account lookup identifiers.
   - [x] Connect verified text events to atomic canonical sender admission while
     treating authenticated duplicate deliveries idempotently.
+  - [x] Reject signed webhook events older than a deployment-owned maximum age
+    before any batch storage mutation.
   - [x] Define a bounded authenticated-channel message contract whose
     canonical workspace, principal, and client identity must come from a
     deployment-owned sender binding rather than webhook payload claims.

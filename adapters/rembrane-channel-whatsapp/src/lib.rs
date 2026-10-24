@@ -31,6 +31,7 @@ pub enum WhatsAppWebhookError {
     InvalidPayload,
     PayloadTooLarge,
     TooManyMessages,
+    StaleEvent,
     Admission(ApplicationError),
 }
 
@@ -127,10 +128,18 @@ impl WhatsAppWebhookVerifier {
         signature_header: &str,
         payload: &[u8],
         now_epoch_seconds: u64,
+        maximum_event_age_seconds: u64,
         replay_window_seconds: u64,
         maximum_events: usize,
     ) -> Result<Vec<VerifiedChannelMessage>, WhatsAppWebhookError> {
         let events = self.verify_and_extract_text(signature_header, payload)?;
+        let oldest_accepted = now_epoch_seconds.saturating_sub(maximum_event_age_seconds);
+        if events
+            .iter()
+            .any(|event| event.received_at_epoch_seconds() < oldest_accepted)
+        {
+            return Err(WhatsAppWebhookError::StaleEvent);
+        }
         let mut admitted = Vec::with_capacity(events.len());
         for event in events {
             match repository.accept_bound_channel_event(
@@ -389,6 +398,7 @@ mod tests {
                 &bad_signature,
                 PAYLOAD,
                 1_700_000_001,
+                300,
                 86_400,
                 1_000,
             ),
@@ -402,6 +412,7 @@ mod tests {
                 &signature(PAYLOAD),
                 PAYLOAD,
                 1_700_000_001,
+                300,
                 86_400,
                 1_000,
             )
@@ -416,11 +427,49 @@ mod tests {
                 &signature(PAYLOAD),
                 PAYLOAD,
                 1_700_000_002,
+                300,
                 86_400,
                 1_000,
             )
             .expect("duplicate delivery should be idempotent");
         assert!(duplicate.is_empty());
         assert_eq!(repository.calls, 2);
+    }
+
+    #[test]
+    fn rejects_stale_events_before_storage_at_an_inclusive_boundary() {
+        let mut repository = RecordingIngress {
+            calls: 0,
+            replay: false,
+        };
+        let verifier = verifier();
+
+        let accepted = verifier
+            .ingest_text(
+                &mut repository,
+                &signature(PAYLOAD),
+                PAYLOAD,
+                1_700_000_300,
+                300,
+                86_400,
+                1_000,
+            )
+            .expect("event exactly at maximum age should be accepted");
+        assert_eq!(accepted.len(), 1);
+        assert_eq!(repository.calls, 1);
+
+        assert!(matches!(
+            verifier.ingest_text(
+                &mut repository,
+                &signature(PAYLOAD),
+                PAYLOAD,
+                1_700_000_301,
+                300,
+                86_400,
+                1_000,
+            ),
+            Err(WhatsAppWebhookError::StaleEvent)
+        ));
+        assert_eq!(repository.calls, 1);
     }
 }
