@@ -35,6 +35,10 @@ like:
 WWW-Authenticate: Bearer resource_metadata="https://memory.example.test/.well-known/oauth-protected-resource/mcp"
 ```
 
+The metadata URL is derived mechanically from the validated resource URL using
+RFC 9728 well-known URI path insertion. Adapters must use the shared
+configuration helper rather than concatenate this header independently.
+
 An insufficient but otherwise valid grant returns `403`. Authentication errors
 must not reveal whether a workspace, subject, memory, trip, or checkpoint
 exists.

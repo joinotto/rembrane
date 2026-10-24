@@ -95,6 +95,8 @@ This roadmap describes sequencing, not release dates.
       HTTPS endpoints, referenced client secrets, and exact browser origins.
       - [x] Reject non-ASCII, whitespace, controls, quotes, and malformed
         authorities before configuration values can reach HTTP headers.
+      - [x] Derive one canonical RFC 9728 metadata URL and bearer challenge
+        from an encapsulated profile that cannot be mutated after validation.
     - [x] Provide one transport-neutral lifecycle boundary that composes
       per-request HTTP authorization with session establish, revalidation,
       tool-scope enforcement, and authenticated deletion.

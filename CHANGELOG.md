@@ -24,6 +24,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Hardened remote MCP profile validation against control-character, whitespace,
   quote, non-ASCII, and malformed-authority values before configuration can
   flow into OAuth or MCP HTTP headers.
+- Canonical RFC 9728 protected-resource metadata URL and OAuth bearer challenge
+  generation from validated, immutable remote MCP resource profiles.
 - Pre-alpha remote Streamable HTTP MCP security contract with RFC 9728
   protected-resource metadata, explicit OAuth scope ceilings, bearer challenge
   behavior, verified identity requirements, and per-request session

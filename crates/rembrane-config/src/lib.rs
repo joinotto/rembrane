@@ -190,12 +190,12 @@ impl SecretReference {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RemoteMcpConfig {
-    pub resource: String,
-    pub issuer: String,
-    pub introspection_endpoint: String,
-    pub introspection_client_id: String,
-    pub introspection_client_secret: SecretReference,
-    pub trusted_origins: Vec<String>,
+    resource: String,
+    issuer: String,
+    introspection_endpoint: String,
+    introspection_client_id: String,
+    introspection_client_secret: SecretReference,
+    trusted_origins: Vec<String>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -266,6 +266,63 @@ impl RemoteMcpConfig {
             introspection_client_secret,
             trusted_origins: normalized_origins,
         })
+    }
+
+    /// Returns the RFC 9728 protected-resource metadata URL derived from the
+    /// validated MCP resource URL.
+    #[must_use]
+    pub fn protected_resource_metadata_url(&self) -> String {
+        let remainder = self
+            .resource
+            .strip_prefix("https://")
+            .unwrap_or(&self.resource);
+        let (authority, path) = remainder
+            .split_once('/')
+            .map_or((remainder, ""), |(authority, path)| (authority, path));
+        if path.is_empty() {
+            format!("https://{authority}/.well-known/oauth-protected-resource")
+        } else {
+            format!("https://{authority}/.well-known/oauth-protected-resource/{path}")
+        }
+    }
+
+    #[must_use]
+    pub fn resource(&self) -> &str {
+        &self.resource
+    }
+
+    #[must_use]
+    pub fn issuer(&self) -> &str {
+        &self.issuer
+    }
+
+    #[must_use]
+    pub fn introspection_endpoint(&self) -> &str {
+        &self.introspection_endpoint
+    }
+
+    #[must_use]
+    pub fn introspection_client_id(&self) -> &str {
+        &self.introspection_client_id
+    }
+
+    #[must_use]
+    pub const fn introspection_client_secret(&self) -> &SecretReference {
+        &self.introspection_client_secret
+    }
+
+    #[must_use]
+    pub fn trusted_origins(&self) -> &[String] {
+        &self.trusted_origins
+    }
+
+    /// Returns the canonical OAuth bearer challenge for this MCP resource.
+    #[must_use]
+    pub fn bearer_challenge(&self) -> String {
+        format!(
+            "Bearer resource_metadata=\"{}\"",
+            self.protected_resource_metadata_url()
+        )
     }
 }
 
@@ -560,8 +617,16 @@ mod tests {
         )
         .expect("complete secure profile should be valid");
 
-        assert_eq!(profile.introspection_client_secret, secret);
-        assert_eq!(profile.trusted_origins, ["https://app.example"]);
+        assert_eq!(profile.introspection_client_secret(), &secret);
+        assert_eq!(profile.trusted_origins(), ["https://app.example"]);
+        assert_eq!(
+            profile.protected_resource_metadata_url(),
+            "https://memory.example/.well-known/oauth-protected-resource/mcp"
+        );
+        assert_eq!(
+            profile.bearer_challenge(),
+            "Bearer resource_metadata=\"https://memory.example/.well-known/oauth-protected-resource/mcp\""
+        );
         assert_eq!(
             RemoteMcpConfig::new(
                 "http://memory.example/mcp".to_owned(),
@@ -572,6 +637,24 @@ mod tests {
                 Vec::new(),
             ),
             Err(RemoteMcpConfigError::InsecureEndpoint)
+        );
+    }
+
+    #[test]
+    fn remote_mcp_profile_derives_root_resource_metadata_without_trailing_path() {
+        let profile = RemoteMcpConfig::new(
+            "https://memory.example".to_owned(),
+            "https://identity.example".to_owned(),
+            "https://identity.example/oauth/introspect".to_owned(),
+            "client".to_owned(),
+            SecretReference::environment("SECRET").expect("reference should be valid"),
+            Vec::new(),
+        )
+        .expect("root resource should be valid");
+
+        assert_eq!(
+            profile.protected_resource_metadata_url(),
+            "https://memory.example/.well-known/oauth-protected-resource"
         );
     }
 
