@@ -36,7 +36,9 @@ const MEMORY_SHARE_PROPOSAL_MIGRATION: &str =
 const TRIP_MIGRATION: &str = include_str!("../../../migrations/sqlite/0006_trips.sql");
 const BOOKING_RESEARCH_MIGRATION: &str =
     include_str!("../../../migrations/sqlite/0007_booking_research.sql");
-const CURRENT_SCHEMA_VERSION: u32 = 7;
+const TRAVEL_DISCLOSURE_MIGRATION: &str =
+    include_str!("../../../migrations/sqlite/0008_travel_disclosures.sql");
+const CURRENT_SCHEMA_VERSION: u32 = 8;
 const CANONICAL_TABLES: [&str; 10] = [
     "activity_checkpoints",
     "disclosed_memories",
@@ -145,6 +147,12 @@ fn migrate(connection: &mut Connection) -> Result<(), ApplicationError> {
     if version == 6 {
         transaction
             .execute_batch(BOOKING_RESEARCH_MIGRATION)
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        version = 7;
+    }
+    if version == 7 {
+        transaction
+            .execute_batch(TRAVEL_DISCLOSURE_MIGRATION)
             .map_err(|_| ApplicationError::StorageUnavailable)?;
     }
     transaction

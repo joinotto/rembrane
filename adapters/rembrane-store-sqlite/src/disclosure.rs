@@ -1,7 +1,10 @@
 use rembrane_application::{
     ApplicationError, CheckpointDisclosureRepository, DisclosureRepository,
+    TravelDisclosureRepository,
 };
-use rembrane_domain::{CheckpointDisclosureReceipt, DisclosureReceipt};
+use rembrane_domain::{
+    CheckpointDisclosureReceipt, DisclosureReceipt, ResearchFreshness, TravelDisclosureReceipt,
+};
 use rusqlite::{OptionalExtension, params};
 
 use crate::{SqliteStore, map_write_error};
@@ -155,5 +158,129 @@ impl<C> CheckpointDisclosureRepository for SqliteStore<C> {
             )
             .map(|_| ())
             .map_err(map_write_error)
+    }
+}
+
+impl<C> TravelDisclosureRepository for SqliteStore<C> {
+    fn append_travel_disclosure(
+        &mut self,
+        receipt: TravelDisclosureReceipt,
+    ) -> Result<(), ApplicationError> {
+        if receipt.purpose.trim().is_empty()
+            || receipt.trip_version == 0
+            || receipt.as_of.trim().is_empty()
+            || receipt.research.iter().any(|item| item.version == 0)
+        {
+            return Err(ApplicationError::Validation(
+                "invalid travel disclosure".to_owned(),
+            ));
+        }
+        let trip_version = i64::try_from(receipt.trip_version).map_err(|_| {
+            ApplicationError::Validation("trip version exceeds SQLite range".to_owned())
+        })?;
+        let transaction = self
+            .connection
+            .transaction()
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        let stored_trip_version: Option<i64> = transaction
+            .query_row(
+                "SELECT version
+                 FROM trips
+                 WHERE workspace_id = ?1
+                   AND id = ?2
+                   AND owner_subject_id = ?3",
+                params![
+                    receipt.workspace_id.as_str(),
+                    receipt.trip_id.as_str(),
+                    receipt.subject_id.as_str()
+                ],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        if stored_trip_version != Some(trip_version) {
+            return Err(ApplicationError::VersionConflict);
+        }
+
+        transaction
+            .execute(
+                "INSERT INTO travel_disclosure_receipts (
+                    workspace_id,
+                    id,
+                    subject_id,
+                    client_id,
+                    purpose_code,
+                    trip_id,
+                    trip_version,
+                    as_of
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                params![
+                    receipt.workspace_id.as_str(),
+                    receipt.id.as_str(),
+                    receipt.subject_id.as_str(),
+                    receipt.client_id.as_str(),
+                    receipt.purpose,
+                    receipt.trip_id.as_str(),
+                    trip_version,
+                    receipt.as_of
+                ],
+            )
+            .map_err(map_write_error)?;
+
+        for (ordinal, research) in receipt.research.iter().enumerate() {
+            let research_version = i64::try_from(research.version).map_err(|_| {
+                ApplicationError::Validation(
+                    "booking research version exceeds SQLite range".to_owned(),
+                )
+            })?;
+            let stored_research_version: Option<i64> = transaction
+                .query_row(
+                    "SELECT version
+                     FROM booking_research
+                     WHERE workspace_id = ?1
+                       AND id = ?2
+                       AND trip_id = ?3",
+                    params![
+                        receipt.workspace_id.as_str(),
+                        research.id.as_str(),
+                        receipt.trip_id.as_str()
+                    ],
+                    |row| row.get(0),
+                )
+                .optional()
+                .map_err(|_| ApplicationError::StorageUnavailable)?;
+            if stored_research_version != Some(research_version) {
+                return Err(ApplicationError::VersionConflict);
+            }
+            let freshness = match research.freshness {
+                ResearchFreshness::Fresh => "fresh",
+                ResearchFreshness::Expired => "expired",
+            };
+            transaction
+                .execute(
+                    "INSERT INTO disclosed_booking_research (
+                        workspace_id,
+                        disclosure_id,
+                        research_id,
+                        research_version,
+                        freshness,
+                        ordinal
+                    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                    params![
+                        receipt.workspace_id.as_str(),
+                        receipt.id.as_str(),
+                        research.id.as_str(),
+                        research_version,
+                        freshness,
+                        i64::try_from(ordinal).map_err(|_| {
+                            ApplicationError::Validation(
+                                "too many disclosed booking research records".to_owned(),
+                            )
+                        })?
+                    ],
+                )
+                .map_err(map_write_error)?;
+        }
+        transaction.commit().map_err(map_write_error)
     }
 }

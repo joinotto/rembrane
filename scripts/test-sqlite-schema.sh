@@ -19,7 +19,9 @@ sqlite3 "$database" < \
     "$repository_root/migrations/sqlite/0006_trips.sql"
 sqlite3 "$database" < \
     "$repository_root/migrations/sqlite/0007_booking_research.sql"
-sqlite3 "$database" "PRAGMA user_version = 7;"
+sqlite3 "$database" < \
+    "$repository_root/migrations/sqlite/0008_travel_disclosures.sql"
+sqlite3 "$database" "PRAGMA user_version = 8;"
 
 sqlite3 "$database" <<'SQL'
 PRAGMA foreign_keys = ON;
@@ -223,6 +225,40 @@ INSERT INTO booking_research (
         zeroblob(24),
         1
     );
+INSERT INTO travel_disclosure_receipts (
+    workspace_id,
+    id,
+    subject_id,
+    client_id,
+    purpose_code,
+    trip_id,
+    trip_version,
+    as_of
+) VALUES (
+    'workspace_01',
+    'travel_disclosure_01',
+    'principal_01',
+    'assistant_01',
+    'continue-flight-planning',
+    'trip_01',
+    1,
+    '2026-10-24T10:00:00Z'
+);
+INSERT INTO disclosed_booking_research (
+    workspace_id,
+    disclosure_id,
+    research_id,
+    research_version,
+    freshness,
+    ordinal
+) VALUES (
+    'workspace_01',
+    'travel_disclosure_01',
+    'research_01',
+    1,
+    'fresh',
+    0
+);
 INSERT INTO checkpoint_disclosures (
     workspace_id,
     id,
@@ -420,7 +456,7 @@ table_count=$(
 )
 
 test "$table_count" -ge 9
-test "$(sqlite3 "$database" "PRAGMA user_version;")" -eq 7
+test "$(sqlite3 "$database" "PRAGMA user_version;")" -eq 8
 test "$(
     sqlite3 "$database" \
         "SELECT count(*) FROM checkpoint_disclosures;"
@@ -433,6 +469,14 @@ test "$(
     sqlite3 "$database" \
         "SELECT count(*) FROM booking_research WHERE id = 'research_01';"
 )" -eq 2
+test "$(
+    sqlite3 "$database" \
+        "SELECT count(*) FROM travel_disclosure_receipts WHERE workspace_id = 'workspace_01' AND trip_id = 'trip_01' AND trip_version = 1;"
+)" -eq 1
+test "$(
+    sqlite3 "$database" \
+        "SELECT count(*) FROM disclosed_booking_research WHERE workspace_id = 'workspace_01' AND research_id = 'research_01' AND research_version = 1 AND freshness = 'fresh';"
+)" -eq 1
 test "$(
     sqlite3 "$database" \
         "SELECT count(*) FROM sqlite_schema WHERE type = 'table' AND name = 'workspace_invitations';"
