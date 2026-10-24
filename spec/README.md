@@ -20,6 +20,13 @@ The response must validate against `discovery.schema.json`. Discovery describes 
 
 `openapi.yaml` defines the versioned HTTP surface. The initial contract is deliberately narrow and grows only after the corresponding application use case and security invariants exist.
 
+`mobile-share-openapi.yaml` defines the separate least-privileged boundary for
+content a user explicitly selects in a companion app or platform share
+extension. Its body signature authenticates exact bytes and grants no memory
+read authority. `examples/mobile-share-request.json` is a secret-free envelope
+fixture; its timestamp is illustrative and clients must generate current
+values.
+
 ## MCP
 
 `mcp.md` maps application use cases to tools, resources, prompts, connection identity, permissions, and safety annotations. MCP parameters deliberately exclude canonical workspace and subject identity.

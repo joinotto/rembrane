@@ -465,4 +465,27 @@ mod tests {
             MobileShareHttpStatus::Unauthorized
         );
     }
+
+    #[test]
+    fn published_protocol_fixture_is_executable() {
+        let secret = vec![7; 32];
+        let payload = include_bytes!("../../../spec/examples/mobile-share-request.json");
+        let key = hmac::Key::new(hmac::HMAC_SHA256, &secret);
+        let signature = format!("sha256={}", encode_hex(hmac::sign(&key, payload).as_ref()));
+        let mut repository = Repository::default();
+        let admitted = MobileShareVerifier::new(secret, vec![9; 32])
+            .expect("fixture verifier should initialize")
+            .ingest(
+                &mut repository,
+                &signature,
+                payload,
+                1_792_867_200,
+                300,
+                600,
+                10,
+            )
+            .expect("published fixture should remain compatible")
+            .expect("published fixture should admit");
+        assert_eq!(admitted.event_id(), "share_01");
+    }
 }

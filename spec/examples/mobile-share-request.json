@@ -1,0 +1,7 @@
+{
+  "account_id": "account_01",
+  "device_id": "device_01",
+  "event_id": "share_01",
+  "text": "Continue this task in another assistant",
+  "shared_at_epoch_seconds": 1792867200
+}

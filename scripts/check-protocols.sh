@@ -19,6 +19,7 @@ ruby -e 'require "yaml"; YAML.load_file(ARGV.fetch(0))' spec/openapi.yaml
 ruby -e 'require "yaml"; YAML.load_file(ARGV.fetch(0))' spec/provider-openapi.yaml
 ruby -e 'require "yaml"; YAML.load_file(ARGV.fetch(0))' spec/key-provider-openapi.yaml
 ruby -e 'require "yaml"; YAML.load_file(ARGV.fetch(0))' spec/memory-provider-openapi.yaml
+ruby -e 'require "yaml"; YAML.load_file(ARGV.fetch(0))' spec/mobile-share-openapi.yaml
 jq empty \
     spec/discovery.schema.json \
     spec/memory-provider.schema.json \
@@ -78,6 +79,27 @@ jq -e '
     and (."$defs".pushSyncMutation.oneOf[0].properties | has("sequence") | not)
     and (."$defs".pushSyncMutation.oneOf[1].required | index("expectedVersion") != null)
 ' spec/memory-provider.schema.json >/dev/null
+
+if ! rg -F '/v1/shares:' spec/mobile-share-openapi.yaml >/dev/null ||
+    ! rg -F 'X-Rembrane-Signature-256' spec/mobile-share-openapi.yaml >/dev/null ||
+    ! rg -F 'additionalProperties: false' spec/mobile-share-openapi.yaml >/dev/null ||
+    ! rg -F 'shared_at_epoch_seconds' spec/mobile-share-openapi.yaml >/dev/null
+then
+    echo "mobile-share protocol is missing strict authenticated envelope invariants" >&2
+    exit 1
+fi
+
+ruby -rjson -e '
+request = JSON.parse(File.read(ARGV.fetch(0)))
+required = %w[account_id device_id event_id text shared_at_epoch_seconds]
+abort("mobile-share example fields differ") unless request.keys.sort == required.sort
+required.first(4).each do |field|
+  value = request.fetch(field)
+  abort("mobile-share example string is invalid") unless value.is_a?(String) && !value.empty?
+end
+timestamp = request.fetch("shared_at_epoch_seconds")
+abort("mobile-share example time is invalid") unless timestamp.is_a?(Integer) && timestamp.positive?
+' spec/examples/mobile-share-request.json
 
 jq -e '
     .protocolVersion == "0.1"

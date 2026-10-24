@@ -22,6 +22,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - A Swift mobile-share client with an injectable signer boundary so iOS apps
   and share extensions can keep signing keys in platform-controlled storage
   while sending only explicit user-selected content.
+- A versioned OpenAPI contract and validated secret-free request fixture for
+  independent explicit-share clients, including exact-body signature and
+  non-enumerating response semantics.
 - A Ring-backed WhatsApp Business webhook boundary that authenticates the raw
   bounded payload before parsing, extracts bounded text events, and derives
   domain-separated keyed account/sender lookup fingerprints.
