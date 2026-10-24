@@ -1,0 +1,19 @@
+{
+  "id": "rembrane.native",
+  "version": "0.1.0-alpha.1",
+  "protocolVersion": "0.1",
+  "capabilities": [
+    "index",
+    "search",
+    "delete",
+    "workspace-filter",
+    "versioned-records",
+    "health-check"
+  ],
+  "plaintextProcessing": true,
+  "limits": {
+    "maximumBatchItems": 1,
+    "maximumContentBytes": 262144,
+    "maximumCandidates": 1000
+  }
+}

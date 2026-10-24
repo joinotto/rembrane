@@ -5,7 +5,7 @@
 //! serializable deployment policy.
 
 use rembrane_domain::{ActivityId, EntityId, ReadScope};
-use rembrane_provider_sdk::{Capability, ProviderPolicy};
+use rembrane_provider_sdk::{CURRENT_PROVIDER_PROTOCOL, Capability, ProviderPolicy};
 use std::error::Error;
 use std::fmt::{self, Display};
 
@@ -199,6 +199,7 @@ impl DeploymentPolicy {
             || placement == ProviderPlacement::TrustedBoundary;
 
         ProviderPolicy {
+            minimum_protocol_version: CURRENT_PROVIDER_PROTOCOL,
             required_capabilities,
             allow_plaintext_processing,
         }

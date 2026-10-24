@@ -8,9 +8,12 @@ use std::collections::BTreeSet;
 
 use rembrane_domain::{MemoryId, WorkspaceId};
 use rembrane_provider_sdk::{
-    AuthorizedMemoryProjection, CandidateMemory, Capability, ProviderError, ProviderManifest,
-    SemanticMemoryProvider, SemanticQuery,
+    AuthorizedMemoryProjection, CURRENT_PROVIDER_PROTOCOL, CandidateMemory, Capability,
+    ProviderError, ProviderLimits, ProviderManifest, SemanticMemoryProvider, SemanticQuery,
 };
+
+const MAXIMUM_CONTENT_BYTES: usize = 262_144;
+const MAXIMUM_CANDIDATES: usize = 1_000;
 
 #[derive(Debug, Default)]
 pub struct NativeSemanticProvider {
@@ -29,6 +32,7 @@ impl SemanticMemoryProvider for NativeSemanticProvider {
         ProviderManifest {
             id: "rembrane.native".to_owned(),
             version: env!("CARGO_PKG_VERSION").to_owned(),
+            protocol_version: CURRENT_PROVIDER_PROTOCOL,
             capabilities: vec![
                 Capability::Index,
                 Capability::Search,
@@ -38,6 +42,11 @@ impl SemanticMemoryProvider for NativeSemanticProvider {
                 Capability::HealthCheck,
             ],
             plaintext_processing: true,
+            limits: ProviderLimits {
+                maximum_batch_items: 1,
+                maximum_content_bytes: MAXIMUM_CONTENT_BYTES,
+                maximum_candidates: MAXIMUM_CANDIDATES,
+            },
         }
     }
 
@@ -45,6 +54,11 @@ impl SemanticMemoryProvider for NativeSemanticProvider {
         if projection.content.trim().is_empty() {
             return Err(ProviderError::Rejected(
                 "empty content cannot be indexed".to_owned(),
+            ));
+        }
+        if projection.content.len() > MAXIMUM_CONTENT_BYTES {
+            return Err(ProviderError::Rejected(
+                "content exceeds provider limit".to_owned(),
             ));
         }
 
@@ -57,9 +71,9 @@ impl SemanticMemoryProvider for NativeSemanticProvider {
     }
 
     fn search(&self, query: &SemanticQuery) -> Result<Vec<CandidateMemory>, ProviderError> {
-        if query.maximum_candidates == 0 {
+        if query.maximum_candidates == 0 || query.maximum_candidates > MAXIMUM_CANDIDATES {
             return Err(ProviderError::Rejected(
-                "maximum_candidates must be greater than zero".to_owned(),
+                "maximum_candidates is outside provider limits".to_owned(),
             ));
         }
 

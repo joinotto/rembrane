@@ -103,6 +103,8 @@ This roadmap describes sequencing, not release dates.
 
 ## Phase 5 — Integration ecosystem
 
+- [x] Versioned pre-alpha provider manifest with capability, privacy, and
+  request-limit negotiation.
 - [ ] Stable Memory Provider Protocol.
 - [ ] TypeScript, Python, Rust, Swift, and Kotlin SDKs.
 - [ ] Compatibility registry and conformance suite.

@@ -31,6 +31,15 @@ manifest emitted by `rembrane mcp-config --client generic`. Launchers resolve
 the listed environment variables inside the operator-controlled environment;
 the manifest never contains their values.
 
+## Provider adapter manifest
+
+`provider-manifest.schema.json` defines capability negotiation between the
+canonical Rembrane core and replaceable semantic providers such as native,
+Mem0, or Graphiti adapters. Providers declare their protocol version, explicit
+capabilities, plaintext-processing behavior, and hard request limits. Missing
+security capabilities, incompatible protocol versions, and zero limits fail
+closed before projection work begins.
+
 ## Design rules
 
 - Canonical identifiers are opaque strings.

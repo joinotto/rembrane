@@ -19,6 +19,8 @@ ruby -e 'require "yaml"; YAML.load_file(ARGV.fetch(0))' spec/openapi.yaml
 jq empty \
     spec/discovery.schema.json \
     spec/examples/discovery.json \
+    spec/examples/provider-manifest.json \
+    spec/provider-manifest.schema.json \
     spec/stdio-connection-manifest.schema.json \
     tests/postman/rembrane-local.postman_collection.json
 node --check scripts/test-mcp-e2e.mjs

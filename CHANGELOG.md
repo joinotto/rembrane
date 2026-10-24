@@ -35,6 +35,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Atomic canonical mutation ports and an in-memory reference adapter.
 - Native semantic baseline with authorization revalidation.
 - Provider capability verification and retry/quarantine projection worker.
+- Provider protocol `0.1` negotiation with explicit compatibility checks,
+  plaintext-processing disclosure, non-zero request limits, and a
+  vendor-neutral JSON Schema/example for external adapters.
 - Versioned discovery, OpenAPI, and MCP protocol specifications.
 - Tenant-isolated SQLite canonical schema with encrypted-payload metadata.
 - Versioned SQLite initialization with legacy-schema adoption, idempotent

@@ -7,8 +7,8 @@ use rembrane_domain::{
     ProjectionStatus, ProviderId, WorkspaceId,
 };
 use rembrane_provider_sdk::{
-    AuthorizedMemoryProjection, CandidateMemory, Capability, ProviderError, ProviderManifest,
-    SemanticMemoryProvider, SemanticQuery,
+    AuthorizedMemoryProjection, CURRENT_PROVIDER_PROTOCOL, CandidateMemory, Capability,
+    ProviderError, ProviderLimits, ProviderManifest, SemanticMemoryProvider, SemanticQuery,
 };
 use rembrane_semantic_native::NativeSemanticProvider;
 use rembrane_store_memory::InMemoryStore;
@@ -163,6 +163,7 @@ impl SemanticMemoryProvider for FailingProvider {
         ProviderManifest {
             id: "rembrane.native".to_owned(),
             version: "test".to_owned(),
+            protocol_version: CURRENT_PROVIDER_PROTOCOL,
             capabilities: vec![
                 Capability::Index,
                 Capability::Search,
@@ -171,6 +172,11 @@ impl SemanticMemoryProvider for FailingProvider {
                 Capability::VersionedRecords,
             ],
             plaintext_processing: true,
+            limits: ProviderLimits {
+                maximum_batch_items: 1,
+                maximum_content_bytes: 262_144,
+                maximum_candidates: 1_000,
+            },
         }
     }
 
