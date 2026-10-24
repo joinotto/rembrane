@@ -151,6 +151,8 @@ This roadmap describes sequencing, not release dates.
       memory projection jobs.
     - [x] Persist graph projection jobs in SQLite with idempotent provider
       polling and optimistic transitions.
+    - [x] Process graph projections from exact canonical versions with
+      retry/quarantine handling.
     - [ ] Add Graphiti projection adapter.
 
 - [x] Project entities and scoped preferences.

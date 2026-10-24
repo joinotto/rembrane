@@ -7,6 +7,7 @@ mod authorize_client;
 mod booking_research;
 mod checkpoint;
 mod error;
+mod graph_projection_worker;
 mod invitation;
 mod member_lifecycle;
 mod member_scope;
@@ -29,6 +30,7 @@ pub use checkpoint::{
     CheckpointService, CreateCheckpointCommand, ResumeActivityCommand, UpdateCheckpointCommand,
 };
 pub use error::ApplicationError;
+pub use graph_projection_worker::GraphProjectionWorker;
 pub use invitation::{CreateInvitationCommand, InvitationService, RevokeInvitationCommand};
 pub use member_lifecycle::{MemberLifecycleService, RemoveMemberCommand};
 pub use member_scope::{
