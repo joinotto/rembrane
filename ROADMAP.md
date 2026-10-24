@@ -105,6 +105,8 @@ This roadmap describes sequencing, not release dates.
   - [x] Serve opt-in RFC 9728 protected-resource metadata from the HTTP
     service, requiring an exact HTTPS resource and authorization-server pair.
   - [x] Add a fail-closed verified-token claims contract.
+    - [x] Bound and reject ambiguous issuer, resource, audience, subject,
+      client, and workspace claims in the transport-neutral verifier contract.
   - [x] Add a transport-independent authentication boundary backed by a
     signature-verifying or authenticated-introspection adapter.
   - [x] Add an RFC 7662 authenticated-introspection adapter with a
