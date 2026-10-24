@@ -174,6 +174,8 @@ This roadmap describes sequencing, not release dates.
           Tower services need no blocking bridge or macro dependency.
         - [x] Compose owned Axum authorization and asynchronous dispatch in one
           operation with typed authorization-versus-transport failures.
+        - [x] Couple validated content negotiation and MCP protocol version
+          with identity, invocation, and body through owned dispatch.
   - [x] Allow the shared MCP handler service to initialize canonical
     subject/client/workspace identity exclusively from verified remote claims.
   - [x] Bind remote sessions to issuer, resource, canonical identity,

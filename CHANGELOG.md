@@ -24,6 +24,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Pre-authorization MCP content negotiation enforcing `application/json`
   requests and clients that accept both JSON and event-stream responses, with
   protocol-correct 415 and 406 failures.
+- Owned propagation of validated content type, response negotiation, and MCP
+  protocol version through the same authorization proof as tenant identity and
+  exact request bytes.
 - A transport-injectable Mem0 OSS semantic adapter mapping authorized
   projections into HMAC-pseudonymous workspace partitions while preserving
   canonical memory IDs, versions, replacement, bounded ranking, and

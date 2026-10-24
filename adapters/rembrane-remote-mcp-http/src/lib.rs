@@ -49,11 +49,44 @@ impl RemoteMcpInvocation {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RemoteMcpProtocolHeaders {
+    content_type: String,
+    accept: String,
+    protocol_version: Option<String>,
+}
+
+impl RemoteMcpProtocolHeaders {
+    #[must_use]
+    pub fn content_type(&self) -> &str {
+        &self.content_type
+    }
+
+    #[must_use]
+    pub fn accept(&self) -> &str {
+        &self.accept
+    }
+
+    #[must_use]
+    pub fn protocol_version(&self) -> Option<&str> {
+        self.protocol_version.as_deref()
+    }
+
+    fn transport_neutral() -> Self {
+        Self {
+            content_type: "application/json".to_owned(),
+            accept: "application/json, text/event-stream".to_owned(),
+            protocol_version: None,
+        }
+    }
+}
+
 /// One authorized MCP request whose identity, operation classification, and
 /// exact bounded body remain coupled until dispatch.
 pub struct AuthorizedRemoteMcpRequest {
     access: VerifiedRemoteAccess,
     invocation: RemoteMcpInvocation,
+    protocol_headers: RemoteMcpProtocolHeaders,
     body: Zeroizing<Vec<u8>>,
 }
 
@@ -71,6 +104,7 @@ pub trait AuthorizedRemoteMcpDispatcher {
         &self,
         access: VerifiedRemoteAccess,
         invocation: RemoteMcpInvocation,
+        protocol_headers: RemoteMcpProtocolHeaders,
         body: Zeroizing<Vec<u8>>,
     ) -> Self::DispatchFuture;
 }
@@ -90,6 +124,11 @@ impl AuthorizedRemoteMcpRequest {
     #[must_use]
     pub const fn invocation(&self) -> &RemoteMcpInvocation {
         &self.invocation
+    }
+
+    #[must_use]
+    pub const fn protocol_headers(&self) -> &RemoteMcpProtocolHeaders {
+        &self.protocol_headers
     }
 
     /// Returns only the exact bytes that passed classification and OAuth
@@ -112,9 +151,15 @@ impl AuthorizedRemoteMcpRequest {
     ) -> (
         VerifiedRemoteAccess,
         RemoteMcpInvocation,
+        RemoteMcpProtocolHeaders,
         Zeroizing<Vec<u8>>,
     ) {
-        (self.access, self.invocation, self.body)
+        (
+            self.access,
+            self.invocation,
+            self.protocol_headers,
+            self.body,
+        )
     }
 
     /// Consumes this proof and transfers it to one authorized transport
@@ -131,8 +176,10 @@ impl AuthorizedRemoteMcpRequest {
     where
         Dispatcher: AuthorizedRemoteMcpDispatcher,
     {
-        let (access, invocation, body) = self.into_dispatch_parts();
-        dispatcher.dispatch(access, invocation, body).await
+        let (access, invocation, protocol_headers, body) = self.into_dispatch_parts();
+        dispatcher
+            .dispatch(access, invocation, protocol_headers, body)
+            .await
     }
 }
 
@@ -248,16 +295,33 @@ pub fn request_from_axum_headers(
     let host = unique_header(headers, &HOST)?;
     let origin = unique_header(headers, &ORIGIN)?;
     let session_id = unique_header(headers, &MCP_SESSION_HEADER_NAME)?;
-    unique_header(headers, &MCP_PROTOCOL_VERSION_HEADER_NAME)?;
-    let content_type = unique_header(headers, &CONTENT_TYPE)?;
-    let accept = unique_header(headers, &ACCEPT)?;
-    require_json_content_type(content_type)?;
-    require_mcp_accept(accept)?;
+    protocol_headers_from_axum(headers)?;
     Ok(RemoteMcpHttpRequest {
         authorization,
         host,
         origin,
         session_id,
+    })
+}
+
+fn protocol_headers_from_axum(
+    headers: &HeaderMap,
+) -> Result<RemoteMcpProtocolHeaders, RemoteMcpHttpRejection> {
+    let content_type = unique_header(headers, &CONTENT_TYPE)?;
+    let accept = unique_header(headers, &ACCEPT)?;
+    let protocol_version = unique_header(headers, &MCP_PROTOCOL_VERSION_HEADER_NAME)?;
+    require_json_content_type(content_type)?;
+    require_mcp_accept(accept)?;
+    if content_type.is_some_and(|value| value.len() > 256)
+        || accept.is_some_and(|value| value.len() > 1_024)
+        || protocol_version.is_some_and(|value| value.len() > 64)
+    {
+        return Err(RemoteMcpHttpGate::forbidden());
+    }
+    Ok(RemoteMcpProtocolHeaders {
+        content_type: content_type.unwrap_or_default().to_owned(),
+        accept: accept.unwrap_or_default().to_owned(),
+        protocol_version: protocol_version.map(str::to_owned),
     })
 }
 
@@ -339,12 +403,15 @@ pub fn authorize_axum_stateless_body<Verifier>(
 where
     Verifier: RemoteTokenVerifier,
 {
-    gate.authorize_stateless_body(
+    let protocol_headers = protocol_headers_from_axum(headers)?;
+    let mut authorized = gate.authorize_stateless_body(
         authorization,
         request_from_axum_headers(headers)?,
         body,
         now_epoch_seconds,
-    )
+    )?;
+    authorized.protocol_headers = protocol_headers;
+    Ok(authorized)
 }
 
 /// Owned authorization service suitable for Axum router state.
@@ -637,6 +704,7 @@ impl RemoteMcpHttpGate {
         Ok(AuthorizedRemoteMcpRequest {
             access,
             invocation,
+            protocol_headers: RemoteMcpProtocolHeaders::transport_neutral(),
             body: Zeroizing::new(body.to_vec()),
         })
     }
@@ -780,8 +848,19 @@ mod tests {
 
     struct RecordingDispatcher;
 
+    #[derive(Debug, Eq, PartialEq)]
+    struct RecordedDispatch {
+        workspace: String,
+        method: String,
+        tool_name: Option<String>,
+        content_type: String,
+        accept: String,
+        protocol_version: Option<String>,
+        body: Vec<u8>,
+    }
+
     impl AuthorizedRemoteMcpDispatcher for RecordingDispatcher {
-        type Output = (String, String, Option<String>, Vec<u8>);
+        type Output = RecordedDispatch;
         type Error = std::convert::Infallible;
         type DispatchFuture = std::future::Ready<Result<Self::Output, Self::Error>>;
 
@@ -789,14 +868,18 @@ mod tests {
             &self,
             access: rembrane_contracts::VerifiedRemoteAccess,
             invocation: RemoteMcpInvocation,
+            protocol_headers: super::RemoteMcpProtocolHeaders,
             body: zeroize::Zeroizing<Vec<u8>>,
         ) -> Self::DispatchFuture {
-            std::future::ready(Ok((
-                access.workspace_id().to_string(),
-                invocation.method().to_owned(),
-                invocation.tool_name().map(str::to_owned),
-                body.as_slice().to_vec(),
-            )))
+            std::future::ready(Ok(RecordedDispatch {
+                workspace: access.workspace_id().to_string(),
+                method: invocation.method().to_owned(),
+                tool_name: invocation.tool_name().map(str::to_owned),
+                content_type: protocol_headers.content_type().to_owned(),
+                accept: protocol_headers.accept().to_owned(),
+                protocol_version: protocol_headers.protocol_version().map(str::to_owned),
+                body: body.as_slice().to_vec(),
+            }))
         }
     }
 
@@ -1109,10 +1192,16 @@ mod tests {
             .dispatch_with(&RecordingDispatcher)
             .await
             .expect("authorized dispatch cannot fail");
-        assert_eq!(dispatched.0, "workspace_01");
-        assert_eq!(dispatched.1, "tools/call");
-        assert_eq!(dispatched.2.as_deref(), Some("rembrane_resolve_context"));
-        assert_eq!(dispatched.3, body);
+        assert_eq!(dispatched.workspace, "workspace_01");
+        assert_eq!(dispatched.method, "tools/call");
+        assert_eq!(
+            dispatched.tool_name.as_deref(),
+            Some("rembrane_resolve_context")
+        );
+        assert_eq!(dispatched.content_type, "application/json");
+        assert_eq!(dispatched.accept, "application/json, text/event-stream");
+        assert_eq!(dispatched.protocol_version, None);
+        assert_eq!(dispatched.body, body);
 
         let travel_body = br#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"rembrane_create_trip","arguments":{}}}"#;
         assert_eq!(
@@ -1235,10 +1324,16 @@ mod tests {
             Some("rembrane_resolve_context")
         );
         assert_eq!(authorized.body(), body);
-        let (access, invocation, dispatched_body) = authorized.into_dispatch_parts();
+        let (access, invocation, protocol_headers, dispatched_body) =
+            authorized.into_dispatch_parts();
         assert_eq!(access.workspace_id().as_str(), "workspace_01");
         assert_eq!(invocation.method(), "tools/call");
         assert_eq!(invocation.tool_name(), Some("rembrane_resolve_context"));
+        assert_eq!(protocol_headers.content_type(), "application/json");
+        assert_eq!(
+            protocol_headers.accept(),
+            "application/json, text/event-stream"
+        );
         assert_eq!(dispatched_body.as_slice(), body);
 
         headers.insert(
@@ -1368,8 +1463,10 @@ mod tests {
             .authorize_and_dispatch(&headers, body, 1_000, &RecordingDispatcher)
             .await
             .expect("authorized request should dispatch");
-        assert_eq!(dispatched.0, "workspace_02");
-        assert_eq!(dispatched.3, body);
+        assert_eq!(dispatched.workspace, "workspace_02");
+        assert_eq!(dispatched.content_type, "application/json");
+        assert_eq!(dispatched.accept, "application/json, text/event-stream");
+        assert_eq!(dispatched.body, body);
 
         headers.insert(AUTHORIZATION, HeaderValue::from_static("Bearer invalid"));
         let error = authorization
