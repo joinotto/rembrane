@@ -46,6 +46,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   compatibility, version fidelity, workspace isolation, declared result
   limits, and deletion propagation, with native-provider and adversarial
   reference tests.
+- Evidence-backed provider compatibility registry with a versioned JSON
+  Schema, pinned source revisions, explicit deployment/privacy boundaries,
+  dated conformance results, and static duplicate/evidence validation.
 - Versioned discovery, OpenAPI, and MCP protocol specifications.
 - Tenant-isolated SQLite canonical schema with encrypted-payload metadata.
 - Versioned SQLite initialization with legacy-schema adoption, idempotent

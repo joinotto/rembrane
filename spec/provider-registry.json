@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-10-24T00:00:00Z",
+  "providers": [
+    {
+      "id": "rembrane.native",
+      "adapterVersion": "0.1.0-alpha.1",
+      "source": {
+        "repository": "https://github.com/mesh-ai-labs/rembrane",
+        "revision": "362c1e8"
+      },
+      "protocolVersions": ["0.1"],
+      "deploymentModes": ["embedded", "local-service", "self-hosted"],
+      "plaintextProcessing": true,
+      "status": "experimental",
+      "conformance": {
+        "result": "pass",
+        "testedAt": "2026-10-24T00:00:00Z",
+        "suiteVersion": "0.1.0-alpha.1",
+        "notes": "Passes the reusable in-process semantic-provider conformance suite. Pre-alpha status is not a security certification."
+      }
+    }
+  ]
+}

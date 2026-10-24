@@ -46,6 +46,12 @@ shared harness verifies manifest compatibility, version fidelity, workspace
 isolation, declared result limits, and deletion propagation using a temporary
 fixture namespace.
 
+`provider-registry.schema.json` defines the public compatibility registry, and
+`provider-registry.json` is the repository-maintained registry instance.
+Registry entries are evidence records, not endorsements: they pin the tested
+adapter revision, protocol versions, deployment and plaintext boundaries, and
+dated conformance result. A passing entry is not a security certification.
+
 ## Design rules
 
 - Canonical identifiers are opaque strings.
