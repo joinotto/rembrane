@@ -31,6 +31,34 @@ Workspace and subject identifiers are intentionally absent from tool arguments.
 
 ## Tools
 
+### `rembrane_capture_booking_research`
+
+Captures one encrypted, time-bounded research observation under an exact trip
+entity grant. Workspace, subject, client identity, record IDs, and canonical
+event sequence are server-controlled. The tool requires
+`booking-research:capture`.
+
+Arguments:
+
+- `tripId`
+- `kind`: `flight`, `lodging`, `ground-transport`, `activity`, or `other`
+- `provider`
+- `summary`
+- `sourceReference` (opaque; must not contain credentials)
+- `evidenceSource`
+- `observedAt` and `expiresAt` as canonical UTC timestamps
+
+Annotations:
+
+```json
+{
+  "readOnlyHint": false,
+  "destructiveHint": false,
+  "idempotentHint": false,
+  "openWorldHint": false
+}
+```
+
 ### `rembrane_resolve_context`
 
 Retrieves the minimum confirmed context authorized for the current client and purpose.

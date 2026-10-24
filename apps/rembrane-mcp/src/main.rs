@@ -3,19 +3,21 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
 use rembrane_application::{
-    AuthorizeClientCommand, AuthorizeClientService, CheckpointService, ClientGrantBundle,
-    CreateCheckpointCommand, DeleteMemoryCommand, EventRepository, MemoryLifecycleService,
-    MemoryProposalService, ProposeMemoryCommand, RememberPreferenceCommand,
-    RememberPreferenceService, ResolveContextCommand, ResolveContextService, ResumeActivityCommand,
-    ReviseMemoryCommand, UpdateCheckpointCommand,
+    AuthorizeClientCommand, AuthorizeClientService, CaptureBookingResearchCommand,
+    CaptureBookingResearchService, CheckpointService, ClientGrantBundle, CreateCheckpointCommand,
+    DeleteMemoryCommand, EventRepository, MemoryLifecycleService, MemoryProposalService,
+    ProposeMemoryCommand, RememberPreferenceCommand, RememberPreferenceService,
+    ResolveContextCommand, ResolveContextService, ResumeActivityCommand, ReviseMemoryCommand,
+    UpdateCheckpointCommand,
 };
 use rembrane_config::parse_read_scopes;
 use rembrane_contracts::ResolveContextRequest;
 use rembrane_crypto_rustcrypto::RustCryptoRecordCipher;
 use rembrane_domain::{
-    ActivityCheckpoint, ActivityId, CheckpointId, ClientId, ContextPackId, DisclosureId, EntityId,
-    EventId, EvidenceId, EvidenceReference, EvidenceSource, MemoryId, MemoryKind, MemoryScope,
-    PrincipalId, ReadScope, WorkspaceId, WritePermission,
+    ActivityCheckpoint, ActivityId, BookingResearch, BookingResearchId, BookingResearchKind,
+    CheckpointId, ClientId, ContextPackId, DisclosureId, EntityId, EventId, EvidenceId,
+    EvidenceReference, EvidenceSource, MemoryId, MemoryKind, MemoryScope, PrincipalId, ReadScope,
+    WorkspaceId, WritePermission,
 };
 use rembrane_store_sqlite::SqliteStore;
 use rmcp::handler::server::wrapper::Parameters;
@@ -115,6 +117,28 @@ struct CheckpointParameters {
 struct ResumeActivityParameters {
     activity_id: String,
     current_state_fingerprint: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct CaptureBookingResearchParameters {
+    trip_id: String,
+    kind: String,
+    provider: String,
+    summary: String,
+    source_reference: String,
+    evidence_source: String,
+    observed_at: String,
+    expires_at: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BookingResearchOutput {
+    research_id: String,
+    trip_id: String,
+    version: u64,
+    expires_at: String,
 }
 
 #[derive(Serialize)]
@@ -558,6 +582,67 @@ impl RembraneMcp {
     }
 
     #[tool(
+        name = "rembrane_capture_booking_research",
+        description = "Capture one encrypted, expiring, evidence-backed observation for an authorized trip."
+    )]
+    fn capture_booking_research(
+        &self,
+        Parameters(parameters): Parameters<CaptureBookingResearchParameters>,
+    ) -> Result<String, McpError> {
+        let kind = parse_research_kind(&parameters.kind).ok_or_else(|| {
+            McpError::invalid_params(
+                "kind must be flight, lodging, ground-transport, activity, or other",
+                None,
+            )
+        })?;
+        let evidence_source = parse_evidence_source(&parameters.evidence_source)
+            .ok_or_else(|| McpError::invalid_params("evidenceSource is unsupported", None))?;
+        let mut state = lock_state(&self.state)?;
+        let trip_id = EntityId::new(parameters.trip_id);
+        let grants = authorize(
+            &state,
+            vec![ReadScope::Entity {
+                id: trip_id.clone(),
+            }],
+            vec![WritePermission::CaptureBookingResearch],
+        )?;
+        let previous_sequence = current_sequence(&state)?;
+        let suffix = next_id(&mut state);
+        let research = BookingResearch::new(
+            BookingResearchId::new(format!("research_{suffix}")),
+            state.workspace_id.clone(),
+            trip_id,
+            state.principal_id.clone(),
+            kind,
+            parameters.provider,
+            parameters.summary,
+            parameters.source_reference,
+            EvidenceReference::new(
+                EvidenceId::new(format!("evidence_{suffix}")),
+                evidence_source,
+            ),
+            parameters.observed_at,
+            parameters.expires_at,
+        )
+        .map_err(|_| McpError::invalid_params("invalid booking research", None))?;
+        let captured = CaptureBookingResearchService::new(&mut state.store)
+            .execute(CaptureBookingResearchCommand {
+                grant: grants.write,
+                research,
+                event_id: EventId::new(format!("event_{suffix}")),
+                expected_previous_sequence: previous_sequence,
+            })
+            .map_err(application_error)?;
+        serde_json::to_string(&BookingResearchOutput {
+            research_id: captured.id().to_string(),
+            trip_id: captured.trip_id().to_string(),
+            version: captured.version(),
+            expires_at: captured.expires_at().to_owned(),
+        })
+        .map_err(|_| McpError::internal_error("response serialization failed", None))
+    }
+
+    #[tool(
         name = "rembrane_resume_activity",
         description = "Retrieve the latest encrypted checkpoint for one authorized activity."
     )]
@@ -599,6 +684,28 @@ impl RembraneMcp {
                 )
             },
         )
+    }
+}
+
+fn parse_research_kind(value: &str) -> Option<BookingResearchKind> {
+    match value {
+        "flight" => Some(BookingResearchKind::Flight),
+        "lodging" => Some(BookingResearchKind::Lodging),
+        "ground-transport" => Some(BookingResearchKind::GroundTransport),
+        "activity" => Some(BookingResearchKind::Activity),
+        "other" => Some(BookingResearchKind::Other),
+        _ => None,
+    }
+}
+
+fn parse_evidence_source(value: &str) -> Option<EvidenceSource> {
+    match value {
+        "user-statement" => Some(EvidenceSource::UserStatement),
+        "agent-observation" => Some(EvidenceSource::AgentObservation),
+        "tool-result" => Some(EvidenceSource::ToolResult),
+        "imported-record" => Some(EvidenceSource::ImportedRecord),
+        "workspace-decision" => Some(EvidenceSource::WorkspaceDecision),
+        _ => None,
     }
 }
 

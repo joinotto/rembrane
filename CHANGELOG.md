@@ -37,6 +37,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Authenticated `POST /v1/travel/booking-research` API contract and server
   handler with connection-grant enforcement, strict research validation, and
   conflict-aware responses.
+- `rembrane_capture_booking_research` MCP tool with server-assigned canonical
+  identifiers, exact trip grants, evidence attribution, and expiry validation.
 - Rust modular-monolith workspace with provider-independent domain and
   application layers.
 - Canonical memory, provenance, event, disclosure, membership, grant,
