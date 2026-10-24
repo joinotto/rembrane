@@ -37,12 +37,12 @@ pub use member_scope::{
     GrantMemberScopeCommand, MemberScopeGrantService, RevokeMemberScopeCommand,
 };
 pub use ports::{
-    BookingResearchMutationRepository, BookingResearchRepository, CanonicalMutationRepository,
-    CheckpointDisclosureRepository, CheckpointMutationRepository, CheckpointRepository,
-    DisclosureRepository, EventRepository, GraphProjectionOutboxRepository, InvitationRepository,
-    KnowledgeDirection, KnowledgeGraphMutationRepository, KnowledgeGraphRepository,
-    MAX_KNOWLEDGE_NEIGHBOURS, MemberLifecycleRepository, MemberScopeGrantRepository,
-    MembershipRepository, MemoryRepository, ProjectionOutboxRepository,
+    BookingResearchMutationRepository, BookingResearchRepository, CanonicalGraphMutationRepository,
+    CanonicalMutationRepository, CheckpointDisclosureRepository, CheckpointMutationRepository,
+    CheckpointRepository, DisclosureRepository, EventRepository, GraphProjectionOutboxRepository,
+    InvitationRepository, KnowledgeDirection, KnowledgeGraphMutationRepository,
+    KnowledgeGraphRepository, MAX_KNOWLEDGE_NEIGHBOURS, MemberLifecycleRepository,
+    MemberScopeGrantRepository, MembershipRepository, MemoryRepository, ProjectionOutboxRepository,
     ShareProposalMutationRepository, ShareProposalRepository, TravelDisclosureRepository,
     TripMutationRepository, TripRepository, WorkspaceRepository,
 };

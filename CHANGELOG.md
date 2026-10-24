@@ -46,6 +46,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Graph projection worker that re-reads exact canonical node/edge versions,
   skips stale jobs, and applies retry, quarantine, and completion transitions
   to replaceable providers.
+- Atomic canonical graph mutation port requiring node/edge persistence and all
+  corresponding provider projection jobs to share one transaction boundary.
 - Authenticated key-provider HTTP adapter using Rustls, bounded response reads,
   disabled redirects and environment proxies, zeroized bearer credentials,
   strict JSON/base64 decoding, and HTTPS except for exact loopback origins.

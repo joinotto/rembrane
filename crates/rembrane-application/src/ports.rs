@@ -73,6 +73,36 @@ pub trait KnowledgeGraphMutationRepository: KnowledgeGraphRepository {
     ) -> Result<(), ApplicationError>;
 }
 
+pub trait CanonicalGraphMutationRepository:
+    KnowledgeGraphMutationRepository + GraphProjectionOutboxRepository
+{
+    fn insert_knowledge_node_with_projections(
+        &mut self,
+        node: KnowledgeNode,
+        projections: Vec<GraphProjectionJob>,
+    ) -> Result<(), ApplicationError>;
+
+    fn replace_knowledge_node_with_projections(
+        &mut self,
+        node: KnowledgeNode,
+        expected_version: u64,
+        projections: Vec<GraphProjectionJob>,
+    ) -> Result<(), ApplicationError>;
+
+    fn insert_knowledge_edge_with_projections(
+        &mut self,
+        edge: KnowledgeEdge,
+        projections: Vec<GraphProjectionJob>,
+    ) -> Result<(), ApplicationError>;
+
+    fn replace_knowledge_edge_with_projections(
+        &mut self,
+        edge: KnowledgeEdge,
+        expected_version: u64,
+        projections: Vec<GraphProjectionJob>,
+    ) -> Result<(), ApplicationError>;
+}
+
 pub trait DisclosureRepository {
     fn append(&mut self, receipt: DisclosureReceipt) -> Result<(), ApplicationError>;
 }

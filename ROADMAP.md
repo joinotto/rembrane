@@ -153,6 +153,9 @@ This roadmap describes sequencing, not release dates.
       polling and optimistic transitions.
     - [x] Process graph projections from exact canonical versions with
       retry/quarantine handling.
+    - [ ] Commit canonical graph mutations and projection jobs atomically.
+      - [x] Define the atomic application repository contract.
+      - [ ] Implement in-memory and SQLite transaction adapters.
     - [ ] Add Graphiti projection adapter.
 
 - [x] Project entities and scoped preferences.
