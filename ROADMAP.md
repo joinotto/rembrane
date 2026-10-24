@@ -109,7 +109,8 @@ This roadmap describes sequencing, not release dates.
   boundaries.
 - [ ] Stable Memory Provider Protocol.
 - [ ] TypeScript, Python, Rust, Swift, and Kotlin SDKs.
-- [ ] Compatibility registry and conformance suite.
+- [x] Reusable semantic-provider conformance suite.
+- [ ] Provider compatibility registry.
 - [ ] WhatsApp Business gateway.
 - [ ] Mobile share flows and iMessage extension.
 - [ ] Community provider and agent adapters.

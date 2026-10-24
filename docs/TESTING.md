@@ -32,6 +32,17 @@ The suite performs:
 5. MCP stdio initialization and tool invocation;
 6. REST authentication and tenant-isolation checks through Postman.
 
+Provider authors should also run the shared Rust conformance harness against a
+disposable provider tenant:
+
+```text
+verify_semantic_provider(&mut provider, "unique-test-namespace")
+```
+
+The harness writes and deletes one fixture while checking protocol
+compatibility, exact record versions, workspace isolation, result limits, and
+deletion propagation.
+
 ## Manual local setup
 
 Build binaries:

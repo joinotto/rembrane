@@ -5,6 +5,7 @@
 //! that the canonical core re-authorizes before disclosure.
 
 mod capability;
+mod conformance;
 mod error;
 mod semantic;
 
@@ -12,6 +13,7 @@ pub use capability::{
     CURRENT_PROVIDER_PROTOCOL, Capability, ProviderLimits, ProviderManifest, ProviderPolicy,
     ProviderProtocolVersion,
 };
+pub use conformance::{ConformanceFailure, verify_semantic_provider};
 pub use error::ProviderError;
 pub use semantic::{
     AuthorizedMemoryProjection, CandidateMemory, SemanticMemoryProvider, SemanticQuery,

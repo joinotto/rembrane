@@ -40,6 +40,12 @@ capabilities, plaintext-processing behavior, and hard request limits. Missing
 security capabilities, incompatible protocol versions, and zero limits fail
 closed before projection work begins.
 
+Rust adapters can run `verify_semantic_provider` from
+`rembrane-provider-sdk` against a disposable provider instance or tenant. The
+shared harness verifies manifest compatibility, version fidelity, workspace
+isolation, declared result limits, and deletion propagation using a temporary
+fixture namespace.
+
 ## Design rules
 
 - Canonical identifiers are opaque strings.

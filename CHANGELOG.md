@@ -42,6 +42,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   or undersized providers before processing, semantic queries are bounded by
   declared limits, and excessive or malformed candidates fail before
   disclosure auditing.
+- Reusable semantic-provider conformance harness covering manifest
+  compatibility, version fidelity, workspace isolation, declared result
+  limits, and deletion propagation, with native-provider and adversarial
+  reference tests.
 - Versioned discovery, OpenAPI, and MCP protocol specifications.
 - Tenant-isolated SQLite canonical schema with encrypted-payload metadata.
 - Versioned SQLite initialization with legacy-schema adoption, idempotent
