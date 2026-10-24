@@ -62,6 +62,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Reconciled roadmap completion state with existing workspace, Graphiti,
   Memory Provider, key-provider, and SQLite CI gates so remaining checkboxes
   represent unimplemented or externally gated work.
+- Added a pinned Ubuntu 24.04 Kotlin SDK job that requires the hosted
+  `kotlinc` and Java toolchains and executes the portable compiler smoke test.
 - A versioned per-workspace retention policy contract with separate periods
   for memory, checkpoints, travel research, disclosures, canonical events, and
   administrative audit, including bounded expiry and legal-hold overrides.

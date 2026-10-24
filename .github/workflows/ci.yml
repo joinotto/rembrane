@@ -91,6 +91,17 @@ jobs:
           --package rembrane-memory-provider-configured
           --all-targets -- -D warnings
 
+  kotlin-sdk:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require the runner Kotlin toolchain
+        run: |
+          command -v kotlinc
+          command -v java
+          kotlinc -version
+      - run: ./scripts/test-kotlin-sdk.sh
+
   container:
     runs-on: ubuntu-latest
     steps:
