@@ -10,7 +10,9 @@ use std::future::Future;
 use axum::{
     http::{
         HeaderMap, HeaderName, HeaderValue, StatusCode,
-        header::{AUTHORIZATION, HOST, ORIGIN, RETRY_AFTER, WWW_AUTHENTICATE},
+        header::{
+            ACCEPT, AUTHORIZATION, CONTENT_TYPE, HOST, ORIGIN, RETRY_AFTER, WWW_AUTHENTICATE,
+        },
     },
     response::{IntoResponse, Response},
 };
@@ -26,6 +28,8 @@ use zeroize::Zeroizing;
 pub const MCP_SESSION_HEADER: &str = "Mcp-Session-Id";
 pub const MAX_REMOTE_MCP_REQUEST_BYTES: usize = 1_048_576;
 const MCP_SESSION_HEADER_NAME: HeaderName = HeaderName::from_static("mcp-session-id");
+const MCP_PROTOCOL_VERSION_HEADER_NAME: HeaderName =
+    HeaderName::from_static("mcp-protocol-version");
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RemoteMcpInvocation {
@@ -240,6 +244,9 @@ impl IntoResponse for RemoteMcpHttpRejection {
 pub fn request_from_axum_headers(
     headers: &HeaderMap,
 ) -> Result<RemoteMcpHttpRequest<'_>, RemoteMcpHttpRejection> {
+    unique_header(headers, &CONTENT_TYPE)?;
+    unique_header(headers, &ACCEPT)?;
+    unique_header(headers, &MCP_PROTOCOL_VERSION_HEADER_NAME)?;
     Ok(RemoteMcpHttpRequest {
         authorization: unique_header(headers, &AUTHORIZATION)?,
         host: unique_header(headers, &HOST)?,
@@ -694,7 +701,9 @@ mod tests {
         extract::State,
         http::{
             HeaderMap, HeaderValue, Request,
-            header::{AUTHORIZATION, HOST, ORIGIN, RETRY_AFTER, WWW_AUTHENTICATE},
+            header::{
+                ACCEPT, AUTHORIZATION, CONTENT_TYPE, HOST, ORIGIN, RETRY_AFTER, WWW_AUTHENTICATE,
+            },
         },
         response::IntoResponse,
         routing::post,
@@ -709,10 +718,10 @@ mod tests {
     use tower::ServiceExt;
 
     use super::{
-        AuthorizedRemoteMcpDispatcher, MCP_SESSION_HEADER_NAME, RemoteMcpAxumAuthorization,
-        RemoteMcpDispatchError, RemoteMcpHttpGate, RemoteMcpHttpRejection, RemoteMcpHttpRequest,
-        RemoteMcpInvocation, authorize_axum_stateless_body, classify_remote_mcp_request,
-        request_from_axum_headers,
+        AuthorizedRemoteMcpDispatcher, MCP_PROTOCOL_VERSION_HEADER_NAME, MCP_SESSION_HEADER_NAME,
+        RemoteMcpAxumAuthorization, RemoteMcpDispatchError, RemoteMcpHttpGate,
+        RemoteMcpHttpRejection, RemoteMcpHttpRequest, RemoteMcpInvocation,
+        authorize_axum_stateless_body, classify_remote_mcp_request, request_from_axum_headers,
     };
 
     struct Verifier;
@@ -1090,6 +1099,25 @@ mod tests {
             request_from_axum_headers(&headers).is_err(),
             "multiple host authorities must fail closed"
         );
+
+        headers = HeaderMap::new();
+        for (name, first, second) in [
+            (&CONTENT_TYPE, "application/json", "text/plain"),
+            (&ACCEPT, "application/json", "text/event-stream"),
+            (
+                &MCP_PROTOCOL_VERSION_HEADER_NAME,
+                "2025-03-26",
+                "2026-07-28",
+            ),
+        ] {
+            headers.insert(name, HeaderValue::from_str(first).expect("valid header"));
+            headers.append(name, HeaderValue::from_str(second).expect("valid header"));
+            assert!(
+                request_from_axum_headers(&headers).is_err(),
+                "ambiguous protocol header must fail closed"
+            );
+            headers.clear();
+        }
     }
 
     #[test]

@@ -158,6 +158,8 @@ This roadmap describes sequencing, not release dates.
         access, operation classification, and the exact zeroizing body buffer.
     - [x] Adapt Axum header maps and HTTP rejection responses at the outer
       boundary, rejecting duplicate security headers before SDK dispatch.
+      - [x] Reject ambiguous duplicate content negotiation and MCP protocol
+        version headers before authorizing the request body.
     - [x] Provide an owned Axum authorization service that reconstructs
       borrowing authenticators per request and preserves verified tenant
       identity through an in-memory HTTP router.

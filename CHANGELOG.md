@@ -19,6 +19,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - One owned Axum authorize-and-dispatch operation that consumes the exact
   request proof and preserves typed HTTP authorization versus SDK dispatch
   failures.
+- Fail-closed duplicate rejection for remote MCP `Content-Type`, `Accept`, and
+  `MCP-Protocol-Version` headers before OAuth body authorization.
 - A transport-injectable Mem0 OSS semantic adapter mapping authorized
   projections into HMAC-pseudonymous workspace partitions while preserving
   canonical memory IDs, versions, replacement, bounded ranking, and
