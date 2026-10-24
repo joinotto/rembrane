@@ -28,7 +28,9 @@ Set secrets through the shell, a local uncommitted `.env`, Docker secrets, or
 the operator's secret manager:
 
 ```text
-export REMBRANE_GRAPHITI_BEARER_TOKEN="$(openssl rand -hex 32)"
+install -m 600 /dev/null .rembrane-graphiti-token
+openssl rand -hex 32 > .rembrane-graphiti-token
+export REMBRANE_GRAPHITI_BEARER_TOKEN_FILE="$PWD/.rembrane-graphiti-token"
 export REMBRANE_GRAPHITI_NEO4J_PASSWORD="$(openssl rand -hex 32)"
 export REMBRANE_GRAPHITI_OPENAI_API_KEY='replace-from-secret-manager'
 ```
@@ -52,9 +54,12 @@ For a standalone or custom worker deployment,
 `REMBRANE_GRAPHITI_BEARER_TOKEN_REFERENCE` may select `env:VARIABLE` or a
 protected `file:path` instead of the default bearer-token variable. The
 resolved value remains zeroizing through HTTP transport construction. The
-stock Compose overlay still supplies the matching token to the sidecar
-separately; custom secret-file deployments must mount and configure both
-processes consistently.
+sidecar accepts the same locator grammar and rejects raw inline locators,
+symbolic links, non-regular files, files with group/other permission bits,
+empty values, and oversized values. The stock Compose overlay mounts the file
+selected by `REMBRANE_GRAPHITI_BEARER_TOKEN_FILE` read-only into both
+processes, so the matching credential is never interpolated into the Compose
+service environment.
 
 The Compose overlay constructs the worker automatically and connects it to the
 sidecar over the private container network.

@@ -14,10 +14,15 @@ services:
       REMBRANE_GRAPH_PROVIDER: graphiti
       REMBRANE_GRAPH_PROVIDER_ALLOW_PLAINTEXT: "true"
       REMBRANE_GRAPHITI_BASE_URL: http://graphiti-sidecar:8793
-      REMBRANE_GRAPHITI_BEARER_TOKEN: ${REMBRANE_GRAPHITI_BEARER_TOKEN:?required}
-      REMBRANE_GRAPHITI_BEARER_TOKEN_REFERENCE: ${REMBRANE_GRAPHITI_BEARER_TOKEN_REFERENCE:-}
+      REMBRANE_GRAPHITI_BEARER_TOKEN_REFERENCE: file:/run/secrets/rembrane_graphiti_bearer_token
       REMBRANE_GRAPH_WORKER_POLL_MILLISECONDS: ${REMBRANE_GRAPH_WORKER_POLL_MILLISECONDS:-1000}
       REMBRANE_GRAPH_WORKER_MAXIMUM_ATTEMPTS: ${REMBRANE_GRAPH_WORKER_MAXIMUM_ATTEMPTS:-5}
+    secrets:
+      - source: rembrane_graphiti_bearer_token
+        target: rembrane_graphiti_bearer_token
+        uid: "10001"
+        gid: "10001"
+        mode: 0400
     volumes:
       - rembrane-data:/var/lib/rembrane
     depends_on:
@@ -36,13 +41,19 @@ services:
       context: ./sidecars/rembrane-graphiti
     restart: unless-stopped
     environment:
-      REMBRANE_GRAPHITI_BEARER_TOKEN: ${REMBRANE_GRAPHITI_BEARER_TOKEN:?required}
+      REMBRANE_GRAPHITI_BEARER_TOKEN_REFERENCE: file:/run/secrets/rembrane_graphiti_bearer_token
       REMBRANE_GRAPHITI_HOST: 0.0.0.0
       REMBRANE_GRAPHITI_PORT: "8793"
       NEO4J_URI: bolt://graphiti-neo4j:7687
       NEO4J_USER: neo4j
       NEO4J_PASSWORD: ${REMBRANE_GRAPHITI_NEO4J_PASSWORD:?required}
       OPENAI_API_KEY: ${REMBRANE_GRAPHITI_OPENAI_API_KEY:?required}
+    secrets:
+      - source: rembrane_graphiti_bearer_token
+        target: rembrane_graphiti_bearer_token
+        uid: "10002"
+        gid: "10002"
+        mode: 0400
     ports:
       - "127.0.0.1:8793:8793"
     depends_on:
@@ -84,3 +95,7 @@ services:
 
 volumes:
   rembrane-graphiti-neo4j:
+
+secrets:
+  rembrane_graphiti_bearer_token:
+    file: ${REMBRANE_GRAPHITI_BEARER_TOKEN_FILE:?required}

@@ -97,8 +97,14 @@ rg -q 'CLOUDFLARE_TUNNEL_TOKEN' compose.cloudflare.yaml
 rg -q 'http://rembrane:8787' docs/CLOUDFLARE_DEPLOYMENT.md
 rg -q 'read_only: true' compose.cloudflare.yaml
 rg -q '127\.0\.0\.1:8793:8793' compose.graphiti.yaml
-rg -q 'REMBRANE_GRAPHITI_BEARER_TOKEN' compose.graphiti.yaml
 rg -q 'REMBRANE_GRAPHITI_BEARER_TOKEN_REFERENCE' compose.graphiti.yaml
+rg -q 'REMBRANE_GRAPHITI_BEARER_TOKEN_FILE' compose.graphiti.yaml
+rg -q 'file:/run/secrets/rembrane_graphiti_bearer_token' compose.graphiti.yaml
+if rg -q '^[[:space:]]+REMBRANE_GRAPHITI_BEARER_TOKEN:' compose.graphiti.yaml; then
+    echo "Graphiti Compose must not interpolate the raw bearer token" >&2
+    exit 1
+fi
+test "$(rg -c 'mode: 0400' compose.graphiti.yaml)" -eq 2
 rg -q 'rembrane-graph-worker' compose.graphiti.yaml
 rg -q 'REMBRANE_GRAPH_PROVIDER_ALLOW_PLAINTEXT: "true"' compose.graphiti.yaml
 rg -q 'no-new-privileges:true' compose.graphiti.yaml
@@ -147,7 +153,7 @@ if command -v docker >/dev/null 2>&1; then
     REMBRANE_WORKSPACE_KEY_ID=key_static \
     REMBRANE_WORKSPACE_KEY_HEX=0000000000000000000000000000000000000000000000000000000000000000 \
     REMBRANE_API_TOKEN=token_static \
-    REMBRANE_GRAPHITI_BEARER_TOKEN=graphiti-static-token \
+    REMBRANE_GRAPHITI_BEARER_TOKEN_FILE=/tmp/rembrane-graphiti-static-token \
     REMBRANE_GRAPHITI_NEO4J_PASSWORD=graphiti-static-password \
     REMBRANE_GRAPHITI_OPENAI_API_KEY=graphiti-static-model-key \
         docker compose -f compose.yaml -f compose.graphiti.yaml config --quiet

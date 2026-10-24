@@ -9,6 +9,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- Protected environment or file reference resolution for the Python Graphiti
+  sidecar bearer credential, plus one mode-restricted Compose secret shared
+  with the Rust projection worker instead of environment interpolation.
 - Protected local bearer-token reference resolution for environment-selected
   portable Memory Provider HTTP composition, with zeroizing configuration
   ownership and opaque resolution failures.
