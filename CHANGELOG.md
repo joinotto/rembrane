@@ -47,6 +47,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Socket-free Memory Provider HTTP request-construction tests covering exact
   methods, encoded paths and queries, bearer and correlation headers, direct
   JSON payloads, and body-free reads under restricted development sandboxes.
+- Hardened OAuth introspection HTTP transport validation with parsed HTTPS
+  endpoints, bounded control-free credentials and bearer tokens, disabled
+  environment proxies, and socket-free exact RFC 7662 request tests.
 - A transport-injectable Mem0 OSS semantic adapter mapping authorized
   projections into HMAC-pseudonymous workspace partitions while preserving
   canonical memory IDs, versions, replacement, bounded ranking, and
