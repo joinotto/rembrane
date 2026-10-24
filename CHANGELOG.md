@@ -33,6 +33,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Introspection responses are now stream-bounded independently of
   `Content-Length`, preventing an unbounded body when an authorization server
   omits or falsifies the header.
+- Typed remote MCP deployment profiles reject plaintext, partial,
+  credential-bearing, or wildcard-origin OAuth configuration before startup
+  while retaining the introspection secret only as a provider reference.
 - Hardened Cloudflare Tunnel Compose overlay and operator guide for
   outbound-only self-hosted access without mounting the memory database or
   workspace encryption credentials into the tunnel container.

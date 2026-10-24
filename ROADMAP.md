@@ -89,6 +89,8 @@ This roadmap describes sequencing, not release dates.
     parsing, trusted-origin checks, fail-closed tool lookup, and per-request
     reauthentication.
   - [ ] Integrate the authorization middleware with the HTTP server adapter.
+    - [x] Validate complete remote profiles before startup, including exact
+      HTTPS endpoints, referenced client secrets, and exact browser origins.
   - [x] Allow the shared MCP handler service to initialize canonical
     subject/client/workspace identity exclusively from verified remote claims.
   - [ ] Serve Streamable HTTP through the official Rust MCP SDK.
