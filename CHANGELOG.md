@@ -16,6 +16,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   proving exact tenant, operation, tool, and request-body transfer.
 - A dependency-free asynchronous future contract for remote-MCP dispatchers,
   avoiding blocking at the eventual official SDK Tower boundary.
+- One owned Axum authorize-and-dispatch operation that consumes the exact
+  request proof and preserves typed HTTP authorization versus SDK dispatch
+  failures.
 - A transport-injectable Mem0 OSS semantic adapter mapping authorized
   projections into HMAC-pseudonymous workspace partitions while preserving
   canonical memory IDs, versions, replacement, bounded ranking, and

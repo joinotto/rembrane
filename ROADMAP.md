@@ -168,6 +168,8 @@ This roadmap describes sequencing, not release dates.
         adapter and prove exact body and tenant transfer through it.
         - [x] Model dispatch as an associated future so official asynchronous
           Tower services need no blocking bridge or macro dependency.
+        - [x] Compose owned Axum authorization and asynchronous dispatch in one
+          operation with typed authorization-versus-transport failures.
   - [x] Allow the shared MCP handler service to initialize canonical
     subject/client/workspace identity exclusively from verified remote claims.
   - [x] Bind remote sessions to issuer, resource, canonical identity,

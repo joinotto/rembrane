@@ -71,6 +71,12 @@ pub trait AuthorizedRemoteMcpDispatcher {
     ) -> Self::DispatchFuture;
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RemoteMcpDispatchError<DispatchError> {
+    Authorization(RemoteMcpHttpRejection),
+    Dispatch(DispatchError),
+}
+
 impl AuthorizedRemoteMcpRequest {
     #[must_use]
     pub const fn access(&self) -> &VerifiedRemoteAccess {
@@ -341,6 +347,30 @@ where
             .collect::<Vec<_>>();
         let authorization = RemoteHttpAuthorization::new(&authenticator, &trusted_origins);
         authorize_axum_stateless_body(&self.gate, &authorization, headers, body, now_epoch_seconds)
+    }
+
+    /// Authorizes and dispatches one exact stateless request without exposing
+    /// an intermediate reusable authorization decision to the HTTP adapter.
+    ///
+    /// # Errors
+    ///
+    /// Distinguishes HTTP-ready authentication/authorization rejection from a
+    /// downstream protocol-dispatch failure.
+    pub async fn authorize_and_dispatch<Dispatcher>(
+        &self,
+        headers: &HeaderMap,
+        body: &[u8],
+        now_epoch_seconds: u64,
+        dispatcher: &Dispatcher,
+    ) -> Result<Dispatcher::Output, RemoteMcpDispatchError<Dispatcher::Error>>
+    where
+        Dispatcher: AuthorizedRemoteMcpDispatcher,
+    {
+        self.authorize_stateless_body(headers, body, now_epoch_seconds)
+            .map_err(RemoteMcpDispatchError::Authorization)?
+            .dispatch_with(dispatcher)
+            .await
+            .map_err(RemoteMcpDispatchError::Dispatch)
     }
 }
 
@@ -680,8 +710,9 @@ mod tests {
 
     use super::{
         AuthorizedRemoteMcpDispatcher, MCP_SESSION_HEADER_NAME, RemoteMcpAxumAuthorization,
-        RemoteMcpHttpGate, RemoteMcpHttpRejection, RemoteMcpHttpRequest, RemoteMcpInvocation,
-        authorize_axum_stateless_body, classify_remote_mcp_request, request_from_axum_headers,
+        RemoteMcpDispatchError, RemoteMcpHttpGate, RemoteMcpHttpRejection, RemoteMcpHttpRequest,
+        RemoteMcpInvocation, authorize_axum_stateless_body, classify_remote_mcp_request,
+        request_from_axum_headers,
     };
 
     struct Verifier;
@@ -1191,5 +1222,48 @@ mod tests {
             .await
             .expect("in-memory router should respond");
         assert_eq!(denied.status(), 403);
+    }
+
+    #[tokio::test]
+    async fn owned_service_authorizes_and_dispatches_as_one_operation() {
+        let config = RemoteMcpConfig::new(
+            "https://memory.example.test/mcp".to_owned(),
+            "https://identity.example.test".to_owned(),
+            "https://identity.example.test/introspect".to_owned(),
+            "rembrane".to_owned(),
+            SecretReference::environment("OAUTH_SECRET").expect("reference should be valid"),
+            vec!["https://agent.example.test".to_owned()],
+        )
+        .expect("remote profile should be valid");
+        let authorization = RemoteMcpAxumAuthorization::from_config(16, &config, Verifier)
+            .expect("owned authorization service should initialize");
+        let mut headers = HeaderMap::new();
+        headers.insert(HOST, HeaderValue::from_static("memory.example.test"));
+        headers.insert(
+            AUTHORIZATION,
+            HeaderValue::from_static("Bearer workspace-two"),
+        );
+        headers.insert(
+            ORIGIN,
+            HeaderValue::from_static("https://agent.example.test"),
+        );
+        let body = br#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"rembrane_resolve_context","arguments":{}}}"#;
+
+        let dispatched = authorization
+            .authorize_and_dispatch(&headers, body, 1_000, &RecordingDispatcher)
+            .await
+            .expect("authorized request should dispatch");
+        assert_eq!(dispatched.0, "workspace_02");
+        assert_eq!(dispatched.3, body);
+
+        headers.insert(AUTHORIZATION, HeaderValue::from_static("Bearer invalid"));
+        let error = authorization
+            .authorize_and_dispatch(&headers, body, 1_000, &RecordingDispatcher)
+            .await
+            .expect_err("invalid token must never reach dispatch");
+        assert!(matches!(
+            error,
+            RemoteMcpDispatchError::Authorization(RemoteMcpHttpRejection { status: 401, .. })
+        ));
     }
 }
