@@ -15,6 +15,10 @@ pub const MAX_REMOTE_ENDPOINT_BYTES: usize = 2_048;
 pub const MAX_REMOTE_CLIENT_ID_BYTES: usize = 255;
 pub const MAX_REMOTE_TRUSTED_ORIGINS: usize = 64;
 pub const MAX_REMOTE_ORIGIN_BYTES: usize = 2_048;
+pub const MAX_SECRET_ENVIRONMENT_NAME_BYTES: usize = 255;
+pub const MAX_SECRET_FILE_REFERENCE_BYTES: usize = 4_096;
+pub const MAX_SECRET_PROVIDER_ID_BYTES: usize = 100;
+pub const MAX_SECRET_EXTERNAL_KEY_BYTES: usize = 2_048;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ProcessingMode {
@@ -164,6 +168,7 @@ pub enum SecretReference {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SecretReferenceError {
     EmptyField,
+    InvalidField,
     InlineValueForbidden,
 }
 
@@ -171,6 +176,8 @@ impl Display for SecretReferenceError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::EmptyField => formatter.write_str("secret reference fields must not be empty"),
+            Self::InvalidField => formatter
+                .write_str("secret reference fields must be bounded, portable, and control-free"),
             Self::InlineValueForbidden => {
                 formatter.write_str("inline secret values are forbidden; use a reference")
             }
@@ -186,6 +193,14 @@ impl SecretReference {
         if variable.trim().is_empty() {
             return Err(SecretReferenceError::EmptyField);
         }
+        if variable.len() > MAX_SECRET_ENVIRONMENT_NAME_BYTES
+            || !variable.is_ascii()
+            || !variable.bytes().enumerate().all(|(index, byte)| {
+                byte.is_ascii_alphabetic() || byte == b'_' || (index > 0 && byte.is_ascii_digit())
+            })
+        {
+            return Err(SecretReferenceError::InvalidField);
+        }
         Ok(Self::Environment { variable })
     }
 
@@ -193,6 +208,12 @@ impl SecretReference {
         let path = path.into();
         if path.trim().is_empty() {
             return Err(SecretReferenceError::EmptyField);
+        }
+        if path.len() > MAX_SECRET_FILE_REFERENCE_BYTES
+            || path.trim() != path
+            || path.chars().any(char::is_control)
+        {
+            return Err(SecretReferenceError::InvalidField);
         }
         Ok(Self::File { path })
     }
@@ -205,6 +226,18 @@ impl SecretReference {
         let key = key.into();
         if provider.trim().is_empty() || key.trim().is_empty() {
             return Err(SecretReferenceError::EmptyField);
+        }
+        if provider.len() > MAX_SECRET_PROVIDER_ID_BYTES
+            || !provider.bytes().enumerate().all(|(index, byte)| {
+                byte.is_ascii_lowercase()
+                    || byte.is_ascii_digit()
+                    || (index > 0 && matches!(byte, b'.' | b'_' | b'-'))
+            })
+            || key.len() > MAX_SECRET_EXTERNAL_KEY_BYTES
+            || key.trim() != key
+            || key.chars().any(char::is_control)
+        {
+            return Err(SecretReferenceError::InvalidField);
         }
         Ok(Self::External { provider, key })
     }
@@ -525,9 +558,11 @@ mod tests {
     use super::{
         DeploymentPolicy, MAX_PROVIDER_ENDPOINT_BYTES, MAX_REMOTE_CLIENT_ID_BYTES,
         MAX_REMOTE_ENDPOINT_BYTES, MAX_REMOTE_ORIGIN_BYTES, MAX_REMOTE_TRUSTED_ORIGINS,
-        ProcessingMode, ProviderConnection, ProviderConnectionError, ProviderKind,
-        ProviderPlacement, RemoteMcpConfig, RemoteMcpConfigError, SecretReference,
-        SecretReferenceError, parse_read_permissions, parse_read_scopes,
+        MAX_SECRET_ENVIRONMENT_NAME_BYTES, MAX_SECRET_EXTERNAL_KEY_BYTES,
+        MAX_SECRET_FILE_REFERENCE_BYTES, MAX_SECRET_PROVIDER_ID_BYTES, ProcessingMode,
+        ProviderConnection, ProviderConnectionError, ProviderKind, ProviderPlacement,
+        RemoteMcpConfig, RemoteMcpConfigError, SecretReference, SecretReferenceError,
+        parse_read_permissions, parse_read_scopes,
     };
 
     #[test]
@@ -572,6 +607,58 @@ mod tests {
                 variable: "REMBRANE_DATABASE_URL".to_owned()
             })
         );
+    }
+
+    #[test]
+    fn secret_references_are_bounded_portable_and_control_free() {
+        for invalid in [
+            "1SECRET",
+            "SECRET-NAME",
+            "SECRET NAME",
+            "SECRET\nNAME",
+            "SÉCRET",
+        ] {
+            assert_eq!(
+                SecretReference::environment(invalid),
+                Err(SecretReferenceError::InvalidField)
+            );
+        }
+        assert_eq!(
+            SecretReference::environment("X".repeat(MAX_SECRET_ENVIRONMENT_NAME_BYTES + 1)),
+            Err(SecretReferenceError::InvalidField)
+        );
+        assert!(SecretReference::environment("_REMBRANE_SECRET_2").is_ok());
+
+        for invalid in [" secret.txt", "secret.txt ", "secret\nfile"] {
+            assert_eq!(
+                SecretReference::file(invalid),
+                Err(SecretReferenceError::InvalidField)
+            );
+        }
+        assert_eq!(
+            SecretReference::file("x".repeat(MAX_SECRET_FILE_REFERENCE_BYTES + 1)),
+            Err(SecretReferenceError::InvalidField)
+        );
+        assert!(SecretReference::file("/run/secrets/rembrane-key").is_ok());
+
+        for provider in ["Vault", "vault/provider", "vault provider"] {
+            assert_eq!(
+                SecretReference::external(provider, "secret/data/rembrane"),
+                Err(SecretReferenceError::InvalidField)
+            );
+        }
+        assert_eq!(
+            SecretReference::external(
+                "x".repeat(MAX_SECRET_PROVIDER_ID_BYTES + 1),
+                "secret/data/rembrane",
+            ),
+            Err(SecretReferenceError::InvalidField)
+        );
+        assert_eq!(
+            SecretReference::external("vault", "x".repeat(MAX_SECRET_EXTERNAL_KEY_BYTES + 1)),
+            Err(SecretReferenceError::InvalidField)
+        );
+        assert!(SecretReference::external("vault", "secret/data/rembrane").is_ok());
     }
 
     #[test]

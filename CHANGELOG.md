@@ -67,6 +67,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Canonically parsed and bounded bring-your-own provider endpoints that reject
   stored whitespace and URL normalization ambiguity while permitting literal
   loopback HTTP only for providers declared inside the trusted boundary.
+- Bounded portable secret references for environment variables, protected
+  files, and external secret-manager keys, rejecting whitespace ambiguity,
+  controls, invalid provider identifiers, and resource-exhaustion inputs.
 - A transport-injectable Mem0 OSS semantic adapter mapping authorized
   projections into HMAC-pseudonymous workspace partitions while preserving
   canonical memory IDs, versions, replacement, bounded ranking, and
