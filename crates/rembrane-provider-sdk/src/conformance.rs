@@ -33,10 +33,159 @@ impl From<ProviderError> for ConformanceFailure {
     }
 }
 
+fn search_validated(
+    provider: &impl SemanticMemoryProvider,
+    manifest: &crate::ProviderManifest,
+    workspace_id: WorkspaceId,
+    text: String,
+    maximum_candidates: usize,
+) -> Result<Vec<crate::CandidateMemory>, ConformanceFailure> {
+    let candidates = provider.search(&SemanticQuery {
+        workspace_id,
+        text,
+        maximum_candidates,
+    })?;
+    manifest.validate_candidates(&candidates, maximum_candidates)?;
+    Ok(candidates)
+}
+
+fn verify_workspace_isolation(
+    provider: &impl SemanticMemoryProvider,
+    manifest: &crate::ProviderManifest,
+    workspace: &WorkspaceId,
+    other_workspace: WorkspaceId,
+    memory_id: &MemoryId,
+    token: &str,
+    candidate_limit: usize,
+) -> Result<(), ConformanceFailure> {
+    let visible = search_validated(
+        provider,
+        manifest,
+        workspace.clone(),
+        token.to_owned(),
+        candidate_limit,
+    )?;
+    if !visible
+        .iter()
+        .any(|candidate| &candidate.memory_id == memory_id && candidate.version == 1)
+    {
+        return Err(ConformanceFailure::Behavior(
+            "indexed version was not returned in its workspace".to_owned(),
+        ));
+    }
+
+    let leaked = search_validated(
+        provider,
+        manifest,
+        other_workspace,
+        token.to_owned(),
+        candidate_limit,
+    )?;
+    if leaked
+        .iter()
+        .any(|candidate| &candidate.memory_id == memory_id)
+    {
+        return Err(ConformanceFailure::Behavior(
+            "fixture crossed a workspace boundary".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+fn verify_version_lifecycle(
+    provider: &mut impl SemanticMemoryProvider,
+    manifest: &crate::ProviderManifest,
+    workspace: &WorkspaceId,
+    memory_id: &MemoryId,
+    first_token: String,
+    second_token: String,
+    candidate_limit: usize,
+) -> Result<(), ConformanceFailure> {
+    provider.index(AuthorizedMemoryProjection {
+        workspace_id: workspace.clone(),
+        memory_id: memory_id.clone(),
+        version: 2,
+        scope: MemoryScope::Global,
+        kind: MemoryKind::Semantic,
+        content: second_token.clone(),
+    })?;
+
+    let revised = search_validated(
+        provider,
+        manifest,
+        workspace.clone(),
+        second_token.clone(),
+        candidate_limit,
+    )?;
+    if !revised
+        .iter()
+        .any(|candidate| &candidate.memory_id == memory_id && candidate.version == 2)
+        || revised
+            .iter()
+            .any(|candidate| &candidate.memory_id == memory_id && candidate.version != 2)
+    {
+        return Err(ConformanceFailure::Behavior(
+            "replacement version was not returned exactly".to_owned(),
+        ));
+    }
+
+    let stale = search_validated(
+        provider,
+        manifest,
+        workspace.clone(),
+        first_token,
+        candidate_limit,
+    )?;
+    if stale
+        .iter()
+        .any(|candidate| &candidate.memory_id == memory_id)
+    {
+        return Err(ConformanceFailure::Behavior(
+            "superseded fixture remained searchable".to_owned(),
+        ));
+    }
+
+    provider.delete(workspace, memory_id, 1)?;
+    let preserved = search_validated(
+        provider,
+        manifest,
+        workspace.clone(),
+        second_token.clone(),
+        candidate_limit,
+    )?;
+    if !preserved
+        .iter()
+        .any(|candidate| &candidate.memory_id == memory_id && candidate.version == 2)
+    {
+        return Err(ConformanceFailure::Behavior(
+            "deletion through an older version removed the current version".to_owned(),
+        ));
+    }
+
+    provider.delete(workspace, memory_id, 2)?;
+    let deleted = search_validated(
+        provider,
+        manifest,
+        workspace.clone(),
+        second_token,
+        candidate_limit,
+    )?;
+    if deleted
+        .iter()
+        .any(|candidate| &candidate.memory_id == memory_id && candidate.version <= 2)
+    {
+        return Err(ConformanceFailure::Behavior(
+            "deleted fixture remained searchable".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
 /// Exercises the mandatory synchronous semantic-provider contract.
 ///
 /// The caller must supply a unique namespace and a disposable provider
-/// instance or test tenant. The harness writes and deletes one fixture.
+/// instance or test tenant. The harness writes two versions of one fixture
+/// and deletes it.
 pub fn verify_semantic_provider(
     provider: &mut impl SemanticMemoryProvider,
     fixture_namespace: &str,
@@ -63,8 +212,11 @@ pub fn verify_semantic_provider(
     let workspace = WorkspaceId::new(format!("conformance.workspace.{namespace}"));
     let other_workspace = WorkspaceId::new(format!("conformance.other.{namespace}"));
     let memory_id = MemoryId::new(format!("conformance.memory.{namespace}"));
-    let token = format!("rembrane_conformance_{namespace}");
-    if token.len() > manifest.limits.maximum_content_bytes {
+    let first_token = format!("rembrane_conformance_{namespace}_v1");
+    let second_token = format!("rembrane_conformance_{namespace}_v2");
+    if first_token.len() > manifest.limits.maximum_content_bytes
+        || second_token.len() > manifest.limits.maximum_content_bytes
+    {
         return Err(ConformanceFailure::InvalidFixture);
     }
     let candidate_limit = manifest.bounded_candidate_limit(10)?;
@@ -75,56 +227,27 @@ pub fn verify_semantic_provider(
         version: 1,
         scope: MemoryScope::Global,
         kind: MemoryKind::Semantic,
-        content: token.clone(),
+        content: first_token.clone(),
     })?;
 
-    let visible = provider.search(&SemanticQuery {
-        workspace_id: workspace.clone(),
-        text: token.clone(),
-        maximum_candidates: candidate_limit,
-    })?;
-    manifest.validate_candidates(&visible, candidate_limit)?;
-    if !visible
-        .iter()
-        .any(|candidate| candidate.memory_id == memory_id && candidate.version == 1)
-    {
-        return Err(ConformanceFailure::Behavior(
-            "indexed version was not returned in its workspace".to_owned(),
-        ));
-    }
-
-    let leaked = provider.search(&SemanticQuery {
-        workspace_id: other_workspace,
-        text: token.clone(),
-        maximum_candidates: candidate_limit,
-    })?;
-    manifest.validate_candidates(&leaked, candidate_limit)?;
-    if leaked
-        .iter()
-        .any(|candidate| candidate.memory_id == memory_id)
-    {
-        return Err(ConformanceFailure::Behavior(
-            "fixture crossed a workspace boundary".to_owned(),
-        ));
-    }
-
-    provider.delete(&workspace, &memory_id, 1)?;
-    let deleted = provider.search(&SemanticQuery {
-        workspace_id: workspace,
-        text: token,
-        maximum_candidates: candidate_limit,
-    })?;
-    manifest.validate_candidates(&deleted, candidate_limit)?;
-    if deleted
-        .iter()
-        .any(|candidate| candidate.memory_id == memory_id && candidate.version <= 1)
-    {
-        return Err(ConformanceFailure::Behavior(
-            "deleted fixture remained searchable".to_owned(),
-        ));
-    }
-
-    Ok(())
+    verify_workspace_isolation(
+        provider,
+        &manifest,
+        &workspace,
+        other_workspace,
+        &memory_id,
+        &first_token,
+        candidate_limit,
+    )?;
+    verify_version_lifecycle(
+        provider,
+        &manifest,
+        &workspace,
+        &memory_id,
+        first_token,
+        second_token,
+        candidate_limit,
+    )
 }
 
 #[cfg(test)]
@@ -139,6 +262,53 @@ mod tests {
     #[derive(Default)]
     struct LeakyProvider {
         projection: Option<AuthorizedMemoryProjection>,
+    }
+
+    #[derive(Default)]
+    struct OverDeletingProvider {
+        projection: Option<AuthorizedMemoryProjection>,
+    }
+
+    impl SemanticMemoryProvider for OverDeletingProvider {
+        fn manifest(&self) -> ProviderManifest {
+            LeakyProvider::default().manifest()
+        }
+
+        fn index(&mut self, projection: AuthorizedMemoryProjection) -> Result<(), ProviderError> {
+            self.projection = Some(projection);
+            Ok(())
+        }
+
+        fn search(&self, query: &SemanticQuery) -> Result<Vec<CandidateMemory>, ProviderError> {
+            Ok(self
+                .projection
+                .as_ref()
+                .filter(|projection| {
+                    projection.workspace_id == query.workspace_id
+                        && projection.content == query.text
+                })
+                .map(|projection| CandidateMemory {
+                    memory_id: projection.memory_id.clone(),
+                    version: projection.version,
+                    score_millionths: 1_000_000,
+                })
+                .into_iter()
+                .collect())
+        }
+
+        fn delete(
+            &mut self,
+            workspace_id: &WorkspaceId,
+            memory_id: &MemoryId,
+            _through_version: u64,
+        ) -> Result<(), ProviderError> {
+            if self.projection.as_ref().is_some_and(|projection| {
+                &projection.workspace_id == workspace_id && &projection.memory_id == memory_id
+            }) {
+                self.projection = None;
+            }
+            Ok(())
+        }
     }
 
     impl SemanticMemoryProvider for LeakyProvider {
@@ -198,6 +368,16 @@ mod tests {
             verify_semantic_provider(&mut LeakyProvider::default(), "leak-test"),
             Err(ConformanceFailure::Behavior(
                 "fixture crossed a workspace boundary".to_owned()
+            ))
+        );
+    }
+
+    #[test]
+    fn detects_provider_that_ignores_delete_version_bound() {
+        assert_eq!(
+            verify_semantic_provider(&mut OverDeletingProvider::default(), "delete-bound-test"),
+            Err(ConformanceFailure::Behavior(
+                "deletion through an older version removed the current version".to_owned()
             ))
         );
     }

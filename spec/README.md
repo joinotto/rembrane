@@ -45,8 +45,8 @@ the JSON Schema.
 Rust adapters can run `verify_semantic_provider` from
 `rembrane-provider-sdk` against a disposable provider instance or tenant. The
 shared harness verifies manifest compatibility, version fidelity, workspace
-isolation, declared result limits, and deletion propagation using a temporary
-fixture namespace.
+isolation, declared result limits, replacement, version-bounded deletion, and
+deletion propagation using a temporary fixture namespace.
 
 `provider-registry.schema.json` defines the public compatibility registry, and
 `provider-registry.json` is the repository-maintained registry instance.

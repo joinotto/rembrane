@@ -54,9 +54,9 @@ target/debug/rembrane providers test \
   --namespace local-check | jq .
 ```
 
-The harness writes and deletes one fixture while checking protocol
-compatibility, exact record versions, workspace isolation, result limits, and
-deletion propagation.
+The harness writes two versions of one fixture and deletes it while checking
+protocol compatibility, exact replacement semantics, workspace isolation,
+result limits, version-bounded deletion, and deletion propagation.
 
 ## Manual local setup
 

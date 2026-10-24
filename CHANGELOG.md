@@ -59,6 +59,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   conformance suite against an adapter installed in the current CLI build,
   initially supporting the native provider with explicit failure for absent
   adapters.
+- Stronger provider conformance coverage for exact v2 replacement,
+  superseded-content removal, preservation across deletion through an older
+  version, and final deletion propagation.
 - Versioned discovery, OpenAPI, and MCP protocol specifications.
 - Tenant-isolated SQLite canonical schema with encrypted-payload metadata.
 - Versioned SQLite initialization with legacy-schema adoption, idempotent
