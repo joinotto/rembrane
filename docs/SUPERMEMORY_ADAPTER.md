@@ -80,7 +80,9 @@ canonical outbox job retryable. Canonical memory is never rolled back.
 
 The Rust `SupermemoryTransport` contract therefore requires a separate
 `await_ready` operation after ingestion. A transport cannot represent HTTP
-acceptance as completed indexing.
+acceptance as completed indexing. Readiness receives the authorized projection
+so the HTTP implementation can require the exact canonical ID and version to
+become visible through scoped search.
 
 Deletion similarly returns explicit confirmation for the requested provider
 identity. A partial-success response that omits or fails that identity is a

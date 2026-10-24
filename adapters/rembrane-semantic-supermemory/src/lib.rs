@@ -66,7 +66,7 @@ pub trait SupermemoryTransport {
         &mut self,
         namespace: &str,
         document_id: &str,
-        canonical_version: u64,
+        projection: &AuthorizedMemoryProjection,
     ) -> Result<(), ProviderError>;
     fn search(
         &self,
@@ -191,7 +191,7 @@ impl<Transport: SupermemoryTransport> SemanticMemoryProvider
         self.transport
             .upsert_exact(&namespace, &document_id, &projection)?;
         self.transport
-            .await_ready(&namespace, &document_id, projection.version)
+            .await_ready(&namespace, &document_id, &projection)
     }
 
     fn search(&self, query: &SemanticQuery) -> Result<Vec<CandidateMemory>, ProviderError> {
@@ -324,7 +324,7 @@ mod tests {
             &mut self,
             _namespace: &str,
             _document_id: &str,
-            _canonical_version: u64,
+            _projection: &AuthorizedMemoryProjection,
         ) -> Result<(), ProviderError> {
             if self.fail_readiness {
                 Err(ProviderError::Unavailable)

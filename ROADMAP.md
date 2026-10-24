@@ -710,6 +710,8 @@ This roadmap describes sequencing, not release dates.
         deterministic keyed document pseudonyms.
       - [x] Require bounded readiness confirmation after ingestion before an
         adapter may report projection success.
+        - [x] Bind readiness verification to the exact authorized projection
+          for scoped search convergence.
       - [x] Require exact provider-identity confirmation before replacement or
         deletion can complete.
   - [x] Generate a secret-reference-only local MCP configuration for OpenCode

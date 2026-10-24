@@ -43,6 +43,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Mandatory Supermemory ingestion-readiness confirmation, with incomplete
   processing surfaced as retryable provider failure rather than false
   projection completion.
+- Supermemory readiness checks bound to the exact authorized projection,
+  enabling canonical ID/version visibility verification through scoped search.
 - Exact Supermemory deletion confirmation, treating partial or omitted
   provider identities as retryable failures.
 - Local validation proving generated Supermemory namespace pseudonyms satisfy
