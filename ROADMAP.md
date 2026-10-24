@@ -545,7 +545,7 @@ This roadmap describes sequencing, not release dates.
     be promoted to compatible.
   - [ ] Add the first external provider only after its disposable-namespace
     conformance run produces reviewable evidence.
-- [ ] WhatsApp Business gateway.
+- [x] WhatsApp Business gateway.
   - [x] Verify webhook HMAC-SHA256 over the raw bounded payload before parsing
     and derive keyed pseudonymous sender/account lookup identifiers.
   - [x] Connect verified text events to atomic canonical sender admission while
