@@ -14,6 +14,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   minimum context, event, and sync limits.
 - Negotiated Memory Provider connections that generate unique typed request
   envelopes and reject operations absent from the accepted discovery manifest.
+- Memory Provider response-correlation validation that rejects mismatched
+  request IDs or protocol versions before a typed response body is consumed.
 - Sealed Rust Memory Provider payload-to-operation mappings and an
   operation-derived request constructor, preventing downstream callers from
   pairing valid payload types with unrelated privileged operations.

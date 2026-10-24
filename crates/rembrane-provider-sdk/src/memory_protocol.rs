@@ -229,6 +229,27 @@ impl<Payload: MemoryProviderPayload> MemoryProviderRequest<Payload> {
             body: MemoryProviderResponseBody::Error(error),
         }
     }
+
+    /// Verifies that a response belongs to this exact request and negotiated
+    /// protocol version.
+    ///
+    /// # Errors
+    ///
+    /// Returns a rejected-operation error when a transport returns a response
+    /// correlated to another request or protocol version.
+    pub fn validate_response<'response>(
+        &self,
+        response: &'response MemoryProviderResponse<Payload::Result>,
+    ) -> Result<&'response MemoryProviderResponseBody<Payload::Result>, ProviderError> {
+        if response.request_id != self.request_id
+            || response.protocol_version != self.protocol_version
+        {
+            return Err(ProviderError::Rejected(
+                "memory provider response correlation mismatch".to_owned(),
+            ));
+        }
+        Ok(&response.body)
+    }
 }
 
 impl<Payload> MemoryProviderRequest<Payload> {
@@ -447,6 +468,11 @@ impl<Payload> MemoryProviderResponse<Payload> {
     #[must_use]
     pub const fn body(&self) -> &MemoryProviderResponseBody<Payload> {
         &self.body
+    }
+
+    #[must_use]
+    pub fn into_body(self) -> MemoryProviderResponseBody<Payload> {
+        self.body
     }
 }
 
@@ -1207,6 +1233,24 @@ mod tests {
         assert_eq!(
             denied.body(),
             &MemoryProviderResponseBody::Error(MemoryProviderErrorCode::AccessDenied)
+        );
+        assert_eq!(
+            request.validate_response(&success),
+            Ok(&MemoryProviderResponseBody::Success("context"))
+        );
+
+        let other_request = MemoryProviderRequest::new(
+            MemoryProviderRequestId::new("request_fedcba9876543210")
+                .expect("request id should be valid"),
+            CURRENT_MEMORY_PROVIDER_PROTOCOL,
+            TestPayload,
+        )
+        .expect("current request should be compatible");
+        assert_eq!(
+            other_request.validate_response(&success),
+            Err(ProviderError::Rejected(
+                "memory provider response correlation mismatch".to_owned()
+            ))
         );
 
         assert_eq!(

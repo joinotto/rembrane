@@ -233,6 +233,8 @@ This roadmap describes sequencing, not release dates.
     required capabilities, allowed privacy modes, and minimum operation limits.
   - [x] Bind typed request creation to the negotiated manifest with unique
     correlation IDs and per-operation advertised-capability enforcement.
+  - [x] Reject transport responses correlated to another request or protocol
+    version before exposing their typed result bodies.
   - [x] Define transport-neutral request and response envelopes with bounded
     correlation IDs, protocol negotiation, operation binding, and closed
     portable error codes.
