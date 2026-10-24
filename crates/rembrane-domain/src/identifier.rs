@@ -50,6 +50,7 @@ identifier!(MemoryId);
 identifier!(PrincipalId);
 identifier!(ProjectionJobId);
 identifier!(ProviderId);
+identifier!(ShareProposalId);
 identifier!(WorkspaceId);
 
 #[cfg(test)]

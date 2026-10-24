@@ -71,6 +71,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   deletion, and cleanup through an isolated disposable namespace.
 - Authenticated loopback mock-sidecar test for the HTTP conformance runner,
   including final fixture cleanup and bearer-token output leakage assertions.
+- Content-free private-to-shared memory proposal aggregate referencing one
+  exact source version and target scope, with source-owner-only approval or
+  rejection and proposer/source-owner revocation before disclosure.
 - Versioned discovery, OpenAPI, and MCP protocol specifications.
 - Tenant-isolated SQLite canonical schema with encrypted-payload metadata.
 - Versioned SQLite initialization with legacy-schema adoption, idempotent
