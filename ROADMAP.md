@@ -136,6 +136,9 @@ This roadmap describes sequencing, not release dates.
     - [x] Authorize modern stateless Streamable HTTP requests without accepting
       a legacy session identifier, while preserving per-request bearer,
       origin, host, method, tool, and scope enforcement.
+    - [x] Classify bounded JSON-RPC bodies before SDK dispatch, rejecting
+      batches, malformed envelopes, unsupported methods, and unknown or
+      mismatched tool calls without trusting request headers.
   - [x] Allow the shared MCP handler service to initialize canonical
     subject/client/workspace identity exclusively from verified remote claims.
   - [x] Bind remote sessions to issuer, resource, canonical identity,

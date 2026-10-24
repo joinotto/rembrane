@@ -1,9 +1,9 @@
 //! HTTP-facing authorization gate for remote MCP server transports.
 //!
-//! This adapter deliberately does not parse or execute JSON-RPC. The official
-//! MCP SDK remains responsible for protocol handling, while this gate ensures
-//! every accepted request has already passed bearer, origin, method/tool,
-//! session, and tenant-binding checks.
+//! This adapter performs only the minimum bounded JSON-RPC classification
+//! needed for authorization. The official MCP SDK remains responsible for
+//! protocol execution, while this gate ensures every accepted request has
+//! already passed bearer, origin, method/tool, session, and tenant checks.
 
 use rembrane_application::{
     RemoteHttpAuthorization, RemoteHttpAuthorizationError, RemoteSessionHttpError,
@@ -11,8 +11,93 @@ use rembrane_application::{
 };
 use rembrane_config::RemoteMcpConfig;
 use rembrane_contracts::{RemoteMcpRequestAuthorization, RemoteSessionId, VerifiedRemoteAccess};
+use serde::Deserialize;
 
 pub const MCP_SESSION_HEADER: &str = "Mcp-Session-Id";
+pub const MAX_REMOTE_MCP_REQUEST_BYTES: usize = 1_048_576;
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RemoteMcpInvocation {
+    method: String,
+    tool_name: Option<String>,
+}
+
+impl RemoteMcpInvocation {
+    #[must_use]
+    pub fn method(&self) -> &str {
+        &self.method
+    }
+
+    #[must_use]
+    pub fn tool_name(&self) -> Option<&str> {
+        self.tool_name.as_deref()
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct JsonRpcEnvelope {
+    jsonrpc: String,
+    method: String,
+    #[serde(default)]
+    id: JsonRpcId,
+    #[serde(default)]
+    params: Option<serde_json::Value>,
+}
+
+#[derive(Default)]
+enum JsonRpcId {
+    #[default]
+    Missing,
+    Present(serde_json::Value),
+}
+
+impl<'de> Deserialize<'de> for JsonRpcId {
+    fn deserialize<Deserializer>(deserializer: Deserializer) -> Result<Self, Deserializer::Error>
+    where
+        Deserializer: serde::Deserializer<'de>,
+    {
+        serde_json::Value::deserialize(deserializer).map(Self::Present)
+    }
+}
+
+/// Classifies one bounded JSON-RPC request before SDK dispatch.
+///
+/// # Errors
+///
+/// Returns a forbidden response for empty, oversized, malformed, batched, or
+/// unsupported JSON-RPC input.
+pub fn classify_remote_mcp_request(
+    body: &[u8],
+) -> Result<RemoteMcpInvocation, RemoteMcpHttpRejection> {
+    if body.is_empty() || body.len() > MAX_REMOTE_MCP_REQUEST_BYTES {
+        return Err(RemoteMcpHttpGate::forbidden());
+    }
+    let envelope: JsonRpcEnvelope =
+        serde_json::from_slice(body).map_err(|_| RemoteMcpHttpGate::forbidden())?;
+    if envelope.jsonrpc != "2.0"
+        || matches!(envelope.id, JsonRpcId::Present(serde_json::Value::Null))
+    {
+        return Err(RemoteMcpHttpGate::forbidden());
+    }
+    let tool_name = if envelope.method == "tools/call" {
+        envelope
+            .params
+            .as_ref()
+            .and_then(serde_json::Value::as_object)
+            .and_then(|params| params.get("name"))
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_owned)
+    } else {
+        None
+    };
+    RemoteMcpRequestAuthorization::classify(&envelope.method, tool_name.as_deref())
+        .ok_or_else(RemoteMcpHttpGate::forbidden)?;
+    Ok(RemoteMcpInvocation {
+        method: envelope.method,
+        tool_name,
+    })
+}
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct RemoteMcpHttpRequest<'request> {
@@ -318,7 +403,7 @@ mod tests {
     use rembrane_contracts::{RemoteAccessScope, RemoteTokenClaims};
     use rembrane_domain::{ClientId, PrincipalId, WorkspaceId};
 
-    use super::{RemoteMcpHttpGate, RemoteMcpHttpRequest};
+    use super::{RemoteMcpHttpGate, RemoteMcpHttpRequest, classify_remote_mcp_request};
 
     struct Verifier;
 
@@ -569,5 +654,30 @@ mod tests {
             )
             .expect_err("stateless boundary must reject session ambiguity");
         assert_eq!(stateful_header.status, 403);
+    }
+
+    #[test]
+    fn json_rpc_classifier_fails_closed_before_sdk_dispatch() {
+        let invocation = classify_remote_mcp_request(
+            br#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"rembrane_resolve_context","arguments":{}}}"#,
+        )
+        .expect("known tool request should classify");
+        assert_eq!(invocation.method(), "tools/call");
+        assert_eq!(invocation.tool_name(), Some("rembrane_resolve_context"));
+
+        for body in [
+            br"[]".as_slice(),
+            br#"{"jsonrpc":"1.0","id":1,"method":"tools/list"}"#,
+            br#"{"jsonrpc":"2.0","id":null,"method":"tools/list"}"#,
+            br#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{}}"#,
+            br#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"future_tool"}}"#,
+            br#"{"jsonrpc":"2.0","id":1,"method":"resources/list"}"#,
+            br#"{"jsonrpc":"2.0","id":1,"method":"tools/list","extra":true}"#,
+        ] {
+            assert!(
+                classify_remote_mcp_request(body).is_err(),
+                "unsupported body must fail closed"
+            );
+        }
     }
 }

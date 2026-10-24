@@ -1360,6 +1360,8 @@ dependencies = [
  "rembrane-config",
  "rembrane-contracts",
  "rembrane-domain",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
