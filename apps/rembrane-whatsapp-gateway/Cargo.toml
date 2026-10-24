@@ -11,12 +11,13 @@ rust-version.workspace = true
 anyhow = "1"
 axum = "0.8"
 rembrane-channel-whatsapp = { path = "../../adapters/rembrane-channel-whatsapp" }
+rembrane-config = { path = "../../crates/rembrane-config" }
 rembrane-crypto = { path = "../../crates/rembrane-crypto" }
 rembrane-crypto-configured = { path = "../../adapters/rembrane-crypto-configured" }
+rembrane-secret-local = { path = "../../adapters/rembrane-secret-local" }
 rembrane-store-sqlite = { path = "../../adapters/rembrane-store-sqlite" }
 serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["macros", "net", "rt-multi-thread"] }
-zeroize = "1"
 
 [lints]
 workspace = true

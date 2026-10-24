@@ -9,13 +9,15 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use rembrane_channel_whatsapp::{
-    WhatsAppHttpStatus, WhatsAppSubscriptionVerifier, WhatsAppWebhookVerifier, webhook_http_status,
+    WhatsAppCredentialReferences, WhatsAppHttpStatus, WhatsAppSubscriptionVerifier,
+    WhatsAppWebhookVerifier, webhook_http_status,
 };
+use rembrane_config::SecretReference;
 use rembrane_crypto::RecordCipher;
 use rembrane_crypto_configured::ConfiguredRecordCipher;
+use rembrane_secret_local::LocalSecretResolver;
 use rembrane_store_sqlite::SqliteStore;
 use serde::Deserialize;
-use zeroize::Zeroizing;
 
 const MAXIMUM_WEBHOOK_BYTES: usize = 3 * 1024 * 1024;
 const DEFAULT_MAXIMUM_EVENT_AGE_SECONDS: u64 = 300;
@@ -60,9 +62,13 @@ struct SubscriptionQuery {
 impl AppState<ConfiguredRecordCipher> {
     fn from_environment() -> Result<Self> {
         let database = required_environment("REMBRANE_DATABASE")?;
-        let app_secret = required_secret("REMBRANE_WHATSAPP_APP_SECRET")?;
-        let binding_lookup_secret = required_secret("REMBRANE_WHATSAPP_BINDING_LOOKUP_SECRET")?;
-        let verification_token = required_secret("REMBRANE_WHATSAPP_WEBHOOK_VERIFICATION_TOKEN")?;
+        let verifiers = WhatsAppCredentialReferences::new(
+            environment_reference("REMBRANE_WHATSAPP_APP_SECRET")?,
+            environment_reference("REMBRANE_WHATSAPP_BINDING_LOOKUP_SECRET")?,
+            environment_reference("REMBRANE_WHATSAPP_WEBHOOK_VERIFICATION_TOKEN")?,
+        )
+        .and_then(|references| references.resolve(&LocalSecretResolver))
+        .map_err(|_| anyhow::anyhow!("invalid or unavailable WhatsApp credentials"))?;
         let maximum_event_age_seconds = positive_environment_u64(
             "REMBRANE_WHATSAPP_MAXIMUM_EVENT_AGE_SECONDS",
             DEFAULT_MAXIMUM_EVENT_AGE_SECONDS,
@@ -80,14 +86,7 @@ impl AppState<ConfiguredRecordCipher> {
         let store = SqliteStore::open(database)
             .context("failed to open the Rembrane channel store")?
             .with_cipher(cipher);
-        let webhook_verifier = WhatsAppWebhookVerifier::new(
-            app_secret.as_bytes().to_vec(),
-            binding_lookup_secret.as_bytes().to_vec(),
-        )
-        .map_err(|_| anyhow::anyhow!("invalid WhatsApp webhook secrets"))?;
-        let subscription_verifier =
-            WhatsAppSubscriptionVerifier::new(verification_token.as_bytes().to_vec())
-                .map_err(|_| anyhow::anyhow!("invalid WhatsApp verification token"))?;
+        let (webhook_verifier, subscription_verifier) = verifiers.into_parts();
         Ok(Self {
             inner: Arc::new(Inner {
                 runtime: Mutex::new(Runtime { store }),
@@ -165,10 +164,9 @@ fn required_environment(name: &str) -> Result<String> {
     std::env::var(name).with_context(|| format!("{name} is required"))
 }
 
-fn required_secret(name: &str) -> Result<Zeroizing<String>> {
-    let value = Zeroizing::new(required_environment(name)?);
-    anyhow::ensure!(!value.is_empty(), "{name} is empty");
-    Ok(value)
+fn environment_reference(name: &str) -> Result<SecretReference> {
+    SecretReference::environment(name)
+        .map_err(|_| anyhow::anyhow!("invalid WhatsApp environment secret reference"))
 }
 
 fn positive_environment_u64(name: &str, default: u64) -> Result<u64> {

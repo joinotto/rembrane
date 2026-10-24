@@ -71,6 +71,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Reference-only WhatsApp verifier configuration through pluggable secret
   resolvers, requiring distinct app-signature, sender-pseudonym, and
   subscription credentials and retaining only derived HMAC keys.
+- Shipped WhatsApp gateway startup through reference-only configuration and
+  the protected local secret resolver, removing direct raw-secret handling
+  from the executable.
 - Fail-closed OAuth introspection claim bounds covering audience cardinality,
   issuer and identity sizes, scope size, and control-character rejection
   before claims become canonical tenant identity.

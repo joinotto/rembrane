@@ -649,6 +649,8 @@ This roadmap describes sequencing, not release dates.
     capability needed to seal its durable inbox.
   - [x] Resolve distinct app-signature, sender-pseudonym, and subscription
     secrets through any deployment-selected secret resolver.
+    - [x] Make the shipped gateway startup consume the local resolver rather
+      than reading and copying raw secret strings itself.
   - [x] Package the gateway as an opt-in hardened Compose overlay with a
     loopback-only host port and documented TLS proxy boundary.
   - [x] Add administrator-only sender onboarding that consumes raw identifiers

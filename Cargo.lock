@@ -1461,16 +1461,17 @@ dependencies = [
  "axum",
  "rembrane-application",
  "rembrane-channel-whatsapp",
+ "rembrane-config",
  "rembrane-contracts",
  "rembrane-crypto",
  "rembrane-crypto-configured",
  "rembrane-crypto-rustcrypto",
  "rembrane-domain",
+ "rembrane-secret-local",
  "rembrane-store-sqlite",
  "ring",
  "serde",
  "tokio",
- "zeroize",
 ]
 
 [[package]]
