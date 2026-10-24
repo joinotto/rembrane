@@ -628,11 +628,11 @@ fn print_mcp_config(arguments: &[String]) -> Result<(), String> {
         "cursor" => cursor_mcp_config(server_binary, &environment),
         "vscode" => vscode_mcp_config(server_binary, &environment),
         "zed" => zed_mcp_config(server_binary),
+        "opencode" => opencode_mcp_config(server_binary, &environment),
         "generic" => generic_mcp_config(server_binary, &environment),
         _ => {
             return Err(
-                "--client must be codex, claude-code, gemini-cli, cursor, vscode, zed, or generic"
-                    .to_owned(),
+                "--client must be codex, claude-code, gemini-cli, cursor, vscode, zed, opencode, or generic".to_owned(),
             );
         }
     };
@@ -783,6 +783,30 @@ fn zed_mcp_config(server_binary: &str) -> String {
          \"command\":\"{}\",\"args\":[],\"env\":{{}}}}}}}}",
         escape_config_string(server_binary)
     )
+}
+
+fn opencode_mcp_config(server_binary: &str, variables: &[&str]) -> String {
+    let environment = variables
+        .iter()
+        .map(|variable| {
+            (
+                (*variable).to_owned(),
+                serde_json::Value::String(format!("{{env:{variable}}}")),
+            )
+        })
+        .collect::<serde_json::Map<_, _>>();
+    serde_json::json!({
+        "$schema": "https://opencode.ai/config.json",
+        "mcp": {
+            "rembrane": {
+                "type": "local",
+                "command": [server_binary],
+                "enabled": true,
+                "environment": environment
+            }
+        }
+    })
+    .to_string()
 }
 
 fn escape_config_string(value: &str) -> String {
@@ -1696,7 +1720,7 @@ fn print_help() {
              --principal <owner-or-admin-id> --workspace <id> \
              --subject <active-member-id> --client <id> --request <id>\n\
            rembrane mcp-config \
-             --client <codex|claude-code|gemini-cli|cursor|vscode|zed|generic> \
+             --client <codex|claude-code|gemini-cli|cursor|vscode|zed|opencode|generic> \
              --server-binary <path> \
              [--key-provider <environment|macos-keychain|http>]\n\
            rembrane remember --database <path> --principal <id> \
@@ -1722,9 +1746,9 @@ mod tests {
     use super::{
         EXPORT_MAGIC, claude_mcp_config, codex_mcp_config, cursor_mcp_config, format_read_scopes,
         gemini_mcp_config, generic_mcp_config, mcp_environment_variables, memory_privacy_mode_name,
-        memory_provider_check_policy, option, positive_u64, providers, read_export,
-        recall_scope_context, redact_endpoint, requested_memory_privacy, requested_memory_scope,
-        test_provider, vscode_mcp_config, write_export, zed_mcp_config,
+        memory_provider_check_policy, opencode_mcp_config, option, positive_u64, providers,
+        read_export, recall_scope_context, redact_endpoint, requested_memory_privacy,
+        requested_memory_scope, test_provider, vscode_mcp_config, write_export, zed_mcp_config,
     };
 
     fn temporary_path(name: &str) -> std::path::PathBuf {
@@ -2051,6 +2075,16 @@ mod tests {
         assert!(zed.contains("\"context_servers\":{\"rembrane\""));
         assert!(zed.contains("\"env\":{}"));
         assert!(!zed.contains("REMBRANE_WORKSPACE_KEY_HEX"));
+
+        let opencode = opencode_mcp_config("/opt/rembrane-mcp", &environment);
+        assert!(opencode.contains("\"$schema\":\"https://opencode.ai/config.json\""));
+        assert!(opencode.contains("\"type\":\"local\""));
+        assert!(opencode.contains("\"command\":[\"/opt/rembrane-mcp\"]"));
+        assert!(
+            opencode
+                .contains("\"REMBRANE_WORKSPACE_KEY_HEX\":\"{env:REMBRANE_WORKSPACE_KEY_HEX}\"")
+        );
+        assert!(!opencode.contains("00010203"));
 
         let generic = generic_mcp_config("/opt/rembrane-mcp", &environment);
         assert!(generic.contains("\"schemaVersion\":1"));

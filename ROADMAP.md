@@ -647,6 +647,8 @@ This roadmap describes sequencing, not release dates.
     single-text selection, Keychain-held enrollment material, and explicit
     limitations against Messages database or background access.
 - [ ] Community provider and agent adapters.
+  - [x] Generate a secret-reference-only local MCP configuration for OpenCode
+    using its command-array and environment-substitution contract.
 
 ## Release gates
 

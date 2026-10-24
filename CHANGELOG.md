@@ -9,6 +9,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- Secret-safe OpenCode local MCP configuration generation using the documented
+  command-array shape and environment-variable references without embedding
+  credential values.
 - A modern stateless remote-MCP authorization path that rejects legacy session
   ambiguity while preserving per-request bearer verification, trusted Host and
   Origin checks, strict method/tool classification, and narrow OAuth scopes.
