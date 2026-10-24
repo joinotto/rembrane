@@ -107,7 +107,8 @@ This roadmap describes sequencing, not release dates.
   - [ ] Encrypted persistent trip repository with tenant-isolation and rollback
     coverage.
     - [x] Versioned SQLite schema and encrypted atomic trip/event repository.
-    - [ ] Executable encrypted tenant-isolation and rollback adapter tests.
+    - [x] Executable encrypted tenant-isolation, optimistic revision, and
+      rollback adapter tests.
 - [ ] Booking-research evidence and expiry.
 - [ ] Cross-agent activity continuation.
 - [ ] Sensitive travel-data permissions.

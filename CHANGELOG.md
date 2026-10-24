@@ -20,6 +20,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   listing.
 - A distinct `trip-entity` encryption purpose in the record-cipher and external
   key-provider contract to prevent ciphertext substitution across data types.
+- Encrypted SQLite trip adapter tests covering duplicate opaque identifiers
+  across tenants, owner-scoped reads, atomic sequence-conflict rollback, and
+  optimistic revision conflicts.
 - Rust modular-monolith workspace with provider-independent domain and
   application layers.
 - Canonical memory, provenance, event, disclosure, membership, grant,
