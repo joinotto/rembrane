@@ -17,6 +17,34 @@ pub struct ConfiguredMemoryProvider {
     connection: MemoryProviderConnection,
 }
 
+/// Deployment-owned HTTP values for portable Memory Provider composition.
+///
+/// The type intentionally does not implement `Clone`, `Debug`, serialization,
+/// or field accessors so bearer credentials are not accidentally duplicated,
+/// formatted, or persisted by generic configuration tooling.
+pub struct MemoryProviderHttpConfig {
+    base_url: String,
+    bearer_token: String,
+    request_prefix: Option<String>,
+}
+
+impl MemoryProviderHttpConfig {
+    #[must_use]
+    pub fn new(base_url: impl Into<String>, bearer_token: impl Into<String>) -> Self {
+        Self {
+            base_url: base_url.into(),
+            bearer_token: bearer_token.into(),
+            request_prefix: None,
+        }
+    }
+
+    #[must_use]
+    pub fn with_request_prefix(mut self, request_prefix: impl Into<String>) -> Self {
+        self.request_prefix = Some(request_prefix.into());
+        self
+    }
+}
+
 impl ConfiguredMemoryProvider {
     /// Connects to the selected portable memory provider using
     /// deployment-owned environment variables.
@@ -39,17 +67,40 @@ impl ConfiguredMemoryProvider {
             "http" => {
                 let endpoint = required_environment("REMBRANE_MEMORY_PROVIDER_BASE_URL")?;
                 let token = required_environment("REMBRANE_MEMORY_PROVIDER_TOKEN")?;
-                let prefix = match std::env::var("REMBRANE_MEMORY_PROVIDER_REQUEST_PREFIX") {
-                    Ok(value) => validate_request_prefix(value)?,
-                    Err(_) => default_request_prefix()?,
+                let mut config = MemoryProviderHttpConfig::new(endpoint, token);
+                if let Ok(prefix) = std::env::var("REMBRANE_MEMORY_PROVIDER_REQUEST_PREFIX") {
+                    config = config.with_request_prefix(prefix);
                 };
-                let client = HttpMemoryProviderClient::new(&endpoint, token)?;
-                Self::from_client(Box::new(client), policy, prefix)
+                Self::from_http_config(config, policy)
             }
             _ => Err(ProviderError::InvalidConfiguration(
                 "REMBRANE_MEMORY_PROVIDER must be http".to_owned(),
             )),
         }
+    }
+
+    /// Connects using values supplied by deployment-owned configuration and
+    /// secret-resolution code.
+    ///
+    /// This lets applications resolve credentials from an OS keychain,
+    /// customer vault, cloud secret manager, file descriptor, or another
+    /// mechanism without copying secrets into fixed Rembrane environment
+    /// variables.
+    ///
+    /// # Errors
+    ///
+    /// Returns a provider error for malformed endpoint, token, request prefix,
+    /// discovery, or policy negotiation.
+    pub fn from_http_config(
+        config: MemoryProviderHttpConfig,
+        policy: &MemoryProviderPolicy,
+    ) -> Result<Self, ProviderError> {
+        let request_prefix = match config.request_prefix {
+            Some(value) => validate_request_prefix(value)?,
+            None => default_request_prefix()?,
+        };
+        let client = HttpMemoryProviderClient::new(&config.base_url, config.bearer_token)?;
+        Self::from_client(Box::new(client), policy, request_prefix)
     }
 
     /// Negotiates and installs any transport implementing the portable client
@@ -190,7 +241,31 @@ fn default_request_prefix() -> Result<String, ProviderError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{default_request_prefix, validate_request_prefix};
+    use rembrane_provider_sdk::{
+        CURRENT_MEMORY_PROVIDER_PROTOCOL, MemoryProviderLimits, MemoryProviderPolicy,
+        MemoryProviderPrivacyMode, MemoryProviderTransport,
+    };
+
+    use super::{
+        ConfiguredMemoryProvider, MemoryProviderHttpConfig, default_request_prefix,
+        validate_request_prefix,
+    };
+
+    fn minimal_policy() -> MemoryProviderPolicy {
+        MemoryProviderPolicy::new(
+            CURRENT_MEMORY_PROVIDER_PROTOCOL,
+            MemoryProviderTransport::Https,
+            Vec::new(),
+            vec![MemoryProviderPrivacyMode::EndToEndEncrypted],
+            MemoryProviderLimits {
+                maximum_context_items: 1,
+                maximum_context_bytes: 1,
+                maximum_event_batch_items: 1,
+                maximum_sync_batch_items: 1,
+            },
+        )
+        .expect("policy")
+    }
 
     #[test]
     fn validates_explicit_request_prefixes_without_secret_material() {
@@ -214,5 +289,39 @@ mod tests {
                 .bytes()
                 .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
         );
+    }
+
+    #[test]
+    fn explicit_http_configuration_validates_before_discovery() {
+        let result = ConfiguredMemoryProvider::from_http_config(
+            MemoryProviderHttpConfig::new("https://memory.example.com", "synthetic-test-token")
+                .with_request_prefix("contains tenant name"),
+            &minimal_policy(),
+        );
+        let error = match result {
+            Ok(_) => panic!("unsafe request prefix must fail before network access"),
+            Err(error) => error,
+        };
+
+        assert!(
+            error
+                .to_string()
+                .contains("must contain 8 to 64 URL-safe characters")
+        );
+    }
+
+    #[test]
+    fn explicit_http_configuration_reuses_transport_endpoint_validation() {
+        let result = ConfiguredMemoryProvider::from_http_config(
+            MemoryProviderHttpConfig::new("http://memory.example.com", "synthetic-test-token")
+                .with_request_prefix("safe-client-01"),
+            &minimal_policy(),
+        );
+        let error = match result {
+            Ok(_) => panic!("remote plaintext HTTP must fail before discovery"),
+            Err(error) => error,
+        };
+
+        assert!(error.to_string().contains("HTTPS"));
     }
 }

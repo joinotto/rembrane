@@ -23,6 +23,24 @@ Kubernetes Secret, systemd credential, customer secret manager, or equivalent
 deployment-owned facility. The adapter moves the loaded token into zeroizing
 transport storage and never sends it to the public discovery endpoint.
 
+Applications that already own configuration and secret resolution can avoid
+fixed environment-variable names:
+
+```rust
+use rembrane_memory_provider_configured::{
+    ConfiguredMemoryProvider, MemoryProviderHttpConfig,
+};
+
+let config = MemoryProviderHttpConfig::new(provider_url, resolved_token)
+    .with_request_prefix("my-agent-01");
+let provider = ConfiguredMemoryProvider::from_http_config(config, &policy)?;
+```
+
+`MemoryProviderHttpConfig` is consumed during construction and intentionally
+does not implement cloning, debug formatting, or serialization. The calling
+application may obtain `resolved_token` from its OS keychain, customer vault,
+cloud secret manager, container secret, or any other private mechanism.
+
 The base URL must be an origin without embedded credentials, paths, query
 parameters, or fragments. Remote plaintext HTTP is rejected. Loopback HTTP is
 accepted only for `127.0.0.1`, `::1`, or `localhost`.

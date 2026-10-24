@@ -9,6 +9,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- A consumed, non-serializable Memory Provider HTTP configuration API for
+  applications that resolve endpoint and bearer credentials through their own
+  keychains, vaults, cloud secret managers, or deployment systems.
 - Fail-closed Memory Provider CLI privacy negotiation that requires
   end-to-end encryption by default and accepts weaker provider modes only
   through an explicit operator flag.
