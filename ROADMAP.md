@@ -139,6 +139,9 @@ This roadmap describes sequencing, not release dates.
     - [x] Classify bounded JSON-RPC bodies before SDK dispatch, rejecting
       batches, malformed envelopes, unsupported methods, and unknown or
       mismatched tool calls without trusting request headers.
+    - [x] Couple stateless body classification and OAuth authorization in one
+      gate operation so dispatched bytes cannot drift from the authorized
+      method, tool, or scope.
   - [x] Allow the shared MCP handler service to initialize canonical
     subject/client/workspace identity exclusively from verified remote claims.
   - [x] Bind remote sessions to issuer, resource, canonical identity,

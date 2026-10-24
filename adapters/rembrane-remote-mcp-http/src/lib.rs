@@ -289,6 +289,35 @@ impl RemoteMcpHttpGate {
         }
     }
 
+    /// Classifies and authorizes one stateless JSON-RPC body as a single
+    /// operation so callers cannot authorize metadata that differs from the
+    /// bytes later dispatched to the protocol SDK.
+    ///
+    /// # Errors
+    ///
+    /// Returns an HTTP-ready rejection for invalid JSON-RPC, credentials,
+    /// host, origin, method, tool, or OAuth scope.
+    pub fn authorize_stateless_body<Verifier>(
+        &self,
+        authorization: &RemoteHttpAuthorization<'_, '_, Verifier>,
+        request: RemoteMcpHttpRequest<'_>,
+        body: &[u8],
+        now_epoch_seconds: u64,
+    ) -> Result<(VerifiedRemoteAccess, RemoteMcpInvocation), RemoteMcpHttpRejection>
+    where
+        Verifier: RemoteTokenVerifier,
+    {
+        let invocation = classify_remote_mcp_request(body)?;
+        let access = self.authorize_stateless(
+            authorization,
+            request,
+            invocation.method(),
+            invocation.tool_name(),
+            now_epoch_seconds,
+        )?;
+        Ok((access, invocation))
+    }
+
     /// Reauthenticates and removes one established MCP session.
     ///
     /// # Errors
@@ -679,5 +708,42 @@ mod tests {
                 "unsupported body must fail closed"
             );
         }
+    }
+
+    #[test]
+    fn stateless_body_authorization_cannot_drift_from_dispatched_bytes() {
+        let verifier = Verifier;
+        let authenticator = RemoteAccessAuthenticator::new(
+            &verifier,
+            "https://identity.example.test",
+            "https://memory.example.test/mcp",
+        );
+        let authorization = RemoteHttpAuthorization::new(&authenticator, &[]);
+        let gate = RemoteMcpHttpGate::new(
+            1,
+            "https://memory.example.test/.well-known/oauth-protected-resource/mcp",
+            &["memory.example.test"],
+        )
+        .expect("gate should be valid");
+        let request = RemoteMcpHttpRequest {
+            authorization: Some("Bearer workspace-one"),
+            host: Some("memory.example.test"),
+            origin: None,
+            session_id: None,
+        };
+        let body = br#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"rembrane_resolve_context","arguments":{}}}"#;
+        let (access, invocation) = gate
+            .authorize_stateless_body(&authorization, request, body, 1_000)
+            .expect("body and its exact scope should authorize together");
+        assert_eq!(access.workspace_id().as_str(), "workspace_01");
+        assert_eq!(invocation.tool_name(), Some("rembrane_resolve_context"));
+
+        let travel_body = br#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"rembrane_create_trip","arguments":{}}}"#;
+        assert_eq!(
+            gate.authorize_stateless_body(&authorization, request, travel_body, 1_000)
+                .expect_err("body requiring an absent scope must fail")
+                .status,
+            403
+        );
     }
 }

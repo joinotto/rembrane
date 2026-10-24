@@ -15,6 +15,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - A bounded pre-dispatch remote-MCP JSON-RPC classifier that rejects batches,
   malformed envelopes, unsupported methods, and unknown or mismatched tools
   before requests can reach the official protocol SDK.
+- An atomic stateless body-authorization operation that binds verified OAuth
+  identity and narrow scope decisions to the exact classified JSON-RPC bytes.
 - A transport-neutral mobile-share verifier for explicit user-selected text,
   with raw-payload HMAC authentication, bounded strict envelopes,
   pseudonymous device binding, freshness enforcement, replay idempotency, and
