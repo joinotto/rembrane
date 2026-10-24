@@ -77,6 +77,7 @@ done
 sh -n scripts/check-local-alpha.sh
 sh -n scripts/test-graphiti-http-e2e.sh
 sh -n scripts/test-graphiti-sidecar.sh
+sh -n scripts/test-container-entrypoint.sh
 sh -n scripts/test-swift-sdk.sh
 sh -n scripts/test-ios-share-extension.sh
 sh -n scripts/test-ios-imessage-extension.sh
@@ -163,7 +164,10 @@ fi
 rg -q 'REMBRANE_KEY_PROVIDER_TOKEN_REFERENCE' compose.mobile-share.yaml
 rg -q 'REMBRANE_API_TOKEN_REFERENCE' compose.yaml
 rg -q 'no-new-privileges:true' compose.whatsapp.yaml
+test "$(rg 'REMBRANE_SKIP_WORKSPACE_INIT: \"1\"' \
+    compose.whatsapp.yaml compose.mobile-share.yaml | wc -l | tr -d ' ')" -eq 3
 rg -q 'USER 10002:10002' sidecars/rembrane-graphiti/Dockerfile
+./scripts/test-container-entrypoint.sh
 if command -v docker >/dev/null 2>&1; then
     REMBRANE_PRINCIPAL_ID=principal_static \
     REMBRANE_WORKSPACE_ID=workspace_static \

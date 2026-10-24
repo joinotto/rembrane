@@ -7,6 +7,7 @@ services:
       - rembrane-whatsapp-gateway
     environment:
       REMBRANE_DATABASE: /var/lib/rembrane/rembrane.db
+      REMBRANE_SKIP_WORKSPACE_INIT: "1"
       REMBRANE_WHATSAPP_APP_SECRET_REFERENCE: file:/run/secrets/rembrane_whatsapp_app_secret
       REMBRANE_WHATSAPP_BINDING_LOOKUP_SECRET_REFERENCE: file:/run/secrets/rembrane_whatsapp_binding_lookup
       REMBRANE_WHATSAPP_WEBHOOK_VERIFICATION_TOKEN_REFERENCE: file:/run/secrets/rembrane_whatsapp_verification_token
@@ -51,6 +52,9 @@ services:
       - "127.0.0.1:8790:8790"
     volumes:
       - rembrane-data:/var/lib/rembrane
+    depends_on:
+      rembrane:
+        condition: service_healthy
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -64,6 +68,7 @@ services:
       - rembrane-channel-worker
     environment:
       REMBRANE_DATABASE: /var/lib/rembrane/rembrane.db
+      REMBRANE_SKIP_WORKSPACE_INIT: "1"
       REMBRANE_WORKSPACE_ID: ${REMBRANE_WORKSPACE_ID:?required}
       REMBRANE_CHANNEL_PROCESSOR_URL: ${REMBRANE_CHANNEL_PROCESSOR_URL:?required}
       REMBRANE_CHANNEL_PROCESSOR_TOKEN_REFERENCE: file:/run/secrets/rembrane_channel_processor_token
@@ -96,6 +101,9 @@ services:
         mode: 0400
     volumes:
       - rembrane-data:/var/lib/rembrane
+    depends_on:
+      rembrane:
+        condition: service_healthy
     security_opt:
       - no-new-privileges:true
     cap_drop:

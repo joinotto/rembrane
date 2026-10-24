@@ -9,6 +9,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- A validated container startup mode for least-privileged channel services
+  that skips personal-workspace bootstrap and no longer requires injecting a
+  default principal into gateways or workers.
 - Owner-only mobile-share Compose secrets for request signing and stable
   account/device pseudonymization credentials.
 - Owner-only WhatsApp and channel-processor Compose secrets for webhook

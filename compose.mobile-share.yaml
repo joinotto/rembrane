@@ -7,6 +7,7 @@ services:
       - rembrane-mobile-share-gateway
     environment:
       REMBRANE_DATABASE: /var/lib/rembrane/rembrane.db
+      REMBRANE_SKIP_WORKSPACE_INIT: "1"
       REMBRANE_MOBILE_SHARE_SIGNING_SECRET_REFERENCE: file:/run/secrets/rembrane_mobile_share_signing
       REMBRANE_MOBILE_SHARE_BINDING_LOOKUP_SECRET_REFERENCE: file:/run/secrets/rembrane_mobile_share_binding_lookup
       REMBRANE_MOBILE_SHARE_MAXIMUM_EVENT_AGE_SECONDS: ${REMBRANE_MOBILE_SHARE_MAXIMUM_EVENT_AGE_SECONDS:-300}
@@ -45,6 +46,9 @@ services:
       - "127.0.0.1:8791:8791"
     volumes:
       - rembrane-data:/var/lib/rembrane
+    depends_on:
+      rembrane:
+        condition: service_healthy
     security_opt:
       - no-new-privileges:true
     cap_drop:
