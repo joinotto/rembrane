@@ -139,7 +139,11 @@ if ! rg -F '/context/resolve:' spec/openapi.yaml >/dev/null ||
     ! rg -F '/travel/context/resolve:' spec/openapi.yaml >/dev/null ||
     ! rg -F '"/v1/travel/context/resolve"' apps/rembrane-api/src/main.rs >/dev/null ||
     ! rg -F '/travel/trip-participants:' spec/openapi.yaml >/dev/null ||
-    ! rg -F '"/v1/travel/trip-participants"' apps/rembrane-api/src/main.rs >/dev/null
+    ! rg -F '"/v1/travel/trip-participants"' apps/rembrane-api/src/main.rs >/dev/null ||
+    ! rg -F '/travel/trip-constraints:' spec/openapi.yaml >/dev/null ||
+    ! rg -F '"/v1/travel/trip-constraints"' apps/rembrane-api/src/main.rs >/dev/null ||
+    ! rg -F '/travel/trip-decisions:' spec/openapi.yaml >/dev/null ||
+    ! rg -F '"/v1/travel/trip-decisions"' apps/rembrane-api/src/main.rs >/dev/null
 then
     echo "REST routes and OpenAPI contract are inconsistent" >&2
     exit 1

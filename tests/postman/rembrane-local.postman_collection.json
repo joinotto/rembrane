@@ -230,6 +230,79 @@
               "  pm.expect(body.tripId).to.eql(pm.collectionVariables.get('createdTripId'));",
               "  pm.expect(body.participantId).to.be.a('string');",
               "  pm.expect(body.tripVersion).to.eql(2);",
+              "  pm.collectionVariables.set('createdParticipantId', body.participantId);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Add evidence-backed trip constraint",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{apiToken}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"workspaceId\":\"{{workspaceId}}\",\"subjectId\":\"{{principalId}}\",\"tripId\":\"{{createdTripId}}\",\"participantId\":\"{{createdParticipantId}}\",\"kind\":\"dietary\",\"statement\":\"Vegetarian meals\",\"evidenceSource\":\"user-statement\",\"expectedTripVersion\":2,\"expectedPreviousSequence\":4}"
+        },
+        "url": "{{baseUrl}}/v1/travel/trip-constraints"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('constraint is added without replacing trip state', function () {",
+              "  pm.response.to.have.status(201);",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.recordId).to.be.a('string');",
+              "  pm.expect(body.tripVersion).to.eql(3);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Record attributed trip decision",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{apiToken}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"workspaceId\":\"{{workspaceId}}\",\"subjectId\":\"{{principalId}}\",\"tripId\":\"{{createdTripId}}\",\"status\":\"selected\",\"summary\":\"Prefer the nonstop flight\",\"rationale\":\"Simpler handoff\",\"evidenceSource\":\"workspace-decision\",\"expectedTripVersion\":3,\"expectedPreviousSequence\":5}"
+        },
+        "url": "{{baseUrl}}/v1/travel/trip-decisions"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('decision is attributed by the server', function () {",
+              "  pm.response.to.have.status(201);",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.recordId).to.be.a('string');",
+              "  pm.expect(body.tripVersion).to.eql(4);",
               "});"
             ]
           }
@@ -252,7 +325,7 @@
         ],
         "body": {
           "mode": "raw",
-          "raw": "{\"workspaceId\":\"{{workspaceId}}\",\"subjectId\":\"{{principalId}}\",\"tripId\":\"{{createdTripId}}\",\"kind\":\"flight\",\"provider\":\"postman-search\",\"summary\":\"Nonstop morning option\",\"sourceReference\":\"opaque-result-success\",\"evidenceSource\":\"tool-result\",\"observedAt\":\"2026-10-25T10:00:00Z\",\"expiresAt\":\"2026-10-25T10:30:00Z\",\"expectedPreviousSequence\":4}"
+          "raw": "{\"workspaceId\":\"{{workspaceId}}\",\"subjectId\":\"{{principalId}}\",\"tripId\":\"{{createdTripId}}\",\"kind\":\"flight\",\"provider\":\"postman-search\",\"summary\":\"Nonstop morning option\",\"sourceReference\":\"opaque-result-success\",\"evidenceSource\":\"tool-result\",\"observedAt\":\"2026-10-25T10:00:00Z\",\"expiresAt\":\"2026-10-25T10:30:00Z\",\"expectedPreviousSequence\":6}"
         },
         "url": "{{baseUrl}}/v1/travel/booking-research"
       },

@@ -174,6 +174,60 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
+  /travel/trip-constraints:
+    post:
+      operationId: addTripConstraint
+      summary: Add an evidence-backed constraint without replacing the trip
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddTripConstraintRequest"
+      responses:
+        "201":
+          description: Constraint added
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TripRevisionResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/AccessDenied"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /travel/trip-decisions:
+    post:
+      operationId: recordTripDecision
+      summary: Record a decision attributed to the authenticated principal
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RecordTripDecisionRequest"
+      responses:
+        "201":
+          description: Decision recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TripRevisionResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/AccessDenied"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
 components:
   securitySchemes:
     bearerAuth:
@@ -342,6 +396,112 @@ components:
           $ref: "#/components/schemas/OpaqueId"
         label:
           type: string
+        tripVersion:
+          type: integer
+          minimum: 2
+    AddTripConstraintRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - workspaceId
+        - subjectId
+        - tripId
+        - kind
+        - statement
+        - evidenceSource
+        - expectedTripVersion
+        - expectedPreviousSequence
+      properties:
+        workspaceId:
+          $ref: "#/components/schemas/OpaqueId"
+        subjectId:
+          $ref: "#/components/schemas/OpaqueId"
+        tripId:
+          $ref: "#/components/schemas/OpaqueId"
+        participantId:
+          oneOf:
+            - $ref: "#/components/schemas/OpaqueId"
+            - type: "null"
+        kind:
+          enum:
+            - accessibility
+            - accommodation
+            - budget
+            - dietary
+            - documentation
+            - schedule
+            - transport
+            - other
+        statement:
+          type: string
+          minLength: 1
+          maxLength: 4096
+        evidenceSource:
+          enum:
+            - user-statement
+            - agent-observation
+            - tool-result
+            - imported-record
+            - workspace-decision
+        expectedTripVersion:
+          type: integer
+          minimum: 1
+        expectedPreviousSequence:
+          type: integer
+          minimum: 0
+    RecordTripDecisionRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - workspaceId
+        - subjectId
+        - tripId
+        - status
+        - summary
+        - evidenceSource
+        - expectedTripVersion
+        - expectedPreviousSequence
+      properties:
+        workspaceId:
+          $ref: "#/components/schemas/OpaqueId"
+        subjectId:
+          $ref: "#/components/schemas/OpaqueId"
+        tripId:
+          $ref: "#/components/schemas/OpaqueId"
+        status:
+          enum: [proposed, selected, rejected]
+        summary:
+          type: string
+          minLength: 1
+          maxLength: 4096
+        rationale:
+          type:
+            - string
+            - "null"
+          minLength: 1
+          maxLength: 4096
+        evidenceSource:
+          enum:
+            - user-statement
+            - agent-observation
+            - tool-result
+            - imported-record
+            - workspace-decision
+        expectedTripVersion:
+          type: integer
+          minimum: 1
+        expectedPreviousSequence:
+          type: integer
+          minimum: 0
+    TripRevisionResponse:
+      type: object
+      additionalProperties: false
+      required: [tripId, recordId, tripVersion]
+      properties:
+        tripId:
+          $ref: "#/components/schemas/OpaqueId"
+        recordId:
+          $ref: "#/components/schemas/OpaqueId"
         tripVersion:
           type: integer
           minimum: 2

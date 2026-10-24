@@ -9,19 +9,20 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use rembrane_application::{
-    AddTripParticipantCommand, ApplicationError, AuthorizeClientCommand, AuthorizeClientService,
-    CaptureBookingResearchCommand, CaptureBookingResearchService, CreateTripCommand,
-    ResolveContextCommand, ResolveContextService, ResolveTravelContextCommand,
-    TravelContextResearch, TravelContextService, TripService,
+    AddTripConstraintCommand, AddTripParticipantCommand, ApplicationError, AuthorizeClientCommand,
+    AuthorizeClientService, CaptureBookingResearchCommand, CaptureBookingResearchService,
+    CreateTripCommand, RecordTripDecisionCommand, ResolveContextCommand, ResolveContextService,
+    ResolveTravelContextCommand, TravelContextResearch, TravelContextService, TripService,
 };
 use rembrane_config::{parse_read_permissions, parse_read_scopes};
 use rembrane_contracts::ResolveContextRequest;
 use rembrane_crypto_rustcrypto::RustCryptoRecordCipher;
 use rembrane_domain::{
     ActivityId, BookingResearch, BookingResearchId, BookingResearchKind, ClientId, ContextPackId,
-    DisclosureId, EntityId, EventId, EvidenceId, EvidenceReference, EvidenceSource, MemoryKind,
-    MemoryScope, MemoryStatus, PrincipalId, ReadGrant, TravelDateWindow, Trip, TripParticipant,
-    TripParticipantId, WorkspaceId, WriteGrant, WritePermission,
+    DecisionStatus, DisclosureId, EntityId, EventId, EvidenceId, EvidenceReference, EvidenceSource,
+    MemoryKind, MemoryScope, MemoryStatus, PrincipalId, ReadGrant, TravelDateWindow, Trip,
+    TripConstraint, TripConstraintId, TripConstraintKind, TripDecision, TripDecisionId,
+    TripParticipant, TripParticipantId, WorkspaceId, WriteGrant, WritePermission,
 };
 use rembrane_store_sqlite::SqliteStore;
 use serde::{Deserialize, Serialize};
@@ -101,6 +102,34 @@ struct AddTripParticipantRequest {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct AddTripConstraintRequest {
+    workspace_id: String,
+    subject_id: String,
+    trip_id: String,
+    participant_id: Option<String>,
+    kind: String,
+    statement: String,
+    evidence_source: String,
+    expected_trip_version: u64,
+    expected_previous_sequence: u64,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct RecordTripDecisionRequest {
+    workspace_id: String,
+    subject_id: String,
+    trip_id: String,
+    status: String,
+    summary: String,
+    rationale: Option<String>,
+    evidence_source: String,
+    expected_trip_version: u64,
+    expected_previous_sequence: u64,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct ResolveTravelContextRequest {
     workspace_id: String,
     subject_id: String,
@@ -125,6 +154,14 @@ struct TripParticipantResponse {
     trip_id: String,
     participant_id: String,
     label: String,
+    trip_version: u64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TripRevisionResponse {
+    trip_id: String,
+    record_id: String,
     trip_version: u64,
 }
 
@@ -464,6 +501,115 @@ async fn add_trip_participant(
     ))
 }
 
+async fn add_trip_constraint(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<AddTripConstraintRequest>,
+) -> Result<(StatusCode, Json<TripRevisionResponse>), ApiError> {
+    authorize_bearer(&state, &headers)?;
+    let kind = parse_constraint_kind(&request.kind).ok_or_else(ApiError::invalid_request)?;
+    let evidence_source =
+        parse_evidence_source(&request.evidence_source).ok_or_else(ApiError::invalid_request)?;
+    let mut runtime = state
+        .inner
+        .runtime
+        .lock()
+        .map_err(|_| ApiError::internal())?;
+    if request.workspace_id != runtime.write_grant.workspace_id.as_str()
+        || request.subject_id != runtime.write_grant.subject_id.as_str()
+    {
+        return Err(ApiError::access_denied());
+    }
+    runtime.next_id = runtime.next_id.saturating_add(1);
+    let suffix = runtime.next_id;
+    let constraint_id = TripConstraintId::new(format!("constraint_{suffix}"));
+    let constraint = TripConstraint::new(
+        constraint_id.clone(),
+        request.participant_id.map(TripParticipantId::new),
+        kind,
+        request.statement,
+        EvidenceReference::new(
+            EvidenceId::new(format!("evidence_{suffix}")),
+            evidence_source,
+        ),
+    )
+    .map_err(|_| ApiError::invalid_request())?;
+    let write_grant = runtime.write_grant.clone();
+    let revised = TripService::new(&mut runtime.store)
+        .add_constraint(AddTripConstraintCommand {
+            grant: write_grant,
+            trip_id: EntityId::new(request.trip_id),
+            constraint,
+            expected_trip_version: request.expected_trip_version,
+            event_id: EventId::new(format!("event_{suffix}")),
+            expected_previous_sequence: request.expected_previous_sequence,
+        })
+        .map_err(ApiError::from_application)?;
+    Ok((
+        StatusCode::CREATED,
+        Json(TripRevisionResponse {
+            trip_id: revised.id().to_string(),
+            record_id: constraint_id.to_string(),
+            trip_version: revised.version(),
+        }),
+    ))
+}
+
+async fn record_trip_decision(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<RecordTripDecisionRequest>,
+) -> Result<(StatusCode, Json<TripRevisionResponse>), ApiError> {
+    authorize_bearer(&state, &headers)?;
+    let status = parse_decision_status(&request.status).ok_or_else(ApiError::invalid_request)?;
+    let evidence_source =
+        parse_evidence_source(&request.evidence_source).ok_or_else(ApiError::invalid_request)?;
+    let mut runtime = state
+        .inner
+        .runtime
+        .lock()
+        .map_err(|_| ApiError::internal())?;
+    if request.workspace_id != runtime.write_grant.workspace_id.as_str()
+        || request.subject_id != runtime.write_grant.subject_id.as_str()
+    {
+        return Err(ApiError::access_denied());
+    }
+    runtime.next_id = runtime.next_id.saturating_add(1);
+    let suffix = runtime.next_id;
+    let decision_id = TripDecisionId::new(format!("decision_{suffix}"));
+    let decision = TripDecision::new(
+        decision_id.clone(),
+        status,
+        request.summary,
+        request.rationale,
+        runtime.write_grant.subject_id.clone(),
+        EvidenceReference::new(
+            EvidenceId::new(format!("evidence_{suffix}")),
+            evidence_source,
+        ),
+    )
+    .map_err(|_| ApiError::invalid_request())?;
+    let write_grant = runtime.write_grant.clone();
+    let revised = TripService::new(&mut runtime.store)
+        .record_decision(RecordTripDecisionCommand {
+            grant: write_grant,
+            trip_id: EntityId::new(request.trip_id),
+            decision,
+            expected_trip_version: request.expected_trip_version,
+            event_id: EventId::new(format!("event_{suffix}")),
+            expected_previous_sequence: request.expected_previous_sequence,
+        })
+        .map_err(ApiError::from_application)?;
+    Ok((
+        StatusCode::CREATED,
+        Json(TripRevisionResponse {
+            trip_id: revised.id().to_string(),
+            record_id: decision_id.to_string(),
+            trip_version: revised.version(),
+        }),
+    ))
+}
+
 async fn resolve_travel_context(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -689,6 +835,29 @@ fn parse_research_kind(value: &str) -> Option<BookingResearchKind> {
     }
 }
 
+fn parse_constraint_kind(value: &str) -> Option<TripConstraintKind> {
+    match value {
+        "accessibility" => Some(TripConstraintKind::Accessibility),
+        "accommodation" => Some(TripConstraintKind::Accommodation),
+        "budget" => Some(TripConstraintKind::Budget),
+        "dietary" => Some(TripConstraintKind::Dietary),
+        "documentation" => Some(TripConstraintKind::Documentation),
+        "schedule" => Some(TripConstraintKind::Schedule),
+        "transport" => Some(TripConstraintKind::Transport),
+        "other" => Some(TripConstraintKind::Other),
+        _ => None,
+    }
+}
+
+fn parse_decision_status(value: &str) -> Option<DecisionStatus> {
+    match value {
+        "proposed" => Some(DecisionStatus::Proposed),
+        "selected" => Some(DecisionStatus::Selected),
+        "rejected" => Some(DecisionStatus::Rejected),
+        _ => None,
+    }
+}
+
 fn research_kind_name(kind: BookingResearchKind) -> &'static str {
     match kind {
         BookingResearchKind::Flight => "flight",
@@ -825,6 +994,8 @@ async fn main() -> Result<()> {
         .route("/v1/context/resolve", post(resolve_context))
         .route("/v1/travel/trips", post(create_trip))
         .route("/v1/travel/trip-participants", post(add_trip_participant))
+        .route("/v1/travel/trip-constraints", post(add_trip_constraint))
+        .route("/v1/travel/trip-decisions", post(record_trip_decision))
         .route("/v1/travel/context/resolve", post(resolve_travel_context))
         .route(
             "/v1/travel/booking-research",

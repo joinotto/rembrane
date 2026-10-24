@@ -127,8 +127,8 @@ This roadmap describes sequencing, not release dates.
   - [x] Successful REST/Postman encrypted trip-to-research lifecycle test.
   - [x] Narrow optimistic participant mutation over REST and MCP preserves
     unrelated trip state and uses server-assigned participant identity.
-  - [x] Narrow evidence-backed constraint and attributed-decision mutations in
-    the application layer and MCP, with server-assigned record identity.
+  - [x] Narrow evidence-backed constraint and attributed-decision mutations
+    over REST and MCP, with server-assigned record identity.
 - [ ] Cross-agent activity continuation.
   - [x] Exact-trip travel context separates fresh research from expired
     observations at a caller-supplied canonical timestamp.
