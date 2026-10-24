@@ -65,6 +65,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Deterministic Supermemory replacement through direct create-or-update
   semantics, removing a bounded pre-delete scan that could miss large
   namespaces.
+- Exact Supermemory document retrieval before version-bounded deletion,
+  removing the remaining pagination dependency from lifecycle operations.
 - A public-API-only iMessage app extension reference with explicit text entry,
   review, confirmation, Keychain-held enrollment material, narrow signed
   gateway submission, and an iPhone Simulator type-check gate.

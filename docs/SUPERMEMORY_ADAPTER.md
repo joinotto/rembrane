@@ -85,6 +85,10 @@ Replacement uses Supermemory's create-or-update behavior for the deterministic
 keeps replacement correct when a namespace contains more documents than one
 list response.
 
+Version-bounded deletion retrieves the deterministic document ID through the
+exact document endpoint before removal. It never searches paginated namespace
+lists for the target.
+
 The Rust `SupermemoryTransport` contract therefore requires a separate
 `await_ready` operation after ingestion. A transport cannot represent HTTP
 acceptance as completed indexing. Readiness receives the authorized projection

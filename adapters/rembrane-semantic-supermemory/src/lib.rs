@@ -108,36 +108,35 @@ pub fn decode_records(bytes: &[u8]) -> Result<Vec<SupermemoryRecord>, ProviderEr
             "Supermemory returned too many records".to_owned(),
         ));
     }
-    wire.results
-        .into_iter()
-        .map(|record| {
-            let provider_id = record
-                .custom_id
-                .or(record.document_id)
-                .or(record.id)
-                .ok_or_else(|| {
-                    ProviderError::Rejected("Supermemory record identity is missing".to_owned())
-                })?;
-            let score = record
-                .score
-                .map(|score| {
-                    if !score.is_finite() || !(0.0..=1.0).contains(&score) {
-                        return Err(ProviderError::Rejected(
-                            "Supermemory returned an invalid score".to_owned(),
-                        ));
-                    }
-                    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-                    Ok((score * 1_000_000.0).round() as u32)
-                })
-                .transpose()?;
-            SupermemoryRecord::new(
-                provider_id,
-                MemoryId::new(record.metadata.rembrane_memory_id),
-                record.metadata.rembrane_version,
-                score,
-            )
+    wire.results.into_iter().map(decode_wire_record).collect()
+}
+
+fn decode_wire_record(record: WireRecord) -> Result<SupermemoryRecord, ProviderError> {
+    let provider_id = record
+        .custom_id
+        .or(record.document_id)
+        .or(record.id)
+        .ok_or_else(|| {
+            ProviderError::Rejected("Supermemory record identity is missing".to_owned())
+        })?;
+    let score = record
+        .score
+        .map(|score| {
+            if !score.is_finite() || !(0.0..=1.0).contains(&score) {
+                return Err(ProviderError::Rejected(
+                    "Supermemory returned an invalid score".to_owned(),
+                ));
+            }
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            Ok((score * 1_000_000.0).round() as u32)
         })
-        .collect()
+        .transpose()?;
+    SupermemoryRecord::new(
+        provider_id,
+        MemoryId::new(record.metadata.rembrane_memory_id),
+        record.metadata.rembrane_version,
+        score,
+    )
 }
 
 pub fn deletion_confirmed(bytes: &[u8], provider_id: &str) -> Result<bool, ProviderError> {
@@ -149,6 +148,11 @@ pub fn deletion_confirmed(bytes: &[u8], provider_id: &str) -> Result<bool, Provi
 
 pub trait SupermemoryTransport {
     fn list(&self, namespace: &str) -> Result<Vec<SupermemoryRecord>, ProviderError>;
+    fn get(
+        &self,
+        namespace: &str,
+        document_id: &str,
+    ) -> Result<Option<SupermemoryRecord>, ProviderError>;
     fn upsert_exact(
         &mut self,
         namespace: &str,
@@ -295,6 +299,32 @@ impl SupermemoryTransport for HttpSupermemoryTransport {
             .send()
             .map_err(|_| ProviderError::Unavailable)?;
         decode_records(&Self::decode(response)?)
+    }
+
+    fn get(
+        &self,
+        namespace: &str,
+        document_id: &str,
+    ) -> Result<Option<SupermemoryRecord>, ProviderError> {
+        if !valid_provider_identifier(document_id, 255) {
+            return Err(ProviderError::Rejected(
+                "Supermemory document identity is invalid".to_owned(),
+            ));
+        }
+        let response = self
+            .request(
+                self.client
+                    .get(self.endpoint(namespace, &["document", document_id])?),
+            )
+            .send()
+            .map_err(|_| ProviderError::Unavailable)?;
+        if response.status().as_u16() == 404 {
+            return Ok(None);
+        }
+        let wire: WireRecord = serde_json::from_slice(&Self::decode(response)?).map_err(|_| {
+            ProviderError::Rejected("Supermemory returned malformed JSON".to_owned())
+        })?;
+        decode_wire_record(wire).map(Some)
     }
 
     fn upsert_exact(
@@ -611,13 +641,15 @@ impl<Transport: SupermemoryTransport> SemanticMemoryProvider
         through_version: u64,
     ) -> Result<(), ProviderError> {
         let namespace = self.namespace(workspace_id);
-        for record in self.transport.list(&namespace)? {
-            if &record.canonical_memory_id == memory_id
-                && record.canonical_version <= through_version
-                && !self.transport.delete(&namespace, record.provider_id())?
-            {
-                return Err(ProviderError::Unavailable);
-            }
+        let document_id = self.document_id(memory_id);
+        let Some(record) = self.transport.get(&namespace, &document_id)? else {
+            return Ok(());
+        };
+        if &record.canonical_memory_id == memory_id
+            && record.canonical_version <= through_version
+            && !self.transport.delete(&namespace, &document_id)?
+        {
+            return Err(ProviderError::Unavailable);
         }
         Ok(())
     }
@@ -654,6 +686,20 @@ mod tests {
                 .flatten()
                 .map(|(r, _)| r.clone())
                 .collect())
+        }
+
+        fn get(
+            &self,
+            namespace: &str,
+            document_id: &str,
+        ) -> Result<Option<SupermemoryRecord>, ProviderError> {
+            Ok(self
+                .records
+                .get(namespace)
+                .into_iter()
+                .flatten()
+                .find(|(record, _)| record.provider_id() == document_id)
+                .map(|(record, _)| record.clone()))
         }
 
         fn upsert_exact(

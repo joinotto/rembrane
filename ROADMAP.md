@@ -710,6 +710,8 @@ This roadmap describes sequencing, not release dates.
         deterministic keyed document pseudonyms.
       - [x] Replace versions through deterministic provider upsert without a
         bounded pre-delete list scan.
+      - [x] Use exact deterministic document lookup for version-bounded
+        deletion instead of scanning paginated namespace lists.
       - [x] Require bounded readiness confirmation after ingestion before an
         adapter may report projection success.
         - [x] Bind readiness verification to the exact authorized projection
