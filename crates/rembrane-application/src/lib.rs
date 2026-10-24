@@ -47,8 +47,9 @@ pub use ports::{
     KnowledgeDirection, KnowledgeGraphMutationRepository, KnowledgeGraphRepository,
     MAX_ADMINISTRATIVE_AUDIT_PAGE, MAX_KNOWLEDGE_NEIGHBOURS, MemberLifecycleRepository,
     MemberScopeGrantRepository, MembershipRepository, MemoryRepository, ProjectionOutboxRepository,
-    RetentionRepository, ShareProposalMutationRepository, ShareProposalRepository,
-    TravelDisclosureRepository, TripMutationRepository, TripRepository, WorkspaceRepository,
+    RetentionPurgeRepository, RetentionRepository, ShareProposalMutationRepository,
+    ShareProposalRepository, TravelDisclosureRepository, TripMutationRepository, TripRepository,
+    WorkspaceRepository,
 };
 pub use projection_worker::{ProjectionOutcome, ProjectionWorker};
 pub use propose_memory::{ConfirmMemoryCommand, MemoryProposalService, ProposeMemoryCommand};
@@ -60,7 +61,8 @@ pub use remote_access::{
 pub use remote_session::RemoteSessionRegistry;
 pub use resolve_context::{ResolveContextCommand, ResolveContextService};
 pub use retention::{
-    PlaceLegalHoldCommand, ReleaseLegalHoldCommand, RetentionService, SetRetentionPolicyCommand,
+    ExecuteRetentionPurgeCommand, PlaceLegalHoldCommand, ReleaseLegalHoldCommand,
+    RetentionPurgePlan, RetentionPurgeResult, RetentionService, SetRetentionPolicyCommand,
 };
 pub use revise_memory::{DeleteMemoryCommand, MemoryLifecycleService, ReviseMemoryCommand};
 pub use semantic_context::SemanticContextService;

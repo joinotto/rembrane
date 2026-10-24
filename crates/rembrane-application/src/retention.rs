@@ -6,7 +6,42 @@ use rembrane_domain::{
     WorkspaceRetentionPolicy,
 };
 
-use crate::{ApplicationError, MembershipRepository, RetentionRepository};
+use crate::{
+    ApplicationError, MembershipRepository, RetentionPurgeRepository, RetentionRepository,
+};
+
+pub const MAX_RETENTION_PURGE_ITEMS: usize = 1_000;
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RetentionPurgePlan {
+    pub workspace_id: WorkspaceId,
+    pub memory_cutoff_epoch_seconds: Option<u64>,
+    pub checkpoint_cutoff_epoch_seconds: Option<u64>,
+    pub travel_cutoff_epoch_seconds: Option<u64>,
+    pub disclosure_cutoff_epoch_seconds: Option<u64>,
+    pub event_cutoff_epoch_seconds: Option<u64>,
+    pub maximum_items: usize,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct RetentionPurgeResult {
+    pub memories: usize,
+    pub checkpoints: usize,
+    pub travel_research: usize,
+    pub disclosures: usize,
+    pub canonical_events: usize,
+}
+
+impl RetentionPurgeResult {
+    #[must_use]
+    pub const fn total(self) -> usize {
+        self.memories
+            .saturating_add(self.checkpoints)
+            .saturating_add(self.travel_research)
+            .saturating_add(self.disclosures)
+            .saturating_add(self.canonical_events)
+    }
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SetRetentionPolicyCommand {
@@ -30,6 +65,14 @@ pub struct ReleaseLegalHoldCommand {
     pub hold_id: LegalHoldId,
     pub released_by: PrincipalId,
     pub request_id: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExecuteRetentionPurgeCommand {
+    pub workspace_id: WorkspaceId,
+    pub executed_by: PrincipalId,
+    pub now_epoch_seconds: u64,
+    pub maximum_items: usize,
 }
 
 pub struct RetentionService<'repository, Repository> {
@@ -124,6 +167,74 @@ where
         self.repository
             .replace_legal_hold(released.clone(), expected_version, audit)?;
         Ok(released)
+    }
+}
+
+impl<Repository> RetentionService<'_, Repository>
+where
+    Repository: MembershipRepository + RetentionPurgeRepository + RetentionRepository,
+{
+    pub fn execute_purge(
+        &mut self,
+        command: ExecuteRetentionPurgeCommand,
+    ) -> Result<RetentionPurgeResult, ApplicationError> {
+        authorize_administrator(self.repository, &command.workspace_id, &command.executed_by)?;
+        if command.now_epoch_seconds == 0
+            || !(1..=MAX_RETENTION_PURGE_ITEMS).contains(&command.maximum_items)
+        {
+            return Err(ApplicationError::Validation(
+                "retention purge bounds are invalid".to_owned(),
+            ));
+        }
+        let policy = self
+            .repository
+            .find_retention_policy(&command.workspace_id)?
+            .ok_or(ApplicationError::NotFound)?;
+        if !self
+            .repository
+            .list_active_legal_holds(&command.workspace_id)?
+            .is_empty()
+        {
+            return Err(ApplicationError::AccessDenied);
+        }
+        let plan = RetentionPurgePlan {
+            workspace_id: command.workspace_id,
+            memory_cutoff_epoch_seconds: cutoff(
+                policy.period(rembrane_domain::RetentionResource::UserMemory),
+                command.now_epoch_seconds,
+            ),
+            checkpoint_cutoff_epoch_seconds: cutoff(
+                policy.period(rembrane_domain::RetentionResource::ActivityCheckpoint),
+                command.now_epoch_seconds,
+            ),
+            travel_cutoff_epoch_seconds: cutoff(
+                policy.period(rembrane_domain::RetentionResource::TravelResearch),
+                command.now_epoch_seconds,
+            ),
+            disclosure_cutoff_epoch_seconds: cutoff(
+                policy.period(rembrane_domain::RetentionResource::DisclosureReceipt),
+                command.now_epoch_seconds,
+            ),
+            event_cutoff_epoch_seconds: cutoff(
+                policy.period(rembrane_domain::RetentionResource::CanonicalEvent),
+                command.now_epoch_seconds,
+            ),
+            maximum_items: command.maximum_items,
+        };
+        let result = self.repository.execute_retention_purge(&plan)?;
+        if result.total() > plan.maximum_items {
+            return Err(ApplicationError::StorageUnavailable);
+        }
+        Ok(result)
+    }
+}
+
+const fn cutoff(period: rembrane_domain::RetentionPeriod, now_epoch_seconds: u64) -> Option<u64> {
+    match period {
+        rembrane_domain::RetentionPeriod::Forever => None,
+        rembrane_domain::RetentionPeriod::Days(days) => {
+            now_epoch_seconds.checked_sub((days as u64).saturating_mul(86_400))
+        }
     }
 }
 

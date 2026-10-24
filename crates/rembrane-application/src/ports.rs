@@ -10,6 +10,7 @@ use rembrane_domain::{
 };
 
 use crate::ApplicationError;
+use crate::{RetentionPurgePlan, RetentionPurgeResult};
 
 pub const MAX_ADMINISTRATIVE_AUDIT_PAGE: usize = 1_000;
 
@@ -63,6 +64,13 @@ pub trait RetentionRepository {
         expected_version: u64,
         audit_event: AdministrativeAuditEvent,
     ) -> Result<(), ApplicationError>;
+}
+
+pub trait RetentionPurgeRepository {
+    fn execute_retention_purge(
+        &mut self,
+        plan: &RetentionPurgePlan,
+    ) -> Result<RetentionPurgeResult, ApplicationError>;
 }
 
 pub trait MemoryRepository {

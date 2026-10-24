@@ -27,6 +27,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Tenant-bound authenticated management HTTP endpoints and CLI commands for
   bounded administrative-audit reads, retention-policy updates, and legal-hold
   placement or release.
+- Owner/admin-only bounded retention purge planning and SQLite execution with
+  resource-specific cutoffs, a global deletion cap, active legal-hold
+  blocking, referential-safety checks, and permanent exclusion of append-only
+  administrative audit evidence.
 - A versioned per-workspace retention policy contract with separate periods
   for memory, checkpoints, travel research, disclosures, canonical events, and
   administrative audit, including bounded expiry and legal-hold overrides.

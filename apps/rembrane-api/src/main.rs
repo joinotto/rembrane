@@ -12,11 +12,12 @@ use rembrane_application::{
     AddTripConstraintCommand, AddTripParticipantCommand, AdministrativeAuditRepository,
     ApplicationError, AuthorizeClientCommand, AuthorizeClientService,
     CaptureBookingResearchCommand, CaptureBookingResearchService, ClientGrantBundle,
-    CreateTripCommand, KeyRotationRepository, MemberLifecycleService, MembershipRepository,
-    PlaceLegalHoldCommand, RecordTripDecisionCommand, ReleaseLegalHoldCommand,
-    ResolveContextCommand, ResolveContextService, ResolveTravelContextCommand, RetentionService,
-    SetRetentionPolicyCommand, TravelContextResearch, TravelContextService, TravelContextTrip,
-    TravelSensitiveProfile, TripService,
+    CreateTripCommand, ExecuteRetentionPurgeCommand, KeyRotationRepository, MemberLifecycleService,
+    MembershipRepository, PlaceLegalHoldCommand, RecordTripDecisionCommand,
+    ReleaseLegalHoldCommand, ResolveContextCommand, ResolveContextService,
+    ResolveTravelContextCommand, RetentionService, SetRetentionPolicyCommand,
+    TravelContextResearch, TravelContextService, TravelContextTrip, TravelSensitiveProfile,
+    TripService,
 };
 use rembrane_config::{parse_read_permissions, parse_read_scopes};
 use rembrane_contracts::ResolveContextRequest;
@@ -102,6 +103,13 @@ struct LegalHoldRequest {
     workspace_id: String,
     hold_id: String,
     request_id: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct ExecuteRetentionPurgeRequest {
+    workspace_id: String,
+    maximum_items: usize,
 }
 
 #[derive(Deserialize)]
@@ -380,6 +388,17 @@ struct LegalHoldResponse {
     hold_id: String,
     version: u64,
     status: &'static str,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RetentionPurgeResponse {
+    memories: usize,
+    checkpoints: usize,
+    travel_research: usize,
+    disclosures: usize,
+    canonical_events: usize,
+    total: usize,
 }
 
 #[derive(Serialize)]
@@ -679,6 +698,42 @@ async fn release_legal_hold(
         })
         .map_err(ApiError::from_application)?;
     Ok(Json(LegalHoldResponse::from(&hold)))
+}
+
+async fn execute_retention_purge(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<ExecuteRetentionPurgeRequest>,
+) -> Result<Json<RetentionPurgeResponse>, ApiError> {
+    authorize_bearer(&state, &headers)?;
+    let mut runtime = state
+        .inner
+        .runtime
+        .lock()
+        .map_err(|_| ApiError::internal())?;
+    authorize_management_workspace(&runtime, &request.workspace_id)?;
+    let workspace_id = runtime.write_grant.workspace_id.clone();
+    let executed_by = runtime.write_grant.subject_id.clone();
+    let now_epoch_seconds = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| ApiError::internal())?
+        .as_secs();
+    let result = RetentionService::new(&mut runtime.store)
+        .execute_purge(ExecuteRetentionPurgeCommand {
+            workspace_id,
+            executed_by,
+            now_epoch_seconds,
+            maximum_items: request.maximum_items,
+        })
+        .map_err(ApiError::from_application)?;
+    Ok(Json(RetentionPurgeResponse {
+        memories: result.memories,
+        checkpoints: result.checkpoints,
+        travel_research: result.travel_research,
+        disclosures: result.disclosures,
+        canonical_events: result.canonical_events,
+        total: result.total(),
+    }))
 }
 
 fn authorize_management_workspace(runtime: &Runtime, workspace_id: &str) -> Result<(), ApiError> {
@@ -1514,6 +1569,7 @@ async fn main() -> Result<()> {
         .route("/v1/workspaces/key-rotation", post(rotate_workspace_key))
         .route("/v1/administrative-audit", get(list_administrative_audit))
         .route("/v1/retention/policy", post(set_retention_policy))
+        .route("/v1/retention/purge", post(execute_retention_purge))
         .route("/v1/retention/legal-holds", post(place_legal_hold))
         .route(
             "/v1/retention/legal-holds/release",

@@ -313,7 +313,7 @@ This roadmap describes sequencing, not release dates.
       - [x] Add the authenticated management REST operation.
       - [x] Prove unauthorized callers cannot trigger provider side effects
         and removed members are excluded from the provider recipient set.
-- [ ] Organizational audit and retention controls.
+- [x] Organizational audit and retention controls.
   - [x] Define an immutable bounded content-free administrative audit event
     contract with tenant, actor, closed action, opaque target, request
     correlation, and occurrence time.
@@ -326,12 +326,12 @@ This roadmap describes sequencing, not release dates.
       evidence in the same repository transaction.
     - [x] Commit retention-policy and legal-hold mutations with their audit
       evidence in the same repository transaction.
-  - [ ] Define enforceable per-workspace retention policies and legal holds.
+  - [x] Define enforceable per-workspace retention policies and legal holds.
     - [x] Define versioned resource-specific retention periods, bounded expiry
       calculation, minimum audit/disclosure relationship, and legal-hold purge
       override semantics.
     - [x] Persist policies and legal holds with optimistic versioning.
-    - [ ] Execute bounded purge plans without deleting held resources or
+    - [x] Execute bounded purge plans without deleting held resources or
       append-only security evidence prematurely.
   - [x] Expose narrowly authorized audit and retention management APIs.
     - [x] Add owner/admin-only application services for retention-policy and

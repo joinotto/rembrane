@@ -1,11 +1,11 @@
 use rembrane_application::{
     AdministrativeAuditRepository, ApplicationError, AuthorizeClientCommand,
     AuthorizeClientService, CanonicalMutationRepository, CheckpointRepository, ClientGrantBundle,
-    DeleteMemoryCommand, EventRepository, MemberLifecycleService, MembershipRepository,
-    MemoryLifecycleService, MemoryRepository, PlaceLegalHoldCommand, ReleaseLegalHoldCommand,
-    RememberPreferenceCommand, RememberPreferenceService, ResolveContextCommand,
-    ResolveContextService, RetentionService, ReviseMemoryCommand, SetRetentionPolicyCommand,
-    WorkspaceRepository,
+    DeleteMemoryCommand, EventRepository, ExecuteRetentionPurgeCommand, MemberLifecycleService,
+    MembershipRepository, MemoryLifecycleService, MemoryRepository, PlaceLegalHoldCommand,
+    ReleaseLegalHoldCommand, RememberPreferenceCommand, RememberPreferenceService,
+    ResolveContextCommand, ResolveContextService, RetentionService, ReviseMemoryCommand,
+    SetRetentionPolicyCommand, WorkspaceRepository,
 };
 use rembrane_config::{ProviderConnection, ProviderKind, ProviderPlacement, SecretReference};
 use rembrane_contracts::ResolveContextRequest;
@@ -134,6 +134,36 @@ fn audit(arguments: &[String]) -> Result<(), String> {
 }
 
 fn retention(arguments: &[String]) -> Result<(), String> {
+    if arguments.first().map(String::as_str) == Some("purge") {
+        let arguments = &arguments[1..];
+        let (mut store, principal_id, workspace_id) = encrypted_store(arguments)?;
+        let maximum_items = optional_option(arguments, "--limit")
+            .map_or(Ok(100), |value| parse_usize(value, "--limit"))?;
+        let now_epoch_seconds = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|_| "system clock is before the Unix epoch".to_owned())?
+            .as_secs();
+        let result = RetentionService::new(&mut store)
+            .execute_purge(ExecuteRetentionPurgeCommand {
+                workspace_id,
+                executed_by: principal_id,
+                now_epoch_seconds,
+                maximum_items,
+            })
+            .map_err(|error| format!("cannot execute retention purge: {error}"))?;
+        println!(
+            "{}",
+            serde_json::json!({
+                "memories": result.memories,
+                "checkpoints": result.checkpoints,
+                "travelResearch": result.travel_research,
+                "disclosures": result.disclosures,
+                "canonicalEvents": result.canonical_events,
+                "total": result.total()
+            })
+        );
+        return Ok(());
+    }
     if arguments.first().map(String::as_str) != Some("set") {
         return Err("usage: rembrane retention set --database <path> --principal <id> --workspace <id> --request <id> --memory-days <days|forever> --checkpoint-days <days|forever> --travel-days <days|forever> --disclosure-days <days|forever> --event-days <days|forever> --audit-days <days|forever> [--expected-version <n>]".to_owned());
     }
@@ -1397,6 +1427,8 @@ fn print_help() {
              --travel-days <days|forever> --disclosure-days <days|forever> \
              --event-days <days|forever> --audit-days <days|forever> \
              [--expected-version <n>]\n\
+           rembrane retention purge --database <path> \
+             --principal <owner-or-admin-id> --workspace <id> [--limit <items>]\n\
            rembrane legal-hold <place|release> --database <path> \
              --principal <owner-or-admin-id> --workspace <id> \
              --hold <id> --request <id>\n\

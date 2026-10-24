@@ -15,8 +15,8 @@ use std::path::Path;
 use rembrane_application::{
     AdministrativeAuditRepository, ApplicationError, InvitationRepository, KeyRotationRepository,
     MAX_ADMINISTRATIVE_AUDIT_PAGE, MemberLifecycleRepository, MemberScopeGrantRepository,
-    MembershipRepository, MemoryRepository, RetentionRepository, ShareProposalRepository,
-    WorkspaceRepository,
+    MembershipRepository, MemoryRepository, RetentionPurgePlan, RetentionPurgeRepository,
+    RetentionPurgeResult, RetentionRepository, ShareProposalRepository, WorkspaceRepository,
 };
 use rembrane_codec::decode_memory;
 use rembrane_crypto::{EncryptedPayload, EncryptionContext, PayloadPurpose, RecordCipher};
@@ -416,6 +416,155 @@ impl<C> RetentionRepository for SqliteStore<C> {
             .commit()
             .map_err(|_| ApplicationError::StorageUnavailable)
     }
+}
+
+impl<C> RetentionPurgeRepository for SqliteStore<C> {
+    fn execute_retention_purge(
+        &mut self,
+        plan: &RetentionPurgePlan,
+    ) -> Result<RetentionPurgeResult, ApplicationError> {
+        if plan.maximum_items == 0 {
+            return Err(ApplicationError::Validation(
+                "retention purge limit must be positive".to_owned(),
+            ));
+        }
+        let transaction = self
+            .connection
+            .transaction()
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        let mut remaining = plan.maximum_items;
+        let mut result = RetentionPurgeResult::default();
+
+        if let Some(cutoff) = plan.disclosure_cutoff_epoch_seconds {
+            for table in [
+                "disclosure_receipts",
+                "checkpoint_disclosures",
+                "travel_disclosure_receipts",
+            ] {
+                if remaining == 0 {
+                    break;
+                }
+                let deleted = delete_bounded_by_created_at(
+                    &transaction,
+                    table,
+                    &plan.workspace_id,
+                    cutoff,
+                    remaining,
+                    None,
+                )?;
+                result.disclosures = result.disclosures.saturating_add(deleted);
+                remaining = remaining.saturating_sub(deleted);
+            }
+        }
+        if let Some(cutoff) = plan.travel_cutoff_epoch_seconds {
+            let deleted = delete_bounded_by_created_at(
+                &transaction,
+                "booking_research",
+                &plan.workspace_id,
+                cutoff,
+                remaining,
+                Some(
+                    "NOT EXISTS (SELECT 1 FROM disclosed_booking_research d \
+                     WHERE d.workspace_id=booking_research.workspace_id \
+                     AND d.research_id=booking_research.id)",
+                ),
+            )?;
+            result.travel_research = deleted;
+            remaining = remaining.saturating_sub(deleted);
+        }
+        if let Some(cutoff) = plan.checkpoint_cutoff_epoch_seconds {
+            let deleted = delete_bounded_by_created_at(
+                &transaction,
+                "activity_checkpoints",
+                &plan.workspace_id,
+                cutoff,
+                remaining,
+                Some(
+                    "NOT EXISTS (SELECT 1 FROM checkpoint_disclosures d \
+                     WHERE d.workspace_id=activity_checkpoints.workspace_id \
+                     AND d.checkpoint_id=activity_checkpoints.id)",
+                ),
+            )?;
+            result.checkpoints = deleted;
+            remaining = remaining.saturating_sub(deleted);
+        }
+        if let Some(cutoff) = plan.memory_cutoff_epoch_seconds {
+            let deleted = delete_bounded_by_created_at(
+                &transaction,
+                "memories",
+                &plan.workspace_id,
+                cutoff,
+                remaining,
+                Some(
+                    "NOT EXISTS (SELECT 1 FROM disclosed_memories d \
+                     WHERE d.workspace_id=memories.workspace_id AND d.memory_id=memories.id) \
+                     AND NOT EXISTS (SELECT 1 FROM projection_outbox p \
+                     WHERE p.workspace_id=memories.workspace_id AND p.memory_id=memories.id)",
+                ),
+            )?;
+            result.memories = deleted;
+            remaining = remaining.saturating_sub(deleted);
+        }
+        if let Some(cutoff) = plan.event_cutoff_epoch_seconds {
+            let deleted = delete_bounded_by_created_at(
+                &transaction,
+                "workspace_events",
+                &plan.workspace_id,
+                cutoff,
+                remaining,
+                None,
+            )?;
+            result.canonical_events = deleted;
+        }
+
+        transaction
+            .commit()
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        Ok(result)
+    }
+}
+
+fn delete_bounded_by_created_at(
+    connection: &Connection,
+    table: &str,
+    workspace_id: &WorkspaceId,
+    cutoff_epoch_seconds: u64,
+    limit: usize,
+    additional_predicate: Option<&str>,
+) -> Result<usize, ApplicationError> {
+    if limit == 0 {
+        return Ok(0);
+    }
+    let allowed_table = matches!(
+        table,
+        "disclosure_receipts"
+            | "checkpoint_disclosures"
+            | "travel_disclosure_receipts"
+            | "booking_research"
+            | "activity_checkpoints"
+            | "memories"
+            | "workspace_events"
+    );
+    if !allowed_table {
+        return Err(ApplicationError::StorageUnavailable);
+    }
+    let predicate = additional_predicate.unwrap_or("1=1");
+    let statement = format!(
+        "DELETE FROM {table} WHERE rowid IN (
+            SELECT rowid FROM {table}
+            WHERE workspace_id=?1 AND unixepoch(created_at) <= ?2 AND {predicate}
+            ORDER BY created_at, rowid LIMIT ?3
+        )"
+    );
+    let cutoff = i64::try_from(cutoff_epoch_seconds).map_err(|_| {
+        ApplicationError::Validation("retention cutoff is outside SQLite range".to_owned())
+    })?;
+    let limit = i64::try_from(limit).map_err(|_| {
+        ApplicationError::Validation("retention purge limit is outside SQLite range".to_owned())
+    })?;
+    connection
+        .execute(&statement, params![workspace_id.as_str(), cutoff, limit])
+        .map_err(map_write_error)
 }
 
 fn retention_period(days: Option<u32>) -> Result<RetentionPeriod, ApplicationError> {
