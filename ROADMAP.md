@@ -493,7 +493,7 @@ This roadmap describes sequencing, not release dates.
       - [x] Cover the configured cipher and its CLI, REST, and MCP consumers in
         the dedicated dependency-enabled gate.
     - [ ] Verify the dependency-enabled adapter build and tests in CI.
-- [ ] TypeScript, Python, Rust, Swift, and Kotlin SDKs.
+- [x] TypeScript, Python, Rust, Swift, and Kotlin SDKs.
   - [x] Publish and test a zero-dependency TypeScript client package for the
     authenticated REST surface.
   - [x] Publish and test a standard-library-only Python client package for the
@@ -502,7 +502,10 @@ This roadmap describes sequencing, not release dates.
     implementation.
   - [x] Publish and compile-test a Swift Package with injectable async
     transport and a redirect-rejecting URLSession implementation.
-  - [ ] Publish a Kotlin client package.
+  - [x] Publish a dependency-free Kotlin/JVM client package with injected
+    transport and an executable smoke fixture.
+    - [ ] Execute the Kotlin compiler smoke fixture in a toolchain-enabled CI
+      environment.
 - [x] Reusable semantic-provider conformance suite.
 - [x] Evidence-backed provider compatibility registry schema and initial
   native-provider record.

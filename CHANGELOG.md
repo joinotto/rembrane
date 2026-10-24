@@ -46,6 +46,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   redirect-rejecting ephemeral URLSession transport, HTTPS-or-loopback
   endpoint policy, bounded JSON decoding, typed API errors, and a standalone
   compiled smoke test.
+- A dependency-free Kotlin/JVM SDK using the JDK HTTP client with redirects
+  disabled, HTTPS-or-loopback endpoint policy, bounded JSON responses, typed
+  API errors, injected transport support, and a portable smoke fixture.
 - A versioned per-workspace retention policy contract with separate periods
   for memory, checkpoints, travel research, disclosures, canonical events, and
   administrative audit, including bounded expiry and legal-hold overrides.
