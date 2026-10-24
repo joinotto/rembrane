@@ -39,19 +39,19 @@ Start Rembrane with the optional projection data plane:
 docker compose -f compose.yaml -f compose.graphiti.yaml up --build -d
 ```
 
-The adapter accepts an endpoint and secret reference shaped as:
+The worker accepts an endpoint and locally resolved secret shaped as:
 
 ```text
 REMBRANE_GRAPH_PROVIDER=graphiti
 REMBRANE_GRAPHITI_BASE_URL=http://127.0.0.1:8793
-REMBRANE_GRAPHITI_TOKEN_REF=env:REMBRANE_GRAPHITI_BEARER_TOKEN
+REMBRANE_GRAPHITI_BEARER_TOKEN='resolve-from-local-secret-store'
+REMBRANE_GRAPH_PROVIDER_ALLOW_PLAINTEXT=true
 ```
 
-The token reference is configuration metadata; its value remains in the local
-environment or secret manager. Automatic worker construction from these
-variables is tracked separately; until that wiring lands, applications compose
-the `rembrane-graph-graphiti` and `rembrane-graph-graphiti-http` crates
-explicitly.
+The token remains in the local environment or secret manager and is resolved
+only by the worker process. The Compose overlay constructs the worker
+automatically and connects it to the sidecar over the private container
+network.
 
 ## Security properties
 

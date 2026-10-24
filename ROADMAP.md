@@ -183,8 +183,10 @@ This roadmap describes sequencing, not release dates.
         - [x] Add a configured encrypted SQLite graph-worker executable that
           drains provider-specific jobs through the canonical retry,
           supersession, completion, and quarantine state machine.
-        - [ ] Package and exercise the graph worker in the self-hosted
-          Graphiti deployment.
+        - [x] Package the graph worker in the self-hosted Graphiti deployment
+          with the shared encrypted volume, private sidecar endpoint, and
+          operator-supplied credentials.
+        - [ ] Add an executable worker lifecycle test over a real outbox job.
 
 - [x] Project entities and scoped preferences.
 - [x] Layer global, domain, entity, and activity context in one request.

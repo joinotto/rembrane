@@ -1,4 +1,35 @@
 services:
+  graph-projection-worker:
+    build:
+      context: .
+    restart: unless-stopped
+    command:
+      - rembrane-graph-worker
+    environment:
+      REMBRANE_DATABASE: /var/lib/rembrane/rembrane.db
+      REMBRANE_PRINCIPAL_ID: ${REMBRANE_PRINCIPAL_ID:?required}
+      REMBRANE_WORKSPACE_ID: ${REMBRANE_WORKSPACE_ID:?required}
+      REMBRANE_WORKSPACE_KEY_ID: ${REMBRANE_WORKSPACE_KEY_ID:?required}
+      REMBRANE_WORKSPACE_KEY_HEX: ${REMBRANE_WORKSPACE_KEY_HEX:?required}
+      REMBRANE_GRAPH_PROVIDER: graphiti
+      REMBRANE_GRAPH_PROVIDER_ALLOW_PLAINTEXT: "true"
+      REMBRANE_GRAPHITI_BASE_URL: http://graphiti-sidecar:8793
+      REMBRANE_GRAPHITI_BEARER_TOKEN: ${REMBRANE_GRAPHITI_BEARER_TOKEN:?required}
+      REMBRANE_GRAPH_WORKER_POLL_MILLISECONDS: ${REMBRANE_GRAPH_WORKER_POLL_MILLISECONDS:-1000}
+      REMBRANE_GRAPH_WORKER_MAXIMUM_ATTEMPTS: ${REMBRANE_GRAPH_WORKER_MAXIMUM_ATTEMPTS:-5}
+    volumes:
+      - rembrane-data:/var/lib/rembrane
+    depends_on:
+      graphiti-sidecar:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
   graphiti-sidecar:
     build:
       context: ./sidecars/rembrane-graphiti

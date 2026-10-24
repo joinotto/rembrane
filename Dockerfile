@@ -7,6 +7,7 @@ COPY . .
 RUN cargo build --release \
     --package rembrane-api \
     --package rembrane-cli \
+    --package rembrane-graph-worker \
     --package rembrane-mcp
 
 FROM debian:bookworm-slim AS runtime
@@ -23,6 +24,8 @@ COPY --from=builder /source/target/release/rembrane-api \
     /usr/local/bin/rembrane-api
 COPY --from=builder /source/target/release/rembrane-mcp \
     /usr/local/bin/rembrane-mcp
+COPY --from=builder /source/target/release/rembrane-graph-worker \
+    /usr/local/bin/rembrane-graph-worker
 COPY --chmod=755 docker/entrypoint.sh /usr/local/bin/rembrane-entrypoint
 
 ENV REMBRANE_DATABASE=/var/lib/rembrane/rembrane.db
