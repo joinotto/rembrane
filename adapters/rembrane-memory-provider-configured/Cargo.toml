@@ -1,0 +1,15 @@
+[package]
+name = "rembrane-memory-provider-configured"
+description = "Deployment-selected portable memory provider composition for Rembrane"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+rembrane-memory-provider-http = { path = "../rembrane-memory-provider-http" }
+rembrane-provider-sdk = { path = "../../crates/rembrane-provider-sdk" }
+
+[lints]
+workspace = true

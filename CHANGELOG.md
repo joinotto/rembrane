@@ -101,6 +101,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Dedicated Memory Provider CI execution of the independent black-box mock
   conformance proof before dependency-enabled Rust client tests and clippy,
   with a bounded job timeout.
+- A configured Memory Provider adapter that discovers and negotiates the
+  portable HTTP provider from deployment-owned environment values, retains
+  credentials only inside the zeroizing transport, and generates safe
+  non-tenant request identity prefixes.
 - Canonical engine-neutral temporal knowledge graph aggregates with typed
   nodes, validated relationship types, strict workspace namespaces, separate
   validity and ingestion time, evidence provenance, bounded aliases, versions,

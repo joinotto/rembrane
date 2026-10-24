@@ -392,6 +392,9 @@ This roadmap describes sequencing, not release dates.
         payload, digest, and continuation invariants.
       - [x] Push idempotent optimistic mutation batches atomically from a base
         cursor and require ordered one-for-one canonical acknowledgements.
+  - [x] Add deployment-selected Memory Provider composition using
+    environment-owned endpoint and bearer-token values plus safe request
+    identity prefixes.
 - [x] Versioned key-provider sidecar protocol for OS, HSM, and customer-KMS
   adapters.
   - [x] Add transport-independent Rust manifest, negotiation, request, context,

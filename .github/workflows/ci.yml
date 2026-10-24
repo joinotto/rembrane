@@ -81,10 +81,14 @@ jobs:
         with:
           components: clippy
       - run: node scripts/test-memory-provider-http-runner.mjs
-      - run: cargo test --package rembrane-memory-provider-http
+      - run: >-
+          cargo test
+          --package rembrane-memory-provider-http
+          --package rembrane-memory-provider-configured
       - run: >-
           cargo clippy
           --package rembrane-memory-provider-http
+          --package rembrane-memory-provider-configured
           --all-targets -- -D warnings
 
   container:
