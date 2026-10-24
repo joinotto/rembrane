@@ -183,13 +183,15 @@ export REMBRANE_SECRET_SERVICE_HISTORICAL_KEYS=
 openssl rand -hex 32 | /usr/bin/secret-tool store \
   --label="Rembrane workspace key" \
   rembrane-service "$REMBRANE_SECRET_SERVICE_SERVICE" \
-  rembrane-account "$REMBRANE_SECRET_SERVICE_ACCOUNT"
+  rembrane-account "$REMBRANE_SECRET_SERVICE_ACCOUNT" \
+  rembrane-key-id "$REMBRANE_WORKSPACE_KEY_ID"
 ```
 
 The desktop session must provide an unlocked Secret Service collection. Key
 output is captured into zeroizing process memory and never placed in command
-arguments. Windows DPAPI, HSM, and direct customer-KMS resolvers remain
-roadmap work.
+arguments. Lookup binds service, account, and expected key ID so historical
+generations cannot resolve through a reused account label. Windows DPAPI, HSM,
+and direct customer-KMS resolvers remain roadmap work.
 
 A customer-controlled Key Provider Protocol sidecar can keep raw workspace
 keys outside the Rembrane process:

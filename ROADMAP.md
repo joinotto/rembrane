@@ -65,6 +65,8 @@ This roadmap describes sequencing, not release dates.
   - [ ] Add Windows DPAPI and Linux Secret Service adapters.
     - [x] Resolve active and historical Linux Secret Service keys through the
       fixed `secret-tool` client with lookup metadata only and zeroized output.
+      - [x] Bind each lookup to service, account, and expected key ID to avoid
+        cross-generation resolution through reused account metadata.
     - [ ] Add a Windows DPAPI adapter.
   - [x] Define a vendor-neutral authenticated key-provider operation protocol
     that never exports raw workspace keys.

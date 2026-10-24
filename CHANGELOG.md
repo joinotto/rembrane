@@ -14,6 +14,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   metadata-only agent configuration, and zeroized captured secrets.
 - Immediate zeroization guards around OS-keyring subprocess stdout and stderr,
   including non-UTF-8, nonzero-exit, and unexpected-diagnostic failure paths.
+- Linux Secret Service lookups bound to service, account, and expected key ID
+  so active and historical generations cannot cross-resolve through reused
+  account metadata.
 - Secret-safe OpenCode local MCP configuration generation using the documented
   command-array shape and environment-variable references without embedding
   credential values.

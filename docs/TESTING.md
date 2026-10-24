@@ -144,12 +144,13 @@ export REMBRANE_SECRET_SERVICE_HISTORICAL_KEYS=
 openssl rand -hex 32 | /usr/bin/secret-tool store \
   --label="Disposable Rembrane test key" \
   rembrane-service "$REMBRANE_SECRET_SERVICE_SERVICE" \
-  rembrane-account "$REMBRANE_SECRET_SERVICE_ACCOUNT"
+  rembrane-account "$REMBRANE_SECRET_SERVICE_ACCOUNT" \
+  rembrane-key-id "$REMBRANE_WORKSPACE_KEY_ID"
 unset REMBRANE_WORKSPACE_KEY_HEX
 ```
 
 Delete the item after testing using the desktop keyring manager or
-`secret-tool clear` with the same two attributes.
+`secret-tool clear` with the same three attributes.
 
 To exercise a disposable customer-controlled key-provider sidecar instead:
 

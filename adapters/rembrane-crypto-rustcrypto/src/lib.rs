@@ -156,7 +156,11 @@ impl RustCryptoRecordCipher {
         service: &str,
         account: &str,
     ) -> Result<Self, CryptoError> {
-        if !valid_key_metadata(service) || !valid_key_metadata(account) {
+        let key_id = key_id.into();
+        if !valid_key_metadata(&key_id)
+            || !valid_key_metadata(service)
+            || !valid_key_metadata(account)
+        {
             return Err(CryptoError::KeyUnavailable);
         }
         let output = Command::new("/usr/bin/secret-tool")
@@ -166,6 +170,8 @@ impl RustCryptoRecordCipher {
                 service,
                 "rembrane-account",
                 account,
+                "rembrane-key-id",
+                &key_id,
             ])
             .output()
             .map_err(|_| CryptoError::KeyUnavailable)?;
