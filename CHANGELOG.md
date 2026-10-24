@@ -33,6 +33,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Bounded Memory Provider activity-checkpoint payloads with separate create and
   optimistic-update shapes, idempotency keys, entity linkage, resumable
   fingerprints, and canonical checkpoint result identities.
+- Idempotent append-only Memory Provider disclosure receipt payloads with
+  bounded purpose, context-pack linkage, exact unique memory revisions,
+  non-future timestamps, and no caller-controlled workspace, subject, or
+  client identity fields.
 - Expiry-aware remote MCP session capacity reclamation so abandoned bindings
   cannot exhaust the bounded in-process registry indefinitely.
 - A transport-neutral remote MCP lifecycle boundary that composes strict HTTP

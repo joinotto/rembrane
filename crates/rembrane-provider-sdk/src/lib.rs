@@ -9,6 +9,7 @@ mod conformance;
 mod error;
 mod memory_checkpoint;
 mod memory_context;
+mod memory_disclosure;
 mod memory_mutation;
 mod memory_protocol;
 mod semantic;
@@ -24,6 +25,10 @@ pub use memory_context::{
     MAX_CONTEXT_PURPOSE_BYTES, MAX_CONTEXT_QUERY_BYTES, MemoryProviderContextItem,
     MemoryProviderContextSelector, MemoryProviderDisclosureConstraint, MemoryProviderSensitivity,
     ResolveContextPayload, ResolveContextResult,
+};
+pub use memory_disclosure::{
+    MAX_DISCLOSED_MEMORIES, MAX_DISCLOSURE_PURPOSE_BYTES, MemoryProviderDisclosedMemory,
+    RecordDisclosurePayload, RecordDisclosureResult,
 };
 pub use memory_mutation::{MAX_SOURCE_REFERENCE_BYTES, ProposeMemoryPayload, ProposeMemoryResult};
 pub use memory_protocol::{

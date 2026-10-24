@@ -245,6 +245,9 @@ This roadmap describes sequencing, not release dates.
       allowing clients to assert confirmed status.
     - [x] Add bounded idempotent activity-checkpoint create/update payloads
       with explicit optimistic versions and canonical checkpoint identities.
+    - [x] Add append-only disclosure receipt payloads containing exact memory
+      revisions while deriving workspace, subject, and client identity solely
+      from authenticated connection context.
   - [ ] Publish a serialization schema and HTTP binding.
   - [ ] Add cross-implementation conformance fixtures.
 - [x] Versioned key-provider sidecar protocol for OS, HSM, and customer-KMS
