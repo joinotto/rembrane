@@ -20,6 +20,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - A Windows DPAPI blob-reference contract with generation-specific key IDs,
   bounded local absolute paths, traversal rejection, historical parsing, and a
   dedicated Windows warnings-as-errors CI job.
+- Windows CurrentUser DPAPI resolution for active and historical workspace
+  keys through a fixed system PowerShell bridge, with key-ID entropy,
+  zeroized subprocess output, metadata-only agent configuration, and a live
+  Windows CI protect/unprotect round trip.
 - Secret-safe OpenCode local MCP configuration generation using the documented
   command-array shape and environment-variable references without embedding
   credential values.

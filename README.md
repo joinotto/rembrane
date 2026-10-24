@@ -190,8 +190,42 @@ openssl rand -hex 32 | /usr/bin/secret-tool store \
 The desktop session must provide an unlocked Secret Service collection. Key
 output is captured into zeroizing process memory and never placed in command
 arguments. Lookup binds service, account, and expected key ID so historical
-generations cannot resolve through a reused account label. Windows DPAPI, HSM,
-and direct customer-KMS resolvers remain roadmap work.
+generations cannot resolve through a reused account label.
+
+On Windows, a workspace key can be protected for the current signed-in user
+with DPAPI. Run this in Windows PowerShell; the raw key is generated and
+cleared inside the process and is never supplied as a command argument:
+
+```powershell
+$env:REMBRANE_KEY_PROVIDER = "windows-dpapi"
+$env:REMBRANE_WORKSPACE_KEY_ID = "local-key-v1"
+$env:REMBRANE_DPAPI_BLOB_PATH = "$env:LOCALAPPDATA\Rembrane\local-key-v1.dpapi"
+$env:REMBRANE_DPAPI_HISTORICAL_KEYS = ""
+$directory = Split-Path -Parent $env:REMBRANE_DPAPI_BLOB_PATH
+[IO.Directory]::CreateDirectory($directory) | Out-Null
+[byte[]]$key = New-Object byte[] 32
+$rng = New-Object Security.Cryptography.RNGCryptoServiceProvider
+$rng.GetBytes($key)
+[byte[]]$entropy = [Text.Encoding]::UTF8.GetBytes($env:REMBRANE_WORKSPACE_KEY_ID)
+try {
+  [byte[]]$blob = [Security.Cryptography.ProtectedData]::Protect(
+    $key, $entropy,
+    [Security.Cryptography.DataProtectionScope]::CurrentUser
+  )
+  [IO.File]::WriteAllBytes($env:REMBRANE_DPAPI_BLOB_PATH, $blob)
+} finally {
+  if ($null -ne $blob) { [Array]::Clear($blob, 0, $blob.Length) }
+  [Array]::Clear($key, 0, $key.Length)
+  [Array]::Clear($entropy, 0, $entropy.Length)
+  $rng.Dispose()
+}
+```
+
+The resolver uses the fixed system Windows PowerShell executable, passes only
+the protected blob path and key ID, binds the key ID as DPAPI entropy, and
+zeroizes captured output. A blob is user- and machine-bound by DPAPI; preserve
+a separately protected recovery copy before relying on it. HSM and direct
+customer-KMS resolvers remain roadmap work.
 
 A customer-controlled Key Provider Protocol sidecar can keep raw workspace
 keys outside the Rembrane process:

@@ -72,6 +72,9 @@ Strict-E2EE content is unrecoverable. Maintainers and infrastructure providers
 must not have a hidden recovery key. Development environment variables are not
 a production recovery mechanism. Losing the OS keyring item and every
 separately protected recovery copy has the same irreversible result.
+Windows DPAPI CurrentUser blobs are bound to the Windows user and machine
+protection context; copying the blob alone to another host or account is not a
+recovery strategy.
 
 ### Database available, wrong key
 

@@ -152,6 +152,21 @@ unset REMBRANE_WORKSPACE_KEY_HEX
 Delete the item after testing using the desktop keyring manager or
 `secret-tool clear` with the same three attributes.
 
+On Windows, create a disposable CurrentUser DPAPI blob with the provisioning
+script in the README, using a path beneath `$env:TEMP`, then configure:
+
+```powershell
+$env:REMBRANE_KEY_PROVIDER = "windows-dpapi"
+$env:REMBRANE_WORKSPACE_KEY_ID = "local-key-v1"
+$env:REMBRANE_DPAPI_BLOB_PATH = "$env:TEMP\rembrane-test-key.dpapi"
+$env:REMBRANE_DPAPI_HISTORICAL_KEYS = ""
+Remove-Item Env:REMBRANE_WORKSPACE_KEY_HEX -ErrorAction SilentlyContinue
+```
+
+Run the Rust test suite from the same Windows user account. The Windows CI job
+also performs a live DPAPI protect/unprotect round trip and warnings-as-errors
+lint. Delete the disposable blob after testing.
+
 To exercise a disposable customer-controlled key-provider sidecar instead:
 
 ```text

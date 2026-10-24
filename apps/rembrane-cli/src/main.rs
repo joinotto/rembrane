@@ -671,6 +671,12 @@ fn mcp_environment_variables(key_provider: &str) -> Result<Vec<&'static str>, St
             "REMBRANE_SECRET_SERVICE_ACCOUNT",
             "REMBRANE_SECRET_SERVICE_HISTORICAL_KEYS",
         ]),
+        "windows-dpapi" => variables.extend([
+            "REMBRANE_KEY_PROVIDER",
+            "REMBRANE_WORKSPACE_KEY_ID",
+            "REMBRANE_DPAPI_BLOB_PATH",
+            "REMBRANE_DPAPI_HISTORICAL_KEYS",
+        ]),
         "http" => variables.extend([
             "REMBRANE_KEY_PROVIDER",
             "REMBRANE_KEY_PROVIDER_BASE_URL",
@@ -678,7 +684,7 @@ fn mcp_environment_variables(key_provider: &str) -> Result<Vec<&'static str>, St
         ]),
         provider => {
             return Err(format!(
-                "unsupported --key-provider {provider}; expected environment, macos-keychain, linux-secret-service, or http"
+                "unsupported --key-provider {provider}; expected environment, macos-keychain, linux-secret-service, windows-dpapi, or http"
             ));
         }
     }
@@ -1124,6 +1130,7 @@ fn configured_secret_sources() -> Vec<&'static str> {
     {
         "macos-keychain" => vec!["macOS Keychain"],
         "linux-secret-service" => vec!["Linux Secret Service"],
+        "windows-dpapi" => vec!["Windows DPAPI"],
         "http" => vec!["REMBRANE_KEY_PROVIDER_TOKEN"],
         _ => vec!["REMBRANE_WORKSPACE_KEY_ID", "REMBRANE_WORKSPACE_KEY_HEX"],
     };
@@ -1146,9 +1153,10 @@ fn configured_key_provider() -> Result<&'static str, String> {
         "environment" => Ok("environment (development only)"),
         "macos-keychain" => Ok("macOS Keychain"),
         "linux-secret-service" => Ok("Linux Secret Service"),
+        "windows-dpapi" => Ok("Windows DPAPI (current user)"),
         "http" => Ok("authenticated HTTP key provider"),
         provider => Err(format!(
-            "unsupported REMBRANE_KEY_PROVIDER {provider}; expected environment, macos-keychain, linux-secret-service, or http"
+            "unsupported REMBRANE_KEY_PROVIDER {provider}; expected environment, macos-keychain, linux-secret-service, windows-dpapi, or http"
         )),
     }
 }
@@ -1742,7 +1750,7 @@ fn print_help() {
            rembrane mcp-config \
              --client <codex|claude-code|gemini-cli|cursor|vscode|zed|opencode|generic> \
              --server-binary <path> \
-             [--key-provider <environment|macos-keychain|linux-secret-service|http>]\n\
+             [--key-provider <environment|macos-keychain|linux-secret-service|windows-dpapi|http>]\n\
            rembrane remember --database <path> --principal <id> \
              --workspace <id> --content <preference> \
              [--domain <name> | --entity <id> | --activity <id>]\n\
@@ -2152,6 +2160,17 @@ mod tests {
         assert!(config.contains("\"REMBRANE_SECRET_SERVICE_SERVICE\""));
         assert!(config.contains("\"REMBRANE_SECRET_SERVICE_ACCOUNT\""));
         assert!(config.contains("\"REMBRANE_SECRET_SERVICE_HISTORICAL_KEYS\""));
+        assert!(!config.contains("REMBRANE_WORKSPACE_KEY_HEX"));
+    }
+
+    #[test]
+    fn windows_dpapi_config_passes_only_blob_references() {
+        let environment = mcp_environment_variables("windows-dpapi")
+            .expect("Windows DPAPI provider should be valid");
+        let config = codex_mcp_config("/opt/rembrane-mcp", &environment);
+
+        assert!(config.contains("\"REMBRANE_DPAPI_BLOB_PATH\""));
+        assert!(config.contains("\"REMBRANE_DPAPI_HISTORICAL_KEYS\""));
         assert!(!config.contains("REMBRANE_WORKSPACE_KEY_HEX"));
     }
 
