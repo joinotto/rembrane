@@ -1,0 +1,16 @@
+[package]
+name = "rembrane-crypto-configured"
+description = "Deployment-selected record cipher composition for Rembrane"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+rembrane-crypto = { path = "../../crates/rembrane-crypto" }
+rembrane-crypto-rustcrypto = { path = "../rembrane-crypto-rustcrypto" }
+rembrane-key-provider-http = { path = "../rembrane-key-provider-http" }
+
+[lints]
+workspace = true

@@ -1,0 +1,149 @@
+//! Deployment-selected local or customer-controlled record encryption.
+
+use std::time::{SystemTime, UNIX_EPOCH};
+
+use rembrane_crypto::{
+    CURRENT_KEY_PROVIDER_PROTOCOL, CryptoError, EncryptedPayload, EncryptionContext,
+    KeyProviderCipher, KeyProviderPolicy, RecordCipher,
+};
+use rembrane_crypto_rustcrypto::RustCryptoKeyringCipher;
+use rembrane_key_provider_http::HttpKeyProviderTransport;
+
+const DEFAULT_ALGORITHM: &str = "xchacha20poly1305-ietf";
+const DEFAULT_MINIMUM_PLAINTEXT_BYTES: usize = 262_144;
+
+pub enum ConfiguredRecordCipher {
+    Local(RustCryptoKeyringCipher),
+    Http(KeyProviderCipher<HttpKeyProviderTransport>),
+}
+
+impl ConfiguredRecordCipher {
+    /// Loads the selected encryption provider without placing key material in
+    /// application configuration.
+    ///
+    /// Supported values for `REMBRANE_KEY_PROVIDER` are `environment`,
+    /// `macos-keychain`, and `http`. The HTTP provider requires
+    /// `REMBRANE_KEY_PROVIDER_BASE_URL` and `REMBRANE_KEY_PROVIDER_TOKEN`.
+    ///
+    /// # Errors
+    ///
+    /// Returns key-unavailable for missing, malformed, unsupported, or
+    /// policy-incompatible provider configuration.
+    pub fn from_environment() -> Result<Self, CryptoError> {
+        let provider =
+            std::env::var("REMBRANE_KEY_PROVIDER").unwrap_or_else(|_| "environment".to_owned());
+        match provider.as_str() {
+            "environment" | "macos-keychain" => {
+                RustCryptoKeyringCipher::from_configured_provider().map(Self::Local)
+            }
+            "http" => Self::http_from_environment(),
+            _ => Err(CryptoError::KeyUnavailable),
+        }
+    }
+
+    fn http_from_environment() -> Result<Self, CryptoError> {
+        let endpoint = required_environment("REMBRANE_KEY_PROVIDER_BASE_URL")?;
+        let token = required_environment("REMBRANE_KEY_PROVIDER_TOKEN")?;
+        let algorithm = std::env::var("REMBRANE_KEY_PROVIDER_ALGORITHM")
+            .unwrap_or_else(|_| DEFAULT_ALGORITHM.to_owned());
+        if algorithm.trim().is_empty() || algorithm.trim() != algorithm {
+            return Err(CryptoError::KeyUnavailable);
+        }
+        let minimum_plaintext_bytes =
+            std::env::var("REMBRANE_KEY_PROVIDER_MINIMUM_PLAINTEXT_BYTES")
+                .ok()
+                .map_or(Ok(DEFAULT_MINIMUM_PLAINTEXT_BYTES), |value| {
+                    value
+                        .parse::<usize>()
+                        .ok()
+                        .filter(|size| *size > 0)
+                        .ok_or(CryptoError::KeyUnavailable)
+                })?;
+        let require_historical_keys =
+            match std::env::var("REMBRANE_KEY_PROVIDER_REQUIRE_HISTORICAL_KEYS")
+                .as_deref()
+                .unwrap_or("true")
+            {
+                "true" => true,
+                "false" => false,
+                _ => return Err(CryptoError::KeyUnavailable),
+            };
+        let request_prefix = match std::env::var("REMBRANE_KEY_PROVIDER_REQUEST_PREFIX") {
+            Ok(value) => value,
+            Err(_) => default_request_prefix()?,
+        };
+        let transport = HttpKeyProviderTransport::new(&endpoint, token)?;
+        let cipher = KeyProviderCipher::connect(
+            transport,
+            KeyProviderPolicy {
+                minimum_protocol_version: CURRENT_KEY_PROVIDER_PROTOCOL,
+                required_algorithm: algorithm,
+                minimum_plaintext_bytes,
+                require_historical_keys,
+            },
+            request_prefix,
+        )?;
+        Ok(Self::Http(cipher))
+    }
+}
+
+impl RecordCipher for ConfiguredRecordCipher {
+    fn seal(
+        &self,
+        context: &EncryptionContext,
+        plaintext: &[u8],
+    ) -> Result<EncryptedPayload, CryptoError> {
+        match self {
+            Self::Local(cipher) => cipher.seal(context, plaintext),
+            Self::Http(cipher) => cipher.seal(context, plaintext),
+        }
+    }
+
+    fn open(
+        &self,
+        context: &EncryptionContext,
+        payload: &EncryptedPayload,
+    ) -> Result<Vec<u8>, CryptoError> {
+        match self {
+            Self::Local(cipher) => cipher.open(context, payload),
+            Self::Http(cipher) => cipher.open(context, payload),
+        }
+    }
+}
+
+fn required_environment(name: &str) -> Result<String, CryptoError> {
+    std::env::var(name)
+        .ok()
+        .filter(|value| !value.is_empty())
+        .ok_or(CryptoError::KeyUnavailable)
+}
+
+fn default_request_prefix() -> Result<String, CryptoError> {
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| CryptoError::KeyUnavailable)?
+        .as_nanos();
+    Ok(format!("rembrane-{}-{timestamp}", std::process::id()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{DEFAULT_MINIMUM_PLAINTEXT_BYTES, default_request_prefix};
+
+    #[test]
+    fn generated_request_prefix_is_nonempty_and_bounded() {
+        let prefix = default_request_prefix().expect("system clock should provide a prefix");
+        assert!(prefix.starts_with("rembrane-"));
+        assert!(prefix.len() <= 200);
+        assert!(
+            prefix
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+        );
+    }
+
+    #[test]
+    fn default_plaintext_policy_covers_canonical_records() {
+        assert_eq!(DEFAULT_MINIMUM_PLAINTEXT_BYTES, 262_144);
+    }
+}
