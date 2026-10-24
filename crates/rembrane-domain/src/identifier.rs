@@ -50,6 +50,7 @@ identifier!(EvidenceId);
 identifier!(InvitationId);
 identifier!(KnowledgeEdgeId);
 identifier!(KnowledgeNodeId);
+identifier!(LegalHoldId);
 identifier!(MemoryId);
 identifier!(PrincipalId);
 identifier!(ProjectionJobId);

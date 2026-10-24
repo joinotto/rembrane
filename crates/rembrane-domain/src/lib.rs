@@ -43,8 +43,8 @@ pub use graph_projection::{GraphProjectionJob, GraphProjectionJobError, GraphPro
 pub use identifier::{
     ActivityId, AdministrativeAuditEventId, BookingResearchId, CheckpointId, ClientId,
     ContextPackId, DisclosureId, EntityId, EventId, EvidenceId, InvitationId, KeyRotationId,
-    KnowledgeEdgeId, KnowledgeNodeId, MemoryId, PrincipalId, ProjectionJobId, ProviderId,
-    ShareProposalId, TripConstraintId, TripDecisionId, TripParticipantId, WorkspaceId,
+    KnowledgeEdgeId, KnowledgeNodeId, LegalHoldId, MemoryId, PrincipalId, ProjectionJobId,
+    ProviderId, ShareProposalId, TripConstraintId, TripDecisionId, TripParticipantId, WorkspaceId,
 };
 pub use invitation::{Invitation, InvitationError, InvitationStatus};
 pub use key_rotation::{
@@ -62,8 +62,8 @@ pub use memory::{
 pub use projection::{ProjectionJob, ProjectionJobError, ProjectionOperation, ProjectionStatus};
 pub use provenance::{EvidenceReference, EvidenceSource};
 pub use retention::{
-    MAX_RETENTION_DAYS, RetentionPeriod, RetentionPolicyError, RetentionResource,
-    WorkspaceRetentionPolicy,
+    LegalHoldError, LegalHoldStatus, MAX_RETENTION_DAYS, RetentionPeriod, RetentionPolicyError,
+    RetentionResource, WorkspaceLegalHold, WorkspaceRetentionPolicy,
 };
 pub use scope::MemoryScope;
 pub use share_proposal::{MemoryShareProposal, ShareProposalError, ShareProposalStatus};

@@ -1,7 +1,7 @@
 use std::error::Error;
 use std::fmt::{self, Display};
 
-use crate::WorkspaceId;
+use crate::{LegalHoldId, PrincipalId, WorkspaceId};
 
 pub const MAX_RETENTION_DAYS: u32 = 36_500;
 
@@ -54,6 +54,179 @@ pub enum RetentionPolicyError {
     InvalidVersion,
     InvalidPeriod,
     UnsafeAuditRetention,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LegalHoldStatus {
+    Active,
+    Released,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LegalHoldError {
+    InvalidIdentity,
+    InvalidVersion,
+    InvalidTime,
+    AlreadyReleased,
+}
+
+impl Display for LegalHoldError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::InvalidIdentity => "legal hold identity is invalid",
+            Self::InvalidVersion => "legal hold version must be greater than zero",
+            Self::InvalidTime => "legal hold time is invalid",
+            Self::AlreadyReleased => "legal hold is already released",
+        })
+    }
+}
+
+impl Error for LegalHoldError {}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WorkspaceLegalHold {
+    id: LegalHoldId,
+    workspace_id: WorkspaceId,
+    placed_by: PrincipalId,
+    placed_at_epoch_seconds: u64,
+    status: LegalHoldStatus,
+    version: u64,
+    released_by: Option<PrincipalId>,
+    released_at_epoch_seconds: Option<u64>,
+}
+
+impl WorkspaceLegalHold {
+    pub fn active(
+        id: LegalHoldId,
+        workspace_id: WorkspaceId,
+        placed_by: PrincipalId,
+        placed_at_epoch_seconds: u64,
+    ) -> Result<Self, LegalHoldError> {
+        Self::restore(
+            id,
+            workspace_id,
+            placed_by,
+            placed_at_epoch_seconds,
+            LegalHoldStatus::Active,
+            1,
+            None,
+            None,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn restore(
+        id: LegalHoldId,
+        workspace_id: WorkspaceId,
+        placed_by: PrincipalId,
+        placed_at_epoch_seconds: u64,
+        status: LegalHoldStatus,
+        version: u64,
+        released_by: Option<PrincipalId>,
+        released_at_epoch_seconds: Option<u64>,
+    ) -> Result<Self, LegalHoldError> {
+        if !safe_id(id.as_str())
+            || !safe_id(workspace_id.as_str())
+            || !safe_id(placed_by.as_str())
+            || released_by.as_ref().is_some_and(|id| !safe_id(id.as_str()))
+        {
+            return Err(LegalHoldError::InvalidIdentity);
+        }
+        if version == 0 {
+            return Err(LegalHoldError::InvalidVersion);
+        }
+        if placed_at_epoch_seconds == 0
+            || released_at_epoch_seconds.is_some_and(|released| released < placed_at_epoch_seconds)
+        {
+            return Err(LegalHoldError::InvalidTime);
+        }
+        match status {
+            LegalHoldStatus::Active
+                if released_by.is_some() || released_at_epoch_seconds.is_some() =>
+            {
+                return Err(LegalHoldError::InvalidTime);
+            }
+            LegalHoldStatus::Released
+                if released_by.is_none() || released_at_epoch_seconds.is_none() =>
+            {
+                return Err(LegalHoldError::InvalidTime);
+            }
+            LegalHoldStatus::Active | LegalHoldStatus::Released => {}
+        }
+        Ok(Self {
+            id,
+            workspace_id,
+            placed_by,
+            placed_at_epoch_seconds,
+            status,
+            version,
+            released_by,
+            released_at_epoch_seconds,
+        })
+    }
+
+    pub fn release(
+        mut self,
+        released_by: PrincipalId,
+        released_at_epoch_seconds: u64,
+    ) -> Result<Self, LegalHoldError> {
+        if self.status == LegalHoldStatus::Released {
+            return Err(LegalHoldError::AlreadyReleased);
+        }
+        if !safe_id(released_by.as_str())
+            || released_at_epoch_seconds < self.placed_at_epoch_seconds
+        {
+            return Err(LegalHoldError::InvalidTime);
+        }
+        self.status = LegalHoldStatus::Released;
+        self.version = self
+            .version
+            .checked_add(1)
+            .ok_or(LegalHoldError::InvalidVersion)?;
+        self.released_by = Some(released_by);
+        self.released_at_epoch_seconds = Some(released_at_epoch_seconds);
+        Ok(self)
+    }
+
+    #[must_use]
+    pub const fn id(&self) -> &LegalHoldId {
+        &self.id
+    }
+
+    #[must_use]
+    pub const fn workspace_id(&self) -> &WorkspaceId {
+        &self.workspace_id
+    }
+
+    #[must_use]
+    pub const fn placed_by(&self) -> &PrincipalId {
+        &self.placed_by
+    }
+
+    #[must_use]
+    pub const fn placed_at_epoch_seconds(&self) -> u64 {
+        self.placed_at_epoch_seconds
+    }
+
+    #[must_use]
+    pub const fn status(&self) -> LegalHoldStatus {
+        self.status
+    }
+
+    #[must_use]
+    pub const fn version(&self) -> u64 {
+        self.version
+    }
+
+    #[must_use]
+    pub const fn released_by(&self) -> Option<&PrincipalId> {
+        self.released_by.as_ref()
+    }
+
+    #[must_use]
+    pub const fn released_at_epoch_seconds(&self) -> Option<u64> {
+        self.released_at_epoch_seconds
+    }
 }
 
 impl Display for RetentionPolicyError {
@@ -160,12 +333,21 @@ const fn period_days(period: RetentionPeriod) -> u64 {
     }
 }
 
+fn safe_id(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 255
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b':'))
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        RetentionPeriod, RetentionPolicyError, RetentionResource, WorkspaceRetentionPolicy,
+        LegalHoldError, LegalHoldStatus, RetentionPeriod, RetentionPolicyError, RetentionResource,
+        WorkspaceLegalHold, WorkspaceRetentionPolicy,
     };
-    use crate::WorkspaceId;
+    use crate::{LegalHoldId, PrincipalId, WorkspaceId};
 
     fn policy() -> WorkspaceRetentionPolicy {
         WorkspaceRetentionPolicy::new(
@@ -213,6 +395,26 @@ mod tests {
                 RetentionPeriod::days(30).expect("audit"),
             ),
             Err(RetentionPolicyError::UnsafeAuditRetention)
+        );
+    }
+
+    #[test]
+    fn legal_hold_releases_once_with_monotonic_version_and_time() {
+        let hold = WorkspaceLegalHold::active(
+            LegalHoldId::new("hold_01"),
+            WorkspaceId::new("workspace_01"),
+            PrincipalId::new("owner_01"),
+            100,
+        )
+        .expect("active hold");
+        let released = hold
+            .release(PrincipalId::new("owner_01"), 200)
+            .expect("release");
+        assert_eq!(released.status(), LegalHoldStatus::Released);
+        assert_eq!(released.version(), 2);
+        assert_eq!(
+            released.clone().release(PrincipalId::new("owner_01"), 300),
+            Err(LegalHoldError::AlreadyReleased)
         );
     }
 }
