@@ -80,6 +80,11 @@ The adapter must model indexing as retryable derived work:
 Timeout, rate limiting, partial deletion, or non-terminal processing leave the
 canonical outbox job retryable. Canonical memory is never rolled back.
 
+Replacement uses Supermemory's create-or-update behavior for the deterministic
+`customId`; it does not scan a bounded document page and delete first. This
+keeps replacement correct when a namespace contains more documents than one
+list response.
+
 The Rust `SupermemoryTransport` contract therefore requires a separate
 `await_ready` operation after ingestion. A transport cannot represent HTTP
 acceptance as completed indexing. Readiness receives the authorized projection

@@ -708,6 +708,8 @@ This roadmap describes sequencing, not release dates.
         length and character contract.
       - [x] Keep canonical memory IDs out of provider paths by validating
         deterministic keyed document pseudonyms.
+      - [x] Replace versions through deterministic provider upsert without a
+        bounded pre-delete list scan.
       - [x] Require bounded readiness confirmation after ingestion before an
         adapter may report projection success.
         - [x] Bind readiness verification to the exact authorized projection

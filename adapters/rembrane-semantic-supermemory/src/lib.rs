@@ -559,13 +559,6 @@ impl<Transport: SupermemoryTransport> SemanticMemoryProvider
         }
         let namespace = self.namespace(&projection.workspace_id);
         let document_id = self.document_id(&projection.memory_id);
-        for record in self.transport.list(&namespace)? {
-            if record.canonical_memory_id == projection.memory_id
-                && !self.transport.delete(&namespace, record.provider_id())?
-            {
-                return Err(ProviderError::Unavailable);
-            }
-        }
         self.transport
             .upsert_exact(&namespace, &document_id, &projection)?;
         self.transport
@@ -670,16 +663,15 @@ mod tests {
             projection: &AuthorizedMemoryProjection,
         ) -> Result<(), ProviderError> {
             self.next_id += 1;
+            let records = self.records.entry(namespace.to_owned()).or_default();
+            records.retain(|(record, _)| record.provider_id() != document_id);
             let record = SupermemoryRecord::new(
                 document_id,
                 projection.memory_id.clone(),
                 projection.version,
                 Some(1_000_000),
             )?;
-            self.records
-                .entry(namespace.to_owned())
-                .or_default()
-                .push((record, projection.content.clone()));
+            records.push((record, projection.content.clone()));
             Ok(())
         }
 
