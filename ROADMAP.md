@@ -269,6 +269,8 @@ This roadmap describes sequencing, not release dates.
     PostgreSQL schemas under forced RLS.
   - [x] Add PostgreSQL channel replay, active-member bindings, encrypted inbox
     leasing, retry/quarantine, and channel-administration audit schemas.
+  - [x] Enforce complete canonical table-inventory parity between SQLite and
+    PostgreSQL migrations in the static security gate.
   - [x] Document transaction-local tenant identity and non-owner,
     non-`BYPASSRLS` runtime-role requirements.
   - [x] Run a live PostgreSQL two-tenant CI proof covering scoped reads,

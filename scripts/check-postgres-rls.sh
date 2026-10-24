@@ -9,6 +9,30 @@ channel=migrations/postgres/0005_channel_continuity.sql
 migration=migrations/postgres/9999_tenant_rls.sql
 readme=migrations/postgres/README.md
 
+sqlite_tables=$(
+    rg -o '^CREATE TABLE [A-Za-z0-9_]+' migrations/sqlite/*.sql |
+        sed 's/.*CREATE TABLE //' |
+        sort -u
+)
+postgres_tables=$(
+    rg -o '^CREATE TABLE [A-Za-z0-9_]+' migrations/postgres/0*.sql |
+        sed 's/.*CREATE TABLE //' |
+        sort -u
+)
+
+for table in $sqlite_tables; do
+    printf '%s\n' "$postgres_tables" | rg -qx "$table" || {
+        echo "PostgreSQL schema is missing SQLite table: $table" >&2
+        exit 1
+    }
+done
+for table in $postgres_tables; do
+    printf '%s\n' "$sqlite_tables" | rg -qx "$table" || {
+        echo "PostgreSQL schema has an unmatched table: $table" >&2
+        exit 1
+    }
+done
+
 for table in \
     principals \
     workspaces \
