@@ -29,6 +29,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   exact request bytes.
 - Forward-compatible but bounded `YYYY-MM-DD` validation for optional
   `MCP-Protocol-Version` values before OAuth work and SDK dispatch.
+- An owned stateless Streamable HTTP event-stream authorization boundary with
+  GET-specific `text/event-stream` negotiation and the same bearer, Host,
+  Origin, session, and tenant checks as POST.
 - A transport-injectable Mem0 OSS semantic adapter mapping authorized
   projections into HMAC-pseudonymous workspace partitions while preserving
   canonical memory IDs, versions, replacement, bounded ranking, and

@@ -291,17 +291,51 @@ impl IntoResponse for RemoteMcpHttpRejection {
 pub fn request_from_axum_headers(
     headers: &HeaderMap,
 ) -> Result<RemoteMcpHttpRequest<'_>, RemoteMcpHttpRejection> {
+    protocol_headers_from_axum(headers)?;
+    security_request_from_axum_headers(headers)
+}
+
+fn security_request_from_axum_headers(
+    headers: &HeaderMap,
+) -> Result<RemoteMcpHttpRequest<'_>, RemoteMcpHttpRejection> {
     let authorization = unique_header(headers, &AUTHORIZATION)?;
     let host = unique_header(headers, &HOST)?;
     let origin = unique_header(headers, &ORIGIN)?;
     let session_id = unique_header(headers, &MCP_SESSION_HEADER_NAME)?;
-    protocol_headers_from_axum(headers)?;
     Ok(RemoteMcpHttpRequest {
         authorization,
         host,
         origin,
         session_id,
     })
+}
+
+fn require_event_stream_accept(headers: &HeaderMap) -> Result<(), RemoteMcpHttpRejection> {
+    let Some(value) = unique_header(headers, &ACCEPT)? else {
+        return Err(RemoteMcpHttpRejection {
+            status: 406,
+            www_authenticate: None,
+            retry_after_seconds: None,
+        });
+    };
+    if value.len() <= 1_024
+        && value.split(',').any(|media_range| {
+            media_range
+                .split(';')
+                .next()
+                .unwrap_or_default()
+                .trim()
+                .eq_ignore_ascii_case("text/event-stream")
+        })
+    {
+        Ok(())
+    } else {
+        Err(RemoteMcpHttpRejection {
+            status: 406,
+            www_authenticate: None,
+            retry_after_seconds: None,
+        })
+    }
 }
 
 fn protocol_headers_from_axum(
@@ -487,6 +521,32 @@ where
             .collect::<Vec<_>>();
         let authorization = RemoteHttpAuthorization::new(&authenticator, &trusted_origins);
         authorize_axum_stateless_body(&self.gate, &authorization, headers, body, now_epoch_seconds)
+    }
+
+    /// Authorizes a stateless Streamable HTTP GET before the SDK opens its
+    /// server event stream.
+    ///
+    /// # Errors
+    ///
+    /// Returns 406 for invalid event-stream negotiation, or the normal
+    /// fail-closed bearer, origin, host, and session rejection.
+    pub fn authorize_event_stream(
+        &self,
+        headers: &HeaderMap,
+        now_epoch_seconds: u64,
+    ) -> Result<VerifiedRemoteAccess, RemoteMcpHttpRejection> {
+        require_event_stream_accept(headers)?;
+        let request = security_request_from_axum_headers(headers)?;
+        let authenticator =
+            RemoteAccessAuthenticator::new(&self.verifier, &self.issuer, &self.resource);
+        let trusted_origins = self
+            .trusted_origins
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>();
+        let authorization = RemoteHttpAuthorization::new(&authenticator, &trusted_origins);
+        self.gate
+            .authorize_stateless_connection(&authorization, request, now_epoch_seconds)
     }
 
     /// Authorizes and dispatches one exact stateless request without exposing
@@ -687,6 +747,24 @@ impl RemoteMcpHttpGate {
                 )
                 .map_err(|error| self.authorization_rejection(error)),
         }
+    }
+
+    fn authorize_stateless_connection<Verifier>(
+        &self,
+        authorization: &RemoteHttpAuthorization<'_, '_, Verifier>,
+        request: RemoteMcpHttpRequest<'_>,
+        now_epoch_seconds: u64,
+    ) -> Result<VerifiedRemoteAccess, RemoteMcpHttpRejection>
+    where
+        Verifier: RemoteTokenVerifier,
+    {
+        self.require_allowed_host(request.host)?;
+        if request.session_id.is_some() {
+            return Err(Self::forbidden());
+        }
+        authorization
+            .authorize_connection_for_http(request.authorization, request.origin, now_epoch_seconds)
+            .map_err(|error| self.authorization_rejection(error))
     }
 
     /// Classifies and authorizes one stateless JSON-RPC body as a single
@@ -1511,5 +1589,58 @@ mod tests {
             error,
             RemoteMcpDispatchError::Authorization(RemoteMcpHttpRejection { status: 401, .. })
         ));
+    }
+
+    #[test]
+    fn owned_service_authorizes_stateless_event_stream_gets() {
+        let config = RemoteMcpConfig::new(
+            "https://memory.example.test/mcp".to_owned(),
+            "https://identity.example.test".to_owned(),
+            "https://identity.example.test/introspect".to_owned(),
+            "rembrane".to_owned(),
+            SecretReference::environment("OAUTH_SECRET").expect("reference should be valid"),
+            vec!["https://agent.example.test".to_owned()],
+        )
+        .expect("remote profile should be valid");
+        let authorization = RemoteMcpAxumAuthorization::from_config(16, &config, Verifier)
+            .expect("owned authorization service should initialize");
+        let mut headers = HeaderMap::new();
+        headers.insert(HOST, HeaderValue::from_static("memory.example.test"));
+        headers.insert(
+            AUTHORIZATION,
+            HeaderValue::from_static("Bearer workspace-one"),
+        );
+        headers.insert(
+            ORIGIN,
+            HeaderValue::from_static("https://agent.example.test"),
+        );
+        headers.insert(ACCEPT, HeaderValue::from_static("text/event-stream"));
+
+        let access = authorization
+            .authorize_event_stream(&headers, 1_000)
+            .expect("valid event stream should authorize without Content-Type");
+        assert_eq!(access.workspace_id().as_str(), "workspace_01");
+
+        headers.insert(ACCEPT, HeaderValue::from_static("application/json"));
+        assert_eq!(
+            authorization
+                .authorize_event_stream(&headers, 1_000)
+                .expect_err("GET must negotiate event-stream")
+                .status,
+            406
+        );
+
+        headers.insert(ACCEPT, HeaderValue::from_static("text/event-stream"));
+        headers.insert(
+            MCP_SESSION_HEADER_NAME,
+            HeaderValue::from_static("session_0123456789abcdef"),
+        );
+        assert_eq!(
+            authorization
+                .authorize_event_stream(&headers, 1_000)
+                .expect_err("stateless GET must reject legacy session headers")
+                .status,
+            403
+        );
     }
 }

@@ -167,6 +167,8 @@ This roadmap describes sequencing, not release dates.
     - [x] Provide an owned Axum authorization service that reconstructs
       borrowing authenticators per request and preserves verified tenant
       identity through an in-memory HTTP router.
+      - [x] Authorize stateless server event-stream GET requests with
+        GET-specific negotiation and no artificial JSON content requirement.
     - [x] Provide a consuming dispatch handoff that keeps verified identity,
       classified invocation, and the exact zeroizing request body coupled
       until the official SDK transport takes ownership.
