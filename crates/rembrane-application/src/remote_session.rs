@@ -37,7 +37,9 @@ impl RemoteSessionRegistry {
         &mut self,
         session_id: RemoteSessionId,
         access: &VerifiedRemoteAccess,
+        now_epoch_seconds: u64,
     ) -> Result<(), ApplicationError> {
+        self.prune_expired(now_epoch_seconds);
         if self.sessions.contains_key(&session_id) {
             return Err(ApplicationError::AlreadyExists);
         }
@@ -46,6 +48,15 @@ impl RemoteSessionRegistry {
         }
         self.sessions.insert(session_id, access.session_binding());
         Ok(())
+    }
+
+    /// Removes bindings whose non-extending authorization lifetime elapsed.
+    ///
+    /// This keeps abandoned sessions from permanently consuming the bounded
+    /// registry. It does not inspect or reveal their authorization fields.
+    pub fn prune_expired(&mut self, now_epoch_seconds: u64) {
+        self.sessions
+            .retain(|_, binding| !binding.is_expired(now_epoch_seconds));
     }
 
     /// Reauthenticates an existing session against its exact binding.
@@ -136,17 +147,17 @@ mod tests {
         let access = access("workspace_01", &[RemoteAccessScope::ContextRead]);
 
         registry
-            .establish(first.clone(), &access)
+            .establish(first.clone(), &access, 1_000)
             .expect("first session should establish");
         assert_eq!(
             registry
-                .establish(first.clone(), &access)
+                .establish(first.clone(), &access, 1_000)
                 .expect_err("duplicate must fail"),
             ApplicationError::AlreadyExists
         );
         assert_eq!(
             registry
-                .establish(second, &access)
+                .establish(second, &access, 1_000)
                 .expect_err("capacity must be enforced"),
             ApplicationError::StorageUnavailable
         );
@@ -169,7 +180,7 @@ mod tests {
             ],
         );
         registry
-            .establish(session.clone(), &bound_access)
+            .establish(session.clone(), &bound_access, 1_000)
             .expect("session should establish");
 
         let unknown =
@@ -200,5 +211,27 @@ mod tests {
                 .expect_err("scope substitution must fail"),
             ApplicationError::AccessDenied
         );
+    }
+
+    #[test]
+    fn registry_reclaims_expired_capacity_before_establishing() {
+        let mut registry = RemoteSessionRegistry::new(1).expect("capacity should be valid");
+        let expired =
+            RemoteSessionId::new("session_0123456789abcdef").expect("session id should be valid");
+        let replacement =
+            RemoteSessionId::new("session_fedcba9876543210").expect("session id should be valid");
+        let access = access("workspace_01", &[RemoteAccessScope::ContextRead]);
+
+        registry
+            .establish(expired, &access, 1_000)
+            .expect("first session should establish");
+        registry
+            .establish(replacement.clone(), &access, 2_000)
+            .expect("expired session should not consume capacity");
+
+        assert_eq!(registry.len(), 1);
+        registry
+            .revalidate(&replacement, &access, 1_999)
+            .expect("replacement session should remain available");
     }
 }

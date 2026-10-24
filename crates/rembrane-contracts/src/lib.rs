@@ -314,6 +314,11 @@ impl VerifiedRemoteAccess {
 }
 
 impl RemoteSessionBinding {
+    #[must_use]
+    pub const fn is_expired(&self, now_epoch_seconds: u64) -> bool {
+        self.maximum_token_expiry_epoch_seconds <= now_epoch_seconds
+    }
+
     /// Validates that a reauthenticated request still belongs to this exact
     /// session authorization context.
     ///
@@ -331,7 +336,7 @@ impl RemoteSessionBinding {
         access: &VerifiedRemoteAccess,
         now_epoch_seconds: u64,
     ) -> Result<(), RemoteAccessError> {
-        if self.maximum_token_expiry_epoch_seconds <= now_epoch_seconds
+        if self.is_expired(now_epoch_seconds)
             || access.expires_at_epoch_seconds <= now_epoch_seconds
         {
             return Err(RemoteAccessError::Expired);
