@@ -103,6 +103,16 @@ claude_config=$(
 printf '%s\n' "$claude_config" | jq -e \
     '.mcpServers.rembrane.env.REMBRANE_WORKSPACE_KEY_HEX
         == "${REMBRANE_WORKSPACE_KEY_HEX}"' >/dev/null
+gemini_config=$(
+    "$rembrane_binary" mcp-config \
+        --client gemini-cli \
+        --server-binary "$repository_root/target/debug/rembrane-mcp"
+)
+printf '%s\n' "$gemini_config" | jq -e \
+    '.mcpServers.rembrane.command
+        and .mcpServers.rembrane.args == []
+        and .mcpServers.rembrane.env.REMBRANE_WORKSPACE_KEY_HEX
+            == "${REMBRANE_WORKSPACE_KEY_HEX}"' >/dev/null
 generic_config=$(
     "$rembrane_binary" mcp-config \
         --client generic \

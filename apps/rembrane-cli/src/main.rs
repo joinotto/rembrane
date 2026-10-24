@@ -115,9 +115,10 @@ fn print_mcp_config(arguments: &[String]) -> Result<(), String> {
     let config = match client {
         "codex" => codex_mcp_config(server_binary, &environment),
         "claude-code" => claude_mcp_config(server_binary, &environment),
+        "gemini-cli" => gemini_mcp_config(server_binary, &environment),
         "generic" => generic_mcp_config(server_binary, &environment),
         _ => {
-            return Err("--client must be codex, claude-code, or generic".to_owned());
+            return Err("--client must be codex, claude-code, gemini-cli, or generic".to_owned());
         }
     };
     println!("{config}");
@@ -182,6 +183,20 @@ fn claude_mcp_config(server_binary: &str, variables: &[&str]) -> String {
     format!(
         "{{\"mcpServers\":{{\"rembrane\":{{\"type\":\"stdio\",\
          \"command\":\"{}\",\"args\":[],\"env\":{{{environment}}}}}}}}}}",
+        escape_config_string(server_binary)
+    )
+}
+
+fn gemini_mcp_config(server_binary: &str, variables: &[&str]) -> String {
+    let environment = variables
+        .iter()
+        .map(|variable| format!("\"{variable}\":\"${{{variable}}}\""))
+        .collect::<Vec<_>>()
+        .join(",");
+    format!(
+        "{{\"mcpServers\":{{\"rembrane\":{{\
+         \"command\":\"{}\",\"args\":[],\"env\":{{{environment}}},\
+         \"description\":\"Encrypted central memory through local Rembrane MCP\"}}}}}}}}",
         escape_config_string(server_binary)
     )
 }
@@ -1068,7 +1083,7 @@ fn print_help() {
            rembrane fingerprint-git --repository <path>\n\
            rembrane providers list\n\
            rembrane providers test --provider <id> --namespace <unique-name>\n\
-           rembrane mcp-config --client <codex|claude-code|generic> \
+           rembrane mcp-config --client <codex|claude-code|gemini-cli|generic> \
              --server-binary <path> \
              [--key-provider <environment|macos-keychain>]\n\
            rembrane remember --database <path> --principal <id> \
@@ -1092,9 +1107,9 @@ mod tests {
     use rembrane_domain::{EntityId, MemoryScope, ReadScope};
 
     use super::{
-        EXPORT_MAGIC, claude_mcp_config, codex_mcp_config, format_read_scopes, generic_mcp_config,
-        option, positive_u64, providers, read_export, recall_scope_context, redact_endpoint,
-        requested_memory_scope, test_provider, write_export,
+        EXPORT_MAGIC, claude_mcp_config, codex_mcp_config, format_read_scopes, gemini_mcp_config,
+        generic_mcp_config, option, positive_u64, providers, read_export, recall_scope_context,
+        redact_endpoint, requested_memory_scope, test_provider, write_export,
     };
 
     fn temporary_path(name: &str) -> std::path::PathBuf {
@@ -1292,6 +1307,13 @@ mod tests {
             claude.contains("\"REMBRANE_WORKSPACE_KEY_HEX\":\"${REMBRANE_WORKSPACE_KEY_HEX}\"")
         );
         assert!(!claude.contains("00010203"));
+
+        let gemini = gemini_mcp_config("/opt/rembrane-mcp", &environment);
+        assert!(gemini.contains("\"mcpServers\":{\"rembrane\""));
+        assert!(
+            gemini.contains("\"REMBRANE_WORKSPACE_KEY_HEX\":\"${REMBRANE_WORKSPACE_KEY_HEX}\"")
+        );
+        assert!(!gemini.contains("00010203"));
 
         let generic = generic_mcp_config("/opt/rembrane-mcp", &environment);
         assert!(generic.contains("\"schemaVersion\":1"));

@@ -9,6 +9,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- Secret-safe Gemini CLI `settings.json` MCP configuration generation alongside
+  the existing Codex, Claude Code, and vendor-neutral connection manifests.
 - Dedicated `travel` domain authorization for creating new trip entities,
   avoiding pre-grants for identifiers that do not exist while retaining exact
   entity grants for every revision and research capture.

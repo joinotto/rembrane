@@ -196,6 +196,10 @@ target/debug/rembrane mcp-config \
   --server-binary "$PWD/target/debug/rembrane-mcp"
 
 target/debug/rembrane mcp-config \
+  --client gemini-cli \
+  --server-binary "$PWD/target/debug/rembrane-mcp"
+
+target/debug/rembrane mcp-config \
   --client generic \
   --server-binary "$PWD/target/debug/rembrane-mcp"
 ```

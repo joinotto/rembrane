@@ -90,6 +90,7 @@ This roadmap describes sequencing, not release dates.
 - [x] Versioned vendor-neutral stdio connection manifest for apps, bots, and
   agent launchers.
 - [ ] Additional native coding-agent configuration adapters.
+  - [x] Generate a secret-safe Gemini CLI `settings.json` MCP fragment.
 - [x] Deterministic item and plaintext-byte context budgets.
 - [x] Enforce canonical memory and checkpoint payload ceilings.
 - [x] Optional external-state fingerprints and stale handoff detection.
