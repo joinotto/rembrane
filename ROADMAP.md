@@ -161,8 +161,10 @@ This roadmap describes sequencing, not release dates.
       - [x] Define a versioned, bounded sidecar protocol with workspace-derived
         namespaces, mutation idempotency, and response correlation.
       - [x] Implement the transport-injected Graphiti graph provider.
-      - [ ] Add authenticated bounded HTTP transport and sidecar contract
-        tests.
+      - [x] Add authenticated bounded HTTP transport with strict origin,
+        credential, timeout, redirect, response-size, manifest, and response
+        correlation validation.
+      - [ ] Add executable Graphiti sidecar contract and integration tests.
 
 - [x] Project entities and scoped preferences.
 - [x] Layer global, domain, entity, and activity context in one request.

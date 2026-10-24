@@ -213,6 +213,23 @@ pub struct GraphitiResponse<ResultPayload> {
 }
 
 impl<ResultPayload> GraphitiResponse<ResultPayload> {
+    /// Reconstructs a response received from a sidecar transport.
+    ///
+    /// Correlation and protocol compatibility are still verified by the
+    /// originating request before the result is accepted.
+    #[must_use]
+    pub fn from_parts(
+        request_id: GraphitiRequestId,
+        protocol_version: ProviderProtocolVersion,
+        result: Result<ResultPayload, GraphitiErrorCode>,
+    ) -> Self {
+        Self {
+            request_id,
+            protocol_version,
+            result,
+        }
+    }
+
     #[must_use]
     pub fn success(request: &GraphitiRequest<impl GraphitiPayload>, result: ResultPayload) -> Self {
         Self {

@@ -17,6 +17,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   projection, temporal neighbourhood lookup, version-bounded deletion,
   provider capability negotiation, and shared cross-workspace conformance
   coverage.
+- An authenticated Graphiti HTTP transport with fixed versioned operations,
+  HTTPS-or-loopback origin validation, header-safe credentials, strict
+  timeouts, disabled redirects and proxies, bounded JSON bodies, fail-closed
+  manifests, and correlated sidecar responses.
 - Canonical engine-neutral temporal knowledge graph aggregates with typed
   nodes, validated relationship types, strict workspace namespaces, separate
   validity and ingestion time, evidence provenance, bounded aliases, versions,
