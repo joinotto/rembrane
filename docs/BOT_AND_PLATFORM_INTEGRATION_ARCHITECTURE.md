@@ -320,6 +320,9 @@ The signing and lookup secrets must be distinct and at least 32 bytes. The
 gateway has no memory-read token or default identity. It maps the authenticated
 account/device pseudonyms through an active membership and acknowledges only
 after replay reservation and encrypted durable admission commit atomically.
+The Swift package includes `CryptoKitMobileShareSigner`; load its secret from
+an app-group-accessible Keychain item shared with the extension, never from
+source code, `UserDefaults`, the shared envelope, or canonical memory.
 
 An owner or administrator can bind an active member without placing raw phone
 identifiers in process arguments:

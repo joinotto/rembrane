@@ -617,6 +617,8 @@ This roadmap describes sequencing, not release dates.
     bearer token.
   - [x] Publish a versioned implementation-independent OpenAPI contract and
     secret-free fixture for third-party companion apps and share extensions.
+  - [x] Provide a CryptoKit HMAC signer compatible with Keychain-provisioned
+    iOS companion and share-extension deployments.
 - [ ] Community provider and agent adapters.
 
 ## Release gates

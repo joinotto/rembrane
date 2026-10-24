@@ -25,6 +25,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - A versioned OpenAPI contract and validated secret-free request fixture for
   independent explicit-share clients, including exact-body signature and
   non-enumerating response semantics.
+- A CryptoKit mobile-share signer for the Swift package, validating minimum
+  key strength and producing the protocol's exact lowercase HMAC header.
 - A Ring-backed WhatsApp Business webhook boundary that authenticates the raw
   bounded payload before parsing, extracts bounded text events, and derives
   domain-separated keyed account/sender lookup fingerprints.

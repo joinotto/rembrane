@@ -2,6 +2,9 @@ import Foundation
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
+#if canImport(CryptoKit)
+import CryptoKit
+#endif
 
 public struct RembraneHTTPResponse: Sendable {
     public let status: Int
@@ -204,6 +207,34 @@ private struct Problem: Decodable {
 public protocol RembraneMobileShareSigner: Sendable {
     func signatureHeader(for body: Data) throws -> String
 }
+
+#if canImport(CryptoKit)
+public struct CryptoKitMobileShareSigner: RembraneMobileShareSigner {
+    private let key: SymmetricKey
+
+    public init(secret: Data) throws {
+        guard secret.count >= 32 else {
+            throw RembraneAPIError(
+                status: 0,
+                code: "invalid_signing_key",
+                message: "Mobile-share signing keys require at least 32 bytes"
+            )
+        }
+        self.key = SymmetricKey(data: secret)
+    }
+
+    public func signatureHeader(for body: Data) throws -> String {
+        let authenticationCode = HMAC<SHA256>.authenticationCode(
+            for: body,
+            using: key
+        )
+        let encoded = authenticationCode.map {
+            String(format: "%02x", $0)
+        }.joined()
+        return "sha256=\(encoded)"
+    }
+}
+#endif
 
 public struct RembraneMobileShareEnvelope: Encodable, Sendable {
     public let accountID: String

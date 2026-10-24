@@ -90,5 +90,16 @@ private struct RembraneSmoke {
             String(data: shareRequest?.httpBody ?? Data(), encoding: .utf8)?
                 .contains(#""device_id":"device_01""#) == true
         )
+
+        #if canImport(CryptoKit)
+        let cryptoSigner = try CryptoKitMobileShareSigner(
+            secret: Data(repeating: 7, count: 32)
+        )
+        let signature = try cryptoSigner.signatureHeader(
+            for: Data("explicit share".utf8)
+        )
+        precondition(signature.hasPrefix("sha256="))
+        precondition(signature.count == 71)
+        #endif
     }
 }
