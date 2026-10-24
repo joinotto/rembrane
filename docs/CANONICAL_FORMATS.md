@@ -45,6 +45,16 @@ activity checkpoints; and disclosure receipts.
 See `crates/rembrane-codec/fixtures/event-v1-memory-created.json` for the
 normative version-one fixture.
 
+## Event format version 2
+
+Format identifier: `rembrane.event`
+
+Version two adds content-free share proposal, approval, rejection, and
+revocation events plus the target-workspace shared-copy event. Existing event
+variants continue to encode as version one so their normative bytes do not
+change. Decoders accept both versions but reject a share event falsely labeled
+as version one.
+
 ## Activity checkpoint format version 1
 
 Format identifier: `rembrane.activity-checkpoint`

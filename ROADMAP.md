@@ -101,6 +101,7 @@ This roadmap describes sequencing, not release dates.
     approval, rejection, and pre-approval revocation.
   - [x] Tenant-scoped SQLite persistence with exact-source and workspace-kind
     constraints.
+  - [x] Versioned canonical audit events and approved target-copy construction.
   - [ ] Atomic persisted approval and target-workspace copy.
 - [x] Authorized member removal with atomic scope-grant cleanup.
 - [ ] Group key rotation after membership changes.

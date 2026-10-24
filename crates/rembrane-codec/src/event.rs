@@ -1,13 +1,14 @@
 use rembrane_domain::{
     ActivityId, CanonicalEvent, ContextPackId, DisclosureId, EventId, EventPayload, EvidenceId,
-    MemoryId, PrincipalId, WorkspaceId,
+    MemoryId, PrincipalId, ShareProposalId, WorkspaceId,
 };
 use serde::{Deserialize, Serialize};
 
 use crate::CodecError;
 
 const EVENT_FORMAT: &str = "rembrane.event";
-const EVENT_FORMAT_VERSION: u16 = 1;
+const EVENT_FORMAT_V1: u16 = 1;
+const EVENT_FORMAT_V2: u16 = 2;
 
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -51,6 +52,31 @@ enum EventPayloadDto {
         memory_id: String,
         version: u64,
     },
+    MemoryShareProposed {
+        proposal_id: String,
+        source_memory_id: String,
+        source_version: u64,
+        target_workspace_id: String,
+    },
+    MemoryShareApproved {
+        proposal_id: String,
+        target_workspace_id: String,
+        target_memory_id: String,
+    },
+    MemoryShareRejected {
+        proposal_id: String,
+    },
+    MemoryShareRevoked {
+        proposal_id: String,
+    },
+    MemorySharedIn {
+        proposal_id: String,
+        source_workspace_id: String,
+        source_memory_id: String,
+        source_version: u64,
+        target_memory_id: String,
+        target_version: u64,
+    },
     ObservationCaptured {
         evidence_id: String,
     },
@@ -67,7 +93,7 @@ enum EventPayloadDto {
 pub fn encode_event(event: &CanonicalEvent) -> Result<Vec<u8>, CodecError> {
     let envelope = EventEnvelope {
         format: EVENT_FORMAT.to_owned(),
-        version: EVENT_FORMAT_VERSION,
+        version: event_format_version(event.payload()),
         record: EventDto::from(event),
     };
 
@@ -80,7 +106,9 @@ pub fn decode_event(payload: &[u8]) -> Result<CanonicalEvent, CodecError> {
     if envelope.format != EVENT_FORMAT {
         return Err(CodecError::UnsupportedFormat);
     }
-    if envelope.version != EVENT_FORMAT_VERSION {
+    if !matches!(envelope.version, EVENT_FORMAT_V1 | EVENT_FORMAT_V2)
+        || (envelope.version == EVENT_FORMAT_V1 && envelope.record.payload.is_share_event())
+    {
         return Err(CodecError::UnsupportedVersion);
     }
 
@@ -99,6 +127,30 @@ impl From<&CanonicalEvent> for EventDto {
             sequence: event.sequence(),
             payload: EventPayloadDto::from(event.payload()),
         }
+    }
+}
+
+const fn event_format_version(payload: &EventPayload) -> u16 {
+    match payload {
+        EventPayload::MemoryShareProposed { .. }
+        | EventPayload::MemoryShareApproved { .. }
+        | EventPayload::MemoryShareRejected { .. }
+        | EventPayload::MemoryShareRevoked { .. }
+        | EventPayload::MemorySharedIn { .. } => EVENT_FORMAT_V2,
+        _ => EVENT_FORMAT_V1,
+    }
+}
+
+impl EventPayloadDto {
+    const fn is_share_event(&self) -> bool {
+        matches!(
+            self,
+            Self::MemoryShareProposed { .. }
+                | Self::MemoryShareApproved { .. }
+                | Self::MemoryShareRejected { .. }
+                | Self::MemoryShareRevoked { .. }
+                | Self::MemorySharedIn { .. }
+        )
     }
 }
 
@@ -140,6 +192,47 @@ impl From<&EventPayload> for EventPayloadDto {
             EventPayload::MemoryDeleted { memory_id, version } => Self::MemoryDeleted {
                 memory_id: memory_id.as_str().to_owned(),
                 version: *version,
+            },
+            EventPayload::MemoryShareProposed {
+                proposal_id,
+                source_memory_id,
+                source_version,
+                target_workspace_id,
+            } => Self::MemoryShareProposed {
+                proposal_id: proposal_id.as_str().to_owned(),
+                source_memory_id: source_memory_id.as_str().to_owned(),
+                source_version: *source_version,
+                target_workspace_id: target_workspace_id.as_str().to_owned(),
+            },
+            EventPayload::MemoryShareApproved {
+                proposal_id,
+                target_workspace_id,
+                target_memory_id,
+            } => Self::MemoryShareApproved {
+                proposal_id: proposal_id.as_str().to_owned(),
+                target_workspace_id: target_workspace_id.as_str().to_owned(),
+                target_memory_id: target_memory_id.as_str().to_owned(),
+            },
+            EventPayload::MemoryShareRejected { proposal_id } => Self::MemoryShareRejected {
+                proposal_id: proposal_id.as_str().to_owned(),
+            },
+            EventPayload::MemoryShareRevoked { proposal_id } => Self::MemoryShareRevoked {
+                proposal_id: proposal_id.as_str().to_owned(),
+            },
+            EventPayload::MemorySharedIn {
+                proposal_id,
+                source_workspace_id,
+                source_memory_id,
+                source_version,
+                target_memory_id,
+                target_version,
+            } => Self::MemorySharedIn {
+                proposal_id: proposal_id.as_str().to_owned(),
+                source_workspace_id: source_workspace_id.as_str().to_owned(),
+                source_memory_id: source_memory_id.as_str().to_owned(),
+                source_version: *source_version,
+                target_memory_id: target_memory_id.as_str().to_owned(),
+                target_version: *target_version,
             },
             EventPayload::ObservationCaptured { evidence_id } => Self::ObservationCaptured {
                 evidence_id: evidence_id.as_str().to_owned(),
@@ -185,6 +278,47 @@ impl From<EventPayloadDto> for EventPayload {
                 memory_id: MemoryId::new(memory_id),
                 version,
             },
+            EventPayloadDto::MemoryShareProposed {
+                proposal_id,
+                source_memory_id,
+                source_version,
+                target_workspace_id,
+            } => Self::MemoryShareProposed {
+                proposal_id: ShareProposalId::new(proposal_id),
+                source_memory_id: MemoryId::new(source_memory_id),
+                source_version,
+                target_workspace_id: WorkspaceId::new(target_workspace_id),
+            },
+            EventPayloadDto::MemoryShareApproved {
+                proposal_id,
+                target_workspace_id,
+                target_memory_id,
+            } => Self::MemoryShareApproved {
+                proposal_id: ShareProposalId::new(proposal_id),
+                target_workspace_id: WorkspaceId::new(target_workspace_id),
+                target_memory_id: MemoryId::new(target_memory_id),
+            },
+            EventPayloadDto::MemoryShareRejected { proposal_id } => Self::MemoryShareRejected {
+                proposal_id: ShareProposalId::new(proposal_id),
+            },
+            EventPayloadDto::MemoryShareRevoked { proposal_id } => Self::MemoryShareRevoked {
+                proposal_id: ShareProposalId::new(proposal_id),
+            },
+            EventPayloadDto::MemorySharedIn {
+                proposal_id,
+                source_workspace_id,
+                source_memory_id,
+                source_version,
+                target_memory_id,
+                target_version,
+            } => Self::MemorySharedIn {
+                proposal_id: ShareProposalId::new(proposal_id),
+                source_workspace_id: WorkspaceId::new(source_workspace_id),
+                source_memory_id: MemoryId::new(source_memory_id),
+                source_version,
+                target_memory_id: MemoryId::new(target_memory_id),
+                target_version,
+            },
             EventPayloadDto::ObservationCaptured { evidence_id } => Self::ObservationCaptured {
                 evidence_id: EvidenceId::new(evidence_id),
             },
@@ -209,7 +343,7 @@ impl From<EventPayloadDto> for EventPayload {
 #[cfg(test)]
 mod tests {
     use rembrane_domain::{
-        CanonicalEvent, EventId, EventPayload, MemoryId, PrincipalId, WorkspaceId,
+        CanonicalEvent, EventId, EventPayload, MemoryId, PrincipalId, ShareProposalId, WorkspaceId,
     };
 
     use super::{decode_event, encode_event};
@@ -246,5 +380,54 @@ mod tests {
             .as_bytes();
 
         assert_eq!(encoded, expected);
+    }
+
+    #[test]
+    fn round_trips_share_event_as_wire_version_two() {
+        let event = CanonicalEvent::new(
+            EventId::new("event_share_01"),
+            WorkspaceId::new("personal_01"),
+            PrincipalId::new("principal_01"),
+            Some(PrincipalId::new("principal_01")),
+            2,
+            EventPayload::MemoryShareApproved {
+                proposal_id: ShareProposalId::new("share_01"),
+                target_workspace_id: WorkspaceId::new("team_01"),
+                target_memory_id: MemoryId::new("shared_memory_01"),
+            },
+        )
+        .expect("share event should be valid");
+
+        let encoded = encode_event(&event).expect("share event should encode");
+        let wire = std::str::from_utf8(&encoded).expect("JSON should be UTF-8");
+        assert!(wire.contains("\"version\":2"));
+        assert_eq!(
+            decode_event(&encoded).expect("share event should decode"),
+            event
+        );
+    }
+
+    #[test]
+    fn rejects_share_variant_claiming_wire_version_one() {
+        let payload = br#"{
+            "format":"rembrane.event",
+            "version":1,
+            "record":{
+                "id":"event_share_01",
+                "workspace_id":"personal_01",
+                "actor_id":"principal_01",
+                "subject_id":"principal_01",
+                "sequence":2,
+                "payload":{
+                    "type":"memory-share-rejected",
+                    "proposal_id":"share_01"
+                }
+            }
+        }"#;
+
+        assert_eq!(
+            decode_event(payload),
+            Err(super::CodecError::UnsupportedVersion)
+        );
     }
 }

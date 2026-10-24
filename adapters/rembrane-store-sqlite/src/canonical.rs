@@ -484,7 +484,20 @@ fn event_describes_memory(payload: &EventPayload, memory: &MemoryRecord) -> bool
         EventPayload::MemoryDeleted { memory_id, version } => {
             (memory_id, version, memory.status() == MemoryStatus::Deleted)
         }
-        EventPayload::ObservationCaptured { .. }
+        EventPayload::MemorySharedIn {
+            target_memory_id,
+            target_version,
+            ..
+        } => (
+            target_memory_id,
+            target_version,
+            memory.status() == MemoryStatus::Confirmed,
+        ),
+        EventPayload::MemoryShareProposed { .. }
+        | EventPayload::MemoryShareApproved { .. }
+        | EventPayload::MemoryShareRejected { .. }
+        | EventPayload::MemoryShareRevoked { .. }
+        | EventPayload::ObservationCaptured { .. }
         | EventPayload::ActivityCheckpointed { .. }
         | EventPayload::DisclosureRecorded { .. } => return false,
     };
@@ -554,6 +567,11 @@ fn event_type(event: &CanonicalEvent) -> &'static str {
         rembrane_domain::EventPayload::MemoryCreated { .. } => "memory-created",
         rembrane_domain::EventPayload::MemoryRevised { .. } => "memory-revised",
         rembrane_domain::EventPayload::MemoryDeleted { .. } => "memory-deleted",
+        rembrane_domain::EventPayload::MemoryShareProposed { .. } => "memory-share-proposed",
+        rembrane_domain::EventPayload::MemoryShareApproved { .. } => "memory-share-approved",
+        rembrane_domain::EventPayload::MemoryShareRejected { .. } => "memory-share-rejected",
+        rembrane_domain::EventPayload::MemoryShareRevoked { .. } => "memory-share-revoked",
+        rembrane_domain::EventPayload::MemorySharedIn { .. } => "memory-shared-in",
         rembrane_domain::EventPayload::ObservationCaptured { .. } => "observation-captured",
         rembrane_domain::EventPayload::ActivityCheckpointed { .. } => "activity-checkpointed",
         rembrane_domain::EventPayload::DisclosureRecorded { .. } => "disclosure-recorded",

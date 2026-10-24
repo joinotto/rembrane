@@ -83,6 +83,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Canonical approved-share copy construction that preserves the private
   source record, subject attribution, kind, content, and evidence while adding
   a unique approval reference, plus a distinct `ShareMemory` permission.
+- Canonical share-proposal, approval, rejection, revocation, and target-copy
+  audit events using event wire format v2 while preserving byte-identical v1
+  encoding for all pre-existing event variants.
 - Versioned discovery, OpenAPI, and MCP protocol specifications.
 - Tenant-isolated SQLite canonical schema with encrypted-payload metadata.
 - Versioned SQLite initialization with legacy-schema adoption, idempotent

@@ -3,7 +3,7 @@ use std::fmt::{self, Display};
 
 use crate::{
     ActivityId, ContextPackId, DisclosureId, EventId, EvidenceId, MemoryId, PrincipalId,
-    WorkspaceId,
+    ShareProposalId, WorkspaceId,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -27,6 +27,31 @@ pub enum EventPayload {
     MemoryDeleted {
         memory_id: MemoryId,
         version: u64,
+    },
+    MemoryShareProposed {
+        proposal_id: ShareProposalId,
+        source_memory_id: MemoryId,
+        source_version: u64,
+        target_workspace_id: WorkspaceId,
+    },
+    MemoryShareApproved {
+        proposal_id: ShareProposalId,
+        target_workspace_id: WorkspaceId,
+        target_memory_id: MemoryId,
+    },
+    MemoryShareRejected {
+        proposal_id: ShareProposalId,
+    },
+    MemoryShareRevoked {
+        proposal_id: ShareProposalId,
+    },
+    MemorySharedIn {
+        proposal_id: ShareProposalId,
+        source_workspace_id: WorkspaceId,
+        source_memory_id: MemoryId,
+        source_version: u64,
+        target_memory_id: MemoryId,
+        target_version: u64,
     },
     ObservationCaptured {
         evidence_id: EvidenceId,
