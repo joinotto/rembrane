@@ -354,6 +354,11 @@ This roadmap describes sequencing, not release dates.
   - [x] Add an authenticated Rust HTTP client adapter.
     - [x] Add bounded redirect-free, proxy-free HTTPS/loopback discovery with
       zeroized bearer credentials.
+      - [x] Keep public discovery credential-free and attach bearer authority
+        only to protected operation requests.
+    - [x] Use canonical direct HTTPS operation bodies and results while
+      binding request and protocol correlation exclusively through mandatory
+      transport headers.
     - [x] Reject manifests whose capability, OAuth scope, HTTP method, or path
       bindings differ from the canonical protocol registry.
     - [x] Add typed codecs and response validation for every operation.

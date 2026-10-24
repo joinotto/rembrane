@@ -24,12 +24,14 @@ use rembrane_provider_sdk::{
 };
 use reqwest::Url;
 use reqwest::blocking::{Client, Response};
-use reqwest::header::{ACCEPT, CONTENT_TYPE};
+use reqwest::header::{ACCEPT, CONTENT_TYPE, HeaderMap};
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
 const MAXIMUM_DISCOVERY_BYTES: u64 = 262_144;
 const MAXIMUM_OPERATION_BYTES: u64 = 1_500_000;
+const REQUEST_ID_HEADER: &str = "x-rembrane-request-id";
+const PROTOCOL_VERSION_HEADER: &str = "x-rembrane-protocol-version";
 
 pub struct HttpMemoryProviderClient {
     client: Client,
@@ -64,7 +66,6 @@ impl HttpMemoryProviderClient {
             .client
             .get(self.discovery_endpoint.clone())
             .header(ACCEPT, "application/json")
-            .bearer_auth(self.bearer_token.as_str())
             .send()
             .map_err(|_| ProviderError::Unavailable)?;
         if !response.status().is_success() {
@@ -90,27 +91,11 @@ impl HttpMemoryProviderClient {
             .base_url
             .join("v1/context/resolve")
             .map_err(|_| ProviderError::Unavailable)?;
-        let body = RequestEnvelope {
-            request_id: request.request_id().as_str(),
-            protocol_version: "0.1",
-            operation: "resolve_context",
-            payload: ResolveContextBody::from(request.payload()),
-        };
-        let response = self.post_json(endpoint, &body)?;
-        let status = response.status().as_u16();
-        let wire: ResponseEnvelope<ResolveContextResultBody> =
-            decode_json(response, MAXIMUM_OPERATION_BYTES)?;
-        validate_response_identity(request, &wire.request_id, &wire.protocol_version)?;
-        match (wire.result, wire.error) {
-            (Some(result), None) if (200..300).contains(&status) => {
-                Ok(request.success(result.into_domain(request.payload())?))
-            }
-            (None, Some(error)) if !(200..300).contains(&status) => {
-                Ok(request.error(parse_error_code(&error.code)?))
-            }
-            _ => Err(ProviderError::Rejected(
-                "memory provider response status and envelope disagree".to_owned(),
-            )),
+        let body = ResolveContextBody::from(request.payload());
+        let response = self.post_json(endpoint, &body, request.request_id().as_str())?;
+        match decode_operation_response::<ResolveContextResultBody, _>(response, request)? {
+            Ok(result) => Ok(request.success(result.into_domain(request.payload())?)),
+            Err(error) => Ok(request.error(error)),
         }
     }
 
@@ -122,27 +107,11 @@ impl HttpMemoryProviderClient {
             .base_url
             .join("v1/questions/resolve")
             .map_err(|_| ProviderError::Unavailable)?;
-        let body = RequestEnvelope {
-            request_id: request.request_id().as_str(),
-            protocol_version: "0.1",
-            operation: "resolve_question",
-            payload: ResolveQuestionBody::from(request.payload()),
-        };
-        let response = self.post_json(endpoint, &body)?;
-        let status = response.status().as_u16();
-        let wire: ResponseEnvelope<ResolveQuestionResultBody> =
-            decode_json(response, MAXIMUM_OPERATION_BYTES)?;
-        validate_response_identity(request, &wire.request_id, &wire.protocol_version)?;
-        match (wire.result, wire.error) {
-            (Some(result), None) if (200..300).contains(&status) => {
-                Ok(request.success(result.into_domain(request.payload())?))
-            }
-            (None, Some(error)) if !(200..300).contains(&status) => {
-                Ok(request.error(parse_error_code(&error.code)?))
-            }
-            _ => Err(ProviderError::Rejected(
-                "memory provider response status and envelope disagree".to_owned(),
-            )),
+        let body = ResolveQuestionBody::from(request.payload());
+        let response = self.post_json(endpoint, &body, request.request_id().as_str())?;
+        match decode_operation_response::<ResolveQuestionResultBody, _>(response, request)? {
+            Ok(result) => Ok(request.success(result.into_domain(request.payload())?)),
+            Err(error) => Ok(request.error(error)),
         }
     }
 
@@ -154,27 +123,14 @@ impl HttpMemoryProviderClient {
             .base_url
             .join("v1/memory/proposals")
             .map_err(|_| ProviderError::Unavailable)?;
-        let body = RequestEnvelope {
-            request_id: request.request_id().as_str(),
-            protocol_version: "0.1",
-            operation: "propose_memory",
-            payload: ProposeMemoryBody::from(request.payload()),
-        };
-        let response = self.post_json(endpoint, &body)?;
-        let status = response.status().as_u16();
-        let wire: ResponseEnvelope<ProposeMemoryResultBody> =
-            decode_json(response, MAXIMUM_OPERATION_BYTES)?;
-        validate_response_identity(request, &wire.request_id, &wire.protocol_version)?;
-        match (wire.result, wire.error) {
-            (Some(result), None) if (200..300).contains(&status) => Ok(request.success(
-                ProposeMemoryResult::new(MemoryId::new(result.memory_id), result.version)?,
-            )),
-            (None, Some(error)) if !(200..300).contains(&status) => {
-                Ok(request.error(parse_error_code(&error.code)?))
-            }
-            _ => Err(ProviderError::Rejected(
-                "memory provider response status and envelope disagree".to_owned(),
-            )),
+        let body = ProposeMemoryBody::from(request.payload());
+        let response = self.post_json(endpoint, &body, request.request_id().as_str())?;
+        match decode_operation_response::<ProposeMemoryResultBody, _>(response, request)? {
+            Ok(result) => Ok(request.success(ProposeMemoryResult::new(
+                MemoryId::new(result.memory_id),
+                result.version,
+            )?)),
+            Err(error) => Ok(request.error(error)),
         }
     }
 
@@ -186,27 +142,11 @@ impl HttpMemoryProviderClient {
             .base_url
             .join("v1/events")
             .map_err(|_| ProviderError::Unavailable)?;
-        let body = RequestEnvelope {
-            request_id: request.request_id().as_str(),
-            protocol_version: "0.1",
-            operation: "record_event",
-            payload: RecordEventBody::from(request.payload()),
-        };
-        let response = self.post_json(endpoint, &body)?;
-        let status = response.status().as_u16();
-        let wire: ResponseEnvelope<RecordEventResultBody> =
-            decode_json(response, MAXIMUM_OPERATION_BYTES)?;
-        validate_response_identity(request, &wire.request_id, &wire.protocol_version)?;
-        match (wire.result, wire.error) {
-            (Some(result), None) if (200..300).contains(&status) => {
-                Ok(request.success(result.into_domain(request.payload())?))
-            }
-            (None, Some(error)) if !(200..300).contains(&status) => {
-                Ok(request.error(parse_error_code(&error.code)?))
-            }
-            _ => Err(ProviderError::Rejected(
-                "memory provider response status and envelope disagree".to_owned(),
-            )),
+        let body = RecordEventBody::from(request.payload());
+        let response = self.post_json(endpoint, &body, request.request_id().as_str())?;
+        match decode_operation_response::<RecordEventResultBody, _>(response, request)? {
+            Ok(result) => Ok(request.success(result.into_domain(request.payload())?)),
+            Err(error) => Ok(request.error(error)),
         }
     }
 
@@ -219,27 +159,11 @@ impl HttpMemoryProviderClient {
             request.payload().activity_id().as_str(),
             "checkpoint",
         )?;
-        let body = RequestEnvelope {
-            request_id: request.request_id().as_str(),
-            protocol_version: "0.1",
-            operation: "checkpoint_activity",
-            payload: CheckpointActivityBody::from(request.payload()),
-        };
-        let response = self.post_json(endpoint, &body)?;
-        let status = response.status().as_u16();
-        let wire: ResponseEnvelope<CheckpointActivityResultBody> =
-            decode_json(response, MAXIMUM_OPERATION_BYTES)?;
-        validate_response_identity(request, &wire.request_id, &wire.protocol_version)?;
-        match (wire.result, wire.error) {
-            (Some(result), None) if (200..300).contains(&status) => {
-                Ok(request.success(result.into_domain(request.payload())?))
-            }
-            (None, Some(error)) if !(200..300).contains(&status) => {
-                Ok(request.error(parse_error_code(&error.code)?))
-            }
-            _ => Err(ProviderError::Rejected(
-                "memory provider response status and envelope disagree".to_owned(),
-            )),
+        let body = CheckpointActivityBody::from(request.payload());
+        let response = self.post_json(endpoint, &body, request.request_id().as_str())?;
+        match decode_operation_response::<CheckpointActivityResultBody, _>(response, request)? {
+            Ok(result) => Ok(request.success(result.into_domain(request.payload())?)),
+            Err(error) => Ok(request.error(error)),
         }
     }
 
@@ -251,27 +175,15 @@ impl HttpMemoryProviderClient {
             .base_url
             .join("v1/disclosures/receipt")
             .map_err(|_| ProviderError::Unavailable)?;
-        let body = RequestEnvelope {
-            request_id: request.request_id().as_str(),
-            protocol_version: "0.1",
-            operation: "record_disclosure",
-            payload: RecordDisclosureBody::from(request.payload()),
-        };
-        let response = self.post_json(endpoint, &body)?;
-        let status = response.status().as_u16();
-        let wire: ResponseEnvelope<RecordDisclosureResultBody> =
-            decode_json(response, MAXIMUM_OPERATION_BYTES)?;
-        validate_response_identity(request, &wire.request_id, &wire.protocol_version)?;
-        match (wire.result, wire.error) {
-            (Some(result), None) if (200..300).contains(&status) => Ok(request.success(
-                RecordDisclosureResult::new(DisclosureId::new(result.disclosure_id))?,
-            )),
-            (None, Some(error)) if !(200..300).contains(&status) => {
-                Ok(request.error(parse_error_code(&error.code)?))
-            }
-            _ => Err(ProviderError::Rejected(
-                "memory provider response status and envelope disagree".to_owned(),
-            )),
+        let body = RecordDisclosureBody::from(request.payload());
+        let response = self.post_json(endpoint, &body, request.request_id().as_str())?;
+        match decode_operation_response::<RecordDisclosureResultBody, _>(response, request)? {
+            Ok(result) => Ok(
+                request.success(RecordDisclosureResult::new(DisclosureId::new(
+                    result.disclosure_id,
+                ))?),
+            ),
+            Err(error) => Ok(request.error(error)),
         }
     }
 
@@ -279,31 +191,11 @@ impl HttpMemoryProviderClient {
         &self,
         request: &MemoryProviderRequest<SyncPullPayload>,
     ) -> Result<MemoryProviderResponse<SyncPullResult>, ProviderError> {
-        let endpoint = self
-            .base_url
-            .join("v1/sync/pull")
-            .map_err(|_| ProviderError::Unavailable)?;
-        let body = RequestEnvelope {
-            request_id: request.request_id().as_str(),
-            protocol_version: "0.1",
-            operation: "sync_pull",
-            payload: SyncPullBody::from(request.payload()),
-        };
-        let response = self.get_json(endpoint, &body)?;
-        let status = response.status().as_u16();
-        let wire: ResponseEnvelope<SyncPullResultBody> =
-            decode_json(response, MAXIMUM_OPERATION_BYTES)?;
-        validate_response_identity(request, &wire.request_id, &wire.protocol_version)?;
-        match (wire.result, wire.error) {
-            (Some(result), None) if (200..300).contains(&status) => {
-                Ok(request.success(result.into_domain(request.payload())?))
-            }
-            (None, Some(error)) if !(200..300).contains(&status) => {
-                Ok(request.error(parse_error_code(&error.code)?))
-            }
-            _ => Err(ProviderError::Rejected(
-                "memory provider response status and envelope disagree".to_owned(),
-            )),
+        let endpoint = sync_pull_endpoint(&self.base_url, request.payload())?;
+        let response = self.get(endpoint, request.request_id().as_str())?;
+        match decode_operation_response::<SyncPullResultBody, _>(response, request)? {
+            Ok(result) => Ok(request.success(result.into_domain(request.payload())?)),
+            Err(error) => Ok(request.error(error)),
         }
     }
 
@@ -315,27 +207,11 @@ impl HttpMemoryProviderClient {
             .base_url
             .join("v1/sync/push")
             .map_err(|_| ProviderError::Unavailable)?;
-        let body = RequestEnvelope {
-            request_id: request.request_id().as_str(),
-            protocol_version: "0.1",
-            operation: "sync_push",
-            payload: SyncPushBody::from(request.payload()),
-        };
-        let response = self.post_json(endpoint, &body)?;
-        let status = response.status().as_u16();
-        let wire: ResponseEnvelope<SyncPushResultBody> =
-            decode_json(response, MAXIMUM_OPERATION_BYTES)?;
-        validate_response_identity(request, &wire.request_id, &wire.protocol_version)?;
-        match (wire.result, wire.error) {
-            (Some(result), None) if (200..300).contains(&status) => {
-                Ok(request.success(result.into_domain(request.payload())?))
-            }
-            (None, Some(error)) if !(200..300).contains(&status) => {
-                Ok(request.error(parse_error_code(&error.code)?))
-            }
-            _ => Err(ProviderError::Rejected(
-                "memory provider response status and envelope disagree".to_owned(),
-            )),
+        let body = SyncPushBody::from(request.payload());
+        let response = self.post_json(endpoint, &body, request.request_id().as_str())?;
+        match decode_operation_response::<SyncPushResultBody, _>(response, request)? {
+            Ok(result) => Ok(request.success(result.into_domain(request.payload())?)),
+            Err(error) => Ok(request.error(error)),
         }
     }
 
@@ -344,19 +220,10 @@ impl HttpMemoryProviderClient {
         request: &MemoryProviderRequest<DeleteMemoryPayload>,
     ) -> Result<MemoryProviderResponse<DeleteMemoryResult>, ProviderError> {
         let endpoint = memory_endpoint(&self.base_url, request.payload().memory_id().as_str())?;
-        let body = RequestEnvelope {
-            request_id: request.request_id().as_str(),
-            protocol_version: "0.1",
-            operation: "delete_memory",
-            payload: DeleteMemoryBody::from(request.payload()),
-        };
-        let response = self.delete_json(endpoint, &body)?;
-        let status = response.status().as_u16();
-        let wire: ResponseEnvelope<DeleteMemoryResultBody> =
-            decode_json(response, MAXIMUM_OPERATION_BYTES)?;
-        validate_response_identity(request, &wire.request_id, &wire.protocol_version)?;
-        match (wire.result, wire.error) {
-            (Some(result), None) if (200..300).contains(&status) => {
+        let body = DeleteMemoryBody::from(request.payload());
+        let response = self.delete_json(endpoint, &body, request.request_id().as_str())?;
+        match decode_operation_response::<DeleteMemoryResultBody, _>(response, request)? {
+            Ok(result) => {
                 if result.memory_id != request.payload().memory_id().as_str() {
                     return Err(ProviderError::Rejected(
                         "memory provider deletion returned another memory id".to_owned(),
@@ -368,12 +235,7 @@ impl HttpMemoryProviderClient {
                     result.tombstone_version,
                 )?))
             }
-            (None, Some(error)) if !(200..300).contains(&status) => {
-                Ok(request.error(parse_error_code(&error.code)?))
-            }
-            _ => Err(ProviderError::Rejected(
-                "memory provider response status and envelope disagree".to_owned(),
-            )),
+            Err(error) => Ok(request.error(error)),
         }
     }
 
@@ -381,47 +243,21 @@ impl HttpMemoryProviderClient {
         &self,
         request: &MemoryProviderRequest<ExplainMemoryPayload>,
     ) -> Result<MemoryProviderResponse<ExplainMemoryResult>, ProviderError> {
-        let endpoint = memory_subresource_endpoint(
-            &self.base_url,
-            request.payload().memory_id().as_str(),
-            "explain",
-        )?;
-        let body = RequestEnvelope {
-            request_id: request.request_id().as_str(),
-            protocol_version: "0.1",
-            operation: "explain_memory",
-            payload: ExplainMemoryBody::from(request.payload()),
-        };
-        let response = self.get_json(endpoint, &body)?;
-        let status = response.status().as_u16();
-        let wire: ResponseEnvelope<ExplainMemoryResultBody> =
-            decode_json(response, MAXIMUM_OPERATION_BYTES)?;
-        validate_response_identity(request, &wire.request_id, &wire.protocol_version)?;
-        match (wire.result, wire.error) {
-            (Some(result), None) if (200..300).contains(&status) => {
-                Ok(request.success(result.into_domain(request.payload())?))
-            }
-            (None, Some(error)) if !(200..300).contains(&status) => {
-                Ok(request.error(parse_error_code(&error.code)?))
-            }
-            _ => Err(ProviderError::Rejected(
-                "memory provider response status and envelope disagree".to_owned(),
-            )),
+        let endpoint = explain_memory_endpoint(&self.base_url, request.payload())?;
+        let response = self.get(endpoint, request.request_id().as_str())?;
+        match decode_operation_response::<ExplainMemoryResultBody, _>(response, request)? {
+            Ok(result) => Ok(request.success(result.into_domain(request.payload())?)),
+            Err(error) => Ok(request.error(error)),
         }
     }
 
-    fn get_json<Body: Serialize>(
-        &self,
-        endpoint: Url,
-        body: &Body,
-    ) -> Result<Response, ProviderError> {
-        let encoded = encode_operation_body(body)?;
+    fn get(&self, endpoint: Url, request_id: &str) -> Result<Response, ProviderError> {
         self.client
             .get(endpoint)
             .header(ACCEPT, "application/json")
-            .header(CONTENT_TYPE, "application/json")
+            .header(REQUEST_ID_HEADER, request_id)
+            .header(PROTOCOL_VERSION_HEADER, "0.1")
             .bearer_auth(self.bearer_token.as_str())
-            .body(encoded)
             .send()
             .map_err(|_| ProviderError::Unavailable)
     }
@@ -430,12 +266,15 @@ impl HttpMemoryProviderClient {
         &self,
         endpoint: Url,
         body: &Body,
+        request_id: &str,
     ) -> Result<Response, ProviderError> {
         let encoded = encode_operation_body(body)?;
         self.client
             .post(endpoint)
             .header(ACCEPT, "application/json")
             .header(CONTENT_TYPE, "application/json")
+            .header(REQUEST_ID_HEADER, request_id)
+            .header(PROTOCOL_VERSION_HEADER, "0.1")
             .bearer_auth(self.bearer_token.as_str())
             .body(encoded)
             .send()
@@ -446,12 +285,15 @@ impl HttpMemoryProviderClient {
         &self,
         endpoint: Url,
         body: &Body,
+        request_id: &str,
     ) -> Result<Response, ProviderError> {
         let encoded = encode_operation_body(body)?;
         self.client
             .delete(endpoint)
             .header(ACCEPT, "application/json")
             .header(CONTENT_TYPE, "application/json")
+            .header(REQUEST_ID_HEADER, request_id)
+            .header(PROTOCOL_VERSION_HEADER, "0.1")
             .bearer_auth(self.bearer_token.as_str())
             .body(encoded)
             .send()
@@ -498,6 +340,33 @@ fn memory_subresource_endpoint(
             ProviderError::InvalidConfiguration("memory provider URL cannot be a base".to_owned())
         })?
         .push(subresource);
+    Ok(endpoint)
+}
+
+fn explain_memory_endpoint(
+    base_url: &Url,
+    payload: &ExplainMemoryPayload,
+) -> Result<Url, ProviderError> {
+    let mut endpoint =
+        memory_subresource_endpoint(base_url, payload.memory_id().as_str(), "explain")?;
+    endpoint
+        .query_pairs_mut()
+        .append_pair("version", &payload.version().to_string())
+        .append_pair("purpose", payload.purpose());
+    Ok(endpoint)
+}
+
+fn sync_pull_endpoint(base_url: &Url, payload: &SyncPullPayload) -> Result<Url, ProviderError> {
+    let mut endpoint = base_url
+        .join("v1/sync/pull")
+        .map_err(|_| ProviderError::Unavailable)?;
+    {
+        let mut query = endpoint.query_pairs_mut();
+        if let Some(cursor) = payload.cursor() {
+            query.append_pair("cursor", cursor.as_str());
+        }
+        query.append_pair("maximumItems", &payload.maximum_items().to_string());
+    }
     Ok(endpoint)
 }
 
@@ -595,13 +464,36 @@ fn decode_json<Body: for<'de> Deserialize<'de>>(
         .map_err(|_| ProviderError::Rejected("memory provider returned malformed JSON".to_owned()))
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct RequestEnvelope<'request, Payload> {
-    request_id: &'request str,
-    protocol_version: &'static str,
-    operation: &'static str,
-    payload: Payload,
+fn decode_operation_response<ResultBody, Payload>(
+    response: Response,
+    request: &MemoryProviderRequest<Payload>,
+) -> Result<Result<ResultBody, rembrane_provider_sdk::MemoryProviderErrorCode>, ProviderError>
+where
+    ResultBody: for<'de> Deserialize<'de>,
+    Payload: rembrane_provider_sdk::MemoryProviderPayload,
+{
+    validate_response_headers(response.headers(), request.request_id().as_str())?;
+    if response.status().is_success() {
+        Ok(Ok(decode_json(response, MAXIMUM_OPERATION_BYTES)?))
+    } else {
+        let error: ErrorBody = decode_json(response, MAXIMUM_OPERATION_BYTES)?;
+        Ok(Err(parse_error_code(&error.code)?))
+    }
+}
+
+fn validate_response_headers(headers: &HeaderMap, request_id: &str) -> Result<(), ProviderError> {
+    let response_request_id = headers
+        .get(REQUEST_ID_HEADER)
+        .and_then(|value| value.to_str().ok());
+    let response_protocol = headers
+        .get(PROTOCOL_VERSION_HEADER)
+        .and_then(|value| value.to_str().ok());
+    if response_request_id != Some(request_id) || response_protocol != Some("0.1") {
+        return Err(ProviderError::Rejected(
+            "memory provider response correlation mismatch".to_owned(),
+        ));
+    }
+    Ok(())
 }
 
 #[derive(Serialize)]
@@ -681,13 +573,6 @@ struct RecordDisclosureBody<'request> {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct SyncPullBody<'request> {
-    cursor: Option<&'request str>,
-    maximum_items: usize,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
 struct SyncPushBody<'request> {
     idempotency_key: &'request str,
     base_cursor: &'request str,
@@ -730,15 +615,6 @@ impl<'request> From<&'request MemoryProviderPushMutation> for PushSyncMutationBo
             operation: sync_operation_name(mutation.operation()),
             payload: mutation.payload(),
             payload_sha256: mutation.payload_sha256(),
-        }
-    }
-}
-
-impl<'request> From<&'request SyncPullPayload> for SyncPullBody<'request> {
-    fn from(payload: &'request SyncPullPayload) -> Self {
-        Self {
-            cursor: payload.cursor().map(MemoryProviderSyncCursor::as_str),
-            maximum_items: payload.maximum_items(),
         }
     }
 }
@@ -847,24 +723,6 @@ struct DeleteMemoryBody<'request> {
     reason: &'request str,
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct ExplainMemoryBody<'request> {
-    memory_id: &'request str,
-    version: u64,
-    purpose: &'request str,
-}
-
-impl<'request> From<&'request ExplainMemoryPayload> for ExplainMemoryBody<'request> {
-    fn from(payload: &'request ExplainMemoryPayload) -> Self {
-        Self {
-            memory_id: payload.memory_id().as_str(),
-            version: payload.version(),
-            purpose: payload.purpose(),
-        }
-    }
-}
-
 impl<'request> From<&'request DeleteMemoryPayload> for DeleteMemoryBody<'request> {
     fn from(payload: &'request DeleteMemoryPayload) -> Self {
         Self {
@@ -910,15 +768,6 @@ impl<'request> From<&'request MemoryScope> for SelectorBody<'request> {
             },
         }
     }
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
-struct ResponseEnvelope<ResultBody> {
-    request_id: String,
-    protocol_version: String,
-    result: Option<ResultBody>,
-    error: Option<ErrorBody>,
 }
 
 #[derive(Deserialize)]
@@ -1315,19 +1164,6 @@ impl DisclosureConstraintBody {
     }
 }
 
-fn validate_response_identity(
-    request: &MemoryProviderRequest<impl rembrane_provider_sdk::MemoryProviderPayload>,
-    response_request_id: &str,
-    response_protocol: &str,
-) -> Result<(), ProviderError> {
-    if response_request_id != request.request_id().as_str() || response_protocol != "0.1" {
-        return Err(ProviderError::Rejected(
-            "memory provider response correlation mismatch".to_owned(),
-        ));
-    }
-    Ok(())
-}
-
 fn parse_memory_kind(value: &str) -> Result<MemoryKind, ProviderError> {
     match value {
         "preference" => Ok(MemoryKind::Preference),
@@ -1627,14 +1463,15 @@ mod tests {
     };
 
     use super::{
-        CheckpointActivityBody, CheckpointActivityResultBody, DiscoveryBody, ExplainMemoryBody,
+        CheckpointActivityBody, CheckpointActivityResultBody, DiscoveryBody,
         ExplainMemoryResultBody, ProposeMemoryBody, RecordDisclosureBody,
-        RecordDisclosureResultBody, RecordEventBody, RecordEventResultBody, RequestEnvelope,
-        ResolveContextBody, ResolveContextResultBody, ResolveQuestionBody,
-        ResolveQuestionResultBody, SyncPullBody, SyncPullResultBody, SyncPushBody,
-        SyncPushResultBody, activity_subresource_endpoint, memory_endpoint,
-        memory_subresource_endpoint, validate_base_url, validate_bearer_token,
+        RecordDisclosureResultBody, RecordEventBody, RecordEventResultBody, ResolveContextBody,
+        ResolveContextResultBody, ResolveQuestionBody, ResolveQuestionResultBody,
+        SyncPullResultBody, SyncPushBody, SyncPushResultBody, activity_subresource_endpoint,
+        explain_memory_endpoint, memory_endpoint, memory_subresource_endpoint, sync_pull_endpoint,
+        validate_base_url, validate_bearer_token, validate_response_headers,
     };
+    use reqwest::header::{HeaderMap, HeaderValue};
 
     const DISCOVERY: &str = r#"{
       "providerId":"rembrane.memory.example",
@@ -1689,6 +1526,27 @@ mod tests {
         assert!(validate_bearer_token("token with spaces").is_err());
         assert!(validate_bearer_token("token\r\ninjected:value").is_err());
         assert!(validate_bearer_token("opaque-token_123").is_ok());
+    }
+
+    #[test]
+    fn requires_exact_https_response_correlation_headers() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            super::REQUEST_ID_HEADER,
+            HeaderValue::from_static("request_0123456789"),
+        );
+        headers.insert(
+            super::PROTOCOL_VERSION_HEADER,
+            HeaderValue::from_static("0.1"),
+        );
+        assert!(validate_response_headers(&headers, "request_0123456789").is_ok());
+        assert!(validate_response_headers(&headers, "request_9876543210").is_err());
+
+        headers.insert(
+            super::PROTOCOL_VERSION_HEADER,
+            HeaderValue::from_static("0.2"),
+        );
+        assert!(validate_response_headers(&headers, "request_0123456789").is_err());
     }
 
     #[test]
@@ -1747,20 +1605,12 @@ mod tests {
         let connection =
             MemoryProviderConnection::connect(manifest, &policy, "context-test").expect("connect");
         let request = connection.request(payload).expect("request");
-        let encoded = serde_json::to_value(RequestEnvelope {
-            request_id: request.request_id().as_str(),
-            protocol_version: "0.1",
-            operation: "resolve_context",
-            payload: ResolveContextBody::from(request.payload()),
-        })
-        .expect("request JSON");
-        assert_eq!(encoded["payload"]["selector"]["scope"], "entity");
-        assert_eq!(
-            encoded["payload"]["selector"]["entityId"],
-            "project_rembrane"
-        );
-        assert!(encoded["payload"].get("workspaceId").is_none());
-        assert!(encoded["payload"].get("subjectId").is_none());
+        let encoded = serde_json::to_value(ResolveContextBody::from(request.payload()))
+            .expect("request JSON");
+        assert_eq!(encoded["selector"]["scope"], "entity");
+        assert_eq!(encoded["selector"]["entityId"], "project_rembrane");
+        assert!(encoded.get("workspaceId").is_none());
+        assert!(encoded.get("subjectId").is_none());
     }
 
     #[test]
@@ -2050,11 +1900,15 @@ mod tests {
             limits,
         )
         .expect("request");
-        let encoded = serde_json::to_value(SyncPullBody::from(&request)).expect("request JSON");
-        assert_eq!(encoded["cursor"], "cursor_0123456789_start");
-        assert_eq!(encoded["maximumItems"], 2);
-        assert!(encoded.get("workspaceId").is_none());
-        assert!(encoded.get("clientId").is_none());
+        let endpoint = sync_pull_endpoint(
+            &validate_base_url("https://memory.example.test").expect("base"),
+            &request,
+        )
+        .expect("endpoint");
+        assert_eq!(
+            endpoint.as_str(),
+            "https://memory.example.test/v1/sync/pull?cursor=cursor_0123456789_start&maximumItems=2"
+        );
 
         let wire: SyncPullResultBody = serde_json::from_str(
             r#"{
@@ -2214,11 +2068,15 @@ mod tests {
             "explain personalization",
         )
         .expect("payload");
-        let encoded =
-            serde_json::to_value(ExplainMemoryBody::from(&payload)).expect("request JSON");
-        assert_eq!(encoded["memoryId"], "memory_01");
-        assert_eq!(encoded["version"], 7);
-        assert_eq!(encoded["purpose"], "explain personalization");
+        let endpoint = explain_memory_endpoint(
+            &validate_base_url("https://memory.example.test").expect("base"),
+            &payload,
+        )
+        .expect("endpoint");
+        assert_eq!(
+            endpoint.as_str(),
+            "https://memory.example.test/v1/memories/memory_01/explain?version=7&purpose=explain+personalization"
+        );
 
         let wire: ExplainMemoryResultBody = serde_json::from_str(
             r#"{

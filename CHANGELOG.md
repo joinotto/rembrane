@@ -91,6 +91,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Typed Memory Provider sync push with an idempotent atomic batch, optimistic
   expected revisions, base-cursor fork detection, ciphertext-compatible
   payload integrity, and ordered one-for-one canonical acknowledgements.
+- Canonical Memory Provider HTTPS framing across every operation: direct
+  OpenAPI payloads and results, mandatory request/protocol correlation
+  headers, query-encoded GET parameters, closed direct error bodies, and
+  credential-free public discovery.
 - Canonical engine-neutral temporal knowledge graph aggregates with typed
   nodes, validated relationship types, strict workspace namespaces, separate
   validity and ingestion time, evidence provenance, bounded aliases, versions,
