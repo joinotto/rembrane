@@ -548,6 +548,8 @@ This roadmap describes sequencing, not release dates.
 - [ ] WhatsApp Business gateway.
   - [x] Verify webhook HMAC-SHA256 over the raw bounded payload before parsing
     and derive keyed pseudonymous sender/account lookup identifiers.
+  - [x] Connect verified text events to atomic canonical sender admission while
+    treating authenticated duplicate deliveries idempotently.
   - [x] Define a bounded authenticated-channel message contract whose
     canonical workspace, principal, and client identity must come from a
     deployment-owned sender binding rather than webhook payload claims.

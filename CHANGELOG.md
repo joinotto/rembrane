@@ -12,6 +12,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - A Ring-backed WhatsApp Business webhook boundary that authenticates the raw
   bounded payload before parsing, extracts bounded text events, and derives
   domain-separated keyed account/sender lookup fingerprints.
+- A WhatsApp ingestion bridge into atomic canonical sender admission that
+  verifies before storage, ignores authenticated duplicate deliveries, and
+  fails closed on every other repository error.
 - Durable, content-free SQLite channel replay receipts with atomic cleanup,
   fail-closed capacity enforcement, per-platform namespaces, and
   cross-workspace duplicate denial for multi-process gateways.

@@ -1071,6 +1071,9 @@ dependencies = [
 name = "rembrane-channel-whatsapp"
 version = "0.1.0-alpha.1"
 dependencies = [
+ "rembrane-application",
+ "rembrane-contracts",
+ "rembrane-domain",
  "ring",
  "serde",
  "serde_json",

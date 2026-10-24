@@ -1,5 +1,7 @@
 //! Authenticated, bounded `WhatsApp` Business webhook ingestion.
 
+use rembrane_application::{ApplicationError, ChannelIngressRepository};
+use rembrane_contracts::{ChannelKind, VerifiedChannelMessage};
 use ring::hmac;
 use serde::Deserialize;
 use zeroize::Zeroize;
@@ -22,13 +24,14 @@ pub struct WhatsAppTextEvent {
     received_at_epoch_seconds: u64,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum WhatsAppWebhookError {
     InvalidConfiguration,
     InvalidSignature,
     InvalidPayload,
     PayloadTooLarge,
     TooManyMessages,
+    Admission(ApplicationError),
 }
 
 impl WhatsAppWebhookVerifier {
@@ -111,6 +114,42 @@ impl WhatsAppWebhookVerifier {
             }
         }
         Ok(events)
+    }
+
+    /// Authenticates a webhook and admits each text event through Rembrane's
+    /// atomic sender-binding and replay boundary.
+    ///
+    /// Duplicate platform deliveries are ignored. Every other admission
+    /// failure is fail-closed and returned to the caller for retry handling.
+    pub fn ingest_text<R: ChannelIngressRepository>(
+        &self,
+        repository: &mut R,
+        signature_header: &str,
+        payload: &[u8],
+        now_epoch_seconds: u64,
+        replay_window_seconds: u64,
+        maximum_events: usize,
+    ) -> Result<Vec<VerifiedChannelMessage>, WhatsAppWebhookError> {
+        let events = self.verify_and_extract_text(signature_header, payload)?;
+        let mut admitted = Vec::with_capacity(events.len());
+        for event in events {
+            match repository.accept_bound_channel_event(
+                ChannelKind::WhatsAppBusiness,
+                event.account_lookup_key(),
+                event.sender_lookup_key(),
+                event.event_id(),
+                event.text(),
+                event.received_at_epoch_seconds(),
+                now_epoch_seconds,
+                replay_window_seconds,
+                maximum_events,
+            ) {
+                Ok(message) => admitted.push(message),
+                Err(ApplicationError::AlreadyExists) => {}
+                Err(error) => return Err(WhatsAppWebhookError::Admission(error)),
+            }
+        }
+        Ok(admitted)
     }
 }
 
@@ -239,6 +278,9 @@ struct Text {
 
 #[cfg(test)]
 mod tests {
+    use rembrane_application::{ApplicationError, ChannelIngressRepository};
+    use rembrane_contracts::{ChannelKind, VerifiedChannelMessage};
+    use rembrane_domain::{ClientId, PrincipalId, WorkspaceId};
     use ring::hmac;
 
     use super::{MAXIMUM_WEBHOOK_BYTES, WhatsAppWebhookError, WhatsAppWebhookVerifier, encode_hex};
@@ -283,27 +325,102 @@ mod tests {
     fn rejects_tampering_bad_headers_and_oversized_payloads() {
         let mut tampered = PAYLOAD.to_vec();
         tampered.push(b' ');
-        assert_eq!(
-            verifier()
-                .verify_and_extract_text(&signature(PAYLOAD), &tampered)
-                .err()
-                .expect("tampering must fail"),
-            WhatsAppWebhookError::InvalidSignature
-        );
-        assert_eq!(
-            verifier()
-                .verify_and_extract_text("sha256=ABC", PAYLOAD)
-                .err()
-                .expect("malformed signature must fail"),
-            WhatsAppWebhookError::InvalidSignature
-        );
+        assert!(matches!(
+            verifier().verify_and_extract_text(&signature(PAYLOAD), &tampered),
+            Err(WhatsAppWebhookError::InvalidSignature)
+        ));
+        assert!(matches!(
+            verifier().verify_and_extract_text("sha256=ABC", PAYLOAD),
+            Err(WhatsAppWebhookError::InvalidSignature)
+        ));
         let oversized = vec![0; MAXIMUM_WEBHOOK_BYTES + 1];
-        assert_eq!(
-            verifier()
-                .verify_and_extract_text(&signature(&oversized), &oversized)
-                .err()
-                .expect("oversized payload must fail"),
-            WhatsAppWebhookError::PayloadTooLarge
-        );
+        assert!(matches!(
+            verifier().verify_and_extract_text(&signature(&oversized), &oversized),
+            Err(WhatsAppWebhookError::PayloadTooLarge)
+        ));
+    }
+
+    struct RecordingIngress {
+        calls: usize,
+        replay: bool,
+    }
+
+    impl ChannelIngressRepository for RecordingIngress {
+        fn accept_bound_channel_event(
+            &mut self,
+            channel: ChannelKind,
+            _account_lookup_key: &str,
+            _sender_lookup_key: &str,
+            event_id: &str,
+            text: &str,
+            received_at_epoch_seconds: u64,
+            _now_epoch_seconds: u64,
+            _replay_window_seconds: u64,
+            _maximum_events: usize,
+        ) -> Result<VerifiedChannelMessage, ApplicationError> {
+            self.calls += 1;
+            if self.replay {
+                return Err(ApplicationError::AlreadyExists);
+            }
+            VerifiedChannelMessage::from_authenticated_transport(
+                channel,
+                event_id,
+                WorkspaceId::new("workspace_01"),
+                PrincipalId::new("principal_01"),
+                ClientId::new("client_whatsapp_01"),
+                text,
+                received_at_epoch_seconds,
+            )
+            .map_err(|_| ApplicationError::Validation("invalid fixture".to_owned()))
+        }
+    }
+
+    #[test]
+    fn signature_precedes_storage_and_duplicate_delivery_is_idempotent() {
+        let mut repository = RecordingIngress {
+            calls: 0,
+            replay: false,
+        };
+        let verifier = verifier();
+        let bad_signature = format!("sha256={}", "0".repeat(64));
+        assert!(matches!(
+            verifier.ingest_text(
+                &mut repository,
+                &bad_signature,
+                PAYLOAD,
+                1_700_000_001,
+                86_400,
+                1_000,
+            ),
+            Err(WhatsAppWebhookError::InvalidSignature)
+        ));
+        assert_eq!(repository.calls, 0);
+
+        let admitted = verifier
+            .ingest_text(
+                &mut repository,
+                &signature(PAYLOAD),
+                PAYLOAD,
+                1_700_000_001,
+                86_400,
+                1_000,
+            )
+            .expect("verified event should be admitted");
+        assert_eq!(admitted.len(), 1);
+        assert_eq!(repository.calls, 1);
+
+        repository.replay = true;
+        let duplicate = verifier
+            .ingest_text(
+                &mut repository,
+                &signature(PAYLOAD),
+                PAYLOAD,
+                1_700_000_002,
+                86_400,
+                1_000,
+            )
+            .expect("duplicate delivery should be idempotent");
+        assert!(duplicate.is_empty());
+        assert_eq!(repository.calls, 2);
     }
 }
