@@ -74,6 +74,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Content-free private-to-shared memory proposal aggregate referencing one
   exact source version and target scope, with source-owner-only approval or
   rejection and proposer/source-owner revocation before disclosure.
+- Repository contract and in-memory reference persistence for tenant-scoped
+  share proposals, including exact confirmed-source validation, immutable
+  identity fields, and optimistic status transitions.
 - Versioned discovery, OpenAPI, and MCP protocol specifications.
 - Tenant-isolated SQLite canonical schema with encrypted-payload metadata.
 - Versioned SQLite initialization with legacy-schema adoption, idempotent

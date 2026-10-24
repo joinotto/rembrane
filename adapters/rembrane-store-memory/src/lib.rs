@@ -4,13 +4,15 @@ use rembrane_application::{
     ApplicationError, CanonicalMutationRepository, CheckpointDisclosureRepository,
     CheckpointMutationRepository, CheckpointRepository, DisclosureRepository, EventRepository,
     InvitationRepository, MemberLifecycleRepository, MemberScopeGrantRepository,
-    MembershipRepository, MemoryRepository, ProjectionOutboxRepository, WorkspaceRepository,
+    MembershipRepository, MemoryRepository, ProjectionOutboxRepository, ShareProposalRepository,
+    WorkspaceRepository,
 };
 use rembrane_domain::{
     ActivityCheckpoint, ActivityId, CanonicalEvent, CheckpointDisclosureReceipt, DisclosureReceipt,
     Invitation, InvitationId, InvitationStatus, MemberScopeGrant, Membership, MemoryId,
-    MemoryRecord, Principal, PrincipalId, ProjectionJob, ProjectionJobId, ProjectionOperation,
-    ProjectionStatus, ProviderId, Workspace, WorkspaceId, WorkspaceKind, WorkspaceRole,
+    MemoryRecord, MemoryShareProposal, MemoryStatus, Principal, PrincipalId, ProjectionJob,
+    ProjectionJobId, ProjectionOperation, ProjectionStatus, ProviderId, ShareProposalId,
+    ShareProposalStatus, Workspace, WorkspaceId, WorkspaceKind, WorkspaceRole,
 };
 
 #[derive(Debug, Default)]
@@ -24,6 +26,7 @@ pub struct InMemoryStore {
     checkpoints: Vec<ActivityCheckpoint>,
     invitations: Vec<Invitation>,
     member_scope_grants: Vec<MemberScopeGrant>,
+    share_proposals: Vec<MemoryShareProposal>,
     memberships: Vec<Membership>,
     projections: Vec<ProjectionJob>,
 }
@@ -496,6 +499,105 @@ impl InvitationRepository for InMemoryStore {
             return Err(ApplicationError::VersionConflict);
         }
         *stored = invitation;
+        Ok(())
+    }
+}
+
+impl ShareProposalRepository for InMemoryStore {
+    fn insert_share_proposal(
+        &mut self,
+        proposal: MemoryShareProposal,
+    ) -> Result<(), ApplicationError> {
+        if self.share_proposals.iter().any(|stored| {
+            stored.source_workspace_id() == proposal.source_workspace_id()
+                && stored.id() == proposal.id()
+        }) {
+            return Err(ApplicationError::AlreadyExists);
+        }
+        let source = self
+            .memories
+            .iter()
+            .find(|memory| {
+                memory.workspace_id() == proposal.source_workspace_id()
+                    && memory.id() == proposal.source_memory_id()
+            })
+            .ok_or(ApplicationError::NotFound)?;
+        if source.version() != proposal.source_memory_version()
+            || source.subject_id() != proposal.source_subject_id()
+            || source.status() != MemoryStatus::Confirmed
+        {
+            return Err(ApplicationError::VersionConflict);
+        }
+        if !self
+            .workspaces
+            .iter()
+            .any(|workspace| workspace.id() == proposal.target_workspace_id())
+            || !self
+                .principals
+                .iter()
+                .any(|principal| principal.id() == proposal.proposed_by())
+        {
+            return Err(ApplicationError::NotFound);
+        }
+        self.share_proposals.push(proposal);
+        Ok(())
+    }
+
+    fn find_share_proposal(
+        &self,
+        source_workspace_id: &WorkspaceId,
+        proposal_id: &ShareProposalId,
+    ) -> Result<Option<MemoryShareProposal>, ApplicationError> {
+        Ok(self
+            .share_proposals
+            .iter()
+            .find(|proposal| {
+                proposal.source_workspace_id() == source_workspace_id
+                    && proposal.id() == proposal_id
+            })
+            .cloned())
+    }
+
+    fn list_share_proposals_for_source(
+        &self,
+        source_workspace_id: &WorkspaceId,
+        source_subject_id: &PrincipalId,
+    ) -> Result<Vec<MemoryShareProposal>, ApplicationError> {
+        Ok(self
+            .share_proposals
+            .iter()
+            .filter(|proposal| {
+                proposal.source_workspace_id() == source_workspace_id
+                    && proposal.source_subject_id() == source_subject_id
+            })
+            .cloned()
+            .collect())
+    }
+
+    fn replace_share_proposal(
+        &mut self,
+        proposal: MemoryShareProposal,
+        expected_status: ShareProposalStatus,
+    ) -> Result<(), ApplicationError> {
+        let stored = self
+            .share_proposals
+            .iter_mut()
+            .find(|stored| {
+                stored.source_workspace_id() == proposal.source_workspace_id()
+                    && stored.id() == proposal.id()
+            })
+            .ok_or(ApplicationError::NotFound)?;
+        if stored.status() != expected_status
+            || stored.source_memory_id() != proposal.source_memory_id()
+            || stored.source_memory_version() != proposal.source_memory_version()
+            || stored.source_subject_id() != proposal.source_subject_id()
+            || stored.target_workspace_id() != proposal.target_workspace_id()
+            || stored.target_scope() != proposal.target_scope()
+            || stored.proposed_by() != proposal.proposed_by()
+        {
+            return Err(ApplicationError::VersionConflict);
+        }
+        *stored = proposal;
         Ok(())
     }
 }

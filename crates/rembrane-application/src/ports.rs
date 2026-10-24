@@ -1,8 +1,9 @@
 use rembrane_domain::{
     ActivityCheckpoint, ActivityId, CanonicalEvent, CheckpointDisclosureReceipt, DisclosureReceipt,
     Invitation, InvitationId, InvitationStatus, MemberScopeGrant, Membership, MembershipStatus,
-    MemoryId, MemoryRecord, Principal, PrincipalId, ProjectionJob, ProjectionJobId,
-    ProjectionStatus, ProviderId, Workspace, WorkspaceId,
+    MemoryId, MemoryRecord, MemoryShareProposal, Principal, PrincipalId, ProjectionJob,
+    ProjectionJobId, ProjectionStatus, ProviderId, ShareProposalId, ShareProposalStatus, Workspace,
+    WorkspaceId,
 };
 
 use crate::ApplicationError;
@@ -128,6 +129,31 @@ pub trait InvitationRepository {
         &mut self,
         invitation: Invitation,
         expected_status: InvitationStatus,
+    ) -> Result<(), ApplicationError>;
+}
+
+pub trait ShareProposalRepository {
+    fn insert_share_proposal(
+        &mut self,
+        proposal: MemoryShareProposal,
+    ) -> Result<(), ApplicationError>;
+
+    fn find_share_proposal(
+        &self,
+        source_workspace_id: &WorkspaceId,
+        proposal_id: &ShareProposalId,
+    ) -> Result<Option<MemoryShareProposal>, ApplicationError>;
+
+    fn list_share_proposals_for_source(
+        &self,
+        source_workspace_id: &WorkspaceId,
+        source_subject_id: &PrincipalId,
+    ) -> Result<Vec<MemoryShareProposal>, ApplicationError>;
+
+    fn replace_share_proposal(
+        &mut self,
+        proposal: MemoryShareProposal,
+        expected_status: ShareProposalStatus,
     ) -> Result<(), ApplicationError>;
 }
 
