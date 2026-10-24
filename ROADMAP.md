@@ -156,6 +156,8 @@ This roadmap describes sequencing, not release dates.
     `workspace_id` table plus explicit workspace and share-proposal policies.
   - [x] Document transaction-local tenant identity and non-owner,
     non-`BYPASSRLS` runtime-role requirements.
+  - [x] Run a live PostgreSQL two-tenant CI proof covering scoped reads,
+    denied cross-tenant writes, and fail-closed missing tenant context.
   - [ ] Implement the Rust PostgreSQL repository adapter and live two-tenant
     integration suite.
 

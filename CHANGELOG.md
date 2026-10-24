@@ -78,6 +78,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Added a PostgreSQL forced-RLS foundation using transaction-local workspace
   identity, deny-by-default policies, separate migration/runtime role
   requirements, and static invariant verification.
+- Added a live PostgreSQL 17 CI proof for tenant-scoped reads, denied
+  cross-tenant writes, source-workspace proposal isolation, and unscoped
+  fail-closed behavior.
 - A versioned per-workspace retention policy contract with separate periods
   for memory, checkpoints, travel research, disclosures, canonical events, and
   administrative audit, including bounded expiry and legal-hold overrides.
