@@ -200,6 +200,43 @@
       ]
     },
     {
+      "name": "Add trip participant",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{apiToken}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"workspaceId\":\"{{workspaceId}}\",\"subjectId\":\"{{principalId}}\",\"tripId\":\"{{createdTripId}}\",\"label\":\"Hippo\",\"expectedTripVersion\":1,\"expectedPreviousSequence\":3}"
+        },
+        "url": "{{baseUrl}}/v1/travel/trip-participants"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('participant is added with an optimistic narrow mutation', function () {",
+              "  pm.response.to.have.status(201);",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.tripId).to.eql(pm.collectionVariables.get('createdTripId'));",
+              "  pm.expect(body.participantId).to.be.a('string');",
+              "  pm.expect(body.tripVersion).to.eql(2);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
       "name": "Capture research for created trip",
       "request": {
         "method": "POST",
@@ -215,7 +252,7 @@
         ],
         "body": {
           "mode": "raw",
-          "raw": "{\"workspaceId\":\"{{workspaceId}}\",\"subjectId\":\"{{principalId}}\",\"tripId\":\"{{createdTripId}}\",\"kind\":\"flight\",\"provider\":\"postman-search\",\"summary\":\"Nonstop morning option\",\"sourceReference\":\"opaque-result-success\",\"evidenceSource\":\"tool-result\",\"observedAt\":\"2026-10-25T10:00:00Z\",\"expiresAt\":\"2026-10-25T10:30:00Z\",\"expectedPreviousSequence\":3}"
+          "raw": "{\"workspaceId\":\"{{workspaceId}}\",\"subjectId\":\"{{principalId}}\",\"tripId\":\"{{createdTripId}}\",\"kind\":\"flight\",\"provider\":\"postman-search\",\"summary\":\"Nonstop morning option\",\"sourceReference\":\"opaque-result-success\",\"evidenceSource\":\"tool-result\",\"observedAt\":\"2026-10-25T10:00:00Z\",\"expiresAt\":\"2026-10-25T10:30:00Z\",\"expectedPreviousSequence\":4}"
         },
         "url": "{{baseUrl}}/v1/travel/booking-research"
       },

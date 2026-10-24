@@ -36,6 +36,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Application-level travel disclosure projections that redact sensitive source
   references by default, plus schema version 9 receipts recording whether a
   privileged response included them.
+- Narrow optimistic trip-participant mutation over REST and MCP with
+  server-assigned participant identity, preventing agents from replacing the
+  complete trip aggregate to make one localized change.
 - Explicit trip create/revise permissions, exact entity-scoped authorization,
   versioned trip audit events, and atomic in-memory trip/event mutations.
 - Member trip revisions through persisted entity grants while trip creation

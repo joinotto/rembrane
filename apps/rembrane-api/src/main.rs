@@ -9,7 +9,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use rembrane_application::{
-    ApplicationError, AuthorizeClientCommand, AuthorizeClientService,
+    AddTripParticipantCommand, ApplicationError, AuthorizeClientCommand, AuthorizeClientService,
     CaptureBookingResearchCommand, CaptureBookingResearchService, CreateTripCommand,
     ResolveContextCommand, ResolveContextService, ResolveTravelContextCommand,
     TravelContextResearch, TravelContextService, TripService,
@@ -20,8 +20,8 @@ use rembrane_crypto_rustcrypto::RustCryptoRecordCipher;
 use rembrane_domain::{
     ActivityId, BookingResearch, BookingResearchId, BookingResearchKind, ClientId, ContextPackId,
     DisclosureId, EntityId, EventId, EvidenceId, EvidenceReference, EvidenceSource, MemoryKind,
-    MemoryScope, MemoryStatus, PrincipalId, ReadGrant, TravelDateWindow, Trip, WorkspaceId,
-    WriteGrant, WritePermission,
+    MemoryScope, MemoryStatus, PrincipalId, ReadGrant, TravelDateWindow, Trip, TripParticipant,
+    TripParticipantId, WorkspaceId, WriteGrant, WritePermission,
 };
 use rembrane_store_sqlite::SqliteStore;
 use serde::{Deserialize, Serialize};
@@ -90,6 +90,17 @@ struct CreateTripRequest {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct AddTripParticipantRequest {
+    workspace_id: String,
+    subject_id: String,
+    trip_id: String,
+    label: String,
+    expected_trip_version: u64,
+    expected_previous_sequence: u64,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct ResolveTravelContextRequest {
     workspace_id: String,
     subject_id: String,
@@ -106,6 +117,15 @@ struct TripResponse {
     workspace_id: String,
     owner_subject_id: String,
     version: u64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TripParticipantResponse {
+    trip_id: String,
+    participant_id: String,
+    label: String,
+    trip_version: u64,
 }
 
 #[derive(Serialize)]
@@ -253,6 +273,7 @@ impl AppState {
                 requested_read_permissions: read_permissions,
                 requested_write_permissions: vec![
                     WritePermission::CreateTrip,
+                    WritePermission::ReviseTrip,
                     WritePermission::CaptureBookingResearch,
                 ],
             })
@@ -391,6 +412,54 @@ async fn capture_booking_research(
             observed_by: captured.observed_by().to_string(),
             version: captured.version(),
             expires_at: captured.expires_at().to_owned(),
+        }),
+    ))
+}
+
+async fn add_trip_participant(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<AddTripParticipantRequest>,
+) -> Result<(StatusCode, Json<TripParticipantResponse>), ApiError> {
+    authorize_bearer(&state, &headers)?;
+    let mut runtime = state
+        .inner
+        .runtime
+        .lock()
+        .map_err(|_| ApiError::internal())?;
+    if request.workspace_id != runtime.write_grant.workspace_id.as_str()
+        || request.subject_id != runtime.write_grant.subject_id.as_str()
+    {
+        return Err(ApiError::access_denied());
+    }
+    runtime.next_id = runtime.next_id.saturating_add(1);
+    let suffix = runtime.next_id;
+    let participant_id = TripParticipantId::new(format!("participant_{suffix}"));
+    let participant = TripParticipant::new(participant_id.clone(), request.label)
+        .map_err(|_| ApiError::invalid_request())?;
+    let write_grant = runtime.write_grant.clone();
+    let revised = TripService::new(&mut runtime.store)
+        .add_participant(AddTripParticipantCommand {
+            grant: write_grant,
+            trip_id: EntityId::new(request.trip_id),
+            participant,
+            expected_trip_version: request.expected_trip_version,
+            event_id: EventId::new(format!("event_{suffix}")),
+            expected_previous_sequence: request.expected_previous_sequence,
+        })
+        .map_err(ApiError::from_application)?;
+    let stored = revised
+        .participants()
+        .iter()
+        .find(|participant| participant.id() == &participant_id)
+        .ok_or_else(ApiError::internal)?;
+    Ok((
+        StatusCode::CREATED,
+        Json(TripParticipantResponse {
+            trip_id: revised.id().to_string(),
+            participant_id: stored.id().to_string(),
+            label: stored.label().to_owned(),
+            trip_version: revised.version(),
         }),
     ))
 }
@@ -755,6 +824,7 @@ async fn main() -> Result<()> {
         .route("/health", get(health))
         .route("/v1/context/resolve", post(resolve_context))
         .route("/v1/travel/trips", post(create_trip))
+        .route("/v1/travel/trip-participants", post(add_trip_participant))
         .route("/v1/travel/context/resolve", post(resolve_travel_context))
         .route(
             "/v1/travel/booking-research",

@@ -3,13 +3,13 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
 use rembrane_application::{
-    AuthorizeClientCommand, AuthorizeClientService, CaptureBookingResearchCommand,
-    CaptureBookingResearchService, CheckpointService, ClientGrantBundle, CreateCheckpointCommand,
-    CreateTripCommand, DeleteMemoryCommand, EventRepository, MemoryLifecycleService,
-    MemoryProposalService, ProposeMemoryCommand, RememberPreferenceCommand,
-    RememberPreferenceService, ResolveContextCommand, ResolveContextService,
-    ResolveTravelContextCommand, ResumeActivityCommand, ReviseMemoryCommand, TravelContextResearch,
-    TravelContextService, TripService, UpdateCheckpointCommand,
+    AddTripParticipantCommand, AuthorizeClientCommand, AuthorizeClientService,
+    CaptureBookingResearchCommand, CaptureBookingResearchService, CheckpointService,
+    ClientGrantBundle, CreateCheckpointCommand, CreateTripCommand, DeleteMemoryCommand,
+    EventRepository, MemoryLifecycleService, MemoryProposalService, ProposeMemoryCommand,
+    RememberPreferenceCommand, RememberPreferenceService, ResolveContextCommand,
+    ResolveContextService, ResolveTravelContextCommand, ResumeActivityCommand, ReviseMemoryCommand,
+    TravelContextResearch, TravelContextService, TripService, UpdateCheckpointCommand,
 };
 use rembrane_config::{parse_read_permissions, parse_read_scopes};
 use rembrane_contracts::ResolveContextRequest;
@@ -18,7 +18,8 @@ use rembrane_domain::{
     ActivityCheckpoint, ActivityId, BookingResearch, BookingResearchId, BookingResearchKind,
     CheckpointId, ClientId, ContextPackId, DisclosureId, EntityId, EventId, EvidenceId,
     EvidenceReference, EvidenceSource, MemoryId, MemoryKind, MemoryScope, PrincipalId,
-    ReadPermission, ReadScope, TravelDateWindow, Trip, WorkspaceId, WritePermission,
+    ReadPermission, ReadScope, TravelDateWindow, Trip, TripParticipant, TripParticipantId,
+    WorkspaceId, WritePermission,
 };
 use rembrane_store_sqlite::SqliteStore;
 use rmcp::handler::server::wrapper::Parameters;
@@ -145,6 +146,14 @@ struct CreateTripParameters {
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct AddTripParticipantParameters {
+    trip_id: String,
+    label: String,
+    expected_trip_version: u64,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct ResolveTravelContextParameters {
     trip_id: String,
     purpose: String,
@@ -157,6 +166,15 @@ struct ResolveTravelContextParameters {
 struct TripOutput {
     trip_id: String,
     version: u64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TripParticipantOutput {
+    trip_id: String,
+    participant_id: String,
+    label: String,
+    trip_version: u64,
 }
 
 #[derive(Serialize)]
@@ -759,6 +777,52 @@ impl RembraneMcp {
             trip_id: captured.trip_id().to_string(),
             version: captured.version(),
             expires_at: captured.expires_at().to_owned(),
+        })
+        .map_err(|_| McpError::internal_error("response serialization failed", None))
+    }
+
+    #[tool(
+        name = "rembrane_add_trip_participant",
+        description = "Atomically add one participant to an authorized trip without replacing unrelated trip state."
+    )]
+    fn add_trip_participant(
+        &self,
+        Parameters(parameters): Parameters<AddTripParticipantParameters>,
+    ) -> Result<String, McpError> {
+        let mut state = lock_state(&self.state)?;
+        let trip_id = EntityId::new(parameters.trip_id);
+        let grants = authorize(
+            &state,
+            vec![ReadScope::Entity {
+                id: trip_id.clone(),
+            }],
+            vec![WritePermission::ReviseTrip],
+        )?;
+        let previous_sequence = current_sequence(&state)?;
+        let suffix = next_id(&mut state);
+        let participant_id = TripParticipantId::new(format!("participant_{suffix}"));
+        let participant = TripParticipant::new(participant_id.clone(), parameters.label)
+            .map_err(|_| McpError::invalid_params("invalid trip participant", None))?;
+        let revised = TripService::new(&mut state.store)
+            .add_participant(AddTripParticipantCommand {
+                grant: grants.write,
+                trip_id,
+                participant,
+                expected_trip_version: parameters.expected_trip_version,
+                event_id: EventId::new(format!("event_{suffix}")),
+                expected_previous_sequence: previous_sequence,
+            })
+            .map_err(application_error)?;
+        let stored = revised
+            .participants()
+            .iter()
+            .find(|participant| participant.id() == &participant_id)
+            .ok_or_else(|| McpError::internal_error("participant mutation was lost", None))?;
+        serde_json::to_string(&TripParticipantOutput {
+            trip_id: revised.id().to_string(),
+            participant_id: stored.id().to_string(),
+            label: stored.label().to_owned(),
+            trip_version: revised.version(),
         })
         .map_err(|_| McpError::internal_error("response serialization failed", None))
     }

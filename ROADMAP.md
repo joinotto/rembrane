@@ -125,6 +125,8 @@ This roadmap describes sequencing, not release dates.
   - [x] Successful MCP trip creation and booking-research capture lifecycle.
   - [x] Authenticated REST trip-creation contract and server route.
   - [x] Successful REST/Postman encrypted trip-to-research lifecycle test.
+  - [x] Narrow optimistic participant mutation over REST and MCP preserves
+    unrelated trip state and uses server-assigned participant identity.
 - [ ] Cross-agent activity continuation.
   - [x] Exact-trip travel context separates fresh research from expired
     observations at a caller-supplied canonical timestamp.

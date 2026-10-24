@@ -94,6 +94,19 @@ requires both `includeSourceReferences: true` and the connection-level
 `travel-source-references` read permission. A client must also hold the exact
 trip entity scope; a travel-domain grant alone cannot read an existing trip.
 
+### `rembrane_add_trip_participant`
+
+Adds one server-identified participant through a narrow optimistic mutation,
+without allowing the caller to replace unrelated trip state.
+
+Arguments:
+
+- `tripId`
+- `label`
+- `expectedTripVersion`
+
+Requires the exact trip entity scope and `trip:revise`.
+
 ### `rembrane_resolve_context`
 
 Retrieves the minimum confirmed context authorized for the current client and purpose.

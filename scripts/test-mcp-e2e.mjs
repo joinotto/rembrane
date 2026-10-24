@@ -101,6 +101,7 @@ try {
     "rembrane_create_trip",
     "rembrane_capture_booking_research",
     "rembrane_resolve_travel_context",
+    "rembrane_add_trip_participant",
   ]) {
     if (!toolNames.has(expected)) {
       throw new Error(`MCP tool list omitted ${expected}`);
@@ -368,7 +369,27 @@ try {
     throw new Error("MCP trip creation returned invalid metadata");
   }
 
-  const capturedResearchCall = await request(17, "tools/call", {
+  const participantCall = await request(17, "tools/call", {
+    name: "rembrane_add_trip_participant",
+    arguments: {
+      tripId: createdTrip.tripId,
+      label: "Hippo",
+      expectedTripVersion: 1,
+    },
+  });
+  if (participantCall.isError) {
+    throw new Error(
+      `MCP participant mutation failed: ${JSON.stringify(participantCall)}`,
+    );
+  }
+  const participant = JSON.parse(
+    participantCall.content?.find((item) => item.type === "text")?.text,
+  );
+  if (!participant.participantId || participant.tripVersion !== 2) {
+    throw new Error("MCP participant mutation returned invalid metadata");
+  }
+
+  const capturedResearchCall = await request(18, "tools/call", {
     name: "rembrane_capture_booking_research",
     arguments: {
       tripId: createdTrip.tripId,
@@ -397,7 +418,7 @@ try {
     throw new Error("MCP research capture returned invalid metadata");
   }
 
-  const travelContextCall = await request(18, "tools/call", {
+  const travelContextCall = await request(19, "tools/call", {
     name: "rembrane_resolve_travel_context",
     arguments: {
       tripId: createdTrip.tripId,
@@ -425,7 +446,7 @@ try {
     throw new Error("MCP travel context exposed an opaque source reference");
   }
 
-  const deniedSensitiveContextCall = await request(19, "tools/call", {
+  const deniedSensitiveContextCall = await request(20, "tools/call", {
     name: "rembrane_resolve_travel_context",
     arguments: {
       tripId: createdTrip.tripId,

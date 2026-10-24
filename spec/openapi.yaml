@@ -147,6 +147,33 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
+  /travel/trip-participants:
+    post:
+      operationId: addTripParticipant
+      summary: Add one participant without replacing unrelated trip state
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddTripParticipantRequest"
+      responses:
+        "201":
+          description: Participant added
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TripParticipantResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/AccessDenied"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
 components:
   securitySchemes:
     bearerAuth:
@@ -277,6 +304,47 @@ components:
           description: |
             Requires the connection-level travel-source-references permission.
             Requests without that permission fail closed.
+    AddTripParticipantRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - workspaceId
+        - subjectId
+        - tripId
+        - label
+        - expectedTripVersion
+        - expectedPreviousSequence
+      properties:
+        workspaceId:
+          $ref: "#/components/schemas/OpaqueId"
+        subjectId:
+          $ref: "#/components/schemas/OpaqueId"
+        tripId:
+          $ref: "#/components/schemas/OpaqueId"
+        label:
+          type: string
+          minLength: 1
+          maxLength: 4096
+        expectedTripVersion:
+          type: integer
+          minimum: 1
+        expectedPreviousSequence:
+          type: integer
+          minimum: 0
+    TripParticipantResponse:
+      type: object
+      additionalProperties: false
+      required: [tripId, participantId, label, tripVersion]
+      properties:
+        tripId:
+          $ref: "#/components/schemas/OpaqueId"
+        participantId:
+          $ref: "#/components/schemas/OpaqueId"
+        label:
+          type: string
+        tripVersion:
+          type: integer
+          minimum: 2
     TravelContextResponse:
       type: object
       additionalProperties: false
