@@ -255,7 +255,7 @@ export REMBRANE_WHATSAPP_BINDING_LOOKUP_SECRET='<stable random secret>'
 export REMBRANE_WHATSAPP_WEBHOOK_VERIFICATION_TOKEN='<random verification token>'
 
 docker compose -f compose.yaml -f compose.whatsapp.yaml up -d \
-  rembrane rembrane-whatsapp-gateway
+  rembrane rembrane-whatsapp-gateway rembrane-channel-worker
 ```
 
 Configure the HTTPS proxy or tunnel to forward the exact public webhook path
@@ -273,6 +273,13 @@ replay reservation, and authenticated encryption into the tenant inbox commit
 in one SQLite transaction. Configure the same `REMBRANE_KEY_PROVIDER` profile
 used by trusted Rembrane workers. Environment key material remains a local
 pre-alpha development option, not a production deployment recommendation.
+
+Set `REMBRANE_CHANNEL_PROCESSOR_URL` to the HTTPS origin of a cooperative bot
+or agent service and keep `REMBRANE_CHANNEL_PROCESSOR_TOKEN` in the deployment
+secret manager. The worker posts to `/v1/channel/messages`; the canonical
+channel and event ID form the downstream idempotency key. A processor must
+return success only after its own durable or idempotent handling succeeds.
+Failed calls remain pending in the encrypted inbox.
 
 An owner or administrator can bind an active member without placing raw phone
 identifiers in process arguments:

@@ -581,6 +581,8 @@ This roadmap describes sequencing, not release dates.
     agent endpoints with canonical identity and event idempotency metadata.
   - [x] Add a configured per-workspace channel worker executable for encrypted
     inbox recovery, retry, HTTP processor delivery, and completion.
+  - [x] Package ingress and delivery workers together in the opt-in hardened
+    WhatsApp Compose profile.
   - [x] Define a bounded authenticated-channel message contract whose
     canonical workspace, principal, and client identity must come from a
     deployment-owned sender binding rather than webhook payload claims.

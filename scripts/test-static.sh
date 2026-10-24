@@ -93,11 +93,15 @@ rg -q 'rembrane-graph-worker' compose.graphiti.yaml
 rg -q 'REMBRANE_GRAPH_PROVIDER_ALLOW_PLAINTEXT: "true"' compose.graphiti.yaml
 rg -q 'no-new-privileges:true' compose.graphiti.yaml
 rg -q -- '--package rembrane-graph-worker' Dockerfile
+rg -q -- '--package rembrane-channel-worker' Dockerfile
 rg -q -- '--package rembrane-whatsapp-gateway' Dockerfile
 rg -q '127\.0\.0\.1:8790:8790' compose.whatsapp.yaml
 rg -q 'REMBRANE_WHATSAPP_APP_SECRET' compose.whatsapp.yaml
 rg -q 'REMBRANE_WHATSAPP_BINDING_LOOKUP_SECRET' compose.whatsapp.yaml
 rg -q 'REMBRANE_WHATSAPP_WEBHOOK_VERIFICATION_TOKEN' compose.whatsapp.yaml
+rg -q 'REMBRANE_CHANNEL_PROCESSOR_URL' compose.whatsapp.yaml
+rg -q 'REMBRANE_CHANNEL_PROCESSOR_TOKEN' compose.whatsapp.yaml
+rg -q 'rembrane-channel-worker' compose.whatsapp.yaml
 rg -q 'no-new-privileges:true' compose.whatsapp.yaml
 rg -q 'USER 10002:10002' sidecars/rembrane-graphiti/Dockerfile
 if command -v docker >/dev/null 2>&1; then
@@ -136,6 +140,8 @@ if command -v docker >/dev/null 2>&1; then
     REMBRANE_WHATSAPP_APP_SECRET=whatsapp-static-app-secret-000000 \
     REMBRANE_WHATSAPP_BINDING_LOOKUP_SECRET=whatsapp-static-lookup-secret-000 \
     REMBRANE_WHATSAPP_WEBHOOK_VERIFICATION_TOKEN=whatsapp-static-verify-token-000 \
+    REMBRANE_CHANNEL_PROCESSOR_URL=https://processor.example \
+    REMBRANE_CHANNEL_PROCESSOR_TOKEN=processor-static-token \
         docker compose -f compose.yaml -f compose.whatsapp.yaml config --quiet
 fi
 

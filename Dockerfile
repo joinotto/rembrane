@@ -6,6 +6,7 @@ WORKDIR /source
 COPY . .
 RUN cargo build --release \
     --package rembrane-api \
+    --package rembrane-channel-worker \
     --package rembrane-cli \
     --package rembrane-graph-worker \
     --package rembrane-mcp \
@@ -23,6 +24,8 @@ RUN apt-get update \
 COPY --from=builder /source/target/release/rembrane /usr/local/bin/rembrane
 COPY --from=builder /source/target/release/rembrane-api \
     /usr/local/bin/rembrane-api
+COPY --from=builder /source/target/release/rembrane-channel-worker \
+    /usr/local/bin/rembrane-channel-worker
 COPY --from=builder /source/target/release/rembrane-mcp \
     /usr/local/bin/rembrane-mcp
 COPY --from=builder /source/target/release/rembrane-graph-worker \
