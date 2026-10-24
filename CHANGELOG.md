@@ -9,6 +9,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- Initial full Memory Provider Protocol discovery contract with a versioned
+  well-known manifest, HTTPS/MCP transports, portable memory capabilities,
+  explicit privacy modes, supported domains, and bounded operation limits.
 - Expiry-aware remote MCP session capacity reclamation so abandoned bindings
   cannot exhaust the bounded in-process registry indefinitely.
 - A transport-neutral remote MCP lifecycle boundary that composes strict HTTP

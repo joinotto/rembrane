@@ -7,6 +7,7 @@
 mod capability;
 mod conformance;
 mod error;
+mod memory_protocol;
 mod semantic;
 
 pub use capability::{
@@ -15,6 +16,11 @@ pub use capability::{
 };
 pub use conformance::{ConformanceFailure, verify_semantic_provider};
 pub use error::ProviderError;
+pub use memory_protocol::{
+    CURRENT_MEMORY_PROVIDER_PROTOCOL, MEMORY_PROVIDER_DISCOVERY_PATH, MemoryProviderCapability,
+    MemoryProviderLimits, MemoryProviderManifest, MemoryProviderPrivacyMode,
+    MemoryProviderTransport,
+};
 pub use semantic::{
     AuthorizedMemoryProjection, CandidateMemory, SemanticMemoryProvider, SemanticQuery,
 };

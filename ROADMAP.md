@@ -224,6 +224,12 @@ This roadmap describes sequencing, not release dates.
 - [x] Versioned HTTP sidecar contract for external semantic providers.
 - [x] Secret-safe black-box HTTP sidecar conformance runner.
 - [ ] Stable Memory Provider Protocol.
+  - [x] Add an immutable, versioned discovery manifest with standard well-known
+    path, transports, operation capabilities, privacy mode, supported domains,
+    and bounded context/event/sync limits.
+  - [ ] Define canonical operation request and response envelopes.
+  - [ ] Publish a serialization schema and HTTP binding.
+  - [ ] Add cross-implementation conformance fixtures.
 - [x] Versioned key-provider sidecar protocol for OS, HSM, and customer-KMS
   adapters.
   - [x] Add transport-independent Rust manifest, negotiation, request, context,
