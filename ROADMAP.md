@@ -398,6 +398,8 @@ This roadmap describes sequencing, not release dates.
     - [x] Accept consumed HTTP configuration values from application-owned
       keychains, vaults, cloud secret managers, and other secret resolvers
       without requiring fixed environment-variable names.
+      - [x] Zeroize bearer material on configuration and transport error paths
+        as well as normal client teardown.
     - [x] Expose every portable operation through a typed facade that always
       creates capability-checked requests from the negotiated connection
       before transport.

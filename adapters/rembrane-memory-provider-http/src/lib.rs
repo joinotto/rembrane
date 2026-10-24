@@ -42,8 +42,9 @@ pub struct HttpMemoryProviderClient {
 
 impl HttpMemoryProviderClient {
     pub fn new(base_url: &str, bearer_token: String) -> Result<Self, ProviderError> {
+        let bearer_token = Zeroizing::new(bearer_token);
         let base = validate_base_url(base_url)?;
-        validate_bearer_token(&bearer_token)?;
+        validate_bearer_token(bearer_token.as_str())?;
         let client = Client::builder()
             .connect_timeout(Duration::from_secs(5))
             .timeout(Duration::from_secs(15))
@@ -57,7 +58,7 @@ impl HttpMemoryProviderClient {
             discovery_endpoint: base
                 .join(MEMORY_PROVIDER_DISCOVERY_PATH.trim_start_matches('/'))
                 .map_err(|_| ProviderError::Unavailable)?,
-            bearer_token: Zeroizing::new(bearer_token),
+            bearer_token,
         })
     }
 

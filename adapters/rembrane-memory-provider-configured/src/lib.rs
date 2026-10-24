@@ -11,6 +11,7 @@ use rembrane_provider_sdk::{
     RecordEventResult, ResolveContextPayload, ResolveContextResult, ResolveQuestionPayload,
     ResolveQuestionResult, SyncPullPayload, SyncPullResult, SyncPushPayload, SyncPushResult,
 };
+use zeroize::Zeroize;
 
 pub struct ConfiguredMemoryProvider {
     client: Box<dyn MemoryProviderClient>,
@@ -26,6 +27,12 @@ pub struct MemoryProviderHttpConfig {
     base_url: String,
     bearer_token: String,
     request_prefix: Option<String>,
+}
+
+impl Drop for MemoryProviderHttpConfig {
+    fn drop(&mut self) {
+        self.bearer_token.zeroize();
+    }
 }
 
 impl MemoryProviderHttpConfig {
@@ -92,14 +99,15 @@ impl ConfiguredMemoryProvider {
     /// Returns a provider error for malformed endpoint, token, request prefix,
     /// discovery, or policy negotiation.
     pub fn from_http_config(
-        config: MemoryProviderHttpConfig,
+        mut config: MemoryProviderHttpConfig,
         policy: &MemoryProviderPolicy,
     ) -> Result<Self, ProviderError> {
-        let request_prefix = match config.request_prefix {
+        let request_prefix = match config.request_prefix.take() {
             Some(value) => validate_request_prefix(value)?,
             None => default_request_prefix()?,
         };
-        let client = HttpMemoryProviderClient::new(&config.base_url, config.bearer_token)?;
+        let bearer_token = std::mem::take(&mut config.bearer_token);
+        let client = HttpMemoryProviderClient::new(&config.base_url, bearer_token)?;
         Self::from_client(Box::new(client), policy, request_prefix)
     }
 
