@@ -9,6 +9,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- A transport-injectable Mem0 OSS semantic adapter mapping authorized
+  projections into HMAC-pseudonymous workspace partitions while preserving
+  canonical memory IDs, versions, replacement, bounded ranking, and
+  version-aware deletion semantics.
 - A public-API-only iMessage app extension reference with explicit text entry,
   review, confirmation, Keychain-held enrollment material, narrow signed
   gateway submission, and an iPhone Simulator type-check gate.

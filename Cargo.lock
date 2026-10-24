@@ -1369,6 +1369,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "rembrane-semantic-mem0"
+version = "0.1.0-alpha.1"
+dependencies = [
+ "rembrane-domain",
+ "rembrane-provider-sdk",
+ "ring",
+ "zeroize",
+]
+
+[[package]]
 name = "rembrane-semantic-native"
 version = "0.1.0-alpha.1"
 dependencies = [

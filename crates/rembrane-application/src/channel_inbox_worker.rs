@@ -280,6 +280,6 @@ mod tests {
             ),
             Err(ApplicationError::Validation(_))
         ));
-        assert!(processor.seen.is_empty());
+        assert_eq!(processor.seen, Vec::<String>::new());
     }
 }

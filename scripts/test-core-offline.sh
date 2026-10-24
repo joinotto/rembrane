@@ -16,7 +16,7 @@ for crate in \
 do
     cp -R "$repository_root/crates/$crate" "$test_directory/crates/"
 done
-for adapter in rembrane-graph-graphiti rembrane-graph-native rembrane-oauth-introspection rembrane-remote-mcp-http rembrane-semantic-native rembrane-store-memory; do
+for adapter in rembrane-graph-graphiti rembrane-graph-native rembrane-oauth-introspection rembrane-remote-mcp-http rembrane-semantic-mem0 rembrane-semantic-native rembrane-store-memory; do
     cp -R "$repository_root/adapters/$adapter" "$test_directory/adapters/"
 done
 
@@ -25,6 +25,7 @@ cat >"$test_directory/Cargo.toml" <<'EOF'
 members = [
     "adapters/rembrane-graph-graphiti",
     "adapters/rembrane-graph-native",
+    "adapters/rembrane-semantic-mem0",
     "adapters/rembrane-semantic-native",
     "adapters/rembrane-oauth-introspection",
     "adapters/rembrane-remote-mcp-http",
