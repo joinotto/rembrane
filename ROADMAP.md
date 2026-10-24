@@ -177,6 +177,9 @@ This roadmap describes sequencing, not release dates.
           deployment overlay using operator-supplied environment secrets.
         - [x] Add a gated live-sidecar runner and exercise the Rust HTTP
           adapter through the shared graph-provider conformance suite in CI.
+        - [x] Add environment-selected native/Graphiti provider composition
+          with explicit plaintext-processing opt-in and secret-local HTTP
+          credentials.
         - [ ] Wire configured Graphiti provider construction into the
           projection-worker runtime.
 

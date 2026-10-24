@@ -1,0 +1,18 @@
+[package]
+name = "rembrane-graph-configured"
+description = "Deployment-selected graph provider composition for Rembrane"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+rembrane-domain = { path = "../../crates/rembrane-domain" }
+rembrane-graph-graphiti = { path = "../rembrane-graph-graphiti" }
+rembrane-graph-graphiti-http = { path = "../rembrane-graph-graphiti-http" }
+rembrane-graph-native = { path = "../rembrane-graph-native" }
+rembrane-provider-sdk = { path = "../../crates/rembrane-provider-sdk" }
+
+[lints]
+workspace = true

@@ -42,6 +42,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   in-memory FastAPI sidecar and runs the Rust HTTP provider through the shared
   workspace-isolation, temporal, and deletion conformance suite in dedicated
   CI.
+- A configured graph-provider adapter selecting the dependency-free native
+  provider or authenticated Graphiti transport from environment-owned
+  credentials, with explicit opt-in required for sidecar plaintext processing.
 - Canonical engine-neutral temporal knowledge graph aggregates with typed
   nodes, validated relationship types, strict workspace namespaces, separate
   validity and ingestion time, evidence provenance, bounded aliases, versions,

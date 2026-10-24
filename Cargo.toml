@@ -2,6 +2,7 @@
 members = [
     "adapters/rembrane-crypto-rustcrypto",
     "adapters/rembrane-crypto-configured",
+    "adapters/rembrane-graph-configured",
     "adapters/rembrane-graph-graphiti",
     "adapters/rembrane-graph-graphiti-http",
     "adapters/rembrane-graph-native",
