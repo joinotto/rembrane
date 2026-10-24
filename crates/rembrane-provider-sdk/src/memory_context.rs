@@ -1,4 +1,7 @@
-use rembrane_domain::{ActivityId, EntityId};
+use rembrane_domain::{
+    ActivityId, ContextPackId, DisclosureId, EntityId, EvidenceReference, MAX_MEMORY_CONTENT_BYTES,
+    MemoryId, MemoryKind, MemoryScope,
+};
 
 use crate::{MemoryProviderLimits, ProviderError};
 
@@ -53,6 +56,251 @@ pub struct ResolveContextPayload {
     selector: MemoryProviderContextSelector,
     maximum_items: usize,
     maximum_bytes: usize,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MemoryProviderSensitivity {
+    Personal,
+    Sensitive,
+    Restricted,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum MemoryProviderDisclosureConstraint {
+    PurposeBound,
+    NoTraining,
+    NoRetention,
+    ExpiresAt(u64),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MemoryProviderContextItem {
+    memory_id: MemoryId,
+    version: u64,
+    scope: MemoryScope,
+    kind: MemoryKind,
+    content: String,
+    evidence: Vec<EvidenceReference>,
+    confidence_millionths: u32,
+    valid_from_epoch_seconds: Option<u64>,
+    valid_until_epoch_seconds: Option<u64>,
+    sensitivity: MemoryProviderSensitivity,
+    disclosure_constraints: Vec<MemoryProviderDisclosureConstraint>,
+}
+
+impl MemoryProviderContextItem {
+    /// Creates one provenance-bearing context item.
+    ///
+    /// # Errors
+    ///
+    /// Returns an invalid-configuration error for unsafe IDs, zero versions,
+    /// empty or oversized content, missing/duplicate evidence, confidence
+    /// outside `[0, 1_000_000]`, invalid validity intervals, or duplicate
+    /// disclosure constraints.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        memory_id: MemoryId,
+        version: u64,
+        scope: MemoryScope,
+        kind: MemoryKind,
+        content: impl Into<String>,
+        evidence: Vec<EvidenceReference>,
+        confidence_millionths: u32,
+        valid_from_epoch_seconds: Option<u64>,
+        valid_until_epoch_seconds: Option<u64>,
+        sensitivity: MemoryProviderSensitivity,
+        disclosure_constraints: Vec<MemoryProviderDisclosureConstraint>,
+    ) -> Result<Self, ProviderError> {
+        validate_opaque_identifier("context memory id", memory_id.as_str())?;
+        let content = content.into();
+        validate_bounded_text("context item content", &content, MAX_MEMORY_CONTENT_BYTES)?;
+        if version == 0 {
+            return Err(ProviderError::InvalidConfiguration(
+                "context item version must be greater than zero".to_owned(),
+            ));
+        }
+        if evidence.is_empty()
+            || evidence.iter().enumerate().any(|(index, reference)| {
+                evidence[..index]
+                    .iter()
+                    .any(|previous| previous.id == reference.id)
+            })
+        {
+            return Err(ProviderError::InvalidConfiguration(
+                "context item evidence must be non-empty and unique".to_owned(),
+            ));
+        }
+        if evidence.iter().any(|reference| {
+            validate_opaque_identifier("context evidence id", reference.id.as_str()).is_err()
+        }) {
+            return Err(ProviderError::InvalidConfiguration(
+                "context item evidence contains an unsafe id".to_owned(),
+            ));
+        }
+        if confidence_millionths > 1_000_000 {
+            return Err(ProviderError::InvalidConfiguration(
+                "context item confidence must not exceed 1,000,000 millionths".to_owned(),
+            ));
+        }
+        if valid_from_epoch_seconds
+            .zip(valid_until_epoch_seconds)
+            .is_some_and(|(start, end)| start >= end)
+        {
+            return Err(ProviderError::InvalidConfiguration(
+                "context item validity start must precede its end".to_owned(),
+            ));
+        }
+        if disclosure_constraints
+            .iter()
+            .enumerate()
+            .any(|(index, constraint)| disclosure_constraints[..index].contains(constraint))
+        {
+            return Err(ProviderError::InvalidConfiguration(
+                "context item disclosure constraints must be unique".to_owned(),
+            ));
+        }
+        Ok(Self {
+            memory_id,
+            version,
+            scope,
+            kind,
+            content,
+            evidence,
+            confidence_millionths,
+            valid_from_epoch_seconds,
+            valid_until_epoch_seconds,
+            sensitivity,
+            disclosure_constraints,
+        })
+    }
+
+    #[must_use]
+    pub const fn memory_id(&self) -> &MemoryId {
+        &self.memory_id
+    }
+
+    #[must_use]
+    pub const fn version(&self) -> u64 {
+        self.version
+    }
+
+    #[must_use]
+    pub const fn scope(&self) -> &MemoryScope {
+        &self.scope
+    }
+
+    #[must_use]
+    pub const fn kind(&self) -> MemoryKind {
+        self.kind
+    }
+
+    #[must_use]
+    pub fn content(&self) -> &str {
+        &self.content
+    }
+
+    #[must_use]
+    pub fn evidence(&self) -> &[EvidenceReference] {
+        &self.evidence
+    }
+
+    #[must_use]
+    pub const fn confidence_millionths(&self) -> u32 {
+        self.confidence_millionths
+    }
+
+    #[must_use]
+    pub const fn valid_from_epoch_seconds(&self) -> Option<u64> {
+        self.valid_from_epoch_seconds
+    }
+
+    #[must_use]
+    pub const fn valid_until_epoch_seconds(&self) -> Option<u64> {
+        self.valid_until_epoch_seconds
+    }
+
+    #[must_use]
+    pub const fn sensitivity(&self) -> MemoryProviderSensitivity {
+        self.sensitivity
+    }
+
+    #[must_use]
+    pub fn disclosure_constraints(&self) -> &[MemoryProviderDisclosureConstraint] {
+        &self.disclosure_constraints
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ResolveContextResult {
+    context_pack_id: ContextPackId,
+    disclosure_id: DisclosureId,
+    items: Vec<MemoryProviderContextItem>,
+}
+
+impl ResolveContextResult {
+    /// Creates a response bounded by the exact originating request.
+    ///
+    /// # Errors
+    ///
+    /// Returns an invalid-configuration error for unsafe response IDs,
+    /// duplicate memory IDs, too many items, or excessive disclosed content.
+    pub fn new(
+        context_pack_id: ContextPackId,
+        disclosure_id: DisclosureId,
+        items: Vec<MemoryProviderContextItem>,
+        request: &ResolveContextPayload,
+    ) -> Result<Self, ProviderError> {
+        validate_opaque_identifier("context pack id", context_pack_id.as_str())?;
+        validate_opaque_identifier("context disclosure id", disclosure_id.as_str())?;
+        if items.len() > request.maximum_items {
+            return Err(ProviderError::Rejected(
+                "context response contains more items than requested".to_owned(),
+            ));
+        }
+        let mut disclosed_bytes = 0_usize;
+        for (index, item) in items.iter().enumerate() {
+            if items[..index]
+                .iter()
+                .any(|previous| previous.memory_id == item.memory_id)
+            {
+                return Err(ProviderError::Rejected(
+                    "context response contains duplicate memory ids".to_owned(),
+                ));
+            }
+            disclosed_bytes = disclosed_bytes
+                .checked_add(item.content.len())
+                .ok_or_else(|| {
+                    ProviderError::Rejected(
+                        "context response disclosed byte count overflowed".to_owned(),
+                    )
+                })?;
+        }
+        if disclosed_bytes > request.maximum_bytes {
+            return Err(ProviderError::Rejected(
+                "context response contains more bytes than requested".to_owned(),
+            ));
+        }
+        Ok(Self {
+            context_pack_id,
+            disclosure_id,
+            items,
+        })
+    }
+
+    #[must_use]
+    pub const fn context_pack_id(&self) -> &ContextPackId {
+        &self.context_pack_id
+    }
+
+    #[must_use]
+    pub const fn disclosure_id(&self) -> &DisclosureId {
+        &self.disclosure_id
+    }
+
+    #[must_use]
+    pub fn items(&self) -> &[MemoryProviderContextItem] {
+        &self.items
+    }
 }
 
 impl ResolveContextPayload {
@@ -160,9 +408,16 @@ fn validate_opaque_identifier(label: &str, value: &str) -> Result<(), ProviderEr
 
 #[cfg(test)]
 mod tests {
-    use rembrane_domain::{ActivityId, EntityId};
+    use rembrane_domain::{
+        ActivityId, ContextPackId, DisclosureId, EntityId, EvidenceId, EvidenceReference,
+        EvidenceSource, MemoryId, MemoryKind, MemoryScope,
+    };
 
-    use super::{MAX_CONTEXT_PURPOSE_BYTES, MemoryProviderContextSelector, ResolveContextPayload};
+    use super::{
+        MAX_CONTEXT_PURPOSE_BYTES, MemoryProviderContextItem, MemoryProviderContextSelector,
+        MemoryProviderDisclosureConstraint, MemoryProviderSensitivity, ResolveContextPayload,
+        ResolveContextResult,
+    };
     use crate::MemoryProviderLimits;
 
     fn limits() -> MemoryProviderLimits {
@@ -172,6 +427,43 @@ mod tests {
             maximum_event_batch_items: 100,
             maximum_sync_batch_items: 500,
         }
+    }
+
+    fn request(maximum_items: usize, maximum_bytes: usize) -> ResolveContextPayload {
+        ResolveContextPayload::new(
+            "continue the current task",
+            "deployment decisions and next steps",
+            MemoryProviderContextSelector::Global,
+            maximum_items,
+            maximum_bytes,
+            limits(),
+        )
+        .expect("request should be valid")
+    }
+
+    fn item(memory_id: &str, content: &str) -> MemoryProviderContextItem {
+        MemoryProviderContextItem::new(
+            MemoryId::new(memory_id),
+            3,
+            MemoryScope::Entity {
+                id: EntityId::new("project_01"),
+            },
+            MemoryKind::Semantic,
+            content,
+            vec![EvidenceReference::new(
+                EvidenceId::new(format!("evidence_{memory_id}")),
+                EvidenceSource::UserStatement,
+            )],
+            900_000,
+            Some(1_000),
+            Some(2_000),
+            MemoryProviderSensitivity::Personal,
+            vec![
+                MemoryProviderDisclosureConstraint::PurposeBound,
+                MemoryProviderDisclosureConstraint::NoTraining,
+            ],
+        )
+        .expect("context item should be valid")
     }
 
     #[test]
@@ -235,6 +527,78 @@ mod tests {
                 21,
                 65_537,
                 limits(),
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn builds_provenance_bearing_bounded_context_results() {
+        let result = ResolveContextResult::new(
+            ContextPackId::new("context_pack_01"),
+            DisclosureId::new("disclosure_01"),
+            vec![item("memory_01", "Call the user Hippo.")],
+            &request(2, 1_024),
+        )
+        .expect("context result should be valid");
+
+        assert_eq!(result.context_pack_id().as_str(), "context_pack_01");
+        assert_eq!(result.disclosure_id().as_str(), "disclosure_01");
+        assert_eq!(result.items()[0].version(), 3);
+        assert_eq!(result.items()[0].confidence_millionths(), 900_000);
+        assert_eq!(
+            result.items()[0].disclosure_constraints(),
+            [
+                MemoryProviderDisclosureConstraint::PurposeBound,
+                MemoryProviderDisclosureConstraint::NoTraining,
+            ]
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_items_duplicates_and_response_limit_overruns() {
+        assert!(
+            MemoryProviderContextItem::new(
+                MemoryId::new("memory_01"),
+                0,
+                MemoryScope::Global,
+                MemoryKind::Preference,
+                "content",
+                Vec::new(),
+                1_000_001,
+                Some(2_000),
+                Some(1_000),
+                MemoryProviderSensitivity::Restricted,
+                Vec::new(),
+            )
+            .is_err()
+        );
+
+        let duplicate = item("memory_01", "first");
+        assert!(
+            ResolveContextResult::new(
+                ContextPackId::new("context_pack_01"),
+                DisclosureId::new("disclosure_01"),
+                vec![duplicate.clone(), duplicate],
+                &request(2, 1_024),
+            )
+            .is_err()
+        );
+        assert!(
+            ResolveContextResult::new(
+                ContextPackId::new("context_pack_01"),
+                DisclosureId::new("disclosure_01"),
+                vec![item("memory_01", "12345"), item("memory_02", "67890")],
+                &request(2, 9),
+            )
+            .is_err()
+        );
+        assert!(
+            ResolveContextResult::new(
+                ContextPackId::new(""),
+                DisclosureId::new("disclosure_01"),
+                Vec::new(),
+                &request(1, 1),
             )
             .is_err()
         );

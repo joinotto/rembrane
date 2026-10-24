@@ -235,6 +235,9 @@ This roadmap describes sequencing, not release dates.
   - [ ] Define canonical operation payloads and validation.
     - [x] Add bounded context-resolution requests with global, domain, entity,
       and activity selectors constrained by provider-advertised limits.
+    - [x] Add bounded context responses carrying canonical IDs, versions,
+      scopes, kinds, evidence, confidence, validity, sensitivity, disclosure
+      constraints, and disclosure receipts.
   - [ ] Publish a serialization schema and HTTP binding.
   - [ ] Add cross-implementation conformance fixtures.
 - [x] Versioned key-provider sidecar protocol for OS, HSM, and customer-KMS
