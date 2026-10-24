@@ -99,6 +99,7 @@ pub trait ChannelInboxRepository {
     fn pending_channel_messages(
         &self,
         workspace_id: &WorkspaceId,
+        now_epoch_seconds: u64,
         limit: usize,
     ) -> Result<Vec<VerifiedChannelMessage>, ApplicationError>;
 
@@ -108,6 +109,15 @@ pub trait ChannelInboxRepository {
         channel: ChannelKind,
         event_id: &str,
     ) -> Result<(), ApplicationError>;
+
+    fn fail_channel_message(
+        &mut self,
+        workspace_id: &WorkspaceId,
+        channel: ChannelKind,
+        event_id: &str,
+        retry_at_epoch_seconds: u64,
+        maximum_attempts: u32,
+    ) -> Result<bool, ApplicationError>;
 }
 
 /// Pluggable trusted-boundary handler for one authenticated channel message.

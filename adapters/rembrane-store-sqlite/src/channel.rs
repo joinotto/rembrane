@@ -445,8 +445,14 @@ impl<C: RecordCipher> ChannelInboxRepository for SqliteStore<C> {
     fn pending_channel_messages(
         &self,
         workspace_id: &WorkspaceId,
+        now_epoch_seconds: u64,
         limit: usize,
     ) -> Result<Vec<VerifiedChannelMessage>, ApplicationError> {
+        if now_epoch_seconds == 0 {
+            return Err(ApplicationError::Validation(
+                "channel inbox clock must be positive".to_owned(),
+            ));
+        }
         if !(1..=MAX_CHANNEL_INBOX_PAGE).contains(&limit) {
             return Err(ApplicationError::Validation(
                 "channel inbox page limit is invalid".to_owned(),
@@ -465,15 +471,18 @@ impl<C: RecordCipher> ChannelInboxRepository for SqliteStore<C> {
                    ON membership.workspace_id = inbox.workspace_id
                   AND membership.principal_id = inbox.principal_id
                   AND membership.status = 'active'
-                 WHERE inbox.workspace_id = ?1 AND inbox.status = 'pending'
+                 WHERE inbox.workspace_id = ?1
+                   AND inbox.status = 'pending'
+                   AND inbox.available_at_epoch_seconds <= ?2
                  ORDER BY inbox.received_at_epoch_seconds, inbox.channel, inbox.event_id
-                 LIMIT ?2",
+                 LIMIT ?3",
             )
             .map_err(|_| ApplicationError::StorageUnavailable)?;
         let rows = statement
             .query_map(
                 params![
                     workspace_id.as_str(),
+                    now_epoch_seconds,
                     i64::try_from(limit).map_err(|_| {
                         ApplicationError::Validation(
                             "channel inbox page limit exceeds SQLite range".to_owned(),
@@ -500,6 +509,61 @@ impl<C: RecordCipher> ChannelInboxRepository for SqliteStore<C> {
                 .and_then(|row| decode_channel_inbox_row(&self.cipher, workspace_id, row))
         })
         .collect()
+    }
+
+    fn fail_channel_message(
+        &mut self,
+        workspace_id: &WorkspaceId,
+        channel: ChannelKind,
+        event_id: &str,
+        retry_at_epoch_seconds: u64,
+        maximum_attempts: u32,
+    ) -> Result<bool, ApplicationError> {
+        if retry_at_epoch_seconds == 0 || maximum_attempts == 0 {
+            return Err(ApplicationError::Validation(
+                "channel retry limits must be positive".to_owned(),
+            ));
+        }
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        let changed = transaction
+            .execute(
+                "UPDATE channel_inbox
+                 SET attempts = attempts + 1,
+                     status = CASE
+                         WHEN attempts + 1 >= ?4 THEN 'quarantined'
+                         ELSE 'pending'
+                     END,
+                     available_at_epoch_seconds = ?5
+                 WHERE workspace_id = ?1
+                   AND channel = ?2
+                   AND event_id = ?3
+                   AND status = 'pending'",
+                params![
+                    workspace_id.as_str(),
+                    encode_channel(channel),
+                    event_id,
+                    maximum_attempts,
+                    retry_at_epoch_seconds
+                ],
+            )
+            .map_err(map_write_error)?;
+        if changed != 1 {
+            return Err(ApplicationError::NotFound);
+        }
+        let quarantined = transaction
+            .query_row(
+                "SELECT status = 'quarantined'
+                 FROM channel_inbox
+                 WHERE workspace_id = ?1 AND channel = ?2 AND event_id = ?3",
+                params![workspace_id.as_str(), encode_channel(channel), event_id],
+                |row| row.get(0),
+            )
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        transaction.commit().map_err(map_write_error)?;
+        Ok(quarantined)
     }
 
     fn complete_channel_message(
@@ -596,8 +660,9 @@ fn insert_encrypted_channel_inbox(
             "INSERT INTO channel_inbox (
                 channel, event_id, workspace_id, principal_id, client_id,
                 received_at_epoch_seconds, text_ciphertext,
-                encryption_key_id, encryption_algorithm, encryption_nonce
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                encryption_key_id, encryption_algorithm, encryption_nonce,
+                available_at_epoch_seconds
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?6)",
             params![
                 encode_channel(message.channel()),
                 message.event_id(),
@@ -958,13 +1023,13 @@ mod tests {
         assert_ne!(stored_text, admitted.text().as_bytes());
         assert!(
             store
-                .pending_channel_messages(&WorkspaceId::new("workspace_02"), 10)
+                .pending_channel_messages(&WorkspaceId::new("workspace_02"), 1_000, 10)
                 .expect("other tenant query should succeed")
                 .is_empty()
         );
         assert_eq!(
             store
-                .pending_channel_messages(&WorkspaceId::new("workspace_01"), 10)
+                .pending_channel_messages(&WorkspaceId::new("workspace_01"), 1_000, 10)
                 .expect("inbox should decrypt"),
             vec![admitted.clone()]
         );
@@ -977,7 +1042,7 @@ mod tests {
             .expect("delivery should complete");
         assert!(
             store
-                .pending_channel_messages(&WorkspaceId::new("workspace_01"), 10)
+                .pending_channel_messages(&WorkspaceId::new("workspace_01"), 1_000, 10)
                 .expect("completed inbox query should succeed")
                 .is_empty()
         );
@@ -989,6 +1054,92 @@ mod tests {
                     admitted.event_id(),
                 )
                 .expect_err("completion must be monotonic"),
+            ApplicationError::NotFound
+        );
+    }
+
+    #[test]
+    fn failed_channel_delivery_is_delayed_then_quarantined() {
+        let mut store = store();
+        store
+            .insert_channel_sender_binding(
+                ChannelSenderBinding::new(
+                    ChannelKind::WhatsAppBusiness,
+                    "hmac-account-retry",
+                    "hmac-sender-retry",
+                    WorkspaceId::new("workspace_01"),
+                    PrincipalId::new("principal_01"),
+                    ClientId::new("client_whatsapp_retry"),
+                )
+                .expect("binding should validate"),
+            )
+            .expect("binding should persist");
+        let cipher = RustCryptoRecordCipher::new("channel-retry-key", [29; 32]).expect("valid key");
+        let mut store = store.with_cipher(cipher);
+        let admitted = store
+            .accept_bound_channel_event_to_inbox(
+                ChannelKind::WhatsAppBusiness,
+                "hmac-account-retry",
+                "hmac-sender-retry",
+                "event-retry-01",
+                "retry me",
+                1_000,
+                1_000,
+                100,
+                10,
+            )
+            .expect("event should enqueue");
+
+        assert!(
+            !store
+                .fail_channel_message(
+                    &WorkspaceId::new("workspace_01"),
+                    ChannelKind::WhatsAppBusiness,
+                    admitted.event_id(),
+                    1_030,
+                    2,
+                )
+                .expect("first failure should schedule retry")
+        );
+        assert!(
+            store
+                .pending_channel_messages(&WorkspaceId::new("workspace_01"), 1_029, 10)
+                .expect("early query should succeed")
+                .is_empty()
+        );
+        assert_eq!(
+            store
+                .pending_channel_messages(&WorkspaceId::new("workspace_01"), 1_030, 10)
+                .expect("retry should become available"),
+            vec![admitted.clone()]
+        );
+        assert!(
+            store
+                .fail_channel_message(
+                    &WorkspaceId::new("workspace_01"),
+                    ChannelKind::WhatsAppBusiness,
+                    admitted.event_id(),
+                    1_060,
+                    2,
+                )
+                .expect("second failure should quarantine")
+        );
+        assert!(
+            store
+                .pending_channel_messages(&WorkspaceId::new("workspace_01"), 2_000, 10)
+                .expect("quarantined query should succeed")
+                .is_empty()
+        );
+        assert_eq!(
+            store
+                .fail_channel_message(
+                    &WorkspaceId::new("workspace_01"),
+                    ChannelKind::WhatsAppBusiness,
+                    admitted.event_id(),
+                    2_030,
+                    2,
+                )
+                .expect_err("quarantine must be terminal"),
             ApplicationError::NotFound
         );
     }

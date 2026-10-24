@@ -8,7 +8,8 @@ use crate::{
 pub struct ChannelDispatchReport {
     pub attempted: usize,
     pub completed: usize,
-    pub failed: usize,
+    pub retried: usize,
+    pub quarantined: usize,
 }
 
 pub struct ChannelInboxWorker<'worker, Repository, Processor> {
@@ -31,21 +32,44 @@ where
     pub fn process_batch(
         &mut self,
         workspace_id: &WorkspaceId,
+        now_epoch_seconds: u64,
         limit: usize,
+        maximum_attempts: u32,
+        retry_delay_seconds: u64,
     ) -> Result<ChannelDispatchReport, ApplicationError> {
-        if !(1..=MAX_CHANNEL_INBOX_PAGE).contains(&limit) {
+        if !(1..=MAX_CHANNEL_INBOX_PAGE).contains(&limit)
+            || now_epoch_seconds == 0
+            || maximum_attempts == 0
+            || retry_delay_seconds == 0
+        {
             return Err(ApplicationError::Validation(
-                "channel dispatch batch limit is invalid".to_owned(),
+                "channel dispatch bounds are invalid".to_owned(),
             ));
         }
-        let pending = self
-            .repository
-            .pending_channel_messages(workspace_id, limit)?;
+        let retry_at_epoch_seconds = now_epoch_seconds
+            .checked_add(retry_delay_seconds)
+            .ok_or_else(|| {
+                ApplicationError::Validation("channel retry time overflows".to_owned())
+            })?;
+        let pending =
+            self.repository
+                .pending_channel_messages(workspace_id, now_epoch_seconds, limit)?;
         let mut report = ChannelDispatchReport::default();
         for message in pending {
             report.attempted += 1;
             if self.processor.process_channel_message(&message).is_err() {
-                report.failed += 1;
+                let quarantined = self.repository.fail_channel_message(
+                    message.workspace_id(),
+                    message.channel(),
+                    message.event_id(),
+                    retry_at_epoch_seconds,
+                    maximum_attempts,
+                )?;
+                if quarantined {
+                    report.quarantined += 1;
+                } else {
+                    report.retried += 1;
+                }
                 continue;
             }
             self.repository.complete_channel_message(
@@ -78,6 +102,7 @@ mod tests {
         fn pending_channel_messages(
             &self,
             workspace_id: &WorkspaceId,
+            _now_epoch_seconds: u64,
             limit: usize,
         ) -> Result<Vec<VerifiedChannelMessage>, ApplicationError> {
             Ok(self
@@ -100,6 +125,20 @@ mod tests {
             }
             self.completed.push(event_id.to_owned());
             Ok(())
+        }
+
+        fn fail_channel_message(
+            &mut self,
+            workspace_id: &WorkspaceId,
+            _channel: ChannelKind,
+            event_id: &str,
+            _retry_at_epoch_seconds: u64,
+            maximum_attempts: u32,
+        ) -> Result<bool, ApplicationError> {
+            if workspace_id.as_str() != "workspace_01" {
+                return Err(ApplicationError::AccessDenied);
+            }
+            Ok(maximum_attempts == 1 && event_id == "event_02")
         }
     }
 
@@ -145,11 +184,12 @@ mod tests {
             fail_event: "event_02",
         };
         let report = ChannelInboxWorker::new(&mut inbox, &mut processor)
-            .process_batch(&WorkspaceId::new("workspace_01"), 10)
+            .process_batch(&WorkspaceId::new("workspace_01"), 1_000, 10, 3, 30)
             .expect("batch should continue across handler failure");
         assert_eq!(report.attempted, 2);
         assert_eq!(report.completed, 1);
-        assert_eq!(report.failed, 1);
+        assert_eq!(report.retried, 1);
+        assert_eq!(report.quarantined, 0);
         assert_eq!(inbox.completed, vec!["event_01"]);
         assert_eq!(processor.seen, vec!["event_01", "event_02"]);
     }
@@ -167,7 +207,10 @@ mod tests {
         assert!(matches!(
             ChannelInboxWorker::new(&mut inbox, &mut processor).process_batch(
                 &WorkspaceId::new("workspace_01"),
-                MAX_CHANNEL_INBOX_PAGE + 1
+                1_000,
+                MAX_CHANNEL_INBOX_PAGE + 1,
+                3,
+                30,
             ),
             Err(ApplicationError::Validation(_))
         ));

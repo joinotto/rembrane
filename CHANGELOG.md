@@ -57,6 +57,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   and persists completion only after success.
 - Complete opt-in WhatsApp Compose packaging for both durable webhook ingress
   and per-workspace encrypted-inbox delivery to a cooperative bot endpoint.
+- Bounded channel delivery retries with durable availability times, configurable
+  attempt limits, and terminal quarantine so poison messages cannot monopolize
+  an inbox worker.
 - Durable, content-free SQLite channel replay receipts with atomic cleanup,
   fail-closed capacity enforcement, per-platform namespaces, and
   cross-workspace duplicate denial for multi-process gateways.

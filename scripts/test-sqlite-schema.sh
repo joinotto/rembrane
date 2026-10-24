@@ -47,7 +47,9 @@ sqlite3 "$database" < \
     "$repository_root/migrations/sqlite/0020_channel_binding_audit.sql"
 sqlite3 "$database" < \
     "$repository_root/migrations/sqlite/0021_encrypted_channel_inbox.sql"
-sqlite3 "$database" "PRAGMA user_version = 21;"
+sqlite3 "$database" < \
+    "$repository_root/migrations/sqlite/0022_channel_inbox_retry.sql"
+sqlite3 "$database" "PRAGMA user_version = 22;"
 
 sqlite3 "$database" <<'SQL'
 PRAGMA foreign_keys = ON;
@@ -665,7 +667,7 @@ table_count=$(
 )
 
 test "$table_count" -ge 9
-test "$(sqlite3 "$database" "PRAGMA user_version;")" -eq 21
+test "$(sqlite3 "$database" "PRAGMA user_version;")" -eq 22
 test "$(
     sqlite3 "$database" \
         "SELECT count(*) FROM channel_event_receipts WHERE event_id = 'event_channel_01';"

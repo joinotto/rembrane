@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
 use rembrane_application::ChannelInboxWorker;
@@ -10,6 +10,8 @@ use zeroize::Zeroizing;
 
 const DEFAULT_BATCH_SIZE: usize = 10;
 const DEFAULT_POLL_MILLISECONDS: u64 = 1_000;
+const DEFAULT_MAXIMUM_ATTEMPTS: u32 = 5;
+const DEFAULT_RETRY_DELAY_SECONDS: u64 = 30;
 
 struct Configuration {
     database: String,
@@ -18,6 +20,8 @@ struct Configuration {
     processor_token: Zeroizing<String>,
     batch_size: usize,
     poll_milliseconds: u64,
+    maximum_attempts: u32,
+    retry_delay_seconds: u64,
     run_once: bool,
 }
 
@@ -38,6 +42,14 @@ impl Configuration {
                 "REMBRANE_CHANNEL_WORKER_POLL_MILLISECONDS",
                 DEFAULT_POLL_MILLISECONDS,
             )?,
+            maximum_attempts: positive_environment_u32(
+                "REMBRANE_CHANNEL_WORKER_MAXIMUM_ATTEMPTS",
+                DEFAULT_MAXIMUM_ATTEMPTS,
+            )?,
+            retry_delay_seconds: positive_environment_u64(
+                "REMBRANE_CHANNEL_WORKER_RETRY_DELAY_SECONDS",
+                DEFAULT_RETRY_DELAY_SECONDS,
+            )?,
             run_once: boolean_environment("REMBRANE_CHANNEL_WORKER_RUN_ONCE", false)?,
         })
     }
@@ -55,12 +67,22 @@ fn run(configuration: &Configuration) -> Result<()> {
     )
     .context("failed to configure channel processor")?;
     loop {
+        let now_epoch_seconds = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .context("system clock is before the Unix epoch")?
+            .as_secs();
         let report = ChannelInboxWorker::new(&mut store, &mut processor)
-            .process_batch(&configuration.workspace_id, configuration.batch_size)
+            .process_batch(
+                &configuration.workspace_id,
+                now_epoch_seconds,
+                configuration.batch_size,
+                configuration.maximum_attempts,
+                configuration.retry_delay_seconds,
+            )
             .context("failed to process channel inbox")?;
         println!(
-            "channel inbox batch: attempted={}, completed={}, failed={}",
-            report.attempted, report.completed, report.failed
+            "channel inbox batch: attempted={}, completed={}, retried={}, quarantined={}",
+            report.attempted, report.completed, report.retried, report.quarantined
         );
         if configuration.run_once {
             return Ok(());
@@ -90,6 +112,16 @@ fn positive_environment_u64(name: &str, default: u64) -> Result<u64> {
     std::env::var(name).map_or(Ok(default), |value| {
         value
             .parse::<u64>()
+            .ok()
+            .filter(|parsed| *parsed > 0)
+            .with_context(|| format!("{name} must be a positive integer"))
+    })
+}
+
+fn positive_environment_u32(name: &str, default: u32) -> Result<u32> {
+    std::env::var(name).map_or(Ok(default), |value| {
+        value
+            .parse::<u32>()
             .ok()
             .filter(|parsed| *parsed > 0)
             .with_context(|| format!("{name} must be a positive integer"))
