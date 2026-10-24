@@ -531,6 +531,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Security
 
+- Key-provider request correlation now fails permanently at atomic sequence
+  exhaustion instead of wrapping and risking identifier reuse.
 - Workspace identity is mandatory on canonical storage keys.
 - CLI, MCP, and REST grants are derived by the shared authorization service
   rather than constructed by transport adapters.

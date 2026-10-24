@@ -274,11 +274,19 @@ impl<Transport: KeyProviderTransport> KeyProviderCipher<Transport> {
     }
 
     fn request_id(&self, operation: &str) -> Result<String, CryptoError> {
-        let sequence = self.next_request.fetch_add(1, Ordering::Relaxed);
-        if sequence == u64::MAX {
-            return Err(CryptoError::KeyUnavailable);
+        let mut current = self.next_request.load(Ordering::Relaxed);
+        loop {
+            let next = current.checked_add(1).ok_or(CryptoError::KeyUnavailable)?;
+            match self.next_request.compare_exchange_weak(
+                current,
+                next,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => return Ok(format!("{}-{operation}-{current}", self.request_prefix)),
+                Err(observed) => current = observed,
+            }
         }
-        Ok(format!("{}-{operation}-{sequence}", self.request_prefix))
     }
 }
 
@@ -509,5 +517,22 @@ mod tests {
             "x".repeat(201),
         );
         assert!(matches!(result, Err(CryptoError::InvalidEnvelope)));
+    }
+
+    #[test]
+    fn provider_cipher_never_wraps_or_reuses_exhausted_request_ids() {
+        let cipher = connected(Vec::new());
+        cipher
+            .next_request
+            .store(u64::MAX - 1, std::sync::atomic::Ordering::Relaxed);
+
+        assert_eq!(
+            cipher
+                .request_id("seal")
+                .expect("last available request id should be issued"),
+            format!("test-client-seal-{}", u64::MAX - 1)
+        );
+        assert_eq!(cipher.request_id("seal"), Err(CryptoError::KeyUnavailable));
+        assert_eq!(cipher.request_id("open"), Err(CryptoError::KeyUnavailable));
     }
 }

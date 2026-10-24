@@ -298,6 +298,8 @@ This roadmap describes sequencing, not release dates.
   - [x] Add a secret-safe black-box HTTP conformance runner.
   - [x] Add a transport-neutral negotiated `RecordCipher` client with bounded
     requests and fail-closed response validation.
+    - [x] Prevent request-correlation sequence exhaustion from wrapping and
+      reusing identifiers.
   - [ ] Add an authenticated HTTP client adapter.
     - [x] Implement a redirect-free, proxy-free, bounded HTTPS and loopback
       HTTP transport with strict media-type, JSON, and base64 decoding.
