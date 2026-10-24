@@ -19,6 +19,7 @@ mod member_scope;
 mod memory;
 mod projection;
 mod provenance;
+mod retention;
 mod scope;
 mod share_proposal;
 mod trip;
@@ -60,6 +61,10 @@ pub use memory::{
 };
 pub use projection::{ProjectionJob, ProjectionJobError, ProjectionOperation, ProjectionStatus};
 pub use provenance::{EvidenceReference, EvidenceSource};
+pub use retention::{
+    MAX_RETENTION_DAYS, RetentionPeriod, RetentionPolicyError, RetentionResource,
+    WorkspaceRetentionPolicy,
+};
 pub use scope::MemoryScope;
 pub use share_proposal::{MemoryShareProposal, ShareProposalError, ShareProposalStatus};
 pub use trip::{

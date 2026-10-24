@@ -321,6 +321,12 @@ This roadmap describes sequencing, not release dates.
   - [ ] Record membership, scope, key-rotation, retention, and legal-hold
     mutations atomically with their administrative audit evidence.
   - [ ] Define enforceable per-workspace retention policies and legal holds.
+    - [x] Define versioned resource-specific retention periods, bounded expiry
+      calculation, minimum audit/disclosure relationship, and legal-hold purge
+      override semantics.
+    - [ ] Persist policies and legal holds with optimistic versioning.
+    - [ ] Execute bounded purge plans without deleting held resources or
+      append-only security evidence prematurely.
   - [ ] Expose narrowly authorized audit and retention management APIs.
 
 ## Phase 5 — Integration ecosystem
