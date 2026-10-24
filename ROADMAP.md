@@ -93,6 +93,8 @@ This roadmap describes sequencing, not release dates.
   - [ ] Integrate the authorization middleware with the HTTP server adapter.
     - [x] Validate complete remote profiles before startup, including exact
       HTTPS endpoints, referenced client secrets, and exact browser origins.
+      - [x] Reject non-ASCII, whitespace, controls, quotes, and malformed
+        authorities before configuration values can reach HTTP headers.
     - [x] Provide one transport-neutral lifecycle boundary that composes
       per-request HTTP authorization with session establish, revalidation,
       tool-scope enforcement, and authenticated deletion.

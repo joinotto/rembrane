@@ -21,6 +21,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   invalid credentials remain `401 Unauthorized`, while authenticated origin,
   tool, and scope denials become `403 Forbidden` without weakening the
   application's non-enumerating `AccessDenied` boundary.
+- Hardened remote MCP profile validation against control-character, whitespace,
+  quote, non-ASCII, and malformed-authority values before configuration can
+  flow into OAuth or MCP HTTP headers.
 - Pre-alpha remote Streamable HTTP MCP security contract with RFC 9728
   protected-resource metadata, explicit OAuth scope ceilings, bearer challenge
   behavior, verified identity requirements, and per-request session
