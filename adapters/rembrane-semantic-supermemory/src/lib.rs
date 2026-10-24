@@ -96,9 +96,9 @@ impl<Transport> SupermemorySemanticProvider<Transport> {
     }
 
     fn namespace(&self, workspace_id: &WorkspaceId) -> String {
-        let signature = hmac::sign(&self.workspace_lookup_key, workspace_id.as_str().as_bytes());
+        let signature = self.pseudonym(b"namespace\0", workspace_id.as_str());
         let mut namespace = String::from("rembrane-");
-        for byte in signature.as_ref() {
+        for byte in signature {
             use std::fmt::Write;
             let _ = write!(namespace, "{byte:02x}");
         }
@@ -106,13 +106,22 @@ impl<Transport> SupermemorySemanticProvider<Transport> {
     }
 
     fn document_id(&self, memory_id: &MemoryId) -> String {
-        let signature = hmac::sign(&self.workspace_lookup_key, memory_id.as_str().as_bytes());
+        let signature = self.pseudonym(b"document\0", memory_id.as_str());
         let mut document_id = String::from("rembrane-");
-        for byte in signature.as_ref() {
+        for byte in signature {
             use std::fmt::Write;
             let _ = write!(document_id, "{byte:02x}");
         }
         document_id
+    }
+
+    fn pseudonym(&self, domain: &[u8], value: &str) -> [u8; 32] {
+        let mut context = hmac::Context::with_key(&self.workspace_lookup_key);
+        context.update(domain);
+        context.update(value.as_bytes());
+        let mut output = [0_u8; 32];
+        output.copy_from_slice(context.sign().as_ref());
+        output
     }
 }
 

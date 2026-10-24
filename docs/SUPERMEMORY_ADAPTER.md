@@ -38,7 +38,8 @@ plaintext projection inside an explicitly permitted provider boundary.
 
 The namespace lookup secret is independent from the API credential. The
 derived namespace must match Supermemory's documented 100-character safe
-pattern and must not reveal the canonical workspace ID.
+pattern and must not reveal the canonical workspace ID. Namespace and document
+pseudonyms use distinct HMAC domain labels.
 
 ## Required behavior
 
