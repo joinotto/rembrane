@@ -11,6 +11,7 @@ mod event;
 mod grant;
 mod identifier;
 mod invitation;
+mod knowledge_graph;
 mod member_scope;
 mod memory;
 mod projection;
@@ -32,10 +33,15 @@ pub use event::{CanonicalEvent, EventError, EventPayload};
 pub use grant::{ReadGrant, ReadPermission, ReadScope, WriteGrant, WritePermission};
 pub use identifier::{
     ActivityId, BookingResearchId, CheckpointId, ClientId, ContextPackId, DisclosureId, EntityId,
-    EventId, EvidenceId, InvitationId, MemoryId, PrincipalId, ProjectionJobId, ProviderId,
-    ShareProposalId, TripConstraintId, TripDecisionId, TripParticipantId, WorkspaceId,
+    EventId, EvidenceId, InvitationId, KnowledgeEdgeId, KnowledgeNodeId, MemoryId, PrincipalId,
+    ProjectionJobId, ProviderId, ShareProposalId, TripConstraintId, TripDecisionId,
+    TripParticipantId, WorkspaceId,
 };
 pub use invitation::{Invitation, InvitationError, InvitationStatus};
+pub use knowledge_graph::{
+    KnowledgeEdge, KnowledgeGraphError, KnowledgeNode, KnowledgeNodeKind, KnowledgeRelationType,
+    MAX_KNOWLEDGE_ALIASES, MAX_KNOWLEDGE_EVIDENCE, MAX_KNOWLEDGE_LABEL_BYTES, TemporalValidity,
+};
 pub use member_scope::MemberScopeGrant;
 pub use memory::{
     MAX_MEMORY_CONTENT_BYTES, MemoryKind, MemoryLifecycleError, MemoryRecord, MemoryStatus,

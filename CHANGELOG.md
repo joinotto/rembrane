@@ -9,6 +9,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- Canonical engine-neutral temporal knowledge graph aggregates with typed
+  nodes, validated relationship types, strict workspace namespaces, separate
+  validity and ingestion time, evidence provenance, bounded aliases, versions,
+  and explicit edge supersession references.
 - Authenticated key-provider HTTP adapter using Rustls, bounded response reads,
   disabled redirects and environment proxies, zeroized bearer credentials,
   strict JSON/base64 decoding, and HTTPS except for exact loopback origins.

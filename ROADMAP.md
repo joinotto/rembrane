@@ -134,6 +134,13 @@ This roadmap describes sequencing, not release dates.
 
 ## Phase 2 — Development continuity
 
+- [ ] Canonical temporal knowledge graph.
+  - [x] Define engine-neutral, typed workspace-scoped nodes and relationships
+    with separate event/system time, validity windows, provenance, bounded
+    aliases, and explicit supersession references.
+  - [ ] Add tenant-isolated mutation and neighbourhood repository contracts.
+  - [ ] Add local SQLite graph persistence and Graphiti projection adapter.
+
 - [x] Project entities and scoped preferences.
 - [x] Layer global, domain, entity, and activity context in one request.
 - [x] Activity-scoped work-trace ingestion as proposed observation memory.

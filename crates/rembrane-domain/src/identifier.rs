@@ -47,6 +47,8 @@ identifier!(EntityId);
 identifier!(EventId);
 identifier!(EvidenceId);
 identifier!(InvitationId);
+identifier!(KnowledgeEdgeId);
+identifier!(KnowledgeNodeId);
 identifier!(MemoryId);
 identifier!(PrincipalId);
 identifier!(ProjectionJobId);
