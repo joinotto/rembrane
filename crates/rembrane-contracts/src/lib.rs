@@ -748,3 +748,9 @@ mod tests {
         }
     }
 }
+mod channel;
+
+pub use channel::{
+    ChannelKind, ChannelMessageError, MAX_CHANNEL_EVENT_ID_BYTES, MAX_CHANNEL_TEXT_BYTES,
+    VerifiedChannelMessage,
+};

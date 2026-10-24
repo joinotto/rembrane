@@ -94,6 +94,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Added static CI hardening and expanded secret detection for risky workflow
   triggers, mutable actions, excessive permissions, shell-download pipelines,
   private keys, cloud credentials, and common service-token formats.
+- Added a bounded verified-channel message contract for WhatsApp Business,
+  explicit iMessage extensions, and mobile share flows that derives canonical
+  tenant identity only from authenticated deployment-owned sender bindings.
 - A versioned per-workspace retention policy contract with separate periods
   for memory, checkpoints, travel research, disclosures, canonical events, and
   administrative audit, including bounded expiry and legal-hold overrides.

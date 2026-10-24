@@ -546,7 +546,13 @@ This roadmap describes sequencing, not release dates.
   - [ ] Add the first external provider only after its disposable-namespace
     conformance run produces reviewable evidence.
 - [ ] WhatsApp Business gateway.
+  - [x] Define a bounded authenticated-channel message contract whose
+    canonical workspace, principal, and client identity must come from a
+    deployment-owned sender binding rather than webhook payload claims.
 - [ ] Mobile share flows and iMessage extension.
+  - [x] Reuse the authenticated-channel contract for explicit iMessage
+    extension and mobile-share ingestion without claiming conversation
+    interception.
 - [ ] Community provider and agent adapters.
 
 ## Release gates
