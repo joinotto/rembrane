@@ -116,6 +116,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Secret-safe key-provider HTTP conformance runner covering bearer
   authentication, manifest limits, envelope shape, round trips, cross-workspace
   context substitution, unknown keys, oversized plaintext, and token leakage.
+- Transport-neutral key-provider `RecordCipher` client that negotiates one
+  manifest, generates bounded monotonic request IDs, rejects oversized
+  plaintext before transport, enforces the selected algorithm, and rejects
+  oversized open responses.
 - Versioned discovery, OpenAPI, and MCP protocol specifications.
 - Tenant-isolated SQLite canonical schema with encrypted-payload metadata.
 - Versioned SQLite initialization with legacy-schema adoption, idempotent

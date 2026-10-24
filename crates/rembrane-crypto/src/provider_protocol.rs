@@ -1,7 +1,8 @@
 use std::error::Error;
 use std::fmt::{self, Display};
+use std::sync::atomic::{AtomicU64, Ordering};
 
-use crate::{EncryptedPayload, EncryptionContext};
+use crate::{CryptoError, EncryptedPayload, EncryptionContext, RecordCipher};
 
 pub const CURRENT_KEY_PROVIDER_PROTOCOL: KeyProviderProtocolVersion =
     KeyProviderProtocolVersion::new(0, 1);
@@ -229,15 +230,126 @@ impl Display for KeyProviderProtocolError {
 
 impl Error for KeyProviderProtocolError {}
 
+pub trait KeyProviderTransport {
+    fn fetch_manifest(&self) -> Result<KeyProviderManifest, CryptoError>;
+
+    fn seal(&self, request: &SealRequest) -> Result<EncryptedPayload, CryptoError>;
+
+    fn open(&self, request: &OpenRequest) -> Result<Vec<u8>, CryptoError>;
+}
+
+pub struct KeyProviderCipher<Transport> {
+    transport: Transport,
+    manifest: KeyProviderManifest,
+    required_algorithm: String,
+    request_prefix: String,
+    next_request: AtomicU64,
+}
+
+impl<Transport: KeyProviderTransport> KeyProviderCipher<Transport> {
+    pub fn connect(
+        transport: Transport,
+        policy: KeyProviderPolicy,
+        request_prefix: impl Into<String>,
+    ) -> Result<Self, CryptoError> {
+        let request_prefix = request_prefix.into();
+        validate_request_id(&request_prefix).map_err(protocol_error)?;
+        if request_prefix.len() > 200 {
+            return Err(CryptoError::InvalidEnvelope);
+        }
+        let manifest = transport.fetch_manifest()?;
+        policy.validate(&manifest).map_err(protocol_error)?;
+        Ok(Self {
+            transport,
+            manifest,
+            required_algorithm: policy.required_algorithm,
+            request_prefix,
+            next_request: AtomicU64::new(1),
+        })
+    }
+
+    #[must_use]
+    pub const fn manifest(&self) -> &KeyProviderManifest {
+        &self.manifest
+    }
+
+    fn request_id(&self, operation: &str) -> Result<String, CryptoError> {
+        let sequence = self.next_request.fetch_add(1, Ordering::Relaxed);
+        if sequence == u64::MAX {
+            return Err(CryptoError::KeyUnavailable);
+        }
+        Ok(format!("{}-{operation}-{sequence}", self.request_prefix))
+    }
+}
+
+impl<Transport: KeyProviderTransport> RecordCipher for KeyProviderCipher<Transport> {
+    fn seal(
+        &self,
+        context: &EncryptionContext,
+        plaintext: &[u8],
+    ) -> Result<EncryptedPayload, CryptoError> {
+        let request = SealRequest::new(
+            self.request_id("seal")?,
+            context.clone(),
+            plaintext.to_vec(),
+            self.manifest.maximum_plaintext_bytes,
+        )
+        .map_err(protocol_error)?;
+        let envelope = self.transport.seal(&request)?;
+        if envelope.algorithm() != self.required_algorithm
+            || !self
+                .manifest
+                .algorithms
+                .iter()
+                .any(|algorithm| algorithm == envelope.algorithm())
+        {
+            return Err(CryptoError::UnsupportedAlgorithm);
+        }
+        Ok(envelope)
+    }
+
+    fn open(
+        &self,
+        context: &EncryptionContext,
+        payload: &EncryptedPayload,
+    ) -> Result<Vec<u8>, CryptoError> {
+        if payload.algorithm() != self.required_algorithm {
+            return Err(CryptoError::UnsupportedAlgorithm);
+        }
+        let request = OpenRequest::new(self.request_id("open")?, context.clone(), payload.clone())
+            .map_err(protocol_error)?;
+        let plaintext = self.transport.open(&request)?;
+        request
+            .validate_plaintext_response(&plaintext, self.manifest.maximum_plaintext_bytes)
+            .map_err(protocol_error)?;
+        Ok(plaintext)
+    }
+}
+
+fn protocol_error(error: KeyProviderProtocolError) -> CryptoError {
+    match error {
+        KeyProviderProtocolError::UnsupportedAlgorithm => CryptoError::UnsupportedAlgorithm,
+        KeyProviderProtocolError::InvalidRequest | KeyProviderProtocolError::PlaintextTooLarge => {
+            CryptoError::InvalidEnvelope
+        }
+        KeyProviderProtocolError::HistoricalKeysRequired
+        | KeyProviderProtocolError::IncompatibleProtocol
+        | KeyProviderProtocolError::InvalidManifest
+        | KeyProviderProtocolError::InvalidPolicy
+        | KeyProviderProtocolError::LimitTooSmall => CryptoError::KeyUnavailable,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use rembrane_domain::WorkspaceId;
 
     use super::{
-        CURRENT_KEY_PROVIDER_PROTOCOL, KeyProviderManifest, KeyProviderPolicy,
-        KeyProviderProtocolError, KeyProviderProtocolVersion, SealRequest,
+        CURRENT_KEY_PROVIDER_PROTOCOL, KeyProviderCipher, KeyProviderManifest, KeyProviderPolicy,
+        KeyProviderProtocolError, KeyProviderProtocolVersion, KeyProviderTransport, OpenRequest,
+        SealRequest,
     };
-    use crate::{EncryptionContext, PayloadPurpose};
+    use crate::{CryptoError, EncryptedPayload, EncryptionContext, PayloadPurpose, RecordCipher};
 
     fn manifest() -> KeyProviderManifest {
         KeyProviderManifest {
@@ -301,5 +413,101 @@ mod tests {
         assert_eq!(request.context().record_version(), 1);
         assert_eq!(request.context().purpose(), PayloadPurpose::MemoryContent);
         assert_eq!(request.plaintext(), b"secret");
+    }
+
+    struct FakeTransport {
+        manifest: KeyProviderManifest,
+        open_response: Vec<u8>,
+    }
+
+    impl KeyProviderTransport for FakeTransport {
+        fn fetch_manifest(&self) -> Result<KeyProviderManifest, CryptoError> {
+            Ok(self.manifest.clone())
+        }
+
+        fn seal(&self, request: &SealRequest) -> Result<EncryptedPayload, CryptoError> {
+            EncryptedPayload::new(
+                request.plaintext().to_vec(),
+                "key_v1",
+                "xchacha20poly1305-ietf",
+                vec![7; 24],
+            )
+        }
+
+        fn open(&self, request: &OpenRequest) -> Result<Vec<u8>, CryptoError> {
+            assert_eq!(request.context().workspace_id().as_str(), "workspace_01");
+            Ok(self.open_response.clone())
+        }
+    }
+
+    fn connected(open_response: Vec<u8>) -> KeyProviderCipher<FakeTransport> {
+        KeyProviderCipher::connect(
+            FakeTransport {
+                manifest: manifest(),
+                open_response,
+            },
+            KeyProviderPolicy {
+                minimum_protocol_version: CURRENT_KEY_PROVIDER_PROTOCOL,
+                required_algorithm: "xchacha20poly1305-ietf".to_owned(),
+                minimum_plaintext_bytes: 10,
+                require_historical_keys: true,
+            },
+            "test-client",
+        )
+        .expect("compatible provider should connect")
+    }
+
+    #[test]
+    fn provider_cipher_negotiates_then_seals_and_opens() {
+        let cipher = connected(b"opened".to_vec());
+        let envelope = cipher
+            .seal(&context(), b"sealed")
+            .expect("bounded plaintext should seal");
+        assert_eq!(envelope.key_id(), "key_v1");
+        assert_eq!(
+            cipher
+                .open(&context(), &envelope)
+                .expect("provider response should open"),
+            b"opened"
+        );
+    }
+
+    #[test]
+    fn provider_cipher_fails_closed_on_limits_and_algorithms() {
+        let cipher = connected(vec![0; 262_145]);
+        assert_eq!(
+            cipher.seal(&context(), &vec![0; 262_145]),
+            Err(CryptoError::InvalidEnvelope)
+        );
+        let foreign = EncryptedPayload::new(vec![1], "key", "foreign", vec![2; 24])
+            .expect("envelope should be structurally valid");
+        assert_eq!(
+            cipher.open(&context(), &foreign),
+            Err(CryptoError::UnsupportedAlgorithm)
+        );
+        let valid = EncryptedPayload::new(vec![1], "key_v1", "xchacha20poly1305-ietf", vec![2; 24])
+            .expect("envelope should be valid");
+        assert_eq!(
+            cipher.open(&context(), &valid),
+            Err(CryptoError::InvalidEnvelope)
+        );
+    }
+
+    #[test]
+    fn provider_cipher_rejects_request_namespace_that_cannot_safely_grow() {
+        let result = KeyProviderCipher::connect(
+            FakeTransport {
+                manifest: manifest(),
+                open_response: Vec::new(),
+            },
+            KeyProviderPolicy {
+                minimum_protocol_version: CURRENT_KEY_PROVIDER_PROTOCOL,
+                required_algorithm: "xchacha20poly1305-ietf".to_owned(),
+                minimum_plaintext_bytes: 1,
+                require_historical_keys: false,
+            },
+            "x".repeat(201),
+        );
+        assert!(matches!(result, Err(CryptoError::InvalidEnvelope)));
     }
 }

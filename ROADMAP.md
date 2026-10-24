@@ -133,6 +133,8 @@ This roadmap describes sequencing, not release dates.
   - [x] Add transport-independent Rust manifest, negotiation, request, context,
     and response-limit contracts to the offline verification gate.
   - [x] Add a secret-safe black-box HTTP conformance runner.
+  - [x] Add a transport-neutral negotiated `RecordCipher` client with bounded
+    requests and fail-closed response validation.
   - [ ] Add an authenticated HTTP client adapter.
 - [ ] TypeScript, Python, Rust, Swift, and Kotlin SDKs.
 - [x] Reusable semantic-provider conformance suite.

@@ -33,6 +33,11 @@ key identifier, algorithm, and nonce. Historical-key lookup is strictly by the
 envelope key identifier. Providers must fail closed for an unknown key,
 unsupported algorithm, mismatched context, or failed authentication.
 
+Clients negotiate and cache one validated manifest before use. Every operation
+uses a bounded, deployment-unique request namespace plus a monotonic suffix;
+deployments should generate the namespace with enough entropy to avoid replay
+collisions across process restarts.
+
 ## Consequences
 
 - Raw keys can remain non-exportable inside an HSM, KMS gateway, or keychain

@@ -11,8 +11,9 @@ use rembrane_domain::WorkspaceId;
 mod provider_protocol;
 
 pub use provider_protocol::{
-    CURRENT_KEY_PROVIDER_PROTOCOL, KeyProviderManifest, KeyProviderPolicy,
-    KeyProviderProtocolError, KeyProviderProtocolVersion, OpenRequest, SealRequest,
+    CURRENT_KEY_PROVIDER_PROTOCOL, KeyProviderCipher, KeyProviderManifest, KeyProviderPolicy,
+    KeyProviderProtocolError, KeyProviderProtocolVersion, KeyProviderTransport, OpenRequest,
+    SealRequest,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
