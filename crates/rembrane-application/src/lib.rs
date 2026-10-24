@@ -37,8 +37,8 @@ pub use ports::{
     CheckpointDisclosureRepository, CheckpointMutationRepository, CheckpointRepository,
     DisclosureRepository, EventRepository, InvitationRepository, MemberLifecycleRepository,
     MemberScopeGrantRepository, MembershipRepository, MemoryRepository, ProjectionOutboxRepository,
-    ShareProposalMutationRepository, ShareProposalRepository, TripMutationRepository,
-    TripRepository, WorkspaceRepository,
+    ShareProposalMutationRepository, ShareProposalRepository, TravelDisclosureRepository,
+    TripMutationRepository, TripRepository, WorkspaceRepository,
 };
 pub use projection_worker::{ProjectionOutcome, ProjectionWorker};
 pub use propose_memory::{ConfirmMemoryCommand, MemoryProposalService, ProposeMemoryCommand};

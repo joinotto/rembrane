@@ -6,15 +6,15 @@ use rembrane_application::{
     CheckpointRepository, DisclosureRepository, EventRepository, InvitationRepository,
     MemberLifecycleRepository, MemberScopeGrantRepository, MembershipRepository, MemoryRepository,
     ProjectionOutboxRepository, ShareProposalMutationRepository, ShareProposalRepository,
-    TripMutationRepository, TripRepository, WorkspaceRepository,
+    TravelDisclosureRepository, TripMutationRepository, TripRepository, WorkspaceRepository,
 };
 use rembrane_domain::{
     ActivityCheckpoint, ActivityId, BookingResearch, BookingResearchId, CanonicalEvent,
     CheckpointDisclosureReceipt, DisclosureReceipt, EntityId, EventPayload, Invitation,
     InvitationId, InvitationStatus, MemberScopeGrant, Membership, MemoryId, MemoryRecord,
     MemoryShareProposal, MemoryStatus, Principal, PrincipalId, ProjectionJob, ProjectionJobId,
-    ProjectionOperation, ProjectionStatus, ProviderId, ShareProposalId, ShareProposalStatus, Trip,
-    Workspace, WorkspaceId, WorkspaceKind, WorkspaceRole,
+    ProjectionOperation, ProjectionStatus, ProviderId, ShareProposalId, ShareProposalStatus,
+    TravelDisclosureReceipt, Trip, Workspace, WorkspaceId, WorkspaceKind, WorkspaceRole,
 };
 
 #[derive(Debug, Default)]
@@ -24,6 +24,7 @@ pub struct InMemoryStore {
     memories: Vec<MemoryRecord>,
     disclosures: Vec<DisclosureReceipt>,
     checkpoint_disclosures: Vec<CheckpointDisclosureReceipt>,
+    travel_disclosures: Vec<TravelDisclosureReceipt>,
     events: Vec<CanonicalEvent>,
     checkpoints: Vec<ActivityCheckpoint>,
     invitations: Vec<Invitation>,
@@ -312,6 +313,11 @@ impl InMemoryStore {
     pub fn checkpoint_disclosure_count(&self) -> usize {
         self.checkpoint_disclosures.len()
     }
+
+    #[must_use]
+    pub fn travel_disclosures(&self) -> &[TravelDisclosureReceipt] {
+        &self.travel_disclosures
+    }
 }
 
 fn validate_shared_bootstrap(
@@ -467,6 +473,49 @@ impl CheckpointDisclosureRepository for InMemoryStore {
             return Err(ApplicationError::VersionConflict);
         }
         self.checkpoint_disclosures.push(receipt);
+        Ok(())
+    }
+}
+
+impl TravelDisclosureRepository for InMemoryStore {
+    fn append_travel_disclosure(
+        &mut self,
+        receipt: TravelDisclosureReceipt,
+    ) -> Result<(), ApplicationError> {
+        if receipt.purpose.trim().is_empty()
+            || receipt.trip_version == 0
+            || receipt.as_of.trim().is_empty()
+            || receipt.research.iter().any(|item| item.version == 0)
+        {
+            return Err(ApplicationError::Validation(
+                "invalid travel disclosure".to_owned(),
+            ));
+        }
+        if self
+            .travel_disclosures
+            .iter()
+            .any(|stored| stored.id == receipt.id)
+        {
+            return Err(ApplicationError::AlreadyExists);
+        }
+        let trip_exists = self.trips.iter().any(|trip| {
+            trip.workspace_id() == &receipt.workspace_id
+                && trip.id() == &receipt.trip_id
+                && trip.owner_subject_id() == &receipt.subject_id
+                && trip.version() == receipt.trip_version
+        });
+        let research_exists = receipt.research.iter().all(|disclosed| {
+            self.booking_research.iter().any(|research| {
+                research.workspace_id() == &receipt.workspace_id
+                    && research.trip_id() == &receipt.trip_id
+                    && research.id() == &disclosed.id
+                    && research.version() == disclosed.version
+            })
+        });
+        if !trip_exists || !research_exists {
+            return Err(ApplicationError::VersionConflict);
+        }
+        self.travel_disclosures.push(receipt);
         Ok(())
     }
 }

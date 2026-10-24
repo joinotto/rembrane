@@ -1,6 +1,6 @@
 use crate::{
-    ActivityId, CheckpointId, ClientId, ContextPackId, DisclosureId, MemoryId, PrincipalId,
-    WorkspaceId,
+    ActivityId, BookingResearchId, CheckpointId, ClientId, ContextPackId, DisclosureId, EntityId,
+    MemoryId, PrincipalId, ResearchFreshness, WorkspaceId,
 };
 
 /// Identifies the exact memory revision disclosed to a client.
@@ -21,6 +21,28 @@ pub struct CheckpointDisclosureReceipt {
     pub checkpoint_id: CheckpointId,
     pub checkpoint_version: u64,
     pub activity_id: ActivityId,
+}
+
+/// Identifies the exact booking-research revision and freshness classification disclosed.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DisclosedBookingResearch {
+    pub id: BookingResearchId,
+    pub version: u64,
+    pub freshness: ResearchFreshness,
+}
+
+/// Append-only audit record for one exact-trip travel context disclosure.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TravelDisclosureReceipt {
+    pub id: DisclosureId,
+    pub workspace_id: WorkspaceId,
+    pub subject_id: PrincipalId,
+    pub client_id: ClientId,
+    pub purpose: String,
+    pub trip_id: EntityId,
+    pub trip_version: u64,
+    pub as_of: String,
+    pub research: Vec<DisclosedBookingResearch>,
 }
 
 /// An append-only audit record created when memory crosses a trust boundary.

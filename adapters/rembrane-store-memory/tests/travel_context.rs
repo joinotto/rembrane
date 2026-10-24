@@ -3,9 +3,9 @@ use rembrane_application::{
     TripMutationRepository,
 };
 use rembrane_domain::{
-    BookingResearch, BookingResearchId, BookingResearchKind, CanonicalEvent, ClientId, EntityId,
-    EventId, EventPayload, EvidenceId, EvidenceReference, EvidenceSource, PrincipalId, ReadGrant,
-    ReadScope, TravelDateWindow, Trip, WorkspaceId,
+    BookingResearch, BookingResearchId, BookingResearchKind, CanonicalEvent, ClientId,
+    DisclosureId, EntityId, EventId, EventPayload, EvidenceId, EvidenceReference, EvidenceSource,
+    PrincipalId, ReadGrant, ReadScope, ResearchFreshness, TravelDateWindow, Trip, WorkspaceId,
 };
 use rembrane_store_memory::InMemoryStore;
 
@@ -104,11 +104,13 @@ fn grant(trip_id: &str) -> ReadGrant {
 
 #[test]
 fn separates_fresh_and_expired_research_for_handoff() {
-    let store = seeded_store();
-    let context = TravelContextService::new(&store)
+    let mut store = seeded_store();
+    let context = TravelContextService::new(&mut store)
         .resolve(&ResolveTravelContextCommand {
             grant: grant("trip_01"),
+            disclosure_id: DisclosureId::new("disclosure_01"),
             trip_id: EntityId::new("trip_01"),
+            purpose: "continue flight planning".to_owned(),
             as_of: "2026-10-24T10:00:00Z".to_owned(),
         })
         .expect("authorized context should resolve");
@@ -116,25 +118,38 @@ fn separates_fresh_and_expired_research_for_handoff() {
     assert_eq!(context.trip.id().as_str(), "trip_01");
     assert_eq!(context.fresh_research[0].id().as_str(), "fresh");
     assert_eq!(context.expired_research[0].id().as_str(), "expired");
+    let receipt = &store.travel_disclosures()[0];
+    assert_eq!(receipt.trip_version, 1);
+    assert_eq!(receipt.research.len(), 2);
+    assert!(
+        receipt.research.iter().any(|item| {
+            item.id.as_str() == "fresh" && item.freshness == ResearchFreshness::Fresh
+        })
+    );
 }
 
 #[test]
 fn rejects_another_trip_scope_and_invalid_clock() {
-    let store = seeded_store();
+    let mut store = seeded_store();
     assert_eq!(
-        TravelContextService::new(&store).resolve(&ResolveTravelContextCommand {
+        TravelContextService::new(&mut store).resolve(&ResolveTravelContextCommand {
             grant: grant("trip_other"),
+            disclosure_id: DisclosureId::new("disclosure_denied"),
             trip_id: EntityId::new("trip_01"),
+            purpose: "continue planning".to_owned(),
             as_of: "2026-10-24T10:00:00Z".to_owned(),
         }),
         Err(rembrane_application::ApplicationError::AccessDenied)
     );
     assert!(matches!(
-        TravelContextService::new(&store).resolve(&ResolveTravelContextCommand {
+        TravelContextService::new(&mut store).resolve(&ResolveTravelContextCommand {
             grant: grant("trip_01"),
+            disclosure_id: DisclosureId::new("disclosure_invalid"),
             trip_id: EntityId::new("trip_01"),
+            purpose: "continue planning".to_owned(),
             as_of: "not-a-timestamp".to_owned(),
         }),
         Err(rembrane_application::ApplicationError::Validation(_))
     ));
+    assert_eq!(store.travel_disclosures(), []);
 }

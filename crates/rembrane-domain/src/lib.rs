@@ -24,7 +24,10 @@ pub use activity::{ActivityCheckpoint, CheckpointError, MAX_CHECKPOINT_PAYLOAD_B
 pub use booking_research::{
     BookingResearch, BookingResearchError, BookingResearchKind, ResearchFreshness,
 };
-pub use disclosure::{CheckpointDisclosureReceipt, DisclosedMemory, DisclosureReceipt};
+pub use disclosure::{
+    CheckpointDisclosureReceipt, DisclosedBookingResearch, DisclosedMemory, DisclosureReceipt,
+    TravelDisclosureReceipt,
+};
 pub use event::{CanonicalEvent, EventError, EventPayload};
 pub use grant::{ReadGrant, ReadScope, WriteGrant, WritePermission};
 pub use identifier::{
