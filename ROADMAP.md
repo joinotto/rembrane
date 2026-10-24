@@ -252,6 +252,8 @@ This roadmap describes sequencing, not release dates.
       explanation payloads without caller-controlled authorization identity.
     - [x] Add idempotent bounded event-batch payloads with exact scope,
       provenance references, observation time, and canonical ordered results.
+    - [x] Add bounded scoped question payloads and answers grounded in exact
+      memory revisions with context-pack and disclosure receipt identity.
   - [ ] Publish a serialization schema and HTTP binding.
   - [ ] Add cross-implementation conformance fixtures.
 - [x] Versioned key-provider sidecar protocol for OS, HSM, and customer-KMS

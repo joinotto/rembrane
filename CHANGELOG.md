@@ -45,6 +45,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   types, sealed scopes, bounded opaque data and provenance references,
   non-future observation times, provider-negotiated item limits, and unique
   canonical event IDs with strictly increasing ledger sequences.
+- Bounded Memory Provider question payloads with sealed memory scope and
+  provider-negotiated output ceilings, plus answers grounded in unique exact
+  memory revisions and linked to canonical context-pack and disclosure receipt
+  identities.
 - Expiry-aware remote MCP session capacity reclamation so abandoned bindings
   cannot exhaust the bounded in-process registry indefinitely.
 - A transport-neutral remote MCP lifecycle boundary that composes strict HTTP

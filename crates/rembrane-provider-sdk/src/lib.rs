@@ -14,6 +14,7 @@ mod memory_event;
 mod memory_lifecycle;
 mod memory_mutation;
 mod memory_protocol;
+mod memory_question;
 mod semantic;
 
 pub use capability::{
@@ -49,6 +50,9 @@ pub use memory_protocol::{
     MemoryProviderPrivacyMode, MemoryProviderRequest, MemoryProviderRequestId,
     MemoryProviderResponse, MemoryProviderResponseBody, MemoryProviderScope,
     MemoryProviderTransport,
+};
+pub use memory_question::{
+    MAX_QUESTION_BYTES, MAX_QUESTION_PURPOSE_BYTES, ResolveQuestionPayload, ResolveQuestionResult,
 };
 pub use semantic::{
     AuthorizedMemoryProjection, CandidateMemory, SemanticMemoryProvider, SemanticQuery,
