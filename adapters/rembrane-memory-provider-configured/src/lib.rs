@@ -3,7 +3,14 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use rembrane_memory_provider_http::HttpMemoryProviderClient;
-use rembrane_provider_sdk::{MemoryProviderConnection, MemoryProviderPolicy, ProviderError};
+use rembrane_provider_sdk::{
+    CheckpointActivityPayload, CheckpointActivityResult, DeleteMemoryPayload, DeleteMemoryResult,
+    ExplainMemoryPayload, ExplainMemoryResult, MemoryProviderConnection, MemoryProviderPolicy,
+    MemoryProviderResponse, ProposeMemoryPayload, ProposeMemoryResult, ProviderError,
+    RecordDisclosurePayload, RecordDisclosureResult, RecordEventPayload, RecordEventResult,
+    ResolveContextPayload, ResolveContextResult, ResolveQuestionPayload, ResolveQuestionResult,
+    SyncPullPayload, SyncPullResult, SyncPushPayload, SyncPushResult,
+};
 
 pub struct ConfiguredMemoryProvider {
     client: HttpMemoryProviderClient,
@@ -54,6 +61,86 @@ impl ConfiguredMemoryProvider {
     #[must_use]
     pub const fn connection(&self) -> &MemoryProviderConnection {
         &self.connection
+    }
+
+    pub fn resolve_context(
+        &self,
+        payload: ResolveContextPayload,
+    ) -> Result<MemoryProviderResponse<ResolveContextResult>, ProviderError> {
+        let request = self.connection.request(payload)?;
+        self.client.resolve_context(&request)
+    }
+
+    pub fn resolve_question(
+        &self,
+        payload: ResolveQuestionPayload,
+    ) -> Result<MemoryProviderResponse<ResolveQuestionResult>, ProviderError> {
+        let request = self.connection.request(payload)?;
+        self.client.resolve_question(&request)
+    }
+
+    pub fn propose_memory(
+        &self,
+        payload: ProposeMemoryPayload,
+    ) -> Result<MemoryProviderResponse<ProposeMemoryResult>, ProviderError> {
+        let request = self.connection.request(payload)?;
+        self.client.propose_memory(&request)
+    }
+
+    pub fn record_events(
+        &self,
+        payload: RecordEventPayload,
+    ) -> Result<MemoryProviderResponse<RecordEventResult>, ProviderError> {
+        let request = self.connection.request(payload)?;
+        self.client.record_events(&request)
+    }
+
+    pub fn checkpoint_activity(
+        &self,
+        payload: CheckpointActivityPayload,
+    ) -> Result<MemoryProviderResponse<CheckpointActivityResult>, ProviderError> {
+        let request = self.connection.request(payload)?;
+        self.client.checkpoint_activity(&request)
+    }
+
+    pub fn record_disclosure(
+        &self,
+        payload: RecordDisclosurePayload,
+    ) -> Result<MemoryProviderResponse<RecordDisclosureResult>, ProviderError> {
+        let request = self.connection.request(payload)?;
+        self.client.record_disclosure(&request)
+    }
+
+    pub fn delete_memory(
+        &self,
+        payload: DeleteMemoryPayload,
+    ) -> Result<MemoryProviderResponse<DeleteMemoryResult>, ProviderError> {
+        let request = self.connection.request(payload)?;
+        self.client.delete_memory(&request)
+    }
+
+    pub fn explain_memory(
+        &self,
+        payload: ExplainMemoryPayload,
+    ) -> Result<MemoryProviderResponse<ExplainMemoryResult>, ProviderError> {
+        let request = self.connection.request(payload)?;
+        self.client.explain_memory(&request)
+    }
+
+    pub fn sync_pull(
+        &self,
+        payload: SyncPullPayload,
+    ) -> Result<MemoryProviderResponse<SyncPullResult>, ProviderError> {
+        let request = self.connection.request(payload)?;
+        self.client.sync_pull(&request)
+    }
+
+    pub fn sync_push(
+        &self,
+        payload: SyncPushPayload,
+    ) -> Result<MemoryProviderResponse<SyncPushResult>, ProviderError> {
+        let request = self.connection.request(payload)?;
+        self.client.sync_push(&request)
     }
 }
 

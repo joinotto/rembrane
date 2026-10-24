@@ -395,6 +395,9 @@ This roadmap describes sequencing, not release dates.
   - [x] Add deployment-selected Memory Provider composition using
     environment-owned endpoint and bearer-token values plus safe request
     identity prefixes.
+    - [x] Expose every portable operation through a typed facade that always
+      creates capability-checked requests from the negotiated connection
+      before transport.
 - [x] Versioned key-provider sidecar protocol for OS, HSM, and customer-KMS
   adapters.
   - [x] Add transport-independent Rust manifest, negotiation, request, context,

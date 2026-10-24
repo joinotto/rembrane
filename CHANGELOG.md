@@ -105,6 +105,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   portable HTTP provider from deployment-owned environment values, retains
   credentials only inside the zeroizing transport, and generates safe
   non-tenant request identity prefixes.
+- A typed configured-provider facade for context, questions, proposals,
+  events, checkpoints, disclosures, lifecycle, and sync that always creates
+  each request through the negotiated capability boundary before transport.
 - Canonical engine-neutral temporal knowledge graph aggregates with typed
   nodes, validated relationship types, strict workspace namespaces, separate
   validity and ingestion time, evidence provenance, bounded aliases, versions,
