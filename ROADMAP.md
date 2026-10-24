@@ -103,7 +103,8 @@ This roadmap describes sequencing, not release dates.
     constraints.
   - [x] Versioned canonical audit events and approved target-copy construction.
   - [x] Dual-workspace authorization and atomic in-memory reference transaction.
-  - [ ] Atomic persisted approval and target-workspace copy.
+  - [x] SQLite atomic approval and target-workspace copy implementation.
+  - [ ] Verify the dependency-enabled SQLite integration suite in CI.
 - [x] Authorized member removal with atomic scope-grant cleanup.
 - [ ] Group key rotation after membership changes.
 - [ ] Organizational audit and retention controls.

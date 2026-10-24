@@ -90,6 +90,12 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   transaction contract, binding source and target grants to one principal and
   client while committing approval, target copy, audit events, and projections
   together.
+- SQLite cross-workspace share transaction implementation that revalidates and
+  decrypts the exact private source inside the transaction before atomically
+  approving the proposal, inserting the shared copy and evidence, appending
+  both workspace audit events, and enqueueing target projections.
+- SQLite integration coverage for successful persisted sharing and rollback on
+  a target-workspace sequence conflict.
 - Versioned discovery, OpenAPI, and MCP protocol specifications.
 - Tenant-isolated SQLite canonical schema with encrypted-payload metadata.
 - Versioned SQLite initialization with legacy-schema adoption, idempotent

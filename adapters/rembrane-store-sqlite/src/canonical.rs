@@ -176,7 +176,7 @@ pub(super) struct SealedRecord {
     pub(super) nonce: Vec<u8>,
 }
 
-fn seal_memory(
+pub(super) fn seal_memory(
     cipher: &impl RecordCipher,
     memory: &MemoryRecord,
 ) -> Result<SealedRecord, ApplicationError> {
@@ -222,7 +222,7 @@ pub(super) fn seal_event(
     })
 }
 
-fn insert_memory(
+pub(super) fn insert_memory(
     transaction: &Transaction<'_>,
     memory: &MemoryRecord,
     encrypted: &SealedRecord,
@@ -310,7 +310,7 @@ fn replace_memory(
     Ok(())
 }
 
-fn insert_evidence(
+pub(super) fn insert_evidence(
     transaction: &Transaction<'_>,
     memory: &MemoryRecord,
 ) -> Result<(), ApplicationError> {
@@ -375,7 +375,7 @@ pub(super) fn insert_event(
         .map_err(map_write_error)
 }
 
-fn insert_projections(
+pub(super) fn insert_projections(
     transaction: &Transaction<'_>,
     projections: &[ProjectionJob],
 ) -> Result<(), ApplicationError> {

@@ -4,6 +4,7 @@ mod canonical;
 mod checkpoint;
 mod disclosure;
 mod projection;
+mod share;
 
 use std::path::Path;
 
@@ -403,7 +404,7 @@ impl<C: RecordCipher> MemoryRepository for SqliteStore<C> {
             .optional()
             .map_err(|_| ApplicationError::StorageUnavailable)?;
 
-        row.map(|encrypted| self.decrypt_memory(workspace_id, memory_id, encrypted))
+        row.map(|encrypted| decrypt_memory_record(&self.cipher, workspace_id, memory_id, encrypted))
             .transpose()
     }
 
@@ -445,7 +446,7 @@ impl<C: RecordCipher> MemoryRepository for SqliteStore<C> {
         for row in rows {
             let (memory_id, encrypted) = row.map_err(|_| ApplicationError::StorageUnavailable)?;
             let memory_id = MemoryId::new(memory_id);
-            let memory = self.decrypt_memory(workspace_id, &memory_id, encrypted)?;
+            let memory = decrypt_memory_record(&self.cipher, workspace_id, &memory_id, encrypted)?;
             if memory.subject_id() != subject_id {
                 return Err(ApplicationError::StorageUnavailable);
             }
@@ -455,40 +456,37 @@ impl<C: RecordCipher> MemoryRepository for SqliteStore<C> {
     }
 }
 
-impl<C: RecordCipher> SqliteStore<C> {
-    fn decrypt_memory(
-        &self,
-        workspace_id: &WorkspaceId,
-        memory_id: &MemoryId,
-        encrypted: EncryptedMemoryRow,
-    ) -> Result<MemoryRecord, ApplicationError> {
-        let context = EncryptionContext::new(
-            workspace_id.clone(),
-            memory_id.as_str(),
-            encrypted.version,
-            PayloadPurpose::MemoryContent,
-        )
+pub(super) fn decrypt_memory_record(
+    cipher: &impl RecordCipher,
+    workspace_id: &WorkspaceId,
+    memory_id: &MemoryId,
+    encrypted: EncryptedMemoryRow,
+) -> Result<MemoryRecord, ApplicationError> {
+    let context = EncryptionContext::new(
+        workspace_id.clone(),
+        memory_id.as_str(),
+        encrypted.version,
+        PayloadPurpose::MemoryContent,
+    )
+    .map_err(|_| ApplicationError::StorageUnavailable)?;
+    let payload = EncryptedPayload::new(
+        encrypted.ciphertext,
+        encrypted.key_id,
+        encrypted.algorithm,
+        encrypted.nonce,
+    )
+    .map_err(|_| ApplicationError::StorageUnavailable)?;
+    let plaintext = cipher
+        .open(&context, &payload)
         .map_err(|_| ApplicationError::StorageUnavailable)?;
-        let payload = EncryptedPayload::new(
-            encrypted.ciphertext,
-            encrypted.key_id,
-            encrypted.algorithm,
-            encrypted.nonce,
-        )
-        .map_err(|_| ApplicationError::StorageUnavailable)?;
-        let plaintext = self
-            .cipher
-            .open(&context, &payload)
-            .map_err(|_| ApplicationError::StorageUnavailable)?;
-        let memory = decode_memory(&plaintext).map_err(|_| ApplicationError::StorageUnavailable)?;
-        if memory.workspace_id() != workspace_id || memory.id() != memory_id {
-            return Err(ApplicationError::StorageUnavailable);
-        }
-        Ok(memory)
+    let memory = decode_memory(&plaintext).map_err(|_| ApplicationError::StorageUnavailable)?;
+    if memory.workspace_id() != workspace_id || memory.id() != memory_id {
+        return Err(ApplicationError::StorageUnavailable);
     }
+    Ok(memory)
 }
 
-struct EncryptedMemoryRow {
+pub(super) struct EncryptedMemoryRow {
     version: u64,
     ciphertext: Vec<u8>,
     key_id: String,
@@ -496,7 +494,9 @@ struct EncryptedMemoryRow {
     nonce: Vec<u8>,
 }
 
-fn encrypted_memory_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<EncryptedMemoryRow> {
+pub(super) fn encrypted_memory_row(
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<EncryptedMemoryRow> {
     Ok(EncryptedMemoryRow {
         version: row.get(0)?,
         ciphertext: row.get(1)?,

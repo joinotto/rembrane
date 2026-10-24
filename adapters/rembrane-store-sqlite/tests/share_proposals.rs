@@ -1,11 +1,14 @@
 use rembrane_application::{
-    ApplicationError, CanonicalMutationRepository, ShareProposalRepository, WorkspaceRepository,
+    ApplicationError, ApproveShareProposalCommand, CanonicalMutationRepository,
+    CreateShareProposalCommand, EventRepository, MemoryRepository, MemoryShareService,
+    ShareProposalRepository, WorkspaceRepository,
 };
 use rembrane_crypto_rustcrypto::RustCryptoRecordCipher;
 use rembrane_domain::{
-    CanonicalEvent, EventId, EventPayload, EvidenceId, EvidenceReference, EvidenceSource,
+    CanonicalEvent, ClientId, EventId, EventPayload, EvidenceId, EvidenceReference, EvidenceSource,
     Membership, MemoryId, MemoryRecord, MemoryScope, MemoryShareProposal, Principal, PrincipalId,
-    ShareProposalId, ShareProposalStatus, Workspace, WorkspaceId, WorkspaceRole,
+    ReadScope, ShareProposalId, ShareProposalStatus, Workspace, WorkspaceId, WorkspaceRole,
+    WriteGrant, WritePermission,
 };
 use rembrane_store_sqlite::SqliteStore;
 
@@ -81,6 +84,47 @@ fn proposal(id: &str, source_version: u64) -> MemoryShareProposal {
     .expect("share proposal should be valid")
 }
 
+fn grant(workspace: &str, permissions: Vec<WritePermission>) -> WriteGrant {
+    WriteGrant {
+        client_id: ClientId::new("assistant_01"),
+        workspace_id: WorkspaceId::new(workspace),
+        subject_id: PrincipalId::new("principal_01"),
+        scopes: vec![ReadScope::Global],
+        permissions,
+    }
+}
+
+fn propose_command() -> CreateShareProposalCommand {
+    CreateShareProposalCommand {
+        source_grant: grant("personal_01", vec![WritePermission::ShareMemory]),
+        target_grant: grant("shared_01", vec![WritePermission::ProposeMemory]),
+        proposal_id: ShareProposalId::new("share_service"),
+        source_memory_id: MemoryId::new("memory_01"),
+        source_memory_version: 1,
+        target_scope: MemoryScope::Global,
+        source_event_id: EventId::new("event_share_proposed"),
+        expected_source_sequence: 1,
+    }
+}
+
+fn approve_command(expected_target_sequence: u64) -> ApproveShareProposalCommand {
+    ApproveShareProposalCommand {
+        source_grant: grant("personal_01", vec![WritePermission::ShareMemory]),
+        target_grant: grant("shared_01", vec![WritePermission::CreateMemory]),
+        proposal_id: ShareProposalId::new("share_service"),
+        target_memory_id: MemoryId::new("memory_shared"),
+        approval_evidence: EvidenceReference::new(
+            EvidenceId::new("evidence_share_approval"),
+            EvidenceSource::UserStatement,
+        ),
+        source_event_id: EventId::new("event_share_approved"),
+        target_event_id: EventId::new("event_memory_shared_in"),
+        expected_source_sequence: 2,
+        expected_target_sequence,
+        projections: Vec::new(),
+    }
+}
+
 #[test]
 fn persists_tenant_scoped_proposal_and_optimistic_transition() {
     let mut store = seeded_store();
@@ -124,5 +168,93 @@ fn rejects_nonexistent_source_version() {
     assert_eq!(
         seeded_store().insert_share_proposal(proposal("share_stale", 2)),
         Err(ApplicationError::VersionConflict)
+    );
+}
+
+#[test]
+fn service_persists_atomic_cross_workspace_share() {
+    let mut store = seeded_store();
+    MemoryShareService::new(&mut store)
+        .propose(propose_command())
+        .expect("authorized proposal should persist");
+    let shared = MemoryShareService::new(&mut store)
+        .approve(approve_command(0))
+        .expect("authorized approval should persist");
+
+    assert_eq!(shared.content(), "Call me Hippo");
+    assert_eq!(shared.evidence().len(), 2);
+    assert_eq!(
+        store
+            .find(
+                &WorkspaceId::new("shared_01"),
+                &MemoryId::new("memory_shared"),
+            )
+            .expect("target lookup should execute"),
+        Some(shared)
+    );
+    assert_eq!(
+        store
+            .find_share_proposal(
+                &WorkspaceId::new("personal_01"),
+                &ShareProposalId::new("share_service"),
+            )
+            .expect("proposal lookup should execute")
+            .expect("proposal should exist")
+            .status(),
+        ShareProposalStatus::Approved
+    );
+    assert_eq!(
+        store
+            .list_events_since(&WorkspaceId::new("personal_01"), 0)
+            .expect("source events should list")
+            .len(),
+        3
+    );
+    assert_eq!(
+        store
+            .list_events_since(&WorkspaceId::new("shared_01"), 0)
+            .expect("target events should list")
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn sequence_conflict_rolls_back_sqlite_share_transaction() {
+    let mut store = seeded_store();
+    MemoryShareService::new(&mut store)
+        .propose(propose_command())
+        .expect("authorized proposal should persist");
+
+    assert_eq!(
+        MemoryShareService::new(&mut store).approve(approve_command(1)),
+        Err(ApplicationError::SequenceConflict)
+    );
+    assert!(
+        store
+            .find(
+                &WorkspaceId::new("shared_01"),
+                &MemoryId::new("memory_shared"),
+            )
+            .expect("target lookup should execute")
+            .is_none()
+    );
+    assert_eq!(
+        store
+            .find_share_proposal(
+                &WorkspaceId::new("personal_01"),
+                &ShareProposalId::new("share_service"),
+            )
+            .expect("proposal lookup should execute")
+            .expect("proposal should remain")
+            .status(),
+        ShareProposalStatus::Pending
+    );
+    assert_eq!(
+        store
+            .list_events_since(&WorkspaceId::new("personal_01"), 0)
+            .expect("source events should list")
+            .len(),
+        2
     );
 }
