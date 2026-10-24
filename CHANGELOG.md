@@ -36,6 +36,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   negotiated `Accept` and optional bounded MCP protocol-version values.
 - An asynchronous consuming event-stream dispatcher port so the official SDK
   can open GET streams only from tenant-bound authorization proofs.
+- One owned Axum authorize-and-open operation for stateless MCP event streams,
+  preserving typed HTTP authorization versus SDK stream-dispatch failures.
 - A transport-injectable Mem0 OSS semantic adapter mapping authorized
   projections into HMAC-pseudonymous workspace partitions while preserving
   canonical memory IDs, versions, replacement, bounded ranking, and

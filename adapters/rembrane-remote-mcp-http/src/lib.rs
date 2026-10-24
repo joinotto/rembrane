@@ -630,6 +630,29 @@ where
         })
     }
 
+    /// Authorizes and opens one stateless server event stream without
+    /// exposing an intermediate reusable proof to the HTTP adapter.
+    ///
+    /// # Errors
+    ///
+    /// Distinguishes HTTP-ready authentication/authorization rejection from a
+    /// downstream event-stream dispatch failure.
+    pub async fn authorize_and_dispatch_event_stream<Dispatcher>(
+        &self,
+        headers: &HeaderMap,
+        now_epoch_seconds: u64,
+        dispatcher: &Dispatcher,
+    ) -> Result<Dispatcher::Output, RemoteMcpDispatchError<Dispatcher::Error>>
+    where
+        Dispatcher: AuthorizedRemoteMcpEventStreamDispatcher,
+    {
+        self.authorize_event_stream(headers, now_epoch_seconds)
+            .map_err(RemoteMcpDispatchError::Authorization)?
+            .dispatch_with(dispatcher)
+            .await
+            .map_err(RemoteMcpDispatchError::Dispatch)
+    }
+
     /// Authorizes and dispatches one exact stateless request without exposing
     /// an intermediate reusable authorization decision to the HTTP adapter.
     ///
@@ -1722,14 +1745,8 @@ mod tests {
             HeaderValue::from_static("2025-03-26"),
         );
 
-        let authorized = authorization
-            .authorize_event_stream(&headers, 1_000)
-            .expect("valid event stream should authorize without Content-Type");
-        assert_eq!(authorized.access().workspace_id().as_str(), "workspace_01");
-        assert_eq!(authorized.accept(), "text/event-stream");
-        assert_eq!(authorized.protocol_version(), Some("2025-03-26"));
-        let dispatched = authorized
-            .dispatch_with(&RecordingEventStreamDispatcher)
+        let dispatched = authorization
+            .authorize_and_dispatch_event_stream(&headers, 1_000, &RecordingEventStreamDispatcher)
             .await
             .expect("authorized stream dispatch cannot fail");
         assert_eq!(dispatched.0, "workspace_01");
@@ -1737,13 +1754,17 @@ mod tests {
         assert_eq!(dispatched.2.as_deref(), Some("2025-03-26"));
 
         headers.insert(ACCEPT, HeaderValue::from_static("application/json"));
-        assert_eq!(
+        assert!(matches!(
             authorization
-                .authorize_event_stream(&headers, 1_000)
-                .expect_err("GET must negotiate event-stream")
-                .status,
-            406
-        );
+                .authorize_and_dispatch_event_stream(
+                    &headers,
+                    1_000,
+                    &RecordingEventStreamDispatcher
+                )
+                .await
+                .expect_err("GET must negotiate event-stream"),
+            RemoteMcpDispatchError::Authorization(RemoteMcpHttpRejection { status: 406, .. })
+        ));
 
         headers.insert(ACCEPT, HeaderValue::from_static("text/event-stream"));
         headers.insert(
