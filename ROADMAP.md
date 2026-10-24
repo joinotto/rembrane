@@ -697,6 +697,8 @@ This roadmap describes sequencing, not release dates.
     and shared disposable-provider conformance.
     - [x] Define the v5 API mapping, asynchronous replacement contract,
       plaintext boundary, and compatibility evidence requirements.
+    - [x] Add a typed bring-your-own Supermemory connection profile using
+      secret references and literal-IP-only loopback policy.
   - [x] Generate a secret-reference-only local MCP configuration for OpenCode
     using its command-array and environment-substitution contract.
   - [x] Enforce one bounded control-free executable-command contract before

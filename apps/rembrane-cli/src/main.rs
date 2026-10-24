@@ -1149,6 +1149,11 @@ fn validate_configured_provider_profiles() -> Result<(), String> {
     for (endpoint_variable, credential_variable, kind) in [
         ("MEM0_BASE_URL", "MEM0_API_KEY", ProviderKind::Mem0),
         (
+            "SUPERMEMORY_BASE_URL",
+            "SUPERMEMORY_API_KEY",
+            ProviderKind::Supermemory,
+        ),
+        (
             "GRAPHITI_BASE_URL",
             "GRAPHITI_CREDENTIALS",
             ProviderKind::Graphiti,

@@ -26,6 +26,7 @@ pub enum ProviderPlacement {
 pub enum ProviderKind {
     Native,
     Mem0,
+    Supermemory,
     Graphiti,
 }
 
@@ -111,9 +112,7 @@ fn validate_provider_endpoint(endpoint: &str) -> Result<(), ProviderConnectionEr
     }
     let secure = scheme == "https";
     let loopback = scheme == "http"
-        && (authority == "localhost"
-            || authority.starts_with("localhost:")
-            || authority == "127.0.0.1"
+        && (authority == "127.0.0.1"
             || authority.starts_with("127.0.0.1:")
             || authority == "[::1]"
             || authority.starts_with("[::1]:"));
@@ -575,6 +574,18 @@ mod tests {
                 variable: "MEM0_API_KEY".to_owned()
             }]
         );
+
+        let supermemory = ProviderConnection::remote(
+            ProviderKind::Supermemory,
+            "https://api.supermemory.ai",
+            vec![
+                SecretReference::environment("SUPERMEMORY_API_KEY")
+                    .expect("secret reference should be valid"),
+            ],
+            ProviderPlacement::External,
+        )
+        .expect("Supermemory profile should be valid");
+        assert_eq!(supermemory.kind, ProviderKind::Supermemory);
     }
 
     #[test]
@@ -605,6 +616,15 @@ mod tests {
                 ProviderPlacement::TrustedBoundary,
             )
             .is_ok()
+        );
+        assert!(
+            ProviderConnection::remote(
+                ProviderKind::Graphiti,
+                "http://localhost:8000",
+                Vec::new(),
+                ProviderPlacement::TrustedBoundary,
+            )
+            .is_err()
         );
         assert!(
             ProviderConnection::remote(
