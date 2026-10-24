@@ -81,6 +81,35 @@ impl RemoteMcpProtocolHeaders {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AuthorizedRemoteMcpEventStream {
+    access: VerifiedRemoteAccess,
+    accept: String,
+    protocol_version: Option<String>,
+}
+
+impl AuthorizedRemoteMcpEventStream {
+    #[must_use]
+    pub const fn access(&self) -> &VerifiedRemoteAccess {
+        &self.access
+    }
+
+    #[must_use]
+    pub fn accept(&self) -> &str {
+        &self.accept
+    }
+
+    #[must_use]
+    pub fn protocol_version(&self) -> Option<&str> {
+        self.protocol_version.as_deref()
+    }
+
+    #[must_use]
+    pub fn into_parts(self) -> (VerifiedRemoteAccess, String, Option<String>) {
+        (self.access, self.accept, self.protocol_version)
+    }
+}
+
 /// One authorized MCP request whose identity, operation classification, and
 /// exact bounded body remain coupled until dispatch.
 pub struct AuthorizedRemoteMcpRequest {
@@ -338,6 +367,22 @@ fn require_event_stream_accept(headers: &HeaderMap) -> Result<(), RemoteMcpHttpR
     }
 }
 
+fn event_stream_headers_from_axum(
+    headers: &HeaderMap,
+) -> Result<(String, Option<String>), RemoteMcpHttpRejection> {
+    require_event_stream_accept(headers)?;
+    let accept = unique_header(headers, &ACCEPT)?.unwrap_or_default();
+    let protocol_version = unique_header(headers, &MCP_PROTOCOL_VERSION_HEADER_NAME)?;
+    if protocol_version.is_some_and(|value| !valid_protocol_version(value)) {
+        return Err(RemoteMcpHttpRejection {
+            status: 400,
+            www_authenticate: None,
+            retry_after_seconds: None,
+        });
+    }
+    Ok((accept.to_owned(), protocol_version.map(str::to_owned)))
+}
+
 fn protocol_headers_from_axum(
     headers: &HeaderMap,
 ) -> Result<RemoteMcpProtocolHeaders, RemoteMcpHttpRejection> {
@@ -534,8 +579,8 @@ where
         &self,
         headers: &HeaderMap,
         now_epoch_seconds: u64,
-    ) -> Result<VerifiedRemoteAccess, RemoteMcpHttpRejection> {
-        require_event_stream_accept(headers)?;
+    ) -> Result<AuthorizedRemoteMcpEventStream, RemoteMcpHttpRejection> {
+        let (accept, protocol_version) = event_stream_headers_from_axum(headers)?;
         let request = security_request_from_axum_headers(headers)?;
         let authenticator =
             RemoteAccessAuthenticator::new(&self.verifier, &self.issuer, &self.resource);
@@ -545,8 +590,14 @@ where
             .map(String::as_str)
             .collect::<Vec<_>>();
         let authorization = RemoteHttpAuthorization::new(&authenticator, &trusted_origins);
-        self.gate
-            .authorize_stateless_connection(&authorization, request, now_epoch_seconds)
+        let access =
+            self.gate
+                .authorize_stateless_connection(&authorization, request, now_epoch_seconds)?;
+        Ok(AuthorizedRemoteMcpEventStream {
+            access,
+            accept,
+            protocol_version,
+        })
     }
 
     /// Authorizes and dispatches one exact stateless request without exposing
@@ -1615,11 +1666,21 @@ mod tests {
             HeaderValue::from_static("https://agent.example.test"),
         );
         headers.insert(ACCEPT, HeaderValue::from_static("text/event-stream"));
+        headers.insert(
+            MCP_PROTOCOL_VERSION_HEADER_NAME,
+            HeaderValue::from_static("2025-03-26"),
+        );
 
-        let access = authorization
+        let authorized = authorization
             .authorize_event_stream(&headers, 1_000)
             .expect("valid event stream should authorize without Content-Type");
+        assert_eq!(authorized.access().workspace_id().as_str(), "workspace_01");
+        assert_eq!(authorized.accept(), "text/event-stream");
+        assert_eq!(authorized.protocol_version(), Some("2025-03-26"));
+        let (access, accept, protocol_version) = authorized.into_parts();
         assert_eq!(access.workspace_id().as_str(), "workspace_01");
+        assert_eq!(accept, "text/event-stream");
+        assert_eq!(protocol_version.as_deref(), Some("2025-03-26"));
 
         headers.insert(ACCEPT, HeaderValue::from_static("application/json"));
         assert_eq!(
@@ -1641,6 +1702,19 @@ mod tests {
                 .expect_err("stateless GET must reject legacy session headers")
                 .status,
             403
+        );
+
+        headers.remove(MCP_SESSION_HEADER_NAME);
+        headers.insert(
+            MCP_PROTOCOL_VERSION_HEADER_NAME,
+            HeaderValue::from_static("future-version"),
+        );
+        assert_eq!(
+            authorization
+                .authorize_event_stream(&headers, 1_000)
+                .expect_err("arbitrary GET protocol versions must fail")
+                .status,
+            400
         );
     }
 }
