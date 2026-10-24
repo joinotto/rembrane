@@ -156,6 +156,10 @@ if rg -q '^[[:space:]]+(REMBRANE_WHATSAPP_APP_SECRET|REMBRANE_WHATSAPP_BINDING_L
     exit 1
 fi
 rg -q 'REMBRANE_KEY_PROVIDER_TOKEN_REFERENCE' compose.whatsapp.yaml
+if rg -q '^[[:space:]]+REMBRANE_KEY_PROVIDER_TOKEN:' compose.whatsapp.yaml; then
+    echo "WhatsApp Compose must not interpolate raw key-provider credentials" >&2
+    exit 1
+fi
 if rg -q '^[[:space:]]+REMBRANE_WORKSPACE_KEY_HEX:' \
     compose.graphiti.yaml compose.whatsapp.yaml compose.mobile-share.yaml; then
     echo "Compose overlays must not interpolate raw workspace keys" >&2
@@ -173,6 +177,10 @@ if rg -q '^[[:space:]]+(REMBRANE_MOBILE_SHARE_SIGNING_SECRET|REMBRANE_MOBILE_SHA
     exit 1
 fi
 rg -q 'REMBRANE_KEY_PROVIDER_TOKEN_REFERENCE' compose.mobile-share.yaml
+if rg -q '^[[:space:]]+REMBRANE_KEY_PROVIDER_TOKEN:' compose.mobile-share.yaml; then
+    echo "mobile-share Compose must not interpolate raw key-provider credentials" >&2
+    exit 1
+fi
 rg -q 'REMBRANE_API_TOKEN_REFERENCE' compose.yaml
 rg -q 'no-new-privileges:true' compose.whatsapp.yaml
 test "$(rg -c 'read_only: true' compose.whatsapp.yaml)" -eq 2

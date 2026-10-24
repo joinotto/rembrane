@@ -61,7 +61,11 @@ decryption operations, and teardown.
 Its environment-driven HTTP composition accepts
 `REMBRANE_KEY_PROVIDER_TOKEN_REFERENCE` with the same local locator semantics
 and retains the resolved credential in `Zeroizing<String>` throughout
-configuration handoff.
+configuration handoff. The shipped channel Compose overlays intentionally
+forward only this locator, never `REMBRANE_KEY_PROVIDER_TOKEN`. A deployment
+using the HTTP provider must mount the credential into the service's private
+runtime secret directory and set a `file:/run/rembrane-secrets/...` locator,
+or supply an equivalent protected resolver in its own overlay.
 
 The local development cipher accepts `REMBRANE_WORKSPACE_KEY_REFERENCE` and
 defaults to `env:REMBRANE_WORKSPACE_KEY_HEX` for compatibility. A protected

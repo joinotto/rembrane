@@ -119,6 +119,8 @@ This roadmap describes sequencing, not release dates.
       profiles through any deployment-selected secret resolver.
     - [x] Resolve the environment-driven HTTP key-provider credential from
       validated environment or protected-file reference metadata.
+    - [x] Remove raw HTTP key-provider bearer interpolation from channel
+      deployment overlays and enforce reference-only configuration.
     - [x] Resolve the local development workspace key from validated
       environment or protected-file reference metadata.
   - [x] Wire configured cipher selection through CLI, REST, MCP, generated

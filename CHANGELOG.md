@@ -9,6 +9,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- Reference-only HTTP key-provider bearer configuration in the WhatsApp,
+  channel-worker, and mobile-share Compose services, with a static regression
+  gate preventing raw credential interpolation.
 - Shared protected-secret staging for the Graphiti sidecar, followed by an
   explicit privilege drop to its dedicated service user.
 - Container-entrypoint staging of mounted secrets into a bounded owner-only
