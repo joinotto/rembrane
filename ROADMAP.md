@@ -351,6 +351,12 @@ This roadmap describes sequencing, not release dates.
     - [ ] Prove the runner against an independent local mock implementation.
       - [x] Add the independent mock and opt-in loopback CI execution hook.
       - [ ] Execute the loopback proof in a socket-enabled environment.
+  - [ ] Add an authenticated Rust HTTP client adapter.
+    - [x] Add bounded redirect-free, proxy-free HTTPS/loopback discovery with
+      zeroized bearer credentials.
+    - [x] Reject manifests whose capability, OAuth scope, HTTP method, or path
+      bindings differ from the canonical protocol registry.
+    - [ ] Add typed codecs and response validation for every operation.
 - [x] Versioned key-provider sidecar protocol for OS, HSM, and customer-KMS
   adapters.
   - [x] Add transport-independent Rust manifest, negotiation, request, context,

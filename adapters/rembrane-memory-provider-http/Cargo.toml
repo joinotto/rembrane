@@ -1,0 +1,18 @@
+[package]
+name = "rembrane-memory-provider-http"
+description = "Authenticated bounded HTTP client for the Rembrane Memory Provider Protocol"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+rembrane-provider-sdk = { path = "../../crates/rembrane-provider-sdk" }
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+zeroize = "1"
+
+[lints]
+workspace = true

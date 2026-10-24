@@ -72,6 +72,19 @@ jobs:
           --package rembrane-graph-graphiti-http
           --all-targets -- -D warnings
 
+  memory-provider-http:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.88.0
+        with:
+          components: clippy
+      - run: cargo test --package rembrane-memory-provider-http
+      - run: >-
+          cargo clippy
+          --package rembrane-memory-provider-http
+          --all-targets -- -D warnings
+
   container:
     runs-on: ubuntu-latest
     steps:

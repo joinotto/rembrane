@@ -54,6 +54,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - A process-level graph-worker lifecycle test that seeds a canonical encrypted
   SQLite node and provider outbox job through the atomic repository, launches
   the real worker binary, and verifies the auditable job reaches completion.
+- An authenticated Memory Provider HTTP discovery client with HTTPS-or-exact-
+  loopback enforcement, disabled redirects and environment proxies, bounded
+  JSON responses, zeroized bearer credentials, and fail-closed validation of
+  every advertised capability, OAuth scope, method, and path binding.
 - Canonical engine-neutral temporal knowledge graph aggregates with typed
   nodes, validated relationship types, strict workspace namespaces, separate
   validity and ingestion time, evidence provenance, bounded aliases, versions,
