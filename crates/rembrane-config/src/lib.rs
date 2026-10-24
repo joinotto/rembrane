@@ -44,10 +44,10 @@ pub enum ProviderKind {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProviderConnection {
-    pub kind: ProviderKind,
-    pub endpoint: Option<String>,
-    pub credentials: Vec<SecretReference>,
-    pub placement: ProviderPlacement,
+    kind: ProviderKind,
+    endpoint: Option<String>,
+    credentials: Vec<SecretReference>,
+    placement: ProviderPlacement,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -116,6 +116,26 @@ impl ProviderConnection {
             credentials,
             placement,
         })
+    }
+
+    #[must_use]
+    pub const fn kind(&self) -> ProviderKind {
+        self.kind
+    }
+
+    #[must_use]
+    pub fn endpoint(&self) -> Option<&str> {
+        self.endpoint.as_deref()
+    }
+
+    #[must_use]
+    pub fn credentials(&self) -> &[SecretReference] {
+        &self.credentials
+    }
+
+    #[must_use]
+    pub const fn placement(&self) -> ProviderPlacement {
+        self.placement
     }
 }
 
@@ -717,9 +737,11 @@ mod tests {
         )
         .expect("secure provider profile should be valid");
 
-        assert_eq!(profile.kind, ProviderKind::Mem0);
+        assert_eq!(profile.kind(), ProviderKind::Mem0);
+        assert_eq!(profile.endpoint(), Some("https://memory.example/v1"));
+        assert_eq!(profile.placement(), ProviderPlacement::External);
         assert_eq!(
-            profile.credentials,
+            profile.credentials(),
             vec![SecretReference::Environment {
                 variable: "MEM0_API_KEY".to_owned()
             }]
@@ -735,7 +757,7 @@ mod tests {
             ProviderPlacement::External,
         )
         .expect("Supermemory profile should be valid");
-        assert_eq!(supermemory.kind, ProviderKind::Supermemory);
+        assert_eq!(supermemory.kind(), ProviderKind::Supermemory);
     }
 
     #[test]

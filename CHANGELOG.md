@@ -73,6 +73,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Bounded duplicate-free credential-reference lists for bring-your-own
   provider profiles, preventing ambiguous precedence and amplified
   secret-manager resolution.
+- Opaque validated provider profiles with read-only accessors, preventing
+  integrations from bypassing endpoint, placement, and credential-reference
+  construction invariants through public fields.
 - A transport-injectable Mem0 OSS semantic adapter mapping authorized
   projections into HMAC-pseudonymous workspace partitions while preserving
   canonical memory IDs, versions, replacement, bounded ranking, and

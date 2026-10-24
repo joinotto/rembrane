@@ -42,6 +42,8 @@ This roadmap describes sequencing, not release dates.
     secret-manager references before storing configuration.
   - [x] Bound and deduplicate each provider profile's credential-reference
     list before any secret-manager resolution.
+  - [x] Make validated provider profiles opaque so callers cannot bypass
+    endpoint, placement, or credential-reference invariants.
 - [x] Implement the encrypted local SQLite adapter.
 - [x] Add development-key encrypted CLI remember and recall commands.
 - [x] Add encrypted CLI correction and deletion commands.
