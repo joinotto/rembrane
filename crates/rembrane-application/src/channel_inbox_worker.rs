@@ -36,11 +36,13 @@ where
         limit: usize,
         maximum_attempts: u32,
         retry_delay_seconds: u64,
+        lease_seconds: u64,
     ) -> Result<ChannelDispatchReport, ApplicationError> {
         if !(1..=MAX_CHANNEL_INBOX_PAGE).contains(&limit)
             || now_epoch_seconds == 0
             || maximum_attempts == 0
             || retry_delay_seconds == 0
+            || lease_seconds == 0
         {
             return Err(ApplicationError::Validation(
                 "channel dispatch bounds are invalid".to_owned(),
@@ -51,9 +53,18 @@ where
             .ok_or_else(|| {
                 ApplicationError::Validation("channel retry time overflows".to_owned())
             })?;
-        let pending =
-            self.repository
-                .pending_channel_messages(workspace_id, now_epoch_seconds, limit)?;
+        let lease_until_epoch_seconds =
+            now_epoch_seconds
+                .checked_add(lease_seconds)
+                .ok_or_else(|| {
+                    ApplicationError::Validation("channel lease time overflows".to_owned())
+                })?;
+        let pending = self.repository.claim_channel_messages(
+            workspace_id,
+            now_epoch_seconds,
+            lease_until_epoch_seconds,
+            limit,
+        )?;
         let mut report = ChannelDispatchReport::default();
         for message in pending {
             report.attempted += 1;
@@ -99,10 +110,11 @@ mod tests {
     }
 
     impl ChannelInboxRepository for Inbox {
-        fn pending_channel_messages(
-            &self,
+        fn claim_channel_messages(
+            &mut self,
             workspace_id: &WorkspaceId,
             _now_epoch_seconds: u64,
+            _lease_until_epoch_seconds: u64,
             limit: usize,
         ) -> Result<Vec<VerifiedChannelMessage>, ApplicationError> {
             Ok(self
@@ -184,7 +196,7 @@ mod tests {
             fail_event: "event_02",
         };
         let report = ChannelInboxWorker::new(&mut inbox, &mut processor)
-            .process_batch(&WorkspaceId::new("workspace_01"), 1_000, 10, 3, 30)
+            .process_batch(&WorkspaceId::new("workspace_01"), 1_000, 10, 3, 30, 60)
             .expect("batch should continue across handler failure");
         assert_eq!(report.attempted, 2);
         assert_eq!(report.completed, 1);
@@ -211,6 +223,7 @@ mod tests {
                 MAX_CHANNEL_INBOX_PAGE + 1,
                 3,
                 30,
+                60,
             ),
             Err(ApplicationError::Validation(_))
         ));

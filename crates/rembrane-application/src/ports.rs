@@ -96,10 +96,11 @@ pub trait DurableChannelIngressRepository {
 
 /// Tenant-scoped recovery and completion of encrypted channel messages.
 pub trait ChannelInboxRepository {
-    fn pending_channel_messages(
-        &self,
+    fn claim_channel_messages(
+        &mut self,
         workspace_id: &WorkspaceId,
         now_epoch_seconds: u64,
+        lease_until_epoch_seconds: u64,
         limit: usize,
     ) -> Result<Vec<VerifiedChannelMessage>, ApplicationError>;
 

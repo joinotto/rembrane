@@ -12,6 +12,7 @@ const DEFAULT_BATCH_SIZE: usize = 10;
 const DEFAULT_POLL_MILLISECONDS: u64 = 1_000;
 const DEFAULT_MAXIMUM_ATTEMPTS: u32 = 5;
 const DEFAULT_RETRY_DELAY_SECONDS: u64 = 30;
+const DEFAULT_LEASE_SECONDS: u64 = 120;
 
 struct Configuration {
     database: String,
@@ -22,6 +23,7 @@ struct Configuration {
     poll_milliseconds: u64,
     maximum_attempts: u32,
     retry_delay_seconds: u64,
+    lease_seconds: u64,
     run_once: bool,
 }
 
@@ -49,6 +51,10 @@ impl Configuration {
             retry_delay_seconds: positive_environment_u64(
                 "REMBRANE_CHANNEL_WORKER_RETRY_DELAY_SECONDS",
                 DEFAULT_RETRY_DELAY_SECONDS,
+            )?,
+            lease_seconds: positive_environment_u64(
+                "REMBRANE_CHANNEL_WORKER_LEASE_SECONDS",
+                DEFAULT_LEASE_SECONDS,
             )?,
             run_once: boolean_environment("REMBRANE_CHANNEL_WORKER_RUN_ONCE", false)?,
         })
@@ -78,6 +84,7 @@ fn run(configuration: &Configuration) -> Result<()> {
                 configuration.batch_size,
                 configuration.maximum_attempts,
                 configuration.retry_delay_seconds,
+                configuration.lease_seconds,
             )
             .context("failed to process channel inbox")?;
         println!(

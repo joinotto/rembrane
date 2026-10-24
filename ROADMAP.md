@@ -585,6 +585,8 @@ This roadmap describes sequencing, not release dates.
     WhatsApp Compose profile.
   - [x] Persist bounded delayed delivery retries and quarantine poison messages
     after a deployment-configured maximum attempt count.
+  - [x] Atomically lease encrypted inbox messages so concurrent workers cannot
+    dispatch the same event, while expired claims are safely recoverable.
   - [x] Define a bounded authenticated-channel message contract whose
     canonical workspace, principal, and client identity must come from a
     deployment-owned sender binding rather than webhook payload claims.

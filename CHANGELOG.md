@@ -78,6 +78,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Bounded channel delivery retries with durable availability times, configurable
   attempt limits, and terminal quarantine so poison messages cannot monopolize
   an inbox worker.
+- Atomic expiring channel-inbox leases that prevent concurrent workers from
+  delivering the same event while automatically reclaiming work after a
+  crashed or stalled worker.
 - Durable, content-free SQLite channel replay receipts with atomic cleanup,
   fail-closed capacity enforcement, per-platform namespaces, and
   cross-workspace duplicate denial for multi-process gateways.

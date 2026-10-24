@@ -314,7 +314,7 @@ mod tests {
             .store
             .lock()
             .expect("store lock should be available")
-            .pending_channel_messages(&WorkspaceId::new("workspace_01"), now, 10)
+            .claim_channel_messages(&WorkspaceId::new("workspace_01"), now, now + 60, 10)
             .expect("encrypted inbox should recover");
         assert_eq!(pending.len(), 1);
         assert_eq!(pending[0].text(), "continue on another assistant");

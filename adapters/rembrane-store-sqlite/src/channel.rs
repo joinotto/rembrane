@@ -442,15 +442,16 @@ impl<C: RecordCipher> DurableChannelIngressRepository for SqliteStore<C> {
 }
 
 impl<C: RecordCipher> ChannelInboxRepository for SqliteStore<C> {
-    fn pending_channel_messages(
-        &self,
+    fn claim_channel_messages(
+        &mut self,
         workspace_id: &WorkspaceId,
         now_epoch_seconds: u64,
+        lease_until_epoch_seconds: u64,
         limit: usize,
     ) -> Result<Vec<VerifiedChannelMessage>, ApplicationError> {
-        if now_epoch_seconds == 0 {
+        if now_epoch_seconds == 0 || lease_until_epoch_seconds <= now_epoch_seconds {
             return Err(ApplicationError::Validation(
-                "channel inbox clock must be positive".to_owned(),
+                "channel inbox lease must end after the current time".to_owned(),
             ));
         }
         if !(1..=MAX_CHANNEL_INBOX_PAGE).contains(&limit) {
@@ -458,10 +459,14 @@ impl<C: RecordCipher> ChannelInboxRepository for SqliteStore<C> {
                 "channel inbox page limit is invalid".to_owned(),
             ));
         }
-        let mut statement = self
+        let transaction = self
             .connection
-            .prepare(
-                "SELECT
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        let rows = {
+            let mut statement = transaction
+                .prepare(
+                    "SELECT
                     inbox.channel, inbox.event_id, inbox.principal_id,
                     inbox.client_id, inbox.received_at_epoch_seconds,
                     inbox.text_ciphertext, inbox.encryption_key_id,
@@ -472,43 +477,74 @@ impl<C: RecordCipher> ChannelInboxRepository for SqliteStore<C> {
                   AND membership.principal_id = inbox.principal_id
                   AND membership.status = 'active'
                  WHERE inbox.workspace_id = ?1
-                   AND inbox.status = 'pending'
-                   AND inbox.available_at_epoch_seconds <= ?2
+                   AND (
+                       (inbox.status = 'pending'
+                        AND inbox.available_at_epoch_seconds <= ?2)
+                       OR (inbox.status = 'processing'
+                           AND inbox.lease_until_epoch_seconds <= ?2)
+                   )
                  ORDER BY inbox.received_at_epoch_seconds, inbox.channel, inbox.event_id
                  LIMIT ?3",
-            )
-            .map_err(|_| ApplicationError::StorageUnavailable)?;
-        let rows = statement
-            .query_map(
-                params![
-                    workspace_id.as_str(),
-                    now_epoch_seconds,
-                    i64::try_from(limit).map_err(|_| {
-                        ApplicationError::Validation(
-                            "channel inbox page limit exceeds SQLite range".to_owned(),
-                        )
-                    })?
-                ],
-                |row| {
-                    Ok(ChannelInboxRow {
-                        channel: row.get(0)?,
-                        event_id: row.get(1)?,
-                        principal_id: row.get(2)?,
-                        client_id: row.get(3)?,
-                        received_at_epoch_seconds: row.get(4)?,
-                        ciphertext: row.get(5)?,
-                        key_id: row.get(6)?,
-                        algorithm: row.get(7)?,
-                        nonce: row.get(8)?,
-                    })
-                },
-            )
-            .map_err(|_| ApplicationError::StorageUnavailable)?;
-        rows.map(|row| {
-            row.map_err(|_| ApplicationError::StorageUnavailable)
-                .and_then(|row| decode_channel_inbox_row(&self.cipher, workspace_id, row))
-        })
-        .collect()
+                )
+                .map_err(|_| ApplicationError::StorageUnavailable)?;
+            statement
+                .query_map(
+                    params![
+                        workspace_id.as_str(),
+                        now_epoch_seconds,
+                        i64::try_from(limit).map_err(|_| {
+                            ApplicationError::Validation(
+                                "channel inbox page limit exceeds SQLite range".to_owned(),
+                            )
+                        })?
+                    ],
+                    |row| {
+                        Ok(ChannelInboxRow {
+                            channel: row.get(0)?,
+                            event_id: row.get(1)?,
+                            principal_id: row.get(2)?,
+                            client_id: row.get(3)?,
+                            received_at_epoch_seconds: row.get(4)?,
+                            ciphertext: row.get(5)?,
+                            key_id: row.get(6)?,
+                            algorithm: row.get(7)?,
+                            nonce: row.get(8)?,
+                        })
+                    },
+                )
+                .map_err(|_| ApplicationError::StorageUnavailable)?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|_| ApplicationError::StorageUnavailable)?
+        };
+        for row in &rows {
+            let changed = transaction
+                .execute(
+                    "UPDATE channel_inbox
+                     SET status = 'processing', lease_until_epoch_seconds = ?4
+                     WHERE workspace_id = ?1
+                       AND channel = ?2
+                       AND event_id = ?3
+                       AND (
+                           (status = 'pending' AND available_at_epoch_seconds <= ?5)
+                           OR (status = 'processing' AND lease_until_epoch_seconds <= ?5)
+                       )",
+                    params![
+                        workspace_id.as_str(),
+                        row.channel,
+                        row.event_id,
+                        lease_until_epoch_seconds,
+                        now_epoch_seconds
+                    ],
+                )
+                .map_err(map_write_error)?;
+            if changed != 1 {
+                return Err(ApplicationError::StorageUnavailable);
+            }
+        }
+        transaction.commit().map_err(map_write_error)?;
+        rows.into_iter()
+            .map(|row| decode_channel_inbox_row(&self.cipher, workspace_id, row))
+            .collect()
     }
 
     fn fail_channel_message(
@@ -536,11 +572,12 @@ impl<C: RecordCipher> ChannelInboxRepository for SqliteStore<C> {
                          WHEN attempts + 1 >= ?4 THEN 'quarantined'
                          ELSE 'pending'
                      END,
-                     available_at_epoch_seconds = ?5
+                     available_at_epoch_seconds = ?5,
+                     lease_until_epoch_seconds = NULL
                  WHERE workspace_id = ?1
                    AND channel = ?2
                    AND event_id = ?3
-                   AND status = 'pending'",
+                   AND status = 'processing'",
                 params![
                     workspace_id.as_str(),
                     encode_channel(channel),
@@ -576,11 +613,13 @@ impl<C: RecordCipher> ChannelInboxRepository for SqliteStore<C> {
             .connection
             .execute(
                 "UPDATE channel_inbox
-                 SET status = 'delivered', delivered_at = CURRENT_TIMESTAMP
+                 SET status = 'delivered',
+                     delivered_at = CURRENT_TIMESTAMP,
+                     lease_until_epoch_seconds = NULL
                  WHERE workspace_id = ?1
                    AND channel = ?2
                    AND event_id = ?3
-                   AND status = 'pending'",
+                   AND status = 'processing'",
                 params![workspace_id.as_str(), encode_channel(channel), event_id],
             )
             .map_err(map_write_error)?;
@@ -1023,13 +1062,13 @@ mod tests {
         assert_ne!(stored_text, admitted.text().as_bytes());
         assert!(
             store
-                .pending_channel_messages(&WorkspaceId::new("workspace_02"), 1_000, 10)
+                .claim_channel_messages(&WorkspaceId::new("workspace_02"), 1_000, 1_060, 10)
                 .expect("other tenant query should succeed")
                 .is_empty()
         );
         assert_eq!(
             store
-                .pending_channel_messages(&WorkspaceId::new("workspace_01"), 1_000, 10)
+                .claim_channel_messages(&WorkspaceId::new("workspace_01"), 1_000, 1_060, 10)
                 .expect("inbox should decrypt"),
             vec![admitted.clone()]
         );
@@ -1042,7 +1081,7 @@ mod tests {
             .expect("delivery should complete");
         assert!(
             store
-                .pending_channel_messages(&WorkspaceId::new("workspace_01"), 1_000, 10)
+                .claim_channel_messages(&WorkspaceId::new("workspace_01"), 1_000, 1_060, 10)
                 .expect("completed inbox query should succeed")
                 .is_empty()
         );
@@ -1089,6 +1128,18 @@ mod tests {
                 10,
             )
             .expect("event should enqueue");
+        assert_eq!(
+            store
+                .claim_channel_messages(&WorkspaceId::new("workspace_01"), 1_000, 1_060, 10)
+                .expect("first worker should claim"),
+            vec![admitted.clone()]
+        );
+        assert!(
+            store
+                .claim_channel_messages(&WorkspaceId::new("workspace_01"), 1_001, 1_061, 10)
+                .expect("second worker query should succeed")
+                .is_empty()
+        );
 
         assert!(
             !store
@@ -1103,13 +1154,13 @@ mod tests {
         );
         assert!(
             store
-                .pending_channel_messages(&WorkspaceId::new("workspace_01"), 1_029, 10)
+                .claim_channel_messages(&WorkspaceId::new("workspace_01"), 1_029, 1_089, 10)
                 .expect("early query should succeed")
                 .is_empty()
         );
         assert_eq!(
             store
-                .pending_channel_messages(&WorkspaceId::new("workspace_01"), 1_030, 10)
+                .claim_channel_messages(&WorkspaceId::new("workspace_01"), 1_030, 1_090, 10)
                 .expect("retry should become available"),
             vec![admitted.clone()]
         );
@@ -1126,7 +1177,7 @@ mod tests {
         );
         assert!(
             store
-                .pending_channel_messages(&WorkspaceId::new("workspace_01"), 2_000, 10)
+                .claim_channel_messages(&WorkspaceId::new("workspace_01"), 2_000, 2_060, 10)
                 .expect("quarantined query should succeed")
                 .is_empty()
         );
