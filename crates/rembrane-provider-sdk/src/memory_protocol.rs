@@ -4,6 +4,18 @@ pub const MEMORY_PROVIDER_DISCOVERY_PATH: &str = "/.well-known/ai-memory";
 pub const CURRENT_MEMORY_PROVIDER_PROTOCOL: ProviderProtocolVersion =
     ProviderProtocolVersion::new(0, 1);
 
+pub(crate) mod sealed {
+    pub trait Sealed {}
+}
+
+/// A canonical payload whose protocol operation cannot be caller-selected.
+///
+/// The trait is sealed so downstream crates cannot bind arbitrary payloads to
+/// privileged operations.
+pub trait MemoryProviderPayload: sealed::Sealed {
+    const OPERATION: MemoryProviderOperation;
+}
+
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum MemoryProviderTransport {
     Https,
@@ -147,8 +159,8 @@ pub struct MemoryProviderRequest<Payload> {
     payload: Payload,
 }
 
-impl<Payload> MemoryProviderRequest<Payload> {
-    /// Creates a request envelope accepted by this protocol implementation.
+impl<Payload: MemoryProviderPayload> MemoryProviderRequest<Payload> {
+    /// Creates an operation-bound request envelope.
     ///
     /// # Errors
     ///
@@ -157,7 +169,6 @@ impl<Payload> MemoryProviderRequest<Payload> {
     pub fn new(
         request_id: MemoryProviderRequestId,
         protocol_version: ProviderProtocolVersion,
-        operation: MemoryProviderOperation,
         payload: Payload,
     ) -> Result<Self, ProviderError> {
         if !CURRENT_MEMORY_PROVIDER_PROTOCOL.is_compatible_with(protocol_version) {
@@ -171,11 +182,13 @@ impl<Payload> MemoryProviderRequest<Payload> {
         Ok(Self {
             request_id,
             protocol_version,
-            operation,
+            operation: Payload::OPERATION,
             payload,
         })
     }
+}
 
+impl<Payload> MemoryProviderRequest<Payload> {
     #[must_use]
     pub const fn request_id(&self) -> &MemoryProviderRequestId {
         &self.request_id
@@ -201,6 +214,57 @@ impl<Payload> MemoryProviderRequest<Payload> {
         self.payload
     }
 }
+
+macro_rules! bind_payload {
+    ($payload:path, $operation:expr) => {
+        impl sealed::Sealed for $payload {}
+
+        impl MemoryProviderPayload for $payload {
+            const OPERATION: MemoryProviderOperation = $operation;
+        }
+    };
+}
+
+bind_payload!(
+    crate::memory_context::ResolveContextPayload,
+    MemoryProviderOperation::ResolveContext
+);
+bind_payload!(
+    crate::memory_question::ResolveQuestionPayload,
+    MemoryProviderOperation::ResolveQuestion
+);
+bind_payload!(
+    crate::memory_event::RecordEventPayload,
+    MemoryProviderOperation::RecordEvent
+);
+bind_payload!(
+    crate::memory_mutation::ProposeMemoryPayload,
+    MemoryProviderOperation::ProposeMemory
+);
+bind_payload!(
+    crate::memory_checkpoint::CheckpointActivityPayload,
+    MemoryProviderOperation::CheckpointActivity
+);
+bind_payload!(
+    crate::memory_disclosure::RecordDisclosurePayload,
+    MemoryProviderOperation::RecordDisclosure
+);
+bind_payload!(
+    crate::memory_lifecycle::DeleteMemoryPayload,
+    MemoryProviderOperation::DeleteMemory
+);
+bind_payload!(
+    crate::memory_lifecycle::ExplainMemoryPayload,
+    MemoryProviderOperation::ExplainMemory
+);
+bind_payload!(
+    crate::memory_sync::SyncPullPayload,
+    MemoryProviderOperation::SyncPull
+);
+bind_payload!(
+    crate::memory_sync::SyncPushPayload,
+    MemoryProviderOperation::SyncPush
+);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MemoryProviderErrorCode {
@@ -523,6 +587,15 @@ mod tests {
     };
     use crate::{ProviderError, ProviderProtocolVersion};
 
+    #[derive(Clone, Debug, Eq, PartialEq)]
+    struct TestPayload;
+
+    impl super::sealed::Sealed for TestPayload {}
+
+    impl super::MemoryProviderPayload for TestPayload {
+        const OPERATION: MemoryProviderOperation = MemoryProviderOperation::ResolveContext;
+    }
+
     fn manifest() -> MemoryProviderManifest {
         MemoryProviderManifest::new(
             "rembrane.local".to_owned(),
@@ -702,8 +775,7 @@ mod tests {
         let request = MemoryProviderRequest::new(
             request_id.clone(),
             CURRENT_MEMORY_PROVIDER_PROTOCOL,
-            MemoryProviderOperation::ResolveContext,
-            "payload",
+            TestPayload,
         )
         .expect("current request should be compatible");
         assert_eq!(request.request_id(), &request_id);
@@ -723,12 +795,7 @@ mod tests {
         );
 
         assert_eq!(
-            MemoryProviderRequest::new(
-                request_id,
-                ProviderProtocolVersion::new(0, 2),
-                MemoryProviderOperation::ResolveContext,
-                (),
-            ),
+            MemoryProviderRequest::new(request_id, ProviderProtocolVersion::new(0, 2), TestPayload,),
             Err(ProviderError::IncompatibleProtocol {
                 required_major: 0,
                 required_minor: 2,

@@ -47,7 +47,7 @@ pub use memory_mutation::{MAX_SOURCE_REFERENCE_BYTES, ProposeMemoryPayload, Prop
 pub use memory_protocol::{
     CURRENT_MEMORY_PROVIDER_PROTOCOL, MEMORY_PROVIDER_DISCOVERY_PATH, MemoryProviderCapability,
     MemoryProviderErrorCode, MemoryProviderHttpMethod, MemoryProviderIdempotencyKey,
-    MemoryProviderLimits, MemoryProviderManifest, MemoryProviderOperation,
+    MemoryProviderLimits, MemoryProviderManifest, MemoryProviderOperation, MemoryProviderPayload,
     MemoryProviderPrivacyMode, MemoryProviderRequest, MemoryProviderRequestId,
     MemoryProviderResponse, MemoryProviderResponseBody, MemoryProviderScope,
     MemoryProviderTransport,
