@@ -1,0 +1,15 @@
+{
+  "requestId": "request_0123456789abcdef",
+  "protocolVersion": "0.1",
+  "operation": "resolve_context",
+  "payload": {
+    "purpose": "Continue development work in a new coding agent.",
+    "query": "Current implementation state and next verified task",
+    "selector": {
+      "scope": "entity",
+      "entityId": "project_rembrane"
+    },
+    "maximumItems": 20,
+    "maximumBytes": 65536
+  }
+}

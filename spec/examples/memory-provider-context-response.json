@@ -1,0 +1,38 @@
+{
+  "requestId": "request_0123456789abcdef",
+  "protocolVersion": "0.1",
+  "result": {
+    "contextPackId": "context_pack_01",
+    "disclosureId": "disclosure_01",
+    "items": [
+      {
+        "memoryId": "memory_01",
+        "version": 3,
+        "scope": {
+          "scope": "entity",
+          "entityId": "project_rembrane"
+        },
+        "kind": "working",
+        "content": "The Memory Provider wire schema is the next implementation task.",
+        "evidence": [
+          {
+            "evidenceId": "event_64bb52c",
+            "source": "tool_result"
+          }
+        ],
+        "confidenceMillionths": 1000000,
+        "validFromEpochSeconds": 1792790000,
+        "validUntilEpochSeconds": null,
+        "sensitivity": "personal",
+        "disclosureConstraints": [
+          {
+            "type": "purpose_bound"
+          },
+          {
+            "type": "no_training"
+          }
+        ]
+      }
+    ]
+  }
+}

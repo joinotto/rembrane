@@ -14,6 +14,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   context selectors, provider limits, and closed request, success, and error
   envelopes, plus a complete ten-operation discovery example enforced by the
   offline protocol gate.
+- Strict Memory Provider JSON schemas for context resolution, grounded
+  questions, exact-version deletion, and provenance explanation, including
+  evidence, sensitivity, disclosure constraints, and executable context
+  request/response examples.
 - Initial full Memory Provider Protocol discovery contract with a versioned
   well-known manifest, HTTPS/MCP transports, portable memory capabilities,
   explicit privacy modes, supported domains, and bounded operation limits.

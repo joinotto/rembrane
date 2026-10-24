@@ -23,6 +23,8 @@ jq empty \
     spec/memory-provider.schema.json \
     spec/examples/discovery.json \
     spec/examples/memory-provider-discovery.json \
+    spec/examples/memory-provider-context-request.json \
+    spec/examples/memory-provider-context-response.json \
     spec/examples/oauth-protected-resource.json \
     spec/examples/provider-manifest.json \
     spec/examples/provider-projection.json \
@@ -44,6 +46,14 @@ jq -e '
     and ."$defs".requestEnvelope.additionalProperties == false
     and ."$defs".successEnvelope.additionalProperties == false
     and ."$defs".errorEnvelope.additionalProperties == false
+    and ."$defs".resolveContextPayload.additionalProperties == false
+    and ."$defs".resolveContextResult.additionalProperties == false
+    and ."$defs".resolveQuestionPayload.additionalProperties == false
+    and ."$defs".resolveQuestionResult.additionalProperties == false
+    and ."$defs".deleteMemoryPayload.additionalProperties == false
+    and ."$defs".deleteMemoryResult.additionalProperties == false
+    and ."$defs".explainMemoryPayload.additionalProperties == false
+    and ."$defs".explainMemoryResult.additionalProperties == false
 ' spec/memory-provider.schema.json >/dev/null
 
 jq -e '
@@ -59,6 +69,25 @@ jq -e '
         and (.pathTemplate | startswith("/v1/"))
     )
 ' spec/examples/memory-provider-discovery.json >/dev/null
+
+jq -e '
+    .protocolVersion == "0.1"
+    and .operation == "resolve_context"
+    and .payload.selector.scope == "entity"
+    and (.payload.maximumItems > 0)
+    and (.payload.maximumBytes > 0)
+' spec/examples/memory-provider-context-request.json >/dev/null
+
+jq -e '
+    .protocolVersion == "0.1"
+    and (.result.items | length > 0)
+    and all(
+        .result.items[];
+        (.version > 0)
+        and (.confidenceMillionths >= 0 and .confidenceMillionths <= 1000000)
+        and (.evidence | length > 0)
+    )
+' spec/examples/memory-provider-context-response.json >/dev/null
 
 jq -e '
     (.resource | startswith("https://"))

@@ -281,6 +281,404 @@
         }
       }
     },
+    "positiveVersion": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "boundedText4096": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096,
+      "pattern": "^[^\\u0000]+$"
+    },
+    "boundedText32768": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 32768,
+      "pattern": "^[^\\u0000]+$"
+    },
+    "idempotencyKey": {
+      "type": "string",
+      "minLength": 16,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9_-]+$"
+    },
+    "memoryKind": {
+      "type": "string",
+      "enum": [
+        "preference",
+        "semantic",
+        "episodic",
+        "procedural",
+        "observation",
+        "working"
+      ]
+    },
+    "evidenceSource": {
+      "type": "string",
+      "enum": [
+        "user_statement",
+        "agent_observation",
+        "tool_result",
+        "imported_record",
+        "workspace_decision"
+      ]
+    },
+    "evidenceReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "evidenceId",
+        "source"
+      ],
+      "properties": {
+        "evidenceId": {
+          "$ref": "#/$defs/safeOpaqueId"
+        },
+        "source": {
+          "$ref": "#/$defs/evidenceSource"
+        }
+      }
+    },
+    "exactMemoryRevision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "memoryId",
+        "version"
+      ],
+      "properties": {
+        "memoryId": {
+          "$ref": "#/$defs/safeOpaqueId"
+        },
+        "version": {
+          "$ref": "#/$defs/positiveVersion"
+        }
+      }
+    },
+    "sensitivity": {
+      "type": "string",
+      "enum": [
+        "personal",
+        "sensitive",
+        "restricted"
+      ]
+    },
+    "disclosureConstraint": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "type": {
+              "enum": [
+                "purpose_bound",
+                "no_training",
+                "no_retention"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "expiresAtEpochSeconds"
+          ],
+          "properties": {
+            "type": {
+              "const": "expires_at"
+            },
+            "expiresAtEpochSeconds": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        }
+      ]
+    },
+    "contextItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "memoryId",
+        "version",
+        "scope",
+        "kind",
+        "content",
+        "evidence",
+        "confidenceMillionths",
+        "sensitivity",
+        "disclosureConstraints"
+      ],
+      "properties": {
+        "memoryId": {
+          "$ref": "#/$defs/safeOpaqueId"
+        },
+        "version": {
+          "$ref": "#/$defs/positiveVersion"
+        },
+        "scope": {
+          "$ref": "#/$defs/selector"
+        },
+        "kind": {
+          "$ref": "#/$defs/memoryKind"
+        },
+        "content": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 262144,
+          "pattern": "^[^\\u0000]+$"
+        },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/evidenceReference"
+          }
+        },
+        "confidenceMillionths": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "validFromEpochSeconds": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "validUntilEpochSeconds": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "sensitivity": {
+          "$ref": "#/$defs/sensitivity"
+        },
+        "disclosureConstraints": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/disclosureConstraint"
+          }
+        }
+      }
+    },
+    "resolveContextPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "purpose",
+        "query",
+        "selector",
+        "maximumItems",
+        "maximumBytes"
+      ],
+      "properties": {
+        "purpose": {
+          "$ref": "#/$defs/boundedText4096"
+        },
+        "query": {
+          "$ref": "#/$defs/boundedText32768"
+        },
+        "selector": {
+          "$ref": "#/$defs/selector"
+        },
+        "maximumItems": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "maximumBytes": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "resolveContextResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contextPackId",
+        "disclosureId",
+        "items"
+      ],
+      "properties": {
+        "contextPackId": {
+          "$ref": "#/$defs/safeOpaqueId"
+        },
+        "disclosureId": {
+          "$ref": "#/$defs/safeOpaqueId"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/contextItem"
+          }
+        }
+      }
+    },
+    "resolveQuestionPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "purpose",
+        "question",
+        "selector",
+        "maximumSupportingItems",
+        "maximumAnswerBytes"
+      ],
+      "properties": {
+        "purpose": {
+          "$ref": "#/$defs/boundedText4096"
+        },
+        "question": {
+          "$ref": "#/$defs/boundedText32768"
+        },
+        "selector": {
+          "$ref": "#/$defs/selector"
+        },
+        "maximumSupportingItems": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "maximumAnswerBytes": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "resolveQuestionResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "answer",
+        "supportingMemories",
+        "contextPackId",
+        "disclosureId"
+      ],
+      "properties": {
+        "answer": {
+          "$ref": "#/$defs/boundedText32768"
+        },
+        "supportingMemories": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/exactMemoryRevision"
+          }
+        },
+        "contextPackId": {
+          "$ref": "#/$defs/safeOpaqueId"
+        },
+        "disclosureId": {
+          "$ref": "#/$defs/safeOpaqueId"
+        }
+      }
+    },
+    "deleteMemoryPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "idempotencyKey",
+        "memoryId",
+        "expectedVersion",
+        "reason"
+      ],
+      "properties": {
+        "idempotencyKey": {
+          "$ref": "#/$defs/idempotencyKey"
+        },
+        "memoryId": {
+          "$ref": "#/$defs/safeOpaqueId"
+        },
+        "expectedVersion": {
+          "$ref": "#/$defs/positiveVersion"
+        },
+        "reason": {
+          "$ref": "#/$defs/boundedText4096"
+        }
+      }
+    },
+    "deleteMemoryResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "memoryId",
+        "deletedVersion",
+        "tombstoneVersion"
+      ],
+      "properties": {
+        "memoryId": {
+          "$ref": "#/$defs/safeOpaqueId"
+        },
+        "deletedVersion": {
+          "$ref": "#/$defs/positiveVersion"
+        },
+        "tombstoneVersion": {
+          "$ref": "#/$defs/positiveVersion"
+        }
+      }
+    },
+    "explainMemoryPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "memoryId",
+        "version",
+        "purpose"
+      ],
+      "properties": {
+        "memoryId": {
+          "$ref": "#/$defs/safeOpaqueId"
+        },
+        "version": {
+          "$ref": "#/$defs/positiveVersion"
+        },
+        "purpose": {
+          "$ref": "#/$defs/boundedText4096"
+        }
+      }
+    },
+    "explainMemoryResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "memoryId",
+        "version",
+        "explanation",
+        "evidence"
+      ],
+      "properties": {
+        "memoryId": {
+          "$ref": "#/$defs/safeOpaqueId"
+        },
+        "version": {
+          "$ref": "#/$defs/positiveVersion"
+        },
+        "explanation": {
+          "$ref": "#/$defs/boundedText32768"
+        },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1000,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/evidenceReference"
+          }
+        }
+      }
+    },
     "requestEnvelope": {
       "type": "object",
       "additionalProperties": false,
