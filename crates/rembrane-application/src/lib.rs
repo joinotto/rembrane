@@ -16,6 +16,7 @@ mod remember_preference;
 mod resolve_context;
 mod revise_memory;
 mod semantic_context;
+mod share_memory;
 
 pub use authorize_client::{AuthorizeClientCommand, AuthorizeClientService, ClientGrantBundle};
 pub use checkpoint::{
@@ -31,7 +32,8 @@ pub use ports::{
     CanonicalMutationRepository, CheckpointDisclosureRepository, CheckpointMutationRepository,
     CheckpointRepository, DisclosureRepository, EventRepository, InvitationRepository,
     MemberLifecycleRepository, MemberScopeGrantRepository, MembershipRepository, MemoryRepository,
-    ProjectionOutboxRepository, ShareProposalRepository, WorkspaceRepository,
+    ProjectionOutboxRepository, ShareProposalMutationRepository, ShareProposalRepository,
+    WorkspaceRepository,
 };
 pub use projection_worker::{ProjectionOutcome, ProjectionWorker};
 pub use propose_memory::{ConfirmMemoryCommand, MemoryProposalService, ProposeMemoryCommand};
@@ -39,3 +41,6 @@ pub use remember_preference::{RememberPreferenceCommand, RememberPreferenceServi
 pub use resolve_context::{ResolveContextCommand, ResolveContextService};
 pub use revise_memory::{DeleteMemoryCommand, MemoryLifecycleService, ReviseMemoryCommand};
 pub use semantic_context::SemanticContextService;
+pub use share_memory::{
+    ApproveShareProposalCommand, CreateShareProposalCommand, MemoryShareService,
+};

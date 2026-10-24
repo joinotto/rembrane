@@ -86,6 +86,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Canonical share-proposal, approval, rejection, revocation, and target-copy
   audit events using event wire format v2 while preserving byte-identical v1
   encoding for all pre-existing event variants.
+- Dual-workspace memory-share application service and atomic in-memory
+  transaction contract, binding source and target grants to one principal and
+  client while committing approval, target copy, audit events, and projections
+  together.
 - Versioned discovery, OpenAPI, and MCP protocol specifications.
 - Tenant-isolated SQLite canonical schema with encrypted-payload metadata.
 - Versioned SQLite initialization with legacy-schema adoption, idempotent

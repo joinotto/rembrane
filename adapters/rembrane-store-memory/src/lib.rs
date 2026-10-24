@@ -4,15 +4,15 @@ use rembrane_application::{
     ApplicationError, CanonicalMutationRepository, CheckpointDisclosureRepository,
     CheckpointMutationRepository, CheckpointRepository, DisclosureRepository, EventRepository,
     InvitationRepository, MemberLifecycleRepository, MemberScopeGrantRepository,
-    MembershipRepository, MemoryRepository, ProjectionOutboxRepository, ShareProposalRepository,
-    WorkspaceRepository,
+    MembershipRepository, MemoryRepository, ProjectionOutboxRepository,
+    ShareProposalMutationRepository, ShareProposalRepository, WorkspaceRepository,
 };
 use rembrane_domain::{
     ActivityCheckpoint, ActivityId, CanonicalEvent, CheckpointDisclosureReceipt, DisclosureReceipt,
-    Invitation, InvitationId, InvitationStatus, MemberScopeGrant, Membership, MemoryId,
-    MemoryRecord, MemoryShareProposal, MemoryStatus, Principal, PrincipalId, ProjectionJob,
-    ProjectionJobId, ProjectionOperation, ProjectionStatus, ProviderId, ShareProposalId,
-    ShareProposalStatus, Workspace, WorkspaceId, WorkspaceKind, WorkspaceRole,
+    EventPayload, Invitation, InvitationId, InvitationStatus, MemberScopeGrant, Membership,
+    MemoryId, MemoryRecord, MemoryShareProposal, MemoryStatus, Principal, PrincipalId,
+    ProjectionJob, ProjectionJobId, ProjectionOperation, ProjectionStatus, ProviderId,
+    ShareProposalId, ShareProposalStatus, Workspace, WorkspaceId, WorkspaceKind, WorkspaceRole,
 };
 
 #[derive(Debug, Default)]
@@ -508,39 +508,7 @@ impl ShareProposalRepository for InMemoryStore {
         &mut self,
         proposal: MemoryShareProposal,
     ) -> Result<(), ApplicationError> {
-        if self.share_proposals.iter().any(|stored| {
-            stored.source_workspace_id() == proposal.source_workspace_id()
-                && stored.id() == proposal.id()
-        }) {
-            return Err(ApplicationError::AlreadyExists);
-        }
-        let source = self
-            .memories
-            .iter()
-            .find(|memory| {
-                memory.workspace_id() == proposal.source_workspace_id()
-                    && memory.id() == proposal.source_memory_id()
-            })
-            .ok_or(ApplicationError::NotFound)?;
-        if source.version() != proposal.source_memory_version()
-            || source.subject_id() != proposal.source_subject_id()
-            || source.status() != MemoryStatus::Confirmed
-        {
-            return Err(ApplicationError::VersionConflict);
-        }
-        if !self.workspaces.iter().any(|workspace| {
-            workspace.id() == proposal.source_workspace_id()
-                && workspace.kind() == WorkspaceKind::Personal
-        }) || !self.workspaces.iter().any(|workspace| {
-            workspace.id() == proposal.target_workspace_id()
-                && workspace.kind() == WorkspaceKind::Shared
-        }) || !self
-            .principals
-            .iter()
-            .any(|principal| principal.id() == proposal.proposed_by())
-        {
-            return Err(ApplicationError::NotFound);
-        }
+        self.validate_share_proposal_insert(&proposal)?;
         self.share_proposals.push(proposal);
         Ok(())
     }
@@ -600,6 +568,86 @@ impl ShareProposalRepository for InMemoryStore {
             return Err(ApplicationError::VersionConflict);
         }
         *stored = proposal;
+        Ok(())
+    }
+}
+
+impl ShareProposalMutationRepository for InMemoryStore {
+    fn insert_share_proposal_with_event(
+        &mut self,
+        proposal: MemoryShareProposal,
+        event: CanonicalEvent,
+        expected_previous_sequence: u64,
+    ) -> Result<(), ApplicationError> {
+        self.validate_share_proposal_insert(&proposal)?;
+        validate_share_proposed_event(&proposal, &event)?;
+        self.validate_event(&event, expected_previous_sequence)?;
+
+        self.share_proposals.push(proposal);
+        self.events.push(event);
+        Ok(())
+    }
+
+    fn approve_share_proposal_with_copy(
+        &mut self,
+        proposal: MemoryShareProposal,
+        expected_status: ShareProposalStatus,
+        target_memory: MemoryRecord,
+        source_event: CanonicalEvent,
+        target_event: CanonicalEvent,
+        projections: Vec<ProjectionJob>,
+        expected_source_sequence: u64,
+        expected_target_sequence: u64,
+    ) -> Result<(), ApplicationError> {
+        let position = self
+            .share_proposals
+            .iter()
+            .position(|stored| {
+                stored.source_workspace_id() == proposal.source_workspace_id()
+                    && stored.id() == proposal.id()
+            })
+            .ok_or(ApplicationError::NotFound)?;
+        let stored = &self.share_proposals[position];
+        if stored.status() != expected_status
+            || proposal.status() != ShareProposalStatus::Approved
+            || !same_share_proposal_identity(stored, &proposal)
+        {
+            return Err(ApplicationError::VersionConflict);
+        }
+        let source = self
+            .memories
+            .iter()
+            .find(|memory| {
+                memory.workspace_id() == proposal.source_workspace_id()
+                    && memory.id() == proposal.source_memory_id()
+            })
+            .ok_or(ApplicationError::NotFound)?;
+        if source.version() != proposal.source_memory_version()
+            || source.subject_id() != proposal.source_subject_id()
+            || source.status() != MemoryStatus::Confirmed
+        {
+            return Err(ApplicationError::VersionConflict);
+        }
+        validate_shared_copy(&proposal, source, &target_memory)?;
+        validate_share_approval_events(&proposal, &target_memory, &source_event, &target_event)?;
+        if self.memories.iter().any(|memory| {
+            memory.workspace_id() == target_memory.workspace_id()
+                && memory.id() == target_memory.id()
+        }) {
+            return Err(ApplicationError::AlreadyExists);
+        }
+        self.validate_event(&source_event, expected_source_sequence)?;
+        self.validate_event(&target_event, expected_target_sequence)?;
+        if source_event.id() == target_event.id() {
+            return Err(ApplicationError::AlreadyExists);
+        }
+        self.validate_projections(&target_memory, &projections)?;
+
+        self.share_proposals[position] = proposal;
+        self.memories.push(target_memory);
+        self.events.push(source_event);
+        self.events.push(target_event);
+        self.projections.extend(projections);
         Ok(())
     }
 }
@@ -818,6 +866,51 @@ impl EventRepository for InMemoryStore {
 }
 
 impl InMemoryStore {
+    fn validate_share_proposal_insert(
+        &self,
+        proposal: &MemoryShareProposal,
+    ) -> Result<(), ApplicationError> {
+        if proposal.status() != ShareProposalStatus::Pending {
+            return Err(ApplicationError::Validation(
+                "new share proposal must be pending".to_owned(),
+            ));
+        }
+        if self.share_proposals.iter().any(|stored| {
+            stored.source_workspace_id() == proposal.source_workspace_id()
+                && stored.id() == proposal.id()
+        }) {
+            return Err(ApplicationError::AlreadyExists);
+        }
+        let source = self
+            .memories
+            .iter()
+            .find(|memory| {
+                memory.workspace_id() == proposal.source_workspace_id()
+                    && memory.id() == proposal.source_memory_id()
+            })
+            .ok_or(ApplicationError::NotFound)?;
+        if source.version() != proposal.source_memory_version()
+            || source.subject_id() != proposal.source_subject_id()
+            || source.status() != MemoryStatus::Confirmed
+        {
+            return Err(ApplicationError::VersionConflict);
+        }
+        if !self.workspaces.iter().any(|workspace| {
+            workspace.id() == proposal.source_workspace_id()
+                && workspace.kind() == WorkspaceKind::Personal
+        }) || !self.workspaces.iter().any(|workspace| {
+            workspace.id() == proposal.target_workspace_id()
+                && workspace.kind() == WorkspaceKind::Shared
+        }) || !self
+            .principals
+            .iter()
+            .any(|principal| principal.id() == proposal.proposed_by())
+        {
+            return Err(ApplicationError::NotFound);
+        }
+        Ok(())
+    }
+
     fn validate_event(
         &self,
         event: &CanonicalEvent,
@@ -883,6 +976,117 @@ impl InMemoryStore {
 
         Ok(())
     }
+}
+
+fn same_share_proposal_identity(left: &MemoryShareProposal, right: &MemoryShareProposal) -> bool {
+    left.source_workspace_id() == right.source_workspace_id()
+        && left.id() == right.id()
+        && left.source_memory_id() == right.source_memory_id()
+        && left.source_memory_version() == right.source_memory_version()
+        && left.source_subject_id() == right.source_subject_id()
+        && left.target_workspace_id() == right.target_workspace_id()
+        && left.target_scope() == right.target_scope()
+        && left.proposed_by() == right.proposed_by()
+}
+
+fn validate_share_proposed_event(
+    proposal: &MemoryShareProposal,
+    event: &CanonicalEvent,
+) -> Result<(), ApplicationError> {
+    let valid_payload = matches!(
+        event.payload(),
+        EventPayload::MemoryShareProposed {
+            proposal_id,
+            source_memory_id,
+            source_version,
+            target_workspace_id,
+        } if proposal_id == proposal.id()
+            && source_memory_id == proposal.source_memory_id()
+            && *source_version == proposal.source_memory_version()
+            && target_workspace_id == proposal.target_workspace_id()
+    );
+    if proposal.status() != ShareProposalStatus::Pending
+        || event.workspace_id() != proposal.source_workspace_id()
+        || event.actor_id() != proposal.proposed_by()
+        || event.subject_id() != Some(proposal.source_subject_id())
+        || !valid_payload
+    {
+        return Err(ApplicationError::Validation(
+            "event does not describe share proposal creation".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_shared_copy(
+    proposal: &MemoryShareProposal,
+    source: &MemoryRecord,
+    target: &MemoryRecord,
+) -> Result<(), ApplicationError> {
+    let evidence_preserved = target.evidence().len() == source.evidence().len().saturating_add(1)
+        && target.evidence().starts_with(source.evidence());
+    if target.workspace_id() != proposal.target_workspace_id()
+        || target.subject_id() != proposal.source_subject_id()
+        || target.scope() != proposal.target_scope()
+        || target.kind() != source.kind()
+        || target.status() != MemoryStatus::Confirmed
+        || target.version() != 1
+        || target.content() != source.content()
+        || !evidence_preserved
+    {
+        return Err(ApplicationError::Validation(
+            "target memory is not an approved copy of the exact source".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_share_approval_events(
+    proposal: &MemoryShareProposal,
+    target: &MemoryRecord,
+    source_event: &CanonicalEvent,
+    target_event: &CanonicalEvent,
+) -> Result<(), ApplicationError> {
+    let source_payload = matches!(
+        source_event.payload(),
+        EventPayload::MemoryShareApproved {
+            proposal_id,
+            target_workspace_id,
+            target_memory_id,
+        } if proposal_id == proposal.id()
+            && target_workspace_id == proposal.target_workspace_id()
+            && target_memory_id == target.id()
+    );
+    let target_payload = matches!(
+        target_event.payload(),
+        EventPayload::MemorySharedIn {
+            proposal_id,
+            source_workspace_id,
+            source_memory_id,
+            source_version,
+            target_memory_id,
+            target_version,
+        } if proposal_id == proposal.id()
+            && source_workspace_id == proposal.source_workspace_id()
+            && source_memory_id == proposal.source_memory_id()
+            && *source_version == proposal.source_memory_version()
+            && target_memory_id == target.id()
+            && *target_version == target.version()
+    );
+    if source_event.workspace_id() != proposal.source_workspace_id()
+        || target_event.workspace_id() != proposal.target_workspace_id()
+        || source_event.actor_id() != proposal.source_subject_id()
+        || target_event.actor_id() != proposal.source_subject_id()
+        || source_event.subject_id() != Some(proposal.source_subject_id())
+        || target_event.subject_id() != Some(proposal.source_subject_id())
+        || !source_payload
+        || !target_payload
+    {
+        return Err(ApplicationError::Validation(
+            "events do not describe atomic share approval".to_owned(),
+        ));
+    }
+    Ok(())
 }
 
 #[cfg(test)]

@@ -157,6 +157,29 @@ pub trait ShareProposalRepository {
     ) -> Result<(), ApplicationError>;
 }
 
+pub trait ShareProposalMutationRepository:
+    ShareProposalRepository + MemoryRepository + EventRepository
+{
+    fn insert_share_proposal_with_event(
+        &mut self,
+        proposal: MemoryShareProposal,
+        event: CanonicalEvent,
+        expected_previous_sequence: u64,
+    ) -> Result<(), ApplicationError>;
+
+    fn approve_share_proposal_with_copy(
+        &mut self,
+        proposal: MemoryShareProposal,
+        expected_status: ShareProposalStatus,
+        target_memory: MemoryRecord,
+        source_event: CanonicalEvent,
+        target_event: CanonicalEvent,
+        projections: Vec<ProjectionJob>,
+        expected_source_sequence: u64,
+        expected_target_sequence: u64,
+    ) -> Result<(), ApplicationError>;
+}
+
 pub trait MemberScopeGrantRepository {
     fn insert_member_scope_grant(
         &mut self,

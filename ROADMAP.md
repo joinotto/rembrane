@@ -102,6 +102,7 @@ This roadmap describes sequencing, not release dates.
   - [x] Tenant-scoped SQLite persistence with exact-source and workspace-kind
     constraints.
   - [x] Versioned canonical audit events and approved target-copy construction.
+  - [x] Dual-workspace authorization and atomic in-memory reference transaction.
   - [ ] Atomic persisted approval and target-workspace copy.
 - [x] Authorized member removal with atomic scope-grant cleanup.
 - [ ] Group key rotation after membership changes.
