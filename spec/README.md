@@ -38,7 +38,9 @@ canonical Rembrane core and replaceable semantic providers such as native,
 Mem0, or Graphiti adapters. Providers declare their protocol version, explicit
 capabilities, plaintext-processing behavior, and hard request limits. Missing
 security capabilities, incompatible protocol versions, and zero limits fail
-closed before projection work begins.
+closed before projection work begins. Rust manifests enforce the same provider
+identifier, version, capability uniqueness, and non-zero limit constraints as
+the JSON Schema.
 
 Rust adapters can run `verify_semantic_provider` from
 `rembrane-provider-sdk` against a disposable provider instance or tenant. The

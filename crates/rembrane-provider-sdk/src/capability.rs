@@ -49,6 +49,54 @@ pub struct ProviderManifest {
 }
 
 impl ProviderManifest {
+    pub fn validate_structure(&self) -> Result<(), ProviderError> {
+        if self.id.len() < 2
+            || self.id.len() > 255
+            || !self
+                .id
+                .bytes()
+                .enumerate()
+                .all(|(index, byte)| {
+                    byte.is_ascii_lowercase()
+                        || byte.is_ascii_digit()
+                        || (index > 0 && matches!(byte, b'.' | b'_' | b'-'))
+                })
+        {
+            return Err(ProviderError::InvalidConfiguration(
+                "provider id must match ^[a-z0-9][a-z0-9._-]+$".to_owned(),
+            ));
+        }
+        if self.version.trim().is_empty() || self.version.len() > 100 {
+            return Err(ProviderError::InvalidConfiguration(
+                "provider version must contain 1 to 100 characters".to_owned(),
+            ));
+        }
+        if self.capabilities.is_empty() {
+            return Err(ProviderError::InvalidConfiguration(
+                "provider must declare at least one capability".to_owned(),
+            ));
+        }
+        if self
+            .capabilities
+            .iter()
+            .enumerate()
+            .any(|(index, capability)| self.capabilities[..index].contains(capability))
+        {
+            return Err(ProviderError::InvalidConfiguration(
+                "provider capabilities must be unique".to_owned(),
+            ));
+        }
+        if self.limits.maximum_batch_items == 0
+            || self.limits.maximum_content_bytes == 0
+            || self.limits.maximum_candidates == 0
+        {
+            return Err(ProviderError::InvalidConfiguration(
+                "provider limits must be greater than zero".to_owned(),
+            ));
+        }
+        Ok(())
+    }
+
     #[must_use]
     pub fn missing_capabilities(&self, required: &[Capability]) -> Vec<Capability> {
         required
@@ -103,6 +151,7 @@ pub struct ProviderPolicy {
 
 impl ProviderPolicy {
     pub fn validate(&self, provider: &ProviderManifest) -> Result<(), ProviderError> {
+        provider.validate_structure()?;
         if !provider
             .protocol_version
             .is_compatible_with(self.minimum_protocol_version)
@@ -113,14 +162,6 @@ impl ProviderPolicy {
                 offered_major: provider.protocol_version.major,
                 offered_minor: provider.protocol_version.minor,
             });
-        }
-        if provider.limits.maximum_batch_items == 0
-            || provider.limits.maximum_content_bytes == 0
-            || provider.limits.maximum_candidates == 0
-        {
-            return Err(ProviderError::InvalidConfiguration(
-                "provider limits must be greater than zero".to_owned(),
-            ));
         }
         let missing = provider.missing_capabilities(&self.required_capabilities);
         if let Some(capability) = missing.first() {
@@ -292,6 +333,41 @@ mod tests {
             ),
             Err(ProviderError::Rejected(
                 "provider returned an invalid candidate".to_owned()
+            ))
+        );
+    }
+
+    #[test]
+    fn rejects_manifest_structure_that_json_schema_forbids() {
+        let malformed = ProviderManifest {
+            id: "Invalid Provider".to_owned(),
+            version: " ".to_owned(),
+            protocol_version: CURRENT_PROVIDER_PROTOCOL,
+            capabilities: vec![Capability::Search, Capability::Search],
+            plaintext_processing: false,
+            limits: ProviderLimits {
+                maximum_batch_items: 1,
+                maximum_content_bytes: 1,
+                maximum_candidates: 1,
+            },
+        };
+
+        assert_eq!(
+            malformed.validate_structure(),
+            Err(ProviderError::InvalidConfiguration(
+                "provider id must match ^[a-z0-9][a-z0-9._-]+$".to_owned()
+            ))
+        );
+
+        let duplicate_capabilities = ProviderManifest {
+            id: "valid.provider".to_owned(),
+            version: "1.0.0".to_owned(),
+            ..malformed
+        };
+        assert_eq!(
+            duplicate_capabilities.validate_structure(),
+            Err(ProviderError::InvalidConfiguration(
+                "provider capabilities must be unique".to_owned()
             ))
         );
     }

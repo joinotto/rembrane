@@ -49,6 +49,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Evidence-backed provider compatibility registry with a versioned JSON
   Schema, pinned source revisions, explicit deployment/privacy boundaries,
   dated conformance results, and static duplicate/evidence validation.
+- Structural validation parity between Rust provider manifests and the public
+  JSON Schema, including provider IDs, versions, unique capabilities, and
+  non-zero limits.
 - Versioned discovery, OpenAPI, and MCP protocol specifications.
 - Tenant-isolated SQLite canonical schema with encrypted-payload metadata.
 - Versioned SQLite initialization with legacy-schema adoption, idempotent
