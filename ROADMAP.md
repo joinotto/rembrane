@@ -85,6 +85,8 @@ This roadmap describes sequencing, not release dates.
     parsing, trusted-origin checks, fail-closed tool lookup, and per-request
     reauthentication.
   - [ ] Integrate the authorization middleware with the HTTP server adapter.
+  - [x] Allow the shared MCP handler service to initialize canonical
+    subject/client/workspace identity exclusively from verified remote claims.
   - [ ] Serve Streamable HTTP through the official Rust MCP SDK.
   - [ ] Add OAuth and cross-tenant transport integration tests.
   - [x] Add a hardened Cloudflare Tunnel Compose overlay that keeps persistent

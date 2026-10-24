@@ -14,7 +14,7 @@ use rembrane_application::{
     UpdateCheckpointCommand,
 };
 use rembrane_config::{parse_read_permissions, parse_read_scopes};
-use rembrane_contracts::ResolveContextRequest;
+use rembrane_contracts::{ResolveContextRequest, VerifiedRemoteAccess};
 use rembrane_crypto_rustcrypto::RustCryptoRecordCipher;
 use rembrane_domain::{
     ActivityCheckpoint, ActivityId, BookingResearch, BookingResearchId, BookingResearchKind,
@@ -331,6 +331,31 @@ impl RembraneMcp {
         let principal_id = PrincipalId::new(required_environment("REMBRANE_PRINCIPAL_ID")?);
         let workspace_id = WorkspaceId::new(required_environment("REMBRANE_WORKSPACE_ID")?);
         let client_id = ClientId::new(required_environment("REMBRANE_CLIENT_ID")?);
+        Self::from_connection(database, principal_id, workspace_id, client_id)
+    }
+
+    /// Builds an MCP service whose canonical identity comes exclusively from
+    /// verified remote access claims.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when storage, encryption, configured scope policy, or
+    /// canonical workspace authorization cannot be initialized.
+    pub fn from_verified_remote_access(access: &VerifiedRemoteAccess) -> Result<Self> {
+        Self::from_connection(
+            required_environment("REMBRANE_DATABASE")?,
+            access.subject_id().clone(),
+            access.workspace_id().clone(),
+            access.client_id().clone(),
+        )
+    }
+
+    fn from_connection(
+        database: String,
+        principal_id: PrincipalId,
+        workspace_id: WorkspaceId,
+        client_id: ClientId,
+    ) -> Result<Self> {
         let cipher = RustCryptoRecordCipher::from_environment()
             .context("failed to load workspace cipher")?;
         let read_scopes = parse_read_scopes(
