@@ -341,14 +341,19 @@ Enroll the device using environment-only raw identifiers, then start the
 loopback-published gateway behind a deployment-owned HTTPS proxy:
 
 ```sh
+install -m 600 /dev/null .rembrane-mobile-share-signing
+install -m 600 /dev/null .rembrane-mobile-share-binding
+openssl rand -hex 32 > .rembrane-mobile-share-signing
+openssl rand -hex 32 > .rembrane-mobile-share-binding
 export REMBRANE_MOBILE_SHARE_ACCOUNT_ID='<opaque account id>'
 export REMBRANE_MOBILE_SHARE_DEVICE_ID='<opaque device id>'
-export REMBRANE_MOBILE_SHARE_BINDING_LOOKUP_SECRET='<stable random secret>'
+export REMBRANE_MOBILE_SHARE_BINDING_LOOKUP_SECRET_REFERENCE="file:$PWD/.rembrane-mobile-share-binding"
 rembrane channel bind-mobile-share --database ./rembrane.db \
   --principal owner_01 --workspace workspace_01 --subject owner_01 \
   --client ios_share_01 --request request_01
 
-export REMBRANE_MOBILE_SHARE_SIGNING_SECRET='<distinct random secret>'
+export REMBRANE_MOBILE_SHARE_SIGNING_SECRET_FILE="$PWD/.rembrane-mobile-share-signing"
+export REMBRANE_MOBILE_SHARE_BINDING_LOOKUP_SECRET_FILE="$PWD/.rembrane-mobile-share-binding"
 docker compose -f compose.yaml -f compose.mobile-share.yaml up -d \
   rembrane rembrane-mobile-share-gateway
 ```
@@ -374,6 +379,10 @@ The shipped resolver accepts `env:` and protected `file:` locators and fails
 closed for unsupported external providers. Resolved values are zeroized after
 the gateway derives its purpose-specific HMAC keys. Both credentials are
 bounded to 32–4096 bytes and reference reuse is rejected.
+
+The stock Compose overlay mounts both credentials as owner-only secret files
+and exposes only their locators to the gateway process. This keeps signing and
+pseudonymization keys out of rendered Compose environment metadata.
 
 The Swift package includes `CryptoKitMobileShareSigner`; load its secret from
 an app-group-accessible Keychain item shared with the extension, never from

@@ -9,6 +9,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- Owner-only mobile-share Compose secrets for request signing and stable
+  account/device pseudonymization credentials.
 - Owner-only WhatsApp and channel-processor Compose secrets for webhook
   authentication, sender pseudonymization, subscription verification, and
   downstream delivery credentials.

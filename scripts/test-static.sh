@@ -153,6 +153,13 @@ rg -q 'rembrane-channel-worker' compose.whatsapp.yaml
 rg -q '127\.0\.0\.1:8791:8791' compose.mobile-share.yaml
 rg -q 'REMBRANE_MOBILE_SHARE_SIGNING_SECRET_REFERENCE' compose.mobile-share.yaml
 rg -q 'REMBRANE_MOBILE_SHARE_BINDING_LOOKUP_SECRET_REFERENCE' compose.mobile-share.yaml
+rg -q 'REMBRANE_MOBILE_SHARE_SIGNING_SECRET_FILE' compose.mobile-share.yaml
+rg -q 'REMBRANE_MOBILE_SHARE_BINDING_LOOKUP_SECRET_FILE' compose.mobile-share.yaml
+if rg -q '^[[:space:]]+(REMBRANE_MOBILE_SHARE_SIGNING_SECRET|REMBRANE_MOBILE_SHARE_BINDING_LOOKUP_SECRET):' \
+    compose.mobile-share.yaml; then
+    echo "mobile-share Compose must not interpolate raw gateway credentials" >&2
+    exit 1
+fi
 rg -q 'REMBRANE_KEY_PROVIDER_TOKEN_REFERENCE' compose.mobile-share.yaml
 rg -q 'REMBRANE_API_TOKEN_REFERENCE' compose.yaml
 rg -q 'no-new-privileges:true' compose.whatsapp.yaml
@@ -196,6 +203,15 @@ if command -v docker >/dev/null 2>&1; then
     REMBRANE_CHANNEL_PROCESSOR_URL=https://processor.example \
     REMBRANE_CHANNEL_PROCESSOR_TOKEN_FILE=/tmp/rembrane-static-channel-processor-token \
         docker compose -f compose.yaml -f compose.whatsapp.yaml config --quiet
+    REMBRANE_PRINCIPAL_ID=principal_static \
+    REMBRANE_WORKSPACE_ID=workspace_static \
+    REMBRANE_CLIENT_ID=client_static \
+    REMBRANE_WORKSPACE_KEY_ID=key_static \
+    REMBRANE_WORKSPACE_KEY_FILE=/tmp/rembrane-static-workspace-key \
+    REMBRANE_API_TOKEN_FILE=/tmp/rembrane-static-api-token \
+    REMBRANE_MOBILE_SHARE_SIGNING_SECRET_FILE=/tmp/rembrane-static-mobile-signing \
+    REMBRANE_MOBILE_SHARE_BINDING_LOOKUP_SECRET_FILE=/tmp/rembrane-static-mobile-binding \
+        docker compose -f compose.yaml -f compose.mobile-share.yaml config --quiet
 fi
 
 echo "all static Rembrane checks passed"

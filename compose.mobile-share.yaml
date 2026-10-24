@@ -7,10 +7,8 @@ services:
       - rembrane-mobile-share-gateway
     environment:
       REMBRANE_DATABASE: /var/lib/rembrane/rembrane.db
-      REMBRANE_MOBILE_SHARE_SIGNING_SECRET: ${REMBRANE_MOBILE_SHARE_SIGNING_SECRET:-}
-      REMBRANE_MOBILE_SHARE_SIGNING_SECRET_REFERENCE: ${REMBRANE_MOBILE_SHARE_SIGNING_SECRET_REFERENCE:-}
-      REMBRANE_MOBILE_SHARE_BINDING_LOOKUP_SECRET: ${REMBRANE_MOBILE_SHARE_BINDING_LOOKUP_SECRET:-}
-      REMBRANE_MOBILE_SHARE_BINDING_LOOKUP_SECRET_REFERENCE: ${REMBRANE_MOBILE_SHARE_BINDING_LOOKUP_SECRET_REFERENCE:-}
+      REMBRANE_MOBILE_SHARE_SIGNING_SECRET_REFERENCE: file:/run/secrets/rembrane_mobile_share_signing
+      REMBRANE_MOBILE_SHARE_BINDING_LOOKUP_SECRET_REFERENCE: file:/run/secrets/rembrane_mobile_share_binding_lookup
       REMBRANE_MOBILE_SHARE_MAXIMUM_EVENT_AGE_SECONDS: ${REMBRANE_MOBILE_SHARE_MAXIMUM_EVENT_AGE_SECONDS:-300}
       REMBRANE_MOBILE_SHARE_REPLAY_WINDOW_SECONDS: ${REMBRANE_MOBILE_SHARE_REPLAY_WINDOW_SECONDS:-604800}
       REMBRANE_MOBILE_SHARE_MAXIMUM_REPLAY_EVENTS: ${REMBRANE_MOBILE_SHARE_MAXIMUM_REPLAY_EVENTS:-100000}
@@ -33,6 +31,16 @@ services:
         uid: "10001"
         gid: "10001"
         mode: 0400
+      - source: rembrane_mobile_share_signing
+        target: rembrane_mobile_share_signing
+        uid: "10001"
+        gid: "10001"
+        mode: 0400
+      - source: rembrane_mobile_share_binding_lookup
+        target: rembrane_mobile_share_binding_lookup
+        uid: "10001"
+        gid: "10001"
+        mode: 0400
     ports:
       - "127.0.0.1:8791:8791"
     volumes:
@@ -41,3 +49,9 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
+
+secrets:
+  rembrane_mobile_share_signing:
+    file: ${REMBRANE_MOBILE_SHARE_SIGNING_SECRET_FILE:?required}
+  rembrane_mobile_share_binding_lookup:
+    file: ${REMBRANE_MOBILE_SHARE_BINDING_LOOKUP_SECRET_FILE:?required}

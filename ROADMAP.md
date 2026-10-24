@@ -748,6 +748,8 @@ This roadmap describes sequencing, not release dates.
       validated environment or protected-file references.
   - [x] Package the mobile-share gateway in a loopback-only hardened Compose
     overlay with no broad memory API credential or default principal.
+    - [x] Mount mobile signing and binding-pseudonym credentials as owner-only
+      files without raw Compose environment interpolation.
   - [x] Extend the Swift package with an injectable device-held signer and
     explicit-share client that targets the narrow gateway without a memory API
     bearer token.
