@@ -557,6 +557,8 @@ No stable release until:
   dependency, Postman, PostgreSQL, or container gates rather than skipping.
 - [x] Run scheduled and change-triggered CodeQL analysis for Rust,
   JavaScript/TypeScript, and Python.
+- [x] Reject pull requests introducing moderate-or-higher known dependency
+  vulnerabilities or incompatible strong-copyleft/server-side licenses.
 - [x] Tenant-isolation tests cover every implemented adapter and transport
   read path.
 - [x] Threat model and recovery model are published.

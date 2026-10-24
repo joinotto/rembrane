@@ -89,6 +89,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   with explicit failure for unavailable required infrastructure.
 - Added pull-request, main-branch, and scheduled CodeQL analysis for Rust,
   JavaScript/TypeScript, and Python vulnerability patterns.
+- Added pull-request dependency review that blocks moderate-or-higher known
+  vulnerabilities and incompatible AGPL/SSPL dependency licenses.
 - A versioned per-workspace retention policy contract with separate periods
   for memory, checkpoints, travel research, disclosures, canonical events, and
   administrative audit, including bounded expiry and legal-hold overrides.
