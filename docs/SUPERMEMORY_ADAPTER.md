@@ -44,6 +44,10 @@ The namespace lookup secret is independent from the API credential. The
 derived namespace must match Supermemory's documented 100-character safe
 pattern and must not reveal the canonical workspace ID. Namespace and document
 pseudonyms use distinct HMAC domain labels.
+`SupermemorySemanticProvider::from_connection` accepts a validated
+Supermemory profile with exactly two ordered references—API key first,
+independent workspace lookup secret second—and resolves both through the
+deployment-selected `SecretResolver`.
 
 The adapter validates generated namespaces against the documented ASCII
 letters, digits, underscore, colon, and hyphen alphabet before transport use.

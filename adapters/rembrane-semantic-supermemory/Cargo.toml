@@ -8,8 +8,10 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+rembrane-config = { path = "../../crates/rembrane-config" }
 rembrane-domain = { path = "../../crates/rembrane-domain" }
 rembrane-provider-sdk = { path = "../../crates/rembrane-provider-sdk" }
+rembrane-secret-local = { path = "../rembrane-secret-local" }
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 ring = "0.17"
 serde = { version = "1", features = ["derive"] }

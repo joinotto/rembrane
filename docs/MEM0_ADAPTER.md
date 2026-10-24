@@ -41,6 +41,10 @@ let provider = Mem0SemanticProvider::from_http(
 
 Resolve both secrets from the operator's keychain, vault, container secret, or
 cloud secret manager. Never reuse the API key as the workspace lookup secret.
+`Mem0SemanticProvider::from_connection` accepts a validated Mem0 profile with
+exactly two ordered references—API key first, independent workspace lookup
+secret second—and resolves both through the deployment-selected
+`SecretResolver`.
 
 The CLI can execute the destructive shared conformance suite against an
 operator-owned disposable Mem0 instance. It requires `MEM0_BASE_URL`,

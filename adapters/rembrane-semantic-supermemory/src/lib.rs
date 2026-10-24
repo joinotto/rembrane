@@ -5,11 +5,13 @@ use std::io::Read;
 use std::thread;
 use std::time::Duration;
 
+use rembrane_config::{ProviderConnection, ProviderKind};
 use rembrane_domain::{MemoryId, WorkspaceId};
 use rembrane_provider_sdk::{
     AuthorizedMemoryProjection, CURRENT_PROVIDER_PROTOCOL, CandidateMemory, Capability,
     ProviderError, ProviderLimits, ProviderManifest, SemanticMemoryProvider, SemanticQuery,
 };
+use rembrane_secret_local::{SecretResolver, resolve_provider_credentials};
 use ring::hmac;
 use serde::{Deserialize, Serialize};
 use zeroize::{Zeroize, Zeroizing};
@@ -544,6 +546,57 @@ impl SupermemorySemanticProvider<HttpSupermemoryTransport> {
             workspace_lookup_secret,
         )
     }
+
+    /// Builds the direct Supermemory adapter from a validated profile whose
+    /// ordered references are API key followed by workspace-pseudonym secret.
+    ///
+    /// # Errors
+    ///
+    /// Returns a provider error unless Supermemory and provider plaintext
+    /// processing are explicitly selected, exactly two secrets resolve, and
+    /// both values satisfy their transport and pseudonym-key constraints.
+    pub fn from_connection<Resolver>(
+        connection: &ProviderConnection,
+        resolver: &Resolver,
+        allow_provider_plaintext: bool,
+    ) -> Result<Self, ProviderError>
+    where
+        Resolver: SecretResolver + ?Sized,
+    {
+        if connection.kind() != ProviderKind::Supermemory
+            || connection.endpoint().is_none()
+            || connection.credentials().len() != 2
+        {
+            return Err(ProviderError::InvalidConfiguration(
+                "Supermemory requires one endpoint plus API-key and workspace-secret references"
+                    .to_owned(),
+            ));
+        }
+        if !allow_provider_plaintext {
+            return Err(ProviderError::InvalidConfiguration(
+                "Supermemory provider plaintext processing was not explicitly allowed".to_owned(),
+            ));
+        }
+        let mut credentials = resolve_provider_credentials(resolver, connection).map_err(|_| {
+            ProviderError::InvalidConfiguration("Supermemory credentials unavailable".to_owned())
+        })?;
+        let mut workspace_secret = credentials.pop().ok_or_else(|| {
+            ProviderError::InvalidConfiguration("Supermemory credentials unavailable".to_owned())
+        })?;
+        let api_key = credentials.pop().ok_or_else(|| {
+            ProviderError::InvalidConfiguration("Supermemory credentials unavailable".to_owned())
+        })?;
+        let transport = HttpSupermemoryTransport::new_with_secret(
+            connection.endpoint().ok_or_else(|| {
+                ProviderError::InvalidConfiguration("Supermemory endpoint unavailable".to_owned())
+            })?,
+            api_key,
+        )?;
+        Self::new(
+            transport,
+            std::mem::take(&mut *workspace_secret).into_bytes(),
+        )
+    }
 }
 
 impl<Transport> SupermemorySemanticProvider<Transport> {
@@ -715,9 +768,12 @@ impl<Transport: SupermemoryTransport> SemanticMemoryProvider
 mod tests {
     use std::collections::BTreeMap;
 
+    use rembrane_config::{ProviderConnection, ProviderKind, ProviderPlacement, SecretReference};
     use rembrane_provider_sdk::{
         AuthorizedMemoryProjection, ProviderError, verify_semantic_provider,
     };
+    use rembrane_secret_local::{SecretResolutionError, SecretResolver};
+    use zeroize::Zeroizing;
 
     use super::{
         HttpSupermemoryTransport, SupermemoryRecord, SupermemorySemanticProvider,
@@ -725,12 +781,56 @@ mod tests {
         valid_provider_identifier, validate_api_key,
     };
 
+    struct PanicResolver;
+
+    impl SecretResolver for PanicResolver {
+        fn resolve(
+            &self,
+            _reference: &SecretReference,
+        ) -> Result<Zeroizing<String>, SecretResolutionError> {
+            panic!("invalid profile must fail before secret resolution")
+        }
+    }
+
     #[derive(Default)]
     struct FakeSupermemory {
         records: BTreeMap<String, Vec<(SupermemoryRecord, String)>>,
         next_id: u64,
         fail_readiness: bool,
         fail_deletion_confirmation: bool,
+    }
+
+    #[test]
+    fn profile_and_plaintext_policy_fail_before_secret_resolution() {
+        let wrong_kind = ProviderConnection::remote(
+            ProviderKind::Mem0,
+            "https://memory.example.test",
+            vec![
+                SecretReference::environment("MEMORY_API_KEY").expect("reference"),
+                SecretReference::environment("MEMORY_LOOKUP_SECRET").expect("reference"),
+            ],
+            ProviderPlacement::External,
+        )
+        .expect("profile");
+        assert!(
+            SupermemorySemanticProvider::from_connection(&wrong_kind, &PanicResolver, true)
+                .is_err()
+        );
+
+        let supermemory = ProviderConnection::remote(
+            ProviderKind::Supermemory,
+            "https://memory.example.test",
+            vec![
+                SecretReference::environment("MEMORY_API_KEY").expect("reference"),
+                SecretReference::environment("MEMORY_LOOKUP_SECRET").expect("reference"),
+            ],
+            ProviderPlacement::External,
+        )
+        .expect("profile");
+        assert!(
+            SupermemorySemanticProvider::from_connection(&supermemory, &PanicResolver, false)
+                .is_err()
+        );
     }
 
     impl SupermemoryTransport for FakeSupermemory {

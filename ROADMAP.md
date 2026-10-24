@@ -751,6 +751,8 @@ This roadmap describes sequencing, not release dates.
         fresh random suffix before any provider credential is resolved.
     - [x] Accept already resolved zeroizing API credentials without a
       raw-string validation failure path.
+    - [x] Construct the direct adapter from ordered API-key and independent
+      workspace-secret references through any deployment secret resolver.
   - [x] Add a Supermemory v5 semantic adapter with HMAC-derived namespaces,
     deterministic document identity, processing convergence, exact deletion,
     and shared disposable-provider conformance.
@@ -801,6 +803,8 @@ This roadmap describes sequencing, not release dates.
         deletion can complete.
     - [x] Accept already resolved zeroizing API credentials without a
       raw-string validation failure path.
+    - [x] Construct the direct adapter from ordered API-key and independent
+      workspace-secret references through any deployment secret resolver.
   - [x] Generate a secret-reference-only local MCP configuration for OpenCode
     using its command-array and environment-substitution contract.
   - [x] Enforce one bounded control-free executable-command contract before

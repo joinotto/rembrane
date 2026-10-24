@@ -62,6 +62,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Direct Mem0 and Supermemory HTTP constructors for already resolved
   zeroizing API keys, with legacy string constructors entering zeroizing
   custody before endpoint, credential, or client validation can fail.
+- Direct Mem0 and Supermemory semantic-adapter construction from validated
+  two-secret profiles through pluggable resolvers, keeping API credentials
+  separate from independent workspace-pseudonym keys.
 - Fail-closed OAuth introspection claim bounds covering audience cardinality,
   issuer and identity sizes, scope size, and control-character rejection
   before claims become canonical tenant identity.
