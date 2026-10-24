@@ -13,6 +13,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   namespaces exclusively from canonical workspace identity, requires
   idempotency keys for mutations, bounds transport payloads, and rejects
   mismatched responses.
+- A transport-injected Graphiti provider adapter with canonical node and edge
+  projection, temporal neighbourhood lookup, version-bounded deletion,
+  provider capability negotiation, and shared cross-workspace conformance
+  coverage.
 - Canonical engine-neutral temporal knowledge graph aggregates with typed
   nodes, validated relationship types, strict workspace namespaces, separate
   validity and ingestion time, evidence provenance, bounded aliases, versions,

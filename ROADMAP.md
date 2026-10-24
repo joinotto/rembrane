@@ -160,7 +160,7 @@ This roadmap describes sequencing, not release dates.
     - [ ] Add Graphiti projection adapter.
       - [x] Define a versioned, bounded sidecar protocol with workspace-derived
         namespaces, mutation idempotency, and response correlation.
-      - [ ] Implement the transport-injected Graphiti graph provider.
+      - [x] Implement the transport-injected Graphiti graph provider.
       - [ ] Add authenticated bounded HTTP transport and sidecar contract
         tests.
 
