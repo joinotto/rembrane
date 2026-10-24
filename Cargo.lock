@@ -1098,8 +1098,10 @@ name = "rembrane-channel-whatsapp"
 version = "0.1.0-alpha.1"
 dependencies = [
  "rembrane-application",
+ "rembrane-config",
  "rembrane-contracts",
  "rembrane-domain",
+ "rembrane-secret-local",
  "ring",
  "serde",
  "serde_json",

@@ -68,6 +68,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - A canonical key-provider profile kind and configured-cipher construction
   through pluggable secret resolvers, transferring resolved bearer authority
   directly into zeroizing HTTP transport custody.
+- Reference-only WhatsApp verifier configuration through pluggable secret
+  resolvers, requiring distinct app-signature, sender-pseudonym, and
+  subscription credentials and retaining only derived HMAC keys.
 - Fail-closed OAuth introspection claim bounds covering audience cardinality,
   issuer and identity sizes, scope size, and control-character rejection
   before claims become canonical tenant identity.

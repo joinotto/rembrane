@@ -9,7 +9,9 @@ rust-version.workspace = true
 
 [dependencies]
 rembrane-application = { path = "../../crates/rembrane-application" }
+rembrane-config = { path = "../../crates/rembrane-config" }
 rembrane-contracts = { path = "../../crates/rembrane-contracts" }
+rembrane-secret-local = { path = "../rembrane-secret-local" }
 ring = "0.17"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

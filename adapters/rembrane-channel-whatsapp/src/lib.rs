@@ -3,7 +3,9 @@
 use rembrane_application::{
     ApplicationError, ChannelIngressRepository, DurableChannelIngressRepository,
 };
+use rembrane_config::SecretReference;
 use rembrane_contracts::{ChannelKind, VerifiedChannelMessage};
+use rembrane_secret_local::SecretResolver;
 use ring::hmac;
 use serde::Deserialize;
 use zeroize::Zeroize;
@@ -14,6 +16,7 @@ const MAXIMUM_IDENTIFIER_BYTES: usize = 256;
 const MAXIMUM_TEXT_BYTES: usize = 16_384;
 const MAXIMUM_CHALLENGE_BYTES: usize = 512;
 const MAXIMUM_VERIFICATION_TOKEN_BYTES: usize = 256;
+const MAXIMUM_KEY_BYTES: usize = 4_096;
 
 pub struct WhatsAppWebhookVerifier {
     signature_key: hmac::Key,
@@ -22,6 +25,19 @@ pub struct WhatsAppWebhookVerifier {
 
 pub struct WhatsAppSubscriptionVerifier {
     verification_key: hmac::Key,
+}
+
+/// Reference-only `WhatsApp` credential configuration.
+pub struct WhatsAppCredentialReferences {
+    app_secret: SecretReference,
+    binding_lookup_secret: SecretReference,
+    verification_token: SecretReference,
+}
+
+/// Fully initialized verifier pair with no retained credential strings.
+pub struct WhatsAppVerifierBundle {
+    webhook: WhatsAppWebhookVerifier,
+    subscription: WhatsAppSubscriptionVerifier,
 }
 
 pub struct WhatsAppTextEvent {
@@ -64,7 +80,9 @@ impl WhatsAppWebhookVerifier {
         mut app_secret: Vec<u8>,
         mut binding_lookup_secret: Vec<u8>,
     ) -> Result<Self, WhatsAppWebhookError> {
-        if app_secret.len() < 32 || binding_lookup_secret.len() < 32 {
+        if !(32..=MAXIMUM_KEY_BYTES).contains(&app_secret.len())
+            || !(32..=MAXIMUM_KEY_BYTES).contains(&binding_lookup_secret.len())
+        {
             app_secret.zeroize();
             binding_lookup_secret.zeroize();
             return Err(WhatsAppWebhookError::InvalidConfiguration);
@@ -224,6 +242,86 @@ impl WhatsAppWebhookVerifier {
             }
         }
         Ok(admitted)
+    }
+}
+
+impl WhatsAppCredentialReferences {
+    /// Creates a configuration whose three security purposes use distinct
+    /// secret references.
+    ///
+    /// # Errors
+    ///
+    /// Returns invalid-configuration when any reference is reused for another
+    /// purpose.
+    pub fn new(
+        app_secret: SecretReference,
+        binding_lookup_secret: SecretReference,
+        verification_token: SecretReference,
+    ) -> Result<Self, WhatsAppWebhookError> {
+        if app_secret == binding_lookup_secret
+            || app_secret == verification_token
+            || binding_lookup_secret == verification_token
+        {
+            return Err(WhatsAppWebhookError::InvalidConfiguration);
+        }
+        Ok(Self {
+            app_secret,
+            binding_lookup_secret,
+            verification_token,
+        })
+    }
+
+    /// Resolves all credentials and derives verifier keys without retaining
+    /// resolved strings.
+    ///
+    /// # Errors
+    ///
+    /// Returns invalid-configuration when resolution or verifier
+    /// initialization fails.
+    pub fn resolve<Resolver>(
+        &self,
+        resolver: &Resolver,
+    ) -> Result<WhatsAppVerifierBundle, WhatsAppWebhookError>
+    where
+        Resolver: SecretResolver + ?Sized,
+    {
+        let mut app_secret = resolver
+            .resolve(&self.app_secret)
+            .map_err(|_| WhatsAppWebhookError::InvalidConfiguration)?;
+        let mut binding_lookup_secret = resolver
+            .resolve(&self.binding_lookup_secret)
+            .map_err(|_| WhatsAppWebhookError::InvalidConfiguration)?;
+        let mut verification_token = resolver
+            .resolve(&self.verification_token)
+            .map_err(|_| WhatsAppWebhookError::InvalidConfiguration)?;
+        let webhook = WhatsAppWebhookVerifier::new(
+            std::mem::take(&mut *app_secret).into_bytes(),
+            std::mem::take(&mut *binding_lookup_secret).into_bytes(),
+        )?;
+        let subscription = WhatsAppSubscriptionVerifier::new(
+            std::mem::take(&mut *verification_token).into_bytes(),
+        )?;
+        Ok(WhatsAppVerifierBundle {
+            webhook,
+            subscription,
+        })
+    }
+}
+
+impl WhatsAppVerifierBundle {
+    #[must_use]
+    pub const fn webhook(&self) -> &WhatsAppWebhookVerifier {
+        &self.webhook
+    }
+
+    #[must_use]
+    pub const fn subscription(&self) -> &WhatsAppSubscriptionVerifier {
+        &self.subscription
+    }
+
+    #[must_use]
+    pub fn into_parts(self) -> (WhatsAppWebhookVerifier, WhatsAppSubscriptionVerifier) {
+        (self.webhook, self.subscription)
     }
 }
 
@@ -472,14 +570,17 @@ struct Text {
 #[cfg(test)]
 mod tests {
     use rembrane_application::{ApplicationError, ChannelIngressRepository};
+    use rembrane_config::SecretReference;
     use rembrane_contracts::{ChannelKind, VerifiedChannelMessage};
     use rembrane_domain::{ClientId, PrincipalId, WorkspaceId};
+    use rembrane_secret_local::{SecretResolutionError, SecretResolver};
     use ring::hmac;
+    use zeroize::Zeroizing;
 
     use super::{
-        MAXIMUM_WEBHOOK_BYTES, WhatsAppHttpStatus, WhatsAppSubscriptionVerifier,
-        WhatsAppWebhookError, WhatsAppWebhookVerifier, derive_binding_lookup_keys, encode_hex,
-        webhook_http_status,
+        MAXIMUM_WEBHOOK_BYTES, WhatsAppCredentialReferences, WhatsAppHttpStatus,
+        WhatsAppSubscriptionVerifier, WhatsAppWebhookError, WhatsAppWebhookVerifier,
+        derive_binding_lookup_keys, encode_hex, webhook_http_status,
     };
 
     const PAYLOAD: &[u8] = br#"{
@@ -500,6 +601,47 @@ mod tests {
     fn signature(payload: &[u8]) -> String {
         let key = hmac::Key::new(hmac::HMAC_SHA256, &[7; 32]);
         format!("sha256={}", encode_hex(hmac::sign(&key, payload).as_ref()))
+    }
+
+    struct FixtureResolver;
+
+    impl SecretResolver for FixtureResolver {
+        fn resolve(
+            &self,
+            reference: &SecretReference,
+        ) -> Result<Zeroizing<String>, SecretResolutionError> {
+            let byte = match reference.environment_variable() {
+                Some("WHATSAPP_APP_SECRET") => 'a',
+                Some("WHATSAPP_LOOKUP_SECRET") => 'b',
+                Some("WHATSAPP_VERIFICATION_TOKEN") => 'c',
+                _ => return Err(SecretResolutionError::Unavailable),
+            };
+            Ok(Zeroizing::new(byte.to_string().repeat(32)))
+        }
+    }
+
+    #[test]
+    fn resolves_distinct_reference_only_credentials_into_verifiers() {
+        let app = SecretReference::environment("WHATSAPP_APP_SECRET").expect("reference");
+        let lookup = SecretReference::environment("WHATSAPP_LOOKUP_SECRET").expect("reference");
+        let verification =
+            SecretReference::environment("WHATSAPP_VERIFICATION_TOKEN").expect("reference");
+        assert!(
+            WhatsAppCredentialReferences::new(app.clone(), app.clone(), verification.clone())
+                .is_err()
+        );
+
+        let bundle = WhatsAppCredentialReferences::new(app, lookup, verification)
+            .expect("distinct references")
+            .resolve(&FixtureResolver)
+            .expect("resolved verifiers");
+        assert_eq!(
+            bundle
+                .subscription()
+                .verify_challenge("subscribe", &[b'c'; 32], "challenge")
+                .expect("matching token"),
+            "challenge"
+        );
     }
 
     #[test]

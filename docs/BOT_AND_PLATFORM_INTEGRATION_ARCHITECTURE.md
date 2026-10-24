@@ -268,6 +268,12 @@ The three secrets must be distinct, at least 32 bytes each, and supplied by a
 deployment secret manager. Never store them in canonical memory, sender
 bindings, committed Compose files, or URLs.
 
+Deployments using a keychain, protected secret file, Vault, or cloud secret
+manager can construct `WhatsAppCredentialReferences` instead. Its three
+purpose-specific references are resolved through any deployment-selected
+`SecretResolver`; resolved strings are zeroized and only derived HMAC keys are
+retained.
+
 The gateway acknowledges a new message only after active sender resolution,
 replay reservation, and authenticated encryption into the tenant inbox commit
 in one SQLite transaction. Configure the same `REMBRANE_KEY_PROVIDER` profile
