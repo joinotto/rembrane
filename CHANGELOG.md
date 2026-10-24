@@ -9,6 +9,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- A canonical PostgreSQL base schema for encrypted memories, evidence,
+  checkpoints, disclosure receipts, projection jobs, and immutable workspace
+  events, plus membership-scoped principal RLS.
 - Reference-only HTTP key-provider bearer configuration in the WhatsApp,
   channel-worker, and mobile-share Compose services, with a static regression
   gate preventing raw credential interpolation.

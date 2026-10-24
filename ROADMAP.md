@@ -259,6 +259,8 @@ This roadmap describes sequencing, not release dates.
 - [ ] Provide the hosted PostgreSQL adapter with row-level security.
   - [x] Add deny-by-default forced RLS policy generation for every canonical
     `workspace_id` table plus explicit workspace and share-proposal policies.
+  - [x] Add the canonical encrypted PostgreSQL base schema and isolate
+    principal reads through the current workspace's visible memberships.
   - [x] Document transaction-local tenant identity and non-owner,
     non-`BYPASSRLS` runtime-role requirements.
   - [x] Run a live PostgreSQL two-tenant CI proof covering scoped reads,

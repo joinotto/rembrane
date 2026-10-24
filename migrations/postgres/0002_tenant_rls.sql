@@ -1,3 +1,4 @@
+-- Apply immediately after the canonical schema and before runtime grants.
 BEGIN;
 
 CREATE SCHEMA IF NOT EXISTS rembrane;
@@ -46,6 +47,20 @@ BEGIN
     END LOOP;
 END
 $$;
+
+ALTER TABLE principals ENABLE ROW LEVEL SECURITY;
+ALTER TABLE principals FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS rembrane_workspace_members ON principals;
+CREATE POLICY rembrane_workspace_members ON principals
+FOR SELECT
+USING (
+    EXISTS (
+        SELECT 1
+        FROM memberships
+        WHERE memberships.workspace_id = rembrane.current_workspace_id()
+          AND memberships.principal_id = principals.id
+    )
+);
 
 ALTER TABLE workspaces ENABLE ROW LEVEL SECURITY;
 ALTER TABLE workspaces FORCE ROW LEVEL SECURITY;
