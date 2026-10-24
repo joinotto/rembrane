@@ -229,6 +229,8 @@ This roadmap describes sequencing, not release dates.
     and bounded context/event/sync limits.
   - [x] Register each portable operation with exactly one capability, narrow
     OAuth scope, HTTP method, and stable path template.
+  - [x] Add fail-closed provider negotiation over protocol version, transport,
+    required capabilities, allowed privacy modes, and minimum operation limits.
   - [x] Define transport-neutral request and response envelopes with bounded
     correlation IDs, protocol negotiation, operation binding, and closed
     portable error codes.

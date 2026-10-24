@@ -437,6 +437,125 @@ pub struct MemoryProviderManifest {
     limits: MemoryProviderLimits,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MemoryProviderPolicy {
+    minimum_protocol_version: ProviderProtocolVersion,
+    required_transport: MemoryProviderTransport,
+    required_capabilities: Vec<MemoryProviderCapability>,
+    allowed_privacy_modes: Vec<MemoryProviderPrivacyMode>,
+    minimum_limits: MemoryProviderLimits,
+}
+
+impl MemoryProviderPolicy {
+    /// Creates a fail-closed policy for accepting a discovered provider.
+    ///
+    /// # Errors
+    ///
+    /// Returns an invalid-configuration error when capabilities or privacy
+    /// modes are empty or duplicated, or any required limit is zero.
+    pub fn new(
+        minimum_protocol_version: ProviderProtocolVersion,
+        required_transport: MemoryProviderTransport,
+        required_capabilities: Vec<MemoryProviderCapability>,
+        allowed_privacy_modes: Vec<MemoryProviderPrivacyMode>,
+        minimum_limits: MemoryProviderLimits,
+    ) -> Result<Self, ProviderError> {
+        validate_unique_nonempty("required capability", &required_capabilities)?;
+        validate_unique_nonempty("allowed privacy mode", &allowed_privacy_modes)?;
+        if minimum_limits.maximum_context_items == 0
+            || minimum_limits.maximum_context_bytes == 0
+            || minimum_limits.maximum_event_batch_items == 0
+            || minimum_limits.maximum_sync_batch_items == 0
+        {
+            return Err(ProviderError::InvalidConfiguration(
+                "memory provider policy limits must be greater than zero".to_owned(),
+            ));
+        }
+        Ok(Self {
+            minimum_protocol_version,
+            required_transport,
+            required_capabilities,
+            allowed_privacy_modes,
+            minimum_limits,
+        })
+    }
+
+    /// Validates discovery against every policy requirement.
+    ///
+    /// # Errors
+    ///
+    /// Returns an incompatible-protocol error for a version mismatch and an
+    /// invalid-configuration error for every other unmet requirement.
+    pub fn validate(&self, manifest: &MemoryProviderManifest) -> Result<(), ProviderError> {
+        if !manifest.is_protocol_compatible(self.minimum_protocol_version) {
+            return Err(ProviderError::IncompatibleProtocol {
+                required_major: self.minimum_protocol_version.major,
+                required_minor: self.minimum_protocol_version.minor,
+                offered_major: manifest.protocol_version().major,
+                offered_minor: manifest.protocol_version().minor,
+            });
+        }
+        if !manifest.transports().contains(&self.required_transport) {
+            return Err(ProviderError::InvalidConfiguration(
+                "memory provider does not support the required transport".to_owned(),
+            ));
+        }
+        if self
+            .required_capabilities
+            .iter()
+            .any(|capability| !manifest.supports(*capability))
+        {
+            return Err(ProviderError::InvalidConfiguration(
+                "memory provider does not support every required capability".to_owned(),
+            ));
+        }
+        if !self
+            .allowed_privacy_modes
+            .contains(&manifest.privacy_mode())
+        {
+            return Err(ProviderError::InvalidConfiguration(
+                "memory provider privacy mode is not allowed by policy".to_owned(),
+            ));
+        }
+        let offered = manifest.limits();
+        if offered.maximum_context_items < self.minimum_limits.maximum_context_items
+            || offered.maximum_context_bytes < self.minimum_limits.maximum_context_bytes
+            || offered.maximum_event_batch_items < self.minimum_limits.maximum_event_batch_items
+            || offered.maximum_sync_batch_items < self.minimum_limits.maximum_sync_batch_items
+        {
+            return Err(ProviderError::InvalidConfiguration(
+                "memory provider limits are below policy minimums".to_owned(),
+            ));
+        }
+        Ok(())
+    }
+
+    #[must_use]
+    pub const fn minimum_protocol_version(&self) -> ProviderProtocolVersion {
+        self.minimum_protocol_version
+    }
+
+    #[must_use]
+    pub const fn required_transport(&self) -> MemoryProviderTransport {
+        self.required_transport
+    }
+
+    #[must_use]
+    pub fn required_capabilities(&self) -> &[MemoryProviderCapability] {
+        &self.required_capabilities
+    }
+
+    #[must_use]
+    pub fn allowed_privacy_modes(&self) -> &[MemoryProviderPrivacyMode] {
+        &self.allowed_privacy_modes
+    }
+
+    #[must_use]
+    pub const fn minimum_limits(&self) -> MemoryProviderLimits {
+        self.minimum_limits
+    }
+}
+
 impl MemoryProviderManifest {
     /// Creates one validated, immutable memory-provider discovery manifest.
     ///
@@ -595,9 +714,9 @@ mod tests {
     use super::{
         CURRENT_MEMORY_PROVIDER_PROTOCOL, MEMORY_PROVIDER_DISCOVERY_PATH, MemoryProviderCapability,
         MemoryProviderErrorCode, MemoryProviderHttpMethod, MemoryProviderLimits,
-        MemoryProviderManifest, MemoryProviderOperation, MemoryProviderPrivacyMode,
-        MemoryProviderRequest, MemoryProviderRequestId, MemoryProviderResponseBody,
-        MemoryProviderScope, MemoryProviderTransport,
+        MemoryProviderManifest, MemoryProviderOperation, MemoryProviderPolicy,
+        MemoryProviderPrivacyMode, MemoryProviderRequest, MemoryProviderRequestId,
+        MemoryProviderResponseBody, MemoryProviderScope, MemoryProviderTransport,
     };
     use crate::{ProviderError, ProviderProtocolVersion};
 
@@ -636,6 +755,25 @@ mod tests {
         .expect("fixture manifest should validate")
     }
 
+    fn policy() -> MemoryProviderPolicy {
+        MemoryProviderPolicy::new(
+            CURRENT_MEMORY_PROVIDER_PROTOCOL,
+            MemoryProviderTransport::Https,
+            vec![
+                MemoryProviderCapability::ResolveContext,
+                MemoryProviderCapability::ProposeMemory,
+            ],
+            vec![MemoryProviderPrivacyMode::EndToEndEncrypted],
+            MemoryProviderLimits {
+                maximum_context_items: 20,
+                maximum_context_bytes: 65_536,
+                maximum_event_batch_items: 50,
+                maximum_sync_batch_items: 100,
+            },
+        )
+        .expect("fixture policy should validate")
+    }
+
     #[test]
     fn advertises_versioned_memory_provider_discovery() {
         let manifest = manifest();
@@ -650,6 +788,82 @@ mod tests {
             MemoryProviderPrivacyMode::EndToEndEncrypted
         );
         assert_eq!(manifest.supported_domains(), ["personal", "development"]);
+    }
+
+    #[test]
+    fn accepts_only_manifests_satisfying_the_complete_provider_policy() {
+        let policy = policy();
+        assert_eq!(policy.validate(&manifest()), Ok(()));
+
+        let plaintext_manifest = MemoryProviderManifest::new(
+            "rembrane.plaintext".to_owned(),
+            "0.1.0".to_owned(),
+            CURRENT_MEMORY_PROVIDER_PROTOCOL,
+            vec![MemoryProviderTransport::Https],
+            vec![
+                MemoryProviderCapability::ResolveContext,
+                MemoryProviderCapability::ProposeMemory,
+            ],
+            MemoryProviderPrivacyMode::ProviderPlaintext,
+            Vec::new(),
+            MemoryProviderLimits {
+                maximum_context_items: 20,
+                maximum_context_bytes: 65_536,
+                maximum_event_batch_items: 50,
+                maximum_sync_batch_items: 100,
+            },
+        )
+        .expect("fixture manifest should validate");
+        assert_eq!(
+            policy.validate(&plaintext_manifest),
+            Err(ProviderError::InvalidConfiguration(
+                "memory provider privacy mode is not allowed by policy".to_owned()
+            ))
+        );
+    }
+
+    #[test]
+    fn provider_policy_fails_closed_for_missing_features_and_small_limits() {
+        let insufficient = MemoryProviderManifest::new(
+            "rembrane.insufficient".to_owned(),
+            "0.1.0".to_owned(),
+            CURRENT_MEMORY_PROVIDER_PROTOCOL,
+            vec![MemoryProviderTransport::Mcp],
+            vec![MemoryProviderCapability::ResolveContext],
+            MemoryProviderPrivacyMode::EndToEndEncrypted,
+            Vec::new(),
+            MemoryProviderLimits {
+                maximum_context_items: 1,
+                maximum_context_bytes: 1,
+                maximum_event_batch_items: 1,
+                maximum_sync_batch_items: 1,
+            },
+        )
+        .expect("fixture manifest should validate");
+        let policy = policy();
+
+        assert_eq!(
+            policy.validate(&insufficient),
+            Err(ProviderError::InvalidConfiguration(
+                "memory provider does not support the required transport".to_owned()
+            ))
+        );
+
+        assert!(
+            MemoryProviderPolicy::new(
+                CURRENT_MEMORY_PROVIDER_PROTOCOL,
+                MemoryProviderTransport::Https,
+                Vec::new(),
+                vec![MemoryProviderPrivacyMode::EndToEndEncrypted],
+                MemoryProviderLimits {
+                    maximum_context_items: 1,
+                    maximum_context_bytes: 1,
+                    maximum_event_batch_items: 1,
+                    maximum_sync_batch_items: 1,
+                },
+            )
+            .is_err()
+        );
     }
 
     #[test]

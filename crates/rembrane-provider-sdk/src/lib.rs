@@ -48,9 +48,9 @@ pub use memory_protocol::{
     CURRENT_MEMORY_PROVIDER_PROTOCOL, MEMORY_PROVIDER_DISCOVERY_PATH, MemoryProviderCapability,
     MemoryProviderErrorCode, MemoryProviderHttpMethod, MemoryProviderIdempotencyKey,
     MemoryProviderLimits, MemoryProviderManifest, MemoryProviderOperation, MemoryProviderPayload,
-    MemoryProviderPrivacyMode, MemoryProviderRequest, MemoryProviderRequestId,
-    MemoryProviderResponse, MemoryProviderResponseBody, MemoryProviderScope,
-    MemoryProviderTransport,
+    MemoryProviderPolicy, MemoryProviderPrivacyMode, MemoryProviderRequest,
+    MemoryProviderRequestId, MemoryProviderResponse, MemoryProviderResponseBody,
+    MemoryProviderScope, MemoryProviderTransport,
 };
 pub use memory_question::{
     MAX_QUESTION_BYTES, MAX_QUESTION_PURPOSE_BYTES, ResolveQuestionPayload, ResolveQuestionResult,
