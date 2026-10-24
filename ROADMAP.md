@@ -318,13 +318,13 @@ This roadmap describes sequencing, not release dates.
     contract with tenant, actor, closed action, opaque target, request
     correlation, and occurrence time.
   - [x] Persist administrative audit events append-only and tenant-scoped.
-  - [ ] Record membership, scope, key-rotation, retention, and legal-hold
+  - [x] Record membership, scope, key-rotation, retention, and legal-hold
     mutations atomically with their administrative audit evidence.
     - [x] Commit member removal, rotation requirement, and rotation completion
       with their audit evidence in the same repository transaction.
     - [x] Commit scope-grant and scope-revocation mutations with their audit
       evidence in the same repository transaction.
-    - [ ] Commit retention-policy and legal-hold mutations with their audit
+    - [x] Commit retention-policy and legal-hold mutations with their audit
       evidence in the same repository transaction.
   - [ ] Define enforceable per-workspace retention policies and legal holds.
     - [x] Define versioned resource-specific retention periods, bounded expiry
@@ -334,6 +334,9 @@ This roadmap describes sequencing, not release dates.
     - [ ] Execute bounded purge plans without deleting held resources or
       append-only security evidence prematurely.
   - [ ] Expose narrowly authorized audit and retention management APIs.
+    - [x] Add owner/admin-only application services for retention-policy and
+      legal-hold mutation.
+    - [ ] Expose authenticated management HTTP and CLI operations.
 
 ## Phase 5 — Integration ecosystem
 

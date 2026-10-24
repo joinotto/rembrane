@@ -68,7 +68,10 @@ impl RetentionRepository for InMemoryStore {
         &mut self,
         policy: WorkspaceRetentionPolicy,
         expected_version: Option<u64>,
+        audit_event: AdministrativeAuditEvent,
     ) -> Result<(), ApplicationError> {
+        validate_retention_audit(&policy, &audit_event)?;
+        validate_new_audit_event(&self.administrative_audit, &audit_event)?;
         let position = self
             .retention_policies
             .iter()
@@ -90,6 +93,7 @@ impl RetentionRepository for InMemoryStore {
                 ));
             }
         }
+        self.administrative_audit.push(audit_event);
         Ok(())
     }
 
@@ -119,7 +123,13 @@ impl RetentionRepository for InMemoryStore {
             .collect())
     }
 
-    fn insert_legal_hold(&mut self, hold: WorkspaceLegalHold) -> Result<(), ApplicationError> {
+    fn insert_legal_hold(
+        &mut self,
+        hold: WorkspaceLegalHold,
+        audit_event: AdministrativeAuditEvent,
+    ) -> Result<(), ApplicationError> {
+        validate_legal_hold_audit(&hold, &audit_event, AdministrativeAction::LegalHoldPlaced)?;
+        validate_new_audit_event(&self.administrative_audit, &audit_event)?;
         if self
             .legal_holds
             .iter()
@@ -128,6 +138,7 @@ impl RetentionRepository for InMemoryStore {
             return Err(ApplicationError::AlreadyExists);
         }
         self.legal_holds.push(hold);
+        self.administrative_audit.push(audit_event);
         Ok(())
     }
 
@@ -135,7 +146,10 @@ impl RetentionRepository for InMemoryStore {
         &mut self,
         hold: WorkspaceLegalHold,
         expected_version: u64,
+        audit_event: AdministrativeAuditEvent,
     ) -> Result<(), ApplicationError> {
+        validate_legal_hold_audit(&hold, &audit_event, AdministrativeAction::LegalHoldReleased)?;
+        validate_new_audit_event(&self.administrative_audit, &audit_event)?;
         let stored = self
             .legal_holds
             .iter_mut()
@@ -147,6 +161,7 @@ impl RetentionRepository for InMemoryStore {
             return Err(ApplicationError::VersionConflict);
         }
         *stored = hold;
+        self.administrative_audit.push(audit_event);
         Ok(())
     }
 }
@@ -1998,6 +2013,39 @@ fn validate_scope_audit(
     {
         return Err(ApplicationError::Validation(
             "scope grant audit evidence is invalid".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_retention_audit(
+    policy: &WorkspaceRetentionPolicy,
+    event: &AdministrativeAuditEvent,
+) -> Result<(), ApplicationError> {
+    if event.workspace_id() != policy.workspace_id()
+        || event.action() != AdministrativeAction::RetentionPolicyChanged
+        || event.target_kind() != rembrane_domain::AdministrativeTargetKind::RetentionPolicy
+        || event.target_id() != policy.workspace_id().as_str()
+    {
+        return Err(ApplicationError::Validation(
+            "retention policy audit evidence is invalid".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_legal_hold_audit(
+    hold: &WorkspaceLegalHold,
+    event: &AdministrativeAuditEvent,
+    action: AdministrativeAction,
+) -> Result<(), ApplicationError> {
+    if event.workspace_id() != hold.workspace_id()
+        || event.action() != action
+        || event.target_kind() != rembrane_domain::AdministrativeTargetKind::LegalHold
+        || event.target_id() != hold.id().as_str()
+    {
+        return Err(ApplicationError::Validation(
+            "legal hold audit evidence is invalid".to_owned(),
         ));
     }
     Ok(())

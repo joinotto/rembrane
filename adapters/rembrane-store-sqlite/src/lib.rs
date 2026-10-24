@@ -213,7 +213,9 @@ impl<C> RetentionRepository for SqliteStore<C> {
         &mut self,
         policy: WorkspaceRetentionPolicy,
         expected_version: Option<u64>,
+        audit_event: AdministrativeAuditEvent,
     ) -> Result<(), ApplicationError> {
+        validate_retention_audit(&policy, &audit_event)?;
         let values = [
             policy.period(RetentionResource::UserMemory).days_value(),
             policy
@@ -232,8 +234,12 @@ impl<C> RetentionRepository for SqliteStore<C> {
                 .period(RetentionResource::AdministrativeAudit)
                 .days_value(),
         ];
+        let transaction = self
+            .connection
+            .transaction()
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
         let changed = match expected_version {
-            None if policy.version() == 1 => self.connection.execute(
+            None if policy.version() == 1 => transaction.execute(
                 "INSERT INTO workspace_retention_policies VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
                 params![
                     policy.workspace_id().as_str(),
@@ -246,8 +252,8 @@ impl<C> RetentionRepository for SqliteStore<C> {
                     values[5]
                 ],
             ),
-            Some(expected) if policy.version() == expected.saturating_add(1) => {
-                self.connection.execute(
+            Some(expected) if policy.version() == expected.saturating_add(1) => transaction
+                .execute(
                     "UPDATE workspace_retention_policies SET version=?2, user_memory_days=?3,
                  activity_checkpoint_days=?4, travel_research_days=?5,
                  disclosure_receipt_days=?6, canonical_event_days=?7,
@@ -263,15 +269,17 @@ impl<C> RetentionRepository for SqliteStore<C> {
                         values[5],
                         expected
                     ],
-                )
-            }
+                ),
             None | Some(_) => return Err(ApplicationError::VersionConflict),
         }
         .map_err(map_write_error)?;
         if changed != 1 {
             return Err(ApplicationError::VersionConflict);
         }
-        Ok(())
+        insert_administrative_audit(&transaction, &audit_event)?;
+        transaction
+            .commit()
+            .map_err(|_| ApplicationError::StorageUnavailable)
     }
 
     fn find_legal_hold(
@@ -340,8 +348,17 @@ impl<C> RetentionRepository for SqliteStore<C> {
             .collect()
     }
 
-    fn insert_legal_hold(&mut self, hold: WorkspaceLegalHold) -> Result<(), ApplicationError> {
-        self.connection
+    fn insert_legal_hold(
+        &mut self,
+        hold: WorkspaceLegalHold,
+        audit_event: AdministrativeAuditEvent,
+    ) -> Result<(), ApplicationError> {
+        validate_legal_hold_audit(&hold, &audit_event, AdministrativeAction::LegalHoldPlaced)?;
+        let transaction = self
+            .connection
+            .transaction()
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        transaction
             .execute(
                 "INSERT INTO workspace_legal_holds VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
                 params![
@@ -356,19 +373,27 @@ impl<C> RetentionRepository for SqliteStore<C> {
                 ],
             )
             .map_err(map_write_error)?;
-        Ok(())
+        insert_administrative_audit(&transaction, &audit_event)?;
+        transaction
+            .commit()
+            .map_err(|_| ApplicationError::StorageUnavailable)
     }
 
     fn replace_legal_hold(
         &mut self,
         hold: WorkspaceLegalHold,
         expected_version: u64,
+        audit_event: AdministrativeAuditEvent,
     ) -> Result<(), ApplicationError> {
+        validate_legal_hold_audit(&hold, &audit_event, AdministrativeAction::LegalHoldReleased)?;
         if hold.version() != expected_version.saturating_add(1) {
             return Err(ApplicationError::VersionConflict);
         }
-        let changed = self
+        let transaction = self
             .connection
+            .transaction()
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        let changed = transaction
             .execute(
                 "UPDATE workspace_legal_holds SET status=?3, version=?4, released_by=?5,
              released_at_epoch_seconds=?6 WHERE workspace_id=?1 AND id=?2 AND version=?7",
@@ -386,7 +411,10 @@ impl<C> RetentionRepository for SqliteStore<C> {
         if changed != 1 {
             return Err(ApplicationError::VersionConflict);
         }
-        Ok(())
+        insert_administrative_audit(&transaction, &audit_event)?;
+        transaction
+            .commit()
+            .map_err(|_| ApplicationError::StorageUnavailable)
     }
 }
 
@@ -1913,6 +1941,39 @@ fn validate_scope_audit(
     {
         return Err(ApplicationError::Validation(
             "scope grant audit evidence is invalid".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_retention_audit(
+    policy: &WorkspaceRetentionPolicy,
+    event: &AdministrativeAuditEvent,
+) -> Result<(), ApplicationError> {
+    if event.workspace_id() != policy.workspace_id()
+        || event.action() != AdministrativeAction::RetentionPolicyChanged
+        || event.target_kind() != AdministrativeTargetKind::RetentionPolicy
+        || event.target_id() != policy.workspace_id().as_str()
+    {
+        return Err(ApplicationError::Validation(
+            "retention policy audit evidence is invalid".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_legal_hold_audit(
+    hold: &WorkspaceLegalHold,
+    event: &AdministrativeAuditEvent,
+    action: AdministrativeAction,
+) -> Result<(), ApplicationError> {
+    if event.workspace_id() != hold.workspace_id()
+        || event.action() != action
+        || event.target_kind() != AdministrativeTargetKind::LegalHold
+        || event.target_id() != hold.id().as_str()
+    {
+        return Err(ApplicationError::Validation(
+            "legal hold audit evidence is invalid".to_owned(),
         ));
     }
     Ok(())

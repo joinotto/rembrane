@@ -37,6 +37,7 @@ pub trait RetentionRepository {
         &mut self,
         policy: WorkspaceRetentionPolicy,
         expected_version: Option<u64>,
+        audit_event: AdministrativeAuditEvent,
     ) -> Result<(), ApplicationError>;
 
     fn find_legal_hold(
@@ -50,12 +51,17 @@ pub trait RetentionRepository {
         workspace_id: &WorkspaceId,
     ) -> Result<Vec<WorkspaceLegalHold>, ApplicationError>;
 
-    fn insert_legal_hold(&mut self, hold: WorkspaceLegalHold) -> Result<(), ApplicationError>;
+    fn insert_legal_hold(
+        &mut self,
+        hold: WorkspaceLegalHold,
+        audit_event: AdministrativeAuditEvent,
+    ) -> Result<(), ApplicationError>;
 
     fn replace_legal_hold(
         &mut self,
         hold: WorkspaceLegalHold,
         expected_version: u64,
+        audit_event: AdministrativeAuditEvent,
     ) -> Result<(), ApplicationError>;
 }
 

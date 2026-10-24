@@ -18,6 +18,7 @@ mod remember_preference;
 mod remote_access;
 mod remote_session;
 mod resolve_context;
+mod retention;
 mod revise_memory;
 mod semantic_context;
 mod share_memory;
@@ -58,6 +59,9 @@ pub use remote_access::{
 };
 pub use remote_session::RemoteSessionRegistry;
 pub use resolve_context::{ResolveContextCommand, ResolveContextService};
+pub use retention::{
+    PlaceLegalHoldCommand, ReleaseLegalHoldCommand, RetentionService, SetRetentionPolicyCommand,
+};
 pub use revise_memory::{DeleteMemoryCommand, MemoryLifecycleService, ReviseMemoryCommand};
 pub use semantic_context::SemanticContextService;
 pub use share_memory::{
