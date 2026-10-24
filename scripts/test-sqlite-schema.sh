@@ -25,7 +25,9 @@ sqlite3 "$database" < \
     "$repository_root/migrations/sqlite/0009_travel_sensitive_disclosures.sql"
 sqlite3 "$database" < \
     "$repository_root/migrations/sqlite/0010_travel_sensitive_profiles.sql"
-sqlite3 "$database" "PRAGMA user_version = 10;"
+sqlite3 "$database" < \
+    "$repository_root/migrations/sqlite/0011_knowledge_graph.sql"
+sqlite3 "$database" "PRAGMA user_version = 11;"
 
 sqlite3 "$database" <<'SQL'
 PRAGMA foreign_keys = ON;
@@ -36,6 +38,32 @@ INSERT INTO memberships (workspace_id, principal_id, role, status)
 VALUES
     ('workspace_01', 'principal_01', 'owner', 'active'),
     ('workspace_02', 'principal_02', 'owner', 'active');
+INSERT INTO knowledge_nodes (
+    workspace_id, id, node_ciphertext, encryption_key_id,
+    encryption_algorithm, encryption_nonce, version,
+    valid_from, valid_until, recorded_at
+) VALUES
+    (
+        'workspace_01', 'node_project', X'01', 'key_01',
+        'xchacha20poly1305', zeroblob(24), 1, 100, NULL, 100
+    ),
+    (
+        'workspace_01', 'node_rust', X'02', 'key_01',
+        'xchacha20poly1305', zeroblob(24), 1, 100, NULL, 100
+    ),
+    (
+        'workspace_02', 'node_project', X'03', 'key_02',
+        'xchacha20poly1305', zeroblob(24), 1, 100, NULL, 100
+    );
+INSERT INTO knowledge_edges (
+    workspace_id, id, source_id, target_id, supersedes_id,
+    edge_ciphertext, encryption_key_id, encryption_algorithm,
+    encryption_nonce, version, valid_from, valid_until, recorded_at
+) VALUES (
+    'workspace_01', 'edge_uses', 'node_project', 'node_rust', NULL,
+    X'04', 'key_01', 'xchacha20poly1305', zeroblob(24),
+    1, 100, 200, 100
+);
 INSERT INTO workspace_events (
     workspace_id,
     sequence,
@@ -460,7 +488,15 @@ table_count=$(
 )
 
 test "$table_count" -ge 9
-test "$(sqlite3 "$database" "PRAGMA user_version;")" -eq 10
+test "$(sqlite3 "$database" "PRAGMA user_version;")" -eq 11
+test "$(
+    sqlite3 "$database" \
+        "SELECT count(*) FROM knowledge_nodes WHERE workspace_id = 'workspace_01';"
+)" -eq 2
+test "$(
+    sqlite3 "$database" \
+        "SELECT count(*) FROM knowledge_edges WHERE workspace_id = 'workspace_01' AND source_id = 'node_project' AND valid_from <= 150 AND (valid_until IS NULL OR valid_until > 150);"
+)" -eq 1
 test "$(
     sqlite3 "$database" \
         "SELECT count(*) FROM checkpoint_disclosures;"

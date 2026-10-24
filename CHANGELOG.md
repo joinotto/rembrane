@@ -16,6 +16,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Tenant-isolated knowledge graph repository ports and an in-memory reference
   implementation with bounded temporal neighbourhood traversal, endpoint and
   supersession validation, and optimistic node/edge replacement.
+- SQLite schema migration for encrypted temporal graph aggregates, including
+  workspace-bound endpoint and supersession foreign keys plus indexed incoming
+  and outgoing validity-window traversal.
 - Authenticated key-provider HTTP adapter using Rustls, bounded response reads,
   disabled redirects and environment proxies, zeroized bearer credentials,
   strict JSON/base64 decoding, and HTTPS except for exact loopback origins.

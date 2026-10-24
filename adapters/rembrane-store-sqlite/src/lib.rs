@@ -42,7 +42,9 @@ const TRAVEL_SENSITIVE_DISCLOSURE_MIGRATION: &str =
     include_str!("../../../migrations/sqlite/0009_travel_sensitive_disclosures.sql");
 const TRAVEL_SENSITIVE_PROFILE_MIGRATION: &str =
     include_str!("../../../migrations/sqlite/0010_travel_sensitive_profiles.sql");
-const CURRENT_SCHEMA_VERSION: u32 = 10;
+const KNOWLEDGE_GRAPH_MIGRATION: &str =
+    include_str!("../../../migrations/sqlite/0011_knowledge_graph.sql");
+const CURRENT_SCHEMA_VERSION: u32 = 11;
 const CANONICAL_TABLES: [&str; 10] = [
     "activity_checkpoints",
     "disclosed_memories",
@@ -169,6 +171,12 @@ fn migrate(connection: &mut Connection) -> Result<(), ApplicationError> {
     if version == 9 {
         transaction
             .execute_batch(TRAVEL_SENSITIVE_PROFILE_MIGRATION)
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        version = 10;
+    }
+    if version == 10 {
+        transaction
+            .execute_batch(KNOWLEDGE_GRAPH_MIGRATION)
             .map_err(|_| ApplicationError::StorageUnavailable)?;
     }
     transaction
