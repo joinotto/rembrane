@@ -64,6 +64,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   represent unimplemented or externally gated work.
 - Added a pinned Ubuntu 24.04 Kotlin SDK job that requires the hosted
   `kotlinc` and Java toolchains and executes the portable compiler smoke test.
+- Preserved remote MCP HTTP authentication outcomes through session
+  establishment, request classification, cross-tenant revalidation, bounded
+  capacity handling, and authenticated termination.
 - A versioned per-workspace retention policy contract with separate periods
   for memory, checkpoints, travel research, disclosures, canonical events, and
   administrative audit, including bounded expiry and legal-hold overrides.

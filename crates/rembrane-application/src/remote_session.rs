@@ -4,7 +4,17 @@ use rembrane_contracts::{
     RemoteMcpRequestAuthorization, RemoteSessionBinding, RemoteSessionId, VerifiedRemoteAccess,
 };
 
-use crate::{ApplicationError, RemoteHttpAuthorization, RemoteTokenVerifier};
+use crate::{
+    ApplicationError, RemoteHttpAuthorization, RemoteHttpAuthorizationError, RemoteTokenVerifier,
+};
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RemoteSessionHttpError {
+    Unauthorized,
+    Forbidden,
+    Conflict,
+    CapacityExceeded,
+}
 
 pub struct RemoteSessionRegistry {
     sessions: BTreeMap<RemoteSessionId, RemoteSessionBinding>,
@@ -76,6 +86,38 @@ impl RemoteSessionRegistry {
             now_epoch_seconds,
         )?;
         self.establish(session_id, &access, now_epoch_seconds)?;
+        Ok(access)
+    }
+
+    /// Authenticates and establishes an HTTP session while preserving the
+    /// transport outcome required for a correct bearer response.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Unauthorized` only for invalid credentials, `Forbidden` for
+    /// an authenticated but untrusted origin, `Conflict` for a duplicate
+    /// session identifier, and `CapacityExceeded` for bounded-registry
+    /// exhaustion.
+    pub fn authorize_and_establish_for_http<Verifier>(
+        &mut self,
+        authorization: &RemoteHttpAuthorization<'_, '_, Verifier>,
+        session_id: RemoteSessionId,
+        authorization_header: Option<&str>,
+        origin_header: Option<&str>,
+        now_epoch_seconds: u64,
+    ) -> Result<VerifiedRemoteAccess, RemoteSessionHttpError>
+    where
+        Verifier: RemoteTokenVerifier,
+    {
+        let access = authorization
+            .authorize_connection_for_http(authorization_header, origin_header, now_epoch_seconds)
+            .map_err(RemoteSessionHttpError::from)?;
+        self.establish(session_id, &access, now_epoch_seconds)
+            .map_err(|error| match error {
+                ApplicationError::AlreadyExists => RemoteSessionHttpError::Conflict,
+                ApplicationError::StorageUnavailable => RemoteSessionHttpError::CapacityExceeded,
+                _ => RemoteSessionHttpError::Forbidden,
+            })?;
         Ok(access)
     }
 
@@ -174,6 +216,50 @@ impl RemoteSessionRegistry {
         }
     }
 
+    /// Classifies and authorizes an established-session HTTP MCP request
+    /// without collapsing bearer authentication into a generic denial.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Unauthorized` for invalid credentials and `Forbidden` for an
+    /// authenticated origin, tool, scope, session, or tenant mismatch.
+    pub fn authorize_request_for_http<Verifier>(
+        &mut self,
+        authorization: &RemoteHttpAuthorization<'_, '_, Verifier>,
+        session_id: &RemoteSessionId,
+        authorization_header: Option<&str>,
+        origin_header: Option<&str>,
+        method: &str,
+        tool_name: Option<&str>,
+        now_epoch_seconds: u64,
+    ) -> Result<VerifiedRemoteAccess, RemoteSessionHttpError>
+    where
+        Verifier: RemoteTokenVerifier,
+    {
+        let classified = RemoteMcpRequestAuthorization::classify(method, tool_name)
+            .ok_or(RemoteSessionHttpError::Forbidden)?;
+        let access = match classified {
+            RemoteMcpRequestAuthorization::Connection => authorization
+                .authorize_connection_for_http(
+                    authorization_header,
+                    origin_header,
+                    now_epoch_seconds,
+                )
+                .map_err(RemoteSessionHttpError::from)?,
+            RemoteMcpRequestAuthorization::Tool(operation) => authorization
+                .authorize_tool_for_http(
+                    authorization_header,
+                    origin_header,
+                    operation.tool_name(),
+                    now_epoch_seconds,
+                )
+                .map_err(RemoteSessionHttpError::from)?,
+        };
+        self.revalidate(session_id, &access, now_epoch_seconds)
+            .map_err(|_| RemoteSessionHttpError::Forbidden)?;
+        Ok(access)
+    }
+
     /// Reauthenticates and deletes a remote session.
     ///
     /// # Errors
@@ -197,6 +283,31 @@ impl RemoteSessionRegistry {
             now_epoch_seconds,
         )?;
         self.terminate(session_id, &access, now_epoch_seconds)
+    }
+
+    /// Reauthenticates and terminates an HTTP MCP session while retaining
+    /// correct 401 versus 403 semantics.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Unauthorized` for invalid credentials and `Forbidden` for an
+    /// authenticated origin, session, or tenant mismatch.
+    pub fn authorize_and_terminate_for_http<Verifier>(
+        &mut self,
+        authorization: &RemoteHttpAuthorization<'_, '_, Verifier>,
+        session_id: &RemoteSessionId,
+        authorization_header: Option<&str>,
+        origin_header: Option<&str>,
+        now_epoch_seconds: u64,
+    ) -> Result<(), RemoteSessionHttpError>
+    where
+        Verifier: RemoteTokenVerifier,
+    {
+        let access = authorization
+            .authorize_connection_for_http(authorization_header, origin_header, now_epoch_seconds)
+            .map_err(RemoteSessionHttpError::from)?;
+        self.terminate(session_id, &access, now_epoch_seconds)
+            .map_err(|_| RemoteSessionHttpError::Forbidden)
     }
 
     /// Removes bindings whose non-extending authorization lifetime elapsed.
@@ -255,6 +366,15 @@ impl RemoteSessionRegistry {
     }
 }
 
+impl From<RemoteHttpAuthorizationError> for RemoteSessionHttpError {
+    fn from(error: RemoteHttpAuthorizationError) -> Self {
+        match error {
+            RemoteHttpAuthorizationError::Unauthorized => Self::Unauthorized,
+            RemoteHttpAuthorizationError::Forbidden => Self::Forbidden,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;
@@ -264,7 +384,7 @@ mod tests {
     };
     use rembrane_domain::{ClientId, PrincipalId, WorkspaceId};
 
-    use super::RemoteSessionRegistry;
+    use super::{RemoteSessionHttpError, RemoteSessionRegistry};
     use crate::{
         ApplicationError, RemoteAccessAuthenticator, RemoteHttpAuthorization,
         RemoteTokenVerificationError, RemoteTokenVerifier,
@@ -559,5 +679,106 @@ mod tests {
                 ApplicationError::AccessDenied
             );
         }
+    }
+
+    #[test]
+    fn http_lifecycle_preserves_auth_outcomes_and_denies_cross_tenant_replay() {
+        let verifier = FixtureVerifier;
+        let authenticator = RemoteAccessAuthenticator::new(
+            &verifier,
+            "https://identity.example.test",
+            "https://memory.example.test/mcp",
+        );
+        let trusted_origins = ["https://agent.example.test"];
+        let authorization = RemoteHttpAuthorization::new(&authenticator, &trusted_origins);
+        let mut registry = RemoteSessionRegistry::new(1).expect("capacity should be valid");
+        let session =
+            RemoteSessionId::new("session_0123456789abcdef").expect("session id should be valid");
+
+        assert_eq!(
+            registry
+                .authorize_and_establish_for_http(
+                    &authorization,
+                    session.clone(),
+                    None,
+                    Some("https://agent.example.test"),
+                    1_000,
+                )
+                .expect_err("missing bearer must be unauthorized"),
+            RemoteSessionHttpError::Unauthorized
+        );
+        assert_eq!(
+            registry
+                .authorize_and_establish_for_http(
+                    &authorization,
+                    session.clone(),
+                    Some("Bearer workspace-one"),
+                    Some("https://evil.example.test"),
+                    1_000,
+                )
+                .expect_err("untrusted authenticated origin must be forbidden"),
+            RemoteSessionHttpError::Forbidden
+        );
+        registry
+            .authorize_and_establish_for_http(
+                &authorization,
+                session.clone(),
+                Some("Bearer workspace-one"),
+                Some("https://agent.example.test"),
+                1_000,
+            )
+            .expect("valid request should establish");
+
+        assert_eq!(
+            registry
+                .authorize_request_for_http(
+                    &authorization,
+                    &session,
+                    Some("Bearer invalid"),
+                    Some("https://agent.example.test"),
+                    "tools/list",
+                    None,
+                    1_100,
+                )
+                .expect_err("invalid bearer must remain unauthorized"),
+            RemoteSessionHttpError::Unauthorized
+        );
+        assert_eq!(
+            registry
+                .authorize_request_for_http(
+                    &authorization,
+                    &session,
+                    Some("Bearer workspace-two"),
+                    Some("https://agent.example.test"),
+                    "tools/list",
+                    None,
+                    1_100,
+                )
+                .expect_err("cross-tenant replay must be forbidden"),
+            RemoteSessionHttpError::Forbidden
+        );
+        assert_eq!(
+            registry
+                .authorize_request_for_http(
+                    &authorization,
+                    &session,
+                    Some("Bearer workspace-one"),
+                    Some("https://agent.example.test"),
+                    "tools/call",
+                    Some("untrusted_future_tool"),
+                    1_100,
+                )
+                .expect_err("unknown tool must fail closed"),
+            RemoteSessionHttpError::Forbidden
+        );
+        registry
+            .authorize_and_terminate_for_http(
+                &authorization,
+                &session,
+                Some("Bearer workspace-one"),
+                Some("https://agent.example.test"),
+                1_200,
+            )
+            .expect("bound session should terminate");
     }
 }

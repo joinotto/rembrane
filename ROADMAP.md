@@ -122,6 +122,9 @@ This roadmap describes sequencing, not release dates.
     - [x] Preserve transport-facing bearer outcomes so adapters return 401 for
       invalid credentials and 403 only for authenticated but forbidden
       origins, tools, or scopes.
+    - [x] Preserve those HTTP outcomes through session establishment,
+      per-request reauthentication, cross-tenant replay denial, and
+      authenticated termination.
   - [x] Allow the shared MCP handler service to initialize canonical
     subject/client/workspace identity exclusively from verified remote claims.
   - [x] Bind remote sessions to issuer, resource, canonical identity,
