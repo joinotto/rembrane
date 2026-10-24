@@ -1,0 +1,157 @@
+openapi: 3.1.0
+info:
+  title: Rembrane Key Provider Protocol
+  version: 0.1.0
+  description: >-
+    Trusted-boundary protocol for record encryption without exporting raw
+    workspace keys. Deploy over a Unix socket, authenticated loopback, or a
+    mutually authenticated customer-controlled channel.
+servers:
+  - url: http://127.0.0.1:8792
+paths:
+  /v0.1/manifest:
+    get:
+      operationId: getKeyProviderManifest
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Provider capabilities.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Manifest"
+  /v0.1/seal:
+    post:
+      operationId: sealRecord
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SealRequest"
+      responses:
+        "200":
+          description: Authenticated encrypted envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EncryptedEnvelope"
+  /v0.1/open:
+    post:
+      operationId: openRecord
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OpenRequest"
+      responses:
+        "200":
+          description: Authenticated plaintext.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Plaintext"
+        "401":
+          description: Provider authentication failed.
+        "422":
+          description: Envelope, context, algorithm, or key is invalid.
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  schemas:
+    Manifest:
+      type: object
+      additionalProperties: false
+      required: [providerId, protocolVersion, algorithms, maximumPlaintextBytes]
+      properties:
+        providerId:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9._-]+$"
+        protocolVersion:
+          const: "0.1"
+        algorithms:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            type: string
+        maximumPlaintextBytes:
+          type: integer
+          minimum: 1
+        supportsHistoricalKeys:
+          type: boolean
+          default: false
+    EncryptionContext:
+      type: object
+      additionalProperties: false
+      required: [workspaceId, recordId, recordVersion, purpose]
+      properties:
+        workspaceId:
+          type: string
+          minLength: 1
+        recordId:
+          type: string
+          minLength: 1
+        recordVersion:
+          type: integer
+          minimum: 1
+        purpose:
+          enum: [activity-checkpoint, canonical-event, memory-content]
+    SealRequest:
+      type: object
+      additionalProperties: false
+      required: [requestId, context, plaintextBase64]
+      properties:
+        requestId:
+          type: string
+          minLength: 1
+        context:
+          $ref: "#/components/schemas/EncryptionContext"
+        plaintextBase64:
+          type: string
+          contentEncoding: base64
+    OpenRequest:
+      type: object
+      additionalProperties: false
+      required: [requestId, context, envelope]
+      properties:
+        requestId:
+          type: string
+          minLength: 1
+        context:
+          $ref: "#/components/schemas/EncryptionContext"
+        envelope:
+          $ref: "#/components/schemas/EncryptedEnvelope"
+    EncryptedEnvelope:
+      type: object
+      additionalProperties: false
+      required: [ciphertextBase64, keyId, algorithm, nonceBase64]
+      properties:
+        ciphertextBase64:
+          type: string
+          contentEncoding: base64
+        keyId:
+          type: string
+          minLength: 1
+        algorithm:
+          type: string
+          minLength: 1
+        nonceBase64:
+          type: string
+          contentEncoding: base64
+    Plaintext:
+      type: object
+      additionalProperties: false
+      required: [plaintextBase64]
+      properties:
+        plaintextBase64:
+          type: string
+          contentEncoding: base64

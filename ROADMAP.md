@@ -61,6 +61,8 @@ This roadmap describes sequencing, not release dates.
   - [x] Resolve active and historical rotating keyrings from macOS Keychain
     using metadata-only references.
   - [ ] Add Windows DPAPI and Linux Secret Service adapters.
+  - [x] Define a vendor-neutral authenticated key-provider operation protocol
+    that never exports raw workspace keys.
   - [ ] Resolve or unwrap keyring material through customer KMS adapters.
 - [x] Retrieve minimal context through local stdio MCP.
 - [x] Rank canonical context by deterministic local query relevance.
@@ -126,6 +128,8 @@ This roadmap describes sequencing, not release dates.
 - [x] Versioned HTTP sidecar contract for external semantic providers.
 - [x] Secret-safe black-box HTTP sidecar conformance runner.
 - [ ] Stable Memory Provider Protocol.
+- [x] Versioned key-provider sidecar protocol for OS, HSM, and customer-KMS
+  adapters.
 - [ ] TypeScript, Python, Rust, Swift, and Kotlin SDKs.
 - [x] Reusable semantic-provider conformance suite.
 - [x] Evidence-backed provider compatibility registry schema and initial

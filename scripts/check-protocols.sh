@@ -17,6 +17,7 @@ done
 
 ruby -e 'require "yaml"; YAML.load_file(ARGV.fetch(0))' spec/openapi.yaml
 ruby -e 'require "yaml"; YAML.load_file(ARGV.fetch(0))' spec/provider-openapi.yaml
+ruby -e 'require "yaml"; YAML.load_file(ARGV.fetch(0))' spec/key-provider-openapi.yaml
 jq empty \
     spec/discovery.schema.json \
     spec/examples/discovery.json \
@@ -24,6 +25,7 @@ jq empty \
     spec/examples/provider-projection.json \
     spec/examples/provider-search-request.json \
     spec/examples/provider-search-response.json \
+    spec/examples/key-provider-manifest.json \
     spec/provider-manifest.schema.json \
     spec/provider-registry.json \
     spec/provider-registry.schema.json \
@@ -54,6 +56,25 @@ do
         exit 1
     fi
 done
+
+for key_provider_route in \
+    '/v0.1/manifest:' \
+    '/v0.1/seal:' \
+    '/v0.1/open:'
+do
+    if ! rg -F "$key_provider_route" spec/key-provider-openapi.yaml >/dev/null; then
+        echo "key provider protocol route is missing: $key_provider_route" >&2
+        exit 1
+    fi
+done
+
+jq -e '
+    .protocolVersion == "0.1"
+    and (.providerId | test("^[a-z0-9][a-z0-9._-]+$"))
+    and (.algorithms | type == "array" and length > 0)
+    and (.maximumPlaintextBytes | type == "number" and . > 0)
+    and (.supportsHistoricalKeys | type == "boolean")
+' spec/examples/key-provider-manifest.json >/dev/null
 
 jq -e '
     .schemaVersion == 1

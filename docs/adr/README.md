@@ -20,3 +20,4 @@ Changing an accepted decision requires a new ADR that links to and supersedes th
 - [0005: Make canonical mutations atomic](0005-atomic-canonical-mutations.md)
 - [0006: Keep record encryption behind an opaque boundary](0006-opaque-record-encryption-boundary.md)
 - [0007: Prototype record AEAD with RustCrypto](0007-experimental-rustcrypto-record-aead.md)
+- [0008: Key providers expose operations, not raw keys](0008-key-provider-operation-protocol.md)

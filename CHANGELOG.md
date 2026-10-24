@@ -105,6 +105,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Typed macOS Keychain key references and CLI keyring resolution for one active
   key plus metadata-only historical `key_id=account` entries, allowing old
   ciphertext reads after rotation without exporting key material.
+- Key Provider Protocol v0.1 OpenAPI contract and architecture decision for
+  authenticated `seal`/`open` operations that keep raw workspace keys inside
+  OS-keychain, HSM, or customer-KMS provider boundaries.
 - Versioned discovery, OpenAPI, and MCP protocol specifications.
 - Tenant-isolated SQLite canonical schema with encrypted-payload metadata.
 - Versioned SQLite initialization with legacy-schema adoption, idempotent
