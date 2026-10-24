@@ -3,10 +3,13 @@ use rembrane_application::{
     ChannelSenderBindingRepository,
 };
 use rembrane_contracts::{ChannelKind, ChannelSenderBinding, VerifiedChannelMessage};
-use rembrane_domain::{ClientId, PrincipalId, WorkspaceId};
+use rembrane_domain::{
+    AdministrativeAction, AdministrativeAuditEvent, AdministrativeTargetKind, ClientId,
+    PrincipalId, WorkspaceId,
+};
 use rusqlite::{OptionalExtension, TransactionBehavior, params};
 
-use crate::{SqliteStore, map_write_error};
+use crate::{SqliteStore, insert_administrative_audit, map_write_error};
 
 impl<C> ChannelReplayRepository for SqliteStore<C> {
     fn accept_channel_event(
@@ -146,6 +149,80 @@ impl<C> ChannelSenderBindingRepository for SqliteStore<C> {
             .map_err(map_write_error)?;
         Ok(())
     }
+
+    fn insert_channel_sender_binding_with_audit(
+        &mut self,
+        binding: ChannelSenderBinding,
+        audit_event: AdministrativeAuditEvent,
+    ) -> Result<(), ApplicationError> {
+        validate_binding_audit(
+            &binding,
+            &audit_event,
+            AdministrativeAction::ChannelBindingCreated,
+        )?;
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        transaction
+            .execute(
+                "INSERT INTO channel_sender_bindings (
+                    channel, account_lookup_key, sender_lookup_key,
+                    workspace_id, principal_id, client_id
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![
+                    encode_channel(binding.channel()),
+                    binding.account_lookup_key(),
+                    binding.sender_lookup_key(),
+                    binding.workspace_id().as_str(),
+                    binding.principal_id().as_str(),
+                    binding.client_id().as_str(),
+                ],
+            )
+            .map_err(map_write_error)?;
+        insert_administrative_audit(&transaction, &audit_event)?;
+        transaction.commit().map_err(map_write_error)
+    }
+
+    fn delete_channel_sender_binding_with_audit(
+        &mut self,
+        binding: &ChannelSenderBinding,
+        audit_event: AdministrativeAuditEvent,
+    ) -> Result<(), ApplicationError> {
+        validate_binding_audit(
+            binding,
+            &audit_event,
+            AdministrativeAction::ChannelBindingRevoked,
+        )?;
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        let deleted = transaction
+            .execute(
+                "DELETE FROM channel_sender_bindings
+                 WHERE channel = ?1
+                   AND account_lookup_key = ?2
+                   AND sender_lookup_key = ?3
+                   AND workspace_id = ?4
+                   AND principal_id = ?5
+                   AND client_id = ?6",
+                params![
+                    encode_channel(binding.channel()),
+                    binding.account_lookup_key(),
+                    binding.sender_lookup_key(),
+                    binding.workspace_id().as_str(),
+                    binding.principal_id().as_str(),
+                    binding.client_id().as_str(),
+                ],
+            )
+            .map_err(map_write_error)?;
+        if deleted != 1 {
+            return Err(ApplicationError::NotFound);
+        }
+        insert_administrative_audit(&transaction, &audit_event)?;
+        transaction.commit().map_err(map_write_error)
+    }
 }
 
 impl<C> ChannelIngressRepository for SqliteStore<C> {
@@ -253,22 +330,44 @@ impl<C> ChannelIngressRepository for SqliteStore<C> {
 }
 
 const fn encode_channel(channel: ChannelKind) -> &'static str {
-    match channel {
-        ChannelKind::WhatsAppBusiness => "whatsapp-business",
-        ChannelKind::IMessageExtension => "imessage-extension",
-        ChannelKind::MobileShare => "mobile-share",
+    channel.label()
+}
+
+fn validate_binding_audit(
+    binding: &ChannelSenderBinding,
+    event: &AdministrativeAuditEvent,
+    action: AdministrativeAction,
+) -> Result<(), ApplicationError> {
+    let expected_target = format!(
+        "{}:{}:{}",
+        binding.channel().label(),
+        binding.principal_id().as_str(),
+        binding.client_id().as_str()
+    );
+    if event.workspace_id() != binding.workspace_id()
+        || event.action() != action
+        || event.target_kind() != AdministrativeTargetKind::ChannelBinding
+        || event.target_id() != expected_target
+    {
+        return Err(ApplicationError::Validation(
+            "channel binding audit evidence is invalid".to_owned(),
+        ));
     }
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use rembrane_application::{
-        ApplicationError, ChannelIngressRepository, ChannelReplayRepository,
-        ChannelSenderBindingRepository, MembershipRepository, WorkspaceRepository,
+        AdministrativeAuditRepository, ApplicationError, ChannelBindingService,
+        ChannelIngressRepository, ChannelReplayRepository, ChannelSenderBindingRepository,
+        CreateChannelBindingCommand, MembershipRepository, RevokeChannelBindingCommand,
+        WorkspaceRepository,
     };
     use rembrane_contracts::{ChannelKind, ChannelSenderBinding, VerifiedChannelMessage};
     use rembrane_domain::{
-        ClientId, Membership, Principal, PrincipalId, Workspace, WorkspaceId, WorkspaceRole,
+        AdministrativeAction, ClientId, Membership, Principal, PrincipalId, Workspace, WorkspaceId,
+        WorkspaceRole,
     };
 
     use crate::SqliteStore;
@@ -459,6 +558,61 @@ mod tests {
                 )
                 .expect("revoked binding lookup should succeed")
                 .is_none()
+        );
+    }
+
+    #[test]
+    fn administrator_binding_lifecycle_is_atomic_and_audited() {
+        let mut store = store();
+        let binding = ChannelSenderBinding::new(
+            ChannelKind::WhatsAppBusiness,
+            "hmac-account-audited",
+            "hmac-sender-audited",
+            WorkspaceId::new("workspace_01"),
+            PrincipalId::new("principal_01"),
+            ClientId::new("client_whatsapp_audited"),
+        )
+        .expect("binding should be valid");
+        ChannelBindingService::new(&mut store)
+            .create(CreateChannelBindingCommand {
+                binding: binding.clone(),
+                created_by: PrincipalId::new("principal_01"),
+                request_id: "request_channel_create_01".to_owned(),
+            })
+            .expect("owner should create binding");
+        assert_eq!(
+            store
+                .list_administrative_audit(&WorkspaceId::new("workspace_01"), 0, 10)
+                .expect("audit should load")
+                .last()
+                .map(rembrane_domain::AdministrativeAuditEvent::action),
+            Some(AdministrativeAction::ChannelBindingCreated)
+        );
+
+        ChannelBindingService::new(&mut store)
+            .revoke(RevokeChannelBindingCommand {
+                binding,
+                revoked_by: PrincipalId::new("principal_01"),
+                request_id: "request_channel_revoke_01".to_owned(),
+            })
+            .expect("owner should revoke binding");
+        assert!(
+            store
+                .find_channel_sender_binding(
+                    ChannelKind::WhatsAppBusiness,
+                    "hmac-account-audited",
+                    "hmac-sender-audited",
+                )
+                .expect("binding lookup should succeed")
+                .is_none()
+        );
+        let audits = store
+            .list_administrative_audit(&WorkspaceId::new("workspace_01"), 0, 10)
+            .expect("audits should load");
+        assert_eq!(audits.len(), 2);
+        assert_eq!(
+            audits[1].action(),
+            AdministrativeAction::ChannelBindingRevoked
         );
     }
 

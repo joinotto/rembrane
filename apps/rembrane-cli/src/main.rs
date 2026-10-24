@@ -1,12 +1,12 @@
 use rembrane_application::{
     AdministrativeAuditRepository, ApplicationError, AuthorizeClientCommand,
-    AuthorizeClientService, CanonicalMutationRepository, ChannelSenderBindingRepository,
-    CheckpointRepository, ClientGrantBundle, DeleteMemoryCommand, EventRepository,
-    ExecuteRetentionPurgeCommand, MemberLifecycleService, MembershipRepository,
+    AuthorizeClientService, CanonicalMutationRepository, ChannelBindingService,
+    CheckpointRepository, ClientGrantBundle, CreateChannelBindingCommand, DeleteMemoryCommand,
+    EventRepository, ExecuteRetentionPurgeCommand, MemberLifecycleService, MembershipRepository,
     MemoryLifecycleService, MemoryRepository, PlaceLegalHoldCommand, ReleaseLegalHoldCommand,
     RememberPreferenceCommand, RememberPreferenceService, ResolveContextCommand,
-    ResolveContextService, RetentionService, ReviseMemoryCommand, SetRetentionPolicyCommand,
-    WorkspaceRepository,
+    ResolveContextService, RetentionService, ReviseMemoryCommand, RevokeChannelBindingCommand,
+    SetRetentionPolicyCommand, WorkspaceRepository,
 };
 use rembrane_channel_whatsapp::derive_binding_lookup_keys;
 use rembrane_config::{ProviderConnection, ProviderKind, ProviderPlacement, SecretReference};
@@ -75,11 +75,18 @@ fn run(arguments: &[String]) -> Result<(), String> {
 }
 
 fn channel(arguments: &[String]) -> Result<(), String> {
-    if arguments.first().map(String::as_str) != Some("bind-whatsapp") {
-        return Err(
-            "usage: rembrane channel bind-whatsapp --database <path> --principal <owner-or-admin-id> --workspace <id> --subject <member-id> --client <id>"
-                .to_owned(),
-        );
+    let operation = match arguments.first().map(String::as_str) {
+        Some("bind-whatsapp") => "bound",
+        Some("unbind-whatsapp") => "revoked",
+        _ => {
+            return Err(
+                "usage: rembrane channel <bind-whatsapp|unbind-whatsapp> --database <path> --principal <owner-or-admin-id> --workspace <id> --subject <member-id> --client <id> --request <id>"
+                    .to_owned(),
+            );
+        }
+    };
+    if arguments.len() == 1 {
+        return Err("channel binding options are required".to_owned());
     }
     let arguments = &arguments[1..];
     let database = option(arguments, "--database")?;
@@ -87,6 +94,7 @@ fn channel(arguments: &[String]) -> Result<(), String> {
     let workspace_id = WorkspaceId::new(option(arguments, "--workspace")?);
     let subject_id = PrincipalId::new(option(arguments, "--subject")?);
     let client_id = ClientId::new(option(arguments, "--client")?);
+    let request_id = option(arguments, "--request")?;
     let account_identifier = secret_environment("REMBRANE_WHATSAPP_ACCOUNT_ID")?;
     let sender_identifier = secret_environment("REMBRANE_WHATSAPP_SENDER_ID")?;
     let lookup_secret = secret_environment("REMBRANE_WHATSAPP_BINDING_LOOKUP_SECRET")?;
@@ -98,7 +106,6 @@ fn channel(arguments: &[String]) -> Result<(), String> {
     .map_err(|_| "cannot derive WhatsApp binding lookup keys".to_owned())?;
     let mut store =
         SqliteStore::open(database).map_err(|error| format!("cannot open database: {error}"))?;
-    require_workspace_administrator(&store, &workspace_id, &principal_id)?;
     let binding = ChannelSenderBinding::new(
         ChannelKind::WhatsAppBusiness,
         lookup.account_lookup_key(),
@@ -108,9 +115,24 @@ fn channel(arguments: &[String]) -> Result<(), String> {
         client_id.clone(),
     )
     .map_err(|_| "cannot create WhatsApp sender binding".to_owned())?;
-    store
-        .insert_channel_sender_binding(binding)
-        .map_err(|error| format!("cannot persist WhatsApp sender binding: {error}"))?;
+    let mut service = ChannelBindingService::new(&mut store);
+    if operation == "bound" {
+        service
+            .create(CreateChannelBindingCommand {
+                binding,
+                created_by: principal_id,
+                request_id: request_id.to_owned(),
+            })
+            .map_err(|error| format!("cannot persist WhatsApp sender binding: {error}"))?;
+    } else {
+        service
+            .revoke(RevokeChannelBindingCommand {
+                binding,
+                revoked_by: principal_id,
+                request_id: request_id.to_owned(),
+            })
+            .map_err(|error| format!("cannot revoke WhatsApp sender binding: {error}"))?;
+    }
     println!(
         "{}",
         serde_json::json!({
@@ -118,7 +140,7 @@ fn channel(arguments: &[String]) -> Result<(), String> {
             "workspaceId": workspace_id.as_str(),
             "principalId": subject_id.as_str(),
             "clientId": client_id.as_str(),
-            "status": "bound"
+            "status": operation
         })
     );
     Ok(())
@@ -1568,9 +1590,9 @@ fn print_help() {
            rembrane legal-hold <place|release> --database <path> \
              --principal <owner-or-admin-id> --workspace <id> \
              --hold <id> --request <id>\n\
-           rembrane channel bind-whatsapp --database <path> \
+           rembrane channel <bind-whatsapp|unbind-whatsapp> --database <path> \
              --principal <owner-or-admin-id> --workspace <id> \
-             --subject <active-member-id> --client <id>\n\
+             --subject <active-member-id> --client <id> --request <id>\n\
            rembrane mcp-config \
              --client <codex|claude-code|gemini-cli|cursor|vscode|zed|generic> \
              --server-binary <path> \

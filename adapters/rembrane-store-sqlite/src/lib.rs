@@ -68,7 +68,9 @@ const CHANNEL_SENDER_BINDINGS_MIGRATION: &str =
     include_str!("../../../migrations/sqlite/0018_channel_sender_bindings.sql");
 const CHANNEL_BINDING_LIFECYCLE_MIGRATION: &str =
     include_str!("../../../migrations/sqlite/0019_channel_binding_lifecycle.sql");
-const CURRENT_SCHEMA_VERSION: u32 = 19;
+const CHANNEL_BINDING_AUDIT_MIGRATION: &str =
+    include_str!("../../../migrations/sqlite/0020_channel_binding_audit.sql");
+const CURRENT_SCHEMA_VERSION: u32 = 20;
 const CANONICAL_TABLES: [&str; 10] = [
     "activity_checkpoints",
     "disclosed_memories",
@@ -604,6 +606,8 @@ fn parse_administrative_action(value: &str) -> Result<AdministrativeAction, Appl
         "retention-policy-changed" => Ok(AdministrativeAction::RetentionPolicyChanged),
         "legal-hold-placed" => Ok(AdministrativeAction::LegalHoldPlaced),
         "legal-hold-released" => Ok(AdministrativeAction::LegalHoldReleased),
+        "channel-binding-created" => Ok(AdministrativeAction::ChannelBindingCreated),
+        "channel-binding-revoked" => Ok(AdministrativeAction::ChannelBindingRevoked),
         _ => Err(ApplicationError::StorageUnavailable),
     }
 }
@@ -617,6 +621,7 @@ fn parse_administrative_target_kind(
         "scope-grant" => Ok(AdministrativeTargetKind::ScopeGrant),
         "retention-policy" => Ok(AdministrativeTargetKind::RetentionPolicy),
         "legal-hold" => Ok(AdministrativeTargetKind::LegalHold),
+        "channel-binding" => Ok(AdministrativeTargetKind::ChannelBinding),
         _ => Err(ApplicationError::StorageUnavailable),
     }
 }
@@ -782,6 +787,12 @@ fn migrate(connection: &mut Connection) -> Result<(), ApplicationError> {
     if version == 18 {
         transaction
             .execute_batch(CHANNEL_BINDING_LIFECYCLE_MIGRATION)
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        version = 19;
+    }
+    if version == 19 {
+        transaction
+            .execute_batch(CHANNEL_BINDING_AUDIT_MIGRATION)
             .map_err(|_| ApplicationError::StorageUnavailable)?;
     }
     transaction

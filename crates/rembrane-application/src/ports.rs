@@ -41,6 +41,18 @@ pub trait ChannelSenderBindingRepository {
         &mut self,
         binding: ChannelSenderBinding,
     ) -> Result<(), ApplicationError>;
+
+    fn insert_channel_sender_binding_with_audit(
+        &mut self,
+        binding: ChannelSenderBinding,
+        audit_event: AdministrativeAuditEvent,
+    ) -> Result<(), ApplicationError>;
+
+    fn delete_channel_sender_binding_with_audit(
+        &mut self,
+        binding: &ChannelSenderBinding,
+        audit_event: AdministrativeAuditEvent,
+    ) -> Result<(), ApplicationError>;
 }
 
 /// Atomic authenticated-channel admission.

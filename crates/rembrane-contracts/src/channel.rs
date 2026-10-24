@@ -14,6 +14,17 @@ pub enum ChannelKind {
     MobileShare,
 }
 
+impl ChannelKind {
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::WhatsAppBusiness => "whatsapp-business",
+            Self::IMessageExtension => "imessage-extension",
+            Self::MobileShare => "mobile-share",
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct VerifiedChannelMessage {
     channel: ChannelKind,

@@ -563,6 +563,8 @@ This roadmap describes sequencing, not release dates.
   - [x] Add administrator-only sender onboarding that consumes raw identifiers
     and the lookup secret from protected environment variables and persists
     only matching keyed pseudonyms.
+  - [x] Commit content-free administrative audit evidence atomically with
+    explicit channel-binding creation and revocation.
   - [x] Define a bounded authenticated-channel message contract whose
     canonical workspace, principal, and client identity must come from a
     deployment-owned sender binding rather than webhook payload claims.

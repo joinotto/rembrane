@@ -32,6 +32,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - WhatsApp onboarding support for binding any active workspace member by a
   distinct administrator, with explicit lookup-secret zeroization on malformed
   identifier paths.
+- Atomic administrator-authorized channel-binding creation and revocation with
+  content-free append-only audit evidence and explicit CLI lifecycle commands.
 - Durable, content-free SQLite channel replay receipts with atomic cleanup,
   fail-closed capacity enforcement, per-platform namespaces, and
   cross-workspace duplicate denial for multi-process gateways.

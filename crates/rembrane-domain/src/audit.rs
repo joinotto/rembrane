@@ -15,6 +15,8 @@ pub enum AdministrativeAction {
     RetentionPolicyChanged,
     LegalHoldPlaced,
     LegalHoldReleased,
+    ChannelBindingCreated,
+    ChannelBindingRevoked,
 }
 
 impl AdministrativeAction {
@@ -28,6 +30,8 @@ impl AdministrativeAction {
             Self::RetentionPolicyChanged => "retention-policy-changed",
             Self::LegalHoldPlaced => "legal-hold-placed",
             Self::LegalHoldReleased => "legal-hold-released",
+            Self::ChannelBindingCreated => "channel-binding-created",
+            Self::ChannelBindingRevoked => "channel-binding-revoked",
         }
     }
 }
@@ -39,6 +43,7 @@ pub enum AdministrativeTargetKind {
     ScopeGrant,
     RetentionPolicy,
     LegalHold,
+    ChannelBinding,
 }
 
 impl AdministrativeTargetKind {
@@ -50,6 +55,7 @@ impl AdministrativeTargetKind {
             Self::ScopeGrant => "scope-grant",
             Self::RetentionPolicy => "retention-policy",
             Self::LegalHold => "legal-hold",
+            Self::ChannelBinding => "channel-binding",
         }
     }
 }

@@ -278,12 +278,16 @@ rembrane channel bind-whatsapp \
   --principal principal_admin \
   --workspace workspace_team \
   --subject principal_member \
-  --client client_whatsapp
+  --client client_whatsapp \
+  --request request_whatsapp_bind_01
 ```
 
 The command emits canonical IDs and status only. Shell history, logs, and the
 database never receive the raw identifiers as command-line arguments or
-stored binding values.
+stored binding values. Use `unbind-whatsapp` with the same identity arguments
+and a new request ID to revoke the binding. Creation and revocation commit
+content-free administrative audit evidence in the same database transaction
+as the binding mutation.
 
 ## 8. iMessage
 
