@@ -7,8 +7,9 @@ use rembrane_application::{
     CaptureBookingResearchService, CheckpointService, ClientGrantBundle, CreateCheckpointCommand,
     CreateTripCommand, DeleteMemoryCommand, EventRepository, MemoryLifecycleService,
     MemoryProposalService, ProposeMemoryCommand, RememberPreferenceCommand,
-    RememberPreferenceService, ResolveContextCommand, ResolveContextService, ResumeActivityCommand,
-    ReviseMemoryCommand, TripService, UpdateCheckpointCommand,
+    RememberPreferenceService, ResolveContextCommand, ResolveContextService,
+    ResolveTravelContextCommand, ResumeActivityCommand, ReviseMemoryCommand, TravelContextService,
+    TripService, UpdateCheckpointCommand,
 };
 use rembrane_config::parse_read_scopes;
 use rembrane_contracts::ResolveContextRequest;
@@ -142,6 +143,14 @@ struct CreateTripParameters {
     return_not_after: String,
 }
 
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct ResolveTravelContextParameters {
+    trip_id: String,
+    purpose: String,
+    as_of: String,
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct TripOutput {
@@ -156,6 +165,40 @@ struct BookingResearchOutput {
     trip_id: String,
     version: u64,
     expires_at: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TravelContextOutput {
+    disclosure_id: String,
+    trip: TravelTripOutput,
+    fresh_research: Vec<TravelResearchOutput>,
+    expired_research: Vec<TravelResearchOutput>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TravelTripOutput {
+    trip_id: String,
+    title: String,
+    origin: String,
+    destinations: Vec<String>,
+    depart_not_before: String,
+    return_not_after: String,
+    version: u64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TravelResearchOutput {
+    research_id: String,
+    kind: &'static str,
+    provider: String,
+    summary: String,
+    evidence_id: String,
+    observed_at: String,
+    expires_at: String,
+    version: u64,
 }
 
 #[derive(Serialize)]
@@ -712,6 +755,50 @@ impl RembraneMcp {
     }
 
     #[tool(
+        name = "rembrane_resolve_travel_context",
+        description = "Retrieve one authorized trip with fresh and expired research, recording an exact-version disclosure receipt."
+    )]
+    fn resolve_travel_context(
+        &self,
+        Parameters(parameters): Parameters<ResolveTravelContextParameters>,
+    ) -> Result<String, McpError> {
+        let mut state = lock_state(&self.state)?;
+        let trip_id = EntityId::new(parameters.trip_id);
+        let grants = authorize(
+            &state,
+            vec![ReadScope::Entity {
+                id: trip_id.clone(),
+            }],
+            Vec::new(),
+        )?;
+        let disclosure_id = DisclosureId::new(format!("disclosure_{}", next_id(&mut state)));
+        let context = TravelContextService::new(&mut state.store)
+            .resolve(&ResolveTravelContextCommand {
+                grant: grants.read,
+                disclosure_id: disclosure_id.clone(),
+                trip_id,
+                purpose: parameters.purpose,
+                as_of: parameters.as_of,
+            })
+            .map_err(application_error)?;
+        serde_json::to_string(&TravelContextOutput {
+            disclosure_id: disclosure_id.to_string(),
+            trip: TravelTripOutput::from(&context.trip),
+            fresh_research: context
+                .fresh_research
+                .iter()
+                .map(TravelResearchOutput::from)
+                .collect(),
+            expired_research: context
+                .expired_research
+                .iter()
+                .map(TravelResearchOutput::from)
+                .collect(),
+        })
+        .map_err(|_| McpError::internal_error("response serialization failed", None))
+    }
+
+    #[tool(
         name = "rembrane_resume_activity",
         description = "Retrieve the latest encrypted checkpoint for one authorized activity."
     )]
@@ -764,6 +851,45 @@ fn parse_research_kind(value: &str) -> Option<BookingResearchKind> {
         "activity" => Some(BookingResearchKind::Activity),
         "other" => Some(BookingResearchKind::Other),
         _ => None,
+    }
+}
+
+fn research_kind_name(kind: BookingResearchKind) -> &'static str {
+    match kind {
+        BookingResearchKind::Flight => "flight",
+        BookingResearchKind::Lodging => "lodging",
+        BookingResearchKind::GroundTransport => "ground-transport",
+        BookingResearchKind::Activity => "activity",
+        BookingResearchKind::Other => "other",
+    }
+}
+
+impl From<&Trip> for TravelTripOutput {
+    fn from(trip: &Trip) -> Self {
+        Self {
+            trip_id: trip.id().to_string(),
+            title: trip.title().to_owned(),
+            origin: trip.origin().to_owned(),
+            destinations: trip.destinations().to_vec(),
+            depart_not_before: trip.date_window().depart_not_before().to_owned(),
+            return_not_after: trip.date_window().return_not_after().to_owned(),
+            version: trip.version(),
+        }
+    }
+}
+
+impl From<&BookingResearch> for TravelResearchOutput {
+    fn from(research: &BookingResearch) -> Self {
+        Self {
+            research_id: research.id().to_string(),
+            kind: research_kind_name(research.kind()),
+            provider: research.provider().to_owned(),
+            summary: research.summary().to_owned(),
+            evidence_id: research.evidence().id.to_string(),
+            observed_at: research.observed_at().to_owned(),
+            expires_at: research.expires_at().to_owned(),
+            version: research.version(),
+        }
     }
 }
 

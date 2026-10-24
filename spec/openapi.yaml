@@ -115,6 +115,38 @@ paths:
           $ref: "#/components/responses/AccessDenied"
         "409":
           $ref: "#/components/responses/Conflict"
+  /travel/context/resolve:
+    post:
+      operationId: resolveTravelContext
+      summary: Resolve audited continuity context for one trip
+      description: |
+        Returns the authorized trip and classifies its research against the
+        supplied canonical UTC clock. The server records an exact-version
+        disclosure receipt before returning plaintext. Opaque provider source
+        references are intentionally excluded.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResolveTravelContextRequest"
+      responses:
+        "200":
+          description: Audited travel context
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TravelContextResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/AccessDenied"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
 components:
   securitySchemes:
     bearerAuth:
@@ -220,6 +252,105 @@ components:
           maxItems: 100
           items:
             $ref: "#/components/schemas/Memory"
+    ResolveTravelContextRequest:
+      type: object
+      additionalProperties: false
+      required: [workspaceId, subjectId, tripId, purpose, asOf]
+      properties:
+        workspaceId:
+          $ref: "#/components/schemas/OpaqueId"
+        subjectId:
+          $ref: "#/components/schemas/OpaqueId"
+        tripId:
+          $ref: "#/components/schemas/OpaqueId"
+        purpose:
+          type: string
+          minLength: 1
+          maxLength: 255
+        asOf:
+          type: string
+          format: date-time
+          pattern: "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    TravelContextResponse:
+      type: object
+      additionalProperties: false
+      required: [disclosureId, trip, freshResearch, expiredResearch]
+      properties:
+        disclosureId:
+          $ref: "#/components/schemas/OpaqueId"
+        trip:
+          $ref: "#/components/schemas/TravelTrip"
+        freshResearch:
+          type: array
+          items:
+            $ref: "#/components/schemas/TravelResearch"
+        expiredResearch:
+          type: array
+          items:
+            $ref: "#/components/schemas/TravelResearch"
+    TravelTrip:
+      type: object
+      additionalProperties: false
+      required:
+        - tripId
+        - title
+        - origin
+        - destinations
+        - departNotBefore
+        - returnNotAfter
+        - version
+      properties:
+        tripId:
+          $ref: "#/components/schemas/OpaqueId"
+        title:
+          type: string
+        origin:
+          type: string
+        destinations:
+          type: array
+          items:
+            type: string
+        departNotBefore:
+          type: string
+          format: date
+        returnNotAfter:
+          type: string
+          format: date
+        version:
+          type: integer
+          minimum: 1
+    TravelResearch:
+      type: object
+      additionalProperties: false
+      required:
+        - researchId
+        - kind
+        - provider
+        - summary
+        - evidenceId
+        - observedAt
+        - expiresAt
+        - version
+      properties:
+        researchId:
+          $ref: "#/components/schemas/OpaqueId"
+        kind:
+          enum: [flight, lodging, ground-transport, activity, other]
+        provider:
+          type: string
+        summary:
+          type: string
+        evidenceId:
+          $ref: "#/components/schemas/OpaqueId"
+        observedAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+        version:
+          type: integer
+          minimum: 1
     CaptureBookingResearchRequest:
       type: object
       additionalProperties: false

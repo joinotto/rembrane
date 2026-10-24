@@ -76,6 +76,22 @@ Annotations:
 }
 ```
 
+### `rembrane_resolve_travel_context`
+
+Retrieves one authorized trip and separates its booking research into fresh and
+expired observations at the caller-supplied canonical UTC time. The server
+appends an exact-version disclosure receipt before returning plaintext.
+
+Arguments:
+
+- `tripId`
+- `purpose`
+- `asOf`
+
+The response deliberately omits opaque `sourceReference` values. A client must
+hold the exact trip entity scope; a travel-domain grant alone cannot read an
+existing trip.
+
 ### `rembrane_resolve_context`
 
 Retrieves the minimum confirmed context authorized for the current client and purpose.

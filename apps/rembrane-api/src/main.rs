@@ -11,7 +11,8 @@ use axum::{Json, Router};
 use rembrane_application::{
     ApplicationError, AuthorizeClientCommand, AuthorizeClientService,
     CaptureBookingResearchCommand, CaptureBookingResearchService, CreateTripCommand,
-    ResolveContextCommand, ResolveContextService, TripService,
+    ResolveContextCommand, ResolveContextService, ResolveTravelContextCommand,
+    TravelContextService, TripService,
 };
 use rembrane_config::parse_read_scopes;
 use rembrane_contracts::ResolveContextRequest;
@@ -87,6 +88,16 @@ struct CreateTripRequest {
     expected_previous_sequence: u64,
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct ResolveTravelContextRequest {
+    workspace_id: String,
+    subject_id: String,
+    trip_id: String,
+    purpose: String,
+    as_of: String,
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct TripResponse {
@@ -105,6 +116,40 @@ struct BookingResearchResponse {
     observed_by: String,
     version: u64,
     expires_at: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TravelContextResponse {
+    disclosure_id: String,
+    trip: TravelTripOutput,
+    fresh_research: Vec<TravelResearchOutput>,
+    expired_research: Vec<TravelResearchOutput>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TravelTripOutput {
+    trip_id: String,
+    title: String,
+    origin: String,
+    destinations: Vec<String>,
+    depart_not_before: String,
+    return_not_after: String,
+    version: u64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TravelResearchOutput {
+    research_id: String,
+    kind: &'static str,
+    provider: String,
+    summary: String,
+    evidence_id: String,
+    observed_at: String,
+    expires_at: String,
+    version: u64,
 }
 
 #[derive(Serialize)]
@@ -343,6 +388,56 @@ async fn capture_booking_research(
     ))
 }
 
+async fn resolve_travel_context(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<ResolveTravelContextRequest>,
+) -> Result<Json<TravelContextResponse>, ApiError> {
+    authorize_bearer(&state, &headers)?;
+    let mut runtime = state
+        .inner
+        .runtime
+        .lock()
+        .map_err(|_| ApiError::internal())?;
+    if request.workspace_id != runtime.read_grant.workspace_id.as_str()
+        || request.subject_id != runtime.read_grant.subject_id.as_str()
+    {
+        return Err(ApiError::access_denied());
+    }
+    let trip_id = EntityId::new(request.trip_id);
+    if !runtime.read_grant.allows(&MemoryScope::Entity {
+        id: trip_id.clone(),
+    }) {
+        return Err(ApiError::access_denied());
+    }
+    runtime.next_id = runtime.next_id.saturating_add(1);
+    let disclosure_id = DisclosureId::new(format!("disclosure_{}", runtime.next_id));
+    let read_grant = runtime.read_grant.clone();
+    let context = TravelContextService::new(&mut runtime.store)
+        .resolve(&ResolveTravelContextCommand {
+            grant: read_grant,
+            disclosure_id: disclosure_id.clone(),
+            trip_id,
+            purpose: request.purpose,
+            as_of: request.as_of,
+        })
+        .map_err(ApiError::from_application)?;
+    Ok(Json(TravelContextResponse {
+        disclosure_id: disclosure_id.to_string(),
+        trip: TravelTripOutput::from(&context.trip),
+        fresh_research: context
+            .fresh_research
+            .iter()
+            .map(TravelResearchOutput::from)
+            .collect(),
+        expired_research: context
+            .expired_research
+            .iter()
+            .map(TravelResearchOutput::from)
+            .collect(),
+    }))
+}
+
 async fn health() -> Json<Health> {
     Json(Health { status: "ok" })
 }
@@ -517,6 +612,45 @@ fn parse_research_kind(value: &str) -> Option<BookingResearchKind> {
     }
 }
 
+fn research_kind_name(kind: BookingResearchKind) -> &'static str {
+    match kind {
+        BookingResearchKind::Flight => "flight",
+        BookingResearchKind::Lodging => "lodging",
+        BookingResearchKind::GroundTransport => "ground-transport",
+        BookingResearchKind::Activity => "activity",
+        BookingResearchKind::Other => "other",
+    }
+}
+
+impl From<&Trip> for TravelTripOutput {
+    fn from(trip: &Trip) -> Self {
+        Self {
+            trip_id: trip.id().to_string(),
+            title: trip.title().to_owned(),
+            origin: trip.origin().to_owned(),
+            destinations: trip.destinations().to_vec(),
+            depart_not_before: trip.date_window().depart_not_before().to_owned(),
+            return_not_after: trip.date_window().return_not_after().to_owned(),
+            version: trip.version(),
+        }
+    }
+}
+
+impl From<&BookingResearch> for TravelResearchOutput {
+    fn from(research: &BookingResearch) -> Self {
+        Self {
+            research_id: research.id().to_string(),
+            kind: research_kind_name(research.kind()),
+            provider: research.provider().to_owned(),
+            summary: research.summary().to_owned(),
+            evidence_id: research.evidence().id.to_string(),
+            observed_at: research.observed_at().to_owned(),
+            expires_at: research.expires_at().to_owned(),
+            version: research.version(),
+        }
+    }
+}
+
 fn parse_evidence_source(value: &str) -> Option<EvidenceSource> {
     match value {
         "user-statement" => Some(EvidenceSource::UserStatement),
@@ -612,6 +746,7 @@ async fn main() -> Result<()> {
         .route("/health", get(health))
         .route("/v1/context/resolve", post(resolve_context))
         .route("/v1/travel/trips", post(create_trip))
+        .route("/v1/travel/context/resolve", post(resolve_travel_context))
         .route(
             "/v1/travel/booking-research",
             post(capture_booking_research),

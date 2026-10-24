@@ -234,6 +234,45 @@
           }
         }
       ]
+    },
+    {
+      "name": "Resolve audited travel context",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{apiToken}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"workspaceId\":\"{{workspaceId}}\",\"subjectId\":\"{{principalId}}\",\"tripId\":\"{{createdTripId}}\",\"purpose\":\"continue flight planning in another assistant\",\"asOf\":\"2026-10-25T10:15:00Z\"}"
+        },
+        "url": "{{baseUrl}}/v1/travel/context/resolve"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('travel context is audited and minimizes sensitive output', function () {",
+              "  pm.response.to.have.status(200);",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.disclosureId).to.be.a('string');",
+              "  pm.expect(body.trip.tripId).to.eql(pm.collectionVariables.get('createdTripId'));",
+              "  pm.expect(body.freshResearch).to.have.lengthOf(1);",
+              "  pm.expect(body.expiredResearch).to.have.lengthOf(0);",
+              "  pm.expect(body.freshResearch[0]).not.to.have.property('sourceReference');",
+              "});"
+            ]
+          }
+        }
+      ]
     }
   ]
 }

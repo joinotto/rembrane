@@ -100,6 +100,7 @@ try {
     "rembrane_resume_activity",
     "rembrane_create_trip",
     "rembrane_capture_booking_research",
+    "rembrane_resolve_travel_context",
   ]) {
     if (!toolNames.has(expected)) {
       throw new Error(`MCP tool list omitted ${expected}`);
@@ -394,6 +395,34 @@ try {
     capturedResearch.version !== 1
   ) {
     throw new Error("MCP research capture returned invalid metadata");
+  }
+
+  const travelContextCall = await request(18, "tools/call", {
+    name: "rembrane_resolve_travel_context",
+    arguments: {
+      tripId: createdTrip.tripId,
+      purpose: "continue flight planning in another assistant",
+      asOf: "2026-10-25T10:15:00Z",
+    },
+  });
+  if (travelContextCall.isError) {
+    throw new Error(
+      `MCP travel context returned an error: ${JSON.stringify(travelContextCall)}`,
+    );
+  }
+  const travelContext = JSON.parse(
+    travelContextCall.content?.find((item) => item.type === "text")?.text,
+  );
+  if (
+    !travelContext.disclosureId ||
+    travelContext.trip?.tripId !== createdTrip.tripId ||
+    travelContext.freshResearch?.length !== 1 ||
+    travelContext.expiredResearch?.length !== 0
+  ) {
+    throw new Error("MCP travel context returned invalid continuity data");
+  }
+  if ("sourceReference" in travelContext.freshResearch[0]) {
+    throw new Error("MCP travel context exposed an opaque source reference");
   }
 } finally {
   child.kill("SIGTERM");
