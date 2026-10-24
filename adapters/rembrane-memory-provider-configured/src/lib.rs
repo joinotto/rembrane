@@ -2,7 +2,7 @@
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use rembrane_config::{ProviderConnection, ProviderKind};
+use rembrane_config::{ProviderConnection, ProviderKind, SecretReference};
 use rembrane_memory_provider_http::HttpMemoryProviderClient;
 use rembrane_provider_sdk::{
     CheckpointActivityPayload, CheckpointActivityResult, DeleteMemoryPayload, DeleteMemoryResult,
@@ -12,8 +12,8 @@ use rembrane_provider_sdk::{
     RecordEventResult, ResolveContextPayload, ResolveContextResult, ResolveQuestionPayload,
     ResolveQuestionResult, SyncPullPayload, SyncPullResult, SyncPushPayload, SyncPushResult,
 };
-use rembrane_secret_local::{SecretResolver, resolve_provider_credentials};
-use zeroize::Zeroize;
+use rembrane_secret_local::{LocalSecretResolver, SecretResolver, resolve_provider_credentials};
+use zeroize::Zeroizing;
 
 pub struct ConfiguredMemoryProvider {
     client: Box<dyn MemoryProviderClient>,
@@ -27,22 +27,21 @@ pub struct ConfiguredMemoryProvider {
 /// formatted, or persisted by generic configuration tooling.
 pub struct MemoryProviderHttpConfig {
     base_url: String,
-    bearer_token: String,
+    bearer_token: Zeroizing<String>,
     request_prefix: Option<String>,
-}
-
-impl Drop for MemoryProviderHttpConfig {
-    fn drop(&mut self) {
-        self.bearer_token.zeroize();
-    }
 }
 
 impl MemoryProviderHttpConfig {
     #[must_use]
     pub fn new(base_url: impl Into<String>, bearer_token: impl Into<String>) -> Self {
+        Self::new_with_secret(base_url, Zeroizing::new(bearer_token.into()))
+    }
+
+    #[must_use]
+    pub fn new_with_secret(base_url: impl Into<String>, bearer_token: Zeroizing<String>) -> Self {
         Self {
             base_url: base_url.into(),
-            bearer_token: bearer_token.into(),
+            bearer_token,
             request_prefix: None,
         }
     }
@@ -60,7 +59,7 @@ impl ConfiguredMemoryProvider {
     ///
     /// `REMBRANE_MEMORY_PROVIDER` currently accepts `http`. The selected
     /// provider requires `REMBRANE_MEMORY_PROVIDER_BASE_URL` and
-    /// `REMBRANE_MEMORY_PROVIDER_TOKEN`. An optional safe
+    /// `REMBRANE_MEMORY_PROVIDER_TOKEN` or its reference locator. An optional safe
     /// `REMBRANE_MEMORY_PROVIDER_REQUEST_PREFIX` makes request identities
     /// recognizable without containing tenant or credential material.
     ///
@@ -75,8 +74,11 @@ impl ConfiguredMemoryProvider {
         {
             "http" => {
                 let endpoint = required_environment("REMBRANE_MEMORY_PROVIDER_BASE_URL")?;
-                let token = required_environment("REMBRANE_MEMORY_PROVIDER_TOKEN")?;
-                let mut config = MemoryProviderHttpConfig::new(endpoint, token);
+                let token_reference = configured_token_reference()?;
+                let token = LocalSecretResolver
+                    .resolve(&token_reference)
+                    .map_err(|_| provider_credential_unavailable())?;
+                let mut config = MemoryProviderHttpConfig::new_with_secret(endpoint, token);
                 if let Ok(prefix) = std::env::var("REMBRANE_MEMORY_PROVIDER_REQUEST_PREFIX") {
                     config = config.with_request_prefix(prefix);
                 }
@@ -109,7 +111,7 @@ impl ConfiguredMemoryProvider {
             None => default_request_prefix()?,
         };
         let bearer_token = std::mem::take(&mut config.bearer_token);
-        let client = HttpMemoryProviderClient::new(&config.base_url, bearer_token)?;
+        let client = HttpMemoryProviderClient::new_with_secret(&config.base_url, bearer_token)?;
         Self::from_client(Box::new(client), policy, request_prefix)
     }
 
@@ -283,6 +285,29 @@ fn required_environment(name: &str) -> Result<String, ProviderError> {
         .ok_or_else(|| ProviderError::InvalidConfiguration(format!("{name} is required")))
 }
 
+fn configured_token_reference() -> Result<SecretReference, ProviderError> {
+    match std::env::var("REMBRANE_MEMORY_PROVIDER_TOKEN_REFERENCE") {
+        Ok(locator) => selected_token_reference(&locator),
+        Err(std::env::VarError::NotPresent) => selected_token_reference(""),
+        Err(_) => Err(provider_credential_unavailable()),
+    }
+}
+
+fn selected_token_reference(locator: &str) -> Result<SecretReference, ProviderError> {
+    if locator.is_empty() {
+        SecretReference::environment("REMBRANE_MEMORY_PROVIDER_TOKEN")
+            .map_err(|_| provider_credential_unavailable())
+    } else {
+        locator
+            .parse()
+            .map_err(|_| provider_credential_unavailable())
+    }
+}
+
+fn provider_credential_unavailable() -> ProviderError {
+    ProviderError::InvalidConfiguration("memory provider credential unavailable".to_owned())
+}
+
 fn validate_request_prefix(value: String) -> Result<String, ProviderError> {
     if !(8..=64).contains(&value.len())
         || !value
@@ -317,7 +342,7 @@ mod tests {
 
     use super::{
         ConfiguredMemoryProvider, MemoryProviderHttpConfig, default_request_prefix,
-        validate_request_prefix,
+        selected_token_reference, validate_request_prefix,
     };
 
     struct RejectingResolver;
@@ -369,6 +394,19 @@ mod tests {
                 .bytes()
                 .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
         );
+    }
+
+    #[test]
+    fn memory_provider_token_reference_defaults_and_rejects_inline_values() {
+        let default = selected_token_reference("").expect("default environment reference");
+        assert_eq!(
+            default.environment_variable(),
+            Some("REMBRANE_MEMORY_PROVIDER_TOKEN")
+        );
+        let file = selected_token_reference("file:/run/secrets/memory-provider-token")
+            .expect("file reference");
+        assert_eq!(file.file_path(), Some("/run/secrets/memory-provider-token"));
+        assert!(selected_token_reference("inline-token").is_err());
     }
 
     #[test]

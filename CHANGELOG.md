@@ -9,6 +9,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- Protected local bearer-token reference resolution for environment-selected
+  portable Memory Provider HTTP composition, with zeroizing configuration
+  ownership and opaque resolution failures.
 - Reference-only REST API bearer-token configuration with protected local
   resolution and bounded RFC-compatible token validation.
 - Protected-file or environment reference resolution for stable WhatsApp and

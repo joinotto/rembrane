@@ -79,3 +79,10 @@ stable pseudonym key can stay in a protected secret file.
 `REMBRANE_GRAPHITI_BEARER_TOKEN_REFERENCE` for standalone and custom
 knowledge-graph worker deployments, resolving it before the Graphiti HTTP
 transport is constructed.
+
+`ConfiguredMemoryProvider::from_environment` similarly accepts
+`REMBRANE_MEMORY_PROVIDER_TOKEN_REFERENCE` for environment-selected portable
+HTTP providers. When the locator is absent it resolves
+`REMBRANE_MEMORY_PROVIDER_TOKEN`; otherwise local `env:VARIABLE` and protected
+`file:path` locators are supported. Resolution failures remain opaque and the
+credential stays zeroizing across configuration and transport ownership.

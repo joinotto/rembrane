@@ -14,14 +14,19 @@ injection mechanism:
 | --- | --- | --- |
 | `REMBRANE_MEMORY_PROVIDER` | No | Provider transport. Defaults to `http`. |
 | `REMBRANE_MEMORY_PROVIDER_BASE_URL` | Yes | HTTPS origin, or exact loopback HTTP for local development. |
-| `REMBRANE_MEMORY_PROVIDER_TOKEN` | Yes | OAuth access token or provider-issued bearer credential. |
+| `REMBRANE_MEMORY_PROVIDER_TOKEN` | Conditional | Default environment source for the OAuth access token or provider-issued bearer credential. |
+| `REMBRANE_MEMORY_PROVIDER_TOKEN_REFERENCE` | Conditional | Optional `env:VARIABLE` or protected `file:path` locator. When absent, `REMBRANE_MEMORY_PROVIDER_TOKEN` is used. |
 | `REMBRANE_MEMORY_PROVIDER_REQUEST_PREFIX` | No | Diagnostic prefix containing 8–64 URL-safe characters. |
 
-Do not commit tokens to `.env` files, Compose manifests, shell profiles, or
-application configuration. Inject them from an OS keychain, container secret,
-Kubernetes Secret, systemd credential, customer secret manager, or equivalent
-deployment-owned facility. The adapter moves the loaded token into zeroizing
-transport storage and never sends it to the public discovery endpoint.
+Exactly one resolvable credential source is required. Do not commit tokens to
+`.env` files, Compose manifests, shell profiles, or application configuration.
+Inject them from an OS keychain, container secret, Kubernetes Secret, systemd
+credential, customer secret manager, or equivalent deployment-owned facility.
+The environment-selected adapter resolves local locators before construction,
+keeps the loaded token in zeroizing configuration and transport storage, and
+never sends it to the public discovery endpoint. An `external:provider:key`
+locator fails closed in this standalone path; applications needing a cloud
+vault supply their own `SecretResolver` through a validated provider profile.
 
 Applications that already own configuration and secret resolution can avoid
 fixed environment-variable names:
@@ -31,15 +36,16 @@ use rembrane_memory_provider_configured::{
     ConfiguredMemoryProvider, MemoryProviderHttpConfig,
 };
 
-let config = MemoryProviderHttpConfig::new(provider_url, resolved_token)
+let config = MemoryProviderHttpConfig::new_with_secret(provider_url, resolved_token)
     .with_request_prefix("my-agent-01");
 let provider = ConfiguredMemoryProvider::from_http_config(config, &policy)?;
 ```
 
 `MemoryProviderHttpConfig` is consumed during construction and intentionally
-does not implement cloning, debug formatting, or serialization. The calling
-application may obtain `resolved_token` from its OS keychain, customer vault,
-cloud secret manager, container secret, or any other private mechanism.
+does not implement cloning, debug formatting, or serialization. Here
+`resolved_token` is a `Zeroizing<String>` obtained from the calling
+application's OS keychain, customer vault, cloud secret manager, container
+secret, or any other private mechanism.
 
 The base URL must be an origin without embedded credentials, paths, query
 parameters, or fragments. Remote plaintext HTTP is rejected. Loopback HTTP is

@@ -572,6 +572,9 @@ This roadmap describes sequencing, not release dates.
   - [x] Add deployment-selected Memory Provider composition using
     environment-owned endpoint and bearer-token values plus safe request
     identity prefixes.
+    - [x] Resolve environment-selected HTTP bearer credentials from protected
+      local environment or file references while preserving the legacy
+      environment-variable default and zeroizing ownership.
     - [x] Consume validated Mem0 or Supermemory profiles through any
       deployment-selected secret resolver.
     - [x] Accept consumed HTTP configuration values from application-owned
