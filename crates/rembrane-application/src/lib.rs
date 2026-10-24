@@ -18,6 +18,7 @@ mod resolve_context;
 mod revise_memory;
 mod semantic_context;
 mod share_memory;
+mod travel_context;
 mod trip;
 
 pub use authorize_client::{AuthorizeClientCommand, AuthorizeClientService, ClientGrantBundle};
@@ -48,4 +49,5 @@ pub use semantic_context::SemanticContextService;
 pub use share_memory::{
     ApproveShareProposalCommand, CreateShareProposalCommand, MemoryShareService,
 };
+pub use travel_context::{ResolveTravelContextCommand, TravelContext, TravelContextService};
 pub use trip::{CreateTripCommand, ReplaceTripCommand, TripService};

@@ -20,6 +20,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   travel-domain creation authority and exact entity capability derivation.
 - REST/Postman end-to-end coverage for creating an encrypted trip, deriving
   its entity authority, and capturing expiring research against it.
+- Exact-trip travel context resolution for cross-agent handoff, with
+  deterministic separation of fresh and expired booking observations.
 - Explicit trip create/revise permissions, exact entity-scoped authorization,
   versioned trip audit events, and atomic in-memory trip/event mutations.
 - Member trip revisions through persisted entity grants while trip creation

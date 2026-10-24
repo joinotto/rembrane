@@ -126,6 +126,9 @@ This roadmap describes sequencing, not release dates.
   - [x] Authenticated REST trip-creation contract and server route.
   - [x] Successful REST/Postman encrypted trip-to-research lifecycle test.
 - [ ] Cross-agent activity continuation.
+  - [x] Exact-trip travel context separates fresh research from expired
+    observations at a caller-supplied canonical timestamp.
+  - [ ] Audited REST/MCP travel context retrieval and disclosure receipts.
 - [ ] Sensitive travel-data permissions.
   - [x] MCP trip creation uses a dedicated travel-domain capability and
     server-assigned identity.
