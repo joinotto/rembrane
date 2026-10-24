@@ -22,9 +22,9 @@ use rembrane_provider_sdk::{
     RecordEventResult, ResolveContextPayload, ResolveContextResult, ResolveQuestionPayload,
     ResolveQuestionResult, SyncPullPayload, SyncPullResult, SyncPushPayload, SyncPushResult,
 };
-use reqwest::Url;
-use reqwest::blocking::{Client, Response};
+use reqwest::blocking::{Client, Request, Response};
 use reqwest::header::{ACCEPT, CONTENT_TYPE, HeaderMap};
+use reqwest::{Method, Url};
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
@@ -253,13 +253,20 @@ impl HttpMemoryProviderClient {
     }
 
     fn get(&self, endpoint: Url, request_id: &str) -> Result<Response, ProviderError> {
+        let request = self.build_get_request(endpoint, request_id)?;
+        self.client
+            .execute(request)
+            .map_err(|_| ProviderError::Unavailable)
+    }
+
+    fn build_get_request(&self, endpoint: Url, request_id: &str) -> Result<Request, ProviderError> {
         self.client
             .get(endpoint)
             .header(ACCEPT, "application/json")
             .header(REQUEST_ID_HEADER, request_id)
             .header(PROTOCOL_VERSION_HEADER, "0.1")
             .bearer_auth(self.bearer_token.as_str())
-            .send()
+            .build()
             .map_err(|_| ProviderError::Unavailable)
     }
 
@@ -269,16 +276,9 @@ impl HttpMemoryProviderClient {
         body: &Body,
         request_id: &str,
     ) -> Result<Response, ProviderError> {
-        let encoded = encode_operation_body(body)?;
+        let request = self.build_json_request(Method::POST, endpoint, body, request_id)?;
         self.client
-            .post(endpoint)
-            .header(ACCEPT, "application/json")
-            .header(CONTENT_TYPE, "application/json")
-            .header(REQUEST_ID_HEADER, request_id)
-            .header(PROTOCOL_VERSION_HEADER, "0.1")
-            .bearer_auth(self.bearer_token.as_str())
-            .body(encoded)
-            .send()
+            .execute(request)
             .map_err(|_| ProviderError::Unavailable)
     }
 
@@ -288,16 +288,29 @@ impl HttpMemoryProviderClient {
         body: &Body,
         request_id: &str,
     ) -> Result<Response, ProviderError> {
+        let request = self.build_json_request(Method::DELETE, endpoint, body, request_id)?;
+        self.client
+            .execute(request)
+            .map_err(|_| ProviderError::Unavailable)
+    }
+
+    fn build_json_request<Body: Serialize>(
+        &self,
+        method: Method,
+        endpoint: Url,
+        body: &Body,
+        request_id: &str,
+    ) -> Result<Request, ProviderError> {
         let encoded = encode_operation_body(body)?;
         self.client
-            .delete(endpoint)
+            .request(method, endpoint)
             .header(ACCEPT, "application/json")
             .header(CONTENT_TYPE, "application/json")
             .header(REQUEST_ID_HEADER, request_id)
             .header(PROTOCOL_VERSION_HEADER, "0.1")
             .bearer_auth(self.bearer_token.as_str())
             .body(encoded)
-            .send()
+            .build()
             .map_err(|_| ProviderError::Unavailable)
     }
 }
@@ -1537,7 +1550,7 @@ fn invalid_discovery() -> ProviderError {
 
 #[cfg(test)]
 mod tests {
-    use rembrane_domain::{EntityId, MemoryScope};
+    use rembrane_domain::{EntityId, EvidenceSource, MemoryKind, MemoryScope};
     use rembrane_provider_sdk::{
         CURRENT_MEMORY_PROVIDER_PROTOCOL, CheckpointActivityPayload, ExplainMemoryPayload,
         MemoryProviderCapability, MemoryProviderConnection, MemoryProviderContextSelector,
@@ -1551,14 +1564,15 @@ mod tests {
 
     use super::{
         CheckpointActivityBody, CheckpointActivityResultBody, DiscoveryBody,
-        ExplainMemoryResultBody, ProposeMemoryBody, RecordDisclosureBody,
+        ExplainMemoryResultBody, HttpMemoryProviderClient, ProposeMemoryBody, RecordDisclosureBody,
         RecordDisclosureResultBody, RecordEventBody, RecordEventResultBody, ResolveContextBody,
         ResolveContextResultBody, ResolveQuestionBody, ResolveQuestionResultBody,
         SyncPullResultBody, SyncPushBody, SyncPushResultBody, activity_subresource_endpoint,
         explain_memory_endpoint, memory_endpoint, memory_subresource_endpoint, sync_pull_endpoint,
         validate_base_url, validate_bearer_token, validate_response_headers,
     };
-    use reqwest::header::{HeaderMap, HeaderValue};
+    use reqwest::Method;
+    use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue};
 
     const DISCOVERY: &str = r#"{
       "providerId":"rembrane.memory.example",
@@ -1614,6 +1628,109 @@ mod tests {
         assert!(validate_bearer_token("token with spaces").is_err());
         assert!(validate_bearer_token("token\r\ninjected:value").is_err());
         assert!(validate_bearer_token("opaque-token_123").is_ok());
+    }
+
+    fn connection(capability: MemoryProviderCapability) -> MemoryProviderConnection {
+        let limits = MemoryProviderLimits {
+            maximum_context_items: 10,
+            maximum_context_bytes: 1_048_576,
+            maximum_event_batch_items: 10,
+            maximum_sync_batch_items: 10,
+        };
+        let manifest = MemoryProviderManifest::new(
+            "rembrane.memory.wire-test".to_owned(),
+            "test".to_owned(),
+            CURRENT_MEMORY_PROVIDER_PROTOCOL,
+            vec![MemoryProviderTransport::Https],
+            vec![capability],
+            MemoryProviderPrivacyMode::EndToEndEncrypted,
+            Vec::new(),
+            limits,
+        )
+        .expect("manifest");
+        let policy = MemoryProviderPolicy::new(
+            CURRENT_MEMORY_PROVIDER_PROTOCOL,
+            MemoryProviderTransport::Https,
+            vec![capability],
+            vec![MemoryProviderPrivacyMode::EndToEndEncrypted],
+            limits,
+        )
+        .expect("policy");
+        MemoryProviderConnection::connect(manifest, &policy, "wire-test").expect("connection")
+    }
+
+    #[test]
+    fn proposal_request_uses_direct_body_and_correlation_headers_without_a_socket() {
+        let client =
+            HttpMemoryProviderClient::new("http://127.0.0.1:8794", "wire-token".to_owned())
+                .expect("client");
+        let request = connection(MemoryProviderCapability::ProposeMemory)
+            .request(
+                ProposeMemoryPayload::new(
+                    MemoryProviderIdempotencyKey::new("proposal_0123456789abcdef").expect("key"),
+                    MemoryProviderContextSelector::global(),
+                    MemoryKind::Preference,
+                    "Call the user Hippo.",
+                    EvidenceSource::UserStatement,
+                    None,
+                    1,
+                    1,
+                )
+                .expect("payload"),
+            )
+            .expect("request");
+        let endpoint = client
+            .base_url
+            .join("v1/memory/proposals")
+            .expect("endpoint");
+        let body = ProposeMemoryBody::from(request.payload());
+        let wire = client
+            .build_json_request(Method::POST, endpoint, &body, request.request_id().as_str())
+            .expect("wire request");
+
+        assert_eq!(wire.method(), Method::POST);
+        assert_eq!(wire.url().path(), "/v1/memory/proposals");
+        assert_eq!(wire.headers()[AUTHORIZATION], "Bearer wire-token");
+        assert_eq!(wire.headers()[super::PROTOCOL_VERSION_HEADER], "0.1");
+        let body = wire
+            .body()
+            .and_then(reqwest::blocking::Body::as_bytes)
+            .expect("in-memory request body");
+        let json: serde_json::Value = serde_json::from_slice(body).expect("JSON body");
+        assert_eq!(json["content"], "Call the user Hippo.");
+        assert!(json.get("payload").is_none());
+        assert!(json.get("requestId").is_none());
+    }
+
+    #[test]
+    fn explanation_request_encodes_path_and_query_without_a_socket_or_body() {
+        let client =
+            HttpMemoryProviderClient::new("http://127.0.0.1:8794", "wire-token".to_owned())
+                .expect("client");
+        let request = connection(MemoryProviderCapability::ExplainMemory)
+            .request(
+                ExplainMemoryPayload::new(
+                    rembrane_domain::MemoryId::new("memory/01"),
+                    7,
+                    "why remember this",
+                )
+                .expect("payload"),
+            )
+            .expect("request");
+        let endpoint =
+            explain_memory_endpoint(&client.base_url, request.payload()).expect("endpoint");
+        let wire = client
+            .build_get_request(endpoint, request.request_id().as_str())
+            .expect("wire request");
+
+        assert_eq!(wire.method(), Method::GET);
+        assert_eq!(wire.url().path(), "/v1/memories/memory%2F01/explain");
+        assert_eq!(
+            wire.url().query(),
+            Some("version=7&purpose=why+remember+this")
+        );
+        assert_eq!(wire.headers()[AUTHORIZATION], "Bearer wire-token");
+        assert!(wire.body().is_none());
     }
 
     #[test]

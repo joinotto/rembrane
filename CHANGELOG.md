@@ -44,6 +44,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Concurrent in-memory Axum event-stream routing coverage proving stateless
   GET dispatch preserves separate OAuth workspace identities and rejects an
   untrusted browser origin before opening a stream.
+- Socket-free Memory Provider HTTP request-construction tests covering exact
+  methods, encoded paths and queries, bearer and correlation headers, direct
+  JSON payloads, and body-free reads under restricted development sandboxes.
 - A transport-injectable Mem0 OSS semantic adapter mapping authorized
   projections into HMAC-pseudonymous workspace partitions while preserving
   canonical memory IDs, versions, replacement, bounded ranking, and
