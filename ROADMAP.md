@@ -553,6 +553,8 @@ This roadmap describes sequencing, not release dates.
     capacity limits, expiry, and cross-platform event-ID namespaces.
   - [x] Persist content-free channel replay receipts in SQLite with atomic
     multi-process capacity enforcement and cross-workspace replay denial.
+  - [x] Add privacy-safe sender bindings using keyed opaque account and sender
+    lookup identifiers instead of storing WhatsApp phone numbers.
 - [ ] Mobile share flows and iMessage extension.
   - [x] Reuse the authenticated-channel contract for explicit iMessage
     extension and mobile-share ingestion without claiming conversation

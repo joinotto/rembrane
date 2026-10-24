@@ -5,6 +5,7 @@ use rembrane_domain::{ClientId, PrincipalId, WorkspaceId};
 
 pub const MAX_CHANNEL_EVENT_ID_BYTES: usize = 256;
 pub const MAX_CHANNEL_TEXT_BYTES: usize = 16_384;
+pub const MAX_CHANNEL_LOOKUP_KEY_BYTES: usize = 256;
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum ChannelKind {
@@ -29,6 +30,16 @@ pub enum ChannelMessageError {
     InvalidEventId,
     InvalidText,
     InvalidTime,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ChannelSenderBinding {
+    channel: ChannelKind,
+    account_lookup_key: String,
+    sender_lookup_key: String,
+    workspace_id: WorkspaceId,
+    principal_id: PrincipalId,
+    client_id: ClientId,
 }
 
 impl VerifiedChannelMessage {
@@ -109,6 +120,71 @@ impl VerifiedChannelMessage {
     pub const fn received_at_epoch_seconds(&self) -> u64 {
         self.received_at_epoch_seconds
     }
+}
+
+impl ChannelSenderBinding {
+    /// Creates a deployment-owned binding from keyed pseudonymous lookup
+    /// identifiers. Raw platform account identifiers must not be supplied.
+    pub fn new(
+        channel: ChannelKind,
+        account_lookup_key: impl Into<String>,
+        sender_lookup_key: impl Into<String>,
+        workspace_id: WorkspaceId,
+        principal_id: PrincipalId,
+        client_id: ClientId,
+    ) -> Result<Self, ChannelMessageError> {
+        let account_lookup_key = account_lookup_key.into();
+        let sender_lookup_key = sender_lookup_key.into();
+        if !valid_lookup_key(&account_lookup_key) || !valid_lookup_key(&sender_lookup_key) {
+            return Err(ChannelMessageError::InvalidEventId);
+        }
+        Ok(Self {
+            channel,
+            account_lookup_key,
+            sender_lookup_key,
+            workspace_id,
+            principal_id,
+            client_id,
+        })
+    }
+
+    #[must_use]
+    pub const fn channel(&self) -> ChannelKind {
+        self.channel
+    }
+
+    #[must_use]
+    pub fn account_lookup_key(&self) -> &str {
+        &self.account_lookup_key
+    }
+
+    #[must_use]
+    pub fn sender_lookup_key(&self) -> &str {
+        &self.sender_lookup_key
+    }
+
+    #[must_use]
+    pub const fn workspace_id(&self) -> &WorkspaceId {
+        &self.workspace_id
+    }
+
+    #[must_use]
+    pub const fn principal_id(&self) -> &PrincipalId {
+        &self.principal_id
+    }
+
+    #[must_use]
+    pub const fn client_id(&self) -> &ClientId {
+        &self.client_id
+    }
+}
+
+fn valid_lookup_key(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= MAX_CHANNEL_LOOKUP_KEY_BYTES
+        && !value
+            .bytes()
+            .any(|byte| byte.is_ascii_control() || byte.is_ascii_whitespace())
 }
 
 impl Display for ChannelMessageError {

@@ -12,6 +12,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Durable, content-free SQLite channel replay receipts with atomic cleanup,
   fail-closed capacity enforcement, per-platform namespaces, and
   cross-workspace duplicate denial for multi-process gateways.
+- Tenant-owned channel sender bindings that resolve keyed pseudonymous account
+  and sender identifiers to canonical workspace, principal, and client IDs
+  without persisting raw phone numbers.
 - An immutable, bounded, content-free administrative audit event contract with
   tenant, actor, closed action, opaque target, request correlation, and
   occurrence time while excluding memory content, secrets, and key material.

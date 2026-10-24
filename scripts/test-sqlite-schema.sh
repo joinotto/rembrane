@@ -39,7 +39,9 @@ sqlite3 "$database" < \
     "$repository_root/migrations/sqlite/0016_retention_and_legal_holds.sql"
 sqlite3 "$database" < \
     "$repository_root/migrations/sqlite/0017_channel_event_receipts.sql"
-sqlite3 "$database" "PRAGMA user_version = 17;"
+sqlite3 "$database" < \
+    "$repository_root/migrations/sqlite/0018_channel_sender_bindings.sql"
+sqlite3 "$database" "PRAGMA user_version = 18;"
 
 sqlite3 "$database" <<'SQL'
 PRAGMA foreign_keys = ON;
@@ -629,6 +631,15 @@ sqlite3 "$database" "
         'imessage-extension', 'event_channel_01', 'workspace_02', 1000, 1100
     );
 "
+sqlite3 "$database" "
+    INSERT INTO channel_sender_bindings (
+        channel, account_lookup_key, sender_lookup_key,
+        workspace_id, principal_id, client_id
+    ) VALUES (
+        'whatsapp-business', 'hmac-account-01', 'hmac-sender-01',
+        'workspace_01', 'principal_01', 'client_whatsapp_01'
+    );
+"
 if sqlite3 "$database" "
     INSERT INTO channel_event_receipts (
         channel, event_id, workspace_id,
@@ -648,11 +659,15 @@ table_count=$(
 )
 
 test "$table_count" -ge 9
-test "$(sqlite3 "$database" "PRAGMA user_version;")" -eq 17
+test "$(sqlite3 "$database" "PRAGMA user_version;")" -eq 18
 test "$(
     sqlite3 "$database" \
         "SELECT count(*) FROM channel_event_receipts WHERE event_id = 'event_channel_01';"
 )" -eq 2
+test "$(
+    sqlite3 "$database" \
+        "SELECT count(*) FROM channel_sender_bindings WHERE workspace_id = 'workspace_01' AND principal_id = 'principal_01';"
+)" -eq 1
 test "$(
     sqlite3 "$database" \
         "SELECT count(*) FROM pragma_table_info('channel_event_receipts') WHERE name IN ('text', 'content', 'principal_id', 'client_id');"

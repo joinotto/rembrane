@@ -44,9 +44,9 @@ pub use member_scope::{
 pub use ports::{
     AdministrativeAuditRepository, BookingResearchMutationRepository, BookingResearchRepository,
     CanonicalGraphMutationRepository, CanonicalMutationRepository, ChannelReplayRepository,
-    CheckpointDisclosureRepository, CheckpointMutationRepository, CheckpointReadRepository,
-    CheckpointRepository, ContextReadRepository, DisclosureRepository, EventRepository,
-    GraphProjectionOutboxRepository, InvitationRepository, KeyRotationRepository,
+    ChannelSenderBindingRepository, CheckpointDisclosureRepository, CheckpointMutationRepository,
+    CheckpointReadRepository, CheckpointRepository, ContextReadRepository, DisclosureRepository,
+    EventRepository, GraphProjectionOutboxRepository, InvitationRepository, KeyRotationRepository,
     KnowledgeDirection, KnowledgeGraphMutationRepository, KnowledgeGraphRepository,
     MAX_ADMINISTRATIVE_AUDIT_PAGE, MAX_KNOWLEDGE_NEIGHBOURS, MemberLifecycleRepository,
     MemberScopeGrantRepository, MembershipRepository, MemoryRepository, ProjectionOutboxRepository,

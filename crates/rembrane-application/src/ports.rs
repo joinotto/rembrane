@@ -1,4 +1,4 @@
-use rembrane_contracts::VerifiedChannelMessage;
+use rembrane_contracts::{ChannelKind, ChannelSenderBinding, VerifiedChannelMessage};
 use rembrane_domain::{
     ActivityCheckpoint, ActivityId, AdministrativeAuditEvent, BookingResearch, BookingResearchId,
     CanonicalEvent, CheckpointDisclosureReceipt, DisclosureReceipt, EntityId, GraphProjectionJob,
@@ -26,6 +26,20 @@ pub trait ChannelReplayRepository {
         now_epoch_seconds: u64,
         replay_window_seconds: u64,
         maximum_events: usize,
+    ) -> Result<(), ApplicationError>;
+}
+
+pub trait ChannelSenderBindingRepository {
+    fn find_channel_sender_binding(
+        &self,
+        channel: ChannelKind,
+        account_lookup_key: &str,
+        sender_lookup_key: &str,
+    ) -> Result<Option<ChannelSenderBinding>, ApplicationError>;
+
+    fn insert_channel_sender_binding(
+        &mut self,
+        binding: ChannelSenderBinding,
     ) -> Result<(), ApplicationError>;
 }
 

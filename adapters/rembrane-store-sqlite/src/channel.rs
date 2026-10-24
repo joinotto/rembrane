@@ -1,6 +1,9 @@
-use rembrane_application::{ApplicationError, ChannelReplayRepository};
-use rembrane_contracts::{ChannelKind, VerifiedChannelMessage};
-use rusqlite::{TransactionBehavior, params};
+use rembrane_application::{
+    ApplicationError, ChannelReplayRepository, ChannelSenderBindingRepository,
+};
+use rembrane_contracts::{ChannelKind, ChannelSenderBinding, VerifiedChannelMessage};
+use rembrane_domain::{ClientId, PrincipalId, WorkspaceId};
+use rusqlite::{OptionalExtension, TransactionBehavior, params};
 
 use crate::{SqliteStore, map_write_error};
 
@@ -67,6 +70,73 @@ impl<C> ChannelReplayRepository for SqliteStore<C> {
             )
             .map_err(map_write_error)?;
         transaction.commit().map_err(map_write_error)
+    }
+}
+
+impl<C> ChannelSenderBindingRepository for SqliteStore<C> {
+    fn find_channel_sender_binding(
+        &self,
+        channel: ChannelKind,
+        account_lookup_key: &str,
+        sender_lookup_key: &str,
+    ) -> Result<Option<ChannelSenderBinding>, ApplicationError> {
+        self.connection
+            .query_row(
+                "SELECT workspace_id, principal_id, client_id
+                 FROM channel_sender_bindings
+                 WHERE channel = ?1
+                   AND account_lookup_key = ?2
+                   AND sender_lookup_key = ?3",
+                params![
+                    encode_channel(channel),
+                    account_lookup_key,
+                    sender_lookup_key
+                ],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                    ))
+                },
+            )
+            .optional()
+            .map_err(|_| ApplicationError::StorageUnavailable)?
+            .map(|(workspace_id, principal_id, client_id)| {
+                ChannelSenderBinding::new(
+                    channel,
+                    account_lookup_key,
+                    sender_lookup_key,
+                    WorkspaceId::new(workspace_id),
+                    PrincipalId::new(principal_id),
+                    ClientId::new(client_id),
+                )
+                .map_err(|_| ApplicationError::StorageUnavailable)
+            })
+            .transpose()
+    }
+
+    fn insert_channel_sender_binding(
+        &mut self,
+        binding: ChannelSenderBinding,
+    ) -> Result<(), ApplicationError> {
+        self.connection
+            .execute(
+                "INSERT INTO channel_sender_bindings (
+                    channel, account_lookup_key, sender_lookup_key,
+                    workspace_id, principal_id, client_id
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![
+                    encode_channel(binding.channel()),
+                    binding.account_lookup_key(),
+                    binding.sender_lookup_key(),
+                    binding.workspace_id().as_str(),
+                    binding.principal_id().as_str(),
+                    binding.client_id().as_str(),
+                ],
+            )
+            .map_err(map_write_error)?;
+        Ok(())
     }
 }
 
