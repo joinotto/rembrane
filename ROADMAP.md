@@ -360,8 +360,10 @@ This roadmap describes sequencing, not release dates.
       - [x] Resolve bounded global, domain, entity, or activity context and
         reconstruct canonical provenance, sensitivity, constraints, context
         pack, and disclosure identity.
-      - [ ] Add question, event, proposal, checkpoint, disclosure, lifecycle,
-        and sync operations.
+      - [x] Submit idempotent evidence-backed memory proposals without tenant
+        identity or caller-asserted confirmation.
+      - [ ] Add question, event, checkpoint, disclosure, lifecycle, and sync
+        operations.
 - [x] Versioned key-provider sidecar protocol for OS, HSM, and customer-KMS
   adapters.
   - [x] Add transport-independent Rust manifest, negotiation, request, context,

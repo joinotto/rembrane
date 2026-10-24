@@ -12,8 +12,8 @@ use rembrane_provider_sdk::{
     MemoryProviderConnection, MemoryProviderContextItem, MemoryProviderDisclosureConstraint,
     MemoryProviderLimits, MemoryProviderManifest, MemoryProviderPolicy, MemoryProviderPrivacyMode,
     MemoryProviderRequest, MemoryProviderResponse, MemoryProviderSensitivity,
-    MemoryProviderTransport, ProviderError, ProviderProtocolVersion, ResolveContextPayload,
-    ResolveContextResult,
+    MemoryProviderTransport, ProposeMemoryPayload, ProposeMemoryResult, ProviderError,
+    ProviderProtocolVersion, ResolveContextPayload, ResolveContextResult,
 };
 use reqwest::Url;
 use reqwest::blocking::{Client, Response};
@@ -98,6 +98,38 @@ impl HttpMemoryProviderClient {
             (Some(result), None) if (200..300).contains(&status) => {
                 Ok(request.success(result.into_domain(request.payload())?))
             }
+            (None, Some(error)) if !(200..300).contains(&status) => {
+                Ok(request.error(parse_error_code(&error.code)?))
+            }
+            _ => Err(ProviderError::Rejected(
+                "memory provider response status and envelope disagree".to_owned(),
+            )),
+        }
+    }
+
+    pub fn propose_memory(
+        &self,
+        request: &MemoryProviderRequest<ProposeMemoryPayload>,
+    ) -> Result<MemoryProviderResponse<ProposeMemoryResult>, ProviderError> {
+        let endpoint = self
+            .base_url
+            .join("v1/memory/proposals")
+            .map_err(|_| ProviderError::Unavailable)?;
+        let body = RequestEnvelope {
+            request_id: request.request_id().as_str(),
+            protocol_version: "0.1",
+            operation: "propose_memory",
+            payload: ProposeMemoryBody::from(request.payload()),
+        };
+        let response = self.post_json(endpoint, &body)?;
+        let status = response.status().as_u16();
+        let wire: ResponseEnvelope<ProposeMemoryResultBody> =
+            decode_json(response, MAXIMUM_OPERATION_BYTES)?;
+        validate_response_identity(request, &wire.request_id, &wire.protocol_version)?;
+        match (wire.result, wire.error) {
+            (Some(result), None) if (200..300).contains(&status) => Ok(request.success(
+                ProposeMemoryResult::new(MemoryId::new(result.memory_id), result.version)?,
+            )),
             (None, Some(error)) if !(200..300).contains(&status) => {
                 Ok(request.error(parse_error_code(&error.code)?))
             }
@@ -228,6 +260,32 @@ struct ResolveContextBody<'request> {
     maximum_bytes: usize,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ProposeMemoryBody<'request> {
+    idempotency_key: &'request str,
+    selector: SelectorBody<'request>,
+    kind: &'static str,
+    content: &'request str,
+    evidence_source: &'static str,
+    source_reference: Option<&'request str>,
+    observed_at_epoch_seconds: u64,
+}
+
+impl<'request> From<&'request ProposeMemoryPayload> for ProposeMemoryBody<'request> {
+    fn from(payload: &'request ProposeMemoryPayload) -> Self {
+        Self {
+            idempotency_key: payload.idempotency_key().as_str(),
+            selector: SelectorBody::from(payload.selector().scope()),
+            kind: memory_kind_name(payload.kind()),
+            content: payload.content(),
+            evidence_source: evidence_source_name(payload.evidence_source()),
+            source_reference: payload.source_reference(),
+            observed_at_epoch_seconds: payload.observed_at_epoch_seconds(),
+        }
+    }
+}
+
 impl<'request> From<&'request ResolveContextPayload> for ResolveContextBody<'request> {
     fn from(payload: &'request ResolveContextPayload) -> Self {
         Self {
@@ -285,6 +343,13 @@ struct ResolveContextResultBody {
     context_pack_id: String,
     disclosure_id: String,
     items: Vec<ContextItemBody>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct ProposeMemoryResultBody {
+    memory_id: String,
+    version: u64,
 }
 
 impl ResolveContextResultBody {
@@ -443,6 +508,27 @@ fn parse_memory_kind(value: &str) -> Result<MemoryKind, ProviderError> {
         "observation" => Ok(MemoryKind::Observation),
         "working" => Ok(MemoryKind::Working),
         _ => Err(invalid_operation_response()),
+    }
+}
+
+const fn memory_kind_name(value: MemoryKind) -> &'static str {
+    match value {
+        MemoryKind::Preference => "preference",
+        MemoryKind::Semantic => "semantic",
+        MemoryKind::Episodic => "episodic",
+        MemoryKind::Procedural => "procedural",
+        MemoryKind::Observation => "observation",
+        MemoryKind::Working => "working",
+    }
+}
+
+const fn evidence_source_name(value: EvidenceSource) -> &'static str {
+    match value {
+        EvidenceSource::UserStatement => "user_statement",
+        EvidenceSource::AgentObservation => "agent_observation",
+        EvidenceSource::ToolResult => "tool_result",
+        EvidenceSource::ImportedRecord => "imported_record",
+        EvidenceSource::WorkspaceDecision => "workspace_decision",
     }
 }
 
@@ -664,14 +750,14 @@ mod tests {
     use rembrane_domain::{EntityId, MemoryScope};
     use rembrane_provider_sdk::{
         CURRENT_MEMORY_PROVIDER_PROTOCOL, MemoryProviderCapability, MemoryProviderConnection,
-        MemoryProviderContextSelector, MemoryProviderLimits, MemoryProviderManifest,
-        MemoryProviderPolicy, MemoryProviderPrivacyMode, MemoryProviderTransport,
-        ResolveContextPayload,
+        MemoryProviderContextSelector, MemoryProviderIdempotencyKey, MemoryProviderLimits,
+        MemoryProviderManifest, MemoryProviderPolicy, MemoryProviderPrivacyMode,
+        MemoryProviderTransport, ProposeMemoryPayload, ResolveContextPayload,
     };
 
     use super::{
-        DiscoveryBody, RequestEnvelope, ResolveContextBody, ResolveContextResultBody,
-        validate_base_url, validate_bearer_token,
+        DiscoveryBody, ProposeMemoryBody, RequestEnvelope, ResolveContextBody,
+        ResolveContextResultBody, validate_base_url, validate_bearer_token,
     };
 
     const DISCOVERY: &str = r#"{
@@ -845,5 +931,28 @@ mod tests {
         assert_eq!(result.items().len(), 1);
         assert_eq!(result.items()[0].scope(), &MemoryScope::Global);
         assert_eq!(result.items()[0].content(), "Call the user Hippo.");
+    }
+
+    #[test]
+    fn serializes_proposals_without_confirmation_or_tenant_identity() {
+        let payload = ProposeMemoryPayload::new(
+            MemoryProviderIdempotencyKey::new("proposal_0123456789abcdef").expect("key"),
+            MemoryProviderContextSelector::global(),
+            rembrane_domain::MemoryKind::Preference,
+            "Call the user Hippo.",
+            rembrane_domain::EvidenceSource::UserStatement,
+            Some("conversation-turn-42".to_owned()),
+            100,
+            101,
+        )
+        .expect("proposal");
+        let encoded = serde_json::to_value(ProposeMemoryBody::from(&payload))
+            .expect("proposal should encode");
+        assert_eq!(encoded["selector"]["scope"], "global");
+        assert_eq!(encoded["kind"], "preference");
+        assert_eq!(encoded["evidenceSource"], "user_statement");
+        assert!(encoded.get("workspaceId").is_none());
+        assert!(encoded.get("subjectId").is_none());
+        assert!(encoded.get("confirmed").is_none());
     }
 }
