@@ -88,6 +88,19 @@ pub struct AuthorizedRemoteMcpEventStream {
     protocol_version: Option<String>,
 }
 
+pub trait AuthorizedRemoteMcpEventStreamDispatcher {
+    type Output;
+    type Error;
+    type DispatchFuture: Future<Output = Result<Self::Output, Self::Error>> + Send;
+
+    fn open(
+        &self,
+        access: VerifiedRemoteAccess,
+        accept: String,
+        protocol_version: Option<String>,
+    ) -> Self::DispatchFuture;
+}
+
 impl AuthorizedRemoteMcpEventStream {
     #[must_use]
     pub const fn access(&self) -> &VerifiedRemoteAccess {
@@ -107,6 +120,23 @@ impl AuthorizedRemoteMcpEventStream {
     #[must_use]
     pub fn into_parts(self) -> (VerifiedRemoteAccess, String, Option<String>) {
         (self.access, self.accept, self.protocol_version)
+    }
+
+    /// Consumes the authorization proof and opens the server event stream
+    /// through one asynchronous transport dispatcher.
+    ///
+    /// # Errors
+    ///
+    /// Returns the transport dispatcher's error.
+    pub async fn dispatch_with<Dispatcher>(
+        self,
+        dispatcher: &Dispatcher,
+    ) -> Result<Dispatcher::Output, Dispatcher::Error>
+    where
+        Dispatcher: AuthorizedRemoteMcpEventStreamDispatcher,
+    {
+        let (access, accept, protocol_version) = self.into_parts();
+        dispatcher.open(access, accept, protocol_version).await
     }
 }
 
@@ -981,15 +1011,36 @@ mod tests {
     use tower::ServiceExt;
 
     use super::{
-        AuthorizedRemoteMcpDispatcher, MCP_PROTOCOL_VERSION_HEADER_NAME, MCP_SESSION_HEADER_NAME,
-        RemoteMcpAxumAuthorization, RemoteMcpDispatchError, RemoteMcpHttpGate,
-        RemoteMcpHttpRejection, RemoteMcpHttpRequest, RemoteMcpInvocation,
-        authorize_axum_stateless_body, classify_remote_mcp_request, request_from_axum_headers,
+        AuthorizedRemoteMcpDispatcher, AuthorizedRemoteMcpEventStreamDispatcher,
+        MCP_PROTOCOL_VERSION_HEADER_NAME, MCP_SESSION_HEADER_NAME, RemoteMcpAxumAuthorization,
+        RemoteMcpDispatchError, RemoteMcpHttpGate, RemoteMcpHttpRejection, RemoteMcpHttpRequest,
+        RemoteMcpInvocation, authorize_axum_stateless_body, classify_remote_mcp_request,
+        request_from_axum_headers,
     };
 
     struct Verifier;
 
     struct RecordingDispatcher;
+    struct RecordingEventStreamDispatcher;
+
+    impl AuthorizedRemoteMcpEventStreamDispatcher for RecordingEventStreamDispatcher {
+        type Output = (String, String, Option<String>);
+        type Error = std::convert::Infallible;
+        type DispatchFuture = std::future::Ready<Result<Self::Output, Self::Error>>;
+
+        fn open(
+            &self,
+            access: rembrane_contracts::VerifiedRemoteAccess,
+            accept: String,
+            protocol_version: Option<String>,
+        ) -> Self::DispatchFuture {
+            std::future::ready(Ok((
+                access.workspace_id().to_string(),
+                accept,
+                protocol_version,
+            )))
+        }
+    }
 
     #[derive(Debug, Eq, PartialEq)]
     struct RecordedDispatch {
@@ -1642,8 +1693,8 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn owned_service_authorizes_stateless_event_stream_gets() {
+    #[tokio::test]
+    async fn owned_service_authorizes_stateless_event_stream_gets() {
         let config = RemoteMcpConfig::new(
             "https://memory.example.test/mcp".to_owned(),
             "https://identity.example.test".to_owned(),
@@ -1677,10 +1728,13 @@ mod tests {
         assert_eq!(authorized.access().workspace_id().as_str(), "workspace_01");
         assert_eq!(authorized.accept(), "text/event-stream");
         assert_eq!(authorized.protocol_version(), Some("2025-03-26"));
-        let (access, accept, protocol_version) = authorized.into_parts();
-        assert_eq!(access.workspace_id().as_str(), "workspace_01");
-        assert_eq!(accept, "text/event-stream");
-        assert_eq!(protocol_version.as_deref(), Some("2025-03-26"));
+        let dispatched = authorized
+            .dispatch_with(&RecordingEventStreamDispatcher)
+            .await
+            .expect("authorized stream dispatch cannot fail");
+        assert_eq!(dispatched.0, "workspace_01");
+        assert_eq!(dispatched.1, "text/event-stream");
+        assert_eq!(dispatched.2.as_deref(), Some("2025-03-26"));
 
         headers.insert(ACCEPT, HeaderValue::from_static("application/json"));
         assert_eq!(

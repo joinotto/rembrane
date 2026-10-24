@@ -171,6 +171,8 @@ This roadmap describes sequencing, not release dates.
         GET-specific negotiation and no artificial JSON content requirement.
         - [x] Return an owned GET proof coupling tenant identity, negotiated
           event-stream acceptance, and bounded protocol version.
+        - [x] Add an asynchronous consuming event-stream dispatcher port for
+          the official SDK transport.
     - [x] Provide a consuming dispatch handoff that keeps verified identity,
       classified invocation, and the exact zeroizing request body coupled
       until the official SDK transport takes ownership.

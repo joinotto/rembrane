@@ -34,6 +34,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   Origin, session, and tenant checks as POST.
 - An owned event-stream proof coupling verified tenant identity with the exact
   negotiated `Accept` and optional bounded MCP protocol-version values.
+- An asynchronous consuming event-stream dispatcher port so the official SDK
+  can open GET streams only from tenant-bound authorization proofs.
 - A transport-injectable Mem0 OSS semantic adapter mapping authorized
   projections into HMAC-pseudonymous workspace partitions while preserving
   canonical memory IDs, versions, replacement, bounded ranking, and
