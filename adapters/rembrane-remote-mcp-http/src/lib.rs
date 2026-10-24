@@ -8,6 +8,7 @@
 use rembrane_application::{
     RemoteHttpAuthorization, RemoteSessionHttpError, RemoteSessionRegistry, RemoteTokenVerifier,
 };
+use rembrane_config::RemoteMcpConfig;
 use rembrane_contracts::{RemoteSessionId, VerifiedRemoteAccess};
 
 pub const MCP_SESSION_HEADER: &str = "Mcp-Session-Id";
@@ -34,6 +35,22 @@ pub struct RemoteMcpHttpGate {
 }
 
 impl RemoteMcpHttpGate {
+    /// Builds the gate directly from the validated deployment profile.
+    ///
+    /// # Errors
+    ///
+    /// Returns an HTTP-ready rejection when session capacity is invalid.
+    pub fn from_config(
+        maximum_sessions: usize,
+        config: &RemoteMcpConfig,
+    ) -> Result<Self, RemoteMcpHttpRejection> {
+        Self::new(
+            maximum_sessions,
+            config.protected_resource_metadata_url(),
+            &[config.resource_authority()],
+        )
+    }
+
     /// Creates a bounded remote MCP HTTP gate.
     ///
     /// # Errors
@@ -236,6 +253,7 @@ mod tests {
         RemoteAccessAuthenticator, RemoteHttpAuthorization, RemoteTokenVerificationError,
         RemoteTokenVerifier,
     };
+    use rembrane_config::{RemoteMcpConfig, SecretReference};
     use rembrane_contracts::{RemoteAccessScope, RemoteTokenClaims};
     use rembrane_domain::{ClientId, PrincipalId, WorkspaceId};
 
@@ -404,5 +422,19 @@ mod tests {
             )
             .expect_err("untrusted host must fail before session creation");
         assert_eq!(hostile_host.status, 403);
+    }
+
+    #[test]
+    fn gate_derives_host_and_challenge_from_one_validated_resource() {
+        let config = RemoteMcpConfig::new(
+            "https://memory.example.test/mcp".to_owned(),
+            "https://identity.example.test".to_owned(),
+            "https://identity.example.test/introspect".to_owned(),
+            "rembrane".to_owned(),
+            SecretReference::environment("OAUTH_SECRET").expect("reference should be valid"),
+            vec!["https://agent.example.test".to_owned()],
+        )
+        .expect("remote profile should be valid");
+        assert!(RemoteMcpHttpGate::from_config(10, &config).is_ok());
     }
 }

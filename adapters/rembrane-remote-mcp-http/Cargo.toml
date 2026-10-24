@@ -9,6 +9,7 @@ rust-version.workspace = true
 
 [dependencies]
 rembrane-application = { path = "../../crates/rembrane-application" }
+rembrane-config = { path = "../../crates/rembrane-config" }
 rembrane-contracts = { path = "../../crates/rembrane-contracts" }
 
 [dev-dependencies]

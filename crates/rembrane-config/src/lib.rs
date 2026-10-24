@@ -191,6 +191,7 @@ impl SecretReference {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RemoteMcpConfig {
     resource: String,
+    resource_authority: String,
     issuer: String,
     introspection_endpoint: String,
     introspection_client_id: String,
@@ -258,8 +259,10 @@ impl RemoteMcpConfig {
                 normalized_origins.push(origin);
             }
         }
+        let resource_authority = remote_endpoint_authority(&resource)?.to_owned();
         Ok(Self {
             resource,
+            resource_authority,
             issuer,
             introspection_endpoint,
             introspection_client_id,
@@ -289,6 +292,16 @@ impl RemoteMcpConfig {
     #[must_use]
     pub fn resource(&self) -> &str {
         &self.resource
+    }
+
+    /// Returns the exact public authority accepted in the HTTP `Host` header.
+    ///
+    /// This is derived from the validated resource rather than independently
+    /// configured, preventing the advertised OAuth resource and DNS-rebinding
+    /// allowlist from drifting apart.
+    #[must_use]
+    pub fn resource_authority(&self) -> &str {
+        &self.resource_authority
     }
 
     #[must_use]
@@ -333,10 +346,7 @@ fn validate_remote_https_endpoint(endpoint: &str) -> Result<(), RemoteMcpConfigE
     if endpoint.contains('@') || endpoint.contains('?') || endpoint.contains('#') {
         return Err(RemoteMcpConfigError::CredentialBearingEndpoint);
     }
-    let Some(authority) = endpoint.strip_prefix("https://") else {
-        return Err(RemoteMcpConfigError::InsecureEndpoint);
-    };
-    let authority = authority.split('/').next().unwrap_or_default();
+    let authority = remote_endpoint_authority(endpoint)?;
     if authority.is_empty()
         || authority.starts_with('.')
         || authority.ends_with('.')
@@ -345,6 +355,13 @@ fn validate_remote_https_endpoint(endpoint: &str) -> Result<(), RemoteMcpConfigE
         return Err(RemoteMcpConfigError::InsecureEndpoint);
     }
     Ok(())
+}
+
+fn remote_endpoint_authority(endpoint: &str) -> Result<&str, RemoteMcpConfigError> {
+    let Some(remainder) = endpoint.strip_prefix("https://") else {
+        return Err(RemoteMcpConfigError::InsecureEndpoint);
+    };
+    Ok(remainder.split('/').next().unwrap_or_default())
 }
 
 fn validate_exact_https_origin(origin: &str) -> Result<(), RemoteMcpConfigError> {
@@ -619,6 +636,7 @@ mod tests {
 
         assert_eq!(profile.introspection_client_secret(), &secret);
         assert_eq!(profile.trusted_origins(), ["https://app.example"]);
+        assert_eq!(profile.resource_authority(), "memory.example");
         assert_eq!(
             profile.protected_resource_metadata_url(),
             "https://memory.example/.well-known/oauth-protected-resource/mcp"
@@ -656,6 +674,7 @@ mod tests {
             profile.protected_resource_metadata_url(),
             "https://memory.example/.well-known/oauth-protected-resource"
         );
+        assert_eq!(profile.resource_authority(), "memory.example");
     }
 
     #[test]
