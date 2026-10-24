@@ -496,9 +496,11 @@ This roadmap describes sequencing, not release dates.
 - [ ] TypeScript, Python, Rust, Swift, and Kotlin SDKs.
   - [x] Publish and test a zero-dependency TypeScript client package for the
     authenticated REST surface.
+  - [x] Publish and test a standard-library-only Python client package for the
+    authenticated REST surface.
   - [x] Publish the transport-neutral Rust provider SDK and authenticated HTTP
     implementation.
-  - [ ] Publish Python, Swift, and Kotlin client packages.
+  - [ ] Publish Swift and Kotlin client packages.
 - [x] Reusable semantic-provider conformance suite.
 - [x] Evidence-backed provider compatibility registry schema and initial
   native-provider record.

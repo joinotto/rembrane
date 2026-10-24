@@ -14,6 +14,11 @@ require_command() {
 for command in git jq node rg ruby sqlite3; do
     require_command "$command"
 done
+python_command=python3
+if command -v python3.11 >/dev/null 2>&1; then
+    python_command=python3.11
+fi
+require_command "$python_command"
 
 ./scripts/check-architecture.sh
 ./scripts/check-sensitive-files.sh
@@ -22,6 +27,8 @@ done
 ./scripts/test-sqlite-atomicity.sh
 node sdks/typescript/test.mjs
 node --check sdks/typescript/index.js
+PYTHONPATH=sdks/python "$python_command" -m unittest sdks/python/test_rembrane.py
+"$python_command" -m py_compile sdks/python/rembrane.py sdks/python/test_rembrane.py
 
 for deployment_file in \
     Dockerfile \

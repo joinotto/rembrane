@@ -39,6 +39,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   HTTPS-or-loopback endpoint enforcement, bearer authentication,
   redirect rejection, bounded JSON responses, management operations, and an
   executable mock-transport test.
+- A standard-library-only Python 3.11 SDK with injected transport testing,
+  HTTPS-or-loopback endpoint enforcement, redirect rejection, bounded JSON
+  decoding, typed API errors, and matching management operations.
 - A versioned per-workspace retention policy contract with separate periods
   for memory, checkpoints, travel research, disclosures, canonical events, and
   administrative audit, including bounded expiry and legal-hold overrides.
