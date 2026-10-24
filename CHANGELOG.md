@@ -31,6 +31,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   authentication, constant-time credential comparison, streaming request-size
   enforcement, disabled schema surfaces, and mandatory production-store
   initialization.
+- A Graphiti/Neo4j sidecar store that maps exact canonical projections to
+  deterministic tenant-scoped entity UUIDs, preserves versions and temporal
+  metadata in strict codecs, verifies endpoint tenancy before edge writes, and
+  sources graph and model credentials only from the sidecar environment.
 - Canonical engine-neutral temporal knowledge graph aggregates with typed
   nodes, validated relationship types, strict workspace namespaces, separate
   validity and ingestion time, evidence provenance, bounded aliases, versions,

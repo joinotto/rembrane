@@ -170,7 +170,9 @@ This roadmap describes sequencing, not release dates.
           temporal traversal, and bounded deletion.
         - [x] Bind the contract core to authenticated, body-bounded FastAPI
           endpoints that fail startup without an explicit bearer secret.
-        - [ ] Add the production Graphiti persistence driver.
+        - [x] Add a Neo4j-backed Graphiti persistence driver with deterministic
+          tenant-scoped UUIDs, exact canonical metadata codecs, optimistic
+          projection semantics, and environment-only provider credentials.
         - [ ] Exercise the Rust HTTP adapter against the live sidecar.
 
 - [x] Project entities and scoped preferences.
