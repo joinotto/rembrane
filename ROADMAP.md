@@ -555,6 +555,8 @@ No stable release until:
 
 - [x] Provide one strict production-readiness command that fails on unavailable
   dependency, Postman, PostgreSQL, or container gates rather than skipping.
+- [x] Run scheduled and change-triggered CodeQL analysis for Rust,
+  JavaScript/TypeScript, and Python.
 - [x] Tenant-isolation tests cover every implemented adapter and transport
   read path.
 - [x] Threat model and recovery model are published.
