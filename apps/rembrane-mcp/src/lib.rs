@@ -15,7 +15,7 @@ use rembrane_application::{
 };
 use rembrane_config::{parse_read_permissions, parse_read_scopes};
 use rembrane_contracts::{ResolveContextRequest, VerifiedRemoteAccess};
-use rembrane_crypto_rustcrypto::RustCryptoKeyringCipher;
+use rembrane_crypto_configured::ConfiguredRecordCipher;
 use rembrane_domain::{
     ActivityCheckpoint, ActivityId, BookingResearch, BookingResearchId, BookingResearchKind,
     CheckpointId, ClientId, ContextPackId, DecisionStatus, DisclosureId, EntityId, EventId,
@@ -311,7 +311,7 @@ struct CheckpointOutput {
 }
 
 struct State {
-    store: SqliteStore<RustCryptoKeyringCipher>,
+    store: SqliteStore<ConfiguredRecordCipher>,
     principal_id: PrincipalId,
     workspace_id: WorkspaceId,
     client_id: ClientId,
@@ -356,7 +356,7 @@ impl RembraneMcp {
         workspace_id: WorkspaceId,
         client_id: ClientId,
     ) -> Result<Self> {
-        let cipher = RustCryptoKeyringCipher::from_configured_provider()
+        let cipher = ConfiguredRecordCipher::from_environment()
             .context("failed to load workspace cipher")?;
         let read_scopes = parse_read_scopes(
             &std::env::var("REMBRANE_READ_SCOPES").unwrap_or_else(|_| "global".to_owned()),

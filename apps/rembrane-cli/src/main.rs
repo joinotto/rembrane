@@ -7,7 +7,7 @@ use rembrane_application::{
 };
 use rembrane_config::{ProviderConnection, ProviderKind, ProviderPlacement, SecretReference};
 use rembrane_contracts::ResolveContextRequest;
-use rembrane_crypto_rustcrypto::RustCryptoKeyringCipher;
+use rembrane_crypto_configured::ConfiguredRecordCipher;
 use rembrane_domain::{
     CanonicalEvent, ClientId, ContextPackId, DisclosureId, EventId, EventPayload, EvidenceId,
     EvidenceReference, EvidenceSource, Membership, MemoryId, MemoryRecord, MemoryScope, Principal,
@@ -138,9 +138,14 @@ fn mcp_environment_variables(key_provider: &str) -> Result<Vec<&'static str>, St
             "REMBRANE_KEYCHAIN_ACCOUNT",
             "REMBRANE_KEYCHAIN_HISTORICAL_KEYS",
         ]),
+        "http" => variables.extend([
+            "REMBRANE_KEY_PROVIDER",
+            "REMBRANE_KEY_PROVIDER_BASE_URL",
+            "REMBRANE_KEY_PROVIDER_TOKEN",
+        ]),
         provider => {
             return Err(format!(
-                "unsupported --key-provider {provider}; expected environment or macos-keychain"
+                "unsupported --key-provider {provider}; expected environment, macos-keychain, or http"
             ));
         }
     }
@@ -287,7 +292,7 @@ fn restore(arguments: &[String]) -> Result<(), String> {
     let result = (|| {
         let principal_id = PrincipalId::new(option(arguments, "--principal")?);
         let workspace_id = WorkspaceId::new(option(arguments, "--workspace")?);
-        let cipher = RustCryptoKeyringCipher::from_configured_provider()
+        let cipher = ConfiguredRecordCipher::from_environment()
             .map_err(|error| format!("cannot load workspace cipher: {error}"))?;
         let store = SqliteStore::open(destination)
             .map_err(|error| format!("cannot open restored database: {error}"))?
@@ -494,6 +499,7 @@ fn configured_secret_sources() -> Vec<&'static str> {
         .as_str()
     {
         "macos-keychain" => vec!["macOS Keychain"],
+        "http" => vec!["REMBRANE_KEY_PROVIDER_TOKEN"],
         _ => vec!["REMBRANE_WORKSPACE_KEY_ID", "REMBRANE_WORKSPACE_KEY_HEX"],
     };
     for source in ["MEM0_API_KEY", "GRAPHITI_CREDENTIALS"] {
@@ -514,8 +520,9 @@ fn configured_key_provider() -> Result<&'static str, String> {
     {
         "environment" => Ok("environment (development only)"),
         "macos-keychain" => Ok("macOS Keychain"),
+        "http" => Ok("authenticated HTTP key provider"),
         provider => Err(format!(
-            "unsupported REMBRANE_KEY_PROVIDER {provider}; expected environment or macos-keychain"
+            "unsupported REMBRANE_KEY_PROVIDER {provider}; expected environment, macos-keychain, or http"
         )),
     }
 }
@@ -526,6 +533,7 @@ fn configured_outbound_endpoints() -> Vec<(&'static str, String)> {
         "GRAPHITI_BASE_URL",
         "MEMORY_OBJECT_ENDPOINT",
         "REMBRANE_REMOTE_MCP_URL",
+        "REMBRANE_KEY_PROVIDER_BASE_URL",
     ]
     .into_iter()
     .filter_map(|source| {
@@ -837,7 +845,7 @@ fn encrypted_store(
     arguments: &[String],
 ) -> Result<
     (
-        SqliteStore<RustCryptoKeyringCipher>,
+        SqliteStore<ConfiguredRecordCipher>,
         PrincipalId,
         WorkspaceId,
     ),
@@ -846,7 +854,7 @@ fn encrypted_store(
     let database = option(arguments, "--database")?;
     let principal_id = PrincipalId::new(option(arguments, "--principal")?);
     let workspace_id = WorkspaceId::new(option(arguments, "--workspace")?);
-    let cipher = RustCryptoKeyringCipher::from_configured_provider()
+    let cipher = ConfiguredRecordCipher::from_environment()
         .map_err(|error| format!("cannot load workspace cipher: {error}"))?;
     let store = SqliteStore::open(database)
         .map_err(|error| format!("cannot open database: {error}"))?
@@ -1085,7 +1093,7 @@ fn print_help() {
            rembrane providers test --provider <id> --namespace <unique-name>\n\
            rembrane mcp-config --client <codex|claude-code|gemini-cli|generic> \
              --server-binary <path> \
-             [--key-provider <environment|macos-keychain>]\n\
+             [--key-provider <environment|macos-keychain|http>]\n\
            rembrane remember --database <path> --principal <id> \
              --workspace <id> --content <preference> \
              [--domain <name> | --entity <id> | --activity <id>]\n\
@@ -1331,6 +1339,18 @@ mod tests {
         assert!(config.contains("\"REMBRANE_KEYCHAIN_SERVICE\""));
         assert!(config.contains("\"REMBRANE_KEYCHAIN_ACCOUNT\""));
         assert!(config.contains("\"REMBRANE_KEYCHAIN_HISTORICAL_KEYS\""));
+        assert!(!config.contains("REMBRANE_WORKSPACE_KEY_HEX"));
+    }
+
+    #[test]
+    fn http_key_provider_config_references_but_never_embeds_credentials() {
+        let environment =
+            mcp_environment_variables("http").expect("HTTP key provider should be valid");
+        let config = codex_mcp_config("/opt/rembrane-mcp", &environment);
+
+        assert!(config.contains("\"REMBRANE_KEY_PROVIDER_BASE_URL\""));
+        assert!(config.contains("\"REMBRANE_KEY_PROVIDER_TOKEN\""));
+        assert!(!config.contains("replace-from-secret-store"));
         assert!(!config.contains("REMBRANE_WORKSPACE_KEY_HEX"));
     }
 }

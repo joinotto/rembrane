@@ -13,7 +13,7 @@ axum = "0.8"
 rembrane-application = { path = "../../crates/rembrane-application" }
 rembrane-config = { path = "../../crates/rembrane-config" }
 rembrane-contracts = { path = "../../crates/rembrane-contracts" }
-rembrane-crypto-rustcrypto = { path = "../../adapters/rembrane-crypto-rustcrypto" }
+rembrane-crypto-configured = { path = "../../adapters/rembrane-crypto-configured" }
 rembrane-domain = { path = "../../crates/rembrane-domain" }
 rembrane-store-sqlite = { path = "../../adapters/rembrane-store-sqlite" }
 serde = { version = "1", features = ["derive"] }

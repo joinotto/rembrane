@@ -12,7 +12,7 @@ anyhow = "1"
 rembrane-application = { path = "../../crates/rembrane-application" }
 rembrane-config = { path = "../../crates/rembrane-config" }
 rembrane-contracts = { path = "../../crates/rembrane-contracts" }
-rembrane-crypto-rustcrypto = { path = "../../adapters/rembrane-crypto-rustcrypto" }
+rembrane-crypto-configured = { path = "../../adapters/rembrane-crypto-configured" }
 rembrane-domain = { path = "../../crates/rembrane-domain" }
 rembrane-store-sqlite = { path = "../../adapters/rembrane-store-sqlite" }
 rmcp = { version = "3.4.1", features = ["server"] }

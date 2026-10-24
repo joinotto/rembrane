@@ -9,7 +9,7 @@ rust-version.workspace = true
 
 [dependencies]
 rembrane-application = { path = "../../crates/rembrane-application" }
-rembrane-crypto-rustcrypto = { path = "../../adapters/rembrane-crypto-rustcrypto" }
+rembrane-crypto-configured = { path = "../../adapters/rembrane-crypto-configured" }
 rembrane-contracts = { path = "../../crates/rembrane-contracts" }
 rembrane-config = { path = "../../crates/rembrane-config" }
 rembrane-crypto = { path = "../../crates/rembrane-crypto" }

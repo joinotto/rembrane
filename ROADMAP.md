@@ -68,6 +68,8 @@ This roadmap describes sequencing, not release dates.
   - [ ] Resolve or unwrap keyring material through customer KMS adapters.
   - [x] Add a provider-agnostic configured cipher that dispatches to local
     environment/macOS keyrings or a policy-negotiated HTTP key provider.
+  - [x] Wire configured cipher selection through CLI, REST, MCP, generated
+    agent configuration, and privacy diagnostics.
 - [x] Retrieve minimal context through local stdio MCP.
 - [x] Rank canonical context by deterministic local query relevance.
 - [x] Enforce administrator-configured connection read-scope allowlists.

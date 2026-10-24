@@ -508,6 +508,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - REST API and MCP startup now honor `REMBRANE_KEY_PROVIDER` through the same
   keyring loader as the CLI, so macOS Keychain selection and historical-key
   reads are no longer silently bypassed.
+- CLI, REST, and MCP storage now use the provider-agnostic configured cipher;
+  generated agent configs and privacy diagnostics recognize authenticated
+  HTTP key providers without embedding bearer credentials.
 - Extracted the canonical MCP tool implementation into a reusable Rust library
   so stdio and remote Streamable HTTP transports share one handler surface.
 - Added verified-remote-access initialization for the shared MCP handler;

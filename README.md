@@ -170,6 +170,21 @@ The final `-w` prompts through standard input, so key material is not placed in
 the process arguments. Do not use `-A`; retain Keychain access control. Windows,
 Linux, HSM, and customer-KMS resolvers remain roadmap work.
 
+A customer-controlled Key Provider Protocol sidecar can keep raw workspace
+keys outside the Rembrane process:
+
+```text
+export REMBRANE_KEY_PROVIDER=http
+export REMBRANE_KEY_PROVIDER_BASE_URL=https://keys.example
+export REMBRANE_KEY_PROVIDER_TOKEN='resolve-from-your-secret-manager'
+export REMBRANE_KEY_PROVIDER_REQUIRE_HISTORICAL_KEYS=true
+```
+
+Exact loopback HTTP is accepted for a same-machine sidecar; non-loopback
+deployments require HTTPS. The client disables redirects and environment
+proxies, bounds responses, authenticates every operation, and negotiates
+protocol, algorithm, plaintext size, and historical-key support before use.
+
 After rotating to a new active item, retain old items only while historical
 ciphertext still references them and list their metadata as comma-separated
 `key_id=account` entries:

@@ -133,6 +133,20 @@ unset REMBRANE_WORKSPACE_KEY_HEX
 Use a disposable Keychain item for tests and delete it after testing. Never use
 the `security -A` option, which would permit unrestricted item access.
 
+To exercise a disposable customer-controlled key-provider sidecar instead:
+
+```text
+export REMBRANE_KEY_PROVIDER=http
+export REMBRANE_KEY_PROVIDER_BASE_URL=https://keys.example
+export REMBRANE_KEY_PROVIDER_TOKEN='replace-from-secret-store'
+export REMBRANE_KEY_PROVIDER_REQUIRE_HISTORICAL_KEYS=true
+unset REMBRANE_WORKSPACE_KEY_HEX
+```
+
+Run `rembrane doctor --privacy` before writing data and confirm that the
+reported key provider and redacted outbound origin match the intended
+deployment.
+
 Initialize and exercise the encrypted CLI:
 
 ```text
