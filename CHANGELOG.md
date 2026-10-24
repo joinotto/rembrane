@@ -38,6 +38,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - SQLite graph projection outbox schema with mutually exclusive node/edge
   identities, tenant-bound foreign keys, idempotency tuples, and indexed
   provider polling.
+- Resource-specific SQLite partial unique indexes that preserve graph
+  projection idempotency despite nullable node/edge identity columns.
 - Authenticated key-provider HTTP adapter using Rustls, bounded response reads,
   disabled redirects and environment proxies, zeroized bearer credentials,
   strict JSON/base64 decoding, and HTTPS except for exact loopback origins.

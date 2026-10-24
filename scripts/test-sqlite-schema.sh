@@ -393,6 +393,21 @@ SQL
 
 if sqlite3 "$database" <<'SQL'
 PRAGMA foreign_keys = ON;
+INSERT INTO graph_projection_outbox (
+    id, workspace_id, resource_type, node_id, edge_id,
+    resource_version, provider_id, operation, status, attempts
+) VALUES (
+    'graph_projection_node_duplicate', 'workspace_01', 'node',
+    'node_project', NULL, 1, 'graph.primary', 'upsert', 'pending', 0
+);
+SQL
+then
+    echo "duplicate graph node projection unexpectedly succeeded" >&2
+    exit 1
+fi
+
+if sqlite3 "$database" <<'SQL'
+PRAGMA foreign_keys = ON;
 INSERT INTO knowledge_edges (
     workspace_id, id, source_id, target_id, supersedes_id,
     edge_ciphertext, encryption_key_id, encryption_algorithm,

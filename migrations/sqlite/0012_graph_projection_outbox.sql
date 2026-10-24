@@ -37,3 +37,15 @@ CREATE TABLE graph_projection_outbox (
 CREATE INDEX graph_projection_outbox_pending
 ON graph_projection_outbox (provider_id, status, available_at, id)
 WHERE status = 'pending';
+
+CREATE UNIQUE INDEX graph_projection_outbox_node_idempotency
+ON graph_projection_outbox (
+    workspace_id, node_id, resource_version, provider_id, operation
+)
+WHERE resource_type = 'node';
+
+CREATE UNIQUE INDEX graph_projection_outbox_edge_idempotency
+ON graph_projection_outbox (
+    workspace_id, edge_id, resource_version, provider_id, operation
+)
+WHERE resource_type = 'edge';
