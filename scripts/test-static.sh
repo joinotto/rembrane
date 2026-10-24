@@ -25,7 +25,9 @@ for deployment_file in \
     Dockerfile \
     compose.yaml \
     compose.cloudflare.yaml \
+    compose.graphiti.yaml \
     docs/CLOUDFLARE_DEPLOYMENT.md \
+    docs/GRAPHITI_SIDECAR.md \
     docker/entrypoint.sh \
     scripts/check-local-alpha.sh \
     scripts/test-graphiti-sidecar.sh \
@@ -45,6 +47,10 @@ rg -q 'cap_drop:' compose.yaml
 rg -q 'CLOUDFLARE_TUNNEL_TOKEN' compose.cloudflare.yaml
 rg -q 'http://rembrane:8787' docs/CLOUDFLARE_DEPLOYMENT.md
 rg -q 'read_only: true' compose.cloudflare.yaml
+rg -q '127\.0\.0\.1:8793:8793' compose.graphiti.yaml
+rg -q 'REMBRANE_GRAPHITI_BEARER_TOKEN' compose.graphiti.yaml
+rg -q 'no-new-privileges:true' compose.graphiti.yaml
+rg -q 'USER 10002:10002' sidecars/rembrane-graphiti/Dockerfile
 if command -v docker >/dev/null 2>&1; then
     REMBRANE_PRINCIPAL_ID=principal_static \
     REMBRANE_WORKSPACE_ID=workspace_static \
@@ -62,6 +68,16 @@ if command -v docker >/dev/null 2>&1; then
     REMBRANE_WORKSPACE_KEY_HEX=0000000000000000000000000000000000000000000000000000000000000000 \
     REMBRANE_API_TOKEN=token_static \
         docker compose -f compose.yaml -f compose.cloudflare.yaml config --quiet
+    REMBRANE_PRINCIPAL_ID=principal_static \
+    REMBRANE_WORKSPACE_ID=workspace_static \
+    REMBRANE_CLIENT_ID=client_static \
+    REMBRANE_WORKSPACE_KEY_ID=key_static \
+    REMBRANE_WORKSPACE_KEY_HEX=0000000000000000000000000000000000000000000000000000000000000000 \
+    REMBRANE_API_TOKEN=token_static \
+    REMBRANE_GRAPHITI_BEARER_TOKEN=graphiti-static-token \
+    REMBRANE_GRAPHITI_NEO4J_PASSWORD=graphiti-static-password \
+    REMBRANE_GRAPHITI_OPENAI_API_KEY=graphiti-static-model-key \
+        docker compose -f compose.yaml -f compose.graphiti.yaml config --quiet
 fi
 
 echo "all static Rembrane checks passed"

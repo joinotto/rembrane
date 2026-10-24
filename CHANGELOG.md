@@ -35,6 +35,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   deterministic tenant-scoped entity UUIDs, preserves versions and temporal
   metadata in strict codecs, verifies endpoint tenancy before edge writes, and
   sources graph and model credentials only from the sidecar environment.
+- An optional hardened Compose deployment for an unprivileged loopback
+  Graphiti sidecar and private persistent Neo4j service, plus an operator guide
+  documenting its plaintext-processing trust boundary and secret ownership.
 - Canonical engine-neutral temporal knowledge graph aggregates with typed
   nodes, validated relationship types, strict workspace namespaces, separate
   validity and ingestion time, evidence provenance, bounded aliases, versions,

@@ -173,6 +173,8 @@ This roadmap describes sequencing, not release dates.
         - [x] Add a Neo4j-backed Graphiti persistence driver with deterministic
           tenant-scoped UUIDs, exact canonical metadata codecs, optimistic
           projection semantics, and environment-only provider credentials.
+        - [x] Package an unprivileged loopback-only sidecar and private Neo4j
+          deployment overlay using operator-supplied environment secrets.
         - [ ] Exercise the Rust HTTP adapter against the live sidecar.
 
 - [x] Project entities and scoped preferences.
