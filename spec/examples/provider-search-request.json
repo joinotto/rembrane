@@ -1,0 +1,5 @@
+{
+  "workspaceId": "workspace_01",
+  "query": "Which language should this project use?",
+  "maximumCandidates": 10
+}

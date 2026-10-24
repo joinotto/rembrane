@@ -62,6 +62,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Stronger provider conformance coverage for exact v2 replacement,
   superseded-content removal, preservation across deletion through an older
   version, and final deletion propagation.
+- OpenAPI 3.1 transport contract and examples for external semantic-provider
+  sidecars, including manifest negotiation, idempotent projection upserts,
+  workspace-bound search, version-bounded deletion, bounded scores, and
+  deployment-resolved bearer authentication.
 - Versioned discovery, OpenAPI, and MCP protocol specifications.
 - Tenant-isolated SQLite canonical schema with encrypted-payload metadata.
 - Versioned SQLite initialization with legacy-schema adoption, idempotent

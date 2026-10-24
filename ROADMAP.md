@@ -107,6 +107,7 @@ This roadmap describes sequencing, not release dates.
   request-limit negotiation.
 - [x] Enforce provider protocol and declared limits at projection and retrieval
   boundaries.
+- [x] Versioned HTTP sidecar contract for external semantic providers.
 - [ ] Stable Memory Provider Protocol.
 - [ ] TypeScript, Python, Rust, Swift, and Kotlin SDKs.
 - [x] Reusable semantic-provider conformance suite.

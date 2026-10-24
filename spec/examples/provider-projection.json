@@ -1,0 +1,11 @@
+{
+  "workspaceId": "workspace_01",
+  "memoryId": "memory_01",
+  "version": 2,
+  "scope": {
+    "type": "entity",
+    "id": "project_rembrane"
+  },
+  "kind": "preference",
+  "content": "Use Rust for the Rembrane core"
+}

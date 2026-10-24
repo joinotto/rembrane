@@ -16,16 +16,32 @@ for command in jq node ruby rg; do
 done
 
 ruby -e 'require "yaml"; YAML.load_file(ARGV.fetch(0))' spec/openapi.yaml
+ruby -e 'require "yaml"; YAML.load_file(ARGV.fetch(0))' spec/provider-openapi.yaml
 jq empty \
     spec/discovery.schema.json \
     spec/examples/discovery.json \
     spec/examples/provider-manifest.json \
+    spec/examples/provider-projection.json \
+    spec/examples/provider-search-request.json \
+    spec/examples/provider-search-response.json \
     spec/provider-manifest.schema.json \
     spec/provider-registry.json \
     spec/provider-registry.schema.json \
     spec/stdio-connection-manifest.schema.json \
     tests/postman/rembrane-local.postman_collection.json
 node --check scripts/test-mcp-e2e.mjs
+
+for provider_route in \
+    '/v0.1/manifest:' \
+    '/v0.1/projections:' \
+    '/v0.1/projections/{workspaceId}/{memoryId}:' \
+    '/v0.1/search:'
+do
+    if ! rg -F "$provider_route" spec/provider-openapi.yaml >/dev/null; then
+        echo "provider protocol route is missing: $provider_route" >&2
+        exit 1
+    fi
+done
 
 jq -e '
     .schemaVersion == 1

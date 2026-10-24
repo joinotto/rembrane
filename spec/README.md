@@ -42,6 +42,12 @@ closed before projection work begins. Rust manifests enforce the same provider
 identifier, version, capability uniqueness, and non-zero limit constraints as
 the JSON Schema.
 
+`provider-openapi.yaml` defines the external HTTP sidecar transport for those
+same semantics. It covers manifest negotiation, idempotent projection upserts,
+version-bounded deletion, and workspace-bound candidate search. Provider
+responses remain untrusted; the canonical core reauthorizes every candidate
+before disclosure.
+
 Rust adapters can run `verify_semantic_provider` from
 `rembrane-provider-sdk` against a disposable provider instance or tenant. The
 shared harness verifies manifest compatibility, version fidelity, workspace

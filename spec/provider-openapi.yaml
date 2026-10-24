@@ -1,0 +1,272 @@
+openapi: 3.1.0
+info:
+  title: Rembrane Semantic Provider Protocol
+  version: 0.1.0
+  description: |
+    Transport contract for replaceable semantic-memory provider sidecars.
+    The Rembrane core remains authoritative for identity, authorization,
+    canonical records, and disclosure auditing. Providers receive only
+    authorized projections and return untrusted candidate identifiers.
+servers:
+  - url: https://provider.example.invalid
+security:
+  - bearerAuth: []
+paths:
+  /v0.1/manifest:
+    get:
+      operationId: getProviderManifest
+      summary: Negotiate provider capabilities before sending memory content.
+      responses:
+        "200":
+          description: Provider manifest.
+          content:
+            application/json:
+              schema:
+                $ref: ./provider-manifest.schema.json
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v0.1/projections:
+    put:
+      operationId: upsertProjection
+      summary: Idempotently index one authorized canonical projection.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Projection"
+      responses:
+        "204":
+          description: Projection is indexed at this version or newer.
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: A newer projection already exists; callers must not overwrite it.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /v0.1/projections/{workspaceId}/{memoryId}:
+    delete:
+      operationId: deleteProjectionVersions
+      summary: Delete only projection versions at or below the supplied bound.
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/MemoryId"
+        - name: throughVersion
+          in: query
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "204":
+          description: Matching versions are absent.
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /v0.1/search:
+    post:
+      operationId: searchProjections
+      summary: Return untrusted candidate identifiers from exactly one workspace.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SearchRequest"
+      responses:
+        "200":
+          description: Candidate identifiers requiring canonical reauthorization.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SearchResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: |
+        Deployment-scoped provider credential. It is resolved by the operator's
+        runtime and must never be stored in canonical memory or registry files.
+  parameters:
+    WorkspaceId:
+      name: workspaceId
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/OpaqueId"
+    MemoryId:
+      name: memoryId
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/OpaqueId"
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 255
+  responses:
+    InvalidRequest:
+      description: Request violates the negotiated provider contract.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    Unauthorized:
+      description: Provider credential is missing or invalid.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    RateLimited:
+      description: Provider capacity limit reached; retry only according to Retry-After.
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+            minimum: 1
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+  schemas:
+    OpaqueId:
+      type: string
+      minLength: 1
+      maxLength: 255
+    Projection:
+      type: object
+      additionalProperties: false
+      required:
+        - workspaceId
+        - memoryId
+        - version
+        - scope
+        - kind
+        - content
+      properties:
+        workspaceId:
+          $ref: "#/components/schemas/OpaqueId"
+        memoryId:
+          $ref: "#/components/schemas/OpaqueId"
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+        scope:
+          $ref: "#/components/schemas/MemoryScope"
+        kind:
+          enum:
+            - preference
+            - semantic
+            - episodic
+            - procedural
+            - observation
+            - working
+        content:
+          type: string
+          minLength: 1
+          maxLength: 262144
+    MemoryScope:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [type]
+          properties:
+            type:
+              const: global
+        - type: object
+          additionalProperties: false
+          required: [type, name]
+          properties:
+            type:
+              const: domain
+            name:
+              type: string
+              minLength: 1
+              maxLength: 255
+        - type: object
+          additionalProperties: false
+          required: [type, id]
+          properties:
+            type:
+              enum: [entity, activity]
+            id:
+              $ref: "#/components/schemas/OpaqueId"
+    SearchRequest:
+      type: object
+      additionalProperties: false
+      required: [workspaceId, query, maximumCandidates]
+      properties:
+        workspaceId:
+          $ref: "#/components/schemas/OpaqueId"
+        query:
+          type: string
+          minLength: 1
+          maxLength: 262144
+        maximumCandidates:
+          type: integer
+          minimum: 1
+    SearchResponse:
+      type: object
+      additionalProperties: false
+      required: [candidates]
+      properties:
+        candidates:
+          type: array
+          items:
+            $ref: "#/components/schemas/Candidate"
+    Candidate:
+      type: object
+      additionalProperties: false
+      required: [memoryId, version, scoreMillionths]
+      properties:
+        memoryId:
+          $ref: "#/components/schemas/OpaqueId"
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+        scoreMillionths:
+          type: integer
+          minimum: 0
+          maximum: 1000000
+    Problem:
+      type: object
+      additionalProperties: true
+      required: [type, title, status]
+      properties:
+        type:
+          type: string
+          format: uri-reference
+        title:
+          type: string
+        status:
+          type: integer
+          minimum: 400
+          maximum: 599
+        detail:
+          type: string
