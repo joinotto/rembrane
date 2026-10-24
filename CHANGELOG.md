@@ -21,6 +21,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   in-memory and SQLite persistence and opaque key-provider identity.
 - Tenant-scoped active-membership enumeration for comparing future
   key-provider rotation receipts against canonical authorized recipients.
+- A bounded, content-free key-provider rotation receipt contract binding
+  provider and request identity, workspace generation, opaque key identity,
+  and a canonical exact recipient set.
 - Consumed customer key-provider HTTP configuration for application-owned
   vault, keychain, cloud-secret, and deployment integrations without fixed
   Rembrane environment-variable names.

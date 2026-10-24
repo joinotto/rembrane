@@ -1,7 +1,9 @@
 use std::error::Error;
 use std::fmt::{self, Display};
 
-use crate::{KeyRotationId, PrincipalId, WorkspaceId};
+use crate::{KeyRotationId, PrincipalId, ProviderId, WorkspaceId};
+
+pub const MAX_KEY_ROTATION_RECIPIENTS: usize = 10_000;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum KeyRotationStatus {
@@ -14,6 +16,7 @@ pub enum KeyRotationError {
     InvalidGeneration,
     InvalidKeyId,
     AlreadyCompleted,
+    InvalidProviderReceipt,
 }
 
 impl Display for KeyRotationError {
@@ -22,11 +25,102 @@ impl Display for KeyRotationError {
             Self::InvalidGeneration => "workspace key generation must be greater than zero",
             Self::InvalidKeyId => "completed rotation requires a safe non-empty key identifier",
             Self::AlreadyCompleted => "workspace key rotation is already completed",
+            Self::InvalidProviderReceipt => {
+                "key-provider rotation receipt is invalid or ambiguously scoped"
+            }
         })
     }
 }
 
 impl Error for KeyRotationError {}
+
+/// Authenticated key-provider result for one workspace generation.
+///
+/// The receipt contains only opaque identities and an exact recipient set,
+/// never raw, wrapped, or encrypted workspace key material.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct KeyRotationReceipt {
+    provider_id: ProviderId,
+    request_id: String,
+    workspace_id: WorkspaceId,
+    generation: u64,
+    key_id: String,
+    recipient_ids: Vec<PrincipalId>,
+}
+
+impl KeyRotationReceipt {
+    pub fn new(
+        provider_id: ProviderId,
+        request_id: impl Into<String>,
+        workspace_id: WorkspaceId,
+        generation: u64,
+        key_id: impl Into<String>,
+        mut recipient_ids: Vec<PrincipalId>,
+    ) -> Result<Self, KeyRotationError> {
+        let request_id = request_id.into();
+        let key_id = key_id.into();
+        if provider_id.as_str().is_empty()
+            || provider_id.as_str().len() > 255
+            || request_id.is_empty()
+            || request_id.len() > 255
+            || !request_id.bytes().all(|byte| {
+                byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b':')
+            })
+            || workspace_id.as_str().is_empty()
+            || generation == 0
+            || recipient_ids.is_empty()
+            || recipient_ids.len() > MAX_KEY_ROTATION_RECIPIENTS
+            || recipient_ids
+                .iter()
+                .any(|recipient| recipient.as_str().is_empty())
+        {
+            return Err(KeyRotationError::InvalidProviderReceipt);
+        }
+        validate_key_id(&key_id)?;
+        recipient_ids.sort();
+        if recipient_ids.windows(2).any(|pair| pair[0] == pair[1]) {
+            return Err(KeyRotationError::InvalidProviderReceipt);
+        }
+        Ok(Self {
+            provider_id,
+            request_id,
+            workspace_id,
+            generation,
+            key_id,
+            recipient_ids,
+        })
+    }
+
+    #[must_use]
+    pub const fn provider_id(&self) -> &ProviderId {
+        &self.provider_id
+    }
+
+    #[must_use]
+    pub fn request_id(&self) -> &str {
+        &self.request_id
+    }
+
+    #[must_use]
+    pub const fn workspace_id(&self) -> &WorkspaceId {
+        &self.workspace_id
+    }
+
+    #[must_use]
+    pub const fn generation(&self) -> u64 {
+        self.generation
+    }
+
+    #[must_use]
+    pub fn key_id(&self) -> &str {
+        &self.key_id
+    }
+
+    #[must_use]
+    pub fn recipient_ids(&self) -> &[PrincipalId] {
+        &self.recipient_ids
+    }
+}
 
 /// Content-free record that a shared workspace must advance its encryption
 /// generation after removing a member.
@@ -179,8 +273,8 @@ fn validate_key_id(key_id: &str) -> Result<(), KeyRotationError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{KeyRotationError, KeyRotationStatus, WorkspaceKeyRotation};
-    use crate::{KeyRotationId, PrincipalId, WorkspaceId};
+    use super::{KeyRotationError, KeyRotationReceipt, KeyRotationStatus, WorkspaceKeyRotation};
+    use crate::{KeyRotationId, PrincipalId, ProviderId, WorkspaceId};
 
     fn required() -> WorkspaceKeyRotation {
         WorkspaceKeyRotation::required(
@@ -235,6 +329,50 @@ mod tests {
         assert_eq!(
             required().complete("secret key value", PrincipalId::new("owner_01")),
             Err(KeyRotationError::InvalidKeyId)
+        );
+    }
+
+    #[test]
+    fn provider_receipt_canonicalizes_exact_recipients_without_key_material() {
+        let receipt = KeyRotationReceipt::new(
+            ProviderId::new("customer.kms"),
+            "rotate-request-01",
+            WorkspaceId::new("workspace_01"),
+            2,
+            "workspace-key:v2",
+            vec![PrincipalId::new("zoe"), PrincipalId::new("alice")],
+        )
+        .expect("provider receipt");
+
+        assert_eq!(receipt.provider_id().as_str(), "customer.kms");
+        assert_eq!(receipt.request_id(), "rotate-request-01");
+        assert_eq!(receipt.generation(), 2);
+        assert_eq!(
+            receipt.recipient_ids(),
+            &[PrincipalId::new("alice"), PrincipalId::new("zoe")]
+        );
+    }
+
+    #[test]
+    fn provider_receipt_rejects_duplicate_or_empty_recipient_sets() {
+        let receipt = |recipients| {
+            KeyRotationReceipt::new(
+                ProviderId::new("customer.kms"),
+                "rotate-request-01",
+                WorkspaceId::new("workspace_01"),
+                2,
+                "workspace-key:v2",
+                recipients,
+            )
+        };
+
+        assert_eq!(
+            receipt(Vec::new()),
+            Err(KeyRotationError::InvalidProviderReceipt)
+        );
+        assert_eq!(
+            receipt(vec![PrincipalId::new("alice"), PrincipalId::new("alice")]),
+            Err(KeyRotationError::InvalidProviderReceipt)
         );
     }
 }

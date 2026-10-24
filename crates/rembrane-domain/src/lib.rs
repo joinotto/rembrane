@@ -41,7 +41,10 @@ pub use identifier::{
     TripParticipantId, WorkspaceId,
 };
 pub use invitation::{Invitation, InvitationError, InvitationStatus};
-pub use key_rotation::{KeyRotationError, KeyRotationStatus, WorkspaceKeyRotation};
+pub use key_rotation::{
+    KeyRotationError, KeyRotationReceipt, KeyRotationStatus, MAX_KEY_ROTATION_RECIPIENTS,
+    WorkspaceKeyRotation,
+};
 pub use knowledge_graph::{
     KnowledgeEdge, KnowledgeGraphError, KnowledgeNode, KnowledgeNodeKind, KnowledgeRelationType,
     MAX_KNOWLEDGE_ALIASES, MAX_KNOWLEDGE_EVIDENCE, MAX_KNOWLEDGE_LABEL_BYTES, TemporalValidity,

@@ -290,6 +290,9 @@ This roadmap describes sequencing, not release dates.
     identity.
   - [ ] Extend the key-provider protocol with a verifiable rotation receipt
     binding generation and authorized recipients.
+    - [x] Define a bounded content-free provider receipt with provider,
+      correlation, workspace, generation, opaque key, and canonical recipient
+      identities.
     - [x] Expose tenant-scoped canonical active-membership enumeration for
       exact recipient-set validation.
 - [ ] Organizational audit and retention controls.
