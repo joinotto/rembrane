@@ -35,6 +35,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   quarantine transitions.
 - Graph projection outbox port and tenant-scoped in-memory reference adapter
   with idempotency tuples and optimistic state transitions.
+- SQLite graph projection outbox schema with mutually exclusive node/edge
+  identities, tenant-bound foreign keys, idempotency tuples, and indexed
+  provider polling.
 - Authenticated key-provider HTTP adapter using Rustls, bounded response reads,
   disabled redirects and environment proxies, zeroized bearer credentials,
   strict JSON/base64 decoding, and HTTPS except for exact loopback origins.

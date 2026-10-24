@@ -27,7 +27,9 @@ sqlite3 "$database" < \
     "$repository_root/migrations/sqlite/0010_travel_sensitive_profiles.sql"
 sqlite3 "$database" < \
     "$repository_root/migrations/sqlite/0011_knowledge_graph.sql"
-sqlite3 "$database" "PRAGMA user_version = 11;"
+sqlite3 "$database" < \
+    "$repository_root/migrations/sqlite/0012_graph_projection_outbox.sql"
+sqlite3 "$database" "PRAGMA user_version = 12;"
 
 sqlite3 "$database" <<'SQL'
 PRAGMA foreign_keys = ON;
@@ -68,6 +70,18 @@ INSERT INTO knowledge_edges (
     X'05', 'key_01', 'xchacha20poly1305', zeroblob(24),
     1, 100, 200, 100
 );
+INSERT INTO graph_projection_outbox (
+    id, workspace_id, resource_type, node_id, edge_id,
+    resource_version, provider_id, operation, status, attempts
+) VALUES
+    (
+        'graph_projection_node', 'workspace_01', 'node',
+        'node_project', NULL, 1, 'graph.primary', 'upsert', 'pending', 0
+    ),
+    (
+        'graph_projection_edge', 'workspace_01', 'edge',
+        NULL, 'edge_uses', 1, 'graph.primary', 'upsert', 'pending', 0
+    );
 INSERT INTO workspace_events (
     workspace_id,
     sequence,
@@ -509,7 +523,11 @@ table_count=$(
 )
 
 test "$table_count" -ge 9
-test "$(sqlite3 "$database" "PRAGMA user_version;")" -eq 11
+test "$(sqlite3 "$database" "PRAGMA user_version;")" -eq 12
+test "$(
+    sqlite3 "$database" \
+        "SELECT count(*) FROM graph_projection_outbox WHERE provider_id = 'graph.primary' AND status = 'pending';"
+)" -eq 2
 test "$(
     sqlite3 "$database" \
         "SELECT count(*) FROM knowledge_nodes WHERE workspace_id = 'workspace_01';"
