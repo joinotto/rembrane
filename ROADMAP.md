@@ -75,7 +75,9 @@ This roadmap describes sequencing, not release dates.
   - [x] Define HTTPS endpoints, RFC 9728 discovery metadata, bearer challenges,
     verified connection identity, scope ceilings, and session security rules.
   - [x] Add a fail-closed verified-token claims contract.
-  - [ ] Add authorization middleware backed by a signature-verifying adapter.
+  - [x] Add a transport-independent authentication boundary backed by a
+    signature-verifying or authenticated-introspection adapter.
+  - [ ] Add HTTP authorization middleware around that authentication boundary.
   - [ ] Serve Streamable HTTP through the official Rust MCP SDK.
   - [ ] Add OAuth and cross-tenant transport integration tests.
 - [x] Persist a disclosure receipt for every SQLite context response.
