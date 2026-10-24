@@ -45,6 +45,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - A configured graph-provider adapter selecting the dependency-free native
   provider or authenticated Graphiti transport from environment-owned
   credentials, with explicit opt-in required for sidecar plaintext processing.
+- A dedicated graph projection worker executable that opens the encrypted
+  canonical SQLite store, selects the configured provider, drains only that
+  provider's durable jobs, and applies bounded retry and polling policy.
 - Canonical engine-neutral temporal knowledge graph aggregates with typed
   nodes, validated relationship types, strict workspace namespaces, separate
   validity and ingestion time, evidence provenance, bounded aliases, versions,

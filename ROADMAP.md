@@ -180,8 +180,11 @@ This roadmap describes sequencing, not release dates.
         - [x] Add environment-selected native/Graphiti provider composition
           with explicit plaintext-processing opt-in and secret-local HTTP
           credentials.
-        - [ ] Wire configured Graphiti provider construction into the
-          projection-worker runtime.
+        - [x] Add a configured encrypted SQLite graph-worker executable that
+          drains provider-specific jobs through the canonical retry,
+          supersession, completion, and quarantine state machine.
+        - [ ] Package and exercise the graph worker in the self-hosted
+          Graphiti deployment.
 
 - [x] Project entities and scoped preferences.
 - [x] Layer global, domain, entity, and activity context in one request.

@@ -1,0 +1,24 @@
+[package]
+name = "rembrane-graph-worker"
+description = "Durable graph projection worker for Rembrane"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+anyhow = "1"
+rembrane-application = { path = "../../crates/rembrane-application" }
+rembrane-crypto-configured = { path = "../../adapters/rembrane-crypto-configured" }
+rembrane-domain = { path = "../../crates/rembrane-domain" }
+rembrane-graph-configured = { path = "../../adapters/rembrane-graph-configured" }
+rembrane-provider-sdk = { path = "../../crates/rembrane-provider-sdk" }
+rembrane-store-sqlite = { path = "../../adapters/rembrane-store-sqlite" }
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "rembrane-graph-worker"
+path = "src/main.rs"

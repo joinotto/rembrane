@@ -14,6 +14,7 @@ members = [
     "adapters/rembrane-semantic-native",
     "apps/rembrane-api",
     "apps/rembrane-cli",
+    "apps/rembrane-graph-worker",
     "apps/rembrane-mcp",
     "crates/rembrane-application",
     "crates/rembrane-codec",
