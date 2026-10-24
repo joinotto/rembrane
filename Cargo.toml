@@ -19,6 +19,7 @@ members = [
     "adapters/rembrane-store-sqlite",
     "adapters/rembrane-semantic-native",
     "adapters/rembrane-semantic-mem0",
+    "adapters/rembrane-semantic-supermemory",
     "apps/rembrane-api",
     "apps/rembrane-cli",
     "apps/rembrane-channel-worker",

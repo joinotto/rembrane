@@ -33,6 +33,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   and the evidence required before compatibility promotion.
 - Typed Supermemory bring-your-own-provider configuration with referenced
   credentials and consistent rejection of remappable `localhost` HTTP.
+- A transport-injectable Supermemory semantic mapping layer with
+  pseudonymous namespaces, canonical version replacement, bounded ranking,
+  exact deletion, and shared conformance coverage.
 - A public-API-only iMessage app extension reference with explicit text entry,
   review, confirmation, Keychain-held enrollment material, narrow signed
   gateway submission, and an iPhone Simulator type-check gate.

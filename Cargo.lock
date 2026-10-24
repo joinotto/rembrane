@@ -1394,6 +1394,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "rembrane-semantic-supermemory"
+version = "0.1.0-alpha.1"
+dependencies = [
+ "rembrane-domain",
+ "rembrane-provider-sdk",
+ "ring",
+ "zeroize",
+]
+
+[[package]]
 name = "rembrane-store-memory"
 version = "0.1.0-alpha.1"
 dependencies = [
