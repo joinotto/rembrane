@@ -229,7 +229,10 @@ This roadmap describes sequencing, not release dates.
     and bounded context/event/sync limits.
   - [x] Register each portable operation with exactly one capability, narrow
     OAuth scope, HTTP method, and stable path template.
-  - [ ] Define canonical operation request and response envelopes.
+  - [x] Define transport-neutral request and response envelopes with bounded
+    correlation IDs, protocol negotiation, operation binding, and closed
+    portable error codes.
+  - [ ] Define canonical operation payloads and validation.
   - [ ] Publish a serialization schema and HTTP binding.
   - [ ] Add cross-implementation conformance fixtures.
 - [x] Versioned key-provider sidecar protocol for OS, HSM, and customer-KMS

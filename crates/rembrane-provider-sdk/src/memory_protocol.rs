@@ -77,6 +77,162 @@ pub enum MemoryProviderOperation {
     SyncPush,
 }
 
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct MemoryProviderRequestId(String);
+
+impl MemoryProviderRequestId {
+    /// Creates an opaque correlation identifier safe for logs and headers.
+    ///
+    /// # Errors
+    ///
+    /// Returns an invalid-configuration error unless the identifier contains
+    /// 16-128 URL-safe ASCII characters.
+    pub fn new(value: impl Into<String>) -> Result<Self, ProviderError> {
+        let value = value.into();
+        if !(16..=128).contains(&value.len())
+            || !value
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+        {
+            return Err(ProviderError::InvalidConfiguration(
+                "memory provider request id must contain 16 to 128 URL-safe ASCII characters"
+                    .to_owned(),
+            ));
+        }
+        Ok(Self(value))
+    }
+
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MemoryProviderRequest<Payload> {
+    request_id: MemoryProviderRequestId,
+    protocol_version: ProviderProtocolVersion,
+    operation: MemoryProviderOperation,
+    payload: Payload,
+}
+
+impl<Payload> MemoryProviderRequest<Payload> {
+    /// Creates a request envelope accepted by this protocol implementation.
+    ///
+    /// # Errors
+    ///
+    /// Returns an incompatible-protocol error when the requested version is
+    /// newer or belongs to a different major protocol generation.
+    pub fn new(
+        request_id: MemoryProviderRequestId,
+        protocol_version: ProviderProtocolVersion,
+        operation: MemoryProviderOperation,
+        payload: Payload,
+    ) -> Result<Self, ProviderError> {
+        if !CURRENT_MEMORY_PROVIDER_PROTOCOL.is_compatible_with(protocol_version) {
+            return Err(ProviderError::IncompatibleProtocol {
+                required_major: protocol_version.major,
+                required_minor: protocol_version.minor,
+                offered_major: CURRENT_MEMORY_PROVIDER_PROTOCOL.major,
+                offered_minor: CURRENT_MEMORY_PROVIDER_PROTOCOL.minor,
+            });
+        }
+        Ok(Self {
+            request_id,
+            protocol_version,
+            operation,
+            payload,
+        })
+    }
+
+    #[must_use]
+    pub const fn request_id(&self) -> &MemoryProviderRequestId {
+        &self.request_id
+    }
+
+    #[must_use]
+    pub const fn protocol_version(&self) -> ProviderProtocolVersion {
+        self.protocol_version
+    }
+
+    #[must_use]
+    pub const fn operation(&self) -> MemoryProviderOperation {
+        self.operation
+    }
+
+    #[must_use]
+    pub const fn payload(&self) -> &Payload {
+        &self.payload
+    }
+
+    #[must_use]
+    pub fn into_payload(self) -> Payload {
+        self.payload
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MemoryProviderErrorCode {
+    InvalidRequest,
+    AccessDenied,
+    NotFound,
+    Conflict,
+    RateLimited,
+    Unsupported,
+    Unavailable,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum MemoryProviderResponseBody<Payload> {
+    Success(Payload),
+    Error(MemoryProviderErrorCode),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MemoryProviderResponse<Payload> {
+    request_id: MemoryProviderRequestId,
+    protocol_version: ProviderProtocolVersion,
+    body: MemoryProviderResponseBody<Payload>,
+}
+
+impl<Payload> MemoryProviderResponse<Payload> {
+    #[must_use]
+    pub fn success(request: &MemoryProviderRequest<impl Sized>, payload: Payload) -> Self {
+        Self {
+            request_id: request.request_id.clone(),
+            protocol_version: request.protocol_version,
+            body: MemoryProviderResponseBody::Success(payload),
+        }
+    }
+
+    #[must_use]
+    pub fn error(
+        request: &MemoryProviderRequest<impl Sized>,
+        error: MemoryProviderErrorCode,
+    ) -> Self {
+        Self {
+            request_id: request.request_id.clone(),
+            protocol_version: request.protocol_version,
+            body: MemoryProviderResponseBody::Error(error),
+        }
+    }
+
+    #[must_use]
+    pub const fn request_id(&self) -> &MemoryProviderRequestId {
+        &self.request_id
+    }
+
+    #[must_use]
+    pub const fn protocol_version(&self) -> ProviderProtocolVersion {
+        self.protocol_version
+    }
+
+    #[must_use]
+    pub const fn body(&self) -> &MemoryProviderResponseBody<Payload> {
+        &self.body
+    }
+}
+
 impl MemoryProviderOperation {
     #[must_use]
     pub const fn capability(self) -> MemoryProviderCapability {
@@ -329,9 +485,10 @@ fn validate_identifier(label: &str, value: &str) -> Result<(), ProviderError> {
 mod tests {
     use super::{
         CURRENT_MEMORY_PROVIDER_PROTOCOL, MEMORY_PROVIDER_DISCOVERY_PATH, MemoryProviderCapability,
-        MemoryProviderHttpMethod, MemoryProviderLimits, MemoryProviderManifest,
-        MemoryProviderOperation, MemoryProviderPrivacyMode, MemoryProviderScope,
-        MemoryProviderTransport,
+        MemoryProviderErrorCode, MemoryProviderHttpMethod, MemoryProviderLimits,
+        MemoryProviderManifest, MemoryProviderOperation, MemoryProviderPrivacyMode,
+        MemoryProviderRequest, MemoryProviderRequestId, MemoryProviderResponse,
+        MemoryProviderResponseBody, MemoryProviderScope, MemoryProviderTransport,
     };
     use crate::{ProviderError, ProviderProtocolVersion};
 
@@ -505,5 +662,62 @@ mod tests {
             assert_eq!(operation.path_template(), path);
             assert!(scope.as_str().starts_with("memory:"));
         }
+    }
+
+    #[test]
+    fn envelopes_bind_operation_version_and_response_correlation() {
+        let request_id = MemoryProviderRequestId::new("request_0123456789abcdef")
+            .expect("request id should be valid");
+        let request = MemoryProviderRequest::new(
+            request_id.clone(),
+            CURRENT_MEMORY_PROVIDER_PROTOCOL,
+            MemoryProviderOperation::ResolveContext,
+            "payload",
+        )
+        .expect("current request should be compatible");
+        assert_eq!(request.request_id(), &request_id);
+        assert_eq!(request.operation(), MemoryProviderOperation::ResolveContext);
+
+        let success = MemoryProviderResponse::success(&request, "context");
+        assert_eq!(success.request_id(), &request_id);
+        assert_eq!(
+            success.body(),
+            &MemoryProviderResponseBody::Success("context")
+        );
+        let denied: MemoryProviderResponse<()> =
+            MemoryProviderResponse::error(&request, MemoryProviderErrorCode::AccessDenied);
+        assert_eq!(
+            denied.body(),
+            &MemoryProviderResponseBody::Error(MemoryProviderErrorCode::AccessDenied)
+        );
+
+        assert_eq!(
+            MemoryProviderRequest::new(
+                request_id,
+                ProviderProtocolVersion::new(0, 2),
+                MemoryProviderOperation::ResolveContext,
+                (),
+            ),
+            Err(ProviderError::IncompatibleProtocol {
+                required_major: 0,
+                required_minor: 2,
+                offered_major: 0,
+                offered_minor: 1,
+            })
+        );
+    }
+
+    #[test]
+    fn request_ids_reject_unsafe_or_unbounded_values() {
+        for invalid in [
+            "",
+            "short",
+            "request with spaces",
+            "request/with/path",
+            "request\r\ninjected",
+        ] {
+            assert!(MemoryProviderRequestId::new(invalid).is_err());
+        }
+        assert!(MemoryProviderRequestId::new("x".repeat(129)).is_err());
     }
 }

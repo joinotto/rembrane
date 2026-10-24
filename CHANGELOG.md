@@ -15,6 +15,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Closed Memory Provider Protocol operation registry mapping every portable
   action to one advertised capability, narrow OAuth scope, HTTP method, and
   stable path template.
+- Transport-neutral Memory Provider Protocol request and response envelopes
+  with bounded correlation IDs, version compatibility checks, explicit
+  operation binding, and closed non-enumerating error codes.
 - Expiry-aware remote MCP session capacity reclamation so abandoned bindings
   cannot exhaust the bounded in-process registry indefinitely.
 - A transport-neutral remote MCP lifecycle boundary that composes strict HTTP

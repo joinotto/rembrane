@@ -18,9 +18,10 @@ pub use conformance::{ConformanceFailure, verify_semantic_provider};
 pub use error::ProviderError;
 pub use memory_protocol::{
     CURRENT_MEMORY_PROVIDER_PROTOCOL, MEMORY_PROVIDER_DISCOVERY_PATH, MemoryProviderCapability,
-    MemoryProviderHttpMethod, MemoryProviderLimits, MemoryProviderManifest,
-    MemoryProviderOperation, MemoryProviderPrivacyMode, MemoryProviderScope,
-    MemoryProviderTransport,
+    MemoryProviderErrorCode, MemoryProviderHttpMethod, MemoryProviderLimits,
+    MemoryProviderManifest, MemoryProviderOperation, MemoryProviderPrivacyMode,
+    MemoryProviderRequest, MemoryProviderRequestId, MemoryProviderResponse,
+    MemoryProviderResponseBody, MemoryProviderScope, MemoryProviderTransport,
 };
 pub use semantic::{
     AuthorizedMemoryProjection, CandidateMemory, SemanticMemoryProvider, SemanticQuery,
