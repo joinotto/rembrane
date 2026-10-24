@@ -124,6 +124,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   destinations, opaque participant identities, participant-scoped
   evidence-backed constraints, attributed proposed/selected/rejected
   decisions, duplicate denial, and aggregate payload ceilings.
+- Strict trip restoration path for persistence adapters, rejecting zero
+  versions, duplicate nested identities, dangling participant references, and
+  reconstructed aggregates over the canonical size ceiling.
 - Versioned discovery, OpenAPI, and MCP protocol specifications.
 - Tenant-isolated SQLite canonical schema with encrypted-payload metadata.
 - Versioned SQLite initialization with legacy-schema adoption, idempotent

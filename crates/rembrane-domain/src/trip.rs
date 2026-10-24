@@ -223,6 +223,54 @@ pub struct Trip {
 }
 
 impl Trip {
+    pub fn restore(
+        id: EntityId,
+        workspace_id: WorkspaceId,
+        owner_subject_id: PrincipalId,
+        title: impl Into<String>,
+        origin: impl Into<String>,
+        destinations: Vec<String>,
+        date_window: TravelDateWindow,
+        participants: Vec<TripParticipant>,
+        constraints: Vec<TripConstraint>,
+        decisions: Vec<TripDecision>,
+        version: u64,
+    ) -> Result<Self, TripError> {
+        if version == 0 {
+            return Err(TripError::InvalidVersion);
+        }
+        let mut trip = Self::new(
+            id,
+            workspace_id,
+            owner_subject_id,
+            title,
+            origin,
+            destinations,
+            date_window,
+        )?;
+        if has_duplicate_ids(&participants, TripParticipant::id)
+            || has_duplicate_ids(&constraints, TripConstraint::id)
+            || has_duplicate_ids(&decisions, TripDecision::id)
+        {
+            return Err(TripError::DuplicateItem);
+        }
+        if constraints.iter().any(|constraint| {
+            constraint.participant_id().is_some_and(|participant_id| {
+                !participants
+                    .iter()
+                    .any(|participant| participant.id() == participant_id)
+            })
+        }) {
+            return Err(TripError::UnknownParticipant);
+        }
+        trip.participants = participants;
+        trip.constraints = constraints;
+        trip.decisions = decisions;
+        trip.version = version;
+        trip.validate_size()?;
+        Ok(trip)
+    }
+
     pub fn new(
         id: EntityId,
         workspace_id: WorkspaceId,
@@ -420,6 +468,14 @@ fn has_duplicates(values: &[String]) -> bool {
         .any(|(index, value)| values[..index].contains(value))
 }
 
+fn has_duplicate_ids<T, Id: PartialEq>(values: &[T], id: impl Fn(&T) -> &Id) -> bool {
+    values.iter().enumerate().any(|(index, value)| {
+        values[..index]
+            .iter()
+            .any(|earlier| id(earlier) == id(value))
+    })
+}
+
 fn valid_iso_date(value: &str) -> bool {
     let bytes = value.as_bytes();
     if bytes.len() != 10 || bytes[4] != b'-' || bytes[7] != b'-' {
@@ -455,6 +511,7 @@ pub enum TripError {
     EmptyField,
     FieldTooLarge,
     InvalidDateWindow,
+    InvalidVersion,
     MissingDestination,
     UnknownParticipant,
     VersionOverflow,
@@ -468,6 +525,7 @@ impl Display for TripError {
             Self::EmptyField => "trip field must not be empty",
             Self::FieldTooLarge => "trip field exceeds the canonical byte limit",
             Self::InvalidDateWindow => "trip date window is invalid",
+            Self::InvalidVersion => "trip version must be greater than zero",
             Self::MissingDestination => "trip requires at least one destination",
             Self::UnknownParticipant => "trip constraint references an unknown participant",
             Self::VersionOverflow => "trip version cannot be incremented",
@@ -576,6 +634,52 @@ mod tests {
         assert_eq!(
             TravelDateWindow::new("2027-04-10", "2027-04-09"),
             Err(TripError::InvalidDateWindow)
+        );
+    }
+
+    #[test]
+    fn restore_rejects_invalid_version_and_dangling_participant_reference() {
+        let window =
+            TravelDateWindow::new("2027-03-10", "2027-03-20").expect("window should be valid");
+        assert_eq!(
+            Trip::restore(
+                EntityId::new("trip"),
+                WorkspaceId::new("workspace"),
+                PrincipalId::new("principal"),
+                "Trip",
+                "Delhi",
+                vec!["Tokyo".to_owned()],
+                window.clone(),
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+                0,
+            ),
+            Err(TripError::InvalidVersion)
+        );
+        let dangling = TripConstraint::new(
+            TripConstraintId::new("constraint"),
+            Some(TripParticipantId::new("missing")),
+            TripConstraintKind::Schedule,
+            "Depart after work",
+            evidence("evidence"),
+        )
+        .expect("constraint should be structurally valid");
+        assert_eq!(
+            Trip::restore(
+                EntityId::new("trip"),
+                WorkspaceId::new("workspace"),
+                PrincipalId::new("principal"),
+                "Trip",
+                "Delhi",
+                vec!["Tokyo".to_owned()],
+                window,
+                Vec::new(),
+                vec![dangling],
+                Vec::new(),
+                1,
+            ),
+            Err(TripError::UnknownParticipant)
         );
     }
 }
