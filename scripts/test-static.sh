@@ -98,6 +98,7 @@ rg -q 'http://rembrane:8787' docs/CLOUDFLARE_DEPLOYMENT.md
 rg -q 'read_only: true' compose.cloudflare.yaml
 rg -q '127\.0\.0\.1:8793:8793' compose.graphiti.yaml
 rg -q 'REMBRANE_GRAPHITI_BEARER_TOKEN' compose.graphiti.yaml
+rg -q 'REMBRANE_GRAPHITI_BEARER_TOKEN_REFERENCE' compose.graphiti.yaml
 rg -q 'rembrane-graph-worker' compose.graphiti.yaml
 rg -q 'REMBRANE_GRAPH_PROVIDER_ALLOW_PLAINTEXT: "true"' compose.graphiti.yaml
 rg -q 'no-new-privileges:true' compose.graphiti.yaml

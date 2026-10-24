@@ -299,6 +299,8 @@ This roadmap describes sequencing, not release dates.
         - [x] Add environment-selected native/Graphiti provider composition
           with explicit plaintext-processing opt-in and secret-local HTTP
           credentials.
+          - [x] Resolve the environment-selected Graphiti bearer credential
+            from validated environment or protected-file reference metadata.
         - [x] Add a configured encrypted SQLite graph-worker executable that
           drains provider-specific jobs through the canonical retry,
           supersession, completion, and quarantine state machine.

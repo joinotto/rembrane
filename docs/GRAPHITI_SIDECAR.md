@@ -48,10 +48,16 @@ REMBRANE_GRAPHITI_BEARER_TOKEN='resolve-from-local-secret-store'
 REMBRANE_GRAPH_PROVIDER_ALLOW_PLAINTEXT=true
 ```
 
-The token remains in the local environment or secret manager and is resolved
-only by the worker process. The Compose overlay constructs the worker
-automatically and connects it to the sidecar over the private container
-network.
+For a standalone or custom worker deployment,
+`REMBRANE_GRAPHITI_BEARER_TOKEN_REFERENCE` may select `env:VARIABLE` or a
+protected `file:path` instead of the default bearer-token variable. The
+resolved value remains zeroizing through HTTP transport construction. The
+stock Compose overlay still supplies the matching token to the sidecar
+separately; custom secret-file deployments must mount and configure both
+processes consistently.
+
+The Compose overlay constructs the worker automatically and connects it to the
+sidecar over the private container network.
 
 ## Security properties
 

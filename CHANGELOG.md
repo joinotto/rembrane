@@ -62,6 +62,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Graphiti composition from validated provider profiles through pluggable
   secret resolvers, with provider-kind, credential-cardinality, and explicit
   plaintext-policy checks before resolution.
+- Protected local Graphiti bearer-token references for environment-selected
+  knowledge-graph worker composition.
 - Portable Mem0 and Supermemory composition from validated provider profiles
   through pluggable secret resolvers, retaining zeroizing credentials through
   HTTP construction and enforcing negotiated privacy policy at discovery.

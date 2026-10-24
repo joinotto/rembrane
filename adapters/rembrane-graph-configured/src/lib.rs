@@ -2,7 +2,7 @@
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use rembrane_config::{ProviderConnection, ProviderKind};
+use rembrane_config::{ProviderConnection, ProviderKind, SecretReference};
 use rembrane_domain::{
     KnowledgeEdge, KnowledgeEdgeId, KnowledgeNode, KnowledgeNodeId, WorkspaceId,
 };
@@ -13,7 +13,7 @@ use rembrane_provider_sdk::{
     CandidateKnowledgeEdge, GraphNeighbourQuery, KnowledgeGraphProvider, ProviderError,
     ProviderManifest,
 };
-use rembrane_secret_local::{SecretResolver, resolve_provider_credentials};
+use rembrane_secret_local::{LocalSecretResolver, SecretResolver, resolve_provider_credentials};
 
 pub enum ConfiguredGraphProvider {
     Native(NativeGraphProvider),
@@ -35,8 +35,11 @@ impl ConfiguredGraphProvider {
                     ));
                 }
                 let endpoint = required_environment("REMBRANE_GRAPHITI_BASE_URL")?;
-                let token = required_environment("REMBRANE_GRAPHITI_BEARER_TOKEN")?;
-                let transport = HttpGraphitiTransport::new(&endpoint, token)?;
+                let token_reference = configured_token_reference()?;
+                let token = LocalSecretResolver
+                    .resolve(&token_reference)
+                    .map_err(|_| graphiti_credential_unavailable())?;
+                let transport = HttpGraphitiTransport::new_with_secret(&endpoint, token)?;
                 Ok(Self::Graphiti(Box::new(GraphitiProvider::connect(
                     transport,
                     request_prefix()?,
@@ -168,6 +171,29 @@ fn required_environment(name: &str) -> Result<String, ProviderError> {
         })
 }
 
+fn configured_token_reference() -> Result<SecretReference, ProviderError> {
+    match std::env::var("REMBRANE_GRAPHITI_BEARER_TOKEN_REFERENCE") {
+        Ok(locator) => selected_token_reference(&locator),
+        Err(std::env::VarError::NotPresent) => selected_token_reference(""),
+        Err(_) => Err(graphiti_credential_unavailable()),
+    }
+}
+
+fn selected_token_reference(locator: &str) -> Result<SecretReference, ProviderError> {
+    if locator.is_empty() {
+        SecretReference::environment("REMBRANE_GRAPHITI_BEARER_TOKEN")
+            .map_err(|_| graphiti_credential_unavailable())
+    } else {
+        locator
+            .parse()
+            .map_err(|_| graphiti_credential_unavailable())
+    }
+}
+
+fn graphiti_credential_unavailable() -> ProviderError {
+    ProviderError::InvalidConfiguration("Graphiti credential unavailable".to_owned())
+}
+
 fn request_prefix() -> Result<String, ProviderError> {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -183,7 +209,7 @@ mod tests {
     use rembrane_secret_local::{SecretResolutionError, SecretResolver};
     use zeroize::Zeroizing;
 
-    use super::{ConfiguredGraphProvider, request_prefix};
+    use super::{ConfiguredGraphProvider, request_prefix, selected_token_reference};
 
     struct RejectingResolver;
 
@@ -213,6 +239,19 @@ mod tests {
                 .bytes()
                 .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
         );
+    }
+
+    #[test]
+    fn graphiti_token_reference_defaults_and_rejects_inline_values() {
+        let default = selected_token_reference("").expect("default environment reference");
+        assert_eq!(
+            default.environment_variable(),
+            Some("REMBRANE_GRAPHITI_BEARER_TOKEN")
+        );
+        let file =
+            selected_token_reference("file:/run/secrets/graphiti-token").expect("file reference");
+        assert_eq!(file.file_path(), Some("/run/secrets/graphiti-token"));
+        assert!(selected_token_reference("inline-token").is_err());
     }
 
     #[test]

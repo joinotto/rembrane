@@ -74,3 +74,8 @@ Administrative WhatsApp and mobile-share bind/unbind commands consume the
 same binding-key locator variables as their gateways. Raw account, sender, and
 device identifiers remain short-lived zeroizing environment inputs, while the
 stable pseudonym key can stay in a protected secret file.
+
+`ConfiguredGraphProvider::from_environment` accepts
+`REMBRANE_GRAPHITI_BEARER_TOKEN_REFERENCE` for standalone and custom
+knowledge-graph worker deployments, resolving it before the Graphiti HTTP
+transport is constructed.
