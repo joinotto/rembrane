@@ -73,6 +73,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   with safe path encoding, path/payload/result identity binding, and canonical
   bounded evidence references that exclude raw sources and provider-internal
   reasoning.
+- Typed Memory Provider question resolution with scoped queries, caller-bound
+  answer and support ceilings, exact supporting memory revisions, and
+  context-pack plus disclosure receipt identity.
 - Canonical engine-neutral temporal knowledge graph aggregates with typed
   nodes, validated relationship types, strict workspace namespaces, separate
   validity and ingestion time, evidence provenance, bounded aliases, versions,

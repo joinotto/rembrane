@@ -368,7 +368,10 @@ This roadmap describes sequencing, not release dates.
       - [x] Explain one exact memory revision with bounded immutable evidence
         references, without exposing raw sources or provider-internal
         reasoning.
-      - [ ] Add question, event, checkpoint, disclosure, and sync operations.
+      - [x] Resolve bounded questions into evidence-grounded answers carrying
+        exact supporting revisions, context-pack identity, and disclosure
+        identity.
+      - [ ] Add event, checkpoint, disclosure, and sync operations.
 - [x] Versioned key-provider sidecar protocol for OS, HSM, and customer-KMS
   adapters.
   - [x] Add transport-independent Rust manifest, negotiation, request, context,

@@ -11,10 +11,11 @@ use rembrane_provider_sdk::{
     CURRENT_MEMORY_PROVIDER_PROTOCOL, DeleteMemoryPayload, DeleteMemoryResult,
     ExplainMemoryPayload, ExplainMemoryResult, MEMORY_PROVIDER_DISCOVERY_PATH,
     MemoryProviderCapability, MemoryProviderConnection, MemoryProviderContextItem,
-    MemoryProviderDisclosureConstraint, MemoryProviderLimits, MemoryProviderManifest,
-    MemoryProviderPolicy, MemoryProviderPrivacyMode, MemoryProviderRequest, MemoryProviderResponse,
-    MemoryProviderSensitivity, MemoryProviderTransport, ProposeMemoryPayload, ProposeMemoryResult,
-    ProviderError, ProviderProtocolVersion, ResolveContextPayload, ResolveContextResult,
+    MemoryProviderDisclosedMemory, MemoryProviderDisclosureConstraint, MemoryProviderLimits,
+    MemoryProviderManifest, MemoryProviderPolicy, MemoryProviderPrivacyMode, MemoryProviderRequest,
+    MemoryProviderResponse, MemoryProviderSensitivity, MemoryProviderTransport,
+    ProposeMemoryPayload, ProposeMemoryResult, ProviderError, ProviderProtocolVersion,
+    ResolveContextPayload, ResolveContextResult, ResolveQuestionPayload, ResolveQuestionResult,
 };
 use reqwest::Url;
 use reqwest::blocking::{Client, Response};
@@ -93,6 +94,38 @@ impl HttpMemoryProviderClient {
         let response = self.post_json(endpoint, &body)?;
         let status = response.status().as_u16();
         let wire: ResponseEnvelope<ResolveContextResultBody> =
+            decode_json(response, MAXIMUM_OPERATION_BYTES)?;
+        validate_response_identity(request, &wire.request_id, &wire.protocol_version)?;
+        match (wire.result, wire.error) {
+            (Some(result), None) if (200..300).contains(&status) => {
+                Ok(request.success(result.into_domain(request.payload())?))
+            }
+            (None, Some(error)) if !(200..300).contains(&status) => {
+                Ok(request.error(parse_error_code(&error.code)?))
+            }
+            _ => Err(ProviderError::Rejected(
+                "memory provider response status and envelope disagree".to_owned(),
+            )),
+        }
+    }
+
+    pub fn resolve_question(
+        &self,
+        request: &MemoryProviderRequest<ResolveQuestionPayload>,
+    ) -> Result<MemoryProviderResponse<ResolveQuestionResult>, ProviderError> {
+        let endpoint = self
+            .base_url
+            .join("v1/questions/resolve")
+            .map_err(|_| ProviderError::Unavailable)?;
+        let body = RequestEnvelope {
+            request_id: request.request_id().as_str(),
+            protocol_version: "0.1",
+            operation: "resolve_question",
+            payload: ResolveQuestionBody::from(request.payload()),
+        };
+        let response = self.post_json(endpoint, &body)?;
+        let status = response.status().as_u16();
+        let wire: ResponseEnvelope<ResolveQuestionResultBody> =
             decode_json(response, MAXIMUM_OPERATION_BYTES)?;
         validate_response_identity(request, &wire.request_id, &wire.protocol_version)?;
         match (wire.result, wire.error) {
@@ -399,6 +432,28 @@ struct ResolveContextBody<'request> {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+struct ResolveQuestionBody<'request> {
+    purpose: &'request str,
+    question: &'request str,
+    selector: SelectorBody<'request>,
+    maximum_supporting_items: usize,
+    maximum_answer_bytes: usize,
+}
+
+impl<'request> From<&'request ResolveQuestionPayload> for ResolveQuestionBody<'request> {
+    fn from(payload: &'request ResolveQuestionPayload) -> Self {
+        Self {
+            purpose: payload.purpose(),
+            question: payload.question(),
+            selector: SelectorBody::from(payload.selector().scope()),
+            maximum_supporting_items: payload.maximum_supporting_items(),
+            maximum_answer_bytes: payload.maximum_answer_bytes(),
+        }
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct ProposeMemoryBody<'request> {
     idempotency_key: &'request str,
     selector: SelectorBody<'request>,
@@ -518,6 +573,46 @@ struct ResolveContextResultBody {
     context_pack_id: String,
     disclosure_id: String,
     items: Vec<ContextItemBody>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct ResolveQuestionResultBody {
+    answer: String,
+    supporting_memories: Vec<ExactMemoryRevisionBody>,
+    context_pack_id: String,
+    disclosure_id: String,
+}
+
+impl ResolveQuestionResultBody {
+    fn into_domain(
+        self,
+        request: &ResolveQuestionPayload,
+    ) -> Result<ResolveQuestionResult, ProviderError> {
+        ResolveQuestionResult::new(
+            self.answer,
+            self.supporting_memories
+                .into_iter()
+                .map(ExactMemoryRevisionBody::into_domain)
+                .collect::<Result<Vec<_>, _>>()?,
+            ContextPackId::new(self.context_pack_id),
+            DisclosureId::new(self.disclosure_id),
+            request,
+        )
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct ExactMemoryRevisionBody {
+    memory_id: String,
+    version: u64,
+}
+
+impl ExactMemoryRevisionBody {
+    fn into_domain(self) -> Result<MemoryProviderDisclosedMemory, ProviderError> {
+        MemoryProviderDisclosedMemory::new(MemoryId::new(self.memory_id), self.version)
+    }
 }
 
 #[derive(Deserialize)]
@@ -967,13 +1062,14 @@ mod tests {
         MemoryProviderConnection, MemoryProviderContextSelector, MemoryProviderIdempotencyKey,
         MemoryProviderLimits, MemoryProviderManifest, MemoryProviderPolicy,
         MemoryProviderPrivacyMode, MemoryProviderTransport, ProposeMemoryPayload,
-        ResolveContextPayload,
+        ResolveContextPayload, ResolveQuestionPayload,
     };
 
     use super::{
         DiscoveryBody, ExplainMemoryBody, ExplainMemoryResultBody, ProposeMemoryBody,
-        RequestEnvelope, ResolveContextBody, ResolveContextResultBody, memory_endpoint,
-        memory_subresource_endpoint, validate_base_url, validate_bearer_token,
+        RequestEnvelope, ResolveContextBody, ResolveContextResultBody, ResolveQuestionBody,
+        ResolveQuestionResultBody, memory_endpoint, memory_subresource_endpoint, validate_base_url,
+        validate_bearer_token,
     };
 
     const DISCOVERY: &str = r#"{
@@ -1147,6 +1243,65 @@ mod tests {
         assert_eq!(result.items().len(), 1);
         assert_eq!(result.items()[0].scope(), &MemoryScope::Global);
         assert_eq!(result.items()[0].content(), "Call the user Hippo.");
+    }
+
+    #[test]
+    fn serializes_and_bounds_grounded_question_answers() {
+        let limits = MemoryProviderLimits {
+            maximum_context_items: 10,
+            maximum_context_bytes: 1_024,
+            maximum_event_batch_items: 1,
+            maximum_sync_batch_items: 1,
+        };
+        let request = ResolveQuestionPayload::new(
+            "continue a project",
+            "What should the next coding agent implement?",
+            MemoryProviderContextSelector::domain("development").expect("selector"),
+            2,
+            512,
+            limits,
+        )
+        .expect("request");
+        let encoded =
+            serde_json::to_value(ResolveQuestionBody::from(&request)).expect("request JSON");
+        assert_eq!(encoded["selector"]["scope"], "domain");
+        assert_eq!(encoded["selector"]["domain"], "development");
+        assert_eq!(encoded["maximumSupportingItems"], 2);
+        assert_eq!(encoded["maximumAnswerBytes"], 512);
+        assert!(encoded.get("workspaceId").is_none());
+        assert!(encoded.get("subjectId").is_none());
+
+        let wire: ResolveQuestionResultBody = serde_json::from_str(
+            r#"{
+              "answer":"Implement the event ingestion binding next.",
+              "supportingMemories":[
+                {"memoryId":"memory_01","version":3},
+                {"memoryId":"memory_02","version":1}
+              ],
+              "contextPackId":"context_pack_01",
+              "disclosureId":"disclosure_01"
+            }"#,
+        )
+        .expect("result JSON");
+        let result = wire.into_domain(&request).expect("canonical result");
+        assert_eq!(result.supporting_memories().len(), 2);
+        assert_eq!(result.supporting_memories()[0].version(), 3);
+        assert_eq!(result.context_pack_id().as_str(), "context_pack_01");
+
+        let oversized: ResolveQuestionResultBody = serde_json::from_str(
+            r#"{
+              "answer":"This result contains too many supporting revisions.",
+              "supportingMemories":[
+                {"memoryId":"memory_01","version":1},
+                {"memoryId":"memory_02","version":1},
+                {"memoryId":"memory_03","version":1}
+              ],
+              "contextPackId":"context_pack_01",
+              "disclosureId":"disclosure_01"
+            }"#,
+        )
+        .expect("result JSON");
+        assert!(oversized.into_domain(&request).is_err());
     }
 
     #[test]
