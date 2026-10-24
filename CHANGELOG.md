@@ -30,6 +30,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   deletion semantics.
 - Dependency-free native temporal graph provider for local operation,
   deterministic benchmarks, and shared adapter conformance testing.
+- Durable graph projection job aggregate with node/edge resource identity,
+  provider routing, version bounds, retry accounting, completion, and
+  quarantine transitions.
 - Authenticated key-provider HTTP adapter using Rustls, bounded response reads,
   disabled redirects and environment proxies, zeroized bearer credentials,
   strict JSON/base64 decoding, and HTTPS except for exact loopback origins.

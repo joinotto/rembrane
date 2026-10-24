@@ -147,6 +147,8 @@ This roadmap describes sequencing, not release dates.
       harness for workspace isolation, validity windows, and deletion.
     - [x] Add a deterministic dependency-free native graph provider as the
       conformance and benchmark baseline.
+    - [x] Model durable graph projection work independently from semantic
+      memory projection jobs.
     - [ ] Add Graphiti projection adapter.
 
 - [x] Project entities and scoped preferences.
