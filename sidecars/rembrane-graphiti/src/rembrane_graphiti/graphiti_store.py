@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Any
 
 from .core import EdgeRecord, NodeRecord, SidecarError
+from .secrets import resolve_secret
 
 _NODE_PREFIX = "rembrane-node-v1:"
 _EDGE_PREFIX = "rembrane-edge-v1:"
@@ -25,9 +28,13 @@ class GraphitiGraphStore:
 
         uri = _required_environment("NEO4J_URI")
         user = _required_environment("NEO4J_USER")
-        password = _required_environment("NEO4J_PASSWORD")
-        _required_environment("OPENAI_API_KEY")
-        graphiti = Graphiti(uri, user, password)
+        password = _database_password(user)
+        model_api_key = resolve_secret(
+            "OPENAI_API_KEY_REFERENCE",
+            "OPENAI_API_KEY",
+        )
+        with _temporary_environment("OPENAI_API_KEY", model_api_key):
+            graphiti = Graphiti(uri, user, password)
         try:
             await graphiti.build_indices_and_constraints()
         except Exception:
@@ -232,6 +239,32 @@ def _required_environment(name: str) -> str:
     if not value:
         raise RuntimeError(f"{name} is required by the Graphiti sidecar")
     return value
+
+
+def _database_password(user: str) -> str:
+    if os.environ.get("NEO4J_AUTH_REFERENCE"):
+        authentication = resolve_secret(
+            "NEO4J_AUTH_REFERENCE",
+            "NEO4J_AUTH",
+        )
+        configured_user, separator, password = authentication.partition("/")
+        if not separator or configured_user != user or not password:
+            raise RuntimeError("Graphiti database credential unavailable")
+        return password
+    return resolve_secret("NEO4J_PASSWORD_REFERENCE", "NEO4J_PASSWORD")
+
+
+@contextmanager
+def _temporary_environment(name: str, value: str) -> Iterator[None]:
+    previous = os.environ.get(name)
+    os.environ[name] = value
+    try:
+        yield
+    finally:
+        if previous is None:
+            os.environ.pop(name, None)
+        else:
+            os.environ[name] = previous
 
 
 def _instant(epoch_seconds: int) -> datetime:

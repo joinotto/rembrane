@@ -46,11 +46,21 @@ services:
       REMBRANE_GRAPHITI_PORT: "8793"
       NEO4J_URI: bolt://graphiti-neo4j:7687
       NEO4J_USER: neo4j
-      NEO4J_PASSWORD: ${REMBRANE_GRAPHITI_NEO4J_PASSWORD:?required}
-      OPENAI_API_KEY: ${REMBRANE_GRAPHITI_OPENAI_API_KEY:?required}
+      NEO4J_AUTH_REFERENCE: file:/run/secrets/rembrane_graphiti_neo4j_auth
+      OPENAI_API_KEY_REFERENCE: file:/run/secrets/rembrane_graphiti_openai_api_key
     secrets:
       - source: rembrane_graphiti_bearer_token
         target: rembrane_graphiti_bearer_token
+        uid: "10002"
+        gid: "10002"
+        mode: 0400
+      - source: rembrane_graphiti_neo4j_auth
+        target: rembrane_graphiti_neo4j_auth
+        uid: "10002"
+        gid: "10002"
+        mode: 0400
+      - source: rembrane_graphiti_openai_api_key
+        target: rembrane_graphiti_openai_api_key
         uid: "10002"
         gid: "10002"
         mode: 0400
@@ -71,8 +81,13 @@ services:
     image: neo4j:5.26-community
     restart: unless-stopped
     environment:
-      NEO4J_AUTH: neo4j/${REMBRANE_GRAPHITI_NEO4J_PASSWORD:?required}
-      NEO4J_PASSWORD: ${REMBRANE_GRAPHITI_NEO4J_PASSWORD:?required}
+      NEO4J_AUTH_FILE: /run/secrets/rembrane_graphiti_neo4j_auth
+    secrets:
+      - source: rembrane_graphiti_neo4j_auth
+        target: rembrane_graphiti_neo4j_auth
+        uid: "7474"
+        gid: "7474"
+        mode: 0400
     volumes:
       - rembrane-graphiti-neo4j:/data
     expose:
@@ -82,7 +97,7 @@ services:
         - CMD-SHELL
         - >-
           cypher-shell -u neo4j
-          -p "$$NEO4J_PASSWORD"
+          -p "$$(cut -d/ -f2- /run/secrets/rembrane_graphiti_neo4j_auth)"
           "RETURN 1" >/dev/null
       interval: 10s
       timeout: 5s
@@ -99,3 +114,7 @@ volumes:
 secrets:
   rembrane_graphiti_bearer_token:
     file: ${REMBRANE_GRAPHITI_BEARER_TOKEN_FILE:?required}
+  rembrane_graphiti_neo4j_auth:
+    file: ${REMBRANE_GRAPHITI_NEO4J_AUTH_FILE:?required}
+  rembrane_graphiti_openai_api_key:
+    file: ${REMBRANE_GRAPHITI_OPENAI_API_KEY_FILE:?required}

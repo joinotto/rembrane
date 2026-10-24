@@ -304,6 +304,9 @@ This roadmap describes sequencing, not release dates.
           - [x] Resolve the Graphiti sidecar bearer credential through the
             same protected local locator grammar and mount one mode-restricted
             Compose secret into both worker and sidecar.
+          - [x] Keep Graphiti Neo4j and model-provider credentials out of
+            Compose environment interpolation using protected file references
+            and official Neo4j auth-file injection.
         - [x] Add a configured encrypted SQLite graph-worker executable that
           drains provider-specific jobs through the canonical retry,
           supersession, completion, and quarantine state machine.

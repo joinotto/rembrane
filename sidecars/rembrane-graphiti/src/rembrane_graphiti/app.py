@@ -5,16 +5,15 @@ from __future__ import annotations
 import hmac
 import json
 import os
-import stat
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
 
 from .core import GraphStore, SidecarError, SidecarService
+from .secrets import resolve_secret
 
 MAXIMUM_REQUEST_BYTES = 1_048_576
 MAXIMUM_TOKEN_BYTES = 8_192
-MAXIMUM_SECRET_BYTES = 65_536
 _DEFAULT_TOKEN_ENVIRONMENT = "REMBRANE_GRAPHITI_BEARER_TOKEN"
 _TOKEN_REFERENCE_ENVIRONMENT = "REMBRANE_GRAPHITI_BEARER_TOKEN_REFERENCE"
 _ROUTES = {
@@ -174,89 +173,13 @@ def _validate_token(token: str) -> None:
 
 
 def _resolve_bearer_token() -> str:
-    locator = os.environ.get(_TOKEN_REFERENCE_ENVIRONMENT, "")
-    if not locator:
-        return _resolve_environment_secret(_DEFAULT_TOKEN_ENVIRONMENT)
-    source, separator, target = locator.partition(":")
-    if not separator or not target:
-        raise RuntimeError("Graphiti bearer credential unavailable")
-    if source == "env":
-        return _resolve_environment_secret(target)
-    if source == "file":
-        return _resolve_file_secret(target)
-    raise RuntimeError("Graphiti bearer credential unavailable")
-
-
-def _resolve_environment_secret(variable: str) -> str:
-    if (
-        len(variable) > 128
-        or not variable
-        or (not variable[0].isalpha() and variable[0] != "_")
-        or any(
-            not character.isascii()
-            or not (character.isalnum() or character == "_")
-            for character in variable
+    try:
+        return resolve_secret(
+            _TOKEN_REFERENCE_ENVIRONMENT,
+            _DEFAULT_TOKEN_ENVIRONMENT,
         )
-    ):
-        raise RuntimeError("Graphiti bearer credential unavailable")
-    try:
-        value = os.environ[variable]
-    except (KeyError, UnicodeError) as error:
+    except RuntimeError as error:
         raise RuntimeError("Graphiti bearer credential unavailable") from error
-    return _validate_resolved_secret(value)
-
-
-def _resolve_file_secret(path: str) -> str:
-    if (
-        len(path.encode()) > 4_096
-        or path.strip() != path
-        or any(ord(character) < 32 or ord(character) == 127 for character in path)
-    ):
-        raise RuntimeError("Graphiti bearer credential unavailable")
-    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
-    descriptor = -1
-    try:
-        descriptor = os.open(path, flags)
-        metadata = os.fstat(descriptor)
-        if (
-            not stat.S_ISREG(metadata.st_mode)
-            or metadata.st_size > MAXIMUM_SECRET_BYTES
-            or metadata.st_mode & 0o077
-        ):
-            raise RuntimeError("Graphiti bearer credential unavailable")
-        value = bytearray()
-        while len(value) <= MAXIMUM_SECRET_BYTES:
-            chunk = os.read(
-                descriptor,
-                min(8_192, MAXIMUM_SECRET_BYTES + 1 - len(value)),
-            )
-            if not chunk:
-                break
-            value.extend(chunk)
-    except (OSError, UnicodeError, ValueError) as error:
-        raise RuntimeError("Graphiti bearer credential unavailable") from error
-    finally:
-        if descriptor >= 0:
-            os.close(descriptor)
-    if len(value) > MAXIMUM_SECRET_BYTES:
-        raise RuntimeError("Graphiti bearer credential unavailable")
-    if value.endswith(b"\n"):
-        value.pop()
-        if value.endswith(b"\r"):
-            value.pop()
-    try:
-        decoded = value.decode("utf-8")
-    except UnicodeDecodeError as error:
-        raise RuntimeError("Graphiti bearer credential unavailable") from error
-    finally:
-        value[:] = b"\0" * len(value)
-    return _validate_resolved_secret(decoded)
-
-
-def _validate_resolved_secret(value: str) -> str:
-    if not value or len(value.encode()) > MAXIMUM_SECRET_BYTES or "\0" in value:
-        raise RuntimeError("Graphiti bearer credential unavailable")
-    return value
 
 
 def run() -> None:

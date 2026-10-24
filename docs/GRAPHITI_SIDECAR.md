@@ -28,11 +28,13 @@ Set secrets through the shell, a local uncommitted `.env`, Docker secrets, or
 the operator's secret manager:
 
 ```text
-install -m 600 /dev/null .rembrane-graphiti-token
+install -m 600 /dev/null .rembrane-graphiti-token .rembrane-neo4j-auth .rembrane-openai-key
 openssl rand -hex 32 > .rembrane-graphiti-token
+printf 'neo4j/%s\n' "$(openssl rand -hex 32)" > .rembrane-neo4j-auth
+printf '%s\n' 'replace-from-secret-manager' > .rembrane-openai-key
 export REMBRANE_GRAPHITI_BEARER_TOKEN_FILE="$PWD/.rembrane-graphiti-token"
-export REMBRANE_GRAPHITI_NEO4J_PASSWORD="$(openssl rand -hex 32)"
-export REMBRANE_GRAPHITI_OPENAI_API_KEY='replace-from-secret-manager'
+export REMBRANE_GRAPHITI_NEO4J_AUTH_FILE="$PWD/.rembrane-neo4j-auth"
+export REMBRANE_GRAPHITI_OPENAI_API_KEY_FILE="$PWD/.rembrane-openai-key"
 ```
 
 Start Rembrane with the optional projection data plane:
@@ -60,6 +62,15 @@ empty values, and oversized values. The stock Compose overlay mounts the file
 selected by `REMBRANE_GRAPHITI_BEARER_TOKEN_FILE` read-only into both
 processes, so the matching credential is never interpolated into the Compose
 service environment.
+
+The Graphiti store also accepts `NEO4J_AUTH_REFERENCE`,
+`NEO4J_PASSWORD_REFERENCE`, and `OPENAI_API_KEY_REFERENCE`. A Neo4j auth
+reference contains the official `username/password` form and must name the
+same user as `NEO4J_USER`. The model key is inserted into the process
+environment only while Graphiti constructs its provider client, then the
+previous value is restored or removed. The stock overlay mounts protected
+Neo4j-auth and model-key files instead of interpolating either credential into
+container environment metadata.
 
 The Compose overlay constructs the worker automatically and connects it to the
 sidecar over the private container network.

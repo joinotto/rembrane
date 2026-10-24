@@ -9,6 +9,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- Protected Graphiti Neo4j-auth and model-provider key references, including
+  file-backed Compose injection and removal of raw credentials from service
+  environment metadata.
 - Protected environment or file reference resolution for the Python Graphiti
   sidecar bearer credential, plus one mode-restricted Compose secret shared
   with the Rust projection worker instead of environment interpolation.
