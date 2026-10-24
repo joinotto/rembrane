@@ -217,9 +217,18 @@ mod tests {
                 .cloned())
         }
 
+        fn find_key_rotation_receipt(
+            &self,
+            _workspace_id: &WorkspaceId,
+            _rotation_id: &KeyRotationId,
+        ) -> Result<Option<rembrane_domain::KeyRotationReceipt>, ApplicationError> {
+            Ok(None)
+        }
+
         fn complete_key_rotation(
             &mut self,
             _rotation: WorkspaceKeyRotation,
+            _receipt: rembrane_domain::KeyRotationReceipt,
             _expected_generation: u64,
         ) -> Result<(), ApplicationError> {
             unreachable!("not used by authorization tests")

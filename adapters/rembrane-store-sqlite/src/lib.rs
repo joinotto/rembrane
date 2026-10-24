@@ -21,10 +21,10 @@ use rembrane_codec::decode_memory;
 use rembrane_crypto::{EncryptedPayload, EncryptionContext, PayloadPurpose, RecordCipher};
 use rembrane_domain::{
     ActivityId, EntityId, Invitation, InvitationId, InvitationStatus, KeyRotationId,
-    KeyRotationStatus, MemberScopeGrant, Membership, MembershipStatus, MemoryId, MemoryRecord,
-    MemoryScope, MemoryShareProposal, Principal, PrincipalId, ReadScope, ShareProposalId,
-    ShareProposalStatus, Workspace, WorkspaceId, WorkspaceKeyRotation, WorkspaceKind,
-    WorkspaceRole,
+    KeyRotationReceipt, KeyRotationStatus, MemberScopeGrant, Membership, MembershipStatus,
+    MemoryId, MemoryRecord, MemoryScope, MemoryShareProposal, Principal, PrincipalId, ProviderId,
+    ReadScope, ShareProposalId, ShareProposalStatus, Workspace, WorkspaceId, WorkspaceKeyRotation,
+    WorkspaceKind, WorkspaceRole,
 };
 use rusqlite::{Connection, ErrorCode, OptionalExtension, params};
 
@@ -52,7 +52,9 @@ const GRAPH_PROJECTION_OUTBOX_MIGRATION: &str =
     include_str!("../../../migrations/sqlite/0012_graph_projection_outbox.sql");
 const WORKSPACE_KEY_ROTATION_MIGRATION: &str =
     include_str!("../../../migrations/sqlite/0013_workspace_key_rotations.sql");
-const CURRENT_SCHEMA_VERSION: u32 = 13;
+const KEY_ROTATION_RECEIPT_MIGRATION: &str =
+    include_str!("../../../migrations/sqlite/0014_key_rotation_receipts.sql");
+const CURRENT_SCHEMA_VERSION: u32 = 14;
 const CANONICAL_TABLES: [&str; 10] = [
     "activity_checkpoints",
     "disclosed_memories",
@@ -197,6 +199,12 @@ fn migrate(connection: &mut Connection) -> Result<(), ApplicationError> {
     if version == 12 {
         transaction
             .execute_batch(WORKSPACE_KEY_ROTATION_MIGRATION)
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        version = 13;
+    }
+    if version == 13 {
+        transaction
+            .execute_batch(KEY_ROTATION_RECEIPT_MIGRATION)
             .map_err(|_| ApplicationError::StorageUnavailable)?;
     }
     transaction
@@ -1309,13 +1317,72 @@ impl<C> KeyRotationRepository for SqliteStore<C> {
             .map_err(|_| ApplicationError::StorageUnavailable)
     }
 
+    fn find_key_rotation_receipt(
+        &self,
+        workspace_id: &WorkspaceId,
+        rotation_id: &KeyRotationId,
+    ) -> Result<Option<KeyRotationReceipt>, ApplicationError> {
+        let header = self
+            .connection
+            .query_row(
+                "SELECT provider_id, request_id, generation, key_id
+                 FROM workspace_key_rotation_receipts
+                 WHERE workspace_id = ?1 AND rotation_id = ?2",
+                params![workspace_id.as_str(), rotation_id.as_str()],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, u64>(2)?,
+                        row.get::<_, String>(3)?,
+                    ))
+                },
+            )
+            .optional()
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        let Some((provider_id, request_id, generation, key_id)) = header else {
+            return Ok(None);
+        };
+        let mut statement = self
+            .connection
+            .prepare(
+                "SELECT principal_id
+                 FROM workspace_key_rotation_recipients
+                 WHERE workspace_id = ?1 AND rotation_id = ?2
+                 ORDER BY principal_id",
+            )
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        let recipients = statement
+            .query_map(
+                params![workspace_id.as_str(), rotation_id.as_str()],
+                |row| row.get::<_, String>(0).map(PrincipalId::new),
+            )
+            .map_err(|_| ApplicationError::StorageUnavailable)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        KeyRotationReceipt::new(
+            ProviderId::new(provider_id),
+            request_id,
+            workspace_id.clone(),
+            generation,
+            key_id,
+            recipients,
+        )
+        .map(Some)
+        .map_err(|_| ApplicationError::StorageUnavailable)
+    }
+
     fn complete_key_rotation(
         &mut self,
         rotation: WorkspaceKeyRotation,
+        receipt: KeyRotationReceipt,
         expected_generation: u64,
     ) -> Result<(), ApplicationError> {
         if rotation.status() != KeyRotationStatus::Completed
             || rotation.generation() != expected_generation
+            || receipt.workspace_id() != rotation.workspace_id()
+            || receipt.generation() != expected_generation
+            || receipt.key_id() != rotation.completed_key_id().unwrap_or_default()
         {
             return Err(ApplicationError::Validation(
                 "completed rotation must match the expected generation".to_owned(),
@@ -1331,8 +1398,11 @@ impl<C> KeyRotationRepository for SqliteStore<C> {
                 "completed rotation must identify the completing principal".to_owned(),
             )
         })?;
-        let changed = self
+        let transaction = self
             .connection
+            .transaction()
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        let changed = transaction
             .execute(
                 "UPDATE workspace_key_rotations
                  SET status = 'completed', completed_key_id = ?1,
@@ -1351,7 +1421,39 @@ impl<C> KeyRotationRepository for SqliteStore<C> {
         if changed != 1 {
             return Err(ApplicationError::VersionConflict);
         }
-        Ok(())
+        transaction
+            .execute(
+                "INSERT INTO workspace_key_rotation_receipts (
+                    workspace_id, rotation_id, provider_id, request_id,
+                    generation, key_id
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![
+                    receipt.workspace_id().as_str(),
+                    rotation.id().as_str(),
+                    receipt.provider_id().as_str(),
+                    receipt.request_id(),
+                    receipt.generation(),
+                    receipt.key_id()
+                ],
+            )
+            .map_err(map_write_error)?;
+        for recipient in receipt.recipient_ids() {
+            transaction
+                .execute(
+                    "INSERT INTO workspace_key_rotation_recipients (
+                        workspace_id, rotation_id, principal_id
+                     ) VALUES (?1, ?2, ?3)",
+                    params![
+                        receipt.workspace_id().as_str(),
+                        rotation.id().as_str(),
+                        recipient.as_str()
+                    ],
+                )
+                .map_err(map_write_error)?;
+        }
+        transaction
+            .commit()
+            .map_err(|_| ApplicationError::StorageUnavailable)
     }
 }
 

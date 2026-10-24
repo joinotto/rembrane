@@ -165,6 +165,16 @@ fn persisted_member_removal_deletes_grants_and_denies_authorization() {
         .expect("completed rotation remains auditable");
     assert_eq!(persisted.status(), KeyRotationStatus::Completed);
     assert_eq!(persisted.completed_key_id(), Some("workspace-key:v2"));
+    let receipt = store
+        .find_key_rotation_receipt(
+            &WorkspaceId::new("team"),
+            &rembrane_domain::KeyRotationId::new("rotation_01"),
+        )
+        .expect("receipt lookup")
+        .expect("validated receipt remains auditable");
+    assert_eq!(receipt.provider_id().as_str(), "customer.kms");
+    assert_eq!(receipt.request_id(), "rotation-request-01");
+    assert_eq!(receipt.recipient_ids(), &[PrincipalId::new("owner")]);
     let error = AuthorizeClientService::new(&store)
         .execute(AuthorizeClientCommand {
             client_id: ClientId::new("assistant"),

@@ -26,6 +26,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   and a canonical exact recipient set.
 - Fail-closed rotation completion unless the provider receipt matches the
   pending workspace generation and exact canonical active-member set.
+- Atomic tenant-scoped persistence of validated rotation provider, request,
+  generation, opaque key, and recipient evidence alongside completion.
 - Consumed customer key-provider HTTP configuration for application-owned
   vault, keychain, cloud-secret, and deployment integrations without fixed
   Rembrane environment-variable names.

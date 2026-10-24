@@ -1,11 +1,12 @@
 use rembrane_domain::{
     ActivityCheckpoint, ActivityId, BookingResearch, BookingResearchId, CanonicalEvent,
     CheckpointDisclosureReceipt, DisclosureReceipt, EntityId, GraphProjectionJob, Invitation,
-    InvitationId, InvitationStatus, KeyRotationId, KnowledgeEdge, KnowledgeEdgeId, KnowledgeNode,
-    KnowledgeNodeId, MemberScopeGrant, Membership, MembershipStatus, MemoryId, MemoryRecord,
-    MemoryShareProposal, Principal, PrincipalId, ProjectionJob, ProjectionJobId, ProjectionStatus,
-    ProviderId, ShareProposalId, ShareProposalStatus, TravelDisclosureReceipt, Trip, Workspace,
-    WorkspaceId, WorkspaceKeyRotation,
+    InvitationId, InvitationStatus, KeyRotationId, KeyRotationReceipt, KnowledgeEdge,
+    KnowledgeEdgeId, KnowledgeNode, KnowledgeNodeId, MemberScopeGrant, Membership,
+    MembershipStatus, MemoryId, MemoryRecord, MemoryShareProposal, Principal, PrincipalId,
+    ProjectionJob, ProjectionJobId, ProjectionStatus, ProviderId, ShareProposalId,
+    ShareProposalStatus, TravelDisclosureReceipt, Trip, Workspace, WorkspaceId,
+    WorkspaceKeyRotation,
 };
 
 use crate::ApplicationError;
@@ -362,9 +363,16 @@ pub trait KeyRotationRepository {
         workspace_id: &WorkspaceId,
     ) -> Result<Option<WorkspaceKeyRotation>, ApplicationError>;
 
+    fn find_key_rotation_receipt(
+        &self,
+        workspace_id: &WorkspaceId,
+        rotation_id: &KeyRotationId,
+    ) -> Result<Option<KeyRotationReceipt>, ApplicationError>;
+
     fn complete_key_rotation(
         &mut self,
         rotation: WorkspaceKeyRotation,
+        receipt: KeyRotationReceipt,
         expected_generation: u64,
     ) -> Result<(), ApplicationError>;
 }

@@ -183,6 +183,15 @@ fn owner_removal_revokes_membership_and_all_scope_grants() {
         })
         .expect("owner should complete exact pending generation");
     assert_eq!(completed.status(), KeyRotationStatus::Completed);
+    let receipt = store
+        .find_key_rotation_receipt(
+            &WorkspaceId::new("team"),
+            &rembrane_domain::KeyRotationId::new("rotation_01"),
+        )
+        .expect("receipt lookup")
+        .expect("validated receipt remains auditable");
+    assert_eq!(receipt.provider_id().as_str(), "customer.kms");
+    assert_eq!(receipt.recipient_ids(), &[PrincipalId::new("owner")]);
     AuthorizeClientService::new(&store)
         .execute(AuthorizeClientCommand {
             client_id: ClientId::new("assistant"),

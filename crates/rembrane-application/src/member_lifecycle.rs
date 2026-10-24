@@ -100,11 +100,15 @@ where
         if canonical_recipients != command.receipt.recipient_ids() {
             return Err(ApplicationError::AccessDenied);
         }
+        let receipt = command.receipt;
         let completed = rotation
-            .complete(command.receipt.key_id(), command.completed_by)
+            .complete(receipt.key_id(), command.completed_by)
             .map_err(|error| ApplicationError::Validation(error.to_string()))?;
-        self.repository
-            .complete_key_rotation(completed.clone(), command.receipt.generation())?;
+        self.repository.complete_key_rotation(
+            completed.clone(),
+            receipt.clone(),
+            receipt.generation(),
+        )?;
         Ok(completed)
     }
 }

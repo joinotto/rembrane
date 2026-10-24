@@ -31,7 +31,9 @@ sqlite3 "$database" < \
     "$repository_root/migrations/sqlite/0012_graph_projection_outbox.sql"
 sqlite3 "$database" < \
     "$repository_root/migrations/sqlite/0013_workspace_key_rotations.sql"
-sqlite3 "$database" "PRAGMA user_version = 13;"
+sqlite3 "$database" < \
+    "$repository_root/migrations/sqlite/0014_key_rotation_receipts.sql"
+sqlite3 "$database" "PRAGMA user_version = 14;"
 
 sqlite3 "$database" <<'SQL'
 PRAGMA foreign_keys = ON;
@@ -559,13 +561,34 @@ then
     exit 1
 fi
 
+sqlite3 "$database" <<'SQL'
+PRAGMA foreign_keys = ON;
+UPDATE workspace_key_rotations
+SET status = 'completed',
+    completed_key_id = 'workspace-key:v1',
+    completed_by = 'principal_01',
+    completed_at = CURRENT_TIMESTAMP
+WHERE workspace_id = 'workspace_shared' AND id = 'rotation_01';
+INSERT INTO workspace_key_rotation_receipts (
+    workspace_id, rotation_id, provider_id, request_id, generation, key_id
+) VALUES (
+    'workspace_shared', 'rotation_01', 'customer.kms',
+    'rotation-request-01', 1, 'workspace-key:v1'
+);
+INSERT INTO workspace_key_rotation_recipients (
+    workspace_id, rotation_id, principal_id
+) VALUES (
+    'workspace_shared', 'rotation_01', 'principal_01'
+);
+SQL
+
 table_count=$(
     sqlite3 "$database" \
         "SELECT count(*) FROM sqlite_schema WHERE type = 'table';"
 )
 
 test "$table_count" -ge 9
-test "$(sqlite3 "$database" "PRAGMA user_version;")" -eq 13
+test "$(sqlite3 "$database" "PRAGMA user_version;")" -eq 14
 test "$(
     sqlite3 "$database" \
         "SELECT count(*) FROM graph_projection_outbox WHERE provider_id = 'graph.primary' AND status = 'pending';"
@@ -645,6 +668,14 @@ test "$(
 )" -eq 1
 test "$(
     sqlite3 "$database" \
-        "SELECT count(*) FROM workspace_key_rotations WHERE workspace_id = 'workspace_shared' AND generation = 1 AND status = 'required';"
+        "SELECT count(*) FROM workspace_key_rotations WHERE workspace_id = 'workspace_shared' AND generation = 1 AND status = 'completed';"
+)" -eq 1
+test "$(
+    sqlite3 "$database" \
+        "SELECT count(*) FROM workspace_key_rotation_receipts WHERE workspace_id = 'workspace_shared' AND rotation_id = 'rotation_01' AND provider_id = 'customer.kms';"
+)" -eq 1
+test "$(
+    sqlite3 "$database" \
+        "SELECT count(*) FROM workspace_key_rotation_recipients WHERE workspace_id = 'workspace_shared' AND rotation_id = 'rotation_01' AND principal_id = 'principal_01';"
 )" -eq 1
 echo "sqlite schema checks passed"

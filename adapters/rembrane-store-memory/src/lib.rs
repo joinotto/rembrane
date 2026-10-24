@@ -15,11 +15,11 @@ use rembrane_domain::{
     ActivityCheckpoint, ActivityId, BookingResearch, BookingResearchId, CanonicalEvent,
     CheckpointDisclosureReceipt, DisclosureReceipt, EntityId, EventPayload, GraphProjectionJob,
     GraphProjectionResource, Invitation, InvitationId, InvitationStatus, KeyRotationId,
-    KeyRotationStatus, KnowledgeEdge, KnowledgeEdgeId, KnowledgeNode, KnowledgeNodeId,
-    MemberScopeGrant, Membership, MemoryId, MemoryRecord, MemoryShareProposal, MemoryStatus,
-    Principal, PrincipalId, ProjectionJob, ProjectionJobId, ProjectionOperation, ProjectionStatus,
-    ProviderId, ShareProposalId, ShareProposalStatus, TravelDisclosureReceipt, Trip, Workspace,
-    WorkspaceId, WorkspaceKeyRotation, WorkspaceKind, WorkspaceRole,
+    KeyRotationReceipt, KeyRotationStatus, KnowledgeEdge, KnowledgeEdgeId, KnowledgeNode,
+    KnowledgeNodeId, MemberScopeGrant, Membership, MemoryId, MemoryRecord, MemoryShareProposal,
+    MemoryStatus, Principal, PrincipalId, ProjectionJob, ProjectionJobId, ProjectionOperation,
+    ProjectionStatus, ProviderId, ShareProposalId, ShareProposalStatus, TravelDisclosureReceipt,
+    Trip, Workspace, WorkspaceId, WorkspaceKeyRotation, WorkspaceKind, WorkspaceRole,
 };
 
 #[derive(Debug, Default)]
@@ -43,6 +43,7 @@ pub struct InMemoryStore {
     knowledge_nodes: Vec<KnowledgeNode>,
     knowledge_edges: Vec<KnowledgeEdge>,
     key_rotations: Vec<WorkspaceKeyRotation>,
+    key_rotation_receipts: Vec<(KeyRotationId, KeyRotationReceipt)>,
 }
 
 impl GraphProjectionOutboxRepository for InMemoryStore {
@@ -1363,31 +1364,59 @@ impl KeyRotationRepository for InMemoryStore {
             .cloned())
     }
 
+    fn find_key_rotation_receipt(
+        &self,
+        workspace_id: &WorkspaceId,
+        rotation_id: &KeyRotationId,
+    ) -> Result<Option<KeyRotationReceipt>, ApplicationError> {
+        Ok(self
+            .key_rotation_receipts
+            .iter()
+            .find(|(stored_id, receipt)| {
+                stored_id == rotation_id && receipt.workspace_id() == workspace_id
+            })
+            .map(|(_, receipt)| receipt.clone()))
+    }
+
     fn complete_key_rotation(
         &mut self,
         rotation: WorkspaceKeyRotation,
+        receipt: KeyRotationReceipt,
         expected_generation: u64,
     ) -> Result<(), ApplicationError> {
         if rotation.status() != KeyRotationStatus::Completed
             || rotation.generation() != expected_generation
+            || receipt.workspace_id() != rotation.workspace_id()
+            || receipt.generation() != expected_generation
+            || receipt.key_id() != rotation.completed_key_id().unwrap_or_default()
         {
             return Err(ApplicationError::Validation(
                 "completed rotation must match the expected generation".to_owned(),
             ));
         }
-        let stored = self
+        if self
+            .key_rotation_receipts
+            .iter()
+            .any(|(stored_id, _)| stored_id == rotation.id())
+        {
+            return Err(ApplicationError::VersionConflict);
+        }
+        let position = self
             .key_rotations
-            .iter_mut()
-            .find(|stored| {
+            .iter()
+            .position(|stored| {
                 stored.workspace_id() == rotation.workspace_id() && stored.id() == rotation.id()
             })
             .ok_or(ApplicationError::NotFound)?;
+        let stored = &self.key_rotations[position];
         if stored.status() != KeyRotationStatus::Required
             || stored.generation() != expected_generation
         {
             return Err(ApplicationError::VersionConflict);
         }
-        *stored = rotation;
+        let rotation_id = rotation.id().clone();
+        self.key_rotations[position] = rotation;
+        self.key_rotation_receipts.push((rotation_id, receipt));
         Ok(())
     }
 }

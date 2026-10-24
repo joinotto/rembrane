@@ -297,6 +297,8 @@ This roadmap describes sequencing, not release dates.
       exact recipient-set validation.
     - [x] Require receipt workspace and generation equality plus exact
       canonical active-recipient equality before completing rotation.
+    - [x] Persist validated provider/request/key metadata and exact recipients
+      atomically with rotation completion.
 - [ ] Organizational audit and retention controls.
 
 ## Phase 5 — Integration ecosystem
