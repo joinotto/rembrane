@@ -50,6 +50,16 @@ For an offline machine without Rust, run:
 Static success proves repository, protocol, shell, Compose, and raw SQLite
 contracts only. It is not a substitute for the full executable command.
 
+For a machine with Rust but without access to crates.io, run:
+
+```text
+./scripts/check-local-alpha.sh --core
+```
+
+This additionally compiles, tests, and Clippy-checks every dependency-free
+domain, application, authorization, provider-contract, in-memory storage, and
+native retrieval package.
+
 ## Explicitly outside this alpha
 
 - Production OS-keychain, HSM, or customer-KMS integration.

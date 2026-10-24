@@ -10,12 +10,17 @@ case "$mode" in
         ./scripts/test-static.sh
         echo "READY: local-alpha static contract"
         ;;
+    --core)
+        ./scripts/test-static.sh
+        ./scripts/test-core-offline.sh
+        echo "READY: local-alpha dependency-free core contract"
+        ;;
     full)
         ./scripts/test-all.sh
         echo "READY: local-alpha executable contract"
         ;;
     *)
-        echo "usage: ./scripts/check-local-alpha.sh [--static]" >&2
+        echo "usage: ./scripts/check-local-alpha.sh [--static|--core]" >&2
         exit 2
         ;;
 esac

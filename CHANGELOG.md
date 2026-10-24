@@ -143,6 +143,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   environments, reused by the complete compiler and end-to-end suite.
 - Executable local-alpha acceptance contract and independent CI jobs for
   static/schema checks, the complete Rust/E2E suite, and container builds.
+- Offline `--core` acceptance mode compiling, testing, and Clippy-checking all
+  dependency-free packages without resolving the external Cargo registry.
 - Roadmap release gates reconciled with executable local-alpha lifecycle and
   tenant-isolation coverage while future-adapter and independent-review gates
   remain open.
