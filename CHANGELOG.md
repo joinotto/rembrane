@@ -12,6 +12,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Authenticated key-provider HTTP adapter using Rustls, bounded response reads,
   disabled redirects and environment proxies, zeroized bearer credentials,
   strict JSON/base64 decoding, and HTTPS except for exact loopback origins.
+- Dedicated Rust 1.88 test and Clippy CI gate for the key-provider HTTP
+  adapter.
 - Strict language-neutral Memory Provider lifecycle fixtures defining actor
   scope expectations and disposable scenario inputs, consumed directly by the
   black-box HTTP conformance client without storing credentials or tenant IDs.

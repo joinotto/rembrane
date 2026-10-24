@@ -29,6 +29,16 @@ jobs:
         env:
           REMBRANE_RUN_LOOPBACK_TESTS: "1"
 
+  key-provider-http:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.88.0
+        with:
+          components: clippy
+      - run: cargo test --package rembrane-key-provider-http
+      - run: cargo clippy --package rembrane-key-provider-http --all-targets -- -D warnings
+
   container:
     runs-on: ubuntu-latest
     steps:
