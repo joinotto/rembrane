@@ -143,7 +143,7 @@ fi
 
 implemented_tools=$(
     sed -n 's/^[[:space:]]*name = "\(rembrane_[a-z_]*\)",$/\1/p' \
-        apps/rembrane-mcp/src/main.rs
+        apps/rembrane-mcp/src/lib.rs
 )
 test -n "$implemented_tools"
 for tool in $implemented_tools; do

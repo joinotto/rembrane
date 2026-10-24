@@ -362,6 +362,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Changed
 
+- Extracted the canonical MCP tool implementation into a reusable Rust library
+  so stdio and remote Streamable HTTP transports share one handler surface.
 - Workspace lint policy documents constructor-arity and public error-doc
   exceptions while retaining warnings-as-errors for actionable Clippy checks.
 - Minimum Rust version is 1.88 and the MCP transport targets the official

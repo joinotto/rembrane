@@ -26,3 +26,7 @@ workspace = true
 [[bin]]
 name = "rembrane-mcp"
 path = "src/main.rs"
+
+[lib]
+name = "rembrane_mcp"
+path = "src/lib.rs"
