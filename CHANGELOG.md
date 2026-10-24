@@ -76,6 +76,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   from the executable.
 - Portable `env:`, `file:`, and `external:` secret-reference parsing, with
   optional WhatsApp gateway locator variables and environment-backed defaults.
+- Reference-only channel processor bearer-token configuration with protected
+  local resolution and zeroizing ownership through HTTP transport setup.
 - Fail-closed OAuth introspection claim bounds covering audience cardinality,
   issuer and identity sizes, scope size, and control-character rejection
   before claims become canonical tenant identity.

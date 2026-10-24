@@ -299,8 +299,11 @@ used by trusted Rembrane workers. Environment key material remains a local
 pre-alpha development option, not a production deployment recommendation.
 
 Set `REMBRANE_CHANNEL_PROCESSOR_URL` to the HTTPS origin of a cooperative bot
-or agent service and keep `REMBRANE_CHANNEL_PROCESSOR_TOKEN` in the deployment
-secret manager. The worker posts to `/v1/channel/messages`; the canonical
+or agent service and keep the processor token in the deployment secret
+manager. The worker defaults to `REMBRANE_CHANNEL_PROCESSOR_TOKEN`; set
+`REMBRANE_CHANNEL_PROCESSOR_TOKEN_REFERENCE` to an `env:` or protected `file:`
+locator to use different local custody without copying the credential into
+configuration. The worker posts to `/v1/channel/messages`; the canonical
 channel and event ID form the downstream idempotency key. A processor must
 return success only after its own durable or idempotent handling succeeds.
 Failed calls remain pending in the encrypted inbox.

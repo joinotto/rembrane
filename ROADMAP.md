@@ -639,6 +639,8 @@ This roadmap describes sequencing, not release dates.
     and derive keyed pseudonymous sender/account lookup identifiers.
   - [x] Connect verified text events to atomic canonical sender admission while
     treating authenticated duplicate deliveries idempotently.
+  - [x] Resolve the downstream processor bearer token through local
+    reference-only secret custody without an unguarded string copy.
   - [x] Reject signed webhook events older than a deployment-owned maximum age
     before any batch storage mutation.
   - [x] Define a framework-neutral webhook HTTP policy with constant-time

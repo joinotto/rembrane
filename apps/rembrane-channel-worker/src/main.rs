@@ -3,8 +3,10 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use anyhow::{Context, Result};
 use rembrane_application::ChannelInboxWorker;
 use rembrane_channel_processor_http::HttpChannelMessageProcessor;
+use rembrane_config::SecretReference;
 use rembrane_crypto_configured::ConfiguredRecordCipher;
 use rembrane_domain::WorkspaceId;
+use rembrane_secret_local::{LocalSecretResolver, SecretResolver};
 use rembrane_store_sqlite::SqliteStore;
 use ring::rand::{SecureRandom, SystemRandom};
 use zeroize::Zeroizing;
@@ -36,9 +38,7 @@ impl Configuration {
             database: required_environment("REMBRANE_DATABASE")?,
             workspace_id: WorkspaceId::new(required_environment("REMBRANE_WORKSPACE_ID")?),
             processor_url: required_environment("REMBRANE_CHANNEL_PROCESSOR_URL")?,
-            processor_token: Zeroizing::new(required_environment(
-                "REMBRANE_CHANNEL_PROCESSOR_TOKEN",
-            )?),
+            processor_token: resolve_processor_token()?,
             batch_size: positive_environment_usize(
                 "REMBRANE_CHANNEL_WORKER_BATCH_SIZE",
                 DEFAULT_BATCH_SIZE,
@@ -65,7 +65,7 @@ impl Configuration {
     }
 }
 
-fn run(configuration: &Configuration) -> Result<()> {
+fn run(configuration: Configuration) -> Result<()> {
     let cipher = ConfiguredRecordCipher::from_environment()
         .context("failed to load channel inbox cipher")?;
     let mut store = SqliteStore::open(&configuration.database)
@@ -73,7 +73,7 @@ fn run(configuration: &Configuration) -> Result<()> {
         .with_cipher(cipher);
     let mut processor = HttpChannelMessageProcessor::new(
         &configuration.processor_url,
-        configuration.processor_token.to_string(),
+        configuration.processor_token,
     )
     .context("failed to configure channel processor")?;
     loop {
@@ -123,6 +123,30 @@ fn required_environment(name: &str) -> Result<String> {
         .with_context(|| format!("{name} is required"))
 }
 
+fn resolve_processor_token() -> Result<Zeroizing<String>> {
+    let reference = match std::env::var("REMBRANE_CHANNEL_PROCESSOR_TOKEN_REFERENCE") {
+        Ok(locator) => selected_processor_token_reference(&locator)?,
+        Err(std::env::VarError::NotPresent) => selected_processor_token_reference("")?,
+        Err(error) => {
+            return Err(error).context("failed to read REMBRANE_CHANNEL_PROCESSOR_TOKEN_REFERENCE");
+        }
+    };
+    LocalSecretResolver
+        .resolve(&reference)
+        .map_err(|_| anyhow::anyhow!("channel processor token is unavailable or invalid"))
+}
+
+fn selected_processor_token_reference(locator: &str) -> Result<SecretReference> {
+    if locator.is_empty() {
+        SecretReference::environment("REMBRANE_CHANNEL_PROCESSOR_TOKEN")
+            .map_err(|_| anyhow::anyhow!("invalid default channel processor token reference"))
+    } else {
+        locator
+            .parse()
+            .map_err(|_| anyhow::anyhow!("invalid channel processor token reference"))
+    }
+}
+
 fn positive_environment_usize(name: &str, default: usize) -> Result<usize> {
     std::env::var(name).map_or(Ok(default), |value| {
         value
@@ -164,12 +188,12 @@ fn boolean_environment(name: &str, default: bool) -> Result<bool> {
 }
 
 fn main() -> Result<()> {
-    run(&Configuration::from_environment()?)
+    run(Configuration::from_environment()?)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{boolean_environment, random_lease_id};
+    use super::{boolean_environment, random_lease_id, selected_processor_token_reference};
 
     #[test]
     fn absent_boolean_uses_default() {
@@ -183,5 +207,20 @@ mod tests {
         assert_eq!(first.len(), 32);
         assert!(first.bytes().all(|byte| byte.is_ascii_hexdigit()));
         assert_ne!(first, second);
+    }
+
+    #[test]
+    fn processor_token_locator_defaults_and_rejects_inline_values() {
+        let default =
+            selected_processor_token_reference("").expect("default environment reference");
+        assert_eq!(
+            default.environment_variable(),
+            Some("REMBRANE_CHANNEL_PROCESSOR_TOKEN")
+        );
+
+        let file = selected_processor_token_reference("file:/run/secrets/processor-token")
+            .expect("file reference");
+        assert_eq!(file.file_path(), Some("/run/secrets/processor-token"));
+        assert!(selected_processor_token_reference("raw-token").is_err());
     }
 }

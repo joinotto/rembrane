@@ -113,6 +113,7 @@ rg -q 'REMBRANE_WHATSAPP_WEBHOOK_VERIFICATION_TOKEN' compose.whatsapp.yaml
 rg -q 'REMBRANE_WHATSAPP_WEBHOOK_VERIFICATION_TOKEN_REFERENCE' compose.whatsapp.yaml
 rg -q 'REMBRANE_CHANNEL_PROCESSOR_URL' compose.whatsapp.yaml
 rg -q 'REMBRANE_CHANNEL_PROCESSOR_TOKEN' compose.whatsapp.yaml
+rg -q 'REMBRANE_CHANNEL_PROCESSOR_TOKEN_REFERENCE' compose.whatsapp.yaml
 rg -q 'rembrane-channel-worker' compose.whatsapp.yaml
 rg -q 'no-new-privileges:true' compose.whatsapp.yaml
 rg -q 'USER 10002:10002' sidecars/rembrane-graphiti/Dockerfile

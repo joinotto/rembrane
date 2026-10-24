@@ -27,8 +27,11 @@ impl HttpChannelMessageProcessor {
     ///
     /// HTTPS is mandatory except on exact loopback hosts. Redirects and
     /// ambient proxy configuration are disabled.
-    pub fn new(base_url: &str, bearer_token: String) -> Result<Self, ApplicationError> {
-        let bearer_token = Zeroizing::new(bearer_token);
+    pub fn new(
+        base_url: &str,
+        bearer_token: impl Into<Zeroizing<String>>,
+    ) -> Result<Self, ApplicationError> {
+        let bearer_token = bearer_token.into();
         validate_bearer_token(&bearer_token)?;
         let base_url = validate_base_url(base_url)?;
         let endpoint = base_url
