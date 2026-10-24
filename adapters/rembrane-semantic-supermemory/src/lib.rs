@@ -59,6 +59,7 @@ pub trait SupermemoryTransport {
     fn upsert_exact(
         &mut self,
         namespace: &str,
+        document_id: &str,
         projection: &AuthorizedMemoryProjection,
     ) -> Result<(), ProviderError>;
     fn search(
@@ -103,6 +104,16 @@ impl<Transport> SupermemorySemanticProvider<Transport> {
         }
         namespace
     }
+
+    fn document_id(&self, memory_id: &MemoryId) -> String {
+        let signature = hmac::sign(&self.workspace_lookup_key, memory_id.as_str().as_bytes());
+        let mut document_id = String::from("rembrane-");
+        for byte in signature.as_ref() {
+            use std::fmt::Write;
+            let _ = write!(document_id, "{byte:02x}");
+        }
+        document_id
+    }
 }
 
 impl<Transport: SupermemoryTransport> SemanticMemoryProvider
@@ -140,12 +151,14 @@ impl<Transport: SupermemoryTransport> SemanticMemoryProvider
             ));
         }
         let namespace = self.namespace(&projection.workspace_id);
+        let document_id = self.document_id(&projection.memory_id);
         for record in self.transport.list(&namespace)? {
             if record.canonical_memory_id == projection.memory_id {
                 self.transport.delete(&namespace, record.provider_id())?;
             }
         }
-        self.transport.upsert_exact(&namespace, &projection)
+        self.transport
+            .upsert_exact(&namespace, &document_id, &projection)
     }
 
     fn search(&self, query: &SemanticQuery) -> Result<Vec<CandidateMemory>, ProviderError> {
@@ -235,11 +248,12 @@ mod tests {
         fn upsert_exact(
             &mut self,
             namespace: &str,
+            document_id: &str,
             projection: &AuthorizedMemoryProjection,
         ) -> Result<(), ProviderError> {
             self.next_id += 1;
             let record = SupermemoryRecord::new(
-                format!("supermemory-{}", self.next_id),
+                document_id,
                 projection.memory_id.clone(),
                 projection.version,
                 Some(1_000_000),

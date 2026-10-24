@@ -701,6 +701,8 @@ This roadmap describes sequencing, not release dates.
       secret references and literal-IP-only loopback policy.
     - [x] Add a transport-injectable canonical mapping layer passing the
       shared semantic-provider conformance suite.
+      - [x] Derive deterministic provider document IDs inside the trusted
+        adapter so transports never choose or expose canonical identity.
   - [x] Generate a secret-reference-only local MCP configuration for OpenCode
     using its command-array and environment-substitution contract.
   - [x] Enforce one bounded control-free executable-command contract before

@@ -31,7 +31,7 @@ plaintext projection inside an explicitly permitted provider boundary.
 | Rembrane value | Supermemory value |
 | --- | --- |
 | workspace ID | HMAC-derived namespace |
-| memory ID | deterministic caller-defined document ID |
+| memory ID | keyed deterministic caller-defined document ID |
 | memory version | numeric metadata |
 | memory content | document content |
 | scope and kind | bounded metadata |
