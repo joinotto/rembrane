@@ -144,13 +144,13 @@ This roadmap describes sequencing, not release dates.
 
 ## Phase 2 — Development continuity
 
-- [ ] Canonical temporal knowledge graph.
+- [x] Canonical temporal knowledge graph.
   - [x] Define engine-neutral, typed workspace-scoped nodes and relationships
     with separate event/system time, validity windows, provenance, bounded
     aliases, and explicit supersession references.
   - [x] Add tenant-isolated mutation and neighbourhood repository contracts
     with bounded temporal traversal and optimistic version checks.
-  - [ ] Add local SQLite graph persistence and Graphiti projection adapter.
+  - [x] Add local SQLite graph persistence and Graphiti projection adapter.
     - [x] Persist tenant-isolated temporal graph aggregates as authenticated
       ciphertext with bounded indexed neighbourhood traversal.
     - [x] Define an engine-neutral graph provider contract and conformance
@@ -167,14 +167,14 @@ This roadmap describes sequencing, not release dates.
       - [x] Define the atomic application repository contract.
       - [x] Implement the in-memory transaction adapter.
       - [x] Implement the SQLite transaction adapter.
-    - [ ] Add Graphiti projection adapter.
+    - [x] Add Graphiti projection adapter.
       - [x] Define a versioned, bounded sidecar protocol with workspace-derived
         namespaces, mutation idempotency, and response correlation.
       - [x] Implement the transport-injected Graphiti graph provider.
       - [x] Add authenticated bounded HTTP transport with strict origin,
         credential, timeout, redirect, response-size, manifest, and response
         correlation validation.
-      - [ ] Add executable Graphiti sidecar contract and integration tests.
+      - [x] Add executable Graphiti sidecar contract and integration tests.
         - [x] Implement and test a dependency-free contract core for workspace
           isolation, physical identity, idempotency, optimistic versions,
           temporal traversal, and bounded deletion.
@@ -275,7 +275,7 @@ This roadmap describes sequencing, not release dates.
 
 - [x] Shared-workspace invitations and role-bound acceptance.
 - [x] Shared-workspace exact scope grants, including entity-level access.
-- [ ] Private-to-shared memory proposals.
+- [x] Private-to-shared memory proposals.
   - [x] Content-free, exact-source-version proposal aggregate with source-owner
     approval, rejection, and pre-approval revocation.
   - [x] Tenant-scoped SQLite persistence with exact-source and workspace-kind
@@ -283,7 +283,8 @@ This roadmap describes sequencing, not release dates.
   - [x] Versioned canonical audit events and approved target-copy construction.
   - [x] Dual-workspace authorization and atomic in-memory reference transaction.
   - [x] SQLite atomic approval and target-workspace copy implementation.
-  - [ ] Verify the dependency-enabled SQLite integration suite in CI.
+  - [x] Verify the dependency-enabled SQLite integration suite in the complete
+    workspace CI gate.
 - [x] Authorized member removal with atomic scope-grant cleanup.
 - [x] Group key rotation after membership changes.
   - [x] Define a content-free canonical rotation requirement with monotonic
@@ -400,7 +401,7 @@ This roadmap describes sequencing, not release dates.
       - [x] Bind event, proposal, checkpoint, and disclosure payloads/results.
       - [x] Bind cursor-based sync pull/push payloads and results.
     - [x] Publish and verify the complete HTTPS OpenAPI surface.
-  - [ ] Add cross-implementation conformance fixtures.
+  - [x] Add cross-implementation conformance fixtures.
     - [x] Publish a versioned machine-readable core profile covering discovery,
       authentication, exact scopes, idempotency, tenant isolation, optimistic
       deletion, and ordered workspace-scoped sync.
@@ -410,10 +411,11 @@ This roadmap describes sequencing, not release dates.
     - [x] Emit a strict portable result containing the tested provider build
       and a pass record for every case in the selected profile.
     - [x] Add a secret-safe black-box HTTPS conformance runner.
-    - [ ] Prove the runner against an independent local mock implementation.
+    - [x] Prove the runner against an independent local mock implementation.
       - [x] Add the independent mock and run it unconditionally in the
         dedicated Memory Provider CI job.
-      - [ ] Execute the loopback proof in a socket-enabled environment.
+      - [x] Execute the loopback proof in the socket-enabled Memory Provider
+        CI job.
   - [x] Add an authenticated Rust HTTP client adapter.
     - [x] Add bounded redirect-free, proxy-free HTTPS/loopback discovery with
       zeroized bearer credentials.
@@ -486,13 +488,14 @@ This roadmap describes sequencing, not release dates.
     requests and fail-closed response validation.
     - [x] Prevent request-correlation sequence exhaustion from wrapping and
       reusing identifiers.
-  - [ ] Add an authenticated HTTP client adapter.
+  - [x] Add an authenticated HTTP client adapter.
     - [x] Implement a redirect-free, proxy-free, bounded HTTPS and loopback
       HTTP transport with strict media-type, JSON, and base64 decoding.
     - [x] Add a dedicated Rust 1.88 test and warnings-as-errors CI job.
       - [x] Cover the configured cipher and its CLI, REST, and MCP consumers in
         the dedicated dependency-enabled gate.
-    - [ ] Verify the dependency-enabled adapter build and tests in CI.
+    - [x] Verify the dependency-enabled adapter build and tests in the
+      configured-encryption CI job.
 - [x] TypeScript, Python, Rust, Swift, and Kotlin SDKs.
   - [x] Publish and test a zero-dependency TypeScript client package for the
     authenticated REST surface.

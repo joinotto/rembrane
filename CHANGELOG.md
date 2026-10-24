@@ -56,6 +56,12 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   repository-secret Ed25519 key, verifies the result, removes the ephemeral
   private-key file, and publishes JSON, checksum, signature, and public-key
   artifacts.
+
+### Changed
+
+- Reconciled roadmap completion state with existing workspace, Graphiti,
+  Memory Provider, key-provider, and SQLite CI gates so remaining checkboxes
+  represent unimplemented or externally gated work.
 - A versioned per-workspace retention policy contract with separate periods
   for memory, checkpoints, travel research, disclosures, canonical events, and
   administrative audit, including bounded expiry and legal-hold overrides.
