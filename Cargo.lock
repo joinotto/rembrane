@@ -1094,6 +1094,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "rembrane-channel-worker"
+version = "0.1.0-alpha.1"
+dependencies = [
+ "anyhow",
+ "rembrane-application",
+ "rembrane-channel-processor-http",
+ "rembrane-crypto-configured",
+ "rembrane-domain",
+ "rembrane-store-sqlite",
+ "zeroize",
+]
+
+[[package]]
 name = "rembrane-cli"
 version = "0.1.0-alpha.1"
 dependencies = [

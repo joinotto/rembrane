@@ -1,0 +1,24 @@
+[package]
+name = "rembrane-channel-worker"
+description = "Encrypted channel inbox delivery worker for Rembrane"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+anyhow = "1"
+rembrane-application = { path = "../../crates/rembrane-application" }
+rembrane-channel-processor-http = { path = "../../adapters/rembrane-channel-processor-http" }
+rembrane-crypto-configured = { path = "../../adapters/rembrane-crypto-configured" }
+rembrane-domain = { path = "../../crates/rembrane-domain" }
+rembrane-store-sqlite = { path = "../../adapters/rembrane-store-sqlite" }
+zeroize = "1"
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "rembrane-channel-worker"
+path = "src/main.rs"

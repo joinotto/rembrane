@@ -19,6 +19,7 @@ members = [
     "adapters/rembrane-semantic-native",
     "apps/rembrane-api",
     "apps/rembrane-cli",
+    "apps/rembrane-channel-worker",
     "apps/rembrane-graph-worker",
     "apps/rembrane-mcp",
     "apps/rembrane-whatsapp-gateway",

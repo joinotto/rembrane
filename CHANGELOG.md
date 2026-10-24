@@ -52,6 +52,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - A strict HTTPS-or-loopback channel processor adapter with bearer
   authentication, canonical workspace/principal/client identity, exact event
   idempotency headers, redirect rejection, and bounded responses.
+- A configurable per-workspace channel worker executable that decrypts bounded
+  inbox batches, delivers them through the HTTP processor, retries failures,
+  and persists completion only after success.
 - Durable, content-free SQLite channel replay receipts with atomic cleanup,
   fail-closed capacity enforcement, per-platform namespaces, and
   cross-workspace duplicate denial for multi-process gateways.
