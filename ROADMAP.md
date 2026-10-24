@@ -261,6 +261,8 @@ This roadmap describes sequencing, not release dates.
     `workspace_id` table plus explicit workspace and share-proposal policies.
   - [x] Add the canonical encrypted PostgreSQL base schema and isolate
     principal reads through the current workspace's visible memberships.
+  - [x] Add PostgreSQL shared-workspace administration, key-rotation,
+    retention, legal-hold, and append-only audit schemas under forced RLS.
   - [x] Document transaction-local tenant identity and non-owner,
     non-`BYPASSRLS` runtime-role requirements.
   - [x] Run a live PostgreSQL two-tenant CI proof covering scoped reads,

@@ -6,6 +6,14 @@ set -eu
 psql "$REMBRANE_POSTGRES_URL" -v ON_ERROR_STOP=1 <<'SQL'
 DROP SCHEMA IF EXISTS rembrane CASCADE;
 DROP TABLE IF EXISTS
+    workspace_legal_holds,
+    workspace_retention_policies,
+    administrative_audit_events,
+    workspace_key_rotation_recipients,
+    workspace_key_rotation_receipts,
+    workspace_key_rotations,
+    member_scope_grants,
+    workspace_invitations,
     memory_share_proposals,
     projection_outbox,
     disclosed_memories,
@@ -23,6 +31,8 @@ SQL
 
 psql "$REMBRANE_POSTGRES_URL" -v ON_ERROR_STOP=1 \
     -f migrations/postgres/0001_canonical_schema.sql
+psql "$REMBRANE_POSTGRES_URL" -v ON_ERROR_STOP=1 \
+    -f migrations/postgres/0002_workspace_administration.sql
 
 psql "$REMBRANE_POSTGRES_URL" -v ON_ERROR_STOP=1 <<'SQL'
 CREATE ROLE rembrane_runtime_test NOLOGIN NOSUPERUSER NOBYPASSRLS;
@@ -72,10 +82,64 @@ INSERT INTO memory_share_proposals (
         'workspace_02', 'proposal_02', 'memory_02', 1, 'principal_02',
         'workspace_shared', 'global', 'principal_02', 'pending'
     );
+INSERT INTO workspace_invitations (
+    workspace_id, id, invited_principal_id, invited_by, role, status
+) VALUES
+    (
+        'workspace_01', 'invitation_01', 'principal_02', 'principal_01',
+        'viewer', 'pending'
+    ),
+    (
+        'workspace_02', 'invitation_02', 'principal_01', 'principal_02',
+        'viewer', 'pending'
+    );
+INSERT INTO member_scope_grants (
+    workspace_id, principal_id, scope_type, scope_value
+) VALUES
+    ('workspace_01', 'principal_01', 'entity', 'project_01'),
+    ('workspace_02', 'principal_02', 'entity', 'project_02');
+INSERT INTO workspace_retention_policies (
+    workspace_id, version, user_memory_days, disclosure_receipt_days
+) VALUES
+    ('workspace_01', 1, 365, 730),
+    ('workspace_02', 1, 180, 365);
+INSERT INTO administrative_audit_events (
+    workspace_id, id, actor_id, action, target_kind, target_id,
+    request_id, occurred_at_epoch_seconds
+) VALUES
+    (
+        'workspace_01', 'audit_01', 'principal_01',
+        'retention-policy-changed', 'retention-policy', 'workspace_01',
+        'request_01', 1
+    ),
+    (
+        'workspace_02', 'audit_02', 'principal_02',
+        'retention-policy-changed', 'retention-policy', 'workspace_02',
+        'request_02', 1
+    );
 SQL
 
 psql "$REMBRANE_POSTGRES_URL" -v ON_ERROR_STOP=1 \
-    -f migrations/postgres/0002_tenant_rls.sql
+    -f migrations/postgres/9999_tenant_rls.sql
+
+unprotected_tables=$(
+    psql "$REMBRANE_POSTGRES_URL" -v ON_ERROR_STOP=1 -qAt <<'SQL'
+SELECT count(*)
+FROM information_schema.columns AS columns
+JOIN pg_catalog.pg_class AS relation
+  ON relation.relname = columns.table_name
+JOIN pg_catalog.pg_namespace AS namespace
+  ON namespace.oid = relation.relnamespace
+ AND namespace.nspname = columns.table_schema
+WHERE columns.table_schema = 'public'
+  AND columns.column_name = 'workspace_id'
+  AND (
+      NOT relation.relrowsecurity
+      OR NOT relation.relforcerowsecurity
+  );
+SQL
+)
+test "$unprotected_tables" = "0"
 
 result=$(
     psql "$REMBRANE_POSTGRES_URL" -v ON_ERROR_STOP=1 -qAt <<'SQL'
@@ -87,11 +151,15 @@ SELECT
     (SELECT count(*) FROM workspaces),
     (SELECT count(*) FROM memberships),
     (SELECT count(*) FROM memories),
-    (SELECT count(*) FROM memory_share_proposals);
+    (SELECT count(*) FROM memory_share_proposals),
+    (SELECT count(*) FROM workspace_invitations),
+    (SELECT count(*) FROM member_scope_grants),
+    (SELECT count(*) FROM workspace_retention_policies),
+    (SELECT count(*) FROM administrative_audit_events);
 ROLLBACK;
 SQL
 )
-test "$result" = "1|1|1|1|1"
+test "$result" = "1|1|1|1|1|1|1|1|1"
 
 if psql "$REMBRANE_POSTGRES_URL" -v ON_ERROR_STOP=1 >/dev/null 2>&1 <<'SQL'
 BEGIN;
@@ -122,10 +190,14 @@ SELECT
     (SELECT count(*) FROM workspaces),
     (SELECT count(*) FROM memberships),
     (SELECT count(*) FROM memories),
-    (SELECT count(*) FROM memory_share_proposals);
+    (SELECT count(*) FROM memory_share_proposals),
+    (SELECT count(*) FROM workspace_invitations),
+    (SELECT count(*) FROM member_scope_grants),
+    (SELECT count(*) FROM workspace_retention_policies),
+    (SELECT count(*) FROM administrative_audit_events);
 ROLLBACK;
 SQL
 )
-test "$unscoped" = "0|0|0|0|0"
+test "$unscoped" = "0|0|0|0|0|0|0|0|0"
 
 echo "PostgreSQL two-tenant RLS test passed"

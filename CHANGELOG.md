@@ -9,6 +9,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- PostgreSQL shared-workspace administration tables for invitations, scoped
+  member grants, key rotation, retention, legal holds, and append-only audit,
+  with RLS applied only after all numbered schema migrations.
 - A canonical PostgreSQL base schema for encrypted memories, evidence,
   checkpoints, disclosure receipts, projection jobs, and immutable workspace
   events, plus membership-scoped principal RLS.

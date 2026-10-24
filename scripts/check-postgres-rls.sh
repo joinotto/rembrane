@@ -2,7 +2,8 @@
 set -eu
 
 schema=migrations/postgres/0001_canonical_schema.sql
-migration=migrations/postgres/0002_tenant_rls.sql
+administration=migrations/postgres/0002_workspace_administration.sql
+migration=migrations/postgres/9999_tenant_rls.sql
 readme=migrations/postgres/README.md
 
 for table in \
@@ -23,6 +24,24 @@ do
         exit 1
     }
 done
+
+for table in \
+    workspace_invitations \
+    member_scope_grants \
+    workspace_key_rotations \
+    workspace_key_rotation_receipts \
+    workspace_key_rotation_recipients \
+    administrative_audit_events \
+    workspace_retention_policies \
+    workspace_legal_holds
+do
+    rg -q "^CREATE TABLE $table " "$administration" || {
+        echo "PostgreSQL administration table is missing: $table" >&2
+        exit 1
+    }
+done
+
+rg -F 'administrative_audit_events_are_append_only' "$administration" >/dev/null
 
 for invariant in \
     'workspace_events_require_contiguous_sequence' \

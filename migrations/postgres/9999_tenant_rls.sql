@@ -1,4 +1,4 @@
--- Apply immediately after the canonical schema and before runtime grants.
+-- Apply after every schema migration and before runtime grants.
 BEGIN;
 
 CREATE SCHEMA IF NOT EXISTS rembrane;

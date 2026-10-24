@@ -2,8 +2,14 @@
 
 `0001_canonical_schema.sql` creates the encrypted canonical memory tables with
 the same domain constraints, append-only event behavior, and indexes as the
-SQLite alpha schema. `0002_tenant_rls.sql` must be applied immediately after
-it, before granting access to the runtime role.
+SQLite alpha schema. `0002_workspace_administration.sql` adds shared-workspace
+invitations and scope grants, key-rotation state, append-only administrative
+audit, retention policies, and legal holds.
+
+Apply numbered schema migrations in ascending order, then apply
+`9999_tenant_rls.sql` after every schema migration and before granting access
+to the runtime role. Keeping RLS last ensures every newly introduced
+`workspace_id` table is included by the deny-by-default policy generator.
 The application must begin a transaction and run:
 
 ```sql
