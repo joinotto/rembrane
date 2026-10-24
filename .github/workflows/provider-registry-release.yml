@@ -1,0 +1,64 @@
+name: Provider registry release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sign:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || github.ref }}
+      - name: Require signing key
+        env:
+          SIGNING_KEY_PEM: ${{ secrets.REMBRANE_REGISTRY_SIGNING_KEY_PEM }}
+        run: |
+          if [ -z "$SIGNING_KEY_PEM" ]; then
+            echo "REMBRANE_REGISTRY_SIGNING_KEY_PEM is not configured" >&2
+            exit 1
+          fi
+      - name: Materialize ephemeral signing key
+        env:
+          SIGNING_KEY_PEM: ${{ secrets.REMBRANE_REGISTRY_SIGNING_KEY_PEM }}
+        run: |
+          umask 077
+          printf '%s' "$SIGNING_KEY_PEM" >"$RUNNER_TEMP/registry-signing-key.pem"
+          openssl pkey \
+            -in "$RUNNER_TEMP/registry-signing-key.pem" \
+            -pubout \
+            -out "$RUNNER_TEMP/registry-signing-public.pem"
+      - name: Verify and sign registry
+        env:
+          REMBRANE_REGISTRY_SIGNING_KEY: ${{ runner.temp }}/registry-signing-key.pem
+        run: |
+          ./scripts/sign-provider-registry.sh
+          cp "$RUNNER_TEMP/registry-signing-public.pem" \
+            dist/provider-registry/provider-registry-signing-public.pem
+          ./scripts/verify-provider-registry-signature.sh \
+            dist/provider-registry/provider-registry.json \
+            dist/provider-registry/provider-registry.json.sig \
+            dist/provider-registry/provider-registry-signing-public.pem
+      - name: Upload immutable workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rembrane-provider-registry-${{ github.sha }}
+          path: dist/provider-registry/
+          if-no-files-found: error
+      - name: Attach artifacts to published release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release upload
+          "${{ github.event.release.tag_name }}"
+          dist/provider-registry/*
+          --clobber
+      - name: Remove ephemeral private key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/registry-signing-key.pem"

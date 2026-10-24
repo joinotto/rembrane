@@ -52,6 +52,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Automated provider-registry evidence validation plus detached Ed25519
   signing and tamper-detection commands that consume private keys only from
   operator-controlled filesystem paths.
+- A release workflow that signs the compatibility registry with a
+  repository-secret Ed25519 key, verifies the result, removes the ephemeral
+  private-key file, and publishes JSON, checksum, signature, and public-key
+  artifacts.
 - A versioned per-workspace retention policy contract with separate periods
   for memory, checkpoints, travel research, disclosures, canonical events, and
   administrative audit, including bounded expiry and legal-hold overrides.

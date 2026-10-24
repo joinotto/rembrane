@@ -20,9 +20,12 @@ fi
 mkdir -p "$output_directory"
 
 cp "$registry" "$output_directory/provider-registry.json"
-openssl dgst -sha256 \
-    -out "$output_directory/provider-registry.json.sha256" \
-    "$output_directory/provider-registry.json"
+registry_sha256=$(
+    openssl dgst -sha256 "$output_directory/provider-registry.json" |
+        awk '{print $NF}'
+)
+printf '%s  %s\n' "$registry_sha256" provider-registry.json \
+    >"$output_directory/provider-registry.json.sha256"
 openssl pkeyutl -sign -rawin \
     -inkey "$private_key" \
     -in "$output_directory/provider-registry.json" \

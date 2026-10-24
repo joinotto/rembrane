@@ -77,6 +77,15 @@ JSON bytes. Set `REMBRANE_REGISTRY_SIGNING_KEY` to a PEM private-key path and
 run `scripts/sign-provider-registry.sh`; no private key belongs in this
 repository. Consumers verify the JSON and `.sig` artifact with
 `scripts/verify-provider-registry-signature.sh` and the release public key.
+They must pin or obtain that public key through an independently trusted
+channel; a public key downloaded beside its signature is not by itself a trust
+anchor.
+
+Published GitHub releases invoke `provider-registry-release.yml`. Configure
+the repository secret `REMBRANE_REGISTRY_SIGNING_KEY_PEM` with the complete
+Ed25519 private-key PEM. The workflow writes it to a mode-restricted temporary
+file, validates and signs the registry, verifies the detached signature, then
+deletes the key and uploads JSON, checksum, signature, and public key.
 
 ## Memory Provider conformance
 
