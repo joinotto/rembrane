@@ -9,6 +9,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- Dedicated `travel` domain authorization for creating new trip entities,
+  avoiding pre-grants for identifiers that do not exist while retaining exact
+  entity grants for every revision and research capture.
 - Explicit trip create/revise permissions, exact entity-scoped authorization,
   versioned trip audit events, and atomic in-memory trip/event mutations.
 - Member trip revisions through persisted entity grants while trip creation

@@ -34,7 +34,7 @@ where
     }
 
     pub fn create(&mut self, command: CreateTripCommand) -> Result<Trip, ApplicationError> {
-        validate_grant(&command.grant, &command.trip, WritePermission::CreateTrip)?;
+        validate_create_grant(&command.grant, &command.trip)?;
         if command.trip.owner_subject_id() != &command.grant.subject_id {
             return Err(ApplicationError::AccessDenied);
         }
@@ -101,6 +101,18 @@ fn validate_grant(
         || grant.workspace_id != *trip.workspace_id()
         || !grant.allows_scope(&MemoryScope::Entity {
             id: trip.id().clone(),
+        })
+    {
+        return Err(ApplicationError::AccessDenied);
+    }
+    Ok(())
+}
+
+fn validate_create_grant(grant: &WriteGrant, trip: &Trip) -> Result<(), ApplicationError> {
+    if !grant.allows(WritePermission::CreateTrip)
+        || grant.workspace_id != *trip.workspace_id()
+        || !grant.allows_scope(&MemoryScope::Domain {
+            name: "travel".to_owned(),
         })
     {
         return Err(ApplicationError::AccessDenied);

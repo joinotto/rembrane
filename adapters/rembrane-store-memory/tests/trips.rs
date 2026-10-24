@@ -37,13 +37,20 @@ fn trip() -> Trip {
 }
 
 fn grant(permission: WritePermission) -> WriteGrant {
+    let scopes = if permission == WritePermission::CreateTrip {
+        vec![ReadScope::Domain {
+            name: "travel".to_owned(),
+        }]
+    } else {
+        vec![ReadScope::Entity {
+            id: EntityId::new("trip_tokyo"),
+        }]
+    };
     WriteGrant {
         client_id: ClientId::new("travel_agent"),
         workspace_id: WorkspaceId::new("workspace_01"),
         subject_id: PrincipalId::new("principal_01"),
-        scopes: vec![ReadScope::Entity {
-            id: EntityId::new("trip_tokyo"),
-        }],
+        scopes,
         permissions: vec![permission],
     }
 }
@@ -103,6 +110,19 @@ fn denies_wrong_scope_and_rolls_back_sequence_conflict() {
             grant: denied_grant,
             trip: trip(),
             event_id: EventId::new("event_denied"),
+            expected_previous_sequence: 0,
+        }),
+        Err(ApplicationError::AccessDenied)
+    );
+    let mut entity_only = grant(WritePermission::CreateTrip);
+    entity_only.scopes = vec![ReadScope::Entity {
+        id: EntityId::new("trip_tokyo"),
+    }];
+    assert_eq!(
+        TripService::new(&mut store).create(CreateTripCommand {
+            grant: entity_only,
+            trip: trip(),
+            event_id: EventId::new("event_entity_only"),
             expected_previous_sequence: 0,
         }),
         Err(ApplicationError::AccessDenied)

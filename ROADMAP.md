@@ -104,6 +104,8 @@ This roadmap describes sequencing, not release dates.
     reconstruction.
   - [x] Authorized create/revise application service with exact entity-scoped
     grants and an atomic in-memory reference repository.
+  - [x] Dedicated travel-domain capability for creating new trip entities;
+    revisions remain exact-entity scoped.
   - [ ] Encrypted persistent trip repository with tenant-isolation and rollback
     coverage.
     - [x] Versioned SQLite schema and encrypted atomic trip/event repository.
