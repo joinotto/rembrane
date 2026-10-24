@@ -28,6 +28,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Engine-neutral temporal graph provider contract and conformance harness
   covering workspace isolation, validity windows, bounded candidates, and
   deletion semantics.
+- Dependency-free native temporal graph provider for local operation,
+  deterministic benchmarks, and shared adapter conformance testing.
 - Authenticated key-provider HTTP adapter using Rustls, bounded response reads,
   disabled redirects and environment proxies, zeroized bearer credentials,
   strict JSON/base64 decoding, and HTTPS except for exact loopback origins.

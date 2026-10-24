@@ -145,6 +145,8 @@ This roadmap describes sequencing, not release dates.
       ciphertext with bounded indexed neighbourhood traversal.
     - [x] Define an engine-neutral graph provider contract and conformance
       harness for workspace isolation, validity windows, and deletion.
+    - [x] Add a deterministic dependency-free native graph provider as the
+      conformance and benchmark baseline.
     - [ ] Add Graphiti projection adapter.
 
 - [x] Project entities and scoped preferences.

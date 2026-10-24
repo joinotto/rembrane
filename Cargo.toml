@@ -2,6 +2,7 @@
 members = [
     "adapters/rembrane-crypto-rustcrypto",
     "adapters/rembrane-crypto-configured",
+    "adapters/rembrane-graph-native",
     "adapters/rembrane-key-provider-http",
     "adapters/rembrane-oauth-introspection",
     "adapters/rembrane-oauth-introspection-http",
