@@ -50,8 +50,8 @@ where
 
         let proposal = MemoryRecord::proposed(
             command.memory_id,
-            command.grant.workspace_id,
-            command.grant.subject_id,
+            command.grant.workspace_id.clone(),
+            command.grant.subject_id.clone(),
             command.scope,
             command.kind,
             command.content,

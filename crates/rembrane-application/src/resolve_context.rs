@@ -180,9 +180,9 @@ fn scope_matches(memory: &MemoryRecord, request: &ResolveContextRequest) -> bool
 mod tests {
     use rembrane_contracts::ResolveContextRequest;
     use rembrane_domain::{
-        ActivityId, ClientId, ContextPackId, DisclosureId, DisclosureReceipt, EntityId, EvidenceId,
-        EvidenceReference, EvidenceSource, MemoryId, MemoryRecord, MemoryScope, PrincipalId,
-        ReadGrant, ReadScope, WorkspaceId,
+        ActivityId, ClientId, ContextPackId, DisclosedMemory, DisclosureId, DisclosureReceipt,
+        EntityId, EvidenceId, EvidenceReference, EvidenceSource, MemoryId, MemoryRecord,
+        MemoryScope, PrincipalId, ReadGrant, ReadScope, WorkspaceId,
     };
 
     use super::{ResolveContextCommand, ResolveContextService};
