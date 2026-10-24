@@ -219,10 +219,35 @@ async fn main() -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use axum::http::StatusCode;
-    use rembrane_channel_whatsapp::WhatsAppHttpStatus;
+    use std::sync::{Arc, Mutex};
+    use std::time::{SystemTime, UNIX_EPOCH};
 
-    use super::status_code;
+    use axum::body::Bytes;
+    use axum::extract::State;
+    use axum::http::{HeaderMap, HeaderValue, StatusCode};
+    use rembrane_application::{ChannelSenderBindingRepository, WorkspaceRepository};
+    use rembrane_channel_whatsapp::{
+        WhatsAppHttpStatus, WhatsAppSubscriptionVerifier, WhatsAppWebhookVerifier,
+        derive_binding_lookup_keys,
+    };
+    use rembrane_contracts::{ChannelKind, ChannelSenderBinding};
+    use rembrane_domain::{
+        ClientId, Membership, Principal, PrincipalId, Workspace, WorkspaceId, WorkspaceRole,
+    };
+    use rembrane_store_sqlite::SqliteStore;
+    use ring::hmac;
+
+    use super::{AppState, Inner, Runtime, receive_webhook, status_code};
+
+    fn encode_hex(bytes: &[u8]) -> String {
+        const HEX: &[u8; 16] = b"0123456789abcdef";
+        let mut encoded = String::with_capacity(bytes.len() * 2);
+        for byte in bytes {
+            encoded.push(char::from(HEX[usize::from(byte >> 4)]));
+            encoded.push(char::from(HEX[usize::from(byte & 0x0f)]));
+        }
+        encoded
+    }
 
     #[test]
     fn maps_every_transport_status() {
@@ -250,6 +275,91 @@ mod tests {
         assert_eq!(
             status_code(WhatsAppHttpStatus::ServiceUnavailable),
             StatusCode::SERVICE_UNAVAILABLE
+        );
+    }
+
+    #[tokio::test]
+    async fn authenticated_bound_delivery_and_replay_cross_the_real_sqlite_boundary() {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("test clock should be valid")
+            .as_secs();
+        let app_secret = vec![7; 32];
+        let lookup_secret = vec![9; 32];
+        let account_id = "15550000001";
+        let sender_id = "15550000002";
+        let lookup = derive_binding_lookup_keys(lookup_secret.clone(), account_id, sender_id)
+            .expect("lookup should derive");
+        let mut store = SqliteStore::open_in_memory().expect("store should initialize");
+        let workspace_id = WorkspaceId::new("workspace_01");
+        let principal_id = PrincipalId::new("principal_01");
+        store
+            .initialize_personal_workspace(
+                Principal::new(principal_id.clone()),
+                Workspace::personal(workspace_id.clone()),
+                Membership::new(
+                    workspace_id.clone(),
+                    principal_id.clone(),
+                    WorkspaceRole::Owner,
+                ),
+            )
+            .expect("workspace should initialize");
+        store
+            .insert_channel_sender_binding(
+                ChannelSenderBinding::new(
+                    ChannelKind::WhatsAppBusiness,
+                    lookup.account_lookup_key(),
+                    lookup.sender_lookup_key(),
+                    workspace_id,
+                    principal_id,
+                    ClientId::new("client_whatsapp_01"),
+                )
+                .expect("binding should validate"),
+            )
+            .expect("binding should persist");
+        let state = AppState {
+            inner: Arc::new(Inner {
+                runtime: Mutex::new(Runtime { store }),
+                webhook_verifier: WhatsAppWebhookVerifier::new(app_secret.clone(), lookup_secret)
+                    .expect("verifier should initialize"),
+                subscription_verifier: WhatsAppSubscriptionVerifier::new(vec![11; 32])
+                    .expect("subscription verifier should initialize"),
+                maximum_event_age_seconds: 300,
+                replay_window_seconds: 86_400,
+                maximum_replay_events: 100,
+            }),
+        };
+        let payload = format!(
+            r#"{{"object":"whatsapp_business_account","entry":[{{"changes":[{{"field":"messages","value":{{"metadata":{{"phone_number_id":"{account_id}"}},"messages":[{{"from":"{sender_id}","id":"wamid.gateway-e2e","timestamp":"{now}","type":"text","text":{{"body":"continue"}}}}]}}}}]}}]}}"#
+        );
+        let signature_key = hmac::Key::new(hmac::HMAC_SHA256, &app_secret);
+        let signature = format!(
+            "sha256={}",
+            encode_hex(hmac::sign(&signature_key, payload.as_bytes()).as_ref())
+        );
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "x-hub-signature-256",
+            HeaderValue::from_str(&signature).expect("signature header should validate"),
+        );
+
+        assert_eq!(
+            receive_webhook(
+                State(state.clone()),
+                headers.clone(),
+                Bytes::copy_from_slice(payload.as_bytes()),
+            )
+            .await,
+            StatusCode::OK
+        );
+        assert_eq!(
+            receive_webhook(
+                State(state),
+                headers,
+                Bytes::copy_from_slice(payload.as_bytes()),
+            )
+            .await,
+            StatusCode::OK
         );
     }
 }

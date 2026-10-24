@@ -34,6 +34,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   identifier paths.
 - Atomic administrator-authorized channel-binding creation and revocation with
   content-free append-only audit evidence and explicit CLI lifecycle commands.
+- A socket-free executable WhatsApp gateway integration test covering a real
+  signed payload, active pseudonymous sender binding, SQLite admission, and
+  idempotent replay.
 - Durable, content-free SQLite channel replay receipts with atomic cleanup,
   fail-closed capacity enforcement, per-platform namespaces, and
   cross-workspace duplicate denial for multi-process gateways.

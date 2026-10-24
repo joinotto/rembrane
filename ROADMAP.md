@@ -565,6 +565,9 @@ This roadmap describes sequencing, not release dates.
     only matching keyed pseudonyms.
   - [x] Commit content-free administrative audit evidence atomically with
     explicit channel-binding creation and revocation.
+  - [x] Exercise the executable webhook path in-process across signature
+    verification, active sender resolution, SQLite replay admission, and
+    idempotent duplicate delivery.
   - [x] Define a bounded authenticated-channel message contract whose
     canonical workspace, principal, and client identity must come from a
     deployment-owned sender binding rather than webhook payload claims.

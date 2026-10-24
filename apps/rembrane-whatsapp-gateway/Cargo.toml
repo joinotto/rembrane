@@ -19,6 +19,12 @@ zeroize = "1"
 [lints]
 workspace = true
 
+[dev-dependencies]
+rembrane-application = { path = "../../crates/rembrane-application" }
+rembrane-contracts = { path = "../../crates/rembrane-contracts" }
+rembrane-domain = { path = "../../crates/rembrane-domain" }
+ring = "0.17"
+
 [[bin]]
 name = "rembrane-whatsapp-gateway"
 path = "src/main.rs"
