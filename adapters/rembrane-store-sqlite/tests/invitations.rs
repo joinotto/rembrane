@@ -1,9 +1,10 @@
 use rembrane_application::{
     ApplicationError, CreateInvitationCommand, InvitationRepository, InvitationService,
-    MembershipRepository, WorkspaceRepository,
+    MembershipRepository, RevokeInvitationCommand, WorkspaceRepository,
 };
 use rembrane_domain::{
-    InvitationId, Membership, Principal, PrincipalId, Workspace, WorkspaceId, WorkspaceRole,
+    InvitationId, InvitationStatus, Membership, Principal, PrincipalId, Workspace, WorkspaceId,
+    WorkspaceRole,
 };
 use rembrane_store_sqlite::SqliteStore;
 
@@ -130,5 +131,40 @@ fn second_acceptance_does_not_mutate_membership() {
     assert_eq!(
         error,
         ApplicationError::Validation("invitation is no longer pending".to_owned())
+    );
+}
+
+#[test]
+fn persisted_revocation_prevents_acceptance() {
+    let mut store = initialized_store();
+    let invitation = InvitationService::new(&mut store)
+        .create(invitation_command())
+        .expect("owner should create invitation");
+
+    let revoked = InvitationService::new(&mut store)
+        .revoke(RevokeInvitationCommand {
+            invitation_id: invitation.id().clone(),
+            workspace_id: WorkspaceId::new("team"),
+            revoked_by: PrincipalId::new("owner"),
+        })
+        .expect("owner should revoke invitation");
+    assert_eq!(revoked.status(), InvitationStatus::Revoked);
+
+    let error = InvitationService::new(&mut store)
+        .accept(
+            &WorkspaceId::new("team"),
+            invitation.id(),
+            &PrincipalId::new("guest"),
+        )
+        .expect_err("revoked invitation cannot be accepted");
+    assert_eq!(
+        error,
+        ApplicationError::Validation("invitation is no longer pending".to_owned())
+    );
+    assert!(
+        store
+            .find_membership(&WorkspaceId::new("team"), &PrincipalId::new("guest"))
+            .expect("membership lookup should succeed")
+            .is_none()
     );
 }

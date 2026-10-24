@@ -474,6 +474,29 @@ impl InvitationRepository for InMemoryStore {
         self.memberships.push(membership);
         Ok(())
     }
+
+    fn replace_invitation(
+        &mut self,
+        invitation: Invitation,
+        expected_status: InvitationStatus,
+    ) -> Result<(), ApplicationError> {
+        let stored = self
+            .invitations
+            .iter_mut()
+            .find(|stored| {
+                stored.workspace_id() == invitation.workspace_id() && stored.id() == invitation.id()
+            })
+            .ok_or(ApplicationError::NotFound)?;
+        if stored.status() != expected_status
+            || stored.invited_principal_id() != invitation.invited_principal_id()
+            || stored.invited_by() != invitation.invited_by()
+            || stored.role() != invitation.role()
+        {
+            return Err(ApplicationError::VersionConflict);
+        }
+        *stored = invitation;
+        Ok(())
+    }
 }
 
 impl CheckpointRepository for InMemoryStore {

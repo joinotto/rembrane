@@ -1,9 +1,10 @@
 use rembrane_application::{
     ApplicationError, CreateInvitationCommand, InvitationRepository, InvitationService,
-    MembershipRepository, WorkspaceRepository,
+    MembershipRepository, RevokeInvitationCommand, WorkspaceRepository,
 };
 use rembrane_domain::{
-    InvitationId, Membership, Principal, PrincipalId, Workspace, WorkspaceId, WorkspaceRole,
+    InvitationId, InvitationStatus, Membership, Principal, PrincipalId, Workspace, WorkspaceId,
+    WorkspaceRole,
 };
 use rembrane_store_memory::InMemoryStore;
 
@@ -128,4 +129,58 @@ fn invitation_lookup_is_workspace_scoped() {
             .expect("lookup should succeed")
             .is_none()
     );
+}
+
+#[test]
+fn owner_can_revoke_pending_invitation() {
+    let mut store = shared_store();
+    let invitation = InvitationService::new(&mut store)
+        .create(command("guest"))
+        .expect("owner should invite member");
+
+    let revoked = InvitationService::new(&mut store)
+        .revoke(RevokeInvitationCommand {
+            invitation_id: invitation.id().clone(),
+            workspace_id: WorkspaceId::new("team"),
+            revoked_by: PrincipalId::new("owner"),
+        })
+        .expect("owner should revoke pending invitation");
+
+    assert_eq!(revoked.status(), InvitationStatus::Revoked);
+    let error = InvitationService::new(&mut store)
+        .accept(
+            &WorkspaceId::new("team"),
+            invitation.id(),
+            &PrincipalId::new("guest"),
+        )
+        .expect_err("revoked invitation must not be accepted");
+    assert_eq!(
+        error,
+        ApplicationError::Validation("invitation is no longer pending".to_owned())
+    );
+}
+
+#[test]
+fn member_cannot_revoke_invitation() {
+    let mut store = shared_store();
+    let invitation = InvitationService::new(&mut store)
+        .create(command("guest"))
+        .expect("owner should invite member");
+    store
+        .insert_membership(Membership::new(
+            WorkspaceId::new("team"),
+            PrincipalId::new("member"),
+            WorkspaceRole::Member,
+        ))
+        .expect("member setup should succeed");
+
+    let error = InvitationService::new(&mut store)
+        .revoke(RevokeInvitationCommand {
+            invitation_id: invitation.id().clone(),
+            workspace_id: WorkspaceId::new("team"),
+            revoked_by: PrincipalId::new("member"),
+        })
+        .expect_err("member must not revoke invitations");
+
+    assert_eq!(error, ApplicationError::AccessDenied);
 }

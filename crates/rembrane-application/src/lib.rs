@@ -20,7 +20,7 @@ pub use checkpoint::{
     CheckpointService, CreateCheckpointCommand, ResumeActivityCommand, UpdateCheckpointCommand,
 };
 pub use error::ApplicationError;
-pub use invitation::{CreateInvitationCommand, InvitationService};
+pub use invitation::{CreateInvitationCommand, InvitationService, RevokeInvitationCommand};
 pub use ports::{
     CanonicalMutationRepository, CheckpointDisclosureRepository, CheckpointMutationRepository,
     CheckpointRepository, DisclosureRepository, EventRepository, InvitationRepository,

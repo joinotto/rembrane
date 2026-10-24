@@ -751,6 +751,36 @@ impl<C> InvitationRepository for SqliteStore<C> {
             .commit()
             .map_err(|_| ApplicationError::StorageUnavailable)
     }
+
+    fn replace_invitation(
+        &mut self,
+        invitation: Invitation,
+        expected_status: InvitationStatus,
+    ) -> Result<(), ApplicationError> {
+        let changed = self
+            .connection
+            .execute(
+                "UPDATE workspace_invitations
+                 SET status = ?6, updated_at = CURRENT_TIMESTAMP
+                 WHERE workspace_id = ?1 AND id = ?2
+                   AND invited_principal_id = ?3 AND invited_by = ?4
+                   AND role = ?5 AND status = ?7",
+                params![
+                    invitation.workspace_id().as_str(),
+                    invitation.id().as_str(),
+                    invitation.invited_principal_id().as_str(),
+                    invitation.invited_by().as_str(),
+                    encode_role(invitation.role()),
+                    encode_invitation_status(invitation.status()),
+                    encode_invitation_status(expected_status)
+                ],
+            )
+            .map_err(map_write_error)?;
+        if changed != 1 {
+            return Err(ApplicationError::VersionConflict);
+        }
+        Ok(())
+    }
 }
 
 fn validate_personal_bootstrap(
@@ -864,6 +894,14 @@ const fn encode_status(status: MembershipStatus) -> &'static str {
         MembershipStatus::Active => "active",
         MembershipStatus::Suspended => "suspended",
         MembershipStatus::Removed => "removed",
+    }
+}
+
+const fn encode_invitation_status(status: InvitationStatus) -> &'static str {
+    match status {
+        InvitationStatus::Pending => "pending",
+        InvitationStatus::Accepted => "accepted",
+        InvitationStatus::Revoked => "revoked",
     }
 }
 

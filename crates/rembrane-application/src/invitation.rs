@@ -13,6 +13,13 @@ pub struct CreateInvitationCommand {
     pub role: WorkspaceRole,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RevokeInvitationCommand {
+    pub invitation_id: InvitationId,
+    pub workspace_id: WorkspaceId,
+    pub revoked_by: PrincipalId,
+}
+
 pub struct InvitationService<'repository, Repository> {
     repository: &'repository mut Repository,
 }
@@ -94,5 +101,34 @@ where
         self.repository
             .accept_invitation_with_membership(accepted, membership.clone())?;
         Ok(membership)
+    }
+
+    pub fn revoke(
+        &mut self,
+        command: RevokeInvitationCommand,
+    ) -> Result<Invitation, ApplicationError> {
+        let RevokeInvitationCommand {
+            invitation_id,
+            workspace_id,
+            revoked_by,
+        } = command;
+        let actor = self
+            .repository
+            .find_membership(&workspace_id, &revoked_by)?
+            .ok_or(ApplicationError::AccessDenied)?;
+        if !actor.can_manage_members() {
+            return Err(ApplicationError::AccessDenied);
+        }
+        let invitation = self
+            .repository
+            .find_invitation(&workspace_id, &invitation_id)?
+            .ok_or(ApplicationError::NotFound)?;
+        let expected_status = invitation.status();
+        let revoked = invitation
+            .revoke()
+            .map_err(|error| ApplicationError::Validation(error.to_string()))?;
+        self.repository
+            .replace_invitation(revoked.clone(), expected_status)?;
+        Ok(revoked)
     }
 }

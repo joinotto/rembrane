@@ -1,7 +1,8 @@
 use rembrane_domain::{
     ActivityCheckpoint, ActivityId, CanonicalEvent, CheckpointDisclosureReceipt, DisclosureReceipt,
-    Invitation, InvitationId, Membership, MemoryId, MemoryRecord, Principal, PrincipalId,
-    ProjectionJob, ProjectionJobId, ProjectionStatus, ProviderId, Workspace, WorkspaceId,
+    Invitation, InvitationId, InvitationStatus, Membership, MemoryId, MemoryRecord, Principal,
+    PrincipalId, ProjectionJob, ProjectionJobId, ProjectionStatus, ProviderId, Workspace,
+    WorkspaceId,
 };
 
 use crate::ApplicationError;
@@ -121,6 +122,12 @@ pub trait InvitationRepository {
         &mut self,
         invitation: Invitation,
         membership: Membership,
+    ) -> Result<(), ApplicationError>;
+
+    fn replace_invitation(
+        &mut self,
+        invitation: Invitation,
+        expected_status: InvitationStatus,
     ) -> Result<(), ApplicationError>;
 }
 
