@@ -1,5 +1,6 @@
 //! Bounded HTTPS implementation of the OAuth introspection transport.
 
+use std::io::Read;
 use std::time::Duration;
 
 use rembrane_oauth_introspection::{
@@ -8,6 +9,8 @@ use rembrane_oauth_introspection::{
 use reqwest::blocking::Client;
 use serde::Deserialize;
 use zeroize::Zeroizing;
+
+const MAXIMUM_RESPONSE_BYTES: u64 = 65_536;
 
 pub struct HttpIntrospectionTransport {
     client: Client,
@@ -63,11 +66,20 @@ impl IntrospectionTransport for HttpIntrospectionTransport {
             .map_err(|_| IntrospectionTransportError)?;
         if response
             .content_length()
-            .is_some_and(|length| length > 65_536)
+            .is_some_and(|length| length > MAXIMUM_RESPONSE_BYTES)
         {
             return Err(IntrospectionTransportError);
         }
-        let wire: WireResponse = response.json().map_err(|_| IntrospectionTransportError)?;
+        let mut body = Vec::new();
+        response
+            .take(MAXIMUM_RESPONSE_BYTES + 1)
+            .read_to_end(&mut body)
+            .map_err(|_| IntrospectionTransportError)?;
+        if body.len() as u64 > MAXIMUM_RESPONSE_BYTES {
+            return Err(IntrospectionTransportError);
+        }
+        let wire: WireResponse =
+            serde_json::from_slice(&body).map_err(|_| IntrospectionTransportError)?;
         Ok(IntrospectionResponse {
             active: wire.active,
             issuer: wire.issuer,

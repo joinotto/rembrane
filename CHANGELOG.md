@@ -30,6 +30,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Concrete bounded HTTPS introspection transport using authenticated resource
   server credentials, rustls, disabled redirects, strict timeouts, and
   response-size rejection.
+- Introspection responses are now stream-bounded independently of
+  `Content-Length`, preventing an unbounded body when an authorization server
+  omits or falsifies the header.
 - Hardened Cloudflare Tunnel Compose overlay and operator guide for
   outbound-only self-hosted access without mounting the memory database or
   workspace encryption credentials into the tunnel container.
