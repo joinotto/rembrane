@@ -1,13 +1,19 @@
 services:
   cloudflared:
-    image: ${CLOUDFLARED_IMAGE:-cloudflare/cloudflared:latest}
+    image: ${CLOUDFLARED_IMAGE:-cloudflare/cloudflared:2026.7.0}
     restart: unless-stopped
     command:
       - tunnel
       - --no-autoupdate
       - run
-      - --token
-      - ${CLOUDFLARE_TUNNEL_TOKEN:?required}
+      - --token-file
+      - /run/secrets/rembrane_cloudflare_tunnel_token
+    secrets:
+      - source: rembrane_cloudflare_tunnel_token
+        target: rembrane_cloudflare_tunnel_token
+        uid: "65532"
+        gid: "65532"
+        mode: 0400
     depends_on:
       rembrane:
         condition: service_healthy
@@ -20,3 +26,7 @@ services:
     read_only: true
     tmpfs:
       - /tmp
+
+secrets:
+  rembrane_cloudflare_tunnel_token:
+    file: ${CLOUDFLARE_TUNNEL_TOKEN_FILE:?required}

@@ -102,7 +102,12 @@ if rg -q '^[[:space:]]+(REMBRANE_WORKSPACE_KEY_HEX|REMBRANE_API_TOKEN):' compose
     exit 1
 fi
 test "$(rg -c 'mode: 0400' compose.yaml)" -eq 2
-rg -q 'CLOUDFLARE_TUNNEL_TOKEN' compose.cloudflare.yaml
+rg -q -- '--token-file' compose.cloudflare.yaml
+rg -q 'CLOUDFLARE_TUNNEL_TOKEN_FILE' compose.cloudflare.yaml
+if rg -q -- '(^|[[:space:]])--token([[:space:]]|$)' compose.cloudflare.yaml; then
+    echo "Cloudflare Compose must not expose the tunnel token as an argument" >&2
+    exit 1
+fi
 rg -q 'http://rembrane:8787' docs/CLOUDFLARE_DEPLOYMENT.md
 rg -q 'read_only: true' compose.cloudflare.yaml
 rg -q '127\.0\.0\.1:8793:8793' compose.graphiti.yaml
@@ -176,8 +181,8 @@ if command -v docker >/dev/null 2>&1; then
     REMBRANE_WORKSPACE_KEY_FILE=/tmp/rembrane-static-workspace-key \
     REMBRANE_API_TOKEN_FILE=/tmp/rembrane-static-api-token \
         docker compose config --quiet
-    CLOUDFLARE_TUNNEL_TOKEN=static-test-token \
-    CLOUDFLARED_IMAGE=cloudflare/cloudflared:latest \
+    CLOUDFLARE_TUNNEL_TOKEN_FILE=/tmp/rembrane-static-cloudflare-token \
+    CLOUDFLARED_IMAGE=cloudflare/cloudflared:2026.7.0 \
     REMBRANE_PRINCIPAL_ID=principal_static \
     REMBRANE_WORKSPACE_ID=workspace_static \
     REMBRANE_CLIENT_ID=client_static \

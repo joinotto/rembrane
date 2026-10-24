@@ -24,8 +24,10 @@ authorization, and record disclosures.
 Set the ordinary variables documented in `.env.example`, plus:
 
 ```text
-CLOUDFLARE_TUNNEL_TOKEN=<secret tunnel token>
-CLOUDFLARED_IMAGE=cloudflare/cloudflared@sha256:<reviewed digest>
+install -m 600 /dev/null .rembrane-cloudflare-tunnel-token
+printf '%s\n' '<secret tunnel token>' > .rembrane-cloudflare-tunnel-token
+export CLOUDFLARE_TUNNEL_TOKEN_FILE="$PWD/.rembrane-cloudflare-tunnel-token"
+export CLOUDFLARED_IMAGE=cloudflare/cloudflared@sha256:<reviewed digest>
 ```
 
 Then run:
@@ -38,6 +40,12 @@ The base Compose file publishes only `127.0.0.1:8787`; it does not expose the
 origin on a public host interface. The tunnel container has no Linux
 capabilities, uses a read-only root filesystem, and receives no Rembrane
 database volume or workspace key variables.
+
+The overlay passes the remotely managed token through `--token-file` and
+mounts it only for cloudflared's numeric non-root user. This requires
+cloudflared `2025.4.0` or later; the default is pinned to `2026.7.0`, while
+production operators should replace that tag with a reviewed immutable
+digest.
 
 ## Required edge and origin controls
 

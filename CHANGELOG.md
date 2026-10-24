@@ -9,6 +9,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- File-backed Cloudflare Tunnel token injection through `--token-file`, with a
+  version-pinned non-root container and no token in rendered command arguments.
 - A validated container startup mode for least-privileged channel services
   that skips personal-workspace bootstrap and no longer requires injecting a
   default principal into gateways or workers.

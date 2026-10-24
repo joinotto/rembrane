@@ -241,6 +241,8 @@ This roadmap describes sequencing, not release dates.
           prove distinct OAuth tenants remain isolated before stream opening.
   - [x] Add a hardened Cloudflare Tunnel Compose overlay that keeps persistent
     memory and encryption credentials on the operator-controlled origin.
+    - [x] Mount the remotely managed tunnel token as an owner-only file instead
+      of exposing it through rendered process arguments.
 - [x] Persist a disclosure receipt for every SQLite context response.
 - [x] Require every future context storage adapter to implement disclosure
   persistence through compile-time composite repository capabilities.
