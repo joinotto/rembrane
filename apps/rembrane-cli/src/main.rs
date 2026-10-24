@@ -13,6 +13,8 @@ use rembrane_domain::{
     EvidenceReference, EvidenceSource, Membership, MemoryId, MemoryRecord, MemoryScope, Principal,
     PrincipalId, ReadGrant, ReadScope, Workspace, WorkspaceId, WorkspaceRole, WritePermission,
 };
+use rembrane_provider_sdk::verify_semantic_provider;
+use rembrane_semantic_native::NativeSemanticProvider;
 use rembrane_store_memory::InMemoryStore;
 use rembrane_store_sqlite::SqliteStore;
 
@@ -63,8 +65,36 @@ fn providers(arguments: &[String]) -> Result<(), String> {
             Ok(())
         }
         Some("list") => Err("providers list does not accept additional arguments".to_owned()),
+        Some("test") => {
+            println!("{}", test_provider(arguments)?);
+            Ok(())
+        }
         Some(command) => Err(format!("unknown providers command: {command}")),
-        None => Err("providers requires a command; supported command: list".to_owned()),
+        None => Err("providers requires a command; supported commands: list, test".to_owned()),
+    }
+}
+
+fn test_provider(arguments: &[String]) -> Result<String, String> {
+    if arguments.len() != 5 {
+        return Err(
+            "usage: rembrane providers test --provider <id> --namespace <unique-name>".to_owned(),
+        );
+    }
+    let provider_id = option(arguments, "--provider")?;
+    let namespace = option(arguments, "--namespace")?;
+    match provider_id {
+        "rembrane.native" => {
+            verify_semantic_provider(&mut NativeSemanticProvider::new(), namespace)
+                .map_err(|error| format!("provider conformance failed: {error}"))?;
+            Ok(format!(
+                "{{\"provider\":\"rembrane.native\",\"protocolVersion\":\"0.1\",\
+                 \"result\":\"pass\",\"suiteVersion\":\"{}\"}}",
+                env!("CARGO_PKG_VERSION")
+            ))
+        }
+        _ => Err(format!(
+            "provider {provider_id} is not installed in this CLI build"
+        )),
     }
 }
 
@@ -992,6 +1022,7 @@ fn print_help() {
              --principal <id> --workspace <id>\n\
            rembrane fingerprint-git --repository <path>\n\
            rembrane providers list\n\
+           rembrane providers test --provider <id> --namespace <unique-name>\n\
            rembrane mcp-config --client <codex|claude-code|generic> \
              --server-binary <path>\n\
            rembrane remember --database <path> --principal <id> \
@@ -1017,7 +1048,7 @@ mod tests {
     use super::{
         EXPORT_MAGIC, claude_mcp_config, codex_mcp_config, format_read_scopes, generic_mcp_config,
         option, positive_u64, providers, read_export, recall_scope_context, redact_endpoint,
-        requested_memory_scope, write_export,
+        requested_memory_scope, test_provider, write_export,
     };
 
     fn temporary_path(name: &str) -> std::path::PathBuf {
@@ -1051,6 +1082,35 @@ mod tests {
         assert!(providers(&[]).is_err());
         assert!(providers(&["unknown".to_owned()]).is_err());
         assert!(providers(&["list".to_owned(), "--extra".to_owned()]).is_err());
+    }
+
+    #[test]
+    fn native_provider_can_run_shared_conformance_from_cli() {
+        let report = test_provider(&[
+            "test".to_owned(),
+            "--provider".to_owned(),
+            "rembrane.native".to_owned(),
+            "--namespace".to_owned(),
+            "cli-unit".to_owned(),
+        ])
+        .expect("native provider should pass conformance");
+
+        assert!(report.contains("\"result\":\"pass\""));
+        assert!(report.contains("\"provider\":\"rembrane.native\""));
+    }
+
+    #[test]
+    fn provider_test_fails_for_adapter_not_in_build() {
+        let error = test_provider(&[
+            "test".to_owned(),
+            "--provider".to_owned(),
+            "community.example".to_owned(),
+            "--namespace".to_owned(),
+            "cli-unit".to_owned(),
+        ])
+        .expect_err("missing adapter must fail explicitly");
+
+        assert!(error.contains("is not installed in this CLI build"));
     }
 
     #[test]

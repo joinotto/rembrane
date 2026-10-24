@@ -122,6 +122,23 @@ printf '%s\n' "$provider_registry" | jq -e \
         and all(.providers[]; has("plaintextProcessing"))
         and all(.providers[]; has("conformance"))' >/dev/null
 
+provider_conformance=$(
+    "$rembrane_binary" providers test \
+        --provider rembrane.native \
+        --namespace cli-e2e
+)
+printf '%s\n' "$provider_conformance" | jq -e \
+    '.provider == "rembrane.native"
+        and .protocolVersion == "0.1"
+        and .result == "pass"' >/dev/null
+if "$rembrane_binary" providers test \
+    --provider community.not-installed \
+    --namespace cli-e2e >/dev/null 2>&1
+then
+    echo "provider test unexpectedly accepted an unavailable adapter" >&2
+    exit 1
+fi
+
 "$rembrane_binary" restore \
     --input "$backup" \
     --database "$restored_database" \

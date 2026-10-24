@@ -113,6 +113,7 @@ This roadmap describes sequencing, not release dates.
 - [x] Evidence-backed provider compatibility registry schema and initial
   native-provider record.
 - [x] Expose the build-pinned compatibility registry through the CLI.
+- [x] Run installed native-provider conformance through the CLI.
 - [ ] Automated external-provider registry verification and release signing.
 - [ ] WhatsApp Business gateway.
 - [ ] Mobile share flows and iMessage extension.

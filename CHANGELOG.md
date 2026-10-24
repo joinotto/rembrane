@@ -55,6 +55,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - `rembrane providers list` for emitting the exact versioned, evidence-backed
   compatibility registry embedded in a CLI build without resolving or printing
   provider credentials.
+- `rembrane providers test` for executing the shared destructive-fixture
+  conformance suite against an adapter installed in the current CLI build,
+  initially supporting the native provider with explicit failure for absent
+  adapters.
 - Versioned discovery, OpenAPI, and MCP protocol specifications.
 - Tenant-isolated SQLite canonical schema with encrypted-payload metadata.
 - Versioned SQLite initialization with legacy-schema adoption, idempotent

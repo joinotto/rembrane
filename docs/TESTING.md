@@ -45,6 +45,15 @@ Inspect the exact compatibility registry compiled into the local CLI:
 target/debug/rembrane providers list | jq .
 ```
 
+The CLI can run the same destructive-fixture suite for adapters compiled into
+the current build. Always use a unique disposable namespace:
+
+```sh
+target/debug/rembrane providers test \
+  --provider rembrane.native \
+  --namespace local-check | jq .
+```
+
 The harness writes and deletes one fixture while checking protocol
 compatibility, exact record versions, workspace isolation, result limits, and
 deletion propagation.

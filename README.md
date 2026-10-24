@@ -177,6 +177,14 @@ Inspect the compatibility evidence embedded in this CLI build:
 target/debug/rembrane providers list | jq .
 ```
 
+Run the shared compatibility suite against an adapter installed in the CLI:
+
+```sh
+target/debug/rembrane providers test \
+  --provider rembrane.native \
+  --namespace local-check | jq .
+```
+
 The generated configuration references protected environment-variable names;
 it never prints their values. The generic output follows the versioned
 `spec/stdio-connection-manifest.schema.json` contract for other apps, bots,

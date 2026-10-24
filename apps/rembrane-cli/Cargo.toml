@@ -14,6 +14,8 @@ rembrane-contracts = { path = "../../crates/rembrane-contracts" }
 rembrane-config = { path = "../../crates/rembrane-config" }
 rembrane-crypto = { path = "../../crates/rembrane-crypto" }
 rembrane-domain = { path = "../../crates/rembrane-domain" }
+rembrane-provider-sdk = { path = "../../crates/rembrane-provider-sdk" }
+rembrane-semantic-native = { path = "../../adapters/rembrane-semantic-native" }
 rembrane-store-memory = { path = "../../adapters/rembrane-store-memory" }
 rembrane-store-sqlite = { path = "../../adapters/rembrane-store-sqlite" }
 
