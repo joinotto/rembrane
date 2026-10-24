@@ -71,6 +71,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   falls back to namespace listing.
 - Removal of namespace-wide listing from the Supermemory transport contract;
   lifecycle uses exact document identity and retrieval remains bounded search.
+- Current Supermemory v5 ingestion compatibility using the caller-defined
+  `id` field, with strict bounded response status and identity confirmation.
 - A public-API-only iMessage app extension reference with explicit text entry,
   review, confirmation, Keychain-held enrollment material, narrow signed
   gateway submission, and an iPhone Simulator type-check gate.

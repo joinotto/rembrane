@@ -710,6 +710,8 @@ This roadmap describes sequencing, not release dates.
         deterministic keyed document pseudonyms.
       - [x] Replace versions through deterministic provider upsert without a
         bounded pre-delete list scan.
+        - [x] Serialize the current v5 caller-defined `id` field and require a
+          bounded, exact-identity, non-failed ingestion acceptance response.
       - [x] Use exact deterministic document lookup for version-bounded
         deletion instead of scanning paginated namespace lists.
         - [x] Lock the no-list lifecycle invariant with regression coverage

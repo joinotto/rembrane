@@ -34,7 +34,7 @@ plaintext projection inside an explicitly permitted provider boundary.
 | Rembrane value | Supermemory value |
 | --- | --- |
 | workspace ID | HMAC-derived namespace |
-| memory ID | keyed deterministic caller-defined document ID |
+| memory ID | keyed deterministic caller-defined document `id` |
 | memory version | numeric metadata |
 | memory content | document content |
 | scope and kind | bounded metadata |
@@ -49,9 +49,9 @@ letters, digits, underscore, colon, and hyphen alphabet before transport use.
 It applies the same path-safe alphabet to deterministic document IDs, so
 canonical memory identifiers never enter provider URLs or request identity
 fields.
-When search responses contain both an internal provider ID and `customId`, the
-adapter retains the deterministic caller ID for exact replacement and
-deletion.
+The v5 ingestion request carries the deterministic caller identity in `id`.
+Search responses may also expose a legacy `customId`; response decoding keeps
+support for both spellings while preferring the caller-defined identity.
 
 ## Required behavior
 
@@ -71,8 +71,10 @@ The provider adapter must:
 
 ## Replacement semantics
 
-Supermemory ingestion may be asynchronous. A successful HTTP acceptance is not
-proof that the new version is searchable or that the old version disappeared.
+Supermemory ingestion may be asynchronous. The adapter first requires a
+bounded JSON acceptance response containing the exact requested `id` and a
+recognized non-failed processing status. Even that acceptance is not proof
+that the new version is searchable or that the old version disappeared.
 The adapter must model indexing as retryable derived work:
 
 1. upsert the deterministic document ID;
@@ -84,7 +86,7 @@ Timeout, rate limiting, partial deletion, or non-terminal processing leave the
 canonical outbox job retryable. Canonical memory is never rolled back.
 
 Replacement uses Supermemory's create-or-update behavior for the deterministic
-`customId`; it does not scan a bounded document page and delete first. This
+document `id`; it does not scan a bounded document page and delete first. This
 keeps replacement correct regardless of namespace cardinality.
 
 Version-bounded deletion retrieves the deterministic document ID through the

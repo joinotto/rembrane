@@ -100,6 +100,25 @@ struct WireDeletion {
     errors: Vec<serde_json::Value>,
 }
 
+#[derive(Deserialize)]
+struct WireIngest {
+    id: String,
+    status: WireIngestStatus,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum WireIngestStatus {
+    Unknown,
+    Queued,
+    Extracting,
+    Chunking,
+    Embedding,
+    Indexing,
+    Done,
+    Failed,
+}
+
 pub fn decode_records(bytes: &[u8]) -> Result<Vec<SupermemoryRecord>, ProviderError> {
     let wire: WireRecords = serde_json::from_slice(bytes)
         .map_err(|_| ProviderError::Rejected("Supermemory returned malformed JSON".to_owned()))?;
@@ -144,6 +163,12 @@ pub fn deletion_confirmed(bytes: &[u8], provider_id: &str) -> Result<bool, Provi
         .map_err(|_| ProviderError::Rejected("Supermemory returned malformed JSON".to_owned()))?;
     let _ = provider_id;
     Ok(wire.errors.is_empty() && wire.count == 1)
+}
+
+fn ingest_accepted(bytes: &[u8], document_id: &str) -> Result<bool, ProviderError> {
+    let wire: WireIngest = serde_json::from_slice(bytes)
+        .map_err(|_| ProviderError::Rejected("Supermemory returned malformed JSON".to_owned()))?;
+    Ok(wire.id == document_id && !matches!(wire.status, WireIngestStatus::Failed))
 }
 
 pub trait SupermemoryTransport {
@@ -328,7 +353,7 @@ impl SupermemoryTransport for HttpSupermemoryTransport {
             .header(CONTENT_TYPE, "application/json")
             .json(&DocumentBody {
                 content: &projection.content,
-                custom_id: document_id,
+                id: document_id,
                 metadata: MetadataBody {
                     memory_id: projection.memory_id.as_str(),
                     version: projection.version,
@@ -336,10 +361,12 @@ impl SupermemoryTransport for HttpSupermemoryTransport {
             })
             .send()
             .map_err(|_| ProviderError::Unavailable)?;
-        if response.status().is_success() {
+        if ingest_accepted(&Self::decode(response)?, document_id)? {
             Ok(())
         } else {
-            Err(ProviderError::Unavailable)
+            Err(ProviderError::Rejected(
+                "Supermemory did not accept the requested document identity".to_owned(),
+            ))
         }
     }
 
@@ -414,7 +441,7 @@ struct MetadataBody<'value> {
 #[serde(rename_all = "camelCase")]
 struct DocumentBody<'value> {
     content: &'value str,
-    custom_id: &'value str,
+    id: &'value str,
     metadata: MetadataBody<'value>,
 }
 
@@ -650,7 +677,7 @@ mod tests {
 
     use super::{
         HttpSupermemoryTransport, SupermemoryRecord, SupermemorySemanticProvider,
-        SupermemoryTransport, decode_records, deletion_confirmed, valid_namespace,
+        SupermemoryTransport, decode_records, deletion_confirmed, ingest_accepted, valid_namespace,
         valid_provider_identifier, validate_api_key,
     };
 
@@ -793,6 +820,42 @@ mod tests {
             !deletion_confirmed(br#"{"count":0,"errors":[]}"#, "doc-01")
                 .expect("valid empty response")
         );
+    }
+
+    #[test]
+    fn ingestion_requires_the_exact_document_identity_and_nonfailed_status() {
+        assert!(
+            ingest_accepted(br#"{"id":"doc-01","status":"queued"}"#, "doc-01")
+                .expect("valid accepted response")
+        );
+        assert!(
+            ingest_accepted(br#"{"id":"doc-01","status":"done"}"#, "doc-01")
+                .expect("valid completed response")
+        );
+        assert!(
+            !ingest_accepted(br#"{"id":"other","status":"queued"}"#, "doc-01")
+                .expect("valid mismatched response")
+        );
+        assert!(
+            !ingest_accepted(br#"{"id":"doc-01","status":"failed"}"#, "doc-01")
+                .expect("valid failed response")
+        );
+        assert!(ingest_accepted(br#"{"id":"doc-01","status":"future"}"#, "doc-01").is_err());
+    }
+
+    #[test]
+    fn ingestion_serializes_the_v5_id_field() {
+        let body = serde_json::to_value(super::DocumentBody {
+            content: "Call me Hippo",
+            id: "doc-01",
+            metadata: super::MetadataBody {
+                memory_id: "memory-01",
+                version: 1,
+            },
+        })
+        .expect("serializable ingestion body");
+        assert_eq!(body["id"], "doc-01");
+        assert!(body.get("customId").is_none());
     }
 
     #[test]
