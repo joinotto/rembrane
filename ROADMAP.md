@@ -500,7 +500,9 @@ This roadmap describes sequencing, not release dates.
     authenticated REST surface.
   - [x] Publish the transport-neutral Rust provider SDK and authenticated HTTP
     implementation.
-  - [ ] Publish Swift and Kotlin client packages.
+  - [x] Publish and compile-test a Swift Package with injectable async
+    transport and a redirect-rejecting URLSession implementation.
+  - [ ] Publish a Kotlin client package.
 - [x] Reusable semantic-provider conformance suite.
 - [x] Evidence-backed provider compatibility registry schema and initial
   native-provider record.

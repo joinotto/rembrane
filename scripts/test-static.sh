@@ -29,6 +29,9 @@ node sdks/typescript/test.mjs
 node --check sdks/typescript/index.js
 PYTHONPATH=sdks/python "$python_command" -m unittest sdks/python/test_rembrane.py
 "$python_command" -m py_compile sdks/python/rembrane.py sdks/python/test_rembrane.py
+if command -v swiftc >/dev/null 2>&1; then
+    ./scripts/test-swift-sdk.sh
+fi
 
 for deployment_file in \
     Dockerfile \
@@ -41,6 +44,7 @@ for deployment_file in \
     scripts/check-local-alpha.sh \
     scripts/test-graphiti-http-e2e.sh \
     scripts/test-graphiti-sidecar.sh \
+    scripts/test-swift-sdk.sh \
     scripts/test-core-offline.sh
 do
     test -s "$deployment_file" || {
@@ -51,6 +55,7 @@ done
 sh -n scripts/check-local-alpha.sh
 sh -n scripts/test-graphiti-http-e2e.sh
 sh -n scripts/test-graphiti-sidecar.sh
+sh -n scripts/test-swift-sdk.sh
 sh -n scripts/test-core-offline.sh
 rg -q '127\.0\.0\.1:8787:8787' compose.yaml
 rg -q 'no-new-privileges:true' compose.yaml

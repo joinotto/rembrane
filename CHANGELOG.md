@@ -42,6 +42,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - A standard-library-only Python 3.11 SDK with injected transport testing,
   HTTPS-or-loopback endpoint enforcement, redirect rejection, bounded JSON
   decoding, typed API errors, and matching management operations.
+- A Swift Package with a `Sendable` injected transport boundary,
+  redirect-rejecting ephemeral URLSession transport, HTTPS-or-loopback
+  endpoint policy, bounded JSON decoding, typed API errors, and a standalone
+  compiled smoke test.
 - A versioned per-workspace retention policy contract with separate periods
   for memory, checkpoints, travel research, disclosures, canonical events, and
   administrative audit, including bounded expiry and legal-hold overrides.
