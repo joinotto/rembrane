@@ -9,6 +9,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- PostgreSQL travel-continuity tables for encrypted trips and booking research,
+  checkpoint disclosures, and receipts that explicitly record sensitive
+  source-reference and traveler-profile disclosure.
 - PostgreSQL shared-workspace administration tables for invitations, scoped
   member grants, key rotation, retention, legal holds, and append-only audit,
   with RLS applied only after all numbered schema migrations.

@@ -6,6 +6,11 @@ set -eu
 psql "$REMBRANE_POSTGRES_URL" -v ON_ERROR_STOP=1 <<'SQL'
 DROP SCHEMA IF EXISTS rembrane CASCADE;
 DROP TABLE IF EXISTS
+    disclosed_booking_research,
+    travel_disclosure_receipts,
+    booking_research,
+    trips,
+    checkpoint_disclosures,
     workspace_legal_holds,
     workspace_retention_policies,
     administrative_audit_events,
@@ -33,6 +38,8 @@ psql "$REMBRANE_POSTGRES_URL" -v ON_ERROR_STOP=1 \
     -f migrations/postgres/0001_canonical_schema.sql
 psql "$REMBRANE_POSTGRES_URL" -v ON_ERROR_STOP=1 \
     -f migrations/postgres/0002_workspace_administration.sql
+psql "$REMBRANE_POSTGRES_URL" -v ON_ERROR_STOP=1 \
+    -f migrations/postgres/0003_travel_continuity.sql
 
 psql "$REMBRANE_POSTGRES_URL" -v ON_ERROR_STOP=1 <<'SQL'
 CREATE ROLE rembrane_runtime_test NOLOGIN NOSUPERUSER NOBYPASSRLS;
@@ -117,6 +124,57 @@ INSERT INTO administrative_audit_events (
         'retention-policy-changed', 'retention-policy', 'workspace_02',
         'request_02', 1
     );
+INSERT INTO trips (
+    workspace_id, id, owner_subject_id, trip_ciphertext,
+    encryption_key_id, encryption_algorithm, encryption_nonce, version
+) VALUES
+    (
+        'workspace_01', 'trip_01', 'principal_01', '\x11', 'key_01',
+        'xchacha20poly1305-ietf', decode(repeat('11', 24), 'hex'), 1
+    ),
+    (
+        'workspace_02', 'trip_02', 'principal_02', '\x12', 'key_02',
+        'xchacha20poly1305-ietf', decode(repeat('12', 24), 'hex'), 1
+    );
+INSERT INTO booking_research (
+    workspace_id, id, trip_id, observed_by, research_ciphertext,
+    encryption_key_id, encryption_algorithm, encryption_nonce, version
+) VALUES
+    (
+        'workspace_01', 'research_01', 'trip_01', 'principal_01', '\x21',
+        'key_01', 'xchacha20poly1305-ietf',
+        decode(repeat('21', 24), 'hex'), 1
+    ),
+    (
+        'workspace_02', 'research_02', 'trip_02', 'principal_02', '\x22',
+        'key_02', 'xchacha20poly1305-ietf',
+        decode(repeat('22', 24), 'hex'), 1
+    );
+INSERT INTO travel_disclosure_receipts (
+    workspace_id, id, subject_id, client_id, purpose_code, trip_id,
+    trip_version, as_of, source_references_included,
+    sensitive_profile_included
+) VALUES
+    (
+        'workspace_01', 'travel_disclosure_01', 'principal_01', 'client_01',
+        'travel-handoff', 'trip_01', 1, '2026-10-24T00:00:00Z', true, false
+    ),
+    (
+        'workspace_02', 'travel_disclosure_02', 'principal_02', 'client_02',
+        'travel-handoff', 'trip_02', 1, '2026-10-24T00:00:00Z', false, true
+    );
+INSERT INTO disclosed_booking_research (
+    workspace_id, disclosure_id, research_id, research_version,
+    freshness, ordinal
+) VALUES
+    (
+        'workspace_01', 'travel_disclosure_01', 'research_01', 1,
+        'fresh', 0
+    ),
+    (
+        'workspace_02', 'travel_disclosure_02', 'research_02', 1,
+        'expired', 0
+    );
 SQL
 
 psql "$REMBRANE_POSTGRES_URL" -v ON_ERROR_STOP=1 \
@@ -155,11 +213,15 @@ SELECT
     (SELECT count(*) FROM workspace_invitations),
     (SELECT count(*) FROM member_scope_grants),
     (SELECT count(*) FROM workspace_retention_policies),
-    (SELECT count(*) FROM administrative_audit_events);
+    (SELECT count(*) FROM administrative_audit_events),
+    (SELECT count(*) FROM trips),
+    (SELECT count(*) FROM booking_research),
+    (SELECT count(*) FROM travel_disclosure_receipts),
+    (SELECT count(*) FROM disclosed_booking_research);
 ROLLBACK;
 SQL
 )
-test "$result" = "1|1|1|1|1|1|1|1|1"
+test "$result" = "1|1|1|1|1|1|1|1|1|1|1|1|1"
 
 if psql "$REMBRANE_POSTGRES_URL" -v ON_ERROR_STOP=1 >/dev/null 2>&1 <<'SQL'
 BEGIN;
@@ -194,10 +256,14 @@ SELECT
     (SELECT count(*) FROM workspace_invitations),
     (SELECT count(*) FROM member_scope_grants),
     (SELECT count(*) FROM workspace_retention_policies),
-    (SELECT count(*) FROM administrative_audit_events);
+    (SELECT count(*) FROM administrative_audit_events),
+    (SELECT count(*) FROM trips),
+    (SELECT count(*) FROM booking_research),
+    (SELECT count(*) FROM travel_disclosure_receipts),
+    (SELECT count(*) FROM disclosed_booking_research);
 ROLLBACK;
 SQL
 )
-test "$unscoped" = "0|0|0|0|0|0|0|0|0"
+test "$unscoped" = "0|0|0|0|0|0|0|0|0|0|0|0|0"
 
 echo "PostgreSQL two-tenant RLS test passed"

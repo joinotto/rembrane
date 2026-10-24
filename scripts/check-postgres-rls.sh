@@ -3,6 +3,7 @@ set -eu
 
 schema=migrations/postgres/0001_canonical_schema.sql
 administration=migrations/postgres/0002_workspace_administration.sql
+travel=migrations/postgres/0003_travel_continuity.sql
 migration=migrations/postgres/9999_tenant_rls.sql
 readme=migrations/postgres/README.md
 
@@ -42,6 +43,30 @@ do
 done
 
 rg -F 'administrative_audit_events_are_append_only' "$administration" >/dev/null
+
+for table in \
+    checkpoint_disclosures \
+    trips \
+    booking_research \
+    travel_disclosure_receipts \
+    disclosed_booking_research
+do
+    rg -q "^CREATE TABLE $table " "$travel" || {
+        echo "PostgreSQL travel table is missing: $table" >&2
+        exit 1
+    }
+done
+
+for invariant in \
+    'source_references_included boolean NOT NULL DEFAULT false' \
+    'sensitive_profile_included boolean NOT NULL DEFAULT false' \
+    'octet_length(encryption_nonce) >= 12'
+do
+    rg -F "$invariant" "$travel" >/dev/null || {
+        echo "PostgreSQL travel invariant is missing: $invariant" >&2
+        exit 1
+    }
+done
 
 for invariant in \
     'workspace_events_require_contiguous_sequence' \

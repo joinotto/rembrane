@@ -4,7 +4,9 @@
 the same domain constraints, append-only event behavior, and indexes as the
 SQLite alpha schema. `0002_workspace_administration.sql` adds shared-workspace
 invitations and scope grants, key-rotation state, append-only administrative
-audit, retention policies, and legal holds.
+audit, retention policies, and legal holds. `0003_travel_continuity.sql` adds
+encrypted trip and booking research records plus checkpoint and travel
+disclosure receipts, including explicit sensitive-data disclosure flags.
 
 Apply numbered schema migrations in ascending order, then apply
 `9999_tenant_rls.sql` after every schema migration and before granting access

@@ -263,6 +263,8 @@ This roadmap describes sequencing, not release dates.
     principal reads through the current workspace's visible memberships.
   - [x] Add PostgreSQL shared-workspace administration, key-rotation,
     retention, legal-hold, and append-only audit schemas under forced RLS.
+  - [x] Add encrypted PostgreSQL trip, booking-research, checkpoint
+    disclosure, and sensitive travel-disclosure schemas under forced RLS.
   - [x] Document transaction-local tenant identity and non-owner,
     non-`BYPASSRLS` runtime-role requirements.
   - [x] Run a live PostgreSQL two-tenant CI proof covering scoped reads,
