@@ -39,6 +39,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Narrow optimistic trip-participant mutation over REST and MCP with
   server-assigned participant identity, preventing agents from replacing the
   complete trip aggregate to make one localized change.
+- Narrow MCP mutations for evidence-backed trip constraints and authenticated
+  trip decisions; decision attribution is server-bound and cannot be spoofed
+  through model-controlled arguments.
 - Explicit trip create/revise permissions, exact entity-scoped authorization,
   versioned trip audit events, and atomic in-memory trip/event mutations.
 - Member trip revisions through persisted entity grants while trip creation

@@ -107,6 +107,34 @@ Arguments:
 
 Requires the exact trip entity scope and `trip:revise`.
 
+### `rembrane_add_trip_constraint`
+
+Adds one server-identified, evidence-backed constraint through an optimistic
+trip revision. An optional `participantId` must already belong to the trip.
+
+Arguments:
+
+- `tripId`
+- `participantId` (optional)
+- `kind`
+- `statement`
+- `evidenceSource`
+- `expectedTripVersion`
+
+### `rembrane_record_trip_decision`
+
+Records one server-identified, evidence-backed decision. `decidedBy` is always
+the authenticated principal and cannot be supplied by the model.
+
+Arguments:
+
+- `tripId`
+- `status`: `proposed`, `selected`, or `rejected`
+- `summary`
+- `rationale` (optional)
+- `evidenceSource`
+- `expectedTripVersion`
+
 ### `rembrane_resolve_context`
 
 Retrieves the minimum confirmed context authorized for the current client and purpose.

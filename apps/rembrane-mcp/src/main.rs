@@ -3,22 +3,24 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
 use rembrane_application::{
-    AddTripParticipantCommand, AuthorizeClientCommand, AuthorizeClientService,
-    CaptureBookingResearchCommand, CaptureBookingResearchService, CheckpointService,
-    ClientGrantBundle, CreateCheckpointCommand, CreateTripCommand, DeleteMemoryCommand,
-    EventRepository, MemoryLifecycleService, MemoryProposalService, ProposeMemoryCommand,
-    RememberPreferenceCommand, RememberPreferenceService, ResolveContextCommand,
-    ResolveContextService, ResolveTravelContextCommand, ResumeActivityCommand, ReviseMemoryCommand,
-    TravelContextResearch, TravelContextService, TripService, UpdateCheckpointCommand,
+    AddTripConstraintCommand, AddTripParticipantCommand, AuthorizeClientCommand,
+    AuthorizeClientService, CaptureBookingResearchCommand, CaptureBookingResearchService,
+    CheckpointService, ClientGrantBundle, CreateCheckpointCommand, CreateTripCommand,
+    DeleteMemoryCommand, EventRepository, MemoryLifecycleService, MemoryProposalService,
+    ProposeMemoryCommand, RecordTripDecisionCommand, RememberPreferenceCommand,
+    RememberPreferenceService, ResolveContextCommand, ResolveContextService,
+    ResolveTravelContextCommand, ResumeActivityCommand, ReviseMemoryCommand, TravelContextResearch,
+    TravelContextService, TripService, UpdateCheckpointCommand,
 };
 use rembrane_config::{parse_read_permissions, parse_read_scopes};
 use rembrane_contracts::ResolveContextRequest;
 use rembrane_crypto_rustcrypto::RustCryptoRecordCipher;
 use rembrane_domain::{
     ActivityCheckpoint, ActivityId, BookingResearch, BookingResearchId, BookingResearchKind,
-    CheckpointId, ClientId, ContextPackId, DisclosureId, EntityId, EventId, EvidenceId,
-    EvidenceReference, EvidenceSource, MemoryId, MemoryKind, MemoryScope, PrincipalId,
-    ReadPermission, ReadScope, TravelDateWindow, Trip, TripParticipant, TripParticipantId,
+    CheckpointId, ClientId, ContextPackId, DecisionStatus, DisclosureId, EntityId, EventId,
+    EvidenceId, EvidenceReference, EvidenceSource, MemoryId, MemoryKind, MemoryScope, PrincipalId,
+    ReadPermission, ReadScope, TravelDateWindow, Trip, TripConstraint, TripConstraintId,
+    TripConstraintKind, TripDecision, TripDecisionId, TripParticipant, TripParticipantId,
     WorkspaceId, WritePermission,
 };
 use rembrane_store_sqlite::SqliteStore;
@@ -154,6 +156,28 @@ struct AddTripParticipantParameters {
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct AddTripConstraintParameters {
+    trip_id: String,
+    participant_id: Option<String>,
+    kind: String,
+    statement: String,
+    evidence_source: String,
+    expected_trip_version: u64,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct RecordTripDecisionParameters {
+    trip_id: String,
+    status: String,
+    summary: String,
+    rationale: Option<String>,
+    evidence_source: String,
+    expected_trip_version: u64,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct ResolveTravelContextParameters {
     trip_id: String,
     purpose: String,
@@ -174,6 +198,14 @@ struct TripParticipantOutput {
     trip_id: String,
     participant_id: String,
     label: String,
+    trip_version: u64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TripRevisionOutput {
+    trip_id: String,
+    record_id: String,
     trip_version: u64,
 }
 
@@ -828,6 +860,113 @@ impl RembraneMcp {
     }
 
     #[tool(
+        name = "rembrane_add_trip_constraint",
+        description = "Atomically add one evidence-backed constraint to an authorized trip."
+    )]
+    fn add_trip_constraint(
+        &self,
+        Parameters(parameters): Parameters<AddTripConstraintParameters>,
+    ) -> Result<String, McpError> {
+        let kind = parse_constraint_kind(&parameters.kind)
+            .ok_or_else(|| McpError::invalid_params("unsupported constraint kind", None))?;
+        let evidence_source = parse_evidence_source(&parameters.evidence_source)
+            .ok_or_else(|| McpError::invalid_params("unsupported evidence source", None))?;
+        let mut state = lock_state(&self.state)?;
+        let trip_id = EntityId::new(parameters.trip_id);
+        let grants = authorize(
+            &state,
+            vec![ReadScope::Entity {
+                id: trip_id.clone(),
+            }],
+            vec![WritePermission::ReviseTrip],
+        )?;
+        let previous_sequence = current_sequence(&state)?;
+        let suffix = next_id(&mut state);
+        let constraint_id = TripConstraintId::new(format!("constraint_{suffix}"));
+        let constraint = TripConstraint::new(
+            constraint_id.clone(),
+            parameters.participant_id.map(TripParticipantId::new),
+            kind,
+            parameters.statement,
+            EvidenceReference::new(
+                EvidenceId::new(format!("evidence_{suffix}")),
+                evidence_source,
+            ),
+        )
+        .map_err(|_| McpError::invalid_params("invalid trip constraint", None))?;
+        let revised = TripService::new(&mut state.store)
+            .add_constraint(AddTripConstraintCommand {
+                grant: grants.write,
+                trip_id,
+                constraint,
+                expected_trip_version: parameters.expected_trip_version,
+                event_id: EventId::new(format!("event_{suffix}")),
+                expected_previous_sequence: previous_sequence,
+            })
+            .map_err(application_error)?;
+        serde_json::to_string(&TripRevisionOutput {
+            trip_id: revised.id().to_string(),
+            record_id: constraint_id.to_string(),
+            trip_version: revised.version(),
+        })
+        .map_err(|_| McpError::internal_error("response serialization failed", None))
+    }
+
+    #[tool(
+        name = "rembrane_record_trip_decision",
+        description = "Atomically record one evidence-backed decision attributed to the authenticated principal."
+    )]
+    fn record_trip_decision(
+        &self,
+        Parameters(parameters): Parameters<RecordTripDecisionParameters>,
+    ) -> Result<String, McpError> {
+        let status = parse_decision_status(&parameters.status)
+            .ok_or_else(|| McpError::invalid_params("unsupported decision status", None))?;
+        let evidence_source = parse_evidence_source(&parameters.evidence_source)
+            .ok_or_else(|| McpError::invalid_params("unsupported evidence source", None))?;
+        let mut state = lock_state(&self.state)?;
+        let trip_id = EntityId::new(parameters.trip_id);
+        let grants = authorize(
+            &state,
+            vec![ReadScope::Entity {
+                id: trip_id.clone(),
+            }],
+            vec![WritePermission::ReviseTrip],
+        )?;
+        let previous_sequence = current_sequence(&state)?;
+        let suffix = next_id(&mut state);
+        let decision_id = TripDecisionId::new(format!("decision_{suffix}"));
+        let decision = TripDecision::new(
+            decision_id.clone(),
+            status,
+            parameters.summary,
+            parameters.rationale,
+            state.principal_id.clone(),
+            EvidenceReference::new(
+                EvidenceId::new(format!("evidence_{suffix}")),
+                evidence_source,
+            ),
+        )
+        .map_err(|_| McpError::invalid_params("invalid trip decision", None))?;
+        let revised = TripService::new(&mut state.store)
+            .record_decision(RecordTripDecisionCommand {
+                grant: grants.write,
+                trip_id,
+                decision,
+                expected_trip_version: parameters.expected_trip_version,
+                event_id: EventId::new(format!("event_{suffix}")),
+                expected_previous_sequence: previous_sequence,
+            })
+            .map_err(application_error)?;
+        serde_json::to_string(&TripRevisionOutput {
+            trip_id: revised.id().to_string(),
+            record_id: decision_id.to_string(),
+            trip_version: revised.version(),
+        })
+        .map_err(|_| McpError::internal_error("response serialization failed", None))
+    }
+
+    #[tool(
         name = "rembrane_resolve_travel_context",
         description = "Retrieve one authorized trip with fresh and expired research, recording an exact-version disclosure receipt."
     )]
@@ -924,6 +1063,29 @@ fn parse_research_kind(value: &str) -> Option<BookingResearchKind> {
         "ground-transport" => Some(BookingResearchKind::GroundTransport),
         "activity" => Some(BookingResearchKind::Activity),
         "other" => Some(BookingResearchKind::Other),
+        _ => None,
+    }
+}
+
+fn parse_constraint_kind(value: &str) -> Option<TripConstraintKind> {
+    match value {
+        "accessibility" => Some(TripConstraintKind::Accessibility),
+        "accommodation" => Some(TripConstraintKind::Accommodation),
+        "budget" => Some(TripConstraintKind::Budget),
+        "dietary" => Some(TripConstraintKind::Dietary),
+        "documentation" => Some(TripConstraintKind::Documentation),
+        "schedule" => Some(TripConstraintKind::Schedule),
+        "transport" => Some(TripConstraintKind::Transport),
+        "other" => Some(TripConstraintKind::Other),
+        _ => None,
+    }
+}
+
+fn parse_decision_status(value: &str) -> Option<DecisionStatus> {
+    match value {
+        "proposed" => Some(DecisionStatus::Proposed),
+        "selected" => Some(DecisionStatus::Selected),
+        "rejected" => Some(DecisionStatus::Rejected),
         _ => None,
     }
 }
