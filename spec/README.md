@@ -67,6 +67,17 @@ Registry entries are evidence records, not endorsements: they pin the tested
 adapter revision, protocol versions, deployment and plaintext boundaries, and
 dated conformance result. A passing entry is not a security certification.
 
+## Memory Provider conformance
+
+`memory-provider-conformance.schema.json` and
+`conformance/memory-provider-core.json` define the portable behavioral profile.
+`memory-provider-fixtures.schema.json` and
+`conformance/memory-provider-core-fixtures.json` define its language-neutral,
+secret-free lifecycle inputs and actor scope expectations. Implementations may
+consume the same fixtures from any language; credentials and authenticated
+workspace identities are supplied by the test environment and never by the
+fixture file.
+
 ## Design rules
 
 - Canonical identifiers are opaque strings.

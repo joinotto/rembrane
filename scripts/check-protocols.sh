@@ -23,7 +23,9 @@ jq empty \
     spec/discovery.schema.json \
     spec/memory-provider.schema.json \
     spec/memory-provider-conformance.schema.json \
+    spec/memory-provider-fixtures.schema.json \
     spec/conformance/memory-provider-core.json \
+    spec/conformance/memory-provider-core-fixtures.json \
     spec/examples/discovery.json \
     spec/examples/memory-provider-discovery.json \
     spec/examples/memory-provider-context-request.json \
@@ -142,6 +144,26 @@ jq -e '
     and any(.cases[]; .expected == "idempotent")
     and any(.cases[]; .expected == "ordered")
 ' spec/conformance/memory-provider-core.json >/dev/null
+
+jq -e '
+    .fixtureId == "rembrane.memory-provider.core.lifecycle"
+    and .profileId == "rembrane.memory-provider.core"
+    and .protocolVersion == "0.1"
+    and (.actors.primary.requiredScopes | contains([
+        "memory:context:read",
+        "memory:proposal:write",
+        "memory:memory:delete",
+        "memory:sync:read"
+    ]))
+    and .actors.otherWorkspace.requiredScopes == .actors.primary.requiredScopes
+    and .actors.readOnly.requiredScopes == ["memory:context:read"]
+    and (.scenario.maximumContextItems > 0)
+    and (.scenario.maximumContextBytes > 0)
+    and (.scenario.maximumSyncItems > 0)
+    and (.scenario | has("workspaceId") | not)
+    and (.scenario | has("subjectId") | not)
+    and (.scenario | has("token") | not)
+' spec/conformance/memory-provider-core-fixtures.json >/dev/null
 
 jq -e '
     (.resource | startswith("https://"))

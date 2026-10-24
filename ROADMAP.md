@@ -280,6 +280,9 @@ This roadmap describes sequencing, not release dates.
     - [x] Publish a versioned machine-readable core profile covering discovery,
       authentication, exact scopes, idempotency, tenant isolation, optimistic
       deletion, and ordered workspace-scoped sync.
+    - [x] Publish a strict language-neutral lifecycle fixture corpus and make
+      the black-box client consume it without embedding credentials or tenant
+      identities.
     - [x] Add a secret-safe black-box HTTPS conformance runner.
     - [ ] Prove the runner against an independent local mock implementation.
       - [x] Add the independent mock and opt-in loopback CI execution hook.

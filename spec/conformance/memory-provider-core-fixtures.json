@@ -1,0 +1,41 @@
+{
+  "fixtureId": "rembrane.memory-provider.core.lifecycle",
+  "profileId": "rembrane.memory-provider.core",
+  "protocolVersion": "0.1",
+  "actors": {
+    "primary": {
+      "requiredScopes": [
+        "memory:context:read",
+        "memory:proposal:write",
+        "memory:memory:delete",
+        "memory:sync:read"
+      ]
+    },
+    "otherWorkspace": {
+      "requiredScopes": [
+        "memory:context:read",
+        "memory:proposal:write",
+        "memory:memory:delete",
+        "memory:sync:read"
+      ]
+    },
+    "readOnly": {
+      "requiredScopes": [
+        "memory:context:read"
+      ]
+    }
+  },
+  "scenario": {
+    "contentPrefix": "rembrane-conformance",
+    "contextPurpose": "memory provider conformance",
+    "evidenceSource": "imported_record",
+    "sourceReference": "memory-provider-conformance",
+    "observedAtEpochSeconds": 1,
+    "staleDeleteReason": "stale conformance deletion",
+    "exactDeleteReason": "completed memory provider conformance",
+    "cleanupDeleteReason": "conformance fixture cleanup",
+    "maximumContextItems": 20,
+    "maximumContextBytes": 65536,
+    "maximumSyncItems": 100
+  }
+}
