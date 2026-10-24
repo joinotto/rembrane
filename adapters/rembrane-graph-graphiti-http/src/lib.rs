@@ -239,7 +239,7 @@ fn validate_base_url(value: &str) -> Result<Url, ProviderError> {
             "Graphiti base URL must be an origin without credentials".to_owned(),
         ));
     }
-    let loopback = matches!(url.host_str(), Some("127.0.0.1" | "::1" | "localhost"));
+    let loopback = matches!(url.host_str(), Some("127.0.0.1" | "::1"));
     if url.scheme() != "https" && !(url.scheme() == "http" && loopback) {
         return Err(ProviderError::InvalidConfiguration(
             "Graphiti transport requires HTTPS outside exact loopback hosts".to_owned(),

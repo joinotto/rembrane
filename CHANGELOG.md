@@ -22,6 +22,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   acknowledgement and environment-only credentials.
 - Fail-closed external provider conformance namespaces constrained to a
   bounded shell-safe character set before credentials are resolved.
+- Literal-IP-only loopback HTTP policy across Mem0, Graphiti, memory-provider,
+  key-provider, and channel-processor transports, preventing remapped
+  `localhost` names from bypassing HTTPS requirements.
 - A public-API-only iMessage app extension reference with explicit text entry,
   review, confirmation, Keychain-held enrollment material, narrow signed
   gateway submission, and an iPhone Simulator type-check gate.

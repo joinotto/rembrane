@@ -13,7 +13,7 @@ Search returns bounded canonical candidates and collapses duplicate provider
 records to the newest version. Deletion removes only matching versions up to
 the requested bound.
 
-`HttpMem0Transport` connects to an HTTPS origin, or exact loopback HTTP for
+`HttpMem0Transport` connects to an HTTPS origin, or literal loopback HTTP for
 local development, using the Mem0 OSS `X-API-Key` header. It disables
 redirects and environment proxies, applies strict timeouts, bounds JSON
 responses, stores the credential in zeroizing memory, uses `infer=false` for

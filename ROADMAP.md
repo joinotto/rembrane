@@ -684,6 +684,8 @@ This roadmap describes sequencing, not release dates.
     replacement, bounded search, and version-aware deletion semantics.
     - [x] Add an authenticated, redirect-free, proxy-free, bounded HTTP
       transport for Mem0 OSS exact add, list, search, and deletion operations.
+      - [x] Permit plaintext HTTP only for literal loopback IP addresses,
+        rejecting remappable local hostnames consistently across sidecars.
     - [x] Expose disposable Mem0 conformance through the CLI with environment
       secret custody and an explicit plaintext-processing acknowledgement.
       - [x] Require a bounded safe external namespace with enough room for a

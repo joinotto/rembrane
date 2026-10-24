@@ -311,7 +311,7 @@ fn validate_base_url(value: &str) -> Result<Url, ProviderError> {
         .map_err(|_| ProviderError::InvalidConfiguration("Mem0 base URL is invalid".to_owned()))?;
     let loopback = url
         .host_str()
-        .is_some_and(|host| matches!(host, "localhost" | "127.0.0.1" | "::1"));
+        .is_some_and(|host| matches!(host, "127.0.0.1" | "::1"));
     if (url.scheme() != "https" && !(url.scheme() == "http" && loopback))
         || !url.username().is_empty()
         || url.password().is_some()
@@ -705,6 +705,7 @@ mod tests {
         assert!(validate_base_url("http://127.0.0.1:8888").is_ok());
         for unsafe_url in [
             "http://mem0.example",
+            "http://localhost:8888",
             "https://user:secret@mem0.example",
             "https://mem0.example/path",
             "https://mem0.example?token=secret",

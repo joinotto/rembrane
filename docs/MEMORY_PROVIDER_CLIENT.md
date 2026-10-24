@@ -43,7 +43,8 @@ cloud secret manager, container secret, or any other private mechanism.
 
 The base URL must be an origin without embedded credentials, paths, query
 parameters, or fragments. Remote plaintext HTTP is rejected. Loopback HTTP is
-accepted only for `127.0.0.1`, `::1`, or `localhost`.
+accepted only for literal `127.0.0.1` or `::1`. Hostnames such as `localhost`
+are rejected because local name resolution can be remapped.
 
 ## Connection policy
 
