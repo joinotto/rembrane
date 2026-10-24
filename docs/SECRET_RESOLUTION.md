@@ -53,3 +53,8 @@ Supermemory profiles through the resolver boundary. It validates provider
 kind, credential cardinality, and request identity before resolution, moves
 the zeroizing bearer value directly into the portable HTTP client, and still
 requires provider discovery to satisfy the caller's explicit privacy policy.
+
+`ConfiguredRecordCipher::from_connection` consumes a validated key-provider
+profile with one credential reference. The resolved value remains zeroizing
+through transport validation, protocol negotiation, record encryption and
+decryption operations, and teardown.

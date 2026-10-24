@@ -73,6 +73,13 @@ deployment requires HTTPS. Production deployments should prefer private
 networking plus workload or mutually authenticated transport; a bearer token
 alone is only the protocol's minimum authentication control.
 
+Applications may instead construct `ProviderConnection` with
+`ProviderKind::KeyProvider`, one endpoint, and one `SecretReference`.
+`ConfiguredRecordCipher::from_connection` resolves that reference through the
+deployment-selected `SecretResolver` and transfers the zeroizing credential
+directly into the HTTP transport. Configuration and canonical memory never
+contain the bearer value.
+
 ## Acceptance
 
 Before use, run `scripts/test-key-provider-http.sh` against a disposable

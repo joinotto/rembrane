@@ -39,7 +39,19 @@ impl HttpKeyProviderTransport {
     /// Returns an opaque key-unavailable error when endpoint, credential, or
     /// HTTP-client configuration is invalid.
     pub fn new(base_url: &str, bearer_token: String) -> Result<Self, CryptoError> {
-        let bearer_token = Zeroizing::new(bearer_token);
+        Self::new_with_secret(base_url, Zeroizing::new(bearer_token))
+    }
+
+    /// Builds a transport from an already resolved zeroizing credential.
+    ///
+    /// # Errors
+    ///
+    /// Returns key-unavailable when the endpoint, credential, or bounded HTTP
+    /// client configuration is invalid.
+    pub fn new_with_secret(
+        base_url: &str,
+        bearer_token: Zeroizing<String>,
+    ) -> Result<Self, CryptoError> {
         let base = validate_base_url(base_url)?;
         if bearer_token.is_empty()
             || bearer_token.len() > 8192

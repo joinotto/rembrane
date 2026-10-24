@@ -40,6 +40,7 @@ pub enum ProviderKind {
     Mem0,
     Supermemory,
     Graphiti,
+    KeyProvider,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

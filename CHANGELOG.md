@@ -65,6 +65,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Direct Mem0 and Supermemory semantic-adapter construction from validated
   two-secret profiles through pluggable resolvers, keeping API credentials
   separate from independent workspace-pseudonym keys.
+- A canonical key-provider profile kind and configured-cipher construction
+  through pluggable secret resolvers, transferring resolved bearer authority
+  directly into zeroizing HTTP transport custody.
 - Fail-closed OAuth introspection claim bounds covering audience cardinality,
   issuer and identity sizes, scope size, and control-character rejection
   before claims become canonical tenant identity.

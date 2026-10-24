@@ -1180,10 +1180,12 @@ dependencies = [
 name = "rembrane-crypto-configured"
 version = "0.1.0-alpha.1"
 dependencies = [
+ "rembrane-config",
  "rembrane-crypto",
  "rembrane-crypto-rustcrypto",
  "rembrane-domain",
  "rembrane-key-provider-http",
+ "rembrane-secret-local",
  "zeroize",
 ]
 

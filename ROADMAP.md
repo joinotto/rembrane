@@ -102,6 +102,8 @@ This roadmap describes sequencing, not release dates.
       environment-variable names.
     - [x] Zeroize key-provider bearer credentials across configuration,
       validation failure, transport construction, and teardown.
+    - [x] Construct customer key providers from validated reference-only
+      profiles through any deployment-selected secret resolver.
   - [x] Wire configured cipher selection through CLI, REST, MCP, generated
     agent configuration, and privacy diagnostics.
 - [x] Retrieve minimal context through local stdio MCP.

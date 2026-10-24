@@ -2,6 +2,7 @@
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use rembrane_config::{ProviderConnection, ProviderKind};
 use rembrane_crypto::{
     CURRENT_KEY_PROVIDER_PROTOCOL, CryptoError, EncryptedPayload, EncryptionContext,
     KeyProviderCipher, KeyProviderPolicy, RecordCipher,
@@ -9,6 +10,7 @@ use rembrane_crypto::{
 use rembrane_crypto_rustcrypto::RustCryptoKeyringCipher;
 use rembrane_domain::{KeyRotationReceipt, PrincipalId, WorkspaceId};
 use rembrane_key_provider_http::HttpKeyProviderTransport;
+use rembrane_secret_local::{SecretResolver, resolve_provider_credentials};
 use zeroize::Zeroize;
 
 const DEFAULT_ALGORITHM: &str = "xchacha20poly1305-ietf";
@@ -175,6 +177,59 @@ impl ConfiguredRecordCipher {
         Ok(Self::Http(Box::new(cipher)))
     }
 
+    /// Connects to a customer-controlled key provider from a validated
+    /// reference-only profile through a deployment-selected resolver.
+    ///
+    /// # Errors
+    ///
+    /// Returns key-unavailable unless the profile selects one key-provider
+    /// endpoint and one credential reference, resolution succeeds, and
+    /// protocol discovery satisfies the requested cryptographic policy.
+    pub fn from_connection<Resolver>(
+        connection: &ProviderConnection,
+        resolver: &Resolver,
+        algorithm: String,
+        minimum_plaintext_bytes: usize,
+        require_historical_keys: bool,
+        request_prefix: Option<String>,
+    ) -> Result<Self, CryptoError>
+    where
+        Resolver: SecretResolver + ?Sized,
+    {
+        if connection.kind() != ProviderKind::KeyProvider
+            || connection.endpoint().is_none()
+            || connection.credentials().len() != 1
+            || algorithm.trim().is_empty()
+            || algorithm.trim() != algorithm
+            || minimum_plaintext_bytes == 0
+        {
+            return Err(CryptoError::KeyUnavailable);
+        }
+        let request_prefix = match request_prefix {
+            Some(value) => value,
+            None => default_request_prefix()?,
+        };
+        let mut credentials = resolve_provider_credentials(resolver, connection)
+            .map_err(|_| CryptoError::KeyUnavailable)?;
+        let bearer_token = credentials.pop().ok_or(CryptoError::KeyUnavailable)?;
+        let transport = HttpKeyProviderTransport::new_with_secret(
+            connection.endpoint().ok_or(CryptoError::KeyUnavailable)?,
+            bearer_token,
+        )?;
+        let cipher = KeyProviderCipher::connect(
+            transport,
+            KeyProviderPolicy {
+                minimum_protocol_version: CURRENT_KEY_PROVIDER_PROTOCOL,
+                required_algorithm: algorithm,
+                minimum_plaintext_bytes,
+                require_historical_keys,
+                require_rotation: false,
+            },
+            request_prefix,
+        )?;
+        Ok(Self::Http(Box::new(cipher)))
+    }
+
     /// Requests a shared-workspace key rotation from the configured
     /// customer-controlled provider.
     ///
@@ -234,10 +289,25 @@ fn default_request_prefix() -> Result<String, CryptoError> {
 
 #[cfg(test)]
 mod tests {
+    use rembrane_config::{ProviderConnection, ProviderKind, ProviderPlacement, SecretReference};
+    use rembrane_secret_local::{SecretResolutionError, SecretResolver};
+    use zeroize::Zeroizing;
+
     use super::{
         ConfiguredRecordCipher, DEFAULT_MINIMUM_PLAINTEXT_BYTES, KeyProviderHttpConfig,
         default_request_prefix,
     };
+
+    struct PanicResolver;
+
+    impl SecretResolver for PanicResolver {
+        fn resolve(
+            &self,
+            _reference: &SecretReference,
+        ) -> Result<Zeroizing<String>, SecretResolutionError> {
+            panic!("invalid profile must fail before secret resolution")
+        }
+    }
 
     #[test]
     fn generated_request_prefix_is_nonempty_and_bounded() {
@@ -278,5 +348,46 @@ mod tests {
             result,
             Err(rembrane_crypto::CryptoError::KeyUnavailable)
         ));
+    }
+
+    #[test]
+    fn reference_profile_is_validated_before_secret_resolution() {
+        let wrong_kind = ProviderConnection::remote(
+            ProviderKind::Graphiti,
+            "https://keys.example.test",
+            vec![SecretReference::environment("KEY_PROVIDER_TOKEN").expect("reference")],
+            ProviderPlacement::External,
+        )
+        .expect("profile");
+        assert!(
+            ConfiguredRecordCipher::from_connection(
+                &wrong_kind,
+                &PanicResolver,
+                "xchacha20poly1305-ietf".to_owned(),
+                DEFAULT_MINIMUM_PLAINTEXT_BYTES,
+                true,
+                Some("safe-client-01".to_owned()),
+            )
+            .is_err()
+        );
+
+        let key_provider = ProviderConnection::remote(
+            ProviderKind::KeyProvider,
+            "https://keys.example.test",
+            vec![SecretReference::environment("KEY_PROVIDER_TOKEN").expect("reference")],
+            ProviderPlacement::External,
+        )
+        .expect("profile");
+        assert!(
+            ConfiguredRecordCipher::from_connection(
+                &key_provider,
+                &PanicResolver,
+                String::new(),
+                DEFAULT_MINIMUM_PLAINTEXT_BYTES,
+                true,
+                Some("safe-client-01".to_owned()),
+            )
+            .is_err()
+        );
     }
 }

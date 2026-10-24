@@ -8,10 +8,12 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+rembrane-config = { path = "../../crates/rembrane-config" }
 rembrane-crypto = { path = "../../crates/rembrane-crypto" }
 rembrane-crypto-rustcrypto = { path = "../rembrane-crypto-rustcrypto" }
 rembrane-domain = { path = "../../crates/rembrane-domain" }
 rembrane-key-provider-http = { path = "../rembrane-key-provider-http" }
+rembrane-secret-local = { path = "../rembrane-secret-local" }
 zeroize = "1"
 
 [lints]
