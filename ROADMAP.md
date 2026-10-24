@@ -231,6 +231,8 @@ This roadmap describes sequencing, not release dates.
     OAuth scope, HTTP method, and stable path template.
   - [x] Add fail-closed provider negotiation over protocol version, transport,
     required capabilities, allowed privacy modes, and minimum operation limits.
+  - [x] Bind typed request creation to the negotiated manifest with unique
+    correlation IDs and per-operation advertised-capability enforcement.
   - [x] Define transport-neutral request and response envelopes with bounded
     correlation IDs, protocol negotiation, operation binding, and closed
     portable error codes.

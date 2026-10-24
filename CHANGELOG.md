@@ -12,6 +12,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Fail-closed Memory Provider negotiation policy covering protocol version,
   required transport and capabilities, explicitly allowed privacy modes, and
   minimum context, event, and sync limits.
+- Negotiated Memory Provider connections that generate unique typed request
+  envelopes and reject operations absent from the accepted discovery manifest.
 - Sealed Rust Memory Provider payload-to-operation mappings and an
   operation-derived request constructor, preventing downstream callers from
   pairing valid payload types with unrelated privileged operations.

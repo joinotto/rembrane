@@ -46,11 +46,12 @@ pub use memory_lifecycle::{
 pub use memory_mutation::{MAX_SOURCE_REFERENCE_BYTES, ProposeMemoryPayload, ProposeMemoryResult};
 pub use memory_protocol::{
     CURRENT_MEMORY_PROVIDER_PROTOCOL, MEMORY_PROVIDER_DISCOVERY_PATH, MemoryProviderCapability,
-    MemoryProviderErrorCode, MemoryProviderHttpMethod, MemoryProviderIdempotencyKey,
-    MemoryProviderLimits, MemoryProviderManifest, MemoryProviderOperation, MemoryProviderPayload,
-    MemoryProviderPolicy, MemoryProviderPrivacyMode, MemoryProviderRequest,
-    MemoryProviderRequestId, MemoryProviderResponse, MemoryProviderResponseBody,
-    MemoryProviderScope, MemoryProviderTransport,
+    MemoryProviderConnection, MemoryProviderErrorCode, MemoryProviderHttpMethod,
+    MemoryProviderIdempotencyKey, MemoryProviderLimits, MemoryProviderManifest,
+    MemoryProviderOperation, MemoryProviderPayload, MemoryProviderPolicy,
+    MemoryProviderPrivacyMode, MemoryProviderRequest, MemoryProviderRequestId,
+    MemoryProviderResponse, MemoryProviderResponseBody, MemoryProviderScope,
+    MemoryProviderTransport,
 };
 pub use memory_question::{
     MAX_QUESTION_BYTES, MAX_QUESTION_PURPOSE_BYTES, ResolveQuestionPayload, ResolveQuestionResult,

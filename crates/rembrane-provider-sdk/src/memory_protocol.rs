@@ -1,3 +1,5 @@
+use std::sync::atomic::{AtomicU64, Ordering};
+
 use crate::{ProviderError, ProviderProtocolVersion};
 
 pub const MEMORY_PROVIDER_DISCOVERY_PATH: &str = "/.well-known/ai-memory";
@@ -36,6 +38,24 @@ pub enum MemoryProviderCapability {
     ExplainMemory,
     SyncPull,
     SyncPush,
+}
+
+impl MemoryProviderCapability {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::ResolveContext => "resolve_context",
+            Self::ResolveQuestion => "resolve_question",
+            Self::RecordEvent => "record_event",
+            Self::ProposeMemory => "propose_memory",
+            Self::CheckpointActivity => "checkpoint_activity",
+            Self::RecordDisclosure => "record_disclosure",
+            Self::DeleteMemory => "delete_memory",
+            Self::ExplainMemory => "explain_memory",
+            Self::SyncPull => "sync_pull",
+            Self::SyncPush => "sync_push",
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -238,6 +258,94 @@ impl<Payload> MemoryProviderRequest<Payload> {
     }
 }
 
+#[derive(Debug)]
+pub struct MemoryProviderConnection {
+    manifest: MemoryProviderManifest,
+    request_prefix: String,
+    next_request: AtomicU64,
+}
+
+impl MemoryProviderConnection {
+    /// Accepts a discovered provider and creates a capability-bound request
+    /// factory.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when discovery fails policy validation or the
+    /// connection's public request namespace is malformed.
+    pub fn connect(
+        manifest: MemoryProviderManifest,
+        policy: &MemoryProviderPolicy,
+        request_prefix: impl Into<String>,
+    ) -> Result<Self, ProviderError> {
+        policy.validate(&manifest)?;
+        let request_prefix = request_prefix.into();
+        if !(8..=64).contains(&request_prefix.len())
+            || !request_prefix
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+        {
+            return Err(ProviderError::InvalidConfiguration(
+                "memory provider request prefix must contain 8 to 64 URL-safe ASCII characters"
+                    .to_owned(),
+            ));
+        }
+        Ok(Self {
+            manifest,
+            request_prefix,
+            next_request: AtomicU64::new(1),
+        })
+    }
+
+    /// Creates a typed request only when discovery advertised its capability.
+    ///
+    /// # Errors
+    ///
+    /// Returns a missing-capability error rather than attempting an
+    /// undeclared operation, and returns unavailable if the request sequence
+    /// is exhausted.
+    pub fn request<Payload: MemoryProviderPayload>(
+        &self,
+        payload: Payload,
+    ) -> Result<MemoryProviderRequest<Payload>, ProviderError> {
+        let operation = Payload::OPERATION;
+        let capability = operation.capability();
+        if !self.manifest.supports(capability) {
+            return Err(ProviderError::MissingCapability(
+                capability.as_str().to_owned(),
+            ));
+        }
+        let sequence = self.next_sequence()?;
+        let request_id = MemoryProviderRequestId::new(format!(
+            "{}-{}-{sequence}",
+            self.request_prefix,
+            operation.as_str()
+        ))?;
+        MemoryProviderRequest::new(request_id, CURRENT_MEMORY_PROVIDER_PROTOCOL, payload)
+    }
+
+    #[must_use]
+    pub const fn manifest(&self) -> &MemoryProviderManifest {
+        &self.manifest
+    }
+
+    fn next_sequence(&self) -> Result<u64, ProviderError> {
+        let mut current = self.next_request.load(Ordering::Relaxed);
+        loop {
+            let next = current.checked_add(1).ok_or(ProviderError::Unavailable)?;
+            match self.next_request.compare_exchange_weak(
+                current,
+                next,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => return Ok(current),
+                Err(observed) => current = observed,
+            }
+        }
+    }
+}
+
 macro_rules! bind_payload {
     ($payload:path, $result:path, $operation:expr) => {
         impl sealed::Sealed for $payload {}
@@ -343,6 +451,22 @@ impl<Payload> MemoryProviderResponse<Payload> {
 }
 
 impl MemoryProviderOperation {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::ResolveContext => "resolve_context",
+            Self::ResolveQuestion => "resolve_question",
+            Self::RecordEvent => "record_event",
+            Self::ProposeMemory => "propose_memory",
+            Self::CheckpointActivity => "checkpoint_activity",
+            Self::RecordDisclosure => "record_disclosure",
+            Self::DeleteMemory => "delete_memory",
+            Self::ExplainMemory => "explain_memory",
+            Self::SyncPull => "sync_pull",
+            Self::SyncPush => "sync_push",
+        }
+    }
+
     #[must_use]
     pub const fn capability(self) -> MemoryProviderCapability {
         match self {
@@ -713,12 +837,16 @@ fn validate_identifier(label: &str, value: &str) -> Result<(), ProviderError> {
 mod tests {
     use super::{
         CURRENT_MEMORY_PROVIDER_PROTOCOL, MEMORY_PROVIDER_DISCOVERY_PATH, MemoryProviderCapability,
-        MemoryProviderErrorCode, MemoryProviderHttpMethod, MemoryProviderLimits,
-        MemoryProviderManifest, MemoryProviderOperation, MemoryProviderPolicy,
-        MemoryProviderPrivacyMode, MemoryProviderRequest, MemoryProviderRequestId,
-        MemoryProviderResponseBody, MemoryProviderScope, MemoryProviderTransport,
+        MemoryProviderConnection, MemoryProviderErrorCode, MemoryProviderHttpMethod,
+        MemoryProviderLimits, MemoryProviderManifest, MemoryProviderOperation,
+        MemoryProviderPolicy, MemoryProviderPrivacyMode, MemoryProviderRequest,
+        MemoryProviderRequestId, MemoryProviderResponseBody, MemoryProviderScope,
+        MemoryProviderTransport,
     };
-    use crate::{ProviderError, ProviderProtocolVersion};
+    use crate::{
+        MemoryProviderContextSelector, ProviderError, ProviderProtocolVersion,
+        ResolveContextPayload, ResolveQuestionPayload,
+    };
 
     #[derive(Clone, Debug, Eq, PartialEq)]
     struct TestPayload;
@@ -863,6 +991,64 @@ mod tests {
                 },
             )
             .is_err()
+        );
+    }
+
+    #[test]
+    fn negotiated_connection_creates_unique_operation_bound_requests() {
+        let connection = MemoryProviderConnection::connect(manifest(), &policy(), "client_alpha")
+            .expect("connection should negotiate");
+        let first = connection
+            .request(
+                ResolveContextPayload::new(
+                    "continue project work".to_owned(),
+                    "current implementation".to_owned(),
+                    MemoryProviderContextSelector::global(),
+                    10,
+                    4096,
+                    connection.manifest().limits(),
+                )
+                .expect("payload should validate"),
+            )
+            .expect("advertised operation should be available");
+        let second = connection
+            .request(
+                ResolveContextPayload::new(
+                    "continue project work".to_owned(),
+                    "current implementation".to_owned(),
+                    MemoryProviderContextSelector::global(),
+                    10,
+                    4096,
+                    connection.manifest().limits(),
+                )
+                .expect("payload should validate"),
+            )
+            .expect("advertised operation should be available");
+
+        assert_eq!(first.operation(), MemoryProviderOperation::ResolveContext);
+        assert_ne!(first.request_id(), second.request_id());
+        assert!(first.request_id().as_str().starts_with("client_alpha-"));
+    }
+
+    #[test]
+    fn negotiated_connection_rejects_undeclared_operations() {
+        let connection = MemoryProviderConnection::connect(manifest(), &policy(), "client_alpha")
+            .expect("connection should negotiate");
+        let payload = ResolveQuestionPayload::new(
+            "answer a question".to_owned(),
+            "What remains?".to_owned(),
+            MemoryProviderContextSelector::global(),
+            10,
+            4096,
+            connection.manifest().limits(),
+        )
+        .expect("payload should validate");
+
+        assert_eq!(
+            connection.request(payload),
+            Err(ProviderError::MissingCapability(
+                "resolve_question".to_owned()
+            ))
         );
     }
 
