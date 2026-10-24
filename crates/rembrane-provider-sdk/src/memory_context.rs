@@ -9,14 +9,18 @@ pub const MAX_CONTEXT_PURPOSE_BYTES: usize = 4_096;
 pub const MAX_CONTEXT_QUERY_BYTES: usize = 32_768;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum MemoryProviderContextSelector {
-    Global,
-    Domain(String),
-    Entity(EntityId),
-    Activity(ActivityId),
+pub struct MemoryProviderContextSelector {
+    scope: MemoryScope,
 }
 
 impl MemoryProviderContextSelector {
+    #[must_use]
+    pub const fn global() -> Self {
+        Self {
+            scope: MemoryScope::Global,
+        }
+    }
+
     /// Creates a domain selector using a portable provider-domain identifier.
     ///
     /// # Errors
@@ -25,7 +29,9 @@ impl MemoryProviderContextSelector {
     pub fn domain(name: impl Into<String>) -> Result<Self, ProviderError> {
         let name = name.into();
         validate_portable_identifier("context domain", &name)?;
-        Ok(Self::Domain(name))
+        Ok(Self {
+            scope: MemoryScope::Domain { name },
+        })
     }
 
     /// Creates a non-empty bounded entity selector.
@@ -35,7 +41,9 @@ impl MemoryProviderContextSelector {
     /// Returns an invalid-configuration error for an unsafe entity ID.
     pub fn entity(id: EntityId) -> Result<Self, ProviderError> {
         validate_opaque_identifier("context entity id", id.as_str())?;
-        Ok(Self::Entity(id))
+        Ok(Self {
+            scope: MemoryScope::Entity { id },
+        })
     }
 
     /// Creates a non-empty bounded activity selector.
@@ -45,7 +53,14 @@ impl MemoryProviderContextSelector {
     /// Returns an invalid-configuration error for an unsafe activity ID.
     pub fn activity(id: ActivityId) -> Result<Self, ProviderError> {
         validate_opaque_identifier("context activity id", id.as_str())?;
-        Ok(Self::Activity(id))
+        Ok(Self {
+            scope: MemoryScope::Activity { id },
+        })
+    }
+
+    #[must_use]
+    pub const fn scope(&self) -> &MemoryScope {
+        &self.scope
     }
 }
 
@@ -433,7 +448,7 @@ mod tests {
         ResolveContextPayload::new(
             "continue the current task",
             "deployment decisions and next steps",
-            MemoryProviderContextSelector::Global,
+            MemoryProviderContextSelector::global(),
             maximum_items,
             maximum_bytes,
             limits(),
@@ -469,7 +484,7 @@ mod tests {
     #[test]
     fn builds_bounded_global_domain_entity_and_activity_requests() {
         let selectors = [
-            MemoryProviderContextSelector::Global,
+            MemoryProviderContextSelector::global(),
             MemoryProviderContextSelector::domain("development").expect("domain should be valid"),
             MemoryProviderContextSelector::entity(EntityId::new("project_01"))
                 .expect("entity should be valid"),
@@ -501,7 +516,7 @@ mod tests {
             ResolveContextPayload::new(
                 " ",
                 "query",
-                MemoryProviderContextSelector::Global,
+                MemoryProviderContextSelector::global(),
                 1,
                 1,
                 limits(),
@@ -512,7 +527,7 @@ mod tests {
             ResolveContextPayload::new(
                 "x".repeat(MAX_CONTEXT_PURPOSE_BYTES + 1),
                 "query",
-                MemoryProviderContextSelector::Global,
+                MemoryProviderContextSelector::global(),
                 1,
                 1,
                 limits(),
@@ -523,7 +538,7 @@ mod tests {
             ResolveContextPayload::new(
                 "purpose",
                 "query",
-                MemoryProviderContextSelector::Global,
+                MemoryProviderContextSelector::global(),
                 21,
                 65_537,
                 limits(),

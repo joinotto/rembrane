@@ -235,6 +235,8 @@ This roadmap describes sequencing, not release dates.
   - [ ] Define canonical operation payloads and validation.
     - [x] Add bounded context-resolution requests with global, domain, entity,
       and activity selectors constrained by provider-advertised limits.
+      - [x] Seal selector representation so callers cannot bypass domain and
+        opaque-ID validation through direct enum construction.
     - [x] Add bounded context responses carrying canonical IDs, versions,
       scopes, kinds, evidence, confidence, validity, sensitivity, disclosure
       constraints, and disclosure receipts.

@@ -21,6 +21,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Bounded provider-independent context-resolution request payloads with
   validated purpose/query text, portable global/domain/entity/activity
   selectors, and provider-negotiated item and byte limits.
+- Encapsulated Memory Provider context selectors so invalid domain, entity, or
+  activity values cannot bypass validated constructors.
 - Provenance-bearing Memory Provider context responses with exact canonical
   versions, scope, kind, confidence, validity, sensitivity, disclosure
   constraints, receipt IDs, duplicate rejection, and whole-pack byte limits.
