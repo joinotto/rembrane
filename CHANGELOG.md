@@ -40,6 +40,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   mapping layer instead of delegated to provider transports.
 - Domain-separated HMAC inputs for Supermemory namespace and document
   pseudonyms.
+- Mandatory Supermemory ingestion-readiness confirmation, with incomplete
+  processing surfaced as retryable provider failure rather than false
+  projection completion.
 - A public-API-only iMessage app extension reference with explicit text entry,
   review, confirmation, Keychain-held enrollment material, narrow signed
   gateway submission, and an iPhone Simulator type-check gate.

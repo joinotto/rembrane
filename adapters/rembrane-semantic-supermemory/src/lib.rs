@@ -62,6 +62,12 @@ pub trait SupermemoryTransport {
         document_id: &str,
         projection: &AuthorizedMemoryProjection,
     ) -> Result<(), ProviderError>;
+    fn await_ready(
+        &mut self,
+        namespace: &str,
+        document_id: &str,
+        canonical_version: u64,
+    ) -> Result<(), ProviderError>;
     fn search(
         &self,
         namespace: &str,
@@ -167,7 +173,9 @@ impl<Transport: SupermemoryTransport> SemanticMemoryProvider
             }
         }
         self.transport
-            .upsert_exact(&namespace, &document_id, &projection)
+            .upsert_exact(&namespace, &document_id, &projection)?;
+        self.transport
+            .await_ready(&namespace, &document_id, projection.version)
     }
 
     fn search(&self, query: &SemanticQuery) -> Result<Vec<CandidateMemory>, ProviderError> {
@@ -241,6 +249,7 @@ mod tests {
     struct FakeSupermemory {
         records: BTreeMap<String, Vec<(SupermemoryRecord, String)>>,
         next_id: u64,
+        fail_readiness: bool,
     }
 
     impl SupermemoryTransport for FakeSupermemory {
@@ -290,6 +299,19 @@ mod tests {
                 .collect())
         }
 
+        fn await_ready(
+            &mut self,
+            _namespace: &str,
+            _document_id: &str,
+            _canonical_version: u64,
+        ) -> Result<(), ProviderError> {
+            if self.fail_readiness {
+                Err(ProviderError::Unavailable)
+            } else {
+                Ok(())
+            }
+        }
+
         fn delete(&mut self, namespace: &str, provider_id: &str) -> Result<(), ProviderError> {
             if let Some(records) = self.records.get_mut(namespace) {
                 records.retain(|(record, _)| record.provider_id() != provider_id);
@@ -305,5 +327,29 @@ mod tests {
                 .expect("valid lookup secret");
         verify_semantic_provider(&mut provider, "supermemory-mapping")
             .expect("mapping should preserve canonical semantics");
+    }
+
+    #[test]
+    fn incomplete_ingestion_never_reports_projection_success() {
+        use rembrane_domain::{MemoryId, MemoryKind, MemoryScope, WorkspaceId};
+        use rembrane_provider_sdk::{AuthorizedMemoryProjection, SemanticMemoryProvider};
+
+        let mut provider = SupermemorySemanticProvider::new(
+            FakeSupermemory {
+                fail_readiness: true,
+                ..FakeSupermemory::default()
+            },
+            vec![8; 32],
+        )
+        .expect("valid lookup secret");
+        let result = provider.index(AuthorizedMemoryProjection {
+            workspace_id: WorkspaceId::new("workspace"),
+            memory_id: MemoryId::new("memory"),
+            version: 1,
+            scope: MemoryScope::Global,
+            kind: MemoryKind::Semantic,
+            content: "Call me Hippo".to_owned(),
+        });
+        assert_eq!(result, Err(ProviderError::Unavailable));
     }
 }

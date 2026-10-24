@@ -72,6 +72,10 @@ The adapter must model indexing as retryable derived work:
 Timeout, rate limiting, partial deletion, or non-terminal processing leave the
 canonical outbox job retryable. Canonical memory is never rolled back.
 
+The Rust `SupermemoryTransport` contract therefore requires a separate
+`await_ready` operation after ingestion. A transport cannot represent HTTP
+acceptance as completed indexing.
+
 ## Privacy
 
 Hosted Supermemory processes plaintext and is incompatible with strict E2EE.
