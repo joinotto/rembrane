@@ -22,6 +22,7 @@ require_command "$python_command"
 
 ./scripts/check-architecture.sh
 ./scripts/check-sensitive-files.sh
+./scripts/check-ci-security.sh
 ./scripts/check-protocols.sh
 ./scripts/check-postgres-rls.sh
 ./scripts/verify-provider-registry.sh
@@ -51,6 +52,7 @@ for deployment_file in \
     scripts/test-swift-sdk.sh \
     scripts/test-kotlin-sdk.sh \
     scripts/check-postgres-rls.sh \
+    scripts/check-ci-security.sh \
     scripts/test-postgres-rls.sh \
     scripts/check-production-readiness.sh \
     scripts/verify-provider-registry.sh \
@@ -70,6 +72,7 @@ sh -n scripts/test-graphiti-sidecar.sh
 sh -n scripts/test-swift-sdk.sh
 sh -n scripts/test-kotlin-sdk.sh
 sh -n scripts/check-postgres-rls.sh
+sh -n scripts/check-ci-security.sh
 sh -n scripts/test-postgres-rls.sh
 sh -n scripts/check-production-readiness.sh
 sh -n scripts/verify-provider-registry.sh

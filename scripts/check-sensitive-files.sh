@@ -14,11 +14,11 @@ if printf '%s\n' "$tracked_files" | rg '\.(pem|key|p12|pfx|jks|keystore)$'; then
 fi
 
 if git grep -n -E \
-    '(-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----|AKIA[0-9A-Z]{16})' \
+    '(-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----|AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{36,}|sk-proj-[A-Za-z0-9_-]{20,}|xox[baprs]-[A-Za-z0-9-]{20,})' \
     -- . \
     ':!scripts/check-sensitive-files.sh'
 then
-    echo "tracked content resembles a private key or cloud credential" >&2
+    echo "tracked content resembles a private key, token, or cloud credential" >&2
     exit 1
 fi
 
