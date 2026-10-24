@@ -530,6 +530,19 @@ impl MemberScopeGrantRepository for InMemoryStore {
             .cloned()
             .collect())
     }
+
+    fn delete_member_scope_grant(
+        &mut self,
+        grant: &MemberScopeGrant,
+    ) -> Result<(), ApplicationError> {
+        let position = self
+            .member_scope_grants
+            .iter()
+            .position(|stored| stored == grant)
+            .ok_or(ApplicationError::NotFound)?;
+        self.member_scope_grants.remove(position);
+        Ok(())
+    }
 }
 
 impl MemberLifecycleRepository for InMemoryStore {

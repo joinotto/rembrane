@@ -1,7 +1,7 @@
 use rembrane_application::{
     ApplicationError, AuthorizeClientCommand, AuthorizeClientService, GrantMemberScopeCommand,
     MemberLifecycleService, MemberScopeGrantRepository, MemberScopeGrantService,
-    MembershipRepository, RemoveMemberCommand, WorkspaceRepository,
+    MembershipRepository, RemoveMemberCommand, RevokeMemberScopeCommand, WorkspaceRepository,
 };
 use rembrane_domain::{
     ClientId, EntityId, Membership, Principal, PrincipalId, ReadScope, Workspace, WorkspaceId,
@@ -157,5 +157,67 @@ fn owner_membership_cannot_be_removed() {
         })
         .expect_err("ownership requires an explicit transfer");
 
+    assert_eq!(error, ApplicationError::AccessDenied);
+}
+
+#[test]
+fn revoking_one_scope_immediately_removes_client_authority() {
+    let mut store = store_with_member();
+    let scope = ReadScope::Entity {
+        id: EntityId::new("project"),
+    };
+    MemberScopeGrantService::new(&mut store)
+        .grant(GrantMemberScopeCommand {
+            workspace_id: WorkspaceId::new("team"),
+            principal_id: PrincipalId::new("member"),
+            granted_by: PrincipalId::new("owner"),
+            scope: scope.clone(),
+        })
+        .expect("scope should be granted");
+    MemberScopeGrantService::new(&mut store)
+        .revoke(RevokeMemberScopeCommand {
+            workspace_id: WorkspaceId::new("team"),
+            principal_id: PrincipalId::new("member"),
+            revoked_by: PrincipalId::new("owner"),
+            scope: scope.clone(),
+        })
+        .expect("owner should revoke scope");
+
+    let grants = AuthorizeClientService::new(&store)
+        .execute(AuthorizeClientCommand {
+            client_id: ClientId::new("assistant"),
+            workspace_id: WorkspaceId::new("team"),
+            principal_id: PrincipalId::new("member"),
+            requested_read_scopes: vec![scope],
+            requested_write_permissions: vec![WritePermission::ProposeMemory],
+        })
+        .expect("active member should still authorize");
+    assert_eq!(grants.read.scopes, Vec::<ReadScope>::new());
+    assert_eq!(grants.write.scopes, Vec::<ReadScope>::new());
+}
+
+#[test]
+fn member_cannot_revoke_its_own_scope() {
+    let mut store = store_with_member();
+    let scope = ReadScope::Entity {
+        id: EntityId::new("project"),
+    };
+    MemberScopeGrantService::new(&mut store)
+        .grant(GrantMemberScopeCommand {
+            workspace_id: WorkspaceId::new("team"),
+            principal_id: PrincipalId::new("member"),
+            granted_by: PrincipalId::new("owner"),
+            scope: scope.clone(),
+        })
+        .expect("scope should be granted");
+
+    let error = MemberScopeGrantService::new(&mut store)
+        .revoke(RevokeMemberScopeCommand {
+            workspace_id: WorkspaceId::new("team"),
+            principal_id: PrincipalId::new("member"),
+            revoked_by: PrincipalId::new("member"),
+            scope,
+        })
+        .expect_err("member must not revoke its own persisted grant");
     assert_eq!(error, ApplicationError::AccessDenied);
 }

@@ -142,6 +142,11 @@ pub trait MemberScopeGrantRepository {
         workspace_id: &WorkspaceId,
         principal_id: &PrincipalId,
     ) -> Result<Vec<MemberScopeGrant>, ApplicationError>;
+
+    fn delete_member_scope_grant(
+        &mut self,
+        grant: &MemberScopeGrant,
+    ) -> Result<(), ApplicationError>;
 }
 
 pub trait MemberLifecycleRepository {

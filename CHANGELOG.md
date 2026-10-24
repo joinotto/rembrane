@@ -29,6 +29,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Role-hierarchy-enforced member removal with owner protection, optimistic
   membership-state checks, atomic scope-grant cleanup, and immediate denial of
   new client authorization.
+- Exact administrator-controlled member scope revocation in both storage
+  adapters, with immediate removal from subsequently issued client read and
+  write grants while leaving the membership active.
 - Atomic canonical mutation ports and an in-memory reference adapter.
 - Native semantic baseline with authorization revalidation.
 - Provider capability verification and retry/quarantine projection worker.

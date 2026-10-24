@@ -1,7 +1,7 @@
 use rembrane_application::{
     AuthorizeClientCommand, AuthorizeClientService, GrantMemberScopeCommand,
     MemberLifecycleService, MemberScopeGrantRepository, MemberScopeGrantService,
-    MembershipRepository, RemoveMemberCommand, WorkspaceRepository,
+    MembershipRepository, RemoveMemberCommand, RevokeMemberScopeCommand, WorkspaceRepository,
 };
 use rembrane_domain::{
     ClientId, EntityId, Membership, Principal, PrincipalId, ReadScope, Workspace, WorkspaceId,
@@ -146,4 +146,40 @@ fn persisted_member_removal_deletes_grants_and_denies_authorization() {
         })
         .expect_err("removed member must not authorize");
     assert_eq!(error, rembrane_application::ApplicationError::AccessDenied);
+}
+
+#[test]
+fn persisted_scope_revocation_immediately_filters_authorization() {
+    let mut store = initialized_store();
+    let scope = ReadScope::Entity {
+        id: EntityId::new("project"),
+    };
+    MemberScopeGrantService::new(&mut store)
+        .grant(GrantMemberScopeCommand {
+            workspace_id: WorkspaceId::new("team"),
+            principal_id: PrincipalId::new("member"),
+            granted_by: PrincipalId::new("owner"),
+            scope: scope.clone(),
+        })
+        .expect("scope should be granted");
+    MemberScopeGrantService::new(&mut store)
+        .revoke(RevokeMemberScopeCommand {
+            workspace_id: WorkspaceId::new("team"),
+            principal_id: PrincipalId::new("member"),
+            revoked_by: PrincipalId::new("owner"),
+            scope: scope.clone(),
+        })
+        .expect("scope should be revoked");
+
+    let grants = AuthorizeClientService::new(&store)
+        .execute(AuthorizeClientCommand {
+            client_id: ClientId::new("assistant"),
+            workspace_id: WorkspaceId::new("team"),
+            principal_id: PrincipalId::new("member"),
+            requested_read_scopes: vec![scope],
+            requested_write_permissions: vec![WritePermission::ProposeMemory],
+        })
+        .expect("active member should still authorize");
+    assert_eq!(grants.read.scopes, Vec::<ReadScope>::new());
+    assert_eq!(grants.write.scopes, Vec::<ReadScope>::new());
 }

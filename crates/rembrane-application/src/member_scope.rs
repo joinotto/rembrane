@@ -10,6 +10,14 @@ pub struct GrantMemberScopeCommand {
     pub scope: ReadScope,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RevokeMemberScopeCommand {
+    pub workspace_id: WorkspaceId,
+    pub principal_id: PrincipalId,
+    pub revoked_by: PrincipalId,
+    pub scope: ReadScope,
+}
+
 pub struct MemberScopeGrantService<'repository, Repository> {
     repository: &'repository mut Repository,
 }
@@ -44,6 +52,36 @@ where
         let grant =
             MemberScopeGrant::new(command.workspace_id, command.principal_id, command.scope);
         self.repository.insert_member_scope_grant(grant.clone())?;
+        Ok(grant)
+    }
+
+    pub fn revoke(
+        &mut self,
+        command: RevokeMemberScopeCommand,
+    ) -> Result<MemberScopeGrant, ApplicationError> {
+        let RevokeMemberScopeCommand {
+            workspace_id,
+            principal_id,
+            revoked_by,
+            scope,
+        } = command;
+        let actor = self
+            .repository
+            .find_membership(&workspace_id, &revoked_by)?
+            .ok_or(ApplicationError::AccessDenied)?;
+        if !actor.can_manage_members() {
+            return Err(ApplicationError::AccessDenied);
+        }
+        let target = self
+            .repository
+            .find_membership(&workspace_id, &principal_id)?
+            .ok_or(ApplicationError::NotFound)?;
+        if !target.is_active() {
+            return Err(ApplicationError::NotFound);
+        }
+
+        let grant = MemberScopeGrant::new(workspace_id, principal_id, scope);
+        self.repository.delete_member_scope_grant(&grant)?;
         Ok(grant)
     }
 }

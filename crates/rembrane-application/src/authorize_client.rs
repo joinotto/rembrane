@@ -126,6 +126,13 @@ mod tests {
                 .cloned()
                 .collect())
         }
+
+        fn delete_member_scope_grant(
+            &mut self,
+            _grant: &MemberScopeGrant,
+        ) -> Result<(), ApplicationError> {
+            unreachable!("not used by authorization tests")
+        }
     }
 
     impl MembershipRepository for Memberships {

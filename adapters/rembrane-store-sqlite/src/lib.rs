@@ -858,6 +858,31 @@ impl<C> MemberScopeGrantRepository for SqliteStore<C> {
         }
         Ok(grants)
     }
+
+    fn delete_member_scope_grant(
+        &mut self,
+        grant: &MemberScopeGrant,
+    ) -> Result<(), ApplicationError> {
+        let (scope_type, scope_value) = encode_read_scope(grant.scope());
+        let changed = self
+            .connection
+            .execute(
+                "DELETE FROM member_scope_grants
+                 WHERE workspace_id = ?1 AND principal_id = ?2
+                   AND scope_type = ?3 AND scope_value = ?4",
+                params![
+                    grant.workspace_id().as_str(),
+                    grant.principal_id().as_str(),
+                    scope_type,
+                    scope_value
+                ],
+            )
+            .map_err(map_write_error)?;
+        if changed != 1 {
+            return Err(ApplicationError::NotFound);
+        }
+        Ok(())
+    }
 }
 
 impl<C> MemberLifecycleRepository for SqliteStore<C> {

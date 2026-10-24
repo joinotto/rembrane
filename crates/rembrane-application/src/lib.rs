@@ -24,7 +24,9 @@ pub use checkpoint::{
 pub use error::ApplicationError;
 pub use invitation::{CreateInvitationCommand, InvitationService, RevokeInvitationCommand};
 pub use member_lifecycle::{MemberLifecycleService, RemoveMemberCommand};
-pub use member_scope::{GrantMemberScopeCommand, MemberScopeGrantService};
+pub use member_scope::{
+    GrantMemberScopeCommand, MemberScopeGrantService, RevokeMemberScopeCommand,
+};
 pub use ports::{
     CanonicalMutationRepository, CheckpointDisclosureRepository, CheckpointMutationRepository,
     CheckpointRepository, DisclosureRepository, EventRepository, InvitationRepository,
