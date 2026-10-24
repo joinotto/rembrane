@@ -1,10 +1,10 @@
 use rembrane_domain::{
     ActivityCheckpoint, ActivityId, BookingResearch, BookingResearchId, CanonicalEvent,
     CheckpointDisclosureReceipt, DisclosureReceipt, EntityId, Invitation, InvitationId,
-    InvitationStatus, MemberScopeGrant, Membership, MembershipStatus, MemoryId, MemoryRecord,
-    MemoryShareProposal, Principal, PrincipalId, ProjectionJob, ProjectionJobId, ProjectionStatus,
-    ProviderId, ShareProposalId, ShareProposalStatus, TravelDisclosureReceipt, Trip, Workspace,
-    WorkspaceId,
+    InvitationStatus, KnowledgeEdge, KnowledgeEdgeId, KnowledgeNode, KnowledgeNodeId,
+    MemberScopeGrant, Membership, MembershipStatus, MemoryId, MemoryRecord, MemoryShareProposal,
+    Principal, PrincipalId, ProjectionJob, ProjectionJobId, ProjectionStatus, ProviderId,
+    ShareProposalId, ShareProposalStatus, TravelDisclosureReceipt, Trip, Workspace, WorkspaceId,
 };
 
 use crate::ApplicationError;
@@ -21,6 +21,56 @@ pub trait MemoryRepository {
         workspace_id: &WorkspaceId,
         subject_id: &PrincipalId,
     ) -> Result<Vec<MemoryRecord>, ApplicationError>;
+}
+
+pub const MAX_KNOWLEDGE_NEIGHBOURS: usize = 100;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum KnowledgeDirection {
+    Incoming,
+    Outgoing,
+    Both,
+}
+
+pub trait KnowledgeGraphRepository {
+    fn find_knowledge_node(
+        &self,
+        workspace_id: &WorkspaceId,
+        node_id: &KnowledgeNodeId,
+    ) -> Result<Option<KnowledgeNode>, ApplicationError>;
+
+    fn find_knowledge_edge(
+        &self,
+        workspace_id: &WorkspaceId,
+        edge_id: &KnowledgeEdgeId,
+    ) -> Result<Option<KnowledgeEdge>, ApplicationError>;
+
+    fn list_neighbour_edges(
+        &self,
+        workspace_id: &WorkspaceId,
+        node_id: &KnowledgeNodeId,
+        direction: KnowledgeDirection,
+        valid_at_epoch_seconds: u64,
+        limit: usize,
+    ) -> Result<Vec<KnowledgeEdge>, ApplicationError>;
+}
+
+pub trait KnowledgeGraphMutationRepository: KnowledgeGraphRepository {
+    fn insert_knowledge_node(&mut self, node: KnowledgeNode) -> Result<(), ApplicationError>;
+
+    fn replace_knowledge_node(
+        &mut self,
+        node: KnowledgeNode,
+        expected_version: u64,
+    ) -> Result<(), ApplicationError>;
+
+    fn insert_knowledge_edge(&mut self, edge: KnowledgeEdge) -> Result<(), ApplicationError>;
+
+    fn replace_knowledge_edge(
+        &mut self,
+        edge: KnowledgeEdge,
+        expected_version: u64,
+    ) -> Result<(), ApplicationError>;
 }
 
 pub trait DisclosureRepository {

@@ -4,17 +4,20 @@ use rembrane_application::{
     ApplicationError, BookingResearchMutationRepository, BookingResearchRepository,
     CanonicalMutationRepository, CheckpointDisclosureRepository, CheckpointMutationRepository,
     CheckpointRepository, DisclosureRepository, EventRepository, InvitationRepository,
-    MemberLifecycleRepository, MemberScopeGrantRepository, MembershipRepository, MemoryRepository,
-    ProjectionOutboxRepository, ShareProposalMutationRepository, ShareProposalRepository,
-    TravelDisclosureRepository, TripMutationRepository, TripRepository, WorkspaceRepository,
+    KnowledgeDirection, KnowledgeGraphMutationRepository, KnowledgeGraphRepository,
+    MAX_KNOWLEDGE_NEIGHBOURS, MemberLifecycleRepository, MemberScopeGrantRepository,
+    MembershipRepository, MemoryRepository, ProjectionOutboxRepository,
+    ShareProposalMutationRepository, ShareProposalRepository, TravelDisclosureRepository,
+    TripMutationRepository, TripRepository, WorkspaceRepository,
 };
 use rembrane_domain::{
     ActivityCheckpoint, ActivityId, BookingResearch, BookingResearchId, CanonicalEvent,
     CheckpointDisclosureReceipt, DisclosureReceipt, EntityId, EventPayload, Invitation,
-    InvitationId, InvitationStatus, MemberScopeGrant, Membership, MemoryId, MemoryRecord,
-    MemoryShareProposal, MemoryStatus, Principal, PrincipalId, ProjectionJob, ProjectionJobId,
-    ProjectionOperation, ProjectionStatus, ProviderId, ShareProposalId, ShareProposalStatus,
-    TravelDisclosureReceipt, Trip, Workspace, WorkspaceId, WorkspaceKind, WorkspaceRole,
+    InvitationId, InvitationStatus, KnowledgeEdge, KnowledgeEdgeId, KnowledgeNode, KnowledgeNodeId,
+    MemberScopeGrant, Membership, MemoryId, MemoryRecord, MemoryShareProposal, MemoryStatus,
+    Principal, PrincipalId, ProjectionJob, ProjectionJobId, ProjectionOperation, ProjectionStatus,
+    ProviderId, ShareProposalId, ShareProposalStatus, TravelDisclosureReceipt, Trip, Workspace,
+    WorkspaceId, WorkspaceKind, WorkspaceRole,
 };
 
 #[derive(Debug, Default)]
@@ -34,6 +37,176 @@ pub struct InMemoryStore {
     projections: Vec<ProjectionJob>,
     trips: Vec<Trip>,
     booking_research: Vec<BookingResearch>,
+    knowledge_nodes: Vec<KnowledgeNode>,
+    knowledge_edges: Vec<KnowledgeEdge>,
+}
+
+impl KnowledgeGraphRepository for InMemoryStore {
+    fn find_knowledge_node(
+        &self,
+        workspace_id: &WorkspaceId,
+        node_id: &KnowledgeNodeId,
+    ) -> Result<Option<KnowledgeNode>, ApplicationError> {
+        Ok(self
+            .knowledge_nodes
+            .iter()
+            .find(|node| node.workspace_id() == workspace_id && node.id() == node_id)
+            .cloned())
+    }
+
+    fn find_knowledge_edge(
+        &self,
+        workspace_id: &WorkspaceId,
+        edge_id: &KnowledgeEdgeId,
+    ) -> Result<Option<KnowledgeEdge>, ApplicationError> {
+        Ok(self
+            .knowledge_edges
+            .iter()
+            .find(|edge| edge.workspace_id() == workspace_id && edge.id() == edge_id)
+            .cloned())
+    }
+
+    fn list_neighbour_edges(
+        &self,
+        workspace_id: &WorkspaceId,
+        node_id: &KnowledgeNodeId,
+        direction: KnowledgeDirection,
+        valid_at_epoch_seconds: u64,
+        limit: usize,
+    ) -> Result<Vec<KnowledgeEdge>, ApplicationError> {
+        if valid_at_epoch_seconds == 0 || limit == 0 || limit > MAX_KNOWLEDGE_NEIGHBOURS {
+            return Err(ApplicationError::Validation(
+                "knowledge neighbourhood query is outside canonical bounds".to_owned(),
+            ));
+        }
+        if self.find_knowledge_node(workspace_id, node_id)?.is_none() {
+            return Err(ApplicationError::NotFound);
+        }
+        Ok(self
+            .knowledge_edges
+            .iter()
+            .filter(|edge| {
+                edge.workspace_id() == workspace_id
+                    && edge.validity().contains(valid_at_epoch_seconds)
+                    && match direction {
+                        KnowledgeDirection::Incoming => edge.target_id() == node_id,
+                        KnowledgeDirection::Outgoing => edge.source_id() == node_id,
+                        KnowledgeDirection::Both => {
+                            edge.source_id() == node_id || edge.target_id() == node_id
+                        }
+                    }
+            })
+            .take(limit)
+            .cloned()
+            .collect())
+    }
+}
+
+impl KnowledgeGraphMutationRepository for InMemoryStore {
+    fn insert_knowledge_node(&mut self, node: KnowledgeNode) -> Result<(), ApplicationError> {
+        if self
+            .knowledge_nodes
+            .iter()
+            .any(|stored| stored.workspace_id() == node.workspace_id() && stored.id() == node.id())
+        {
+            return Err(ApplicationError::AlreadyExists);
+        }
+        self.knowledge_nodes.push(node);
+        Ok(())
+    }
+
+    fn replace_knowledge_node(
+        &mut self,
+        node: KnowledgeNode,
+        expected_version: u64,
+    ) -> Result<(), ApplicationError> {
+        let position = self
+            .knowledge_nodes
+            .iter()
+            .position(|stored| {
+                stored.workspace_id() == node.workspace_id() && stored.id() == node.id()
+            })
+            .ok_or(ApplicationError::NotFound)?;
+        if self.knowledge_nodes[position].version() != expected_version
+            || node.version() != expected_version.saturating_add(1)
+        {
+            return Err(ApplicationError::VersionConflict);
+        }
+        self.knowledge_nodes[position] = node;
+        Ok(())
+    }
+
+    fn insert_knowledge_edge(&mut self, edge: KnowledgeEdge) -> Result<(), ApplicationError> {
+        if self
+            .knowledge_edges
+            .iter()
+            .any(|stored| stored.workspace_id() == edge.workspace_id() && stored.id() == edge.id())
+        {
+            return Err(ApplicationError::AlreadyExists);
+        }
+        self.validate_knowledge_edge(&edge)?;
+        self.knowledge_edges.push(edge);
+        Ok(())
+    }
+
+    fn replace_knowledge_edge(
+        &mut self,
+        edge: KnowledgeEdge,
+        expected_version: u64,
+    ) -> Result<(), ApplicationError> {
+        let position = self
+            .knowledge_edges
+            .iter()
+            .position(|stored| {
+                stored.workspace_id() == edge.workspace_id() && stored.id() == edge.id()
+            })
+            .ok_or(ApplicationError::NotFound)?;
+        if self.knowledge_edges[position].version() != expected_version
+            || edge.version() != expected_version.saturating_add(1)
+        {
+            return Err(ApplicationError::VersionConflict);
+        }
+        self.validate_knowledge_edge(&edge)?;
+        self.knowledge_edges[position] = edge;
+        Ok(())
+    }
+}
+
+impl InMemoryStore {
+    fn validate_knowledge_edge(&self, edge: &KnowledgeEdge) -> Result<(), ApplicationError> {
+        let endpoint_exists = |node_id: &KnowledgeNodeId| {
+            self.knowledge_nodes
+                .iter()
+                .any(|node| node.workspace_id() == edge.workspace_id() && node.id() == node_id)
+        };
+        if !endpoint_exists(edge.source_id()) || !endpoint_exists(edge.target_id()) {
+            return Err(ApplicationError::Validation(
+                "knowledge edge endpoints must exist in the same workspace".to_owned(),
+            ));
+        }
+        if let Some(superseded_id) = edge.supersedes() {
+            let superseded = self
+                .knowledge_edges
+                .iter()
+                .find(|stored| {
+                    stored.workspace_id() == edge.workspace_id() && stored.id() == superseded_id
+                })
+                .ok_or_else(|| {
+                    ApplicationError::Validation(
+                        "superseded knowledge edge must exist in the same workspace".to_owned(),
+                    )
+                })?;
+            if superseded.source_id() != edge.source_id()
+                || superseded.target_id() != edge.target_id()
+                || superseded.relation() != edge.relation()
+            {
+                return Err(ApplicationError::Validation(
+                    "knowledge edge supersession must preserve endpoints and relation".to_owned(),
+                ));
+            }
+        }
+        Ok(())
+    }
 }
 
 impl BookingResearchRepository for InMemoryStore {
@@ -1316,14 +1489,121 @@ fn validate_share_approval_events(
 #[cfg(test)]
 mod tests {
     use rembrane_application::{
-        ApplicationError, CanonicalMutationRepository, EventRepository, MemoryRepository,
+        ApplicationError, CanonicalMutationRepository, EventRepository, KnowledgeDirection,
+        KnowledgeGraphMutationRepository, KnowledgeGraphRepository, MemoryRepository,
     };
     use rembrane_domain::{
         CanonicalEvent, EventId, EventPayload, EvidenceId, EvidenceReference, EvidenceSource,
-        MemoryId, MemoryRecord, MemoryScope, PrincipalId, WorkspaceId,
+        KnowledgeEdge, KnowledgeEdgeId, KnowledgeNode, KnowledgeNodeId, KnowledgeNodeKind,
+        KnowledgeRelationType, MemoryId, MemoryRecord, MemoryScope, PrincipalId, TemporalValidity,
+        WorkspaceId,
     };
 
     use super::InMemoryStore;
+
+    fn evidence(id: &str) -> EvidenceReference {
+        EvidenceReference::new(EvidenceId::new(id), EvidenceSource::UserStatement)
+    }
+
+    fn knowledge_node(id: &str, workspace_id: &str, version: u64) -> KnowledgeNode {
+        KnowledgeNode::new(
+            KnowledgeNodeId::new(id),
+            WorkspaceId::new(workspace_id),
+            KnowledgeNodeKind::Project,
+            id.to_owned(),
+            Vec::new(),
+            vec![evidence(&format!("evidence_{id}"))],
+            TemporalValidity::new(100, None, 100).expect("validity should be valid"),
+            version,
+        )
+        .expect("knowledge node should be valid")
+    }
+
+    fn knowledge_edge(id: &str, workspace_id: &str) -> KnowledgeEdge {
+        KnowledgeEdge::new(
+            KnowledgeEdgeId::new(id),
+            WorkspaceId::new(workspace_id),
+            KnowledgeNodeId::new("node_project"),
+            KnowledgeNodeId::new("node_rust"),
+            KnowledgeRelationType::new("uses").expect("relation should be valid"),
+            vec![evidence(&format!("evidence_{id}"))],
+            TemporalValidity::new(100, Some(200), 100).expect("validity should be valid"),
+            1,
+            None,
+        )
+        .expect("knowledge edge should be valid")
+    }
+
+    #[test]
+    fn knowledge_graph_neighbourhood_is_temporal_and_tenant_isolated() {
+        let mut store = InMemoryStore::new();
+        for workspace_id in ["workspace_one", "workspace_two"] {
+            store
+                .insert_knowledge_node(knowledge_node("node_project", workspace_id, 1))
+                .expect("project node should insert");
+            store
+                .insert_knowledge_node(knowledge_node("node_rust", workspace_id, 1))
+                .expect("technology node should insert");
+            store
+                .insert_knowledge_edge(knowledge_edge("edge_uses", workspace_id))
+                .expect("edge should insert");
+        }
+
+        let neighbours = store
+            .list_neighbour_edges(
+                &WorkspaceId::new("workspace_one"),
+                &KnowledgeNodeId::new("node_project"),
+                KnowledgeDirection::Outgoing,
+                150,
+                10,
+            )
+            .expect("neighbourhood should resolve");
+        assert_eq!(neighbours.len(), 1);
+        assert_eq!(neighbours[0].workspace_id().as_str(), "workspace_one");
+        assert_eq!(
+            store
+                .list_neighbour_edges(
+                    &WorkspaceId::new("workspace_one"),
+                    &KnowledgeNodeId::new("node_project"),
+                    KnowledgeDirection::Outgoing,
+                    200,
+                    10,
+                )
+                .expect("expired neighbourhood should resolve"),
+            Vec::new()
+        );
+        assert!(
+            store
+                .find_knowledge_edge(
+                    &WorkspaceId::new("workspace_other"),
+                    &KnowledgeEdgeId::new("edge_uses"),
+                )
+                .expect("lookup should succeed")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn knowledge_graph_rejects_cross_workspace_endpoints_and_stale_replacement() {
+        let mut store = InMemoryStore::new();
+        store
+            .insert_knowledge_node(knowledge_node("node_project", "workspace_one", 1))
+            .expect("project node should insert");
+        store
+            .insert_knowledge_node(knowledge_node("node_rust", "workspace_two", 1))
+            .expect("technology node should insert");
+
+        let error = store
+            .insert_knowledge_edge(knowledge_edge("edge_uses", "workspace_one"))
+            .expect_err("cross-workspace endpoint should fail");
+        assert!(matches!(error, ApplicationError::Validation(_)));
+
+        let revised = knowledge_node("node_project", "workspace_one", 2);
+        assert_eq!(
+            store.replace_knowledge_node(revised, 2),
+            Err(ApplicationError::VersionConflict)
+        );
+    }
 
     fn preference(
         memory_id: &str,

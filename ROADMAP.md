@@ -138,7 +138,8 @@ This roadmap describes sequencing, not release dates.
   - [x] Define engine-neutral, typed workspace-scoped nodes and relationships
     with separate event/system time, validity windows, provenance, bounded
     aliases, and explicit supersession references.
-  - [ ] Add tenant-isolated mutation and neighbourhood repository contracts.
+  - [x] Add tenant-isolated mutation and neighbourhood repository contracts
+    with bounded temporal traversal and optimistic version checks.
   - [ ] Add local SQLite graph persistence and Graphiti projection adapter.
 
 - [x] Project entities and scoped preferences.
