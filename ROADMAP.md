@@ -445,6 +445,8 @@ This roadmap describes sequencing, not release dates.
     audit evidence in the same transaction as each lifecycle mutation.
   - [x] Expose shared-workspace creation plus invitation create, accept, and
     revoke workflows through the local CLI.
+  - [x] Expose invitation creation, acceptance, and revocation through the
+    authenticated REST API with a zero-authority pre-membership connection.
 - [x] Shared-workspace exact scope grants, including entity-level access.
 - [x] Private-to-shared memory proposals.
   - [x] Content-free, exact-source-version proposal aggregate with source-owner

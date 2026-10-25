@@ -18,6 +18,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   invitation creation, acceptance, and revocation.
 - Local CLI commands for creating shared workspaces and creating, accepting,
   or revoking bounded role-specific invitations.
+- Authenticated REST invitation creation, acceptance, and revocation,
+  including a pre-membership connection state with no memory scopes or
+  mutation permissions.
 - A parameter-bound PostgreSQL tenant-session contract with exact context
   read-back requirements and a live pooled-connection leakage regression.
 - A typed reference-only PostgreSQL connection profile with explicit

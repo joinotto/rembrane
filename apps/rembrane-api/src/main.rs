@@ -9,15 +9,16 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use rembrane_application::{
-    AddTripConstraintCommand, AddTripParticipantCommand, AdministrativeAuditRepository,
-    ApplicationError, AuthorizeClientCommand, AuthorizeClientService,
-    CaptureBookingResearchCommand, CaptureBookingResearchService, ClientGrantBundle,
-    CreateTripCommand, ExecuteRetentionPurgeCommand, KeyRotationRepository, MemberLifecycleService,
+    AcceptInvitationCommand, AddTripConstraintCommand, AddTripParticipantCommand,
+    AdministrativeAuditRepository, ApplicationError, AuthorizeClientCommand,
+    AuthorizeClientService, CaptureBookingResearchCommand, CaptureBookingResearchService,
+    ClientGrantBundle, CreateInvitationCommand, CreateTripCommand, ExecuteRetentionPurgeCommand,
+    InvitationRepository, InvitationService, KeyRotationRepository, MemberLifecycleService,
     MembershipRepository, PlaceLegalHoldCommand, RecordTripDecisionCommand,
     ReleaseLegalHoldCommand, ResolveContextCommand, ResolveContextService,
-    ResolveTravelContextCommand, RetentionService, SetRetentionPolicyCommand,
-    TravelContextResearch, TravelContextService, TravelContextTrip, TravelSensitiveProfile,
-    TripService,
+    ResolveTravelContextCommand, RetentionService, RevokeInvitationCommand,
+    SetRetentionPolicyCommand, TravelContextResearch, TravelContextService, TravelContextTrip,
+    TravelSensitiveProfile, TripService, WorkspaceRepository,
 };
 use rembrane_config::{SecretReference, parse_read_permissions, parse_read_scopes};
 use rembrane_contracts::ResolveContextRequest;
@@ -25,11 +26,11 @@ use rembrane_crypto_configured::ConfiguredRecordCipher;
 use rembrane_domain::{
     ActivityId, AdministrativeAuditEvent, BookingResearch, BookingResearchId, BookingResearchKind,
     ClientId, ContextPackId, DecisionStatus, DisclosureId, EntityId, EventId, EvidenceId,
-    EvidenceReference, EvidenceSource, KeyRotationStatus, LegalHoldId, MemoryKind, MemoryScope,
-    MemoryStatus, PrincipalId, ReadGrant, RetentionPeriod, TravelDateWindow, Trip, TripConstraint,
-    TripConstraintId, TripConstraintKind, TripDecision, TripDecisionId, TripParticipant,
-    TripParticipantId, WorkspaceId, WorkspaceRetentionPolicy, WorkspaceRole, WriteGrant,
-    WritePermission,
+    EvidenceReference, EvidenceSource, InvitationId, InvitationStatus, KeyRotationStatus,
+    LegalHoldId, MemoryKind, MemoryScope, MemoryStatus, PrincipalId, ReadGrant, RetentionPeriod,
+    TravelDateWindow, Trip, TripConstraint, TripConstraintId, TripConstraintKind, TripDecision,
+    TripDecisionId, TripParticipant, TripParticipantId, WorkspaceId, WorkspaceKind,
+    WorkspaceRetentionPolicy, WorkspaceRole, WriteGrant, WritePermission,
 };
 use rembrane_secret_local::{LocalSecretResolver, SecretResolver};
 use rembrane_store_sqlite::SqliteStore;
@@ -114,6 +115,37 @@ struct LegalHoldRequest {
 struct ExecuteRetentionPurgeRequest {
     workspace_id: String,
     maximum_items: usize,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct CreateInvitationRequest {
+    workspace_id: String,
+    invitation_id: String,
+    invited_principal_id: String,
+    role: String,
+    ttl_seconds: u64,
+    request_id: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[allow(clippy::struct_field_names)]
+struct InvitationTransitionRequest {
+    workspace_id: String,
+    invitation_id: String,
+    request_id: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct InvitationResponse {
+    workspace_id: String,
+    invitation_id: String,
+    invited_principal_id: String,
+    role: &'static str,
+    status: &'static str,
+    expires_at_epoch_seconds: u64,
 }
 
 #[derive(Deserialize)]
@@ -477,7 +509,19 @@ impl AppState {
             })
             .or_else(|error| {
                 if error == ApplicationError::AccessDenied {
-                    management_only_grants(&store, client_id, workspace_id, principal_id)
+                    management_only_grants(
+                        &store,
+                        client_id.clone(),
+                        workspace_id.clone(),
+                        principal_id.clone(),
+                    )
+                } else {
+                    Err(error)
+                }
+            })
+            .or_else(|error| {
+                if error == ApplicationError::AccessDenied {
+                    invitation_only_grants(&store, client_id, workspace_id, principal_id)
                 } else {
                     Err(error)
                 }
@@ -574,6 +618,178 @@ fn management_only_grants(
         permissions: Vec::new(),
     };
     Ok(ClientGrantBundle { read, write })
+}
+
+fn invitation_only_grants<C>(
+    store: &SqliteStore<C>,
+    client_id: ClientId,
+    workspace_id: WorkspaceId,
+    principal_id: PrincipalId,
+) -> Result<ClientGrantBundle, ApplicationError> {
+    if store.find_principal(&principal_id)?.is_none()
+        || !store
+            .find_workspace(&workspace_id)?
+            .is_some_and(|workspace| workspace.kind() == WorkspaceKind::Shared)
+        || store
+            .find_membership(&workspace_id, &principal_id)?
+            .is_some()
+    {
+        return Err(ApplicationError::AccessDenied);
+    }
+    Ok(ClientGrantBundle {
+        read: ReadGrant {
+            client_id: client_id.clone(),
+            workspace_id: workspace_id.clone(),
+            subject_id: principal_id.clone(),
+            scopes: Vec::new(),
+            permissions: Vec::new(),
+        },
+        write: WriteGrant {
+            client_id,
+            workspace_id,
+            subject_id: principal_id,
+            scopes: Vec::new(),
+            permissions: Vec::new(),
+        },
+    })
+}
+
+async fn create_invitation(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<CreateInvitationRequest>,
+) -> Result<(StatusCode, Json<InvitationResponse>), ApiError> {
+    authorize_bearer(&state, &headers)?;
+    let mut runtime = state
+        .inner
+        .runtime
+        .lock()
+        .map_err(|_| ApiError::internal())?;
+    authorize_management_workspace(&runtime, &request.workspace_id)?;
+    let role = parse_invitation_role(&request.role).ok_or_else(ApiError::invalid_request)?;
+    let created_at = now_epoch_seconds().map_err(|_| ApiError::internal())?;
+    let expires_at = created_at
+        .checked_add(request.ttl_seconds)
+        .ok_or_else(ApiError::invalid_request)?;
+    let inviter = runtime.write_grant.subject_id.clone();
+    let workspace_id = runtime.write_grant.workspace_id.clone();
+    let invitation = InvitationService::new(&mut runtime.store)
+        .create(CreateInvitationCommand {
+            invitation_id: InvitationId::new(request.invitation_id),
+            workspace_id,
+            invited_principal_id: PrincipalId::new(request.invited_principal_id),
+            invited_by: inviter,
+            role,
+            request_id: request.request_id,
+            created_at_epoch_seconds: created_at,
+            expires_at_epoch_seconds: expires_at,
+        })
+        .map_err(ApiError::from_application)?;
+    Ok((StatusCode::CREATED, Json(invitation_response(&invitation))))
+}
+
+async fn accept_invitation(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<InvitationTransitionRequest>,
+) -> Result<Json<InvitationResponse>, ApiError> {
+    authorize_bearer(&state, &headers)?;
+    let mut runtime = state
+        .inner
+        .runtime
+        .lock()
+        .map_err(|_| ApiError::internal())?;
+    if request.workspace_id != runtime.write_grant.workspace_id.as_str() {
+        return Err(ApiError::access_denied());
+    }
+    let invitation_id = InvitationId::new(request.invitation_id);
+    let principal_id = runtime.write_grant.subject_id.clone();
+    let workspace_id = runtime.write_grant.workspace_id.clone();
+    InvitationService::new(&mut runtime.store)
+        .accept(AcceptInvitationCommand {
+            invitation_id: invitation_id.clone(),
+            workspace_id: workspace_id.clone(),
+            accepting_principal_id: principal_id,
+            request_id: request.request_id,
+            accepted_at_epoch_seconds: now_epoch_seconds().map_err(|_| ApiError::internal())?,
+        })
+        .map_err(ApiError::from_application)?;
+    let invitation = runtime
+        .store
+        .find_invitation(&workspace_id, &invitation_id)
+        .map_err(ApiError::from_application)?
+        .ok_or_else(ApiError::internal)?;
+    Ok(Json(invitation_response(&invitation)))
+}
+
+async fn revoke_invitation(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<InvitationTransitionRequest>,
+) -> Result<Json<InvitationResponse>, ApiError> {
+    authorize_bearer(&state, &headers)?;
+    let mut runtime = state
+        .inner
+        .runtime
+        .lock()
+        .map_err(|_| ApiError::internal())?;
+    authorize_management_workspace(&runtime, &request.workspace_id)?;
+    let workspace_id = runtime.write_grant.workspace_id.clone();
+    let revoked_by = runtime.write_grant.subject_id.clone();
+    let invitation = InvitationService::new(&mut runtime.store)
+        .revoke(RevokeInvitationCommand {
+            invitation_id: InvitationId::new(request.invitation_id),
+            workspace_id,
+            revoked_by,
+            request_id: request.request_id,
+            revoked_at_epoch_seconds: now_epoch_seconds().map_err(|_| ApiError::internal())?,
+        })
+        .map_err(ApiError::from_application)?;
+    Ok(Json(invitation_response(&invitation)))
+}
+
+fn invitation_response(invitation: &rembrane_domain::Invitation) -> InvitationResponse {
+    InvitationResponse {
+        workspace_id: invitation.workspace_id().to_string(),
+        invitation_id: invitation.id().to_string(),
+        invited_principal_id: invitation.invited_principal_id().to_string(),
+        role: workspace_role_name(invitation.role()),
+        status: invitation_status_name(invitation.status()),
+        expires_at_epoch_seconds: invitation.expires_at_epoch_seconds(),
+    }
+}
+
+const fn invitation_status_name(status: InvitationStatus) -> &'static str {
+    match status {
+        InvitationStatus::Pending => "pending",
+        InvitationStatus::Accepted => "accepted",
+        InvitationStatus::Revoked => "revoked",
+        InvitationStatus::Expired => "expired",
+    }
+}
+
+fn parse_invitation_role(value: &str) -> Option<WorkspaceRole> {
+    match value {
+        "admin" => Some(WorkspaceRole::Admin),
+        "member" => Some(WorkspaceRole::Member),
+        "viewer" => Some(WorkspaceRole::Viewer),
+        _ => None,
+    }
+}
+
+const fn workspace_role_name(role: WorkspaceRole) -> &'static str {
+    match role {
+        WorkspaceRole::Owner => "owner",
+        WorkspaceRole::Admin => "admin",
+        WorkspaceRole::Member => "member",
+        WorkspaceRole::Viewer => "viewer",
+    }
+}
+
+fn now_epoch_seconds() -> Result<u64, std::time::SystemTimeError> {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
 }
 
 async fn rotate_workspace_key(
@@ -1601,6 +1817,9 @@ async fn main() -> Result<()> {
             get(oauth_protected_resource),
         )
         .route("/v1/context/resolve", post(resolve_context))
+        .route("/v1/workspaces/invitations", post(create_invitation))
+        .route("/v1/workspaces/invitations/accept", post(accept_invitation))
+        .route("/v1/workspaces/invitations/revoke", post(revoke_invitation))
         .route("/v1/workspaces/key-rotation", post(rotate_workspace_key))
         .route("/v1/administrative-audit", get(list_administrative_audit))
         .route("/v1/retention/policy", post(set_retention_policy))
@@ -1627,11 +1846,16 @@ async fn main() -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use rembrane_domain::{ClientId, EntityId, PrincipalId, ReadGrant, ReadScope, WorkspaceId};
+    use rembrane_application::WorkspaceRepository;
+    use rembrane_domain::{
+        ClientId, EntityId, Membership, Principal, PrincipalId, ReadGrant, ReadScope, Workspace,
+        WorkspaceId, WorkspaceRole,
+    };
+    use rembrane_store_sqlite::SqliteStore;
 
     use super::{
-        ResolveRequest, advance_identifier, request_is_within_grant, selected_api_token_reference,
-        token_matches, valid_api_token,
+        ResolveRequest, advance_identifier, invitation_only_grants, parse_invitation_role,
+        request_is_within_grant, selected_api_token_reference, token_matches, valid_api_token,
     };
 
     #[test]
@@ -1692,5 +1916,69 @@ mod tests {
         assert_eq!(advance_identifier(&mut current), None);
         assert_eq!(advance_identifier(&mut current), None);
         assert_eq!(current, u128::MAX);
+    }
+
+    #[test]
+    fn invitation_only_connection_has_no_memory_or_mutation_authority() {
+        let mut store = SqliteStore::open_in_memory().expect("database");
+        for principal in ["owner", "guest"] {
+            store
+                .initialize_personal_workspace(
+                    Principal::new(PrincipalId::new(principal)),
+                    Workspace::personal(WorkspaceId::new(format!("{principal}-personal"))),
+                    Membership::new(
+                        WorkspaceId::new(format!("{principal}-personal")),
+                        PrincipalId::new(principal),
+                        WorkspaceRole::Owner,
+                    ),
+                )
+                .expect("personal identity");
+        }
+        store
+            .initialize_shared_workspace(
+                Workspace::shared(WorkspaceId::new("team")),
+                Membership::new(
+                    WorkspaceId::new("team"),
+                    PrincipalId::new("owner"),
+                    WorkspaceRole::Owner,
+                ),
+            )
+            .expect("shared workspace");
+
+        let grants = invitation_only_grants(
+            &store,
+            ClientId::new("api_guest"),
+            WorkspaceId::new("team"),
+            PrincipalId::new("guest"),
+        )
+        .expect("unjoined known principal may accept an invitation");
+        assert!(grants.read.scopes.is_empty());
+        assert!(grants.read.permissions.is_empty());
+        assert!(grants.write.scopes.is_empty());
+        assert!(grants.write.permissions.is_empty());
+
+        assert!(
+            invitation_only_grants(
+                &store,
+                ClientId::new("api_owner"),
+                WorkspaceId::new("team"),
+                PrincipalId::new("owner"),
+            )
+            .is_err()
+        );
+        assert!(
+            invitation_only_grants(
+                &store,
+                ClientId::new("api_unknown"),
+                WorkspaceId::new("team"),
+                PrincipalId::new("unknown"),
+            )
+            .is_err()
+        );
+        assert_eq!(
+            parse_invitation_role("owner"),
+            None,
+            "invitations must never transfer ownership"
+        );
     }
 }

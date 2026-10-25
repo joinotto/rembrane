@@ -88,6 +88,92 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
+  /workspaces/invitations:
+    post:
+      operationId: createWorkspaceInvitation
+      summary: Create a bounded role-specific shared-workspace invitation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateInvitationRequest"
+      responses:
+        "201":
+          description: Invitation created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvitationResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/AccessDenied"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /workspaces/invitations/accept:
+    post:
+      operationId: acceptWorkspaceInvitation
+      summary: Accept an invitation as its exact invited principal
+      description: |
+        This is the only operation available to an invitation-only API
+        connection. That connection has no memory scopes or mutation
+        permissions before membership is committed. Reconnect after acceptance
+        to derive ordinary role- and scope-bound grants.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InvitationTransitionRequest"
+      responses:
+        "200":
+          description: Invitation accepted and membership created atomically
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvitationResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/AccessDenied"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /workspaces/invitations/revoke:
+    post:
+      operationId: revokeWorkspaceInvitation
+      summary: Revoke a pending invitation as a workspace administrator
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InvitationTransitionRequest"
+      responses:
+        "200":
+          description: Invitation revoked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvitationResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/AccessDenied"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
   /administrative-audit:
     get:
       operationId: listAdministrativeAudit
@@ -434,6 +520,66 @@ components:
           schema:
             $ref: "#/components/schemas/Problem"
   schemas:
+    CreateInvitationRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - workspaceId
+        - invitationId
+        - invitedPrincipalId
+        - role
+        - ttlSeconds
+        - requestId
+      properties:
+        workspaceId:
+          $ref: "#/components/schemas/OpaqueId"
+        invitationId:
+          $ref: "#/components/schemas/OpaqueId"
+        invitedPrincipalId:
+          $ref: "#/components/schemas/OpaqueId"
+        role:
+          enum: [admin, member, viewer]
+        ttlSeconds:
+          type: integer
+          minimum: 1
+          maximum: 2592000
+        requestId:
+          $ref: "#/components/schemas/OpaqueId"
+    InvitationTransitionRequest:
+      type: object
+      additionalProperties: false
+      required: [workspaceId, invitationId, requestId]
+      properties:
+        workspaceId:
+          $ref: "#/components/schemas/OpaqueId"
+        invitationId:
+          $ref: "#/components/schemas/OpaqueId"
+        requestId:
+          $ref: "#/components/schemas/OpaqueId"
+    InvitationResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - workspaceId
+        - invitationId
+        - invitedPrincipalId
+        - role
+        - status
+        - expiresAtEpochSeconds
+      properties:
+        workspaceId:
+          $ref: "#/components/schemas/OpaqueId"
+        invitationId:
+          $ref: "#/components/schemas/OpaqueId"
+        invitedPrincipalId:
+          $ref: "#/components/schemas/OpaqueId"
+        role:
+          enum: [admin, member, viewer]
+        status:
+          enum: [pending, accepted, revoked, expired]
+        expiresAtEpochSeconds:
+          type: integer
+          minimum: 1
     RotateWorkspaceKeyRequest:
       type: object
       additionalProperties: false
@@ -487,6 +633,9 @@ components:
           $ref: "#/components/schemas/OpaqueId"
         action:
           enum:
+            - invitation-created
+            - invitation-accepted
+            - invitation-revoked
             - member-removed
             - key-rotation-required
             - key-rotation-completed
@@ -494,8 +643,19 @@ components:
             - retention-policy-changed
             - legal-hold-placed
             - legal-hold-released
+            - channel-binding-created
+            - channel-binding-revoked
+            - channel-message-requeued
         targetKind:
-          enum: [principal, key-rotation, scope-grant, retention-policy, legal-hold]
+          enum:
+            - invitation
+            - principal
+            - key-rotation
+            - scope-grant
+            - retention-policy
+            - legal-hold
+            - channel-binding
+            - channel-message
         targetId:
           $ref: "#/components/schemas/OpaqueId"
         requestId:
