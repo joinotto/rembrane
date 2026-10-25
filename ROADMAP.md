@@ -314,6 +314,8 @@ This roadmap describes sequencing, not release dates.
       - [x] Dispatch authenticated session DELETE through Tower before
         committing the local tenant-bound session removal, retaining the
         binding when downstream termination fails.
+        - [x] Parse and reject ambiguous Axum DELETE security and protocol
+          headers before entering the confirmed termination flow.
   - [x] Add OAuth and cross-tenant transport integration tests.
     - [x] Prove verified remote identity is still constrained by canonical
       workspace membership, audience, expiry, and token validity.

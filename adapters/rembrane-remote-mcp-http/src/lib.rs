@@ -689,6 +689,21 @@ fn event_stream_headers_from_axum(
     Ok((accept.to_owned(), protocol_version.map(str::to_owned)))
 }
 
+fn session_deletion_from_axum_headers(
+    headers: &HeaderMap,
+) -> Result<(RemoteMcpHttpRequest<'_>, Option<&str>), RemoteMcpHttpRejection> {
+    let request = security_request_from_axum_headers(headers)?;
+    let protocol_version = unique_header(headers, &MCP_PROTOCOL_VERSION_HEADER_NAME)?;
+    if protocol_version.is_some_and(|value| !valid_protocol_version(value)) {
+        return Err(RemoteMcpHttpRejection {
+            status: 400,
+            www_authenticate: None,
+            retry_after_seconds: None,
+        });
+    }
+    Ok((request, protocol_version))
+}
+
 fn protocol_headers_from_axum(
     headers: &HeaderMap,
 ) -> Result<RemoteMcpProtocolHeaders, RemoteMcpHttpRejection> {
@@ -817,6 +832,36 @@ where
         gate.authorize_stateless_body(authorization, request, body, now_epoch_seconds)?;
     authorized.protocol_headers = protocol_headers;
     Ok(authorized)
+}
+
+/// Reauthenticates an Axum session DELETE, dispatches it to the protocol
+/// service, and commits local deletion only after downstream success.
+///
+/// # Errors
+///
+/// Distinguishes HTTP-ready header, OAuth, tenant, protocol, or session
+/// rejection from downstream dispatch failure.
+pub async fn authorize_axum_session_deletion<Verifier, Dispatcher>(
+    gate: &mut RemoteMcpHttpGate,
+    authorization: &RemoteHttpAuthorization<'_, '_, Verifier>,
+    headers: &HeaderMap,
+    now_epoch_seconds: u64,
+    dispatcher: &Dispatcher,
+) -> Result<Dispatcher::Output, RemoteMcpDispatchError<Dispatcher::Error>>
+where
+    Verifier: RemoteTokenVerifier,
+    Dispatcher: AuthorizedRemoteMcpSessionDeletionDispatcher,
+{
+    let (request, protocol_version) = session_deletion_from_axum_headers(headers)
+        .map_err(RemoteMcpDispatchError::Authorization)?;
+    gate.authorize_and_dispatch_termination(
+        authorization,
+        request,
+        protocol_version,
+        now_epoch_seconds,
+        dispatcher,
+    )
+    .await
 }
 
 /// Owned authorization service suitable for Axum router state.
@@ -1389,8 +1434,8 @@ mod tests {
         AuthorizedTowerMcpDispatcher, MAX_REMOTE_MCP_HEADER_BYTES,
         MCP_PROTOCOL_VERSION_HEADER_NAME, MCP_SESSION_HEADER_NAME, RemoteMcpAxumAuthorization,
         RemoteMcpDispatchError, RemoteMcpHttpGate, RemoteMcpHttpRejection, RemoteMcpHttpRequest,
-        RemoteMcpInvocation, authorize_axum_stateless_body, classify_remote_mcp_request,
-        request_from_axum_headers,
+        RemoteMcpInvocation, authorize_axum_session_deletion, authorize_axum_stateless_body,
+        classify_remote_mcp_request, request_from_axum_headers,
     };
 
     struct Verifier;
@@ -1658,16 +1703,33 @@ mod tests {
                 ))
             },
         );
-        let dispatched = gate
-            .authorize_and_dispatch_termination(
-                &authorization,
-                request("Bearer workspace-one", session),
-                Some("2025-03-26"),
-                1_100,
-                &AuthorizedTowerMcpDispatcher::new(service),
-            )
-            .await
-            .expect("confirmed deletion");
+        let mut delete_headers = HeaderMap::new();
+        delete_headers.insert(HOST, HeaderValue::from_static("memory.example.test"));
+        delete_headers.insert(
+            AUTHORIZATION,
+            HeaderValue::from_static("Bearer workspace-one"),
+        );
+        delete_headers.insert(
+            ORIGIN,
+            HeaderValue::from_static("https://agent.example.test"),
+        );
+        delete_headers.insert(
+            MCP_SESSION_HEADER_NAME,
+            HeaderValue::from_static("session_0123456789abcdef"),
+        );
+        delete_headers.insert(
+            MCP_PROTOCOL_VERSION_HEADER_NAME,
+            HeaderValue::from_static("2025-03-26"),
+        );
+        let dispatched = authorize_axum_session_deletion(
+            &mut gate,
+            &authorization,
+            &delete_headers,
+            1_100,
+            &AuthorizedTowerMcpDispatcher::new(service),
+        )
+        .await
+        .expect("confirmed deletion");
         assert_eq!(dispatched.0, Method::DELETE);
         assert_eq!(dispatched.1.as_deref(), Some(session));
         assert!(!dispatched.2, "bearer must stop at authorization boundary");

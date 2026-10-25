@@ -19,6 +19,8 @@ still withholding the bearer credential.
 For stateful DELETE, Rembrane reauthenticates the exact tenant-bound session,
 dispatches an empty-body termination request without the bearer credential,
 and removes its local binding only after downstream success.
+The Axum boundary rejects duplicate, oversized, non-text, or malformed
+security, session, and protocol-version headers before this flow begins.
 
 The completed endpoint will use the same tools and application services as
 local stdio MCP. Transport selection must never change workspace

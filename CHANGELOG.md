@@ -63,6 +63,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Authenticated MCP session DELETE now reaches the Tower protocol service
   before local deletion commits; downstream failure preserves the session
   binding for a safely reauthorized retry.
+- Axum session DELETE requests now enter that confirmed flow through bounded,
+  duplicate-rejecting authorization, host, origin, session, and protocol
+  header parsing.
 - A strict portable key-provider conformance result schema and runner output
   containing provider identity and explicit pass evidence for eight
   authentication, encryption, limit, rotation, and replay cases.
