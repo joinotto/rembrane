@@ -9,24 +9,24 @@ use std::error::Error;
 use std::fmt::{self, Display, Formatter};
 
 use rembrane_application::{
-    AdministrativeAuditRepository, ApplicationError, CanonicalMutationRepository,
-    CheckpointDisclosureRepository, CheckpointMutationRepository, CheckpointRepository,
-    DisclosureRepository, EventRepository, InvitationRepository, KeyRotationRepository,
-    MAX_ADMINISTRATIVE_AUDIT_PAGE, MAXIMUM_INVITATION_LIST_ITEMS, MemberLifecycleRepository,
-    MemberScopeGrantRepository, MembershipRepository, MemoryRepository, ProjectionOutboxRepository,
-    RetentionRepository, TripMutationRepository, TripRepository, WorkspaceReadRepository,
-    WorkspaceRepository, is_strict_successor,
+    AdministrativeAuditRepository, ApplicationError, BookingResearchRepository,
+    CanonicalMutationRepository, CheckpointDisclosureRepository, CheckpointMutationRepository,
+    CheckpointRepository, DisclosureRepository, EventRepository, InvitationRepository,
+    KeyRotationRepository, MAX_ADMINISTRATIVE_AUDIT_PAGE, MAXIMUM_INVITATION_LIST_ITEMS,
+    MemberLifecycleRepository, MemberScopeGrantRepository, MembershipRepository, MemoryRepository,
+    ProjectionOutboxRepository, RetentionRepository, TripMutationRepository, TripRepository,
+    WorkspaceReadRepository, WorkspaceRepository, is_strict_successor,
 };
 use rembrane_codec::{
-    decode_checkpoint, decode_event, decode_memory, decode_trip, encode_checkpoint, encode_event,
-    encode_memory, encode_trip,
+    decode_booking_research, decode_checkpoint, decode_event, decode_memory, decode_trip,
+    encode_checkpoint, encode_event, encode_memory, encode_trip,
 };
 use rembrane_crypto::{EncryptedPayload, EncryptionContext, PayloadPurpose, RecordCipher};
 use rembrane_domain::{
     ActivityCheckpoint, ActivityId, AdministrativeAction, AdministrativeAuditEvent,
-    AdministrativeAuditEventId, AdministrativeTargetKind, CanonicalEvent,
-    CheckpointDisclosureReceipt, DisclosureReceipt, EntityId, EventPayload, EvidenceSource,
-    Invitation, InvitationId, InvitationStatus, KeyRotationId, KeyRotationReceipt,
+    AdministrativeAuditEventId, AdministrativeTargetKind, BookingResearch, BookingResearchId,
+    CanonicalEvent, CheckpointDisclosureReceipt, DisclosureReceipt, EntityId, EventPayload,
+    EvidenceSource, Invitation, InvitationId, InvitationStatus, KeyRotationId, KeyRotationReceipt,
     KeyRotationStatus, LegalHoldId, LegalHoldStatus, MAX_KEY_ROTATION_RECIPIENTS, MemberScopeGrant,
     Membership, MembershipStatus, MemoryId, MemoryKind, MemoryRecord, MemoryScope, MemoryStatus,
     Principal, PrincipalId, ProjectionJob, ProjectionJobId, ProjectionOperation, ProjectionStatus,
@@ -267,6 +267,15 @@ pub const REPLACE_TRIP_SQL: &str = "UPDATE trips SET trip_ciphertext = $3, \
     encryption_key_id = $4, encryption_algorithm = $5, encryption_nonce = $6, version = $7, \
     updated_at = CURRENT_TIMESTAMP WHERE workspace_id = $1 AND id = $2 \
     AND owner_subject_id = $8 AND version = $9";
+pub const FIND_BOOKING_RESEARCH_SQL: &str = "SELECT workspace_id, id, trip_id, observed_by, \
+    version, research_ciphertext, encryption_key_id, encryption_algorithm, encryption_nonce \
+    FROM booking_research WHERE workspace_id = $1 AND id = $2 \
+    ORDER BY workspace_id, id LIMIT 2";
+pub const MAX_TRIP_BOOKING_RESEARCH: usize = 10_000;
+pub const LIST_TRIP_BOOKING_RESEARCH_SQL: &str = "SELECT workspace_id, id, trip_id, observed_by, \
+    version, research_ciphertext, encryption_key_id, encryption_algorithm, encryption_nonce \
+    FROM booking_research WHERE workspace_id = $1 AND trip_id = $2 \
+    ORDER BY created_at DESC, id LIMIT 10001";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PostgresParameter<'value> {
@@ -2920,6 +2929,109 @@ where
     }
 }
 
+impl<Pool, Cipher> BookingResearchRepository for PostgresTenantMemoryStore<'_, '_, Pool, Cipher>
+where
+    Pool: PostgresPool,
+    Pool::Error: ClassifiedPostgresError,
+    <Pool::Transaction as PostgresTransaction>::Row: PostgresRow<Error = Pool::Error>,
+    Cipher: RecordCipher,
+{
+    fn find_booking_research(
+        &self,
+        workspace_id: &WorkspaceId,
+        research_id: &BookingResearchId,
+    ) -> Result<Option<BookingResearch>, ApplicationError> {
+        if workspace_id != &self.workspace_id {
+            return Err(ApplicationError::AccessDenied);
+        }
+        let mut transaction = self
+            .store
+            .begin_tenant(workspace_id.clone())
+            .map_err(map_application_error)?;
+        let rows = transaction
+            .query(
+                FIND_BOOKING_RESEARCH_SQL,
+                &[
+                    PostgresParameter::Text(workspace_id.as_str()),
+                    PostgresParameter::Text(research_id.as_str()),
+                ],
+            )
+            .map_err(PostgresStoreError::Tenant)
+            .map_err(map_application_error)?;
+        if rows.len() > 1 {
+            return Err(ApplicationError::StorageUnavailable);
+        }
+        let research = rows
+            .first()
+            .map(|row| {
+                decrypt_booking_research_row(
+                    self.cipher,
+                    row,
+                    workspace_id,
+                    Some(research_id),
+                    None,
+                )
+            })
+            .transpose()
+            .map_err(map_application_error)?;
+        transaction
+            .commit()
+            .map_err(PostgresStoreError::Tenant)
+            .map_err(map_application_error)?;
+        Ok(research)
+    }
+
+    fn list_booking_research_for_trip(
+        &self,
+        workspace_id: &WorkspaceId,
+        trip_id: &EntityId,
+    ) -> Result<Vec<BookingResearch>, ApplicationError> {
+        if workspace_id != &self.workspace_id {
+            return Err(ApplicationError::AccessDenied);
+        }
+        let mut transaction = self
+            .store
+            .begin_tenant(workspace_id.clone())
+            .map_err(map_application_error)?;
+        let rows = transaction
+            .query(
+                LIST_TRIP_BOOKING_RESEARCH_SQL,
+                &[
+                    PostgresParameter::Text(workspace_id.as_str()),
+                    PostgresParameter::Text(trip_id.as_str()),
+                ],
+            )
+            .map_err(PostgresStoreError::Tenant)
+            .map_err(map_application_error)?;
+        if rows.len() > MAX_TRIP_BOOKING_RESEARCH {
+            return Err(ApplicationError::StorageUnavailable);
+        }
+        let mut ids = BTreeSet::new();
+        let research = rows
+            .iter()
+            .map(|row| {
+                let item = decrypt_booking_research_row(
+                    self.cipher,
+                    row,
+                    workspace_id,
+                    None,
+                    Some(trip_id),
+                )?;
+                if !ids.insert(item.id().as_str().to_owned()) {
+                    return Err(PostgresStoreError::InvalidRow);
+                }
+                Ok(item)
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(map_application_error)?;
+        transaction
+            .commit()
+            .map_err(PostgresStoreError::Tenant)
+            .map_err(map_application_error)?;
+        Ok(research)
+    }
+}
+
 impl<Pool, Cipher> TripMutationRepository for PostgresTenantMemoryStore<'_, '_, Pool, Cipher>
 where
     Pool: PostgresPool,
@@ -4531,6 +4643,62 @@ where
     Ok(trip)
 }
 
+fn decrypt_booking_research_row<Row, Cipher, DriverError>(
+    cipher: &Cipher,
+    row: &Row,
+    expected_workspace_id: &WorkspaceId,
+    expected_research_id: Option<&BookingResearchId>,
+    expected_trip_id: Option<&EntityId>,
+) -> Result<BookingResearch, PostgresStoreError<DriverError>>
+where
+    Row: PostgresRow<Error = DriverError>,
+    Cipher: RecordCipher,
+{
+    let workspace_id = row.text("workspace_id").map_err(PostgresStoreError::Row)?;
+    let research_id = row.text("id").map_err(PostgresStoreError::Row)?;
+    let trip_id = row.text("trip_id").map_err(PostgresStoreError::Row)?;
+    let observed_by = row.text("observed_by").map_err(PostgresStoreError::Row)?;
+    let version = row.u64("version").map_err(PostgresStoreError::Row)?;
+    if workspace_id != expected_workspace_id.as_str()
+        || expected_research_id.is_some_and(|expected| expected.as_str() != research_id)
+        || expected_trip_id.is_some_and(|expected| expected.as_str() != trip_id)
+    {
+        return Err(PostgresStoreError::InvalidRow);
+    }
+    let context = EncryptionContext::new(
+        expected_workspace_id.clone(),
+        &research_id,
+        version,
+        PayloadPurpose::BookingResearch,
+    )
+    .map_err(|_| PostgresStoreError::InvalidRow)?;
+    let encrypted = EncryptedPayload::new(
+        row.bytes("research_ciphertext")
+            .map_err(PostgresStoreError::Row)?,
+        row.text("encryption_key_id")
+            .map_err(PostgresStoreError::Row)?,
+        row.text("encryption_algorithm")
+            .map_err(PostgresStoreError::Row)?,
+        row.bytes("encryption_nonce")
+            .map_err(PostgresStoreError::Row)?,
+    )
+    .map_err(|_| PostgresStoreError::InvalidRow)?;
+    let plaintext = cipher
+        .open(&context, &encrypted)
+        .map_err(|_| PostgresStoreError::InvalidRow)?;
+    let research =
+        decode_booking_research(&plaintext).map_err(|_| PostgresStoreError::InvalidRow)?;
+    if research.workspace_id() != expected_workspace_id
+        || research.id().as_str() != research_id
+        || research.trip_id().as_str() != trip_id
+        || research.observed_by().as_str() != observed_by
+        || research.version() != version
+    {
+        return Err(PostgresStoreError::InvalidRow);
+    }
+    Ok(research)
+}
+
 fn decrypt_event_row<Row, Cipher, DriverError>(
     cipher: &Cipher,
     row: &Row,
@@ -5172,60 +5340,60 @@ mod tests {
 
     use rembrane_application::{
         AdministrativeAuditRepository, ApplicationError, AuthorizeClientCommand,
-        AuthorizeClientService, CanonicalMutationRepository, CheckpointDisclosureRepository,
-        CheckpointMutationRepository, CheckpointRepository, CheckpointService,
-        CreateInvitationCommand, DisclosureRepository, EventRepository, InvitationRepository,
-        InvitationService, KeyRotationRepository, MemberLifecycleRepository,
+        AuthorizeClientService, BookingResearchRepository, CanonicalMutationRepository,
+        CheckpointDisclosureRepository, CheckpointMutationRepository, CheckpointRepository,
+        CheckpointService, CreateInvitationCommand, DisclosureRepository, EventRepository,
+        InvitationRepository, InvitationService, KeyRotationRepository, MemberLifecycleRepository,
         MemberScopeGrantRepository, MembershipRepository, MemoryRepository,
         ProjectionOutboxRepository, ProjectionOutcome, ProjectionWorker, ResolveContextCommand,
         ResolveContextService, ResumeActivityCommand, RetentionRepository, TripMutationRepository,
         TripRepository, WorkspaceRepository,
     };
-    use rembrane_codec::{encode_checkpoint, encode_memory, encode_trip};
+    use rembrane_codec::{encode_booking_research, encode_checkpoint, encode_memory, encode_trip};
     use rembrane_contracts::ResolveContextRequest;
     use rembrane_crypto::{CryptoError, EncryptedPayload, EncryptionContext, RecordCipher};
     use rembrane_domain::{
         ActivityCheckpoint, ActivityId, AdministrativeAction, AdministrativeAuditEvent,
-        AdministrativeAuditEventId, AdministrativeTargetKind, CanonicalEvent,
-        CheckpointDisclosureReceipt, CheckpointId, ClientId, ContextPackId, DisclosedMemory,
-        DisclosureId, DisclosureReceipt, EntityId, EventId, EventPayload, EvidenceId,
-        EvidenceReference, EvidenceSource, Invitation, InvitationId, InvitationStatus,
-        KeyRotationId, KeyRotationReceipt, KeyRotationStatus, LegalHoldId, LegalHoldStatus,
-        MemberScopeGrant, MembershipStatus, MemoryId, MemoryRecord, MemoryScope, Principal,
-        PrincipalId, ProjectionJob, ProjectionJobId, ProjectionOperation, ProjectionStatus,
-        ProviderId, ReadGrant, ReadScope, RetentionPeriod, RetentionResource, TravelDateWindow,
-        Trip, Workspace, WorkspaceId, WorkspaceKeyRotation, WorkspaceRetentionPolicy,
-        WorkspaceRole, WritePermission,
+        AdministrativeAuditEventId, AdministrativeTargetKind, BookingResearch, BookingResearchId,
+        BookingResearchKind, CanonicalEvent, CheckpointDisclosureReceipt, CheckpointId, ClientId,
+        ContextPackId, DisclosedMemory, DisclosureId, DisclosureReceipt, EntityId, EventId,
+        EventPayload, EvidenceId, EvidenceReference, EvidenceSource, Invitation, InvitationId,
+        InvitationStatus, KeyRotationId, KeyRotationReceipt, KeyRotationStatus, LegalHoldId,
+        LegalHoldStatus, MemberScopeGrant, MembershipStatus, MemoryId, MemoryRecord, MemoryScope,
+        Principal, PrincipalId, ProjectionJob, ProjectionJobId, ProjectionOperation,
+        ProjectionStatus, ProviderId, ReadGrant, ReadScope, RetentionPeriod, RetentionResource,
+        TravelDateWindow, Trip, Workspace, WorkspaceId, WorkspaceKeyRotation,
+        WorkspaceRetentionPolicy, WorkspaceRole, WritePermission,
     };
     use rembrane_semantic_native::NativeSemanticProvider;
 
     use super::{
         ACCEPT_INVITATION_SQL, COMPLETE_KEY_ROTATION_SQL, CURRENT_EVENT_SEQUENCE_SQL,
         ClassifiedPostgresError, DELETE_MEMBER_SCOPE_GRANT_SQL, DELETE_MEMBER_SCOPE_GRANTS_SQL,
-        EXPIRE_PENDING_INVITATION_SQL, FIND_DISCLOSED_CHECKPOINT_VERSION_SQL,
-        FIND_DISCLOSED_MEMORY_VERSION_SQL, FIND_INVITATION_SQL, FIND_KEY_ROTATION_RECEIPT_SQL,
-        FIND_LEGAL_HOLD_SQL, FIND_MEMBERSHIP_SQL, FIND_MEMORY_SQL, FIND_PRINCIPAL_SQL,
-        FIND_PROJECTION_SQL, FIND_PROVISIONING_PRINCIPAL_SQL, FIND_RETENTION_POLICY_SQL,
-        FIND_TRIP_SQL, FIND_WORKSPACE_SQL, INSERT_ADMINISTRATIVE_AUDIT_SQL,
-        INSERT_CHECKPOINT_DISCLOSURE_SQL, INSERT_CHECKPOINT_SQL, INSERT_DISCLOSED_MEMORY_SQL,
-        INSERT_DISCLOSURE_SQL, INSERT_EVENT_SQL, INSERT_INVITATION_SQL,
-        INSERT_KEY_ROTATION_RECEIPT_SQL, INSERT_KEY_ROTATION_RECIPIENT_SQL, INSERT_LEGAL_HOLD_SQL,
-        INSERT_MEMBER_SCOPE_GRANT_SQL, INSERT_MEMBERSHIP_SQL, INSERT_MEMORY_EVIDENCE_SQL,
-        INSERT_MEMORY_SQL, INSERT_PRINCIPAL_SQL, INSERT_PROJECTION_SQL,
-        INSERT_REQUIRED_KEY_ROTATION_SQL, INSERT_RETENTION_POLICY_SQL, INSERT_TRIP_SQL,
-        INSERT_WORKSPACE_SQL, LATEST_CHECKPOINT_SQL, LATEST_KEY_ROTATION_SQL,
+        EXPIRE_PENDING_INVITATION_SQL, FIND_BOOKING_RESEARCH_SQL,
+        FIND_DISCLOSED_CHECKPOINT_VERSION_SQL, FIND_DISCLOSED_MEMORY_VERSION_SQL,
+        FIND_INVITATION_SQL, FIND_KEY_ROTATION_RECEIPT_SQL, FIND_LEGAL_HOLD_SQL,
+        FIND_MEMBERSHIP_SQL, FIND_MEMORY_SQL, FIND_PRINCIPAL_SQL, FIND_PROJECTION_SQL,
+        FIND_PROVISIONING_PRINCIPAL_SQL, FIND_RETENTION_POLICY_SQL, FIND_TRIP_SQL,
+        FIND_WORKSPACE_SQL, INSERT_ADMINISTRATIVE_AUDIT_SQL, INSERT_CHECKPOINT_DISCLOSURE_SQL,
+        INSERT_CHECKPOINT_SQL, INSERT_DISCLOSED_MEMORY_SQL, INSERT_DISCLOSURE_SQL,
+        INSERT_EVENT_SQL, INSERT_INVITATION_SQL, INSERT_KEY_ROTATION_RECEIPT_SQL,
+        INSERT_KEY_ROTATION_RECIPIENT_SQL, INSERT_LEGAL_HOLD_SQL, INSERT_MEMBER_SCOPE_GRANT_SQL,
+        INSERT_MEMBERSHIP_SQL, INSERT_MEMORY_EVIDENCE_SQL, INSERT_MEMORY_SQL, INSERT_PRINCIPAL_SQL,
+        INSERT_PROJECTION_SQL, INSERT_REQUIRED_KEY_ROTATION_SQL, INSERT_RETENTION_POLICY_SQL,
+        INSERT_TRIP_SQL, INSERT_WORKSPACE_SQL, LATEST_CHECKPOINT_SQL, LATEST_KEY_ROTATION_SQL,
         LIST_ACTIVE_LEGAL_HOLDS_SQL, LIST_ACTIVE_MEMBERSHIPS_SQL, LIST_ADMINISTRATIVE_AUDIT_SQL,
         LIST_EVENTS_SINCE_SQL, LIST_INVITATIONS_BY_STATUS_SQL, LIST_MEMBER_SCOPE_GRANTS_SQL,
         LIST_OWNER_TRIPS_SQL, LIST_PENDING_PROJECTIONS_SQL, LIST_SUBJECT_CHECKPOINTS_SQL,
-        LIST_SUBJECT_MEMORIES_SQL, LOCK_WORKSPACE_FOR_ROTATION_SQL, MAX_ACTIVE_MEMBERSHIPS,
-        NEXT_KEY_ROTATION_GENERATION_SQL, PostgresFailureKind, PostgresParameter, PostgresPool,
-        PostgresProvisioner, PostgresProvisioningPool, PostgresRow, PostgresStore,
-        PostgresStoreError, PostgresTransaction, PostgresWorkspaceAdminStore,
-        ProvisioningTransaction, READ_TENANT_SQL, REMOVE_MEMBERSHIP_SQL, REPLACE_CHECKPOINT_SQL,
-        REPLACE_INVITATION_SQL, REPLACE_LEGAL_HOLD_SQL, REPLACE_MEMBERSHIP_SQL,
-        REPLACE_PROJECTION_SQL, REPLACE_RETENTION_POLICY_SQL, REPLACE_TRIP_SQL, SET_TENANT_SQL,
-        TenantTransaction, TenantTransactionError, map_application_error,
-        map_invitation_application_error,
+        LIST_SUBJECT_MEMORIES_SQL, LIST_TRIP_BOOKING_RESEARCH_SQL, LOCK_WORKSPACE_FOR_ROTATION_SQL,
+        MAX_ACTIVE_MEMBERSHIPS, NEXT_KEY_ROTATION_GENERATION_SQL, PostgresFailureKind,
+        PostgresParameter, PostgresPool, PostgresProvisioner, PostgresProvisioningPool,
+        PostgresRow, PostgresStore, PostgresStoreError, PostgresTransaction,
+        PostgresWorkspaceAdminStore, ProvisioningTransaction, READ_TENANT_SQL,
+        REMOVE_MEMBERSHIP_SQL, REPLACE_CHECKPOINT_SQL, REPLACE_INVITATION_SQL,
+        REPLACE_LEGAL_HOLD_SQL, REPLACE_MEMBERSHIP_SQL, REPLACE_PROJECTION_SQL,
+        REPLACE_RETENTION_POLICY_SQL, REPLACE_TRIP_SQL, SET_TENANT_SQL, TenantTransaction,
+        TenantTransactionError, map_application_error, map_invitation_application_error,
     };
 
     #[derive(Clone, Debug, Eq, PartialEq)]
@@ -5406,6 +5574,26 @@ mod tests {
                     ("encryption_nonce", "777777777777777777777777".to_owned()),
                 ]),
                 numbers: BTreeMap::from([("version", trip.version())]),
+            }
+        }
+
+        fn booking_research(research: &BookingResearch) -> Self {
+            let encoded = encode_booking_research(research).expect("encode booking research");
+            Self {
+                columns: BTreeMap::from([
+                    ("workspace_id", research.workspace_id().as_str().to_owned()),
+                    ("id", research.id().as_str().to_owned()),
+                    ("trip_id", research.trip_id().as_str().to_owned()),
+                    ("observed_by", research.observed_by().as_str().to_owned()),
+                    (
+                        "research_ciphertext",
+                        String::from_utf8(encoded).expect("JSON payload"),
+                    ),
+                    ("encryption_key_id", "key_test".to_owned()),
+                    ("encryption_algorithm", "identity-test".to_owned()),
+                    ("encryption_nonce", "777777777777777777777777".to_owned()),
+                ]),
+                numbers: BTreeMap::from([("version", research.version())]),
             }
         }
 
@@ -7521,6 +7709,84 @@ mod tests {
                 "text:workspace_01".to_owned(),
                 "text:principal_01".to_owned(),
             ]
+        )));
+    }
+
+    #[test]
+    fn tenant_cipher_store_decrypts_exact_and_trip_booking_research_reads() {
+        let expected = BookingResearch::new(
+            BookingResearchId::new("research_01"),
+            WorkspaceId::new("workspace_01"),
+            EntityId::new("trip_01"),
+            PrincipalId::new("principal_01"),
+            BookingResearchKind::Flight,
+            "Example Airline",
+            "Direct flight option with one checked bag.",
+            "provider://flight/option-01",
+            EvidenceReference::new(
+                EvidenceId::new("evidence_research_01"),
+                EvidenceSource::ImportedRecord,
+            ),
+            "2026-10-25T08:00:00Z",
+            "2026-10-26T08:00:00Z",
+        )
+        .expect("booking research");
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let store = PostgresStore::new(FakePool {
+            calls: Rc::clone(&calls),
+            tenant_batches: RefCell::new(
+                [
+                    VecDeque::from([
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                    ]),
+                    VecDeque::from([
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                    ]),
+                ]
+                .into(),
+            ),
+            row_batches: RefCell::new(
+                [
+                    vec![FakeRow::booking_research(&expected)],
+                    vec![FakeRow::booking_research(&expected)],
+                ]
+                .into(),
+            ),
+        });
+        let tenant = store.for_workspace(WorkspaceId::new("workspace_01"));
+        let cipher = IdentityCipher;
+        let memories = tenant.with_cipher(&cipher);
+
+        assert_eq!(
+            BookingResearchRepository::find_booking_research(
+                &memories,
+                &WorkspaceId::new("workspace_01"),
+                &BookingResearchId::new("research_01"),
+            )
+            .expect("find research"),
+            Some(expected.clone())
+        );
+        assert_eq!(
+            BookingResearchRepository::list_booking_research_for_trip(
+                &memories,
+                &WorkspaceId::new("workspace_01"),
+                &EntityId::new("trip_01"),
+            )
+            .expect("list research"),
+            vec![expected]
+        );
+        assert!(calls.borrow().contains(&Call::Query(
+            FIND_BOOKING_RESEARCH_SQL.to_owned(),
+            vec![
+                "text:workspace_01".to_owned(),
+                "text:research_01".to_owned(),
+            ]
+        )));
+        assert!(calls.borrow().contains(&Call::Query(
+            LIST_TRIP_BOOKING_RESEARCH_SQL.to_owned(),
+            vec!["text:workspace_01".to_owned(), "text:trip_01".to_owned()]
         )));
     }
 
