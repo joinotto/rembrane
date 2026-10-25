@@ -93,6 +93,15 @@ fn invited_principal_accepts_membership_atomically() {
 }
 
 #[test]
+fn invitation_creation_rejects_unknown_principal_at_repository_boundary() {
+    let mut store = shared_store();
+    assert_eq!(
+        InvitationService::new(&mut store).create(command("principal_unknown")),
+        Err(ApplicationError::NotFound)
+    );
+}
+
+#[test]
 fn another_principal_cannot_enumerate_or_accept_invitation() {
     let mut store = shared_store();
     let invitation = InvitationService::new(&mut store)

@@ -1468,6 +1468,16 @@ impl<C> InvitationRepository for SqliteStore<C> {
             .connection
             .transaction()
             .map_err(|_| ApplicationError::StorageUnavailable)?;
+        let invited_principal_exists: bool = transaction
+            .query_row(
+                "SELECT EXISTS (SELECT 1 FROM principals WHERE id = ?1)",
+                [invitation.invited_principal_id().as_str()],
+                |row| row.get(0),
+            )
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        if !invited_principal_exists {
+            return Err(ApplicationError::NotFound);
+        }
         transaction
             .execute(
                 "UPDATE workspace_invitations

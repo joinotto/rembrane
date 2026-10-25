@@ -93,6 +93,17 @@ fn persists_and_atomically_accepts_invitation() {
 }
 
 #[test]
+fn invitation_creation_rejects_unknown_principal_at_repository_boundary() {
+    let mut store = initialized_store();
+    let mut command = invitation_command();
+    command.invited_principal_id = PrincipalId::new("principal_unknown");
+    assert_eq!(
+        InvitationService::new(&mut store).create(command),
+        Err(ApplicationError::NotFound)
+    );
+}
+
+#[test]
 fn invitation_lookup_and_acceptance_do_not_cross_workspace_or_principal() {
     let mut store = initialized_store();
     let invitation = InvitationService::new(&mut store)

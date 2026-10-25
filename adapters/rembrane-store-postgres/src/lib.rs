@@ -1046,6 +1046,13 @@ where
             ApplicationError::Validation("invalid invitation persistence request".to_owned())
         }
         PostgresStoreError::VersionConflict => ApplicationError::VersionConflict,
+        PostgresStoreError::Begin(error)
+        | PostgresStoreError::Row(error)
+        | PostgresStoreError::Tenant(TenantTransactionError::Driver(error))
+            if error.kind() == PostgresFailureKind::ForeignKeyViolation =>
+        {
+            ApplicationError::NotFound
+        }
         other => map_application_error(other),
     }
 }
@@ -1454,7 +1461,7 @@ mod tests {
         PostgresProvisioningPool, PostgresRow, PostgresStore, PostgresStoreError,
         PostgresTransaction, ProvisioningTransaction, READ_TENANT_SQL, REPLACE_INVITATION_SQL,
         REPLACE_MEMBERSHIP_SQL, SET_TENANT_SQL, TenantTransaction, TenantTransactionError,
-        map_application_error,
+        map_application_error, map_invitation_application_error,
     };
 
     #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2822,6 +2829,12 @@ mod tests {
         }
         assert_eq!(
             map_application_error::<ClassifiedError>(PostgresStoreError::MissingRow),
+            ApplicationError::NotFound
+        );
+        assert_eq!(
+            map_invitation_application_error(PostgresStoreError::Tenant(
+                TenantTransactionError::Driver(ClassifiedError::ForeignKey)
+            )),
             ApplicationError::NotFound
         );
     }

@@ -1190,6 +1190,13 @@ impl InvitationRepository for InMemoryStore {
             AdministrativeAction::InvitationCreated,
         )?;
         validate_new_audit_event(&self.administrative_audit, &audit_event)?;
+        if !self
+            .principals
+            .iter()
+            .any(|principal| principal.id() == invitation.invited_principal_id())
+        {
+            return Err(ApplicationError::NotFound);
+        }
         if self
             .invitations
             .iter()
