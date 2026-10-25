@@ -654,12 +654,17 @@ fn check_provider(arguments: &[String]) -> Result<String, String> {
     let allow_provider_plaintext = arguments
         .iter()
         .any(|argument| argument == "--allow-provider-plaintext");
+    let expected_registry_sha256 = optional_option(arguments, "--expected-registry-sha256");
+    let minimum_registry_generated_at =
+        optional_option(arguments, "--minimum-registry-generated-at");
     let external_registry = ["--registry", "--signature", "--public-key"]
         .iter()
         .any(|name| arguments.iter().any(|argument| argument == name));
     let expected_arguments = 5
         + usize::from(allow_experimental)
         + usize::from(allow_provider_plaintext)
+        + 2 * usize::from(expected_registry_sha256.is_some())
+        + 2 * usize::from(minimum_registry_generated_at.is_some())
         + if external_registry { 6 } else { 0 };
     if arguments.len() != expected_arguments
         || arguments
@@ -672,14 +677,39 @@ fn check_provider(arguments: &[String]) -> Result<String, String> {
             .filter(|argument| *argument == "--allow-provider-plaintext")
             .count()
             > 1
+        || [
+            "--expected-registry-sha256",
+            "--minimum-registry-generated-at",
+        ]
+        .iter()
+        .any(|name| {
+            arguments
+                .iter()
+                .filter(|argument| *argument == name)
+                .count()
+                > 1
+        })
     {
         return Err(
             "usage: rembrane providers check --provider <id> --adapter-version <version> \
              [--allow-experimental] [--allow-provider-plaintext] \
+             [--expected-registry-sha256 <hex>] \
+             [--minimum-registry-generated-at <RFC3339>] \
              [--registry <path> --signature <path> --public-key <path>]"
                 .to_owned(),
         );
     }
+    if expected_registry_sha256.is_some_and(|value| {
+        value.len() != 64
+            || !value
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+    }) {
+        return Err("--expected-registry-sha256 must be 64 lowercase hexadecimal bytes".to_owned());
+    }
+    let minimum_registry_generated_at_epoch_seconds = minimum_registry_generated_at
+        .map(parse_canonical_timestamp)
+        .transpose()?;
     let registry = if external_registry {
         let registry = read_bounded_registry_file(
             option(arguments, "--registry")?,
@@ -704,7 +734,18 @@ fn check_provider(arguments: &[String]) -> Result<String, String> {
         option(arguments, "--adapter-version")?,
         allow_experimental,
         allow_provider_plaintext,
+        minimum_registry_generated_at_epoch_seconds,
+        expected_registry_sha256,
     )
+}
+
+fn parse_canonical_timestamp(value: &str) -> Result<i64, String> {
+    let parsed = chrono::DateTime::parse_from_rfc3339(value)
+        .map_err(|_| "--minimum-registry-generated-at must be canonical RFC3339".to_owned())?;
+    if parsed.to_rfc3339_opts(chrono::SecondsFormat::Secs, true) != value {
+        return Err("--minimum-registry-generated-at must be canonical RFC3339".to_owned());
+    }
+    Ok(parsed.timestamp())
 }
 
 fn read_bounded_registry_file(
@@ -741,6 +782,8 @@ fn check_provider_registry(
         adapter_version,
         allow_experimental,
         allow_provider_plaintext,
+        None,
+        None,
     )
 }
 
@@ -750,6 +793,8 @@ fn check_verified_provider_registry(
     adapter_version: &str,
     allow_experimental: bool,
     allow_provider_plaintext: bool,
+    minimum_registry_generated_at_epoch_seconds: Option<i64>,
+    expected_registry_sha256: Option<&str>,
 ) -> Result<String, String> {
     let receipt = verified_registry
         .select(&ProviderSelectionPolicy {
@@ -758,8 +803,8 @@ fn check_verified_provider_registry(
             allow_experimental,
             allow_provider_plaintext,
             now_epoch_seconds: chrono::Utc::now().timestamp(),
-            minimum_registry_generated_at_epoch_seconds: None,
-            expected_registry_sha256: None,
+            minimum_registry_generated_at_epoch_seconds,
+            expected_registry_sha256,
         })
         .map_err(|error| error.to_string())?;
     serde_json::to_string(&receipt)
@@ -2338,6 +2383,8 @@ fn print_help() {
            rembrane providers list\n\
            rembrane providers check --provider <id> --adapter-version <version> \
              [--allow-experimental] [--allow-provider-plaintext] \
+             [--expected-registry-sha256 <hex>] \
+             [--minimum-registry-generated-at <RFC3339>] \
              [--registry <path> --signature <path> --public-key <path>]\n\
            rembrane providers test --provider <id> --namespace <unique-name>\n\
            rembrane memory-provider check \
@@ -2903,6 +2950,47 @@ mod tests {
                 .contains("timestamp")
             );
         }
+    }
+
+    #[test]
+    fn provider_selection_cli_enforces_snapshot_constraints() {
+        let base = [
+            "check",
+            "--provider",
+            "rembrane.native",
+            "--adapter-version",
+            env!("CARGO_PKG_VERSION"),
+            "--allow-experimental",
+            "--allow-provider-plaintext",
+        ];
+        let mut constrained = base.map(str::to_owned).to_vec();
+        constrained.extend(
+            [
+                "--expected-registry-sha256",
+                "abd7139c64eab7e61c110bce6de6f1f2645dae9e69582d69e099fe1e5935c044",
+                "--minimum-registry-generated-at",
+                "2026-10-25T05:03:44Z",
+            ]
+            .map(str::to_owned),
+        );
+        super::check_provider(&constrained).expect("matching snapshot constraints");
+
+        let mut rollback = base.map(str::to_owned).to_vec();
+        rollback
+            .extend(["--minimum-registry-generated-at", "2026-10-25T05:03:45Z"].map(str::to_owned));
+        assert!(
+            super::check_provider(&rollback)
+                .expect_err("older registry")
+                .contains("older")
+        );
+
+        let mut malformed_digest = base.map(str::to_owned).to_vec();
+        malformed_digest.extend(["--expected-registry-sha256", "ABC"].map(str::to_owned));
+        assert!(
+            super::check_provider(&malformed_digest)
+                .expect_err("invalid digest")
+                .contains("lowercase hexadecimal")
+        );
     }
 
     #[test]

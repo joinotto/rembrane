@@ -60,6 +60,8 @@ target/debug/rembrane providers check \
   --adapter-version 0.1.0-alpha.1 \
   --allow-experimental \
   --allow-provider-plaintext \
+  --expected-registry-sha256 <previously-reviewed-registry-sha256> \
+  --minimum-registry-generated-at 2026-10-25T05:03:44Z \
   --registry provider-registry.json \
   --signature provider-registry.json.sig \
   --public-key provider-registry-signing-public.pem
@@ -68,6 +70,9 @@ target/debug/rembrane providers check \
 Do not obtain the public key from the same untrusted location as the registry.
 The resulting selection receipt includes the SHA-256 fingerprint of the
 canonical Ed25519 public-key DER bytes for trust-anchor auditing.
+Persist the accepted receipt's `registrySha256` and `registryGeneratedAt` when
+an integration needs rollback resistance, then supply them as the exact digest
+or minimum generation constraint on its next selection.
 
 The CLI can run the same destructive-fixture suite for adapters compiled into
 the current build. Always use a unique disposable namespace:

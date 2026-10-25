@@ -997,6 +997,8 @@ This roadmap describes sequencing, not release dates.
           - [x] Allow integrations to pin the exact registry digest or a
             minimum trusted generation time to reject signed snapshot replay
             and rollback.
+            - [x] Expose both snapshot constraints through the CLI for
+              operator-managed and automated integration workflows.
 - [x] Run installed native-provider conformance through the CLI.
 - [x] Automated external-provider registry verification and release signing.
   - [x] Verify registry identity, timestamps, conformance status, and pinned
