@@ -554,7 +554,7 @@ fn decode_json<Body: for<'de> Deserialize<'de>>(
             "memory provider returned an invalid response".to_owned(),
         ));
     }
-    let mut body = Vec::new();
+    let mut body = Zeroizing::new(Vec::new());
     response
         .take(maximum_bytes + 1)
         .read_to_end(&mut body)
@@ -564,7 +564,7 @@ fn decode_json<Body: for<'de> Deserialize<'de>>(
             "memory provider response exceeds the transport limit".to_owned(),
         ));
     }
-    serde_json::from_slice(&body)
+    serde_json::from_slice(body.as_slice())
         .map_err(|_| ProviderError::Rejected("memory provider returned malformed JSON".to_owned()))
 }
 

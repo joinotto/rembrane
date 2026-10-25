@@ -113,6 +113,8 @@ This roadmap describes sequencing, not release dates.
       generation, and recipient correlation.
     - [x] Bind rotation to the authenticated HTTP protocol and black-box
       provider conformance runner without exposing key material.
+      - [x] Zeroize bounded raw key-provider responses after strict typed
+        decoding.
       - [x] Emit a strict portable conformance result with provider identity
         and explicit evidence for all eight key-provider security cases.
         - [x] Publish strict machine-readable case requirements and derive
@@ -257,6 +259,7 @@ This roadmap describes sequencing, not release dates.
     replaceable bounded HTTP transport.
     - [x] Provide a concrete HTTPS transport with authenticated client
       credentials, strict timeouts, no redirects, and bounded responses.
+      - [x] Zeroize the bounded raw claims response after typed decoding.
     - [x] Resolve client credentials through the deployment-selected secret
       resolver without fixed environment-variable names.
   - [x] Map every current MCP tool to one narrow OAuth scope and fail closed
@@ -653,6 +656,8 @@ This roadmap describes sequencing, not release dates.
       - [x] Add authenticated bounded HTTP transport with strict origin,
         credential, timeout, redirect, response-size, manifest, and response
         correlation validation.
+        - [x] Zeroize bounded raw Graphiti response bodies after typed
+          decoding.
       - [x] Add executable Graphiti sidecar contract and integration tests.
         - [x] Implement and test a dependency-free contract core for workspace
           isolation, physical identity, idempotency, optimistic versions,
@@ -1144,6 +1149,8 @@ This roadmap describes sequencing, not release dates.
   - [x] Define an object-safe transport-neutral Rust client boundary covering
     every portable operation and implement it for the authenticated HTTP
     transport.
+    - [x] Zeroize bounded raw portable-provider responses after typed
+      operation decoding.
     - [x] Include discovery and policy negotiation, and let configured
       composition own any boxed client implementation.
 - [x] Versioned key-provider sidecar protocol for OS, HSM, and customer-KMS

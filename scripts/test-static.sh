@@ -215,6 +215,17 @@ rg -q '^REMBRANE_MCP_TRUSTED_ORIGINS=$' .env.example
 rg -q 'Result<Zeroizing<Vec<u8>>, ProviderError>' adapters/rembrane-semantic-mem0/src/lib.rs
 rg -q 'Result<Zeroizing<Vec<u8>>, ProviderError>' \
     adapters/rembrane-semantic-supermemory/src/lib.rs
+for zeroizing_response_adapter in \
+    adapters/rembrane-graph-graphiti-http/src/lib.rs \
+    adapters/rembrane-key-provider-http/src/lib.rs \
+    adapters/rembrane-memory-provider-http/src/lib.rs \
+    adapters/rembrane-oauth-introspection-http/src/lib.rs
+do
+    if ! rg -q 'Zeroizing::new\(Vec::new\(\)\)' "$zeroizing_response_adapter"; then
+        echo "HTTP adapter must zeroize bounded raw response bodies: $zeroizing_response_adapter" >&2
+        exit 1
+    fi
+done
 if rg -q 'errors: Vec<serde_json::Value>' adapters/rembrane-semantic-supermemory/src/lib.rs; then
     echo "Supermemory deletion errors must be streamed without arbitrary JSON retention" >&2
     exit 1

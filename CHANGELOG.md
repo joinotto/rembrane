@@ -9,6 +9,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- Graphiti, portable memory-provider, customer key-provider, and OAuth
+  introspection HTTP transports now zeroize their bounded raw response buffers
+  immediately after typed decoding.
 - Mem0 and Supermemory HTTP response bodies now remain in zeroizing buffers
   while canonical metadata is decoded, and Supermemory deletion failures are
   streamed past without materializing arbitrary provider error objects.

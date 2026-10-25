@@ -131,7 +131,7 @@ impl HttpGraphitiTransport {
                 "Graphiti sidecar returned an invalid response".to_owned(),
             ));
         }
-        let mut bytes = Vec::new();
+        let mut bytes = Zeroizing::new(Vec::new());
         response
             .take((MAX_GRAPHITI_RESPONSE_BYTES + 1) as u64)
             .read_to_end(&mut bytes)
@@ -141,7 +141,7 @@ impl HttpGraphitiTransport {
                 "Graphiti sidecar response exceeds the transport limit".to_owned(),
             ));
         }
-        serde_json::from_slice(&bytes).map_err(|_| {
+        serde_json::from_slice(bytes.as_slice()).map_err(|_| {
             ProviderError::Rejected("Graphiti sidecar returned malformed JSON".to_owned())
         })
     }

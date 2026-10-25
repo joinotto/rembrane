@@ -116,7 +116,7 @@ impl IntrospectionTransport for HttpIntrospectionTransport {
         {
             return Err(IntrospectionTransportError);
         }
-        let mut body = Vec::new();
+        let mut body = Zeroizing::new(Vec::new());
         response
             .take(MAXIMUM_RESPONSE_BYTES + 1)
             .read_to_end(&mut body)
@@ -124,7 +124,7 @@ impl IntrospectionTransport for HttpIntrospectionTransport {
         if body.len() as u64 > MAXIMUM_RESPONSE_BYTES {
             return Err(IntrospectionTransportError);
         }
-        decode_response(&body)
+        decode_response(body.as_slice())
     }
 }
 

@@ -123,7 +123,7 @@ impl HttpKeyProviderTransport {
         {
             return Err(CryptoError::InvalidEnvelope);
         }
-        let mut body = Vec::new();
+        let mut body = Zeroizing::new(Vec::new());
         response
             .take(MAXIMUM_RESPONSE_BYTES + 1)
             .read_to_end(&mut body)
@@ -131,7 +131,7 @@ impl HttpKeyProviderTransport {
         if body.len() as u64 > MAXIMUM_RESPONSE_BYTES {
             return Err(CryptoError::InvalidEnvelope);
         }
-        serde_json::from_slice(&body).map_err(|_| CryptoError::InvalidEnvelope)
+        serde_json::from_slice(body.as_slice()).map_err(|_| CryptoError::InvalidEnvelope)
     }
 }
 
