@@ -814,6 +814,8 @@ This roadmap describes sequencing, not release dates.
       repository.
       - [x] Define and tamper-test the exact two-provider release evidence set,
         including external provenance and distinct maintainer enforcement.
+      - [x] Require the completed two-provider evidence set in strict
+        production readiness.
     - [ ] Complete independent security review and resolve or explicitly
       accept every finding.
     - [x] Publish compatibility, deprecation, and mixed-version negotiation

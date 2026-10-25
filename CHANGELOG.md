@@ -17,6 +17,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   distinct passing implementations, external-provider provenance, separate
   maintainers and disposable namespaces, pinned revisions, ordered core
   conformance cases, and exact mixed-version evidence with no extra files.
+- Strict production readiness now requires the completed Memory Provider
+  release-evidence directory instead of allowing interoperability claims to
+  remain an unverified manual release note.
 - A strict customer-KMS production-evidence envelope and verifier binding each
   disposable cloud run to its provider build, core conformance profile, exact
   result and explicitly approved IAM-policy bytes, and completed resource

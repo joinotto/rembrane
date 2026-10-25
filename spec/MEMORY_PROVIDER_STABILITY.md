@@ -58,3 +58,7 @@ disposable namespaces, pinned implementation revisions, ordered core cases,
 and at least one externally maintained provider. Passing the verifier proves
 artifact completeness; it does not substitute for actually obtaining the
 external run or independent security review.
+
+Strict production readiness reads the completed directory from
+`REMBRANE_MEMORY_PROVIDER_EVIDENCE_DIRECTORY`. Leaving it unset makes the gate
+unavailable in development mode and fails closed under `--strict`.

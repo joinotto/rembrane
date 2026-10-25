@@ -79,6 +79,13 @@ else
     require_or_skip "AWS/Azure/GCP customer-KMS evidence set" 0 || true
 fi
 
+if [ -n "${REMBRANE_MEMORY_PROVIDER_EVIDENCE_DIRECTORY:-}" ]; then
+    node ./scripts/verify-memory-provider-release-evidence.mjs \
+        "$REMBRANE_MEMORY_PROVIDER_EVIDENCE_DIRECTORY"
+else
+    require_or_skip "two-provider protocol release evidence set" 0 || true
+fi
+
 if [ -n "$missing" ]; then
     if [ "$strict" = "1" ]; then
         echo "NOT READY: unavailable required gates: $missing" >&2
