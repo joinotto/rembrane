@@ -1487,9 +1487,11 @@ fn requested_memory_scope(
         + usize::from(entity_id.is_some())
         + usize::from(activity_id.is_some());
     if selected > 1
-        || domain.is_some_and(|value| value.trim().is_empty())
-        || entity_id.is_some_and(|value| value.trim().is_empty())
-        || activity_id.is_some_and(|value| value.trim().is_empty())
+        || domain.is_some_and(|value| {
+            value.trim().is_empty() || value.len() > 100 || value.chars().any(char::is_control)
+        })
+        || entity_id.is_some_and(|value| !valid_opaque_id(value))
+        || activity_id.is_some_and(|value| !valid_opaque_id(value))
     {
         return Err(ApiError::invalid_request());
     }
@@ -1608,7 +1610,16 @@ async fn checkpoint_activity(
             runtime.write_grant.workspace_id.clone(),
             runtime.write_grant.subject_id.clone(),
             activity_id,
-            request.entity_id.map(EntityId::new),
+            request
+                .entity_id
+                .map(|id| {
+                    if valid_opaque_id(&id) {
+                        Ok(EntityId::new(id))
+                    } else {
+                        Err(ApiError::invalid_request())
+                    }
+                })
+                .transpose()?,
             goal,
             request.summary,
             request.next_steps,
@@ -2711,8 +2722,8 @@ mod tests {
     use super::{
         ResolveGraphRequest, ResolveRequest, advance_identifier, build_memory_discovery,
         graph_request_scope, invitation_only_grants, parse_invitation_role,
-        parse_invitation_status, request_is_within_grant, selected_api_token_reference,
-        token_matches, valid_api_token, valid_opaque_id,
+        parse_invitation_status, request_is_within_grant, requested_memory_scope,
+        selected_api_token_reference, token_matches, valid_api_token, valid_opaque_id,
     };
 
     #[test]
@@ -2759,6 +2770,23 @@ mod tests {
             assert!(!valid_opaque_id(invalid));
         }
         assert!(!valid_opaque_id(&"a".repeat(256)));
+    }
+
+    #[test]
+    fn memory_scope_selector_is_exact_and_bounded() {
+        assert!(matches!(
+            requested_memory_scope(None, None, None),
+            Ok(MemoryScope::Global)
+        ));
+        assert!(matches!(
+            requested_memory_scope(Some("development"), None, None),
+            Ok(MemoryScope::Domain { name }) if name == "development"
+        ));
+        assert!(requested_memory_scope(Some("development"), Some("project_1"), None).is_err());
+        assert!(requested_memory_scope(Some("x\n"), None, None).is_err());
+        assert!(requested_memory_scope(Some(&"x".repeat(101)), None, None).is_err());
+        assert!(requested_memory_scope(None, Some("../project"), None).is_err());
+        assert!(requested_memory_scope(None, None, Some("activity/path")).is_err());
     }
 
     #[test]

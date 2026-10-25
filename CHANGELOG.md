@@ -28,6 +28,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   event sequencing.
 - Direct REST activity and memory path identifiers now enforce the same
   bounded ASCII opaque-ID grammar published by OpenAPI and the SDKs.
+- REST preference scopes and checkpoint entity references now reject
+  ambiguous, oversized, control-bearing, or non-opaque selectors before
+  authorization and persistence.
 - The REST service now serves `/.well-known/ai-memory` without authentication,
   reporting its configured API root, implemented capabilities, limits, and
   local-only versus customer-gateway plaintext-processing boundary.
