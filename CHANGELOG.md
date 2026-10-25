@@ -9,6 +9,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- A deterministic security-review manifest generator and validation gate that
+  hash-pin the exact sensitive source, protocol, migration, workflow, threat
+  model, and dependency files supplied to an independent reviewer.
 - Explicit Memory Provider Protocol `1.0` stability gates separating the
   existing review-locked `0.1` wire surface from a future long-term
   compatibility promise.

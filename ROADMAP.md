@@ -1306,5 +1306,7 @@ No stable release until:
 - [x] Threat model and recovery model are published.
 - [x] Protocol and encrypted export formats are versioned.
 - [ ] Security-sensitive code has independent review.
+  - [x] Provide a deterministic, clean-revision security-review manifest with
+    SHA-256 inventory and an external-review evidence checklist.
 - [x] Backup, restore, migration, revocation, and deletion have executable
   local-alpha coverage.
