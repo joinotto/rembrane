@@ -49,6 +49,7 @@ target/debug/rembrane providers check \
   --adapter-version 0.1.0-alpha.1 \
   --allow-experimental \
   --allow-provider-plaintext | jq .
+```
 
 To consume a newer release registry without rebuilding, provide the registry,
 its detached signature, and a separately trusted release public key together:
@@ -65,7 +66,8 @@ target/debug/rembrane providers check \
 ```
 
 Do not obtain the public key from the same untrusted location as the registry.
-```
+The resulting selection receipt includes the SHA-256 fingerprint of the
+canonical Ed25519 public-key DER bytes for trust-anchor auditing.
 
 The CLI can run the same destructive-fixture suite for adapters compiled into
 the current build. Always use a unique disposable namespace:

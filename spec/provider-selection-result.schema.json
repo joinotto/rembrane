@@ -8,6 +8,7 @@
     "schemaVersion",
     "registryGeneratedAt",
     "registrySha256",
+    "registryTrust",
     "provider",
     "adapterVersion",
     "status",
@@ -29,6 +30,34 @@
     "registrySha256": {
       "type": "string",
       "pattern": "^[0-9a-f]{64}$"
+    },
+    "registryTrust": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode"],
+          "properties": {
+            "mode": {
+              "const": "embedded"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode", "publicKeySha256"],
+          "properties": {
+            "mode": {
+              "const": "ed25519"
+            },
+            "publicKeySha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        }
+      ]
     },
     "provider": {
       "type": "string",

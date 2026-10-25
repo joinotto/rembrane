@@ -212,6 +212,7 @@ printf '%s\n' "$provider_selection" | jq -e \
     '.schemaVersion == 1
         and (.registryGeneratedAt | fromdateiso8601) <= now
         and (.registrySha256 | test("^[0-9a-f]{64}$"))
+        and .registryTrust.mode == "embedded"
         and .provider == "rembrane.native"
         and .eligibility == "experimental-opt-in"
         and .protocolVersion == "0.1"
@@ -255,7 +256,10 @@ external_selection=$(
         --public-key "$test_directory/registry-public.pem"
 )
 printf '%s\n' "$external_selection" | jq -e \
-    '.registrySha256 != null and .provider == "rembrane.native"' >/dev/null
+    '.registrySha256 != null
+        and .registryTrust.mode == "ed25519"
+        and (.registryTrust.publicKeySha256 | test("^[0-9a-f]{64}$"))
+        and .provider == "rembrane.native"' >/dev/null
 printf '\n' >>"$test_directory/provider-registry.json"
 if "$rembrane_binary" providers check \
     --provider rembrane.native \

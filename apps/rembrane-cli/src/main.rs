@@ -684,7 +684,7 @@ fn check_provider(arguments: &[String]) -> Result<String, String> {
                 .to_owned(),
         );
     }
-    let registry = if external_registry {
+    let (registry, trust_anchor_sha256) = if external_registry {
         let registry = read_bounded_registry_file(
             option(arguments, "--registry")?,
             MAX_PROVIDER_REGISTRY_BYTES,
@@ -697,17 +697,22 @@ fn check_provider(arguments: &[String]) -> Result<String, String> {
             MAX_PROVIDER_REGISTRY_PUBLIC_KEY_BYTES,
             "public key",
         )?;
-        verify_provider_registry_signature(&registry, &signature, &public_key)?;
-        String::from_utf8(registry).map_err(|_| "provider registry is not UTF-8".to_owned())?
+        let trust_anchor_sha256 =
+            verify_provider_registry_signature(&registry, &signature, &public_key)?;
+        (
+            String::from_utf8(registry).map_err(|_| "provider registry is not UTF-8".to_owned())?,
+            Some(trust_anchor_sha256),
+        )
     } else {
-        PROVIDER_REGISTRY.to_owned()
+        (PROVIDER_REGISTRY.to_owned(), None)
     };
-    check_provider_registry(
+    check_provider_registry_with_trust(
         &registry,
         option(arguments, "--provider")?,
         option(arguments, "--adapter-version")?,
         allow_experimental,
         allow_provider_plaintext,
+        trust_anchor_sha256.as_deref(),
     )
 }
 
@@ -735,7 +740,7 @@ fn verify_provider_registry_signature(
     registry: &[u8],
     signature: &[u8],
     public_key_pem: &[u8],
-) -> Result<(), String> {
+) -> Result<String, String> {
     if signature.len() != 64 {
         return Err("provider registry signature length is invalid".to_owned());
     }
@@ -757,15 +762,35 @@ fn verify_provider_registry_signature(
         &der[ED25519_SPKI_PREFIX.len()..],
     )
     .verify(registry, signature)
-    .map_err(|_| "provider registry signature verification failed".to_owned())
+    .map_err(|_| "provider registry signature verification failed".to_owned())?;
+    Ok(sha256_hex(&der))
 }
 
+#[cfg(test)]
 fn check_provider_registry(
     registry: &str,
     provider_id: &str,
     adapter_version: &str,
     allow_experimental: bool,
     allow_provider_plaintext: bool,
+) -> Result<String, String> {
+    check_provider_registry_with_trust(
+        registry,
+        provider_id,
+        adapter_version,
+        allow_experimental,
+        allow_provider_plaintext,
+        None,
+    )
+}
+
+fn check_provider_registry_with_trust(
+    registry: &str,
+    provider_id: &str,
+    adapter_version: &str,
+    allow_experimental: bool,
+    allow_provider_plaintext: bool,
+    trust_anchor_sha256: Option<&str>,
 ) -> Result<String, String> {
     let registry_sha256 = sha256_hex(registry.as_bytes());
     let registry: serde_json::Value = serde_json::from_str(registry)
@@ -806,18 +831,7 @@ fn check_provider_registry(
         .get("status")
         .and_then(serde_json::Value::as_str)
         .ok_or_else(|| "provider registry status is invalid".to_owned())?;
-    let eligibility = match status {
-        "compatible" => "compatible",
-        "experimental" if allow_experimental => "experimental-opt-in",
-        "experimental" => {
-            return Err("experimental provider requires --allow-experimental".to_owned());
-        }
-        "deprecated" => {
-            return Err("deprecated provider is not eligible for new selection".to_owned());
-        }
-        "revoked" => return Err("revoked provider is not eligible for selection".to_owned()),
-        _ => return Err("provider registry status is invalid".to_owned()),
-    };
+    let eligibility = provider_eligibility(status, allow_experimental)?;
     let plaintext_processing = provider
         .get("plaintextProcessing")
         .and_then(serde_json::Value::as_bool)
@@ -846,6 +860,15 @@ fn check_provider_registry(
         "schemaVersion": 1,
         "registryGeneratedAt": generated_at_text,
         "registrySha256": registry_sha256,
+        "registryTrust": match trust_anchor_sha256 {
+            Some(fingerprint) => serde_json::json!({
+                "mode": "ed25519",
+                "publicKeySha256": fingerprint,
+            }),
+            None => serde_json::json!({
+                "mode": "embedded",
+            }),
+        },
         "provider": provider_id,
         "adapterVersion": adapter_version,
         "status": status,
@@ -866,6 +889,21 @@ fn check_provider_registry(
         },
     }))
     .map_err(|_| "could not serialize provider eligibility".to_owned())
+}
+
+fn provider_eligibility(status: &str, allow_experimental: bool) -> Result<&'static str, String> {
+    Ok(match status {
+        "compatible" => "compatible",
+        "experimental" if allow_experimental => "experimental-opt-in",
+        "experimental" => {
+            return Err("experimental provider requires --allow-experimental".to_owned());
+        }
+        "deprecated" => {
+            return Err("deprecated provider is not eligible for new selection".to_owned());
+        }
+        "revoked" => return Err("revoked provider is not eligible for selection".to_owned()),
+        _ => return Err("provider registry status is invalid".to_owned()),
+    })
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
@@ -3012,6 +3050,7 @@ mod tests {
         assert_eq!(selected["provider"], "rembrane.native");
         assert_eq!(selected["adapterVersion"], env!("CARGO_PKG_VERSION"));
         assert_eq!(selected["eligibility"], "experimental-opt-in");
+        assert_eq!(selected["registryTrust"]["mode"], "embedded");
         assert_eq!(selected["registryGeneratedAt"], "2026-10-25T05:03:44Z");
         assert_eq!(
             selected["registrySha256"],

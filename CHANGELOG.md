@@ -30,6 +30,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Provider selection can consume bounded external registry snapshots after
   in-process detached Ed25519 verification with an operator-supplied public
   key, enabling revocation updates without rebuilding the CLI.
+- Provider-selection receipts identify embedded trust or record the SHA-256
+  fingerprint of the exact Ed25519 public key used for external verification.
 - A strict portable key-provider conformance result schema and runner output
   containing provider identity and explicit pass evidence for eight
   authentication, encryption, limit, rotation, and replay cases.

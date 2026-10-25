@@ -983,6 +983,8 @@ This roadmap describes sequencing, not release dates.
           before issuing a selection receipt.
       - [x] Accept bounded external registry snapshots only with a valid
         detached Ed25519 signature under an explicitly supplied trust anchor.
+        - [x] Record embedded versus external trust mode and the canonical
+          Ed25519 public-key fingerprint in every selection receipt.
 - [x] Run installed native-provider conformance through the CLI.
 - [x] Automated external-provider registry verification and release signing.
   - [x] Verify registry identity, timestamps, conformance status, and pinned
