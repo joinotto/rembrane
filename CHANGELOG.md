@@ -1016,6 +1016,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   signatures from one immutable set of opened artifact bytes.
 - Provider-registry Ed25519 verification now uses bounded no-follow reads and
   verifies the exact opened registry bytes without OpenSSL path reopening.
+- Provider-registry signing now requires owner-only non-symbolic private keys,
+  writes only to a new owner-only directory, revalidates the copied registry,
+  bounds the Ed25519 output, and removes incomplete bundles after failure.
 - Restored the complete dependency-enabled workspace build by declaring
   previously implicit crate dependencies and enabling rmcp's stdio transport.
 - Corrected Memory Provider selector field casing and URL path construction so

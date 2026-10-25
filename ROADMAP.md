@@ -804,6 +804,8 @@ This roadmap describes sequencing, not release dates.
   request-limit negotiation.
   - [x] Verify signed provider registries over exact no-follow registry,
     signature, and Ed25519 public-key reads.
+  - [x] Produce registry signature bundles in new owner-only directories,
+    rejecting unsafe keys and cleaning partial output on failure.
 - [x] Canonically parse and bound bring-your-own provider endpoints, allowing
   plaintext loopback only inside a declared trusted boundary.
 - [x] Enforce provider protocol and declared limits at projection and retrieval
