@@ -12,13 +12,14 @@ use rembrane_application::{
     AdministrativeAuditRepository, ApplicationError, BookingResearchMutationRepository,
     BookingResearchRepository, CanonicalGraphMutationRepository, CanonicalMutationRepository,
     CheckpointDisclosureRepository, CheckpointMutationRepository, CheckpointRepository,
-    DisclosureRepository, EventRepository, GraphProjectionOutboxRepository, InvitationRepository,
-    KeyRotationRepository, KnowledgeDirection, KnowledgeGraphMutationRepository,
-    KnowledgeGraphRepository, MAX_ADMINISTRATIVE_AUDIT_PAGE, MAX_KNOWLEDGE_NEIGHBOURS,
-    MAXIMUM_INVITATION_LIST_ITEMS, MemberLifecycleRepository, MemberScopeGrantRepository,
-    MembershipRepository, MemoryRepository, ProjectionOutboxRepository, RetentionRepository,
-    TravelDisclosureRepository, TripMutationRepository, TripRepository, WorkspaceReadRepository,
-    WorkspaceRepository, is_strict_successor,
+    DisclosureRepository, EventRepository, GraphDisclosureRepository,
+    GraphProjectionOutboxRepository, InvitationRepository, KeyRotationRepository,
+    KnowledgeDirection, KnowledgeGraphMutationRepository, KnowledgeGraphRepository,
+    MAX_ADMINISTRATIVE_AUDIT_PAGE, MAX_KNOWLEDGE_NEIGHBOURS, MAXIMUM_INVITATION_LIST_ITEMS,
+    MemberLifecycleRepository, MemberScopeGrantRepository, MembershipRepository, MemoryRepository,
+    ProjectionOutboxRepository, RetentionRepository, TravelDisclosureRepository,
+    TripMutationRepository, TripRepository, WorkspaceReadRepository, WorkspaceRepository,
+    is_strict_successor,
 };
 use rembrane_codec::{
     decode_booking_research, decode_checkpoint, decode_event, decode_knowledge_edge,
@@ -30,15 +31,16 @@ use rembrane_domain::{
     ActivityCheckpoint, ActivityId, AdministrativeAction, AdministrativeAuditEvent,
     AdministrativeAuditEventId, AdministrativeTargetKind, BookingResearch, BookingResearchId,
     CanonicalEvent, CheckpointDisclosureReceipt, DisclosedBookingResearch, DisclosureReceipt,
-    EntityId, EventPayload, EvidenceSource, GraphProjectionJob, GraphProjectionResource,
-    Invitation, InvitationId, InvitationStatus, KeyRotationId, KeyRotationReceipt,
-    KeyRotationStatus, KnowledgeEdge, KnowledgeEdgeId, KnowledgeNode, KnowledgeNodeId, LegalHoldId,
-    LegalHoldStatus, MAX_KEY_ROTATION_RECIPIENTS, MemberScopeGrant, Membership, MembershipStatus,
-    MemoryId, MemoryKind, MemoryRecord, MemoryScope, MemoryStatus, Principal, PrincipalId,
-    ProjectionJob, ProjectionJobId, ProjectionOperation, ProjectionStatus, ProviderId, ReadScope,
-    ResearchFreshness, RetentionPeriod, RetentionResource, TravelDisclosureReceipt, Trip,
-    Workspace, WorkspaceId, WorkspaceKeyRotation, WorkspaceKind, WorkspaceLegalHold,
-    WorkspaceRetentionPolicy, WorkspaceRole,
+    EntityId, EventPayload, EvidenceSource, GraphDisclosureDirection, GraphDisclosureReceipt,
+    GraphProjectionJob, GraphProjectionResource, Invitation, InvitationId, InvitationStatus,
+    KeyRotationId, KeyRotationReceipt, KeyRotationStatus, KnowledgeEdge, KnowledgeEdgeId,
+    KnowledgeNode, KnowledgeNodeId, LegalHoldId, LegalHoldStatus, MAX_KEY_ROTATION_RECIPIENTS,
+    MemberScopeGrant, Membership, MembershipStatus, MemoryId, MemoryKind, MemoryRecord,
+    MemoryScope, MemoryStatus, Principal, PrincipalId, ProjectionJob, ProjectionJobId,
+    ProjectionOperation, ProjectionStatus, ProviderId, ReadScope, ResearchFreshness,
+    RetentionPeriod, RetentionResource, TravelDisclosureReceipt, Trip, Workspace, WorkspaceId,
+    WorkspaceKeyRotation, WorkspaceKind, WorkspaceLegalHold, WorkspaceRetentionPolicy,
+    WorkspaceRole,
 };
 
 pub const SET_TENANT_SQL: &str = "SELECT set_config('rembrane.workspace_id', $1, true);";
@@ -298,6 +300,14 @@ pub const INSERT_TRAVEL_DISCLOSURE_SQL: &str = "INSERT INTO travel_disclosure_re
 pub const INSERT_DISCLOSED_BOOKING_RESEARCH_SQL: &str = "INSERT INTO disclosed_booking_research \
     (workspace_id, disclosure_id, research_id, research_version, freshness, ordinal) \
     VALUES ($1, $2, $3, $4, $5, $6)";
+pub const INSERT_GRAPH_DISCLOSURE_SQL: &str = "INSERT INTO graph_disclosure_receipts \
+    (workspace_id, id, subject_id, client_id, purpose_code, node_id, direction, \
+    valid_at_epoch_seconds) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)";
+pub const FIND_DISCLOSED_KNOWLEDGE_EDGE_VERSION_SQL: &str = "SELECT workspace_id, id, version FROM knowledge_edges \
+    WHERE workspace_id = $1 AND id = $2 ORDER BY workspace_id, id LIMIT 2";
+pub const INSERT_DISCLOSED_KNOWLEDGE_EDGE_SQL: &str = "INSERT INTO disclosed_knowledge_edges \
+    (workspace_id, disclosure_id, edge_id, edge_version, ordinal) \
+    VALUES ($1, $2, $3, $4, $5)";
 pub const FIND_KNOWLEDGE_NODE_SQL: &str = "SELECT workspace_id, id, version, node_ciphertext, \
     encryption_key_id, encryption_algorithm, encryption_nonce FROM knowledge_nodes \
     WHERE workspace_id = $1 AND id = $2 ORDER BY workspace_id, id LIMIT 2";
@@ -4075,6 +4085,140 @@ where
             .map_err(PostgresStoreError::Tenant)
             .map_err(map_application_error)
     }
+}
+
+impl<Pool, Cipher> GraphDisclosureRepository for PostgresTenantMemoryStore<'_, '_, Pool, Cipher>
+where
+    Pool: PostgresPool,
+    Pool::Error: ClassifiedPostgresError,
+    <Pool::Transaction as PostgresTransaction>::Row: PostgresRow<Error = Pool::Error>,
+    Cipher: RecordCipher,
+{
+    fn append_graph_disclosure(
+        &mut self,
+        receipt: GraphDisclosureReceipt,
+    ) -> Result<(), ApplicationError> {
+        if receipt.workspace_id != self.workspace_id {
+            return Err(ApplicationError::AccessDenied);
+        }
+        if receipt.purpose.trim().is_empty()
+            || receipt.valid_at_epoch_seconds == 0
+            || receipt.edges.len() > MAX_KNOWLEDGE_NEIGHBOURS
+            || receipt.edges.iter().any(|edge| edge.version == 0)
+        {
+            return Err(ApplicationError::Validation(
+                "invalid graph disclosure".to_owned(),
+            ));
+        }
+        let direction = match receipt.direction {
+            GraphDisclosureDirection::Incoming => "incoming",
+            GraphDisclosureDirection::Outgoing => "outgoing",
+            GraphDisclosureDirection::Both => "both",
+        };
+        let mut transaction = self
+            .store
+            .begin_tenant(receipt.workspace_id.clone())
+            .map_err(map_application_error)?;
+        execute_exactly_one(
+            &mut transaction,
+            INSERT_GRAPH_DISCLOSURE_SQL,
+            &[
+                PostgresParameter::Text(receipt.workspace_id.as_str()),
+                PostgresParameter::Text(receipt.id.as_str()),
+                PostgresParameter::Text(receipt.subject_id.as_str()),
+                PostgresParameter::Text(receipt.client_id.as_str()),
+                PostgresParameter::Text(&receipt.purpose),
+                PostgresParameter::Text(receipt.node_id.as_str()),
+                PostgresParameter::Text(direction),
+                PostgresParameter::I64(
+                    postgres_epoch::<Pool::Error>(receipt.valid_at_epoch_seconds)
+                        .map_err(map_application_error)?,
+                ),
+            ],
+        )
+        .map_err(map_application_error)?;
+        insert_disclosed_knowledge_edges(&mut transaction, &receipt)?;
+        transaction
+            .commit()
+            .map_err(PostgresStoreError::Tenant)
+            .map_err(map_application_error)
+    }
+}
+
+fn insert_disclosed_knowledge_edges<Transaction>(
+    transaction: &mut TenantTransaction<Transaction>,
+    receipt: &GraphDisclosureReceipt,
+) -> Result<(), ApplicationError>
+where
+    Transaction: PostgresTransaction,
+    Transaction::Error: ClassifiedPostgresError,
+    Transaction::Row: PostgresRow<Error = Transaction::Error>,
+{
+    let mut edge_ids = BTreeSet::new();
+    for (ordinal, disclosed) in receipt.edges.iter().enumerate() {
+        if !edge_ids.insert(disclosed.id.as_str()) {
+            return Err(ApplicationError::Validation(
+                "duplicate disclosed knowledge edge".to_owned(),
+            ));
+        }
+        let rows = transaction
+            .query(
+                FIND_DISCLOSED_KNOWLEDGE_EDGE_VERSION_SQL,
+                &[
+                    PostgresParameter::Text(receipt.workspace_id.as_str()),
+                    PostgresParameter::Text(disclosed.id.as_str()),
+                ],
+            )
+            .map_err(PostgresStoreError::Tenant)
+            .map_err(map_application_error)?;
+        if rows.len() != 1 {
+            return Err(if rows.is_empty() {
+                ApplicationError::VersionConflict
+            } else {
+                ApplicationError::StorageUnavailable
+            });
+        }
+        let row = &rows[0];
+        let correlated = row
+            .text("workspace_id")
+            .map_err(PostgresStoreError::Row)
+            .map_err(map_application_error)?
+            == receipt.workspace_id.as_str()
+            && row
+                .text("id")
+                .map_err(PostgresStoreError::Row)
+                .map_err(map_application_error)?
+                == disclosed.id.as_str();
+        if !correlated {
+            return Err(ApplicationError::StorageUnavailable);
+        }
+        if row
+            .u64("version")
+            .map_err(PostgresStoreError::Row)
+            .map_err(map_application_error)?
+            != disclosed.version
+        {
+            return Err(ApplicationError::VersionConflict);
+        }
+        execute_exactly_one(
+            transaction,
+            INSERT_DISCLOSED_KNOWLEDGE_EDGE_SQL,
+            &[
+                PostgresParameter::Text(receipt.workspace_id.as_str()),
+                PostgresParameter::Text(receipt.id.as_str()),
+                PostgresParameter::Text(disclosed.id.as_str()),
+                PostgresParameter::I64(
+                    postgres_epoch::<Transaction::Error>(disclosed.version)
+                        .map_err(map_application_error)?,
+                ),
+                PostgresParameter::I64(i64::try_from(ordinal).map_err(|_| {
+                    ApplicationError::Validation("too many disclosed knowledge edges".to_owned())
+                })?),
+            ],
+        )
+        .map_err(map_application_error)?;
+    }
+    Ok(())
 }
 
 fn validate_travel_disclosure(

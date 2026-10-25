@@ -422,6 +422,8 @@ This roadmap describes sequencing, not release dates.
         in-memory reference adapter.
       - [x] Persist tenant-scoped graph disclosure receipts and exact disclosed
         edge revisions atomically in SQLite.
+      - [x] Implement the tenant-pinned PostgreSQL graph disclosure port with
+        bounded duplicate rejection and exact canonical revision checks.
   - [x] Add local SQLite graph persistence and Graphiti projection adapter.
     - [x] Construct Graphiti from validated provider profiles through any
       deployment-selected secret resolver without fixed credential names.

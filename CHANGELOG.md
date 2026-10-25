@@ -17,6 +17,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - SQLite graph disclosure schema and atomic repository support with closed
   direction values, tenant-bound graph foreign keys, and exact canonical edge
   revision verification.
+- Tenant-pinned PostgreSQL graph disclosure repository operations with bounded
+  batches, duplicate-edge rejection, exact returned-row correlation, and
+  rollback on missing or stale canonical revisions.
 - Bounded shared-workspace invitation validity with persisted creation and
   expiry time, a 30-day maximum lifetime, and fail-closed acceptance at the
   expiry boundary.
