@@ -166,6 +166,10 @@ sh -n scripts/sign-provider-registry.sh
 sh -n scripts/verify-provider-registry-signature.sh
 sh -n scripts/test-provider-registry-signing.sh
 sh -n scripts/test-core-offline.sh
+rg -q '^# REMBRANE_KEY_PROVIDER=macos-keychain$' .env.example
+rg -q '^REMBRANE_KEYCHAIN_SERVICE=$' .env.example
+rg -q '^REMBRANE_KEYCHAIN_ACCOUNT=$' .env.example
+rg -q '^REMBRANE_KEYCHAIN_HISTORICAL_KEYS=$' .env.example
 rg -q '127\.0\.0\.1:8787:8787' compose.yaml
 rg -q 'no-new-privileges:true' compose.yaml
 rg -q 'cap_drop:' compose.yaml

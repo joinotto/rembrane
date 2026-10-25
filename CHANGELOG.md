@@ -9,6 +9,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- The canonical environment template now includes the complete macOS Keychain
+  lookup profile, including metadata-only historical key generations, with a
+  static regression gate for Mac and Mac mini self-hosting.
 - Privacy diagnostics now report protected workspace-key and key-provider
   reference targets instead of incorrectly naming raw secret variables, and
   include configured Supermemory credentials in the secret-source inventory.

@@ -93,6 +93,8 @@ This roadmap describes sequencing, not release dates.
     key material.
   - [x] Resolve active and historical rotating keyrings from macOS Keychain
     using metadata-only references.
+    - [x] Publish the complete macOS Keychain lookup profile in the canonical
+      environment template for local and Mac mini self-hosting.
   - [x] Add Windows DPAPI and Linux Secret Service adapters.
     - [x] Resolve active and historical Linux Secret Service keys through the
       fixed `secret-tool` client with lookup metadata only and zeroized output.
