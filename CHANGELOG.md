@@ -31,9 +31,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   fixtures, with CI rejection of unreviewed wire-surface drift.
 - An unconditional negative compatibility-lock fixture proving a tampered
   canonical Memory Provider schema fails verification.
-- A machine-readable MCP client catalog covering Codex, Claude Code, Gemini
-  CLI, Cursor, VS Code, Zed, OpenCode, and the generic bot manifest, including
-  each client's configuration and secret-reference environment mode.
+- A schema-versioned machine-readable MCP client catalog covering Codex,
+  Claude Code, Gemini CLI, Cursor, VS Code, Zed, OpenCode, and the generic bot
+  manifest, including each client's configuration and secret-reference
+  environment mode.
 - A parameter-bound PostgreSQL tenant-session contract with exact context
   read-back requirements and a live pooled-connection leakage regression.
 - A typed reference-only PostgreSQL connection profile with explicit

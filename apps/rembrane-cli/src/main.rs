@@ -793,49 +793,59 @@ struct McpClientDescriptor {
     environment_mode: &'static str,
 }
 
-fn mcp_client_catalog() -> [McpClientDescriptor; 8] {
-    [
-        McpClientDescriptor {
-            id: "codex",
-            config_format: "toml",
-            environment_mode: "inherit-allowlist",
-        },
-        McpClientDescriptor {
-            id: "claude-code",
-            config_format: "json",
-            environment_mode: "placeholder",
-        },
-        McpClientDescriptor {
-            id: "gemini-cli",
-            config_format: "json",
-            environment_mode: "placeholder",
-        },
-        McpClientDescriptor {
-            id: "cursor",
-            config_format: "json",
-            environment_mode: "placeholder",
-        },
-        McpClientDescriptor {
-            id: "vscode",
-            config_format: "json",
-            environment_mode: "placeholder",
-        },
-        McpClientDescriptor {
-            id: "zed",
-            config_format: "json",
-            environment_mode: "process-inherited",
-        },
-        McpClientDescriptor {
-            id: "opencode",
-            config_format: "json",
-            environment_mode: "placeholder",
-        },
-        McpClientDescriptor {
-            id: "generic",
-            config_format: "rembrane-stdio-manifest-v1",
-            environment_mode: "required-environment",
-        },
-    ]
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct McpClientCatalog {
+    schema_version: u32,
+    clients: [McpClientDescriptor; 8],
+}
+
+fn mcp_client_catalog() -> McpClientCatalog {
+    McpClientCatalog {
+        schema_version: 1,
+        clients: [
+            McpClientDescriptor {
+                id: "codex",
+                config_format: "toml",
+                environment_mode: "inherit-allowlist",
+            },
+            McpClientDescriptor {
+                id: "claude-code",
+                config_format: "json",
+                environment_mode: "placeholder",
+            },
+            McpClientDescriptor {
+                id: "gemini-cli",
+                config_format: "json",
+                environment_mode: "placeholder",
+            },
+            McpClientDescriptor {
+                id: "cursor",
+                config_format: "json",
+                environment_mode: "placeholder",
+            },
+            McpClientDescriptor {
+                id: "vscode",
+                config_format: "json",
+                environment_mode: "placeholder",
+            },
+            McpClientDescriptor {
+                id: "zed",
+                config_format: "json",
+                environment_mode: "process-inherited",
+            },
+            McpClientDescriptor {
+                id: "opencode",
+                config_format: "json",
+                environment_mode: "placeholder",
+            },
+            McpClientDescriptor {
+                id: "generic",
+                config_format: "rembrane-stdio-manifest-v1",
+                environment_mode: "required-environment",
+            },
+        ],
+    }
 }
 
 fn validate_mcp_server_binary(server_binary: &str) -> Result<(), String> {
@@ -2675,7 +2685,12 @@ mod tests {
     #[test]
     fn mcp_client_catalog_is_complete_unique_and_secret_custody_explicit() {
         let catalog = mcp_client_catalog();
-        let ids = catalog.iter().map(|client| client.id).collect::<Vec<_>>();
+        assert_eq!(catalog.schema_version, 1);
+        let ids = catalog
+            .clients
+            .iter()
+            .map(|client| client.id)
+            .collect::<Vec<_>>();
         assert_eq!(
             ids,
             [
@@ -2693,11 +2708,12 @@ mod tests {
         unique.sort_unstable();
         unique.dedup();
         assert_eq!(unique.len(), ids.len());
-        assert!(catalog.iter().all(|client| {
+        assert!(catalog.clients.iter().all(|client| {
             !client.config_format.is_empty() && !client.environment_mode.is_empty()
         }));
         assert_eq!(
             catalog
+                .clients
                 .iter()
                 .find(|client| client.id == "zed")
                 .map(|client| client.environment_mode),

@@ -320,10 +320,10 @@ Generated MCP configurations pass only credential locators such as
 another deployment-owned resolver; generated client configuration never asks
 the launcher to serialize raw key or bearer-token values.
 
-`mcp-config clients` returns a machine-readable catalog of every supported
-client, its configuration format, and whether environment references are
-rendered as placeholders, inherited through an allowlist, or inherited from
-the launcher process.
+`mcp-config clients` returns a schema-versioned machine-readable catalog of
+every supported client, its configuration format, and whether environment
+references are rendered as placeholders, inherited through an allowlist, or
+inherited from the launcher process.
 
 Zed does not interpolate environment-variable placeholders in its settings
 file. Its generated entry therefore leaves `env` empty and inherits Rembrane

@@ -916,8 +916,9 @@ This roadmap describes sequencing, not release dates.
   - [x] Generate reference-only credential environment contracts for clients
     with documented interpolation, an inherited-environment Zed configuration,
     and the implementation-independent bot manifest.
-    - [x] Expose a machine-readable catalog of supported agent clients,
-      configuration formats, and secret-reference environment modes.
+    - [x] Expose a schema-versioned machine-readable catalog of supported
+      agent clients, configuration formats, and secret-reference environment
+      modes.
 
 ## Release gates
 
