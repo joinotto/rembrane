@@ -366,6 +366,8 @@ This roadmap describes sequencing, not release dates.
           for pluggable native and Graphiti indexers.
           - [x] Commit encrypted PostgreSQL graph revisions and their validated
             provider projection jobs in one tenant transaction.
+          - [x] Run the graph projection worker through the PostgreSQL facade
+            into the native graph provider and complete the durable lifecycle.
       - [x] Add exact invitation lookup and bounded status-filtered listing
         with terminal-state restoration and full tenant/identifier correlation.
       - [x] Implement atomic invitation creation, acceptance, revocation,

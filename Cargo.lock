@@ -1458,6 +1458,7 @@ dependencies = [
  "rembrane-contracts",
  "rembrane-crypto",
  "rembrane-domain",
+ "rembrane-graph-native",
  "rembrane-semantic-native",
 ]
 

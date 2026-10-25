@@ -6789,14 +6789,14 @@ mod tests {
         CanonicalGraphMutationRepository, CanonicalMutationRepository,
         CheckpointDisclosureRepository, CheckpointMutationRepository, CheckpointRepository,
         CheckpointService, CreateInvitationCommand, DisclosureRepository, EventRepository,
-        GraphProjectionOutboxRepository, InvitationRepository, InvitationService,
-        KeyRotationRepository, KnowledgeDirection, KnowledgeGraphMutationRepository,
-        KnowledgeGraphRepository, MemberLifecycleRepository, MemberScopeGrantRepository,
-        MembershipRepository, MemoryRepository, ProjectionOutboxRepository, ProjectionOutcome,
-        ProjectionWorker, ResolveContextCommand, ResolveContextService,
-        ResolveTravelContextCommand, ResumeActivityCommand, RetentionRepository,
-        TravelContextService, TravelDisclosureRepository, TripMutationRepository, TripRepository,
-        WorkspaceRepository,
+        GraphProjectionOutboxRepository, GraphProjectionWorker, InvitationRepository,
+        InvitationService, KeyRotationRepository, KnowledgeDirection,
+        KnowledgeGraphMutationRepository, KnowledgeGraphRepository, MemberLifecycleRepository,
+        MemberScopeGrantRepository, MembershipRepository, MemoryRepository,
+        ProjectionOutboxRepository, ProjectionOutcome, ProjectionWorker, ResolveContextCommand,
+        ResolveContextService, ResolveTravelContextCommand, ResumeActivityCommand,
+        RetentionRepository, TravelContextService, TravelDisclosureRepository,
+        TripMutationRepository, TripRepository, WorkspaceRepository,
     };
     use rembrane_codec::{
         encode_booking_research, encode_checkpoint, encode_knowledge_edge, encode_knowledge_node,
@@ -6820,6 +6820,7 @@ mod tests {
         Workspace, WorkspaceId, WorkspaceKeyRotation, WorkspaceRetentionPolicy, WorkspaceRole,
         WritePermission,
     };
+    use rembrane_graph_native::NativeGraphProvider;
     use rembrane_semantic_native::NativeSemanticProvider;
 
     use super::{
@@ -10560,6 +10561,98 @@ mod tests {
                     .any(|call| matches!(call, Call::Query(actual, _) if actual == statement))
             );
         }
+    }
+
+    #[test]
+    fn graph_projection_worker_indexes_postgres_node_and_completes_job() {
+        let node = knowledge_node("node_project", KnowledgeNodeKind::Project, "Rembrane");
+        let pending = GraphProjectionJob::new(
+            ProjectionJobId::new("graph_projection_worker_01"),
+            WorkspaceId::new("workspace_01"),
+            GraphProjectionResource::Node(node.id().clone()),
+            node.version(),
+            ProviderId::new("rembrane.graph.native"),
+            ProjectionOperation::Upsert,
+        )
+        .expect("pending graph projection");
+        let processing = pending
+            .clone()
+            .begin()
+            .expect("processing graph projection");
+        let completed = processing
+            .clone()
+            .complete()
+            .expect("completed graph projection");
+        let tenant_reads = || {
+            VecDeque::from([
+                Ok(Some("workspace_01".to_owned())),
+                Ok(Some("workspace_01".to_owned())),
+            ])
+        };
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let store = PostgresStore::new(FakePool {
+            calls: Rc::clone(&calls),
+            tenant_batches: RefCell::new(
+                [
+                    tenant_reads(),
+                    tenant_reads(),
+                    tenant_reads(),
+                    tenant_reads(),
+                ]
+                .into(),
+            ),
+            row_batches: RefCell::new(
+                [
+                    vec![FakeRow::graph_projection(&pending)],
+                    Vec::new(),
+                    vec![FakeRow::knowledge_node(&node)],
+                    Vec::new(),
+                ]
+                .into(),
+            ),
+        });
+        let tenant = store.for_workspace(WorkspaceId::new("workspace_01"));
+        let cipher = IdentityCipher;
+        let mut repository = tenant.with_cipher(&cipher);
+        let mut provider = NativeGraphProvider::new();
+
+        assert_eq!(
+            GraphProjectionWorker::new(
+                &mut repository,
+                &mut provider,
+                ProviderId::new("rembrane.graph.native"),
+                3,
+            )
+            .expect("graph worker")
+            .process_next()
+            .expect("process graph projection"),
+            ProjectionOutcome::Completed
+        );
+
+        let calls = calls.borrow();
+        assert!(calls.iter().any(|call| matches!(
+            call,
+            Call::Query(statement, _)
+                if statement == FIND_KNOWLEDGE_NODE_SQL
+        )));
+        assert_eq!(
+            calls
+                .iter()
+                .filter(|call| matches!(
+                    call,
+                    Call::Execute(statement, parameters)
+                        if statement == REPLACE_GRAPH_PROJECTION_SQL
+                            && (parameters.contains(&format!(
+                                "text:{}",
+                                super::projection_status_name(processing.status())
+                            )) || parameters.contains(&format!(
+                                "text:{}",
+                                super::projection_status_name(completed.status())
+                            )))
+                ))
+                .count(),
+            2
+        );
     }
 
     #[test]

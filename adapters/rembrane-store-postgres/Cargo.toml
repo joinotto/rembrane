@@ -15,6 +15,7 @@ rembrane-domain = { path = "../../crates/rembrane-domain" }
 
 [dev-dependencies]
 rembrane-contracts = { path = "../../crates/rembrane-contracts" }
+rembrane-graph-native = { path = "../rembrane-graph-native" }
 rembrane-semantic-native = { path = "../rembrane-semantic-native" }
 
 [lints]

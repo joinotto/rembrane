@@ -149,6 +149,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Atomic PostgreSQL canonical graph mutations that validate projection batches
   before committing encrypted node or edge revisions and provider outbox jobs
   together.
+- End-to-end PostgreSQL graph projection worker coverage that decrypts the
+  exact canonical node, indexes it through the native graph provider, and
+  completes the optimistic durable outbox lifecycle.
 - PostgreSQL invitation lookup and bounded deterministic listing with optional
   status filtering, numeric lifetime decoding, terminal-state restoration,
   and exact tenant/invitation correlation.
