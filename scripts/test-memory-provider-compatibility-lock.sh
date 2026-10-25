@@ -46,4 +46,23 @@ then
     exit 1
 fi
 
+cp "$repository_root/spec/memory-provider.schema.json" \
+    "$test_root/spec/memory-provider.schema.json"
+jq 'del(.artifacts[-1])' \
+    "$repository_root/spec/memory-provider-compatibility-lock.json" \
+    >"$test_root/spec/memory-provider-compatibility-lock.json"
+if node "$test_root/scripts/verify-memory-provider-compatibility.mjs" \
+    >"$test_root/removal.stdout" 2>"$test_root/removal.stderr"
+then
+    echo "compatibility verifier accepted a lock with a removed artifact" >&2
+    exit 1
+fi
+if ! rg -F \
+    "compatibility lock has an unexpected artifact set" \
+    "$test_root/removal.stderr" >/dev/null
+then
+    echo "compatibility verifier did not report the removed artifact" >&2
+    exit 1
+fi
+
 echo "memory provider compatibility tamper test passed"

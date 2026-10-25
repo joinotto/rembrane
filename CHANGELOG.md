@@ -18,6 +18,7 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   schemas, fixtures, runner output, and compatibility verification.
 - Exact Memory Provider profile and lifecycle-fixture identity binding across
   schemas, runner output, example evidence, and compatibility verification.
+- Memory Provider compatibility tamper coverage for removed locked artifacts.
 - Required bounded key-provider build versions in discovery, Rust negotiation,
   HTTP decoding, fixtures, and portable conformance evidence.
 - A tamper-tested key-provider compatibility lock over reviewed OpenAPI,
