@@ -12,6 +12,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Explicit Memory Provider Protocol `1.0` stability gates separating the
   existing review-locked `0.1` wire surface from a future long-term
   compatibility promise.
+- A normative Memory Provider Protocol compatibility policy covering
+  same-major minor negotiation, breaking changes, deprecation windows,
+  supported generations, and release evidence.
 - A canonical semantic-provider core conformance profile with portable
   evidence bound to its exact SHA-256 across CLI output and provider registry.
 - A tamper-tested semantic-provider compatibility lock over the exact wire,

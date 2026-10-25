@@ -27,9 +27,8 @@ to `1.0` and marking the roadmap milestone complete:
    isolation, idempotency, optimistic concurrency, disclosure evidence, sync
    ordering, and secret handling. Track every finding to resolution or an
    explicitly documented accepted risk.
-3. Publish a compatibility policy defining additive versus breaking changes,
-   deprecation periods, supported protocol generations, and client/provider
-   negotiation behavior.
+3. Apply `MEMORY_PROVIDER_COMPATIBILITY_POLICY.md` to the release candidate
+   and publish the required mixed-version evidence.
 4. Exercise mixed-version client/provider compatibility, including supported
    minor-version negotiation and fail-closed major-version rejection.
 5. Freeze the complete `1.0` artifact inventory, regenerate its compatibility

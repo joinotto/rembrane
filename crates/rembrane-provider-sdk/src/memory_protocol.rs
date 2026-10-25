@@ -945,6 +945,22 @@ mod tests {
     }
 
     #[test]
+    fn protocol_negotiation_accepts_newer_minor_and_rejects_older_or_other_major() {
+        assert!(
+            ProviderProtocolVersion::new(1, 2)
+                .is_compatible_with(ProviderProtocolVersion::new(1, 0))
+        );
+        assert!(
+            !ProviderProtocolVersion::new(1, 0)
+                .is_compatible_with(ProviderProtocolVersion::new(1, 1))
+        );
+        assert!(
+            !ProviderProtocolVersion::new(2, 0)
+                .is_compatible_with(ProviderProtocolVersion::new(1, 0))
+        );
+    }
+
+    #[test]
     fn accepts_only_manifests_satisfying_the_complete_provider_policy() {
         let policy = policy();
         assert_eq!(policy.validate(&manifest()), Ok(()));

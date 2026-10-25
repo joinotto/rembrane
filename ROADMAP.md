@@ -798,8 +798,10 @@ This roadmap describes sequencing, not release dates.
       repository.
     - [ ] Complete independent security review and resolve or explicitly
       accept every finding.
-    - [ ] Publish compatibility, deprecation, and mixed-version negotiation
-      policy with release-candidate evidence.
+    - [x] Publish compatibility, deprecation, and mixed-version negotiation
+      policy.
+    - [ ] Record mixed-version release-candidate evidence for the oldest and
+      newest supported minor versions.
   - [x] Add a machine-verifiable compatibility lock over the canonical wire
     schemas, HTTP binding, conformance profile, and lifecycle fixtures so
     protocol changes require explicit review.

@@ -127,6 +127,8 @@ every profile case.
 
 `MEMORY_PROVIDER_STABILITY.md` records the evidence still required before the
 review-locked `0.1` protocol can make a `1.0` compatibility promise.
+`MEMORY_PROVIDER_COMPATIBILITY_POLICY.md` defines version negotiation,
+compatible additions, breaking changes, deprecation, and support windows.
 
 ## Semantic provider conformance
 
