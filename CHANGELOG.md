@@ -26,6 +26,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   response contract.
 - TypeScript, Python, Swift, and Kotlin invitation-listing operations with
   percent-encoded tenant identifiers and exact authenticated GET-route tests.
+- Postman and shell REST acceptance coverage for bounded status-filtered
+  invitation listing, lifecycle metadata, and cross-workspace denial.
 - Local CLI commands for creating shared workspaces and creating, accepting,
   or revoking bounded role-specific invitations.
 - Authenticated REST invitation creation, acceptance, and revocation,

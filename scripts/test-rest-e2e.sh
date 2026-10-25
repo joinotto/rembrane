@@ -133,6 +133,31 @@ acceptance_create_status=$(
 test "$acceptance_create_status" = "201"
 test "$(jq -r '.status' "$acceptance_create_response")" = "pending"
 
+pending_list_response="$test_directory/pending-list-response.json"
+pending_list_status=$(
+    curl -sS \
+        -o "$pending_list_response" \
+        -w '%{http_code}' \
+        "$base_url/v1/workspaces/invitations?workspaceId=$REMBRANE_WORKSPACE_ID&status=pending&limit=1" \
+        -H "Authorization: Bearer $REMBRANE_API_TOKEN"
+)
+test "$pending_list_status" = "200"
+test "$(jq -r '.workspaceId' "$pending_list_response")" = "$REMBRANE_WORKSPACE_ID"
+test "$(jq -r '.invitations | length' "$pending_list_response")" = "1"
+test "$(jq -r '.invitations[0].invitationId' "$pending_list_response")" = "$acceptance_invitation_id"
+test "$(jq -r '.invitations[0].status' "$pending_list_response")" = "pending"
+
+cross_workspace_list_response="$test_directory/cross-workspace-list-response.json"
+cross_workspace_list_status=$(
+    curl -sS \
+        -o "$cross_workspace_list_response" \
+        -w '%{http_code}' \
+        "$base_url/v1/workspaces/invitations?workspaceId=workspace_other&limit=1" \
+        -H "Authorization: Bearer $REMBRANE_API_TOKEN"
+)
+test "$cross_workspace_list_status" = "403"
+test "$(jq -r '.code' "$cross_workspace_list_response")" = "access_denied"
+
 kill "$api_pid"
 wait "$api_pid" 2>/dev/null || true
 api_pid=

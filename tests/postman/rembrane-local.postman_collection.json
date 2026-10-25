@@ -206,6 +206,39 @@
       ]
     },
     {
+      "name": "List revoked workspace invitations",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{apiToken}}"
+          }
+        ],
+        "url": "{{baseUrl}}/v1/workspaces/invitations?workspaceId={{workspaceId}}&status=revoked&limit=1"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('revoked invitation listing is tenant-scoped and bounded', function () {",
+              "  pm.response.to.have.status(200);",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.workspaceId).to.eql(pm.variables.get('workspaceId'));",
+              "  pm.expect(body.invitations).to.have.lengthOf(1);",
+              "  pm.expect(body.invitations[0].workspaceId).to.eql(pm.variables.get('workspaceId'));",
+              "  pm.expect(body.invitations[0].invitationId).to.eql(pm.variables.get('invitationId'));",
+              "  pm.expect(body.invitations[0].invitedPrincipalId).to.eql(pm.variables.get('invitedPrincipalId'));",
+              "  pm.expect(body.invitations[0].invitedBy).to.eql(pm.variables.get('principalId'));",
+              "  pm.expect(body.invitations[0].status).to.eql('revoked');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
       "name": "Reject research for missing canonical trip",
       "request": {
         "method": "POST",

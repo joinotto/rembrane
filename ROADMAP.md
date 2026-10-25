@@ -451,6 +451,8 @@ This roadmap describes sequencing, not release dates.
       and portable OpenAPI contract.
     - [x] Add exact-route invitation listing operations to the TypeScript,
       Python, Swift, and Kotlin SDKs.
+    - [x] Exercise filtered, bounded, tenant-scoped invitation listing through
+      the Postman and shell REST acceptance flows.
   - [x] Expose shared-workspace creation plus invitation create, accept, and
     revoke workflows through the local CLI.
   - [x] Expose invitation creation, acceptance, and revocation through the
