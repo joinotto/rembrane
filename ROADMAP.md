@@ -295,9 +295,11 @@ This roadmap describes sequencing, not release dates.
     duplicate/capacity controls, per-request revalidation, and authenticated
     deletion, reclaiming expired capacity before accepting new sessions.
   - [ ] Serve Streamable HTTP through the official Rust MCP SDK.
-  - [ ] Add OAuth and cross-tenant transport integration tests.
+  - [x] Add OAuth and cross-tenant transport integration tests.
     - [x] Prove verified remote identity is still constrained by canonical
       workspace membership, audience, expiry, and token validity.
+      - [x] Route real RFC 7662 verifier output through the Axum authorization
+        and consuming dispatch boundary for two isolated workspaces.
     - [x] Prove the Axum boundary preserves distinct verified workspace
       identities and rejects an untrusted browser origin over HTTP routing.
       - [x] Route both tenants through the owned asynchronous dispatcher and

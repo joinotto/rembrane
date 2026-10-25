@@ -1399,6 +1399,7 @@ dependencies = [
  "rembrane-config",
  "rembrane-contracts",
  "rembrane-domain",
+ "rembrane-oauth-introspection",
  "serde",
  "serde_json",
  "tokio",

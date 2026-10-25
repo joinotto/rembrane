@@ -24,6 +24,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Exact ordered conformance-case binding between reviewed profiles and result
   evidence for memory and key providers.
 - Tamper tests for rehashed provider evidence with reordered security cases.
+- RFC 7662-to-Axum remote MCP integration coverage proving two-tenant dispatch
+  isolation and fail-closed audience, expiry, scope, and token handling.
 - Required bounded key-provider build versions in discovery, Rust negotiation,
   HTTP decoding, fixtures, and portable conformance evidence.
 - A tamper-tested key-provider compatibility lock over reviewed OpenAPI,

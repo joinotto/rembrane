@@ -1094,6 +1094,10 @@ mod tests {
     use rembrane_config::{RemoteMcpConfig, SecretReference};
     use rembrane_contracts::{RemoteAccessScope, RemoteTokenClaims};
     use rembrane_domain::{ClientId, PrincipalId, WorkspaceId};
+    use rembrane_oauth_introspection::{
+        IntrospectionResponse, IntrospectionTokenVerifier, IntrospectionTransport,
+        IntrospectionTransportError,
+    };
     use tower::ServiceExt;
 
     use super::{
@@ -1105,6 +1109,7 @@ mod tests {
     };
 
     struct Verifier;
+    struct OAuthFixtureTransport;
 
     struct RecordingDispatcher;
     struct RecordingEventStreamDispatcher;
@@ -1200,6 +1205,58 @@ mod tests {
                 workspace_id: WorkspaceId::new(workspace),
                 scopes,
                 expires_at_epoch_seconds: 2_000,
+                not_before_epoch_seconds: None,
+            })
+        }
+    }
+
+    impl IntrospectionTransport for OAuthFixtureTransport {
+        fn introspect(
+            &self,
+            token: &str,
+        ) -> Result<IntrospectionResponse, IntrospectionTransportError> {
+            let (workspace, audience, scope, expiry) = match token {
+                "oauth-workspace-one" => (
+                    "workspace_01",
+                    "https://memory.example.test/mcp",
+                    "rembrane:context:read",
+                    2_000,
+                ),
+                "oauth-workspace-two" => (
+                    "workspace_02",
+                    "https://memory.example.test/mcp",
+                    "rembrane:context:read",
+                    2_000,
+                ),
+                "oauth-wrong-audience" => (
+                    "workspace_01",
+                    "https://other.example.test/mcp",
+                    "rembrane:context:read",
+                    2_000,
+                ),
+                "oauth-expired" => (
+                    "workspace_01",
+                    "https://memory.example.test/mcp",
+                    "rembrane:context:read",
+                    999,
+                ),
+                "oauth-missing-scope" => (
+                    "workspace_01",
+                    "https://memory.example.test/mcp",
+                    "rembrane:travel:read",
+                    2_000,
+                ),
+                _ => return Err(IntrospectionTransportError),
+            };
+            Ok(IntrospectionResponse {
+                active: true,
+                issuer: Some("https://identity.example.test".to_owned()),
+                audience: vec![audience.to_owned()],
+                subject: Some(format!("principal_{workspace}")),
+                client_id: Some(format!("client_{workspace}")),
+                workspace_id: Some(workspace.to_owned()),
+                scope: Some(scope.to_owned()),
+                expires_at_epoch_seconds: Some(expiry),
                 not_before_epoch_seconds: None,
             })
         }
@@ -1735,6 +1792,23 @@ mod tests {
         }
     }
 
+    async fn introspected_workspace(
+        State(authorization): State<
+            Arc<RemoteMcpAxumAuthorization<IntrospectionTokenVerifier<OAuthFixtureTransport>>>,
+        >,
+        headers: HeaderMap,
+        body: Bytes,
+    ) -> Result<String, RemoteMcpHttpRejection> {
+        match authorization
+            .authorize_and_dispatch(&headers, &body, 1_000, &RecordingDispatcher)
+            .await
+        {
+            Ok(dispatched) => Ok(dispatched.workspace),
+            Err(RemoteMcpDispatchError::Authorization(rejection)) => Err(rejection),
+            Err(RemoteMcpDispatchError::Dispatch(infallible)) => match infallible {},
+        }
+    }
+
     #[tokio::test]
     async fn owned_axum_service_preserves_dispatched_tenant_identity() {
         let config = RemoteMcpConfig::new(
@@ -1794,6 +1868,71 @@ mod tests {
             .await
             .expect("in-memory router should respond");
         assert_eq!(denied.status(), 403);
+    }
+
+    #[tokio::test]
+    async fn rfc7662_introspection_preserves_tenants_and_denies_invalid_claims() {
+        let config = RemoteMcpConfig::new(
+            "https://memory.example.test/mcp".to_owned(),
+            "https://identity.example.test".to_owned(),
+            "https://identity.example.test/introspect".to_owned(),
+            "rembrane".to_owned(),
+            SecretReference::environment("OAUTH_SECRET").expect("reference should be valid"),
+            vec!["https://agent.example.test".to_owned()],
+        )
+        .expect("remote profile should be valid");
+        let verifier = IntrospectionTokenVerifier::new(OAuthFixtureTransport);
+        let authorization = Arc::new(
+            RemoteMcpAxumAuthorization::from_config(16, &config, verifier)
+                .expect("introspection-backed authorization should initialize"),
+        );
+        let app = Router::new()
+            .route("/mcp", post(introspected_workspace))
+            .with_state(authorization);
+        let body = r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"rembrane_resolve_context","arguments":{}}}"#;
+        let request = |token: &'static str| {
+            Request::post("/mcp")
+                .header(HOST, "memory.example.test")
+                .header(CONTENT_TYPE, "application/json")
+                .header(ACCEPT, "application/json, text/event-stream")
+                .header(AUTHORIZATION, format!("Bearer {token}"))
+                .header(ORIGIN, "https://agent.example.test")
+                .body(Body::from(body))
+                .expect("request should build")
+        };
+
+        for (token, expected_workspace) in [
+            ("oauth-workspace-one", "workspace_01"),
+            ("oauth-workspace-two", "workspace_02"),
+        ] {
+            let response = app
+                .clone()
+                .oneshot(request(token))
+                .await
+                .expect("router should respond");
+            assert_eq!(response.status(), 200);
+            let response_body = to_bytes(response.into_body(), 128)
+                .await
+                .expect("bounded response should read");
+            assert_eq!(response_body.as_ref(), expected_workspace.as_bytes());
+        }
+
+        for token in [
+            "oauth-wrong-audience",
+            "oauth-expired",
+            "oauth-missing-scope",
+            "oauth-unknown",
+        ] {
+            let response = app
+                .clone()
+                .oneshot(request(token))
+                .await
+                .expect("router should reject invalid OAuth authority");
+            assert!(
+                response.status() == 401 || response.status() == 403,
+                "invalid OAuth authority must fail closed"
+            );
+        }
     }
 
     #[tokio::test]

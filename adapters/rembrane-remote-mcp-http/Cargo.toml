@@ -18,6 +18,7 @@ zeroize = "1"
 
 [dev-dependencies]
 rembrane-domain = { path = "../../crates/rembrane-domain" }
+rembrane-oauth-introspection = { path = "../rembrane-oauth-introspection" }
 tokio = { version = "1", features = ["macros", "rt"] }
 tower = "0.5"
 
