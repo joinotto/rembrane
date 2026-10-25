@@ -880,6 +880,37 @@ where
     Ok(authorized)
 }
 
+/// Authenticates an exact Axum `initialize` body and establishes its declared
+/// transport session.
+///
+/// Body classification occurs before authentication and capacity mutation, so
+/// malformed or substituted non-initialize requests cannot reserve sessions.
+///
+/// # Errors
+///
+/// Returns an HTTP-ready rejection for malformed or ambiguous headers,
+/// non-initialize JSON-RPC, invalid credentials, untrusted host/origin,
+/// duplicate sessions, or capacity exhaustion.
+pub fn establish_axum_session_body<Verifier>(
+    gate: &mut RemoteMcpHttpGate,
+    authorization: &RemoteHttpAuthorization<'_, '_, Verifier>,
+    headers: &HeaderMap,
+    body: &[u8],
+    now_epoch_seconds: u64,
+) -> Result<AuthorizedRemoteMcpRequest, RemoteMcpHttpRejection>
+where
+    Verifier: RemoteTokenVerifier,
+{
+    let mut protocol_headers = protocol_headers_from_axum(headers)?;
+    let request = request_from_axum_headers(headers)?;
+    protocol_headers.validated_host = request.host.map(str::to_owned);
+    protocol_headers.validated_origin = request.origin.map(str::to_owned);
+    let mut authorized =
+        gate.establish_session_body(authorization, request, body, now_epoch_seconds)?;
+    authorized.protocol_headers = protocol_headers;
+    Ok(authorized)
+}
+
 /// Reauthenticates an Axum session DELETE, dispatches it to the protocol
 /// service, and commits local deletion only after downstream success.
 ///
@@ -1145,6 +1176,37 @@ impl RemoteMcpHttpGate {
                 now_epoch_seconds,
             )
             .map_err(|error| self.rejection(error))
+    }
+
+    /// Classifies an exact `initialize` body before authenticating and
+    /// allocating its session binding.
+    ///
+    /// # Errors
+    ///
+    /// Returns an HTTP-ready rejection for invalid JSON-RPC, any method other
+    /// than `initialize`, invalid session or credentials, untrusted
+    /// host/origin, duplicate sessions, or capacity exhaustion.
+    pub fn establish_session_body<Verifier>(
+        &mut self,
+        authorization: &RemoteHttpAuthorization<'_, '_, Verifier>,
+        request: RemoteMcpHttpRequest<'_>,
+        body: &[u8],
+        now_epoch_seconds: u64,
+    ) -> Result<AuthorizedRemoteMcpRequest, RemoteMcpHttpRejection>
+    where
+        Verifier: RemoteTokenVerifier,
+    {
+        let invocation = classify_remote_mcp_request(body)?;
+        if invocation.method() != "initialize" || invocation.tool_name().is_some() {
+            return Err(Self::forbidden());
+        }
+        let access = self.establish(authorization, request, now_epoch_seconds)?;
+        Ok(AuthorizedRemoteMcpRequest {
+            access,
+            invocation,
+            protocol_headers: RemoteMcpProtocolHeaders::transport_neutral(),
+            body: Zeroizing::new(body.to_vec()),
+        })
     }
 
     /// Reauthenticates and authorizes one established MCP request before the
@@ -1514,7 +1576,8 @@ mod tests {
         MCP_PROTOCOL_VERSION_HEADER_NAME, MCP_SESSION_HEADER_NAME, RemoteMcpAxumAuthorization,
         RemoteMcpDispatchError, RemoteMcpHttpGate, RemoteMcpHttpRejection, RemoteMcpHttpRequest,
         RemoteMcpInvocation, authorize_axum_session_body, authorize_axum_session_deletion,
-        authorize_axum_stateless_body, classify_remote_mcp_request, request_from_axum_headers,
+        authorize_axum_stateless_body, classify_remote_mcp_request, establish_axum_session_body,
+        request_from_axum_headers,
     };
 
     struct Verifier;
@@ -1890,6 +1953,62 @@ mod tests {
                 .expect("foreign tenant must not reuse a session")
                 .status,
             403
+        );
+    }
+
+    #[test]
+    fn session_initialization_classifies_body_before_allocating_capacity() {
+        let verifier = Verifier;
+        let authenticator = RemoteAccessAuthenticator::new(
+            &verifier,
+            "https://identity.example.test",
+            "https://memory.example.test/mcp",
+        );
+        let authorization = RemoteHttpAuthorization::new(&authenticator, &[]);
+        let mut gate = RemoteMcpHttpGate::new(
+            1,
+            "https://memory.example.test/.well-known/oauth-protected-resource/mcp",
+            &["memory.example.test"],
+        )
+        .expect("gate should be valid");
+        let mut headers = HeaderMap::new();
+        headers.insert(HOST, HeaderValue::from_static("memory.example.test"));
+        headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+        headers.insert(
+            ACCEPT,
+            HeaderValue::from_static("application/json, text/event-stream"),
+        );
+        headers.insert(
+            MCP_SESSION_HEADER_NAME,
+            HeaderValue::from_static("session_0123456789abcdef"),
+        );
+        headers.insert(
+            AUTHORIZATION,
+            HeaderValue::from_static("Bearer workspace-one"),
+        );
+        let substituted = br#"{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}"#;
+        assert_eq!(
+            establish_axum_session_body(&mut gate, &authorization, &headers, substituted, 1_000,)
+                .err()
+                .expect("non-initialize body must fail before session allocation")
+                .status,
+            403
+        );
+
+        let initialize = br#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}"#;
+        let authorized =
+            establish_axum_session_body(&mut gate, &authorization, &headers, initialize, 1_000)
+                .expect("valid initialize should still have capacity");
+        assert_eq!(authorized.invocation().method(), "initialize");
+        assert_eq!(authorized.access().workspace_id().as_str(), "workspace_01");
+        assert_eq!(authorized.body(), initialize);
+
+        assert_eq!(
+            establish_axum_session_body(&mut gate, &authorization, &headers, initialize, 1_000)
+                .err()
+                .expect("duplicate session must remain rejected")
+                .status,
+            409
         );
     }
 

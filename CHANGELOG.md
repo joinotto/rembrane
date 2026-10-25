@@ -9,6 +9,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- Remote MCP session initialization now classifies and couples the exact
+  `initialize` JSON-RPC body before authentication or capacity mutation;
+  malformed and substituted methods cannot allocate tenant-bound sessions.
 - Established remote MCP sessions now authorize the exact bounded JSON-RPC
   bytes transferred to the SDK dispatcher, coupling session tenant,
   reauthentication, method/tool classification, scope, and body ownership in

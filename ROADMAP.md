@@ -352,6 +352,9 @@ This roadmap describes sequencing, not release dates.
     subject/client/workspace identity exclusively from verified remote claims.
   - [x] Bind remote sessions to issuer, resource, canonical identity,
     workspace, exact OAuth scope ceiling, and a non-extending expiry.
+    - [x] Classify the exact `initialize` body before authentication and
+      session allocation so malformed or substituted requests cannot reserve
+      tenant-bound session capacity.
   - [x] Add a bounded session registry with URL-safe identifiers,
     duplicate/capacity controls, per-request revalidation, and authenticated
     deletion, reclaiming expired capacity before accepting new sessions.
