@@ -168,6 +168,12 @@ Record each live cloud run as
 `spec/customer-kms-conformance-evidence.schema.json` and validate it with:
 
 ```sh
+node scripts/generate-customer-kms-evidence.mjs \
+  aws-kms SIDECAR_GIT_REVISION \
+  conformance-result.json reviewed-iam-policy.json redacted-cloud-audit.json \
+  REVIEWER_ID EXECUTED_AT POLICY_REVIEWED_AT CLEANUP_COMPLETED_AT \
+  > evidence.json
+
 node scripts/verify-customer-kms-evidence.mjs \
   evidence.json conformance-result.json reviewed-iam-policy.json \
   redacted-cloud-audit.json
@@ -185,4 +191,7 @@ Audit exports must be reviewed and redacted before retention. The verifier
 fails closed on common credential-bearing fields and recognizable private-key,
 JWT, or AWS access-key material; this automated screen supplements rather than
 replaces human review of provider-specific audit fields.
+The generator reads only supplied evidence files and metadata, computes their
+digests locally, emits JSON to standard output, and never resolves cloud
+credentials.
 

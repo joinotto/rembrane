@@ -156,6 +156,8 @@ This roadmap describes sequencing, not release dates.
         exact provider build, disposable namespace, conformance result,
         explicitly approved IAM policy, core profile, and completed resource
         cleanup.
+        - [x] Generate the envelope locally from reviewed artifacts and
+          metadata without resolving or retaining cloud credentials.
         - [x] Bind a redacted cloud audit export so provider promotion proves
           the named KMS handled the disposable conformance operations.
           - [x] Reject common secret fields and recognizable credential

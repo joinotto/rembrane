@@ -13,6 +13,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   disposable cloud run to its provider build, core conformance profile, exact
   result and explicitly approved IAM-policy bytes, and completed resource
   cleanup without storing cloud credentials or keys.
+- A credential-free customer-KMS evidence generator computes exact local
+  artifact hashes and provider metadata before independent verification.
 - Customer-KMS promotion evidence now also hash-binds a bounded redacted cloud
   audit export, preventing a protocol-compatible mock from being presented as
   proof that AWS, Azure, or Google Cloud KMS processed the disposable run.

@@ -24,33 +24,28 @@ result_sha256=$(openssl dgst -sha256 "$test_root/result.json" | awk '{print $NF}
 policy_sha256=$(openssl dgst -sha256 "$test_root/iam-policy.json" | awk '{print $NF}')
 audit_sha256=$(openssl dgst -sha256 "$test_root/cloud-audit.json" | awk '{print $NF}')
 
-jq -n \
+node "$repository_root/scripts/generate-customer-kms-evidence.mjs" \
+    aws-kms \
+    1111111111111111111111111111111111111111 \
+    "$test_root/result.json" \
+    "$test_root/iam-policy.json" \
+    "$test_root/cloud-audit.json" \
+    cloud-security-reviewer \
+    2026-01-15T12:00:00Z \
+    2026-01-15T11:30:00Z \
+    2026-01-15T12:30:00Z \
+    >"$test_root/evidence.json"
+
+jq -e \
     --arg profile "$profile_sha256" \
     --arg result "$result_sha256" \
     --arg policy "$policy_sha256" \
     --arg audit "$audit_sha256" \
-    '{
-        schemaVersion: 1,
-        cloudProvider: "aws-kms",
-        providerId: "example.aws-kms-sidecar",
-        providerVersion: "0.1.0",
-        sidecarSourceRevision: ("1" * 40),
-        namespace: "example-disposable-run",
-        executedAt: "2026-01-15T12:00:00Z",
-        conformanceProfileSha256: $profile,
-        conformanceResultSha256: $result,
-        iamPolicySha256: $policy,
-        iamPolicyReview: {
-            reviewerId: "cloud-security-reviewer",
-            reviewedAt: "2026-01-15T11:30:00Z",
-            approved: true
-        },
-        cloudAuditEvidenceSha256: $audit,
-        cleanup: {
-            completedAt: "2026-01-15T12:30:00Z",
-            resourcesDeleted: true
-        }
-    }' >"$test_root/evidence.json"
+    '.conformanceProfileSha256 == $profile
+     and .conformanceResultSha256 == $result
+     and .iamPolicySha256 == $policy
+     and .cloudAuditEvidenceSha256 == $audit' \
+    "$test_root/evidence.json" >/dev/null
 
 verify() {
     node "$repository_root/scripts/verify-customer-kms-evidence.mjs" \
@@ -59,6 +54,21 @@ verify() {
 
 verify "$test_root/evidence.json" "$test_root/result.json" \
     "$test_root/iam-policy.json" "$test_root/cloud-audit.json" >/dev/null
+
+if node "$repository_root/scripts/generate-customer-kms-evidence.mjs" \
+    aws-kms \
+    1111111111111111111111111111111111111111 \
+    "$test_root/result.json" \
+    "$test_root/iam-policy.json" \
+    "$test_root/cloud-audit.json" \
+    cloud-security-reviewer \
+    not-a-time \
+    2026-01-15T11:30:00Z \
+    2026-01-15T12:30:00Z >/dev/null 2>&1
+then
+    echo "customer KMS evidence generator accepted an invalid timestamp" >&2
+    exit 1
+fi
 
 jq '.cleanup.resourcesDeleted = false' "$test_root/evidence.json" \
     >"$test_root/not-cleaned.json"
