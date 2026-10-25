@@ -1,10 +1,18 @@
 //! Reusable trust boundary for embedded and detached-signed provider registries.
 
+mod selection;
+
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
+
+pub use selection::{
+    ProviderEligibility, ProviderRegistrySelectionError, ProviderSelectionApprovals,
+    ProviderSelectionEvidence, ProviderSelectionPolicy, ProviderSelectionReceipt,
+    ProviderSelectionTrust,
+};
 
 const ED25519_SPKI_PREFIX: &[u8] = &[
     0x30, 0x2a, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x03, 0x21, 0x00,
@@ -80,6 +88,19 @@ impl VerifiedProviderRegistry {
     #[must_use]
     pub const fn trust(&self) -> &RegistryTrust {
         &self.trust
+    }
+
+    /// Selects one exact provider build under a fail-closed policy.
+    ///
+    /// # Errors
+    ///
+    /// Returns an opaque selection error for malformed, stale, ambiguous,
+    /// withdrawn, unconformant, or insufficiently approved providers.
+    pub fn select(
+        &self,
+        policy: &ProviderSelectionPolicy<'_>,
+    ) -> Result<ProviderSelectionReceipt, ProviderRegistrySelectionError> {
+        selection::select(self, policy)
     }
 }
 

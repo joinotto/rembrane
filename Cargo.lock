@@ -1389,7 +1389,11 @@ name = "rembrane-provider-registry"
 version = "0.1.0-alpha.1"
 dependencies = [
  "base64 0.22.1",
+ "chrono",
+ "rembrane-provider-sdk",
  "ring",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

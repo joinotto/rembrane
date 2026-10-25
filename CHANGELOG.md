@@ -35,6 +35,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Reusable `rembrane-provider-registry` Rust crate for registry hashing,
   embedded trust provenance, detached Ed25519 verification, and trust-anchor
   fingerprinting across CLI, bot, service, and agent integrations.
+- Typed reusable registry selection policy and receipt API enforcing exact
+  builds, reviewed conformance, timestamps, lifecycle status, and privacy
+  approvals outside the CLI.
 - A strict portable key-provider conformance result schema and runner output
   containing provider identity and explicit pass evidence for eight
   authentication, encryption, limit, rotation, and replay cases.

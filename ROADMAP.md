@@ -987,6 +987,8 @@ This roadmap describes sequencing, not release dates.
           Ed25519 public-key fingerprint in every selection receipt.
         - [x] Extract registry hashing, signature verification, and trust
           provenance into a reusable Rust crate for non-CLI integrations.
+        - [x] Expose typed reusable provider-selection policy and receipt
+          contracts with build, conformance, time, status, and privacy checks.
 - [x] Run installed native-provider conformance through the CLI.
 - [x] Automated external-provider registry verification and release signing.
   - [x] Verify registry identity, timestamps, conformance status, and pinned
