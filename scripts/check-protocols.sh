@@ -157,6 +157,9 @@ jq -e '
     and ."$defs".provider.properties.conformance.properties.protocolVersion.const == "0.1"
     and ."$defs".provider.properties.conformance.properties.cases.minItems == 6
     and ."$defs".provider.properties.conformance.properties.cases.maxItems == 6
+    and ."$defs".provider.properties.revocation.additionalProperties == false
+    and (."$defs".provider.properties.revocation.properties.reason.enum | length) == 5
+    and (."$defs".provider.allOf | length) == 1
 ' spec/provider-registry.schema.json >/dev/null
 
 jq -e '

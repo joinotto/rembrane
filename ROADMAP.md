@@ -972,6 +972,8 @@ This roadmap describes sequencing, not release dates.
 - [x] Automated external-provider registry verification and release signing.
   - [x] Verify registry identity, timestamps, conformance status, and pinned
     native Git evidence in the repository static gate.
+    - [x] Represent provider revocation as a signed, timestamped, closed-reason
+      state that cannot be attached to an active registry entry.
     - [x] Tamper-test missing, reordered, protocol-mismatched, false-pass, and
       unsafe-namespace conformance evidence.
   - [x] Produce and tamper-test detached Ed25519 signatures using an

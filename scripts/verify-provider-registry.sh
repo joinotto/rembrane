@@ -40,7 +40,24 @@ jq -e --arg profileSha256 "$profile_sha256" '
         and (.protocolVersions | type == "array" and length > 0)
         and (.deploymentModes | type == "array" and length > 0)
         and (.plaintextProcessing | type == "boolean")
-        and (.status | IN("experimental", "compatible", "deprecated"))
+        and (.status | IN("experimental", "compatible", "deprecated", "revoked"))
+        and (
+            if .status == "revoked"
+            then (.revocation | type == "object")
+                and (.revocation.reason | IN(
+                    "compromised",
+                    "incompatible",
+                    "policy-violation",
+                    "superseded",
+                    "unmaintained"
+                ))
+                and (.revocation.revokedAt | fromdateiso8601)
+                    >= (.conformance.testedAt | fromdateiso8601)
+                and (.revocation.revokedAt | fromdateiso8601)
+                    <= ($generatedAt | fromdateiso8601)
+            else has("revocation") | not
+            end
+        )
         and (.conformance.result | IN("pass", "fail"))
         and .conformance.suiteId == "rembrane.semantic-provider.core"
         and .conformance.suiteVersion == "0.1"

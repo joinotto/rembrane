@@ -88,6 +88,31 @@
         "status": {
           "enum": ["experimental", "compatible", "deprecated", "revoked"]
         },
+        "revocation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["revokedAt", "reason"],
+          "properties": {
+            "revokedAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "reason": {
+              "enum": [
+                "compromised",
+                "incompatible",
+                "policy-violation",
+                "superseded",
+                "unmaintained"
+              ]
+            },
+            "details": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
+            }
+          }
+        },
         "conformance": {
           "type": "object",
           "additionalProperties": false,
@@ -164,7 +189,27 @@
             }
           }
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "revoked"
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "required": ["revocation"]
+          },
+          "else": {
+            "not": {
+              "required": ["revocation"]
+            }
+          }
+        }
+      ]
     }
   }
 }

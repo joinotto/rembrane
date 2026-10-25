@@ -41,5 +41,29 @@ reject_mutation mismatched-provider-build '
 '
 reject_mutation false-pass '.providers[0].conformance.cases[0].result = "fail"'
 reject_mutation unsafe-namespace '.providers[0].conformance.namespace = "cross tenant"'
+reject_mutation revoked-without-evidence '.providers[0].status = "revoked"'
+reject_mutation revocation-on-active-provider '
+    .providers[0].revocation = {
+        "revokedAt": .generatedAt,
+        "reason": "compromised"
+    }
+'
+reject_mutation revocation-before-test '
+    .providers[0].status = "revoked"
+    | .providers[0].revocation = {
+        "revokedAt": "2020-01-01T00:00:00Z",
+        "reason": "compromised"
+    }
+'
+
+jq '
+    .providers[0].status = "revoked"
+    | .providers[0].revocation = {
+        "revokedAt": .generatedAt,
+        "reason": "compromised",
+        "details": "Disposable validation fixture"
+    }
+' "$registry" >"$candidate"
+"$repository_root/scripts/verify-provider-registry.sh" "$candidate" >/dev/null
 
 echo "provider registry validation test passed"

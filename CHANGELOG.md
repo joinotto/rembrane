@@ -13,6 +13,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   evidence bound to its exact SHA-256 across CLI output and provider registry.
 - A tamper-tested semantic-provider compatibility lock over the exact wire,
   manifest, conformance-profile, result, and black-box runner artifacts.
+- Signed provider registry entries can now be revoked with bounded timestamped
+  evidence and a closed incident reason, while active entries reject
+  revocation metadata.
 - A strict portable key-provider conformance result schema and runner output
   containing provider identity and explicit pass evidence for eight
   authentication, encryption, limit, rotation, and replay cases.
