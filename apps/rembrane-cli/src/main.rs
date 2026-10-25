@@ -1,13 +1,14 @@
 use rembrane_application::{
-    AdministrativeAuditRepository, ApplicationError, AuthorizeClientCommand,
-    AuthorizeClientService, CanonicalMutationRepository, ChannelBindingService,
-    ChannelInboxAdministrationService, CheckpointRepository, ClientGrantBundle,
-    CreateChannelBindingCommand, DeleteMemoryCommand, EventRepository,
-    ExecuteRetentionPurgeCommand, MemberLifecycleService, MembershipRepository,
-    MemoryLifecycleService, MemoryRepository, PlaceLegalHoldCommand, ReleaseLegalHoldCommand,
-    RememberPreferenceCommand, RememberPreferenceService, RequeueChannelMessageCommand,
-    ResolveContextCommand, ResolveContextService, RetentionService, ReviseMemoryCommand,
-    RevokeChannelBindingCommand, SetRetentionPolicyCommand, WorkspaceRepository,
+    AcceptInvitationCommand, AdministrativeAuditRepository, ApplicationError,
+    AuthorizeClientCommand, AuthorizeClientService, CanonicalMutationRepository,
+    ChannelBindingService, ChannelInboxAdministrationService, CheckpointRepository,
+    ClientGrantBundle, CreateChannelBindingCommand, CreateInvitationCommand, DeleteMemoryCommand,
+    EventRepository, ExecuteRetentionPurgeCommand, InvitationService, MemberLifecycleService,
+    MembershipRepository, MemoryLifecycleService, MemoryRepository, PlaceLegalHoldCommand,
+    ReleaseLegalHoldCommand, RememberPreferenceCommand, RememberPreferenceService,
+    RequeueChannelMessageCommand, ResolveContextCommand, ResolveContextService, RetentionService,
+    ReviseMemoryCommand, RevokeChannelBindingCommand, RevokeInvitationCommand,
+    SetRetentionPolicyCommand, WorkspaceRepository,
 };
 use rembrane_channel_mobile_share::derive_binding_lookup_keys as derive_mobile_binding_lookup_keys;
 use rembrane_channel_whatsapp::derive_binding_lookup_keys as derive_whatsapp_binding_lookup_keys;
@@ -56,6 +57,8 @@ fn run(arguments: &[String]) -> Result<(), String> {
             Ok(())
         }
         Some("init") => initialize(&arguments[1..]),
+        Some("workspace") => workspace(&arguments[1..]),
+        Some("invitation") => invitation(&arguments[1..]),
         Some("doctor") => doctor(&arguments[1..]),
         Some("backup") => backup(&arguments[1..]),
         Some("restore") => restore(&arguments[1..]),
@@ -1694,6 +1697,153 @@ fn unique_suffix() -> Result<u128, String> {
         .map_err(|_| "system clock is before the Unix epoch".to_owned())
 }
 
+fn now_epoch_seconds() -> Result<u64, String> {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .map_err(|_| "system clock is before the Unix epoch".to_owned())
+}
+
+fn workspace(arguments: &[String]) -> Result<(), String> {
+    if arguments.first().map(String::as_str) != Some("create-shared") {
+        return Err(
+            "usage: rembrane workspace create-shared --database <path> --principal <owner-id> --workspace <id>"
+                .to_owned(),
+        );
+    }
+    let arguments = &arguments[1..];
+    let database = option(arguments, "--database")?;
+    let owner_id = PrincipalId::new(option(arguments, "--principal")?);
+    let workspace_id = WorkspaceId::new(option(arguments, "--workspace")?);
+    let mut store =
+        SqliteStore::open(database).map_err(|error| format!("cannot open database: {error}"))?;
+    if store
+        .find_principal(&owner_id)
+        .map_err(|error| format!("cannot inspect owner: {error}"))?
+        .is_none()
+    {
+        return Err("shared-workspace owner must initialize a personal identity first".to_owned());
+    }
+    store
+        .initialize_shared_workspace(
+            Workspace::shared(workspace_id.clone()),
+            Membership::new(workspace_id.clone(), owner_id.clone(), WorkspaceRole::Owner),
+        )
+        .map_err(|error| format!("cannot create shared workspace: {error}"))?;
+    println!(
+        "{}",
+        serde_json::json!({
+            "workspaceId": workspace_id.as_str(),
+            "ownerId": owner_id.as_str(),
+            "kind": "shared"
+        })
+    );
+    Ok(())
+}
+
+fn invitation(arguments: &[String]) -> Result<(), String> {
+    let operation = arguments
+        .first()
+        .map(String::as_str)
+        .ok_or_else(|| invitation_usage().to_owned())?;
+    let arguments = &arguments[1..];
+    let database = option(arguments, "--database")?;
+    let principal_id = PrincipalId::new(option(arguments, "--principal")?);
+    let workspace_id = WorkspaceId::new(option(arguments, "--workspace")?);
+    let invitation_id = rembrane_domain::InvitationId::new(option(arguments, "--invitation")?);
+    let request_id = option(arguments, "--request")?.to_owned();
+    let now = now_epoch_seconds()?;
+    let mut store =
+        SqliteStore::open(database).map_err(|error| format!("cannot open database: {error}"))?;
+    let mut service = InvitationService::new(&mut store);
+
+    let (status, subject_id, role) = match operation {
+        "create" => {
+            let subject_id = PrincipalId::new(option(arguments, "--subject")?);
+            let role = invitation_role(option(arguments, "--role")?)?;
+            let lifetime = positive_u64(arguments, "--ttl-seconds")?;
+            let expires_at = now
+                .checked_add(lifetime)
+                .ok_or_else(|| "invitation expiry exceeds supported time".to_owned())?;
+            let created = service
+                .create(CreateInvitationCommand {
+                    invitation_id: invitation_id.clone(),
+                    workspace_id: workspace_id.clone(),
+                    invited_principal_id: subject_id.clone(),
+                    invited_by: principal_id,
+                    role,
+                    request_id,
+                    created_at_epoch_seconds: now,
+                    expires_at_epoch_seconds: expires_at,
+                })
+                .map_err(|error| format!("cannot create invitation: {error}"))?;
+            ("pending", subject_id, created.role())
+        }
+        "accept" => {
+            let membership = service
+                .accept(AcceptInvitationCommand {
+                    invitation_id: invitation_id.clone(),
+                    workspace_id: workspace_id.clone(),
+                    accepting_principal_id: principal_id.clone(),
+                    request_id,
+                    accepted_at_epoch_seconds: now,
+                })
+                .map_err(|error| format!("cannot accept invitation: {error}"))?;
+            ("accepted", principal_id, membership.role())
+        }
+        "revoke" => {
+            let revoked = service
+                .revoke(RevokeInvitationCommand {
+                    invitation_id: invitation_id.clone(),
+                    workspace_id: workspace_id.clone(),
+                    revoked_by: principal_id,
+                    request_id,
+                    revoked_at_epoch_seconds: now,
+                })
+                .map_err(|error| format!("cannot revoke invitation: {error}"))?;
+            (
+                "revoked",
+                revoked.invited_principal_id().clone(),
+                revoked.role(),
+            )
+        }
+        _ => return Err(invitation_usage().to_owned()),
+    };
+    println!(
+        "{}",
+        serde_json::json!({
+            "invitationId": invitation_id.as_str(),
+            "workspaceId": workspace_id.as_str(),
+            "principalId": subject_id.as_str(),
+            "role": workspace_role_label(role),
+            "status": status
+        })
+    );
+    Ok(())
+}
+
+fn invitation_role(value: &str) -> Result<WorkspaceRole, String> {
+    match value {
+        "admin" => Ok(WorkspaceRole::Admin),
+        "member" => Ok(WorkspaceRole::Member),
+        "viewer" => Ok(WorkspaceRole::Viewer),
+        _ => Err("--role must be admin, member, or viewer".to_owned()),
+    }
+}
+
+const fn workspace_role_label(role: WorkspaceRole) -> &'static str {
+    match role {
+        WorkspaceRole::Owner => "owner",
+        WorkspaceRole::Admin => "admin",
+        WorkspaceRole::Member => "member",
+        WorkspaceRole::Viewer => "viewer",
+    }
+}
+
+const fn invitation_usage() -> &'static str {
+    "usage: rembrane invitation <create|accept|revoke> --database <path> --principal <id> --workspace <id> --invitation <id> --request <id> [--subject <id> --role <admin|member|viewer> --ttl-seconds <seconds>]"
+}
+
 fn initialize(arguments: &[String]) -> Result<(), String> {
     let database = option(arguments, "--database")?;
     let principal = option(arguments, "--principal")?;
@@ -1866,6 +2016,15 @@ fn print_help() {
            rembrane version\n\
            rembrane demo\n\
            rembrane init --database <path> --principal <id> --workspace <id>\n\
+           rembrane workspace create-shared --database <path> \
+             --principal <owner-id> --workspace <id>\n\
+           rembrane invitation create --database <path> --principal <owner-or-admin-id> \
+             --workspace <id> --invitation <id> --subject <id> \
+             --role <admin|member|viewer> --ttl-seconds <seconds> --request <id>\n\
+           rembrane invitation accept --database <path> --principal <invited-id> \
+             --workspace <id> --invitation <id> --request <id>\n\
+           rembrane invitation revoke --database <path> --principal <owner-or-admin-id> \
+             --workspace <id> --invitation <id> --request <id>\n\
            rembrane doctor --database <path> --principal <id> --workspace <id> \
              [--privacy]\n\
            rembrane backup --database <path> --principal <id> \
@@ -1921,14 +2080,19 @@ fn print_help() {
 
 #[cfg(test)]
 mod tests {
-    use rembrane_domain::{EntityId, MemoryScope, ReadScope};
+    use rembrane_application::{AdministrativeAuditRepository, MembershipRepository};
+    use rembrane_domain::{
+        AdministrativeAction, EntityId, MemoryScope, PrincipalId, ReadScope, WorkspaceId,
+        WorkspaceRole,
+    };
+    use rembrane_store_sqlite::SqliteStore;
 
     use super::{
         EXPORT_MAGIC, claude_mcp_config, codex_mcp_config, cursor_mcp_config, format_read_scopes,
         gemini_mcp_config, generic_mcp_config, mcp_environment_variables, memory_privacy_mode_name,
         memory_provider_check_policy, opencode_mcp_config, option, positive_u64, providers,
         read_export, recall_scope_context, redact_endpoint, requested_memory_privacy,
-        requested_memory_scope, selected_secret_reference, test_provider,
+        requested_memory_scope, run, selected_secret_reference, test_provider,
         validate_external_conformance_namespace, validate_mcp_server_binary, vscode_mcp_config,
         write_export, zed_mcp_config,
     };
@@ -1944,6 +2108,13 @@ mod tests {
         ))
     }
 
+    fn request_run(arguments: &[&str]) -> Result<(), String> {
+        run(&arguments
+            .iter()
+            .map(|argument| (*argument).to_owned())
+            .collect::<Vec<_>>())
+    }
+
     #[test]
     fn parses_named_option_independent_of_order() {
         let arguments = vec![
@@ -1957,6 +2128,98 @@ mod tests {
             option(&arguments, "--database").expect("option exists"),
             "memory.db"
         );
+    }
+
+    #[test]
+    fn cli_creates_shared_workspace_and_accepts_audited_invitation() {
+        let database = temporary_path("shared-workspace.db");
+        let database = database.to_string_lossy().into_owned();
+        request_run(&[
+            "init",
+            "--database",
+            &database,
+            "--principal",
+            "owner",
+            "--workspace",
+            "owner-personal",
+        ])
+        .expect("owner initialization");
+        request_run(&[
+            "init",
+            "--database",
+            &database,
+            "--principal",
+            "guest",
+            "--workspace",
+            "guest-personal",
+        ])
+        .expect("guest initialization");
+        request_run(&[
+            "workspace",
+            "create-shared",
+            "--database",
+            &database,
+            "--principal",
+            "owner",
+            "--workspace",
+            "team",
+        ])
+        .expect("shared workspace");
+        request_run(&[
+            "invitation",
+            "create",
+            "--database",
+            &database,
+            "--principal",
+            "owner",
+            "--workspace",
+            "team",
+            "--invitation",
+            "invite_cli_01",
+            "--subject",
+            "guest",
+            "--role",
+            "member",
+            "--ttl-seconds",
+            "3600",
+            "--request",
+            "request_cli_create",
+        ])
+        .expect("invitation");
+        request_run(&[
+            "invitation",
+            "accept",
+            "--database",
+            &database,
+            "--principal",
+            "guest",
+            "--workspace",
+            "team",
+            "--invitation",
+            "invite_cli_01",
+            "--request",
+            "request_cli_accept",
+        ])
+        .expect("acceptance");
+
+        let store = SqliteStore::open(&database).expect("database");
+        let membership = store
+            .find_membership(&WorkspaceId::new("team"), &PrincipalId::new("guest"))
+            .expect("membership lookup")
+            .expect("membership");
+        assert_eq!(membership.role(), WorkspaceRole::Member);
+        let audit = store
+            .list_administrative_audit(&WorkspaceId::new("team"), 0, 10)
+            .expect("audit");
+        let actions = audit
+            .iter()
+            .map(rembrane_domain::AdministrativeAuditEvent::action)
+            .collect::<Vec<_>>();
+        assert_eq!(actions.len(), 2);
+        assert!(actions.contains(&AdministrativeAction::InvitationCreated));
+        assert!(actions.contains(&AdministrativeAction::InvitationAccepted));
+
+        std::fs::remove_file(database).expect("fixture database should be removed");
     }
 
     #[test]

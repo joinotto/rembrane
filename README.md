@@ -111,6 +111,29 @@ cargo run -p rembrane-cli -- init \
   --principal principal_local \
   --workspace workspace_personal
 
+# After each person initializes a personal identity in the same deployment:
+cargo run -p rembrane-cli -- workspace create-shared \
+  --database .rembrane/rembrane.db \
+  --principal principal_local \
+  --workspace workspace_team
+
+cargo run -p rembrane-cli -- invitation create \
+  --database .rembrane/rembrane.db \
+  --principal principal_local \
+  --workspace workspace_team \
+  --invitation invite_01 \
+  --subject principal_teammate \
+  --role member \
+  --ttl-seconds 86400 \
+  --request request_invite_01
+
+cargo run -p rembrane-cli -- invitation accept \
+  --database .rembrane/rembrane.db \
+  --principal principal_teammate \
+  --workspace workspace_team \
+  --invitation invite_01 \
+  --request request_accept_01
+
 export REMBRANE_WORKSPACE_KEY_ID=local-key-v1
 export REMBRANE_WORKSPACE_KEY_HEX=<64-hex-character-development-key>
 
@@ -149,9 +172,9 @@ The demo stores a confirmed preference, resolves it for a second authorized assi
 The current vertical slice persists local identities, workspaces, encrypted
 memories, activity checkpoints, audit events, and disclosure receipts in
 SQLite. It exposes a local stdio MCP server and bearer-authenticated REST
-context retrieval. Production key management, remote OAuth MCP, hosted
-PostgreSQL, shared-workspace lifecycle, and third-party agent adapters remain
-roadmap work.
+context retrieval. Production customer-KMS integration, the Rust PostgreSQL
+repository adapter, stable remote OAuth MCP, and additional third-party agent
+adapters remain roadmap work.
 
 The environment-key flow is for development testing only. Shell history must
 never contain the key value. On macOS, Rembrane can resolve the workspace key

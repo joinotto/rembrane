@@ -16,6 +16,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   while releasing the one-pending-invitation uniqueness slot.
 - Atomic content-free administrative audit evidence for shared-workspace
   invitation creation, acceptance, and revocation.
+- Local CLI commands for creating shared workspaces and creating, accepting,
+  or revoking bounded role-specific invitations.
 - A parameter-bound PostgreSQL tenant-session contract with exact context
   read-back requirements and a live pooled-connection leakage regression.
 - A typed reference-only PostgreSQL connection profile with explicit
