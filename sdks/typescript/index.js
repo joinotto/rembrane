@@ -71,6 +71,32 @@ export class RembraneClient {
     return this.#request("POST", "/graph/context/resolve", request);
   }
 
+  rememberPreference(request) {
+    return this.#request("POST", "/memories/preferences", request);
+  }
+
+  correctMemory(memoryId, request) {
+    if (!isOpaqueId(memoryId)) {
+      throw new TypeError("memoryId must be a bounded opaque identifier");
+    }
+    return this.#request(
+      "POST",
+      `/memories/${encodeURIComponent(memoryId)}/correction`,
+      request,
+    );
+  }
+
+  deleteMemory(memoryId, request) {
+    if (!isOpaqueId(memoryId)) {
+      throw new TypeError("memoryId must be a bounded opaque identifier");
+    }
+    return this.#request(
+      "POST",
+      `/memories/${encodeURIComponent(memoryId)}/deletion`,
+      request,
+    );
+  }
+
   checkpointActivity(activityId, request) {
     if (!isOpaqueId(activityId)) {
       throw new TypeError("activityId must be a bounded opaque identifier");

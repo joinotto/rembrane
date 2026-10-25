@@ -130,6 +130,49 @@ assert.throws(
   /bounded opaque identifier/,
 );
 
+const rememberRequest = {
+  workspaceId: "team",
+  subjectId: "principal-1",
+  content: "Call me Hippo",
+  expectedPreviousSequence: 5,
+};
+const correctionRequest = {
+  workspaceId: "team",
+  subjectId: "principal-1",
+  replacement: "Call me Captain Hippo",
+  expectedVersion: 1,
+  expectedPreviousSequence: 6,
+};
+const deletionRequest = {
+  workspaceId: "team",
+  subjectId: "principal-1",
+  reason: "User requested deletion",
+  expectedVersion: 2,
+  expectedPreviousSequence: 7,
+};
+await client.rememberPreference(rememberRequest);
+await client.correctMemory("memory:preference-1", correctionRequest);
+await client.deleteMemory("memory:preference-1", deletionRequest);
+assert.equal(
+  calls[8].url,
+  "http://127.0.0.1:8787/v1/memories/preferences",
+);
+assert.deepEqual(JSON.parse(calls[8].init.body), rememberRequest);
+assert.equal(
+  calls[9].url,
+  "http://127.0.0.1:8787/v1/memories/memory%3Apreference-1/correction",
+);
+assert.deepEqual(JSON.parse(calls[9].init.body), correctionRequest);
+assert.equal(
+  calls[10].url,
+  "http://127.0.0.1:8787/v1/memories/memory%3Apreference-1/deletion",
+);
+assert.deepEqual(JSON.parse(calls[10].init.body), deletionRequest);
+assert.throws(
+  () => client.correctMemory("../memory", correctionRequest),
+  /bounded opaque identifier/,
+);
+
 assert.throws(
   () =>
     new RembraneClient({

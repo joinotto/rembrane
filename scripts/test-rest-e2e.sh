@@ -238,6 +238,61 @@ updated_checkpoint_status=$(
 test "$updated_checkpoint_status" = "200"
 test "$(jq -r '.version' "$updated_checkpoint_response")" = "2"
 
+denied_memory_response="$test_directory/denied-memory-response.json"
+denied_memory_status=$(
+    curl -sS \
+        -o "$denied_memory_response" \
+        -w '%{http_code}' \
+        -X POST "$base_url/v1/memories/preferences" \
+        -H "Authorization: Bearer $REMBRANE_API_TOKEN" \
+        -H "Content-Type: application/json" \
+        --data "{\"workspaceId\":\"$REMBRANE_WORKSPACE_ID\",\"subjectId\":\"$REMBRANE_PRINCIPAL_ID\",\"entityId\":\"project_outside_grant\",\"content\":\"Must not persist\",\"expectedPreviousSequence\":9}"
+)
+test "$denied_memory_status" = "403"
+test "$(jq -r '.code' "$denied_memory_response")" = "access_denied"
+
+remember_response="$test_directory/remember-response.json"
+remember_status=$(
+    curl -sS \
+        -o "$remember_response" \
+        -w '%{http_code}' \
+        -X POST "$base_url/v1/memories/preferences" \
+        -H "Authorization: Bearer $REMBRANE_API_TOKEN" \
+        -H "Content-Type: application/json" \
+        --data "{\"workspaceId\":\"$REMBRANE_WORKSPACE_ID\",\"subjectId\":\"$REMBRANE_PRINCIPAL_ID\",\"content\":\"Use concise REST responses\",\"expectedPreviousSequence\":9}"
+)
+test "$remember_status" = "201"
+test "$(jq -r '.version' "$remember_response")" = "1"
+test "$(jq -r '.status' "$remember_response")" = "confirmed"
+rest_memory_id=$(jq -er '.memoryId' "$remember_response")
+
+correction_response="$test_directory/correction-response.json"
+correction_status=$(
+    curl -sS \
+        -o "$correction_response" \
+        -w '%{http_code}' \
+        -X POST "$base_url/v1/memories/$rest_memory_id/correction" \
+        -H "Authorization: Bearer $REMBRANE_API_TOKEN" \
+        -H "Content-Type: application/json" \
+        --data "{\"workspaceId\":\"$REMBRANE_WORKSPACE_ID\",\"subjectId\":\"$REMBRANE_PRINCIPAL_ID\",\"replacement\":\"Use concise and direct REST responses\",\"expectedVersion\":1,\"expectedPreviousSequence\":10}"
+)
+test "$correction_status" = "200"
+test "$(jq -r '.version' "$correction_response")" = "2"
+
+deletion_response="$test_directory/deletion-response.json"
+deletion_status=$(
+    curl -sS \
+        -o "$deletion_response" \
+        -w '%{http_code}' \
+        -X POST "$base_url/v1/memories/$rest_memory_id/deletion" \
+        -H "Authorization: Bearer $REMBRANE_API_TOKEN" \
+        -H "Content-Type: application/json" \
+        --data "{\"workspaceId\":\"$REMBRANE_WORKSPACE_ID\",\"subjectId\":\"$REMBRANE_PRINCIPAL_ID\",\"reason\":\"Preference withdrawn\",\"expectedVersion\":2,\"expectedPreviousSequence\":11}"
+)
+test "$deletion_status" = "200"
+test "$(jq -r '.version' "$deletion_response")" = "3"
+test "$(jq -r '.status' "$deletion_response")" = "deleted"
+
 acceptance_invitation_id="invitation_rest_accept"
 acceptance_create_response="$test_directory/acceptance-create-response.json"
 acceptance_create_status=$(
@@ -349,6 +404,10 @@ test "$(
     sqlite3 "$database" \
         "SELECT count(*) FROM checkpoint_disclosures WHERE workspace_id = '$REMBRANE_WORKSPACE_ID' AND activity_id = 'activity_rest_e2e';"
 )" = "1"
+test "$(
+    sqlite3 "$database" \
+        "SELECT version || ':' || status FROM memories WHERE workspace_id = '$REMBRANE_WORKSPACE_ID' AND id = '$rest_memory_id';"
+)" = "3:deleted"
 test "$(
     sqlite3 "$database" \
         "SELECT status FROM workspace_invitations WHERE workspace_id = '$REMBRANE_WORKSPACE_ID' AND id = 'invitation_rest_e2e';"

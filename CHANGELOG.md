@@ -22,6 +22,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Authenticated REST and OpenAPI checkpoint/resume operations, with exact
   activity-scope enforcement, optimistic event sequencing, audited reads, and
   matching path-safe TypeScript and Python SDK methods.
+- REST, OpenAPI, TypeScript, and Python preference lifecycle operations now
+  create, correct, and tombstone canonical encrypted memories using exact
+  workspace identity, one requested scope, optimistic versions, and canonical
+  event sequencing.
 - The REST service now serves `/.well-known/ai-memory` without authentication,
   reporting its configured API root, implemented capabilities, limits, and
   local-only versus customer-gateway plaintext-processing boundary.

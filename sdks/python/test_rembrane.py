@@ -188,6 +188,57 @@ class RembraneClientTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "bounded opaque identifier"):
             client.checkpoint_activity("unsafe/activity", request)
 
+    def test_memory_lifecycle_uses_exact_authenticated_routes(self) -> None:
+        calls = []
+
+        def transport(method, url, headers, body, maximum):
+            calls.append((method, url, headers, body, maximum))
+            return 200, {"Content-Type": "application/json"}, b'{"version":1}'
+
+        client = RembraneClient(
+            "http://127.0.0.1:8787/v1", "test-token", transport=transport
+        )
+        remember = {
+            "workspaceId": "team",
+            "subjectId": "principal-1",
+            "content": "Call me Hippo",
+            "expectedPreviousSequence": 5,
+        }
+        correction = {
+            "workspaceId": "team",
+            "subjectId": "principal-1",
+            "replacement": "Call me Captain Hippo",
+            "expectedVersion": 1,
+            "expectedPreviousSequence": 6,
+        }
+        deletion = {
+            "workspaceId": "team",
+            "subjectId": "principal-1",
+            "reason": "User requested deletion",
+            "expectedVersion": 2,
+            "expectedPreviousSequence": 7,
+        }
+        client.remember_preference(remember)
+        client.correct_memory("memory:preference-1", correction)
+        client.delete_memory("memory:preference-1", deletion)
+
+        self.assertEqual(
+            [call[1] for call in calls],
+            [
+                "http://127.0.0.1:8787/v1/memories/preferences",
+                "http://127.0.0.1:8787/v1/memories/"
+                "memory%3Apreference-1/correction",
+                "http://127.0.0.1:8787/v1/memories/"
+                "memory%3Apreference-1/deletion",
+            ],
+        )
+        self.assertEqual(
+            [json.loads(call[3]) for call in calls],
+            [remember, correction, deletion],
+        )
+        with self.assertRaisesRegex(ValueError, "bounded opaque identifier"):
+            client.correct_memory("../memory", correction)
+
     def test_problem_response_becomes_typed_error(self) -> None:
         client = RembraneClient(
             "https://memory.example.test/v1",

@@ -106,6 +106,34 @@ export interface ActivityCheckpoint {
   disclosureId?: string;
 }
 
+export interface MemoryScopeRequest extends WorkspaceRequest {
+  subjectId: string;
+  domain?: string | null;
+  entityId?: string | null;
+  activityId?: string | null;
+  expectedPreviousSequence: number;
+}
+
+export interface RememberPreferenceRequest extends MemoryScopeRequest {
+  content: string;
+}
+
+export interface CorrectMemoryRequest extends MemoryScopeRequest {
+  replacement: string;
+  expectedVersion: number;
+}
+
+export interface DeleteMemoryRequest extends MemoryScopeRequest {
+  reason: string;
+  expectedVersion: number;
+}
+
+export interface MemoryMutation {
+  memoryId: string;
+  version: number;
+  status: "confirmed" | "deleted";
+}
+
 export type WorkspaceInvitationRole = "admin" | "member" | "viewer";
 export type WorkspaceInvitationStatus = "pending" | "accepted" | "revoked" | "expired";
 
@@ -183,6 +211,15 @@ export class RembraneClient {
   resolveGraphContext(
     request: ResolveGraphContextRequest,
   ): Promise<ResolveGraphContextResponse>;
+  rememberPreference(request: RememberPreferenceRequest): Promise<MemoryMutation>;
+  correctMemory(
+    memoryId: string,
+    request: CorrectMemoryRequest,
+  ): Promise<MemoryMutation>;
+  deleteMemory(
+    memoryId: string,
+    request: DeleteMemoryRequest,
+  ): Promise<MemoryMutation>;
   checkpointActivity(
     activityId: string,
     request: CheckpointActivityRequest,

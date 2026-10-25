@@ -98,6 +98,19 @@ class RembraneClient:
     def resolve_graph_context(self, request: Mapping[str, Any]) -> Any:
         return self._request("POST", "/graph/context/resolve", request)
 
+    def remember_preference(self, request: Mapping[str, Any]) -> Any:
+        return self._request("POST", "/memories/preferences", request)
+
+    def correct_memory(
+        self, memory_id: str, request: Mapping[str, Any]
+    ) -> Any:
+        path_id = _opaque_path_id(memory_id, "memory_id")
+        return self._request("POST", f"/memories/{path_id}/correction", request)
+
+    def delete_memory(self, memory_id: str, request: Mapping[str, Any]) -> Any:
+        path_id = _opaque_path_id(memory_id, "memory_id")
+        return self._request("POST", f"/memories/{path_id}/deletion", request)
+
     def checkpoint_activity(
         self, activity_id: str, request: Mapping[str, Any]
     ) -> Any:
@@ -272,6 +285,10 @@ def _is_bounded_token(value: Any, maximum_bytes: int) -> bool:
 
 
 def _activity_path_id(value: Any) -> str:
+    return _opaque_path_id(value, "activity_id")
+
+
+def _opaque_path_id(value: Any, label: str) -> str:
     if (
         type(value) is not str
         or len(value.encode("utf-8")) > 255
@@ -283,5 +300,5 @@ def _activity_path_id(value: Any) -> str:
             for character in value
         )
     ):
-        raise ValueError("activity_id must be a bounded opaque identifier")
+        raise ValueError(f"{label} must be a bounded opaque identifier")
     return quote(value, safe="")

@@ -122,6 +122,89 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
+  /memories/preferences:
+    post:
+      operationId: rememberPreference
+      summary: Store a confirmed preference in one authorized memory scope
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RememberPreferenceRequest"
+      responses:
+        "201":
+          description: Preference stored
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemoryMutationResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/AccessDenied"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /memories/{memoryId}/correction:
+    post:
+      operationId: correctMemory
+      summary: Correct an existing memory using optimistic versioning
+      parameters:
+        - $ref: "#/components/parameters/MemoryId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CorrectMemoryRequest"
+      responses:
+        "200":
+          description: Memory corrected
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemoryMutationResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/AccessDenied"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /memories/{memoryId}/deletion:
+    post:
+      operationId: deleteMemory
+      summary: Create an encrypted deletion tombstone using optimistic versioning
+      parameters:
+        - $ref: "#/components/parameters/MemoryId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeleteMemoryRequest"
+      responses:
+        "200":
+          description: Memory deletion recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemoryMutationResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/AccessDenied"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
   /activities/{activityId}/resume:
     get:
       operationId: resumeActivity
@@ -638,6 +721,12 @@ components:
       required: true
       schema:
         $ref: "#/components/schemas/OpaqueId"
+    MemoryId:
+      name: memoryId
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/OpaqueId"
   responses:
     InvalidRequest:
       description: Request validation failed
@@ -670,6 +759,118 @@ components:
           schema:
             $ref: "#/components/schemas/Problem"
   schemas:
+    RememberPreferenceRequest:
+      type: object
+      additionalProperties: false
+      required: [workspaceId, subjectId, content, expectedPreviousSequence]
+      properties:
+        workspaceId:
+          $ref: "#/components/schemas/OpaqueId"
+        subjectId:
+          $ref: "#/components/schemas/OpaqueId"
+        content:
+          type: string
+          minLength: 1
+          maxLength: 65536
+        domain:
+          type: [string, "null"]
+          minLength: 1
+          maxLength: 100
+        entityId:
+          oneOf:
+            - $ref: "#/components/schemas/OpaqueId"
+            - type: "null"
+        activityId:
+          oneOf:
+            - $ref: "#/components/schemas/OpaqueId"
+            - type: "null"
+        expectedPreviousSequence:
+          type: integer
+          minimum: 0
+    CorrectMemoryRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - workspaceId
+        - subjectId
+        - replacement
+        - expectedVersion
+        - expectedPreviousSequence
+      properties:
+        workspaceId:
+          $ref: "#/components/schemas/OpaqueId"
+        subjectId:
+          $ref: "#/components/schemas/OpaqueId"
+        replacement:
+          type: string
+          minLength: 1
+          maxLength: 65536
+        domain:
+          type: [string, "null"]
+          minLength: 1
+          maxLength: 100
+        entityId:
+          oneOf:
+            - $ref: "#/components/schemas/OpaqueId"
+            - type: "null"
+        activityId:
+          oneOf:
+            - $ref: "#/components/schemas/OpaqueId"
+            - type: "null"
+        expectedVersion:
+          type: integer
+          minimum: 1
+        expectedPreviousSequence:
+          type: integer
+          minimum: 0
+    DeleteMemoryRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - workspaceId
+        - subjectId
+        - reason
+        - expectedVersion
+        - expectedPreviousSequence
+      properties:
+        workspaceId:
+          $ref: "#/components/schemas/OpaqueId"
+        subjectId:
+          $ref: "#/components/schemas/OpaqueId"
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 8192
+        domain:
+          type: [string, "null"]
+          minLength: 1
+          maxLength: 100
+        entityId:
+          oneOf:
+            - $ref: "#/components/schemas/OpaqueId"
+            - type: "null"
+        activityId:
+          oneOf:
+            - $ref: "#/components/schemas/OpaqueId"
+            - type: "null"
+        expectedVersion:
+          type: integer
+          minimum: 1
+        expectedPreviousSequence:
+          type: integer
+          minimum: 0
+    MemoryMutationResponse:
+      type: object
+      additionalProperties: false
+      required: [memoryId, version, status]
+      properties:
+        memoryId:
+          $ref: "#/components/schemas/OpaqueId"
+        version:
+          type: integer
+          minimum: 1
+        status:
+          enum: [confirmed, deleted]
     CheckpointActivityRequest:
       type: object
       additionalProperties: false
