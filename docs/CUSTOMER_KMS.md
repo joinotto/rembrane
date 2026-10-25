@@ -160,5 +160,7 @@ Retain this result with the reviewed deployment and IAM evidence.
 The case definitions and requirements live in the versioned
 `rembrane.key-provider.core` profile; runner output is generated from that
 profile and carries its exact profile ID so evidence cannot be attributed to a
-different test definition.
+different test definition. It also carries the lowercase SHA-256 of the exact
+profile bytes so evidence remains unambiguous if a pre-stable profile is later
+reviewed and changed.
 

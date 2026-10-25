@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-for command in curl jq mktemp rg base64; do
+for command in curl jq mktemp rg base64 openssl sed; do
     if ! command -v "$command" >/dev/null 2>&1; then
         echo "required key-provider conformance tool is unavailable: $command" >&2
         exit 1
@@ -45,6 +45,14 @@ cases=$(
     jq -c '[.cases[] | {id, result: "pass"}]' "$conformance_profile"
 )
 profile_id=$(jq -r '.profileId' "$conformance_profile")
+profile_sha256=$(
+    openssl dgst -sha256 "$conformance_profile" |
+        sed 's/^.*= //'
+)
+if ! printf '%s' "$profile_sha256" | rg '^[0-9a-f]{64}$' >/dev/null; then
+    echo "could not calculate key-provider conformance profile digest" >&2
+    exit 1
+fi
 
 test_directory=$(mktemp -d "${TMPDIR:-/tmp}/rembrane-key-provider-http.XXXXXX")
 auth_header="$test_directory/auth.header"
@@ -244,10 +252,12 @@ jq -cn \
     --arg providerId "$provider_id" \
     --arg providerVersion "$provider_version" \
     --arg profileId "$profile_id" \
+    --arg profileSha256 "$profile_sha256" \
     --arg namespace "$namespace" \
     --argjson cases "$cases" \
     '{
         profileId: $profileId,
+        profileSha256: $profileSha256,
         protocolVersion: "0.1",
         providerId: $providerId,
         providerVersion: $providerVersion,

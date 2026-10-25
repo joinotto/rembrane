@@ -1,5 +1,6 @@
 {
   "profileId": "rembrane.key-provider.core",
+  "profileSha256": "aee588eabba0f29a05fb633324e54203a1ff81899bedae7dad4bab562bb2fa7b",
   "protocolVersion": "0.1",
   "providerId": "rembrane.mock-key-provider",
   "providerVersion": "0.1.0-test",

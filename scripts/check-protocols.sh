@@ -85,6 +85,7 @@ jq -e '
 jq -e --slurpfile example spec/examples/key-provider-conformance-result.json '
     .additionalProperties == false
     and .properties.profileId.const == "rembrane.key-provider.core"
+    and .properties.profileSha256.pattern == "^[0-9a-f]{64}$"
     and .properties.protocolVersion.const == "0.1"
     and .properties.result.const == "pass"
     and .properties.providerVersion.maxLength == 100
@@ -95,6 +96,7 @@ jq -e --slurpfile example spec/examples/key-provider-conformance-result.json '
     and all($example[0].cases[]; .result == "pass")
     and $example[0].providerVersion == "0.1.0-test"
     and $example[0].profileId == "rembrane.key-provider.core"
+    and ($example[0].profileSha256 | test("^[0-9a-f]{64}$"))
 ' spec/key-provider-conformance-result.schema.json >/dev/null
 
 jq -e '

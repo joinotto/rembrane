@@ -6,6 +6,7 @@
   "additionalProperties": false,
   "required": [
     "profileId",
+    "profileSha256",
     "protocolVersion",
     "providerId",
     "providerVersion",
@@ -16,6 +17,10 @@
   "properties": {
     "profileId": {
       "const": "rembrane.key-provider.core"
+    },
+    "profileSha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
     },
     "protocolVersion": {
       "const": "0.1"

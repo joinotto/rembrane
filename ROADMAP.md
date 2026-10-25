@@ -113,6 +113,8 @@ This roadmap describes sequencing, not release dates.
             exact core profile identifier.
           - [x] Require result case identity and order to match the reviewed
             profile exactly.
+          - [x] Bind portable evidence to the SHA-256 of the exact reviewed
+            profile bytes.
         - [x] Bind discovery and conformance evidence to an exact bounded
           provider build version rather than identity alone.
   - [x] Resolve or unwrap keyring material through customer KMS adapters.

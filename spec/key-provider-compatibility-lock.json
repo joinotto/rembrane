@@ -20,15 +20,15 @@
     },
     {
       "path": "spec/key-provider-conformance-result.schema.json",
-      "sha256": "48513043cdda03406d5a8eca284d7fef744faeef15523fdaed0c3a7c190f7985"
+      "sha256": "df6d5c33fc877375a8d6698719222b6453e6c980bcefbad1b2b2d48ad78b94fb"
     },
     {
       "path": "spec/examples/key-provider-conformance-result.json",
-      "sha256": "6b8ef866659559f95d27441ba8bc319eb7afc42661ebd85ec4c3c8e4360e86db"
+      "sha256": "bcd6ed64549e8c62b59720c8f31acb3c9300f38390ab7127f5a00f7afbf3489d"
     },
     {
       "path": "scripts/test-key-provider-http.sh",
-      "sha256": "016c97a67c627d2a446c5d94114cb7fc2c26c7b5449b84344c9322bdaf98ef22"
+      "sha256": "f6c14ea70ae77cd2dcc2ec5f0fa9cc232d12f2354609ce5b8402dc7418bd4595"
     }
   ]
 }

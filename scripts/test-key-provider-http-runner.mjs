@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
+import { createHash, randomBytes } from "node:crypto";
 import http from "node:http";
-import { randomBytes } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
@@ -154,6 +155,16 @@ assert.equal(status, 0, stderr);
 const result = JSON.parse(stdout);
 assert.equal(result.result, "pass");
 assert.equal(result.profileId, "rembrane.key-provider.core");
+assert.equal(
+  result.profileSha256,
+  createHash("sha256")
+    .update(
+      await readFile(
+        new URL("../spec/conformance/key-provider-core.json", import.meta.url),
+      ),
+    )
+    .digest("hex"),
+);
 assert.equal(result.providerId, "rembrane.mock-key-provider");
 assert.equal(result.providerVersion, "0.1.0-test");
 assert.deepEqual(

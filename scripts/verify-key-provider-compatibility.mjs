@@ -85,12 +85,10 @@ const conformanceSchema = JSON.parse(
     "utf8",
   ),
 );
-const conformanceProfile = JSON.parse(
-  await readFile(
-    resolve(repositoryRoot, "spec/conformance/key-provider-core.json"),
-    "utf8",
-  ),
+const conformanceProfileBytes = await readFile(
+  resolve(repositoryRoot, "spec/conformance/key-provider-core.json"),
 );
+const conformanceProfile = JSON.parse(conformanceProfileBytes.toString("utf8"));
 const resultFixture = JSON.parse(
   await readFile(
     resolve(repositoryRoot, "spec/examples/key-provider-conformance-result.json"),
@@ -126,6 +124,11 @@ assert.equal(
   resultFixture.profileId,
   conformanceProfile.profileId,
   "conformance result fixture is bound to a different profile",
+);
+assert.equal(
+  resultFixture.profileSha256,
+  createHash("sha256").update(conformanceProfileBytes).digest("hex"),
+  "conformance result fixture is bound to different profile bytes",
 );
 assert.equal(
   resultSchema.properties.profileId.const,

@@ -28,6 +28,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   isolation and fail-closed audience, expiry, scope, and token handling.
 - Rejection of whitespace-bearing OAuth identity, issuer, resource, and
   audience claims before canonical remote tenant authorization.
+- Key-provider conformance evidence bound to the SHA-256 of the exact reviewed
+  profile bytes.
 - Required bounded key-provider build versions in discovery, Rust negotiation,
   HTTP decoding, fixtures, and portable conformance evidence.
 - A tamper-tested key-provider compatibility lock over reviewed OpenAPI,
