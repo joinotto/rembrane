@@ -14,6 +14,7 @@ rembrane-config = { path = "../../crates/rembrane-config" }
 rembrane-contracts = { path = "../../crates/rembrane-contracts" }
 rembrane-crypto-configured = { path = "../../adapters/rembrane-crypto-configured" }
 rembrane-domain = { path = "../../crates/rembrane-domain" }
+rembrane-graph-configured = { path = "../../adapters/rembrane-graph-configured" }
 rembrane-store-sqlite = { path = "../../adapters/rembrane-store-sqlite" }
 rmcp = { version = "3.4.1", features = ["server", "transport-io"] }
 serde = { version = "1", features = ["derive"] }

@@ -1295,6 +1295,7 @@ dependencies = [
  "rembrane-contracts",
  "rembrane-crypto-configured",
  "rembrane-domain",
+ "rembrane-graph-configured",
  "rembrane-store-sqlite",
  "rmcp",
  "serde",

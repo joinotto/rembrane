@@ -98,6 +98,32 @@ Participant labels, constraints, and decisions are returned only when
 `includeSensitiveProfile: true` is combined with the connection-level
 `travel-sensitive-profile` permission.
 
+### `rembrane_resolve_graph_context`
+
+Retrieves an authorized temporal neighbourhood from the deployment-selected
+native or Graphiti provider. Provider candidates are treated as untrusted:
+every edge is re-read from canonical encrypted storage and must match the
+workspace, exact revision, requested node direction, and validity time.
+Rembrane commits an exact graph disclosure receipt before returning any edge.
+
+Arguments:
+
+- `nodeId`
+- `direction`: `incoming`, `outgoing`, or `both`
+- `validAtEpochSeconds`
+- `maximumCandidates` (optional, defaults to `20`, maximum `100`)
+- `purpose`
+- exactly zero or one of `domain`, `entityId`, or `activityId`; absence means
+  the explicitly granted global scope
+
+The authenticated connection supplies workspace, subject, and client identity.
+The requested memory scope must be present in that connection's canonical read
+grant. Remote calls additionally require `rembrane:graph:read`.
+
+The response contains the disclosure ID and canonical edge identity, source
+and target node IDs, relation, revision, and temporal validity metadata. It
+does not expose provider-internal identifiers or unverified provider content.
+
 ### `rembrane_add_trip_participant`
 
 Adds one server-identified participant through a narrow optimistic mutation,

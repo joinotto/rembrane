@@ -6,24 +6,25 @@ use rembrane_application::{
     AddTripConstraintCommand, AddTripParticipantCommand, AuthorizeClientCommand,
     AuthorizeClientService, CaptureBookingResearchCommand, CaptureBookingResearchService,
     CheckpointService, ClientGrantBundle, CreateCheckpointCommand, CreateTripCommand,
-    DeleteMemoryCommand, EventRepository, MemoryLifecycleService, MemoryProposalService,
-    ProposeMemoryCommand, RecordTripDecisionCommand, RememberPreferenceCommand,
-    RememberPreferenceService, ResolveContextCommand, ResolveContextService,
-    ResolveTravelContextCommand, ResumeActivityCommand, ReviseMemoryCommand, TravelContextResearch,
-    TravelContextService, TravelContextTrip, TravelSensitiveProfile, TripService,
-    UpdateCheckpointCommand,
+    DeleteMemoryCommand, EventRepository, GraphContextService, MemoryLifecycleService,
+    MemoryProposalService, ProposeMemoryCommand, RecordTripDecisionCommand,
+    RememberPreferenceCommand, RememberPreferenceService, ResolveContextCommand,
+    ResolveContextService, ResolveTravelContextCommand, ResumeActivityCommand, ReviseMemoryCommand,
+    TravelContextResearch, TravelContextService, TravelContextTrip, TravelSensitiveProfile,
+    TripService, UpdateCheckpointCommand,
 };
 use rembrane_config::{parse_read_permissions, parse_read_scopes};
-use rembrane_contracts::{ResolveContextRequest, VerifiedRemoteAccess};
+use rembrane_contracts::{ResolveContextRequest, ResolveGraphContextRequest, VerifiedRemoteAccess};
 use rembrane_crypto_configured::ConfiguredRecordCipher;
 use rembrane_domain::{
     ActivityCheckpoint, ActivityId, BookingResearch, BookingResearchId, BookingResearchKind,
     CheckpointId, ClientId, ContextPackId, DecisionStatus, DisclosureId, EntityId, EventId,
-    EvidenceId, EvidenceReference, EvidenceSource, MemoryId, MemoryKind, MemoryScope, PrincipalId,
-    ReadPermission, ReadScope, TravelDateWindow, Trip, TripConstraint, TripConstraintId,
-    TripConstraintKind, TripDecision, TripDecisionId, TripParticipant, TripParticipantId,
-    WorkspaceId, WritePermission,
+    EvidenceId, EvidenceReference, EvidenceSource, GraphDisclosureDirection, KnowledgeNodeId,
+    MemoryId, MemoryKind, MemoryScope, PrincipalId, ReadPermission, ReadScope, TravelDateWindow,
+    Trip, TripConstraint, TripConstraintId, TripConstraintKind, TripDecision, TripDecisionId,
+    TripParticipant, TripParticipantId, WorkspaceId, WritePermission,
 };
+use rembrane_graph_configured::ConfiguredGraphProvider;
 use rembrane_store_sqlite::SqliteStore;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::{ErrorData as McpError, ServiceExt, schemars, tool, tool_router, transport::stdio};
@@ -55,6 +56,39 @@ struct ResolveContextOutput {
     context_pack_id: String,
     disclosure_id: String,
     items: Vec<ContextItem>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct ResolveGraphContextParameters {
+    node_id: String,
+    direction: String,
+    valid_at_epoch_seconds: u64,
+    maximum_candidates: Option<usize>,
+    purpose: String,
+    domain: Option<String>,
+    entity_id: Option<String>,
+    activity_id: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct GraphEdgeOutput {
+    edge_id: String,
+    source_node_id: String,
+    target_node_id: String,
+    relation: String,
+    version: u64,
+    valid_from_epoch_seconds: u64,
+    valid_until_epoch_seconds: Option<u64>,
+    recorded_at_epoch_seconds: u64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ResolveGraphContextOutput {
+    disclosure_id: String,
+    edges: Vec<GraphEdgeOutput>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -312,6 +346,7 @@ struct CheckpointOutput {
 
 struct State {
     store: SqliteStore<ConfiguredRecordCipher>,
+    graph_provider: ConfiguredGraphProvider,
     principal_id: PrincipalId,
     workspace_id: WorkspaceId,
     client_id: ClientId,
@@ -368,6 +403,8 @@ impl RembraneMcp {
         let store = SqliteStore::open(database)
             .context("failed to open Rembrane database")?
             .with_cipher(cipher);
+        let graph_provider = ConfiguredGraphProvider::from_environment()
+            .context("failed to configure graph provider")?;
         AuthorizeClientService::new(&store)
             .execute(AuthorizeClientCommand {
                 client_id: client_id.clone(),
@@ -386,6 +423,7 @@ impl RembraneMcp {
         Ok(Self {
             state: Arc::new(Mutex::new(State {
                 store,
+                graph_provider,
                 principal_id,
                 workspace_id,
                 client_id,
@@ -478,6 +516,81 @@ impl RembraneMcp {
 
         serde_json::to_string(&output)
             .map_err(|_| McpError::internal_error("response serialization failed", None))
+    }
+
+    #[tool(
+        name = "rembrane_resolve_graph_context",
+        description = "Retrieve one authorized temporal graph neighbourhood. Canonical edge revisions are reauthorized and recorded in a disclosure receipt."
+    )]
+    fn resolve_graph_context(
+        &self,
+        Parameters(parameters): Parameters<ResolveGraphContextParameters>,
+    ) -> Result<String, McpError> {
+        let direction = match parameters.direction.as_str() {
+            "incoming" => GraphDisclosureDirection::Incoming,
+            "outgoing" => GraphDisclosureDirection::Outgoing,
+            "both" => GraphDisclosureDirection::Both,
+            _ => {
+                return Err(McpError::invalid_params(
+                    "direction must be incoming, outgoing, or both",
+                    None,
+                ));
+            }
+        };
+        let maximum_candidates = parameters.maximum_candidates.unwrap_or(20);
+        if !(1..=100).contains(&maximum_candidates) {
+            return Err(McpError::invalid_params(
+                "maximumCandidates must be between 1 and 100",
+                None,
+            ));
+        }
+        let scope = memory_scope(
+            parameters.domain.as_deref(),
+            parameters.entity_id.as_deref(),
+            parameters.activity_id.as_deref(),
+        )?;
+        let mut state = lock_state(&self.state)?;
+        let grants = authorize(&state, vec![read_scope(&scope)], Vec::new())?;
+        let disclosure_id = DisclosureId::new(format!("disclosure_{}", next_id(&mut state)?));
+        let request = ResolveGraphContextRequest {
+            workspace_id: grants.read.workspace_id.clone(),
+            principal_id: grants.read.subject_id.clone(),
+            node_id: KnowledgeNodeId::new(parameters.node_id),
+            scope,
+            direction,
+            valid_at_epoch_seconds: parameters.valid_at_epoch_seconds,
+            maximum_candidates,
+            purpose: parameters.purpose,
+        };
+        let State {
+            store,
+            graph_provider,
+            ..
+        } = &mut *state;
+        let response = GraphContextService::new(store, graph_provider)
+            .execute_request(request, grants.read, disclosure_id)
+            .map_err(application_error)?;
+        serde_json::to_string(&ResolveGraphContextOutput {
+            disclosure_id: response.disclosure_id.to_string(),
+            edges: response
+                .edges
+                .into_iter()
+                .map(|edge| {
+                    let validity = edge.validity();
+                    GraphEdgeOutput {
+                        edge_id: edge.id().to_string(),
+                        source_node_id: edge.source_id().to_string(),
+                        target_node_id: edge.target_id().to_string(),
+                        relation: edge.relation().as_str().to_owned(),
+                        version: edge.version(),
+                        valid_from_epoch_seconds: validity.valid_from_epoch_seconds(),
+                        valid_until_epoch_seconds: validity.valid_until_epoch_seconds(),
+                        recorded_at_epoch_seconds: validity.recorded_at_epoch_seconds(),
+                    }
+                })
+                .collect(),
+        })
+        .map_err(|_| McpError::internal_error("response serialization failed", None))
     }
 
     #[tool(

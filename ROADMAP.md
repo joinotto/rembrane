@@ -427,6 +427,9 @@ This roadmap describes sequencing, not release dates.
         canonical edges, and disclosure identity.
       - [x] Bind transport principal identity to the verified grant before
         converting the neutral request into a provider traversal.
+      - [x] Add a local/remote MCP graph-context tool backed by the
+        deployment-selected native or Graphiti provider and canonical SQLite
+        reauthorization.
     - [x] Persist graph disclosure evidence in the in-memory, SQLite, and
       PostgreSQL repository adapters with tenant-isolation coverage.
       - [x] Enforce exact tenant and edge-revision correlation in the

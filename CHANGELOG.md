@@ -34,6 +34,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Application bridge from the transport-neutral graph request to provider
   traversal, with principal substitution denial and disclosure identity
   returned only after evidence commits.
+- MCP `rembrane_resolve_graph_context` tool with explicit temporal direction,
+  scope, purpose, and candidate bounds, using the configured native or
+  Graphiti provider and returning canonical edge revisions.
 - Bounded shared-workspace invitation validity with persisted creation and
   expiry time, a 30-day maximum lifetime, and fail-closed acceptance at the
   expiry boundary.
