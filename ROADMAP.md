@@ -424,7 +424,7 @@ This roadmap describes sequencing, not release dates.
       subject, and purpose before returning graph context.
       - [x] Deny graph retrieval before provider access when the requested
         domain/entity scope is absent or the disclosure purpose is empty.
-    - [ ] Expose graph context through authenticated interoperable protocol
+    - [x] Expose graph context through authenticated interoperable protocol
       surfaces.
       - [x] Reserve a dedicated `rembrane:graph:read` OAuth scope and
         fail-closed remote MCP operation classification.
@@ -446,7 +446,7 @@ This roadmap describes sequencing, not release dates.
           Python SDKs.
         - [x] Add exact-route graph-context operations to the Swift and Kotlin
           SDKs with executable transport smoke coverage.
-        - [ ] Prove black-box REST scope denial and disclosure persistence for
+        - [x] Prove black-box REST scope denial and disclosure persistence for
           an empty native-provider neighbourhood.
           - [x] Add the executable acceptance scenario; run it in unrestricted
             CI where loopback listener creation is permitted.
