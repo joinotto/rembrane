@@ -982,6 +982,12 @@ struct SyncPushResultBody {
 
 impl SyncPushResultBody {
     fn into_domain(self, request: &SyncPushPayload) -> Result<SyncPushResult, ProviderError> {
+        if self.accepted.len() != request.mutations().len() {
+            return Err(ProviderError::Rejected(
+                "memory provider sync push result count does not match the submitted batch"
+                    .to_owned(),
+            ));
+        }
         SyncPushResult::new(
             self.accepted
                 .into_iter()
@@ -1009,6 +1015,11 @@ impl AcceptedSyncMutationBody {
 
 impl SyncPullResultBody {
     fn into_domain(self, request: &SyncPullPayload) -> Result<SyncPullResult, ProviderError> {
+        if self.changes.len() > request.maximum_items() {
+            return Err(ProviderError::Rejected(
+                "memory provider sync pull returned too many changes".to_owned(),
+            ));
+        }
         SyncPullResult::new(
             self.changes
                 .into_iter()
@@ -1582,8 +1593,8 @@ mod tests {
         MemoryProviderLimits, MemoryProviderManifest, MemoryProviderPolicy,
         MemoryProviderPrivacyMode, MemoryProviderPushMutation, MemoryProviderSyncCursor,
         MemoryProviderSyncOperation, MemoryProviderSyncResource, MemoryProviderTransport,
-        ProposeMemoryPayload, RecordDisclosurePayload, RecordEventPayload, ResolveContextPayload,
-        ResolveQuestionPayload, SyncPullPayload, SyncPushPayload,
+        ProposeMemoryPayload, ProviderError, RecordDisclosurePayload, RecordEventPayload,
+        ResolveContextPayload, ResolveQuestionPayload, SyncPullPayload, SyncPushPayload,
     };
 
     use super::{
@@ -2198,6 +2209,24 @@ mod tests {
         )
         .expect("result JSON");
         assert!(unordered.into_domain(&request).is_err());
+
+        let oversized: SyncPullResultBody = serde_json::from_str(
+            r#"{
+              "changes":[
+                {"changeId":"change_01","sequence":7,"resource":"event","resourceId":"event_01","version":1,"operation":"delete"},
+                {"changeId":"change_02","sequence":8,"resource":"event","resourceId":"event_02","version":1,"operation":"delete"},
+                {"changeId":"change_03","sequence":9,"resource":"event","resourceId":"event_03","version":1,"operation":"delete"}
+              ],
+              "nextCursor":"cursor_0123456789_next",
+              "hasMore":false
+            }"#,
+        )
+        .expect("result JSON");
+        assert!(matches!(
+            oversized.into_domain(&request),
+            Err(ProviderError::Rejected(message))
+                if message == "memory provider sync pull returned too many changes"
+        ));
     }
 
     #[test]
@@ -2272,6 +2301,23 @@ mod tests {
         )
         .expect("result JSON");
         assert!(reordered.into_domain(&request).is_err());
+
+        let oversized: SyncPushResultBody = serde_json::from_str(
+            r#"{
+              "accepted":[
+                {"mutationId":"mutation_01","version":1,"sequence":9},
+                {"mutationId":"mutation_02","version":4,"sequence":10},
+                {"mutationId":"mutation_03","version":1,"sequence":11}
+              ],
+              "nextCursor":"cursor_0123456789_next"
+            }"#,
+        )
+        .expect("result JSON");
+        assert!(matches!(
+            oversized.into_domain(&request),
+            Err(ProviderError::Rejected(message))
+                if message == "memory provider sync push result count does not match the submitted batch"
+        ));
     }
 
     #[test]

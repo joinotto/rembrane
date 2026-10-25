@@ -9,6 +9,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- Portable Memory Provider synchronization responses now reject oversized pull
+  pages and non-exact push acknowledgements before per-item conversion.
 - Portable Memory Provider HTTP responses now reject oversized context and
   grounded-answer collections before canonical item conversion.
 - Graphiti HTTP neighbour responses now reject candidate collections above the

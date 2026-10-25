@@ -919,6 +919,8 @@ This roadmap describes sequencing, not release dates.
 - [x] Secret-safe black-box HTTP sidecar conformance runner.
   - [x] Reject context and grounded-answer collections above each originating
     request's negotiated item ceiling before canonical item conversion.
+  - [x] Reject oversized pull pages and non-exact push acknowledgement
+    collections before converting provider-controlled synchronization items.
 - [ ] Stable Memory Provider Protocol.
   - [ ] Satisfy the explicit `1.0` release gates in
     `spec/MEMORY_PROVIDER_STABILITY.md`.
