@@ -32,6 +32,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   key, enabling revocation updates without rebuilding the CLI.
 - Provider-selection receipts identify embedded trust or record the SHA-256
   fingerprint of the exact Ed25519 public key used for external verification.
+- Reusable `rembrane-provider-registry` Rust crate for registry hashing,
+  embedded trust provenance, detached Ed25519 verification, and trust-anchor
+  fingerprinting across CLI, bot, service, and agent integrations.
 - A strict portable key-provider conformance result schema and runner output
   containing provider identity and explicit pass evidence for eight
   authentication, encryption, limit, rotation, and replay cases.

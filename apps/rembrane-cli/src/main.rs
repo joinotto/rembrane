@@ -1,5 +1,3 @@
-use base64::Engine;
-use base64::engine::general_purpose::STANDARD as BASE64;
 use rembrane_application::{
     AcceptInvitationCommand, AdministrativeAuditRepository, ApplicationError,
     AuthorizeClientCommand, AuthorizeClientService, CanonicalMutationRepository,
@@ -25,6 +23,7 @@ use rembrane_domain::{
     WritePermission,
 };
 use rembrane_memory_provider_configured::ConfiguredMemoryProvider;
+use rembrane_provider_registry::{RegistryTrust, VerifiedProviderRegistry};
 use rembrane_provider_sdk::{
     CURRENT_MEMORY_PROVIDER_PROTOCOL, MemoryProviderCapability, MemoryProviderLimits,
     MemoryProviderPolicy, MemoryProviderPrivacyMode, MemoryProviderTransport,
@@ -45,9 +44,6 @@ const EXPORT_MAGIC: &[u8; 16] = b"REMBRANE-EXPORT\n";
 const EXPORT_VERSION: u32 = 1;
 const MAX_PROVIDER_REGISTRY_BYTES: u64 = 1_048_576;
 const MAX_PROVIDER_REGISTRY_PUBLIC_KEY_BYTES: u64 = 4_096;
-const ED25519_SPKI_PREFIX: &[u8] = &[
-    0x30, 0x2a, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x03, 0x21, 0x00,
-];
 
 fn main() {
     let arguments = std::env::args().skip(1).collect::<Vec<_>>();
@@ -684,7 +680,7 @@ fn check_provider(arguments: &[String]) -> Result<String, String> {
                 .to_owned(),
         );
     }
-    let (registry, trust_anchor_sha256) = if external_registry {
+    let registry = if external_registry {
         let registry = read_bounded_registry_file(
             option(arguments, "--registry")?,
             MAX_PROVIDER_REGISTRY_BYTES,
@@ -697,22 +693,17 @@ fn check_provider(arguments: &[String]) -> Result<String, String> {
             MAX_PROVIDER_REGISTRY_PUBLIC_KEY_BYTES,
             "public key",
         )?;
-        let trust_anchor_sha256 =
-            verify_provider_registry_signature(&registry, &signature, &public_key)?;
-        (
-            String::from_utf8(registry).map_err(|_| "provider registry is not UTF-8".to_owned())?,
-            Some(trust_anchor_sha256),
-        )
+        VerifiedProviderRegistry::verify_ed25519(registry, &signature, &public_key)
+            .map_err(|error| error.to_string())?
     } else {
-        (PROVIDER_REGISTRY.to_owned(), None)
+        VerifiedProviderRegistry::embedded(PROVIDER_REGISTRY.as_bytes())
     };
-    check_provider_registry_with_trust(
+    check_verified_provider_registry(
         &registry,
         option(arguments, "--provider")?,
         option(arguments, "--adapter-version")?,
         allow_experimental,
         allow_provider_plaintext,
-        trust_anchor_sha256.as_deref(),
     )
 }
 
@@ -736,36 +727,6 @@ fn read_bounded_registry_file(
     Ok(bytes)
 }
 
-fn verify_provider_registry_signature(
-    registry: &[u8],
-    signature: &[u8],
-    public_key_pem: &[u8],
-) -> Result<String, String> {
-    if signature.len() != 64 {
-        return Err("provider registry signature length is invalid".to_owned());
-    }
-    let pem = std::str::from_utf8(public_key_pem)
-        .map_err(|_| "provider registry public key is not UTF-8".to_owned())?;
-    let body = pem
-        .strip_prefix("-----BEGIN PUBLIC KEY-----\n")
-        .and_then(|value| value.strip_suffix("-----END PUBLIC KEY-----\n"))
-        .ok_or_else(|| "provider registry public key PEM is invalid".to_owned())?;
-    let encoded = body.lines().collect::<String>();
-    let der = BASE64
-        .decode(encoded)
-        .map_err(|_| "provider registry public key encoding is invalid".to_owned())?;
-    if der.len() != ED25519_SPKI_PREFIX.len() + 32 || !der.starts_with(ED25519_SPKI_PREFIX) {
-        return Err("provider registry public key is not Ed25519".to_owned());
-    }
-    ring::signature::UnparsedPublicKey::new(
-        &ring::signature::ED25519,
-        &der[ED25519_SPKI_PREFIX.len()..],
-    )
-    .verify(registry, signature)
-    .map_err(|_| "provider registry signature verification failed".to_owned())?;
-    Ok(sha256_hex(&der))
-}
-
 #[cfg(test)]
 fn check_provider_registry(
     registry: &str,
@@ -774,25 +735,25 @@ fn check_provider_registry(
     allow_experimental: bool,
     allow_provider_plaintext: bool,
 ) -> Result<String, String> {
-    check_provider_registry_with_trust(
-        registry,
+    check_verified_provider_registry(
+        &VerifiedProviderRegistry::embedded(registry.as_bytes()),
         provider_id,
         adapter_version,
         allow_experimental,
         allow_provider_plaintext,
-        None,
     )
 }
 
-fn check_provider_registry_with_trust(
-    registry: &str,
+fn check_verified_provider_registry(
+    verified_registry: &VerifiedProviderRegistry,
     provider_id: &str,
     adapter_version: &str,
     allow_experimental: bool,
     allow_provider_plaintext: bool,
-    trust_anchor_sha256: Option<&str>,
 ) -> Result<String, String> {
-    let registry_sha256 = sha256_hex(registry.as_bytes());
+    let registry_sha256 = verified_registry.sha256();
+    let registry = std::str::from_utf8(verified_registry.bytes())
+        .map_err(|_| "provider registry is not UTF-8".to_owned())?;
     let registry: serde_json::Value = serde_json::from_str(registry)
         .map_err(|_| "provider registry is not valid JSON".to_owned())?;
     let generated_at = registry
@@ -860,12 +821,12 @@ fn check_provider_registry_with_trust(
         "schemaVersion": 1,
         "registryGeneratedAt": generated_at_text,
         "registrySha256": registry_sha256,
-        "registryTrust": match trust_anchor_sha256 {
-            Some(fingerprint) => serde_json::json!({
+        "registryTrust": match verified_registry.trust() {
+            RegistryTrust::Ed25519 { public_key_sha256 } => serde_json::json!({
                 "mode": "ed25519",
-                "publicKeySha256": fingerprint,
+                "publicKeySha256": public_key_sha256,
             }),
-            None => serde_json::json!({
+            RegistryTrust::Embedded => serde_json::json!({
                 "mode": "embedded",
             }),
         },
@@ -904,17 +865,6 @@ fn provider_eligibility(status: &str, allow_experimental: bool) -> Result<&'stat
         "revoked" => return Err("revoked provider is not eligible for selection".to_owned()),
         _ => return Err("provider registry status is invalid".to_owned()),
     })
-}
-
-fn sha256_hex(bytes: &[u8]) -> String {
-    const HEX: &[u8; 16] = b"0123456789abcdef";
-    let digest = ring::digest::digest(&ring::digest::SHA256, bytes);
-    let mut encoded = String::with_capacity(64);
-    for byte in digest.as_ref() {
-        encoded.push(char::from(HEX[usize::from(byte >> 4)]));
-        encoded.push(char::from(HEX[usize::from(byte & 0x0f)]));
-    }
-    encoded
 }
 
 fn parse_registry_timestamp(value: &str) -> Option<i64> {

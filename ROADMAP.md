@@ -985,6 +985,8 @@ This roadmap describes sequencing, not release dates.
         detached Ed25519 signature under an explicitly supplied trust anchor.
         - [x] Record embedded versus external trust mode and the canonical
           Ed25519 public-key fingerprint in every selection receipt.
+        - [x] Extract registry hashing, signature verification, and trust
+          provenance into a reusable Rust crate for non-CLI integrations.
 - [x] Run installed native-provider conformance through the CLI.
 - [x] Automated external-provider registry verification and release signing.
   - [x] Verify registry identity, timestamps, conformance status, and pinned

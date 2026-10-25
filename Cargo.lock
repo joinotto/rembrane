@@ -1132,7 +1132,6 @@ dependencies = [
 name = "rembrane-cli"
 version = "0.1.0-alpha.1"
 dependencies = [
- "base64 0.22.1",
  "chrono",
  "rembrane-application",
  "rembrane-channel-mobile-share",
@@ -1143,6 +1142,7 @@ dependencies = [
  "rembrane-crypto-configured",
  "rembrane-domain",
  "rembrane-memory-provider-configured",
+ "rembrane-provider-registry",
  "rembrane-provider-sdk",
  "rembrane-secret-local",
  "rembrane-semantic-mem0",
@@ -1150,7 +1150,6 @@ dependencies = [
  "rembrane-semantic-supermemory",
  "rembrane-store-memory",
  "rembrane-store-sqlite",
- "ring",
  "serde",
  "serde_json",
  "zeroize",
@@ -1383,6 +1382,14 @@ dependencies = [
  "serde",
  "serde_json",
  "zeroize",
+]
+
+[[package]]
+name = "rembrane-provider-registry"
+version = "0.1.0-alpha.1"
+dependencies = [
+ "base64 0.22.1",
+ "ring",
 ]
 
 [[package]]
