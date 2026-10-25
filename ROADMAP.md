@@ -296,6 +296,9 @@ This roadmap describes sequencing, not release dates.
     - [x] Authorize modern stateless Streamable HTTP requests without accepting
       a legacy session identifier, while preserving per-request bearer,
       origin, host, method, tool, and scope enforcement.
+      - [x] Deny stateless cancellation notifications until the official SDK
+        transport can prove each target request belongs to the same verified
+        tenant; session-bound cancellation remains separately authorized.
     - [x] Classify bounded JSON-RPC bodies before SDK dispatch, rejecting
       batches, malformed envelopes, unsupported methods, and unknown or
       mismatched tool calls without trusting request headers.

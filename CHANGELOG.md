@@ -9,6 +9,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- Stateless remote MCP now denies cancellation notifications rather than
+  allowing one tenant to target an SDK request identifier without a proven
+  tenant-bound session; ordinary stateless calls and session-bound lifecycle
+  authorization remain available.
 - Remote MCP authorization now rejects missing, null, boolean, object,
   fractional, and out-of-range request IDs, and rejects IDs attached to MCP
   notification methods before the official SDK dispatch boundary.

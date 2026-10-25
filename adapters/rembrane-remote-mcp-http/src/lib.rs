@@ -1176,7 +1176,7 @@ impl RemoteMcpHttpGate {
         Verifier: RemoteTokenVerifier,
     {
         self.require_allowed_host(request.host)?;
-        if request.session_id.is_some() {
+        if request.session_id.is_some() || method == "notifications/cancelled" {
             return Err(Self::forbidden());
         }
         match RemoteMcpRequestAuthorization::classify(method, tool_name)
@@ -1974,6 +1974,19 @@ mod tests {
             )
             .expect_err("stateless boundary must reject session ambiguity");
         assert_eq!(stateful_header.status, 403);
+
+        let cross_request_cancellation = gate
+            .authorize_stateless(
+                &authorization,
+                request("Bearer workspace-one"),
+                "notifications/cancelled",
+                None,
+                1_000,
+            )
+            .expect_err(
+                "stateless cancellation must remain disabled until request ownership is tenant-bound",
+            );
+        assert_eq!(cross_request_cancellation.status, 403);
     }
 
     #[test]
@@ -2065,6 +2078,16 @@ mod tests {
             gate.authorize_stateless_body(&authorization, request, travel_body, 1_000)
                 .err()
                 .expect("body requiring an absent scope must fail")
+                .status,
+            403
+        );
+
+        let cancellation =
+            br#"{"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":1}}"#;
+        assert_eq!(
+            gate.authorize_stateless_body(&authorization, request, cancellation, 1_000)
+                .err()
+                .expect("stateless cancellation must fail closed")
                 .status,
             403
         );
