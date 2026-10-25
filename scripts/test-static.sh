@@ -212,6 +212,10 @@ rg -q '^REMBRANE_OAUTH_INTROSPECTION_ENDPOINT=$' .env.example
 rg -q '^REMBRANE_OAUTH_INTROSPECTION_CLIENT_ID=$' .env.example
 rg -q '^REMBRANE_OAUTH_INTROSPECTION_CLIENT_SECRET_REFERENCE=$' .env.example
 rg -q '^REMBRANE_MCP_TRUSTED_ORIGINS=$' .env.example
+if rg -q 'REMBRANE_REMOTE_MCP_URL' apps/rembrane-cli/src/main.rs .env.example; then
+    echo "CLI and environment template must use the canonical remote MCP profile" >&2
+    exit 1
+fi
 if rg -q '^(GRAPHITI_BASE_URL|GRAPHITI_CREDENTIALS)=' .env.example; then
     echo "Canonical environment template must use REMBRANE_GRAPHITI_* variables" >&2
     exit 1

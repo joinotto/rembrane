@@ -244,6 +244,8 @@ This roadmap describes sequencing, not release dates.
     service, requiring an exact HTTPS resource and authorization-server pair.
     - [x] Require the API metadata route to consume the complete validated
       introspection profile and advertise exactly its public `/mcp` resource.
+    - [x] Validate and report that same complete profile through CLI privacy
+      diagnostics without resolving or exposing its client credential.
   - [x] Add a fail-closed verified-token claims contract.
     - [x] Bound and reject ambiguous issuer, resource, audience, subject,
       client, and workspace claims in the transport-neutral verifier contract.

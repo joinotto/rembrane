@@ -14,7 +14,9 @@ use rembrane_application::{
 };
 use rembrane_channel_mobile_share::derive_binding_lookup_keys as derive_mobile_binding_lookup_keys;
 use rembrane_channel_whatsapp::derive_binding_lookup_keys as derive_whatsapp_binding_lookup_keys;
-use rembrane_config::{ProviderConnection, ProviderKind, ProviderPlacement, SecretReference};
+use rembrane_config::{
+    ProviderConnection, ProviderKind, ProviderPlacement, RemoteMcpConfig, SecretReference,
+};
 use rembrane_contracts::{ChannelKind, ChannelSenderBinding, ResolveContextRequest};
 use rembrane_crypto_configured::ConfiguredRecordCipher;
 use rembrane_domain::{
@@ -1608,7 +1610,96 @@ fn validate_configured_provider_profiles() -> Result<(), String> {
         ProviderConnection::remote(kind, endpoint, credentials, ProviderPlacement::External)
             .map_err(|error| format!("invalid {endpoint_variable} configuration: {error}"))?;
     }
+    validate_configured_remote_mcp_profile()?;
     Ok(())
+}
+
+fn validate_configured_remote_mcp_profile() -> Result<(), String> {
+    let resource = configured_nonempty_environment("REMBRANE_MCP_RESOURCE");
+    let issuer = configured_nonempty_environment("REMBRANE_OAUTH_ISSUER");
+    let introspection_endpoint =
+        configured_nonempty_environment("REMBRANE_OAUTH_INTROSPECTION_ENDPOINT");
+    let client_id = configured_nonempty_environment("REMBRANE_OAUTH_INTROSPECTION_CLIENT_ID");
+    let secret_reference =
+        configured_nonempty_environment("REMBRANE_OAUTH_INTROSPECTION_CLIENT_SECRET_REFERENCE");
+    let trusted_origins = configured_nonempty_environment("REMBRANE_MCP_TRUSTED_ORIGINS");
+    if [
+        resource.as_ref(),
+        issuer.as_ref(),
+        introspection_endpoint.as_ref(),
+        client_id.as_ref(),
+        secret_reference.as_ref(),
+        trusted_origins.as_ref(),
+    ]
+    .iter()
+    .all(|value| value.is_none())
+    {
+        return Ok(());
+    }
+    let secret_reference = secret_reference
+        .ok_or_else(|| {
+            "REMBRANE_OAUTH_INTROSPECTION_CLIENT_SECRET_REFERENCE is required".to_owned()
+        })?
+        .parse::<SecretReference>()
+        .map_err(|_| "invalid REMBRANE_OAUTH_INTROSPECTION_CLIENT_SECRET_REFERENCE".to_owned())?;
+    build_remote_mcp_profile(
+        resource.as_deref(),
+        issuer.as_deref(),
+        introspection_endpoint.as_deref(),
+        client_id.as_deref(),
+        secret_reference,
+        trusted_origins.as_deref(),
+    )
+    .map(|_| ())
+}
+
+fn build_remote_mcp_profile(
+    resource: Option<&str>,
+    issuer: Option<&str>,
+    introspection_endpoint: Option<&str>,
+    client_id: Option<&str>,
+    client_secret: SecretReference,
+    trusted_origins: Option<&str>,
+) -> Result<RemoteMcpConfig, String> {
+    let required = |value: Option<&str>, variable: &str| {
+        value
+            .map(str::to_owned)
+            .ok_or_else(|| format!("{variable} is required"))
+    };
+    let trusted_origins = trusted_origins
+        .map(|origins| {
+            origins
+                .split(',')
+                .map(str::trim)
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default();
+    let config = RemoteMcpConfig::new(
+        required(resource, "REMBRANE_MCP_RESOURCE")?,
+        required(issuer, "REMBRANE_OAUTH_ISSUER")?,
+        required(
+            introspection_endpoint,
+            "REMBRANE_OAUTH_INTROSPECTION_ENDPOINT",
+        )?,
+        required(client_id, "REMBRANE_OAUTH_INTROSPECTION_CLIENT_ID")?,
+        client_secret,
+        trusted_origins,
+    )
+    .map_err(|error| format!("invalid remote MCP OAuth profile: {error}"))?;
+    if !config
+        .protected_resource_metadata_url()
+        .ends_with("/.well-known/oauth-protected-resource/mcp")
+    {
+        return Err("REMBRANE_MCP_RESOURCE must identify the public /mcp endpoint".to_owned());
+    }
+    Ok(config)
+}
+
+fn configured_nonempty_environment(name: &str) -> Option<String> {
+    std::env::var(name)
+        .ok()
+        .filter(|value| !value.trim().is_empty())
 }
 
 fn configured_secret_sources() -> Vec<&'static str> {
@@ -1645,6 +1736,11 @@ fn configured_secret_sources() -> Vec<&'static str> {
             "REMBRANE_GRAPHITI_BEARER_TOKEN",
             "REMBRANE_GRAPHITI_BEARER_TOKEN_REFERENCE",
             "REMBRANE_GRAPHITI_BEARER_TOKEN_REFERENCE target",
+        ),
+        (
+            "REMBRANE_OAUTH_INTROSPECTION_CLIENT_SECRET",
+            "REMBRANE_OAUTH_INTROSPECTION_CLIENT_SECRET_REFERENCE",
+            "REMBRANE_OAUTH_INTROSPECTION_CLIENT_SECRET_REFERENCE target",
         ),
     ] {
         if nonempty_environment(reference) {
@@ -1700,7 +1796,9 @@ fn configured_outbound_endpoints() -> Vec<(&'static str, String)> {
         "MEM0_BASE_URL",
         "REMBRANE_GRAPHITI_BASE_URL",
         "MEMORY_OBJECT_ENDPOINT",
-        "REMBRANE_REMOTE_MCP_URL",
+        "REMBRANE_MCP_RESOURCE",
+        "REMBRANE_OAUTH_ISSUER",
+        "REMBRANE_OAUTH_INTROSPECTION_ENDPOINT",
         "REMBRANE_KEY_PROVIDER_BASE_URL",
     ]
     .into_iter()
@@ -2741,6 +2839,7 @@ fn print_help() {
 #[cfg(test)]
 mod tests {
     use rembrane_application::{AdministrativeAuditRepository, MembershipRepository};
+    use rembrane_config::SecretReference;
     use rembrane_domain::{
         AdministrativeAction, EntityId, Invitation, InvitationId, InvitationStatus, MemoryScope,
         PrincipalId, ReadScope, WorkspaceId, WorkspaceRole,
@@ -2748,13 +2847,13 @@ mod tests {
     use rembrane_store_sqlite::SqliteStore;
 
     use super::{
-        EXPORT_MAGIC, SEMANTIC_PROVIDER_CONFORMANCE_PROFILE_SHA256, check_provider_registry,
-        claude_mcp_config, codex_mcp_config, cursor_mcp_config, format_read_scopes,
-        gemini_mcp_config, generic_mcp_config, invitation_list_json, invitation_status,
-        key_provider_secret_sources, mcp_client_catalog, mcp_environment_variables,
-        memory_privacy_mode_name, memory_provider_check_policy, opencode_mcp_config, option,
-        positive_u64, providers, read_export, recall_scope_context, redact_endpoint,
-        render_mcp_config, requested_memory_privacy, requested_memory_scope, run,
+        EXPORT_MAGIC, SEMANTIC_PROVIDER_CONFORMANCE_PROFILE_SHA256, build_remote_mcp_profile,
+        check_provider_registry, claude_mcp_config, codex_mcp_config, cursor_mcp_config,
+        format_read_scopes, gemini_mcp_config, generic_mcp_config, invitation_list_json,
+        invitation_status, key_provider_secret_sources, mcp_client_catalog,
+        mcp_environment_variables, memory_privacy_mode_name, memory_provider_check_policy,
+        opencode_mcp_config, option, positive_u64, providers, read_export, recall_scope_context,
+        redact_endpoint, render_mcp_config, requested_memory_privacy, requested_memory_scope, run,
         selected_secret_reference, test_provider, validate_external_conformance_namespace,
         validate_mcp_server_binary, vscode_mcp_config, write_export, zed_mcp_config,
     };
@@ -3494,6 +3593,45 @@ mod tests {
         assert_eq!(
             redact_endpoint("not-a-url-with-secret"),
             "<configured; origin unavailable>"
+        );
+    }
+
+    #[test]
+    fn privacy_diagnostics_validate_the_complete_remote_mcp_profile() {
+        let secret_reference =
+            SecretReference::environment("OAUTH_SECRET").expect("test reference should be valid");
+        let valid = build_remote_mcp_profile(
+            Some("https://memory.example.test/mcp"),
+            Some("https://identity.example.test"),
+            Some("https://identity.example.test/introspect"),
+            Some("rembrane-cli"),
+            secret_reference.clone(),
+            Some("https://agent.example.test"),
+        )
+        .expect("complete profile should validate");
+        assert_eq!(valid.resource(), "https://memory.example.test/mcp");
+
+        assert!(
+            build_remote_mcp_profile(
+                Some("https://memory.example.test/mcp"),
+                Some("https://identity.example.test"),
+                None,
+                Some("rembrane-cli"),
+                secret_reference.clone(),
+                None,
+            )
+            .is_err()
+        );
+        assert!(
+            build_remote_mcp_profile(
+                Some("https://memory.example.test/other"),
+                Some("https://identity.example.test"),
+                Some("https://identity.example.test/introspect"),
+                Some("rembrane-cli"),
+                secret_reference,
+                None,
+            )
+            .is_err()
         );
     }
 
