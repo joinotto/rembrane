@@ -76,15 +76,15 @@
     },
     {
       "path": "scripts/memory-provider-discovery.mjs",
-      "sha256": "375dbd96500b9d500560827347a4007995f92a46ad3b54e4b3fb0ec1b90f9aab"
+      "sha256": "0ac0f8473a102afb89c1b668952e6d7a1ffe9ddbac714b616d8646ad28be1446"
     },
     {
       "path": "scripts/run-memory-provider-conformance.mjs",
-      "sha256": "913052a3d149dc0b5a2e8b4efd4b0089eb7f46340bdf0cda9f42039d459ed7ee"
+      "sha256": "9e55e1c146c90193dd40bca356254c6934ec559a6af37a1370d170fb4f965f71"
     },
     {
       "path": "scripts/test-memory-provider-http.sh",
-      "sha256": "975ea77d14278aa6c6fd53652b0c3823568d48b75c66c2e7d12b5b607504487d"
+      "sha256": "bffef3ca0b921ab720c785648c21663d53265527729e50d29d8958d9bdc494a8"
     }
   ]
 }

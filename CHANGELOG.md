@@ -15,6 +15,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Third-party provider discovery is now fetched and validated before the
   conformance runner resolves bearer credentials; CI proves invalid discovery
   cannot trigger access to configured credential files.
+- Both Memory Provider conformance clients now require credential-free,
+  origin-only base URLs and reject paths, query strings, fragments,
+  non-loopback plaintext HTTP, and DNS-resolved `localhost`.
 - Project metadata, security reporting, API contact information, offline
   workspace fixtures, and provider provenance now consistently identify the
   canonical `joinotto/rembrane` repository.

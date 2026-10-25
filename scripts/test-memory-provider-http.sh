@@ -105,9 +105,19 @@ fixture_maximum_context_bytes=$(jq -er '.scenario.maximumContextBytes' "$fixture
 fixture_maximum_sync_items=$(jq -er '.scenario.maximumSyncItems' "$fixture_file")
 
 case "$base_url" in
-    https://* | http://127.0.0.1:* | http://localhost:* | http://\[::1\]:*) ;;
+    https://*) provider_authority=${base_url#https://} ;;
+    http://127.0.0.1:* | http://\[::1\]:*)
+        provider_authority=${base_url#http://}
+        ;;
     *)
-        echo "REMBRANE_MEMORY_PROVIDER_BASE_URL must use HTTPS or loopback HTTP" >&2
+        echo "REMBRANE_MEMORY_PROVIDER_BASE_URL must be an HTTPS origin or literal loopback origin" >&2
+        exit 1
+        ;;
+esac
+provider_authority=${provider_authority%/}
+case "$provider_authority" in
+    "" | */* | *\?* | *\#* | *@*)
+        echo "REMBRANE_MEMORY_PROVIDER_BASE_URL must not contain credentials, paths, query, or fragment" >&2
         exit 1
         ;;
 esac

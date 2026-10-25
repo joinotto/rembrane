@@ -93,6 +93,20 @@ export function validateMemoryProviderDiscovery(value) {
   return value;
 }
 
+export function isSafeMemoryProviderBase(value) {
+  return (
+    value instanceof URL &&
+    value.username === "" &&
+    value.password === "" &&
+    value.pathname === "/" &&
+    value.search === "" &&
+    value.hash === "" &&
+    (value.protocol === "https:" ||
+      (value.protocol === "http:" &&
+        ["127.0.0.1", "[::1]"].includes(value.hostname)))
+  );
+}
+
 function validOperationBinding(value) {
   if (!isExactObject(value, operationKeys)) return false;
   const expected = operationBindings[value.operation];

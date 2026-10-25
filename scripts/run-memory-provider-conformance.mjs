@@ -4,7 +4,10 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { resolveConformanceToken } from "./memory-provider-conformance-secrets.mjs";
-import { validateMemoryProviderDiscovery } from "./memory-provider-discovery.mjs";
+import {
+  isSafeMemoryProviderBase,
+  validateMemoryProviderDiscovery,
+} from "./memory-provider-discovery.mjs";
 
 const namespace = process.argv[2];
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -19,7 +22,7 @@ const fixturePath =
 
 if (
   !/^[A-Za-z0-9._-]{1,64}$/.test(namespace ?? "") ||
-  !safeBase(base)
+  !isSafeMemoryProviderBase(base)
 ) {
   throw new Error("memory-provider conformance configuration is invalid");
 }
@@ -381,18 +384,6 @@ function requireMemoryResult(value) {
   ) {
     throw new Error("proposal returned an invalid memory identity");
   }
-}
-
-function safeBase(value) {
-  return (
-    value.username === "" &&
-    value.password === "" &&
-    value.search === "" &&
-    value.hash === "" &&
-    (value.protocol === "https:" ||
-      (value.protocol === "http:" &&
-        ["127.0.0.1", "localhost", "[::1]"].includes(value.hostname)))
-  );
 }
 
 function positive(value) {

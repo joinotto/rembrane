@@ -971,6 +971,8 @@ This roadmap describes sequencing, not release dates.
     running third-party conformance operations.
   - [x] Validate public third-party discovery before resolving any conformance
     bearer credential reference.
+  - [x] Restrict both conformance clients to credential-free origin URLs using
+    HTTPS or literal loopback HTTP, rejecting paths and `localhost`.
     - [x] Add bounded context-resolution requests with global, domain, entity,
       and activity selectors constrained by provider-advertised limits.
       - [x] Seal selector representation so callers cannot bypass domain and

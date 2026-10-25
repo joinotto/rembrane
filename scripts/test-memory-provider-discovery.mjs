@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-import { validateMemoryProviderDiscovery } from "./memory-provider-discovery.mjs";
+import {
+  isSafeMemoryProviderBase,
+  validateMemoryProviderDiscovery,
+} from "./memory-provider-discovery.mjs";
 
 const fixture = JSON.parse(
   await readFile(
@@ -42,3 +45,24 @@ for (const invalid of [
 }
 
 console.log("memory provider discovery validation checks passed");
+
+for (const accepted of [
+  "https://memory.example.test",
+  "https://memory.example.test:8443/",
+  "http://127.0.0.1:8787",
+  "http://[::1]:8787/",
+]) {
+  assert.equal(isSafeMemoryProviderBase(new URL(accepted)), true);
+}
+for (const rejected of [
+  "http://memory.example.test",
+  "http://localhost:8787",
+  "https://memory.example.test/v1",
+  "https://user:secret@memory.example.test",
+  "https://memory.example.test?tenant=one",
+  "https://memory.example.test#fragment",
+]) {
+  assert.equal(isSafeMemoryProviderBase(new URL(rejected)), false);
+}
+
+console.log("memory provider base URL checks passed");
