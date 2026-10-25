@@ -21,6 +21,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Authenticated REST invitation creation, acceptance, and revocation,
   including a pre-membership connection state with no memory scopes or
   mutation permissions.
+- REST acceptance coverage for bounded invitation creation and revocation plus
+  a zero-memory-authority invited connection accepting into atomic active
+  membership, including persisted terminal-state and audit assertions.
 - TypeScript, Python, Swift, and Kotlin SDK operations for authenticated
   shared-workspace invitation creation, acceptance, and revocation.
 - A machine-verifiable Memory Provider Protocol compatibility lock covering

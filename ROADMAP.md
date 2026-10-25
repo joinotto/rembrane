@@ -447,6 +447,10 @@ This roadmap describes sequencing, not release dates.
     revoke workflows through the local CLI.
   - [x] Expose invitation creation, acceptance, and revocation through the
     authenticated REST API with a zero-authority pre-membership connection.
+    - [x] Exercise owner-created and owner-revoked invitations through the
+      executable Postman REST acceptance collection, then prove a
+      zero-authority invited connection accepts into atomic active membership
+      with persisted audit state.
   - [x] Expose the authenticated invitation lifecycle through the portable
     TypeScript, Python, Swift, and Kotlin SDKs with exact-route executable
     fixtures.
