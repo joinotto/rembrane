@@ -168,6 +168,8 @@ This roadmap describes sequencing, not release dates.
           the named KMS handled the disposable conformance operations.
           - [x] Reject common secret fields and recognizable credential
             material before accepting retained cloud audit evidence.
+          - [x] Verify provider sets from exact no-follow artifact reads
+            without reopening evidence across subprocess boundaries.
       - [x] Create file-backed Unix keyring databases owner-only and reject
         permissive, non-regular, or symbolic-link targets.
       - [x] Enforce workspace, provider-key, and wrapped-ciphertext bounds in

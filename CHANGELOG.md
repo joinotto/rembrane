@@ -1002,6 +1002,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   read untrusted artifacts through no-follow file descriptors with post-open
   bounds checks, and Ed25519 provenance verification uses those exact opened
   bytes instead of reopening attacker-replaceable paths.
+- Customer-KMS promotion evidence now uses the same no-follow bounded reads,
+  and the three-provider release gate verifies the exact opened buffers in one
+  process instead of validating paths before a child process reopens them.
 - Restored the complete dependency-enabled workspace build by declaring
   previously implicit crate dependencies and enabling rmcp's stdio transport.
 - Corrected Memory Provider selector field casing and URL path construction so

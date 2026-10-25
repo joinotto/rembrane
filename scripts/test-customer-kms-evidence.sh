@@ -55,6 +55,14 @@ verify() {
 verify "$test_root/evidence.json" "$test_root/result.json" \
     "$test_root/iam-policy.json" "$test_root/cloud-audit.json" >/dev/null
 
+ln -s "$test_root/evidence.json" "$test_root/evidence-link.json"
+if verify "$test_root/evidence-link.json" "$test_root/result.json" \
+    "$test_root/iam-policy.json" "$test_root/cloud-audit.json" >/dev/null 2>&1
+then
+    echo "customer KMS evidence verifier accepted a symbolic input" >&2
+    exit 1
+fi
+
 if node "$repository_root/scripts/generate-customer-kms-evidence.mjs" \
     aws-kms \
     1111111111111111111111111111111111111111 \

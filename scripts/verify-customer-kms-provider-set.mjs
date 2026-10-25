@@ -1,7 +1,9 @@
-import { spawnSync } from "node:child_process";
-import { lstatSync, readdirSync, readFileSync } from "node:fs";
+import { lstatSync, readdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { verifyCustomerKmsEvidence } from "./customer-kms-evidence.mjs";
+import { readBoundedRegularFile } from "./read-bounded-regular-file.mjs";
 
 const input = process.argv[2];
 if (!input) {
@@ -18,9 +20,11 @@ if (!rootMetadata.isDirectory() || rootMetadata.isSymbolicLink()) {
 
 const providers = ["aws-kms", "azure-key-vault", "google-cloud-kms"];
 requireExactEntries(root, providers);
-const verifier = join(
-  dirname(fileURLToPath(import.meta.url)),
-  "verify-customer-kms-evidence.mjs",
+const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const profileBytes = readBoundedRegularFile(
+  join(repositoryRoot, "spec/conformance/key-provider-core.json"),
+  64 * 1024,
+  "customer KMS conformance profile",
 );
 const namespaces = new Set();
 const providerIds = new Set();
@@ -38,27 +42,31 @@ for (const provider of providers) {
     "iam-policy.json",
   ];
   requireExactEntries(directory, files);
-  for (const name of files) {
-    const fileMetadata = lstatSync(join(directory, name));
-    if (!fileMetadata.isFile() || fileMetadata.isSymbolicLink()) {
-      throw new Error("customer KMS provider evidence must use regular files");
-    }
-  }
 
   const evidencePath = join(directory, "evidence.json");
-  const evidenceMetadata = lstatSync(evidencePath);
-  if (evidenceMetadata.size === 0 || evidenceMetadata.size > 64 * 1024) {
-    throw new Error("customer KMS evidence document exceeds the bounded size");
-  }
-  let evidence;
-  try {
-    evidence = JSON.parse(readFileSync(evidencePath, "utf8"));
-  } catch {
-    throw new Error("customer KMS evidence document is not valid JSON");
-  }
-  if (evidence === null || typeof evidence !== "object" || Array.isArray(evidence)) {
-    throw new Error("customer KMS evidence document must be an object");
-  }
+  const evidence = verifyCustomerKmsEvidence({
+    evidenceBytes: readBoundedRegularFile(
+      evidencePath,
+      64 * 1024,
+      "customer KMS evidence",
+    ),
+    resultBytes: readBoundedRegularFile(
+      join(directory, "conformance-result.json"),
+      64 * 1024,
+      "customer KMS result",
+    ),
+    policyBytes: readBoundedRegularFile(
+      join(directory, "iam-policy.json"),
+      1024 * 1024,
+      "customer KMS IAM policy",
+    ),
+    auditBytes: readBoundedRegularFile(
+      join(directory, "cloud-audit.json"),
+      4 * 1024 * 1024,
+      "customer KMS cloud audit evidence",
+    ),
+    profileBytes,
+  });
   if (evidence.cloudProvider !== provider) {
     throw new Error("customer KMS evidence provider does not match its slot");
   }
@@ -67,25 +75,6 @@ for (const provider of providers) {
   }
   namespaces.add(evidence.namespace);
   providerIds.add(evidence.providerId);
-
-  const verification = spawnSync(
-    process.execPath,
-    [
-      verifier,
-      evidencePath,
-      join(directory, "conformance-result.json"),
-      join(directory, "iam-policy.json"),
-      join(directory, "cloud-audit.json"),
-    ],
-    { encoding: "utf8" },
-  );
-  if (verification.status !== 0) {
-    throw new Error(
-      `customer KMS ${provider} evidence failed verification: ${boundedError(
-        verification.stderr,
-      )}`,
-    );
-  }
 }
 
 process.stdout.write("customer KMS provider evidence set verified\n");
@@ -99,9 +88,4 @@ function requireExactEntries(directory, expected) {
   ) {
     throw new Error("customer KMS evidence set contains unexpected entries");
   }
-}
-
-function boundedError(value) {
-  const text = typeof value === "string" ? value.trim() : "";
-  return text.slice(0, 500) || "verification rejected";
 }

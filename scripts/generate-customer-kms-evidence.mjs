@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
-import { lstatSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { readBoundedRegularFile } from "./read-bounded-regular-file.mjs";
 
 const [
   cloudProvider,
@@ -97,17 +98,7 @@ const evidence = {
 process.stdout.write(`${JSON.stringify(evidence, null, 2)}\n`);
 
 function readBoundedFile(input, maximum, label) {
-  const path = resolve(process.cwd(), input);
-  const metadata = lstatSync(path);
-  if (
-    !metadata.isFile() ||
-    metadata.isSymbolicLink() ||
-    metadata.size === 0 ||
-    metadata.size > maximum
-  ) {
-    throw new Error(`customer KMS ${label} must be a bounded regular file`);
-  }
-  return readFileSync(path);
+  return readBoundedRegularFile(input, maximum, `customer KMS ${label}`);
 }
 
 function safeText(value, maximum) {
