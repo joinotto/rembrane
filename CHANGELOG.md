@@ -9,6 +9,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- Customer key-provider HTTP requests now use bounded zeroizing-owned JSON
+  bodies; seal-request base64 plaintext and decoded open-response base64 are
+  explicitly wiped after their shortest required lifetime.
 - Direct Mem0 and Supermemory transports now bound serialized requests and
   transfer memory content, search queries, metadata, and deletion payloads
   through HTTP bodies backed by zeroizing owners.

@@ -1177,6 +1177,8 @@ This roadmap describes sequencing, not release dates.
   - [x] Add an authenticated HTTP client adapter.
     - [x] Implement a redirect-free, proxy-free, bounded HTTPS and loopback
       HTTP transport with strict media-type, JSON, and base64 decoding.
+      - [x] Preserve zeroizing ownership for serialized requests and wipe
+        transient base64 plaintext around seal and open operations.
     - [x] Add a dedicated Rust 1.88 test and warnings-as-errors CI job.
       - [x] Cover the configured cipher and its CLI, REST, and MCP consumers in
         the dedicated dependency-enabled gate.

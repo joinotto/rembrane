@@ -14,9 +14,10 @@ use reqwest::Url;
 use reqwest::blocking::{Client, Response};
 use reqwest::header::{ACCEPT, CONTENT_TYPE};
 use serde::{Deserialize, Serialize};
-use zeroize::Zeroizing;
+use zeroize::{Zeroize, Zeroizing};
 
 const MAXIMUM_RESPONSE_BYTES: u64 = 1_500_000;
+const MAXIMUM_REQUEST_BYTES: usize = 1_500_000;
 const MAXIMUM_ADVERTISED_PLAINTEXT_BYTES: usize = 1_048_576;
 
 pub struct HttpKeyProviderTransport {
@@ -149,14 +150,15 @@ impl KeyProviderTransport for HttpKeyProviderTransport {
     }
 
     fn seal(&self, request: &SealRequest) -> Result<EncryptedPayload, CryptoError> {
+        let plaintext_base64 = Zeroizing::new(BASE64.encode(request.plaintext()));
         let body = SealBody {
             request_id: request.request_id(),
             context: ContextBody::from(request.context()),
-            plaintext_base64: BASE64.encode(request.plaintext()),
+            plaintext_base64: plaintext_base64.as_str(),
         };
         let response = self
             .request(self.seal_endpoint.clone())
-            .json(&body)
+            .body(encode_json_body(&body)?)
             .send()
             .map_err(|_| CryptoError::KeyUnavailable)?;
         let wire: EnvelopeResponse = Self::decode_response(response)?;
@@ -171,13 +173,15 @@ impl KeyProviderTransport for HttpKeyProviderTransport {
         };
         let response = self
             .request(self.open_endpoint.clone())
-            .json(&body)
+            .body(encode_json_body(&body)?)
             .send()
             .map_err(|_| CryptoError::KeyUnavailable)?;
-        let wire: PlaintextResponse = Self::decode_response(response)?;
-        BASE64
-            .decode(wire.plaintext_base64)
-            .map_err(|_| CryptoError::InvalidEnvelope)
+        let mut wire: PlaintextResponse = Self::decode_response(response)?;
+        let plaintext = BASE64
+            .decode(wire.plaintext_base64.as_bytes())
+            .map_err(|_| CryptoError::InvalidEnvelope);
+        wire.plaintext_base64.zeroize();
+        plaintext
     }
 
     fn rotate(&self, request: &RotateKeyRequest) -> Result<KeyRotationReceipt, CryptoError> {
@@ -193,12 +197,21 @@ impl KeyProviderTransport for HttpKeyProviderTransport {
         };
         let response = self
             .request(self.rotate_endpoint.clone())
-            .json(&body)
+            .body(encode_json_body(&body)?)
             .send()
             .map_err(|_| CryptoError::KeyUnavailable)?;
         let wire: RotationReceiptResponse = Self::decode_response(response)?;
         wire.into_domain()
     }
+}
+
+fn encode_json_body<Body: Serialize>(body: &Body) -> Result<bytes::Bytes, CryptoError> {
+    let encoded =
+        Zeroizing::new(serde_json::to_vec(body).map_err(|_| CryptoError::InvalidEnvelope)?);
+    if encoded.len() > MAXIMUM_REQUEST_BYTES {
+        return Err(CryptoError::InvalidEnvelope);
+    }
+    Ok(bytes::Bytes::from_owner(encoded))
 }
 
 fn validate_base_url(value: &str) -> Result<Url, CryptoError> {
@@ -283,7 +296,7 @@ impl<'value> From<&'value EncryptionContext> for ContextBody<'value> {
 struct SealBody<'value> {
     request_id: &'value str,
     context: ContextBody<'value>,
-    plaintext_base64: String,
+    plaintext_base64: &'value str,
 }
 
 #[derive(Serialize)]

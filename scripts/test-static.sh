@@ -228,6 +228,7 @@ do
 done
 for zeroizing_request_adapter in \
     adapters/rembrane-graph-graphiti-http/src/lib.rs \
+    adapters/rembrane-key-provider-http/src/lib.rs \
     adapters/rembrane-memory-provider-http/src/lib.rs \
     adapters/rembrane-semantic-mem0/src/lib.rs \
     adapters/rembrane-semantic-supermemory/src/lib.rs
@@ -237,6 +238,7 @@ do
         exit 1
     fi
 done
+rg -q 'wire\.plaintext_base64\.zeroize\(\)' adapters/rembrane-key-provider-http/src/lib.rs
 if rg -q 'errors: Vec<serde_json::Value>' adapters/rembrane-semantic-supermemory/src/lib.rs; then
     echo "Supermemory deletion errors must be streamed without arbitrary JSON retention" >&2
     exit 1
