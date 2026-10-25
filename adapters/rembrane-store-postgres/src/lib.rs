@@ -10,13 +10,15 @@ use std::fmt::{self, Display, Formatter};
 
 use rembrane_application::{
     AdministrativeAuditRepository, ApplicationError, CanonicalMutationRepository,
-    CheckpointRepository, DisclosureRepository, EventRepository, InvitationRepository,
-    KeyRotationRepository, MAX_ADMINISTRATIVE_AUDIT_PAGE, MAXIMUM_INVITATION_LIST_ITEMS,
-    MemberLifecycleRepository, MemberScopeGrantRepository, MembershipRepository, MemoryRepository,
-    ProjectionOutboxRepository, RetentionRepository, WorkspaceReadRepository, WorkspaceRepository,
-    is_strict_successor,
+    CheckpointMutationRepository, CheckpointRepository, DisclosureRepository, EventRepository,
+    InvitationRepository, KeyRotationRepository, MAX_ADMINISTRATIVE_AUDIT_PAGE,
+    MAXIMUM_INVITATION_LIST_ITEMS, MemberLifecycleRepository, MemberScopeGrantRepository,
+    MembershipRepository, MemoryRepository, ProjectionOutboxRepository, RetentionRepository,
+    WorkspaceReadRepository, WorkspaceRepository, is_strict_successor,
 };
-use rembrane_codec::{decode_checkpoint, decode_event, decode_memory, encode_event, encode_memory};
+use rembrane_codec::{
+    decode_checkpoint, decode_event, decode_memory, encode_checkpoint, encode_event, encode_memory,
+};
 use rembrane_crypto::{EncryptedPayload, EncryptionContext, PayloadPurpose, RecordCipher};
 use rembrane_domain::{
     ActivityCheckpoint, ActivityId, AdministrativeAction, AdministrativeAuditEvent,
@@ -232,6 +234,14 @@ pub const LIST_SUBJECT_CHECKPOINTS_SQL: &str = "SELECT workspace_id, id, subject
     version, checkpoint_ciphertext, encryption_key_id, encryption_algorithm, encryption_nonce \
     FROM activity_checkpoints WHERE workspace_id = $1 AND subject_id = $2 \
     ORDER BY id LIMIT 10001";
+pub const INSERT_CHECKPOINT_SQL: &str = "INSERT INTO activity_checkpoints \
+    (workspace_id, id, subject_id, activity_id, entity_id, checkpoint_ciphertext, \
+    encryption_key_id, encryption_algorithm, encryption_nonce, version) \
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)";
+pub const REPLACE_CHECKPOINT_SQL: &str = "UPDATE activity_checkpoints SET subject_id = $3, \
+    activity_id = $4, entity_id = $5, checkpoint_ciphertext = $6, encryption_key_id = $7, \
+    encryption_algorithm = $8, encryption_nonce = $9, version = $10, \
+    updated_at = CURRENT_TIMESTAMP WHERE workspace_id = $1 AND id = $2 AND version = $11";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PostgresParameter<'value> {
@@ -2795,6 +2805,109 @@ where
     }
 }
 
+impl<Pool, Cipher> CheckpointMutationRepository for PostgresTenantMemoryStore<'_, '_, Pool, Cipher>
+where
+    Pool: PostgresPool,
+    Pool::Error: ClassifiedPostgresError,
+    <Pool::Transaction as PostgresTransaction>::Row: PostgresRow<Error = Pool::Error>,
+    Cipher: RecordCipher,
+{
+    fn insert_checkpoint_with_event(
+        &mut self,
+        checkpoint: ActivityCheckpoint,
+        event: CanonicalEvent,
+        expected_previous_sequence: u64,
+    ) -> Result<(), ApplicationError> {
+        persist_checkpoint_mutation(self, &checkpoint, None, &event, expected_previous_sequence)
+    }
+
+    fn replace_checkpoint_with_event(
+        &mut self,
+        checkpoint: ActivityCheckpoint,
+        expected_checkpoint_version: u64,
+        event: CanonicalEvent,
+        expected_previous_sequence: u64,
+    ) -> Result<(), ApplicationError> {
+        if !is_strict_successor(expected_checkpoint_version, checkpoint.version()) {
+            return Err(ApplicationError::VersionConflict);
+        }
+        persist_checkpoint_mutation(
+            self,
+            &checkpoint,
+            Some(expected_checkpoint_version),
+            &event,
+            expected_previous_sequence,
+        )
+    }
+}
+
+fn persist_checkpoint_mutation<Pool, Cipher>(
+    store: &PostgresTenantMemoryStore<'_, '_, Pool, Cipher>,
+    checkpoint: &ActivityCheckpoint,
+    expected_checkpoint_version: Option<u64>,
+    event: &CanonicalEvent,
+    expected_previous_sequence: u64,
+) -> Result<(), ApplicationError>
+where
+    Pool: PostgresPool,
+    Pool::Error: ClassifiedPostgresError,
+    <Pool::Transaction as PostgresTransaction>::Row: PostgresRow<Error = Pool::Error>,
+    Cipher: RecordCipher,
+{
+    validate_checkpoint_event(checkpoint, event)?;
+    if checkpoint.workspace_id() != &store.workspace_id {
+        return Err(ApplicationError::AccessDenied);
+    }
+    if !is_strict_successor(expected_previous_sequence, event.sequence()) {
+        return Err(ApplicationError::SequenceConflict);
+    }
+    let checkpoint_plaintext =
+        encode_checkpoint(checkpoint).map_err(|_| ApplicationError::StorageUnavailable)?;
+    let checkpoint_context = EncryptionContext::new(
+        checkpoint.workspace_id().clone(),
+        checkpoint.id().as_str(),
+        checkpoint.version(),
+        PayloadPurpose::ActivityCheckpoint,
+    )
+    .map_err(|_| ApplicationError::Validation("invalid checkpoint context".to_owned()))?;
+    let encrypted_checkpoint = store
+        .cipher
+        .seal(&checkpoint_context, &checkpoint_plaintext)
+        .map_err(|_| ApplicationError::StorageUnavailable)?;
+    let event_plaintext = encode_event(event).map_err(|_| ApplicationError::StorageUnavailable)?;
+    let event_context = EncryptionContext::new(
+        event.workspace_id().clone(),
+        event.id().as_str(),
+        event.sequence(),
+        PayloadPurpose::CanonicalEvent,
+    )
+    .map_err(|_| ApplicationError::Validation("invalid event context".to_owned()))?;
+    let encrypted_event = store
+        .cipher
+        .seal(&event_context, &event_plaintext)
+        .map_err(|_| ApplicationError::StorageUnavailable)?;
+    let mut transaction = store
+        .store
+        .begin_tenant(checkpoint.workspace_id().clone())
+        .map_err(map_event_application_error)?;
+    require_event_sequence(
+        &mut transaction,
+        checkpoint.workspace_id(),
+        expected_previous_sequence,
+    )?;
+    write_checkpoint(
+        &mut transaction,
+        checkpoint,
+        expected_checkpoint_version,
+        &encrypted_checkpoint,
+    )?;
+    insert_canonical_event(&mut transaction, event, &encrypted_event)?;
+    transaction
+        .commit()
+        .map_err(PostgresStoreError::Tenant)
+        .map_err(map_event_application_error)
+}
+
 impl<Pool, Cipher> EventRepository for PostgresTenantMemoryStore<'_, '_, Pool, Cipher>
 where
     Pool: PostgresPool,
@@ -3393,6 +3506,54 @@ where
         REPLACE_MEMORY_SQL
     } else {
         INSERT_MEMORY_SQL
+    };
+    let changed = transaction
+        .execute(statement, &parameters)
+        .map_err(PostgresStoreError::Tenant)
+        .map_err(map_application_error)?;
+    if changed != 1 {
+        return Err(if expected_version.is_some() {
+            ApplicationError::VersionConflict
+        } else {
+            ApplicationError::StorageUnavailable
+        });
+    }
+    Ok(())
+}
+
+fn write_checkpoint<Transaction>(
+    transaction: &mut TenantTransaction<Transaction>,
+    checkpoint: &ActivityCheckpoint,
+    expected_version: Option<u64>,
+    encrypted: &EncryptedPayload,
+) -> Result<(), ApplicationError>
+where
+    Transaction: PostgresTransaction,
+    Transaction::Error: ClassifiedPostgresError,
+{
+    let mut parameters = vec![
+        PostgresParameter::Text(checkpoint.workspace_id().as_str()),
+        PostgresParameter::Text(checkpoint.id().as_str()),
+        PostgresParameter::Text(checkpoint.subject_id().as_str()),
+        PostgresParameter::Text(checkpoint.activity_id().as_str()),
+        PostgresParameter::OptionalText(checkpoint.entity_id().map(EntityId::as_str)),
+        PostgresParameter::Bytes(encrypted.ciphertext()),
+        PostgresParameter::Text(encrypted.key_id()),
+        PostgresParameter::Text(encrypted.algorithm()),
+        PostgresParameter::Bytes(encrypted.nonce()),
+        PostgresParameter::I64(
+            postgres_epoch::<Transaction::Error>(checkpoint.version())
+                .map_err(map_application_error)?,
+        ),
+    ];
+    let statement = if let Some(expected_version) = expected_version {
+        parameters.push(PostgresParameter::I64(
+            postgres_epoch::<Transaction::Error>(expected_version)
+                .map_err(map_application_error)?,
+        ));
+        REPLACE_CHECKPOINT_SQL
+    } else {
+        INSERT_CHECKPOINT_SQL
     };
     let changed = transaction
         .execute(statement, &parameters)
@@ -4059,6 +4220,27 @@ fn validate_memory_mutation(
     Ok(())
 }
 
+fn validate_checkpoint_event(
+    checkpoint: &ActivityCheckpoint,
+    event: &CanonicalEvent,
+) -> Result<(), ApplicationError> {
+    if checkpoint.workspace_id() != event.workspace_id()
+        || event.subject_id() != Some(checkpoint.subject_id())
+        || !matches!(
+            event.payload(),
+            EventPayload::ActivityCheckpointed {
+                activity_id,
+                version,
+            } if activity_id == checkpoint.activity_id() && *version == checkpoint.version()
+        )
+    {
+        return Err(ApplicationError::Validation(
+            "event does not describe activity checkpoint".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
 fn event_describes_memory(payload: &EventPayload, memory: &MemoryRecord) -> bool {
     let (memory_id, version, compatible_status) = match payload {
         EventPayload::MemoryProposed { memory_id, version } => (
@@ -4539,9 +4721,9 @@ mod tests {
 
     use rembrane_application::{
         AdministrativeAuditRepository, ApplicationError, AuthorizeClientCommand,
-        AuthorizeClientService, CanonicalMutationRepository, CheckpointRepository,
-        CreateInvitationCommand, DisclosureRepository, EventRepository, InvitationRepository,
-        InvitationService, KeyRotationRepository, MemberLifecycleRepository,
+        AuthorizeClientService, CanonicalMutationRepository, CheckpointMutationRepository,
+        CheckpointRepository, CreateInvitationCommand, DisclosureRepository, EventRepository,
+        InvitationRepository, InvitationService, KeyRotationRepository, MemberLifecycleRepository,
         MemberScopeGrantRepository, MembershipRepository, MemoryRepository,
         ProjectionOutboxRepository, ProjectionOutcome, ProjectionWorker, ResolveContextCommand,
         ResolveContextService, RetentionRepository, WorkspaceRepository,
@@ -4570,23 +4752,23 @@ mod tests {
         FIND_KEY_ROTATION_RECEIPT_SQL, FIND_LEGAL_HOLD_SQL, FIND_MEMBERSHIP_SQL, FIND_MEMORY_SQL,
         FIND_PRINCIPAL_SQL, FIND_PROJECTION_SQL, FIND_PROVISIONING_PRINCIPAL_SQL,
         FIND_RETENTION_POLICY_SQL, FIND_WORKSPACE_SQL, INSERT_ADMINISTRATIVE_AUDIT_SQL,
-        INSERT_DISCLOSED_MEMORY_SQL, INSERT_DISCLOSURE_SQL, INSERT_EVENT_SQL,
-        INSERT_INVITATION_SQL, INSERT_KEY_ROTATION_RECEIPT_SQL, INSERT_KEY_ROTATION_RECIPIENT_SQL,
-        INSERT_LEGAL_HOLD_SQL, INSERT_MEMBER_SCOPE_GRANT_SQL, INSERT_MEMBERSHIP_SQL,
-        INSERT_MEMORY_EVIDENCE_SQL, INSERT_MEMORY_SQL, INSERT_PRINCIPAL_SQL, INSERT_PROJECTION_SQL,
-        INSERT_REQUIRED_KEY_ROTATION_SQL, INSERT_RETENTION_POLICY_SQL, INSERT_WORKSPACE_SQL,
-        LATEST_CHECKPOINT_SQL, LATEST_KEY_ROTATION_SQL, LIST_ACTIVE_LEGAL_HOLDS_SQL,
-        LIST_ACTIVE_MEMBERSHIPS_SQL, LIST_ADMINISTRATIVE_AUDIT_SQL, LIST_EVENTS_SINCE_SQL,
-        LIST_INVITATIONS_BY_STATUS_SQL, LIST_MEMBER_SCOPE_GRANTS_SQL, LIST_PENDING_PROJECTIONS_SQL,
-        LIST_SUBJECT_CHECKPOINTS_SQL, LIST_SUBJECT_MEMORIES_SQL, LOCK_WORKSPACE_FOR_ROTATION_SQL,
-        MAX_ACTIVE_MEMBERSHIPS, NEXT_KEY_ROTATION_GENERATION_SQL, PostgresFailureKind,
-        PostgresParameter, PostgresPool, PostgresProvisioner, PostgresProvisioningPool,
-        PostgresRow, PostgresStore, PostgresStoreError, PostgresTransaction,
-        PostgresWorkspaceAdminStore, ProvisioningTransaction, READ_TENANT_SQL,
-        REMOVE_MEMBERSHIP_SQL, REPLACE_INVITATION_SQL, REPLACE_LEGAL_HOLD_SQL,
-        REPLACE_MEMBERSHIP_SQL, REPLACE_PROJECTION_SQL, REPLACE_RETENTION_POLICY_SQL,
-        SET_TENANT_SQL, TenantTransaction, TenantTransactionError, map_application_error,
-        map_invitation_application_error,
+        INSERT_CHECKPOINT_SQL, INSERT_DISCLOSED_MEMORY_SQL, INSERT_DISCLOSURE_SQL,
+        INSERT_EVENT_SQL, INSERT_INVITATION_SQL, INSERT_KEY_ROTATION_RECEIPT_SQL,
+        INSERT_KEY_ROTATION_RECIPIENT_SQL, INSERT_LEGAL_HOLD_SQL, INSERT_MEMBER_SCOPE_GRANT_SQL,
+        INSERT_MEMBERSHIP_SQL, INSERT_MEMORY_EVIDENCE_SQL, INSERT_MEMORY_SQL, INSERT_PRINCIPAL_SQL,
+        INSERT_PROJECTION_SQL, INSERT_REQUIRED_KEY_ROTATION_SQL, INSERT_RETENTION_POLICY_SQL,
+        INSERT_WORKSPACE_SQL, LATEST_CHECKPOINT_SQL, LATEST_KEY_ROTATION_SQL,
+        LIST_ACTIVE_LEGAL_HOLDS_SQL, LIST_ACTIVE_MEMBERSHIPS_SQL, LIST_ADMINISTRATIVE_AUDIT_SQL,
+        LIST_EVENTS_SINCE_SQL, LIST_INVITATIONS_BY_STATUS_SQL, LIST_MEMBER_SCOPE_GRANTS_SQL,
+        LIST_PENDING_PROJECTIONS_SQL, LIST_SUBJECT_CHECKPOINTS_SQL, LIST_SUBJECT_MEMORIES_SQL,
+        LOCK_WORKSPACE_FOR_ROTATION_SQL, MAX_ACTIVE_MEMBERSHIPS, NEXT_KEY_ROTATION_GENERATION_SQL,
+        PostgresFailureKind, PostgresParameter, PostgresPool, PostgresProvisioner,
+        PostgresProvisioningPool, PostgresRow, PostgresStore, PostgresStoreError,
+        PostgresTransaction, PostgresWorkspaceAdminStore, ProvisioningTransaction, READ_TENANT_SQL,
+        REMOVE_MEMBERSHIP_SQL, REPLACE_CHECKPOINT_SQL, REPLACE_INVITATION_SQL,
+        REPLACE_LEGAL_HOLD_SQL, REPLACE_MEMBERSHIP_SQL, REPLACE_PROJECTION_SQL,
+        REPLACE_RETENTION_POLICY_SQL, SET_TENANT_SQL, TenantTransaction, TenantTransactionError,
+        map_application_error, map_invitation_application_error,
     };
 
     #[derive(Clone, Debug, Eq, PartialEq)]
@@ -5040,6 +5222,21 @@ mod tests {
             },
             calls,
         )
+    }
+
+    fn checkpoint_event(id: &str, sequence: u64, version: u64) -> CanonicalEvent {
+        CanonicalEvent::new(
+            EventId::new(id),
+            WorkspaceId::new("workspace_01"),
+            PrincipalId::new("principal_01"),
+            Some(PrincipalId::new("principal_01")),
+            sequence,
+            EventPayload::ActivityCheckpointed {
+                activity_id: ActivityId::new("activity_02"),
+                version,
+            },
+        )
+        .expect("checkpoint event")
     }
 
     #[test]
@@ -6756,6 +6953,111 @@ mod tests {
                 "text:workspace_01".to_owned(),
                 "text:principal_01".to_owned(),
             ]
+        )));
+    }
+
+    #[test]
+    fn checkpoint_mutations_commit_ciphertext_and_canonical_events_atomically() {
+        let checkpoint = ActivityCheckpoint::new(
+            CheckpointId::new("checkpoint_02"),
+            WorkspaceId::new("workspace_01"),
+            PrincipalId::new("principal_01"),
+            ActivityId::new("activity_02"),
+            Some(EntityId::new("project_02")),
+            "Continue project work across coding agents",
+            "Initial implementation context captured.",
+            vec!["Run the integration suite".to_owned()],
+            Vec::new(),
+        )
+        .expect("checkpoint");
+        let revised = checkpoint
+            .clone()
+            .update(
+                "Integration suite is passing.",
+                vec!["Prepare provider conformance test".to_owned()],
+                Vec::new(),
+            )
+            .expect("revised checkpoint");
+        let inserted_event = checkpoint_event("event_checkpoint_01", 1, 1);
+        let revised_event = checkpoint_event("event_checkpoint_02", 2, 2);
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let store = PostgresStore::new(FakePool {
+            calls: Rc::clone(&calls),
+            tenant_batches: RefCell::new(
+                [
+                    VecDeque::from([
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                    ]),
+                    VecDeque::from([
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                    ]),
+                ]
+                .into(),
+            ),
+            row_batches: RefCell::new(
+                [
+                    vec![FakeRow::current_event_sequence(0)],
+                    vec![FakeRow::current_event_sequence(1)],
+                ]
+                .into(),
+            ),
+        });
+        let tenant = store.for_workspace(WorkspaceId::new("workspace_01"));
+        let cipher = IdentityCipher;
+        let mut memories = tenant.with_cipher(&cipher);
+
+        CheckpointMutationRepository::insert_checkpoint_with_event(
+            &mut memories,
+            checkpoint,
+            inserted_event,
+            0,
+        )
+        .expect("insert checkpoint");
+        CheckpointMutationRepository::replace_checkpoint_with_event(
+            &mut memories,
+            revised,
+            1,
+            revised_event,
+            1,
+        )
+        .expect("replace checkpoint");
+
+        let calls = calls.borrow();
+        for statement in [
+            INSERT_CHECKPOINT_SQL,
+            REPLACE_CHECKPOINT_SQL,
+            INSERT_EVENT_SQL,
+        ] {
+            assert!(
+                calls
+                    .iter()
+                    .any(|call| matches!(call, Call::Execute(actual, _) if actual == statement)),
+                "missing execution for {statement}"
+            );
+        }
+        assert_eq!(
+            calls.iter().filter(|call| **call == Call::Commit).count(),
+            2
+        );
+        assert!(calls.iter().any(|call| matches!(
+            call,
+            Call::Execute(statement, parameters)
+                if statement == INSERT_CHECKPOINT_SQL
+                    && parameters.contains(&"bytes:24".to_owned())
+                    && parameters.contains(&"i64:1".to_owned())
+        )));
+        assert!(calls.iter().any(|call| matches!(
+            call,
+            Call::Execute(statement, parameters)
+                if statement == REPLACE_CHECKPOINT_SQL
+                    && parameters.iter().filter(|value| *value == "i64:1").count() == 1
+                    && parameters.contains(&"i64:2".to_owned())
         )));
     }
 

@@ -340,6 +340,8 @@ This roadmap describes sequencing, not release dates.
           prove every returned memory revision is disclosure-audited.
       - [x] Add authenticated PostgreSQL latest-checkpoint and bounded
         subject-history reads for development working memory.
+        - [x] Atomically insert and revise encrypted PostgreSQL checkpoints
+          with optimistic versions and canonical event-stream sequencing.
       - [x] Add exact invitation lookup and bounded status-filtered listing
         with terminal-state restoration and full tenant/identifier correlation.
       - [x] Implement atomic invitation creation, acceptance, revocation,
