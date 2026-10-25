@@ -81,6 +81,31 @@ then
     exit 1
 fi
 
+cp -R "$temporary_directory/artifacts" "$temporary_directory/invalid-semantics"
+jq '.providers[0].unexpected = true' \
+    "$temporary_directory/invalid-semantics/provider-registry.json" \
+    >"$temporary_directory/invalid-semantics/provider-registry.next"
+mv "$temporary_directory/invalid-semantics/provider-registry.next" \
+    "$temporary_directory/invalid-semantics/provider-registry.json"
+invalid_sha256=$(
+    openssl dgst -sha256 \
+        "$temporary_directory/invalid-semantics/provider-registry.json" |
+        awk '{print $NF}'
+)
+printf '%s  %s\n' "$invalid_sha256" provider-registry.json \
+    >"$temporary_directory/invalid-semantics/provider-registry.json.sha256"
+openssl pkeyutl -sign -rawin \
+    -inkey "$temporary_directory/private.pem" \
+    -in "$temporary_directory/invalid-semantics/provider-registry.json" \
+    -out "$temporary_directory/invalid-semantics/provider-registry.json.sig"
+if "$repository_root/scripts/verify-provider-registry-bundle.sh" \
+    "$temporary_directory/invalid-semantics" \
+    "$temporary_directory/public.pem" >/dev/null 2>&1
+then
+    echo "provider registry bundle accepted signed invalid semantics" >&2
+    exit 1
+fi
+
 cp -R "$temporary_directory/artifacts" "$temporary_directory/extra-artifact"
 printf '%s\n' 'undeclared' >"$temporary_directory/extra-artifact/notes.txt"
 if "$repository_root/scripts/verify-provider-registry-bundle.sh" \

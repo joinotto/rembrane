@@ -42,7 +42,11 @@ mkdir -p "$(dirname -- "$output_directory")"
 mkdir "$output_directory"
 chmod 700 "$output_directory"
 complete=0
+verification_public_key=
 cleanup() {
+    if [ -n "$verification_public_key" ]; then
+        rm -f "$verification_public_key"
+    fi
     if [ "$complete" != 1 ]; then
         rm -rf "$output_directory"
     fi
@@ -68,6 +72,13 @@ if [ "$signature_bytes" -ne 64 ]; then
     exit 1
 fi
 chmod 600 "$output_directory"/*
+
+verification_public_key=$(mktemp "${TMPDIR:-/tmp}/rembrane-registry-public.XXXXXX")
+chmod 600 "$verification_public_key"
+openssl pkey -in "$private_key" -pubout \
+    -out "$verification_public_key" >/dev/null 2>&1
+"$repository_root/scripts/verify-provider-registry-bundle.sh" \
+    "$output_directory" "$verification_public_key" >/dev/null
 
 complete=1
 echo "signed provider registry artifacts written to: $output_directory"

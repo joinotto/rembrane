@@ -1022,6 +1022,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - A provider-registry bundle verifier now requires the exact registry,
   checksum, and signature inventory and validates all three from one opened
   byte set before enforcing provider and conformance semantics.
+- Provider-registry signing now derives a temporary public key and self-verifies
+  the complete bundle before reporting success; tests also reject correctly
+  signed registries containing invalid semantic fields.
 - Restored the complete dependency-enabled workspace build by declaring
   previously implicit crate dependencies and enabling rmcp's stdio transport.
 - Corrected Memory Provider selector field casing and URL path construction so
