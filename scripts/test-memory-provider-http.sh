@@ -70,12 +70,28 @@ fixture_sha256=$(
     openssl dgst -sha256 "$fixture_file" |
         sed 's/^.*= //'
 )
+canonical_profile_sha256=$(
+    openssl dgst -sha256 \
+        "$repository_root/spec/conformance/memory-provider-core.json" |
+        sed 's/^.*= //'
+)
+canonical_fixture_sha256=$(
+    openssl dgst -sha256 \
+        "$repository_root/spec/conformance/memory-provider-core-fixtures.json" |
+        sed 's/^.*= //'
+)
 for digest in "$profile_sha256" "$fixture_sha256"; do
     if ! printf '%s' "$digest" | rg '^[0-9a-f]{64}$' >/dev/null; then
         echo "could not calculate memory provider conformance digest" >&2
         exit 1
     fi
 done
+if [ "$profile_sha256" != "$canonical_profile_sha256" ] ||
+    [ "$fixture_sha256" != "$canonical_fixture_sha256" ]
+then
+    echo "memory-provider conformance inputs must match the reviewed profile and fixture" >&2
+    exit 1
+fi
 required_actor_scopes=$(jq -c '
     [
         .actors.primary.requiredScopes[],

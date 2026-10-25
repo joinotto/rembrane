@@ -980,6 +980,8 @@ This roadmap describes sequencing, not release dates.
     header validation.
   - [x] Validate shell-provider discovery before validating or materializing
     bearer credentials into owner-only curl header files.
+  - [x] Bind both conformance runners to the exact reviewed profile and fixture
+    bytes so unexecuted custom cases cannot be reported as passing.
     - [x] Add bounded context-resolution requests with global, domain, entity,
       and activity selectors constrained by provider-advertised limits.
       - [x] Seal selector representation so callers cannot bypass domain and

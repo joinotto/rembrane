@@ -29,8 +29,22 @@ if (
 
 const profileBytes = await readFile(profilePath);
 const fixtureBytes = await readFile(fixturePath);
+const canonicalProfileBytes = await readFile(
+  resolve(root, "spec/conformance/memory-provider-core.json"),
+);
+const canonicalFixtureBytes = await readFile(
+  resolve(root, "spec/conformance/memory-provider-core-fixtures.json"),
+);
 if (profileBytes.length > 128 * 1024 || fixtureBytes.length > 256 * 1024) {
   throw new Error("memory-provider conformance artifacts exceed limits");
+}
+if (
+  sha256(profileBytes) !== sha256(canonicalProfileBytes) ||
+  sha256(fixtureBytes) !== sha256(canonicalFixtureBytes)
+) {
+  throw new Error(
+    "memory-provider conformance inputs must match the reviewed profile and fixture",
+  );
 }
 const profile = JSON.parse(profileBytes);
 const fixtures = JSON.parse(fixtureBytes);

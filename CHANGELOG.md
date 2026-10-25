@@ -27,6 +27,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - The shell conformance client now validates public provider discovery before
   validating bearer values or materializing them into owner-only curl header
   files; loopback CI verifies invalid discovery wins over invalid credentials.
+- Both Memory Provider conformance runners now require the exact reviewed
+  profile and fixture bytes, preventing modified or newly added cases from
+  being reported as passed by fixed runner logic that did not execute them.
 - Project metadata, security reporting, API contact information, offline
   workspace fixtures, and provider provenance now consistently identify the
   canonical `joinotto/rembrane` repository.

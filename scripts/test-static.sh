@@ -35,6 +35,7 @@ sh ./scripts/test-package-memory-provider-release-evidence.sh
 node ./scripts/test-memory-provider-conformance-secrets.mjs
 node ./scripts/test-memory-provider-discovery.mjs
 ./scripts/test-memory-provider-discovery-jq.sh
+./scripts/test-memory-provider-conformance-inputs.sh
 ./scripts/check-protocols.sh
 ./scripts/test-semantic-provider-compatibility-lock.sh
 ./scripts/test-memory-provider-compatibility-lock.sh
@@ -94,6 +95,7 @@ for deployment_file in \
     scripts/memory-provider-conformance-secrets.mjs \
     scripts/memory-provider-discovery.jq \
     scripts/test-memory-provider-discovery-jq.sh \
+    scripts/test-memory-provider-conformance-inputs.sh \
     scripts/run-memory-provider-conformance.mjs \
     scripts/test-memory-provider-conformance-secrets.mjs \
     scripts/test-memory-provider-mixed-version-evidence.sh \
