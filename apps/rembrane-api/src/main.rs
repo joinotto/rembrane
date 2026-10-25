@@ -2300,6 +2300,10 @@ fn memory_discovery_from_environment() -> Result<MemoryDiscovery> {
     let listen = std::env::var("REMBRANE_LISTEN").unwrap_or_else(|_| "127.0.0.1:8787".to_owned());
     let api =
         std::env::var("REMBRANE_PUBLIC_API_URL").unwrap_or_else(|_| format!("http://{listen}/v1"));
+    build_memory_discovery(api)
+}
+
+fn build_memory_discovery(api: String) -> Result<MemoryDiscovery> {
     let uri = api
         .parse::<axum::http::Uri>()
         .context("REMBRANE_PUBLIC_API_URL must be an absolute URI")?;
@@ -2430,9 +2434,10 @@ mod tests {
     use rembrane_store_sqlite::SqliteStore;
 
     use super::{
-        ResolveGraphRequest, ResolveRequest, advance_identifier, graph_request_scope,
-        invitation_only_grants, parse_invitation_role, parse_invitation_status,
-        request_is_within_grant, selected_api_token_reference, token_matches, valid_api_token,
+        ResolveGraphRequest, ResolveRequest, advance_identifier, build_memory_discovery,
+        graph_request_scope, invitation_only_grants, parse_invitation_role,
+        parse_invitation_status, request_is_within_grant, selected_api_token_reference,
+        token_matches, valid_api_token,
     };
 
     #[test]
@@ -2532,6 +2537,35 @@ mod tests {
         assert_eq!(advance_identifier(&mut current), None);
         assert_eq!(advance_identifier(&mut current), None);
         assert_eq!(current, u128::MAX);
+    }
+
+    #[test]
+    fn discovery_allows_only_loopback_http_or_public_https() {
+        let local = build_memory_discovery("http://127.0.0.1:8787/v1".to_owned())
+            .expect("loopback HTTP discovery");
+        assert_eq!(local.endpoints.api, "http://127.0.0.1:8787/v1");
+        assert_eq!(local.privacy.processing_modes, ["local-only"]);
+        assert_eq!(local.privacy.plaintext_processing_location, "user-device");
+
+        let public = build_memory_discovery("https://memory.example.test/v1".to_owned())
+            .expect("public HTTPS discovery");
+        assert_eq!(public.privacy.processing_modes, ["customer-gateway"]);
+        assert_eq!(
+            public.privacy.plaintext_processing_location,
+            "customer-gateway"
+        );
+
+        for invalid in [
+            "http://memory.example.test/v1",
+            "https://user@memory.example.test/v1",
+            "https://memory.example.test/v1?token=secret",
+            "https://memory.example.test/api",
+        ] {
+            assert!(
+                build_memory_discovery(invalid.to_owned()).is_err(),
+                "accepted invalid public API URL: {invalid}"
+            );
+        }
     }
 
     #[test]
