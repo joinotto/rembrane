@@ -979,6 +979,8 @@ This roadmap describes sequencing, not release dates.
       and test timestamp.
       - [x] Bind each selection receipt to the exact registry snapshot bytes
         and generation timestamp.
+        - [x] Reject impossible, non-canonical, and future registry timestamps
+          before issuing a selection receipt.
 - [x] Run installed native-provider conformance through the CLI.
 - [x] Automated external-provider registry verification and release signing.
   - [x] Verify registry identity, timestamps, conformance status, and pinned

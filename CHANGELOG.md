@@ -25,6 +25,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   approvals to exact build, protocol, source, and conformance evidence.
 - Provider-selection receipts now include the exact registry SHA-256 and
   generation time, rejecting evidence that postdates its registry snapshot.
+- Provider selection now parses canonical RFC 3339 registry times and rejects
+  impossible calendar values or future-dated snapshots.
 - A strict portable key-provider conformance result schema and runner output
   containing provider identity and explicit pass evidence for eight
   authentication, encryption, limit, rotation, and replay cases.
