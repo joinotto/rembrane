@@ -424,6 +424,8 @@ This roadmap describes sequencing, not release dates.
         edge revisions atomically in SQLite.
       - [x] Implement the tenant-pinned PostgreSQL graph disclosure port with
         bounded duplicate rejection and exact canonical revision checks.
+      - [x] Include SQLite graph disclosure headers and cascaded edge evidence
+        in bounded disclosure-retention purges.
   - [x] Add local SQLite graph persistence and Graphiti projection adapter.
     - [x] Construct Graphiti from validated provider profiles through any
       deployment-selected secret resolver without fixed credential names.

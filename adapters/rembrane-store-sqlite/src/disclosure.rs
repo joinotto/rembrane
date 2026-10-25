@@ -375,7 +375,9 @@ impl<C> GraphDisclosureRepository for SqliteStore<C> {
 
 #[cfg(test)]
 mod tests {
-    use rembrane_application::{ApplicationError, GraphDisclosureRepository};
+    use rembrane_application::{
+        ApplicationError, GraphDisclosureRepository, RetentionPurgePlan, RetentionPurgeRepository,
+    };
     use rembrane_domain::{
         ClientId, DisclosedKnowledgeEdge, DisclosureId, GraphDisclosureDirection,
         GraphDisclosureReceipt, KnowledgeEdgeId, KnowledgeNodeId, PrincipalId, WorkspaceId,
@@ -491,5 +493,45 @@ mod tests {
             )
             .expect("receipt count should read");
         assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn retention_purge_removes_graph_receipt_and_edge_evidence_together() {
+        let mut store = store_with_graph();
+        store
+            .append_graph_disclosure(receipt(1))
+            .expect("receipt should append");
+        store
+            .connection
+            .execute(
+                "UPDATE graph_disclosure_receipts
+                 SET created_at='1970-01-01 00:01:40'
+                 WHERE workspace_id='workspace_01'",
+                [],
+            )
+            .expect("fixture time should update");
+
+        let result = store
+            .execute_retention_purge(&RetentionPurgePlan {
+                workspace_id: WorkspaceId::new("workspace_01"),
+                memory_cutoff_epoch_seconds: None,
+                checkpoint_cutoff_epoch_seconds: None,
+                travel_cutoff_epoch_seconds: None,
+                disclosure_cutoff_epoch_seconds: Some(100),
+                event_cutoff_epoch_seconds: None,
+                maximum_items: 1,
+            })
+            .expect("purge should succeed");
+
+        assert_eq!(result.disclosures, 1);
+        for table in ["graph_disclosure_receipts", "disclosed_knowledge_edges"] {
+            let count: u64 = store
+                .connection
+                .query_row(&format!("SELECT count(*) FROM {table}"), [], |row| {
+                    row.get(0)
+                })
+                .expect("count should read");
+            assert_eq!(count, 0);
+        }
     }
 }

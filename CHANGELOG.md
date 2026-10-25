@@ -23,6 +23,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Driver-boundary regression coverage proving PostgreSQL graph disclosure
   headers and exact disclosed edge revisions commit in one verified tenant
   transaction.
+- Bounded SQLite retention purges now include graph disclosure receipts and
+  cascade their exact disclosed-edge evidence in the same transaction.
 - Bounded shared-workspace invitation validity with persisted creation and
   expiry time, a 30-day maximum lifetime, and fail-closed acceptance at the
   expiry boundary.

@@ -468,6 +468,7 @@ impl<C> RetentionPurgeRepository for SqliteStore<C> {
                 "disclosure_receipts",
                 "checkpoint_disclosures",
                 "travel_disclosure_receipts",
+                "graph_disclosure_receipts",
             ] {
                 if remaining == 0 {
                     break;
@@ -568,6 +569,7 @@ fn delete_bounded_by_created_at(
         "disclosure_receipts"
             | "checkpoint_disclosures"
             | "travel_disclosure_receipts"
+            | "graph_disclosure_receipts"
             | "booking_research"
             | "activity_checkpoints"
             | "memories"
