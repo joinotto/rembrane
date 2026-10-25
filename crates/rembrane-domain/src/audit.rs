@@ -8,6 +8,9 @@ pub const MAX_AUDIT_REQUEST_ID_BYTES: usize = 255;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AdministrativeAction {
+    InvitationCreated,
+    InvitationAccepted,
+    InvitationRevoked,
     MemberRemoved,
     KeyRotationRequired,
     KeyRotationCompleted,
@@ -24,6 +27,9 @@ impl AdministrativeAction {
     #[must_use]
     pub const fn label(self) -> &'static str {
         match self {
+            Self::InvitationCreated => "invitation-created",
+            Self::InvitationAccepted => "invitation-accepted",
+            Self::InvitationRevoked => "invitation-revoked",
             Self::MemberRemoved => "member-removed",
             Self::KeyRotationRequired => "key-rotation-required",
             Self::KeyRotationCompleted => "key-rotation-completed",
@@ -40,6 +46,7 @@ impl AdministrativeAction {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AdministrativeTargetKind {
+    Invitation,
     Principal,
     KeyRotation,
     ScopeGrant,
@@ -53,6 +60,7 @@ impl AdministrativeTargetKind {
     #[must_use]
     pub const fn label(self) -> &'static str {
         match self {
+            Self::Invitation => "invitation",
             Self::Principal => "principal",
             Self::KeyRotation => "key-rotation",
             Self::ScopeGrant => "scope-grant",

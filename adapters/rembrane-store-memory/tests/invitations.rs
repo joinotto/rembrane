@@ -1,10 +1,11 @@
 use rembrane_application::{
-    ApplicationError, CreateInvitationCommand, InvitationRepository, InvitationService,
-    MembershipRepository, RevokeInvitationCommand, WorkspaceRepository,
+    AcceptInvitationCommand, AdministrativeAuditRepository, ApplicationError,
+    CreateInvitationCommand, InvitationRepository, InvitationService, MembershipRepository,
+    RevokeInvitationCommand, WorkspaceRepository,
 };
 use rembrane_domain::{
-    InvitationId, InvitationStatus, Membership, Principal, PrincipalId, Workspace, WorkspaceId,
-    WorkspaceRole,
+    AdministrativeAction, InvitationId, InvitationStatus, Membership, Principal, PrincipalId,
+    Workspace, WorkspaceId, WorkspaceRole,
 };
 use rembrane_store_memory::InMemoryStore;
 
@@ -52,8 +53,23 @@ fn command(invited_principal_id: &str) -> CreateInvitationCommand {
         invited_principal_id: PrincipalId::new(invited_principal_id),
         invited_by: PrincipalId::new("owner"),
         role: WorkspaceRole::Member,
+        request_id: "request-create-01".to_owned(),
         created_at_epoch_seconds: 1_000,
         expires_at_epoch_seconds: 2_000,
+    }
+}
+
+fn accept_command(
+    invitation_id: &InvitationId,
+    principal_id: &str,
+    accepted_at_epoch_seconds: u64,
+) -> AcceptInvitationCommand {
+    AcceptInvitationCommand {
+        invitation_id: invitation_id.clone(),
+        workspace_id: WorkspaceId::new("team"),
+        accepting_principal_id: PrincipalId::new(principal_id),
+        request_id: format!("request-accept-{principal_id}"),
+        accepted_at_epoch_seconds,
     }
 }
 
@@ -64,12 +80,7 @@ fn invited_principal_accepts_membership_atomically() {
         .create(command("guest"))
         .expect("owner should invite member");
     let membership = InvitationService::new(&mut store)
-        .accept(
-            &WorkspaceId::new("team"),
-            invitation.id(),
-            &PrincipalId::new("guest"),
-            1_500,
-        )
+        .accept(accept_command(invitation.id(), "guest", 1_500))
         .expect("invited principal should accept");
 
     assert_eq!(membership.role(), WorkspaceRole::Member);
@@ -89,12 +100,7 @@ fn another_principal_cannot_enumerate_or_accept_invitation() {
         .expect("owner should invite member");
 
     let error = InvitationService::new(&mut store)
-        .accept(
-            &WorkspaceId::new("team"),
-            invitation.id(),
-            &PrincipalId::new("attacker"),
-            1_500,
-        )
+        .accept(accept_command(invitation.id(), "attacker", 1_500))
         .expect_err("other principal must be denied");
 
     assert_eq!(error, ApplicationError::NotFound);
@@ -108,12 +114,7 @@ fn expired_invitation_cannot_create_membership() {
         .expect("owner should invite member");
 
     let error = InvitationService::new(&mut store)
-        .accept(
-            &WorkspaceId::new("team"),
-            invitation.id(),
-            &PrincipalId::new("guest"),
-            2_000,
-        )
+        .accept(accept_command(invitation.id(), "guest", 2_000))
         .expect_err("expired invitation must fail");
 
     assert_eq!(
@@ -136,6 +137,7 @@ fn reinvitation_atomically_expires_the_previous_pending_record() {
         .expect("first invitation");
     let mut second_command = command("guest");
     second_command.invitation_id = InvitationId::new("invite_02");
+    second_command.request_id = "request-create-02".to_owned();
     second_command.created_at_epoch_seconds = 2_000;
     second_command.expires_at_epoch_seconds = 3_000;
 
@@ -225,17 +227,14 @@ fn owner_can_revoke_pending_invitation() {
             invitation_id: invitation.id().clone(),
             workspace_id: WorkspaceId::new("team"),
             revoked_by: PrincipalId::new("owner"),
+            request_id: "request-revoke-01".to_owned(),
+            revoked_at_epoch_seconds: 1_500,
         })
         .expect("owner should revoke pending invitation");
 
     assert_eq!(revoked.status(), InvitationStatus::Revoked);
     let error = InvitationService::new(&mut store)
-        .accept(
-            &WorkspaceId::new("team"),
-            invitation.id(),
-            &PrincipalId::new("guest"),
-            1_500,
-        )
+        .accept(accept_command(invitation.id(), "guest", 1_500))
         .expect_err("revoked invitation must not be accepted");
     assert_eq!(
         error,
@@ -262,8 +261,69 @@ fn member_cannot_revoke_invitation() {
             invitation_id: invitation.id().clone(),
             workspace_id: WorkspaceId::new("team"),
             revoked_by: PrincipalId::new("member"),
+            request_id: "request-revoke-member".to_owned(),
+            revoked_at_epoch_seconds: 1_500,
         })
         .expect_err("member must not revoke invitations");
 
     assert_eq!(error, ApplicationError::AccessDenied);
+}
+
+#[test]
+fn revocation_time_cannot_predate_invitation() {
+    let mut store = shared_store();
+    let invitation = InvitationService::new(&mut store)
+        .create(command("guest"))
+        .expect("owner should invite member");
+
+    let error = InvitationService::new(&mut store)
+        .revoke(RevokeInvitationCommand {
+            invitation_id: invitation.id().clone(),
+            workspace_id: WorkspaceId::new("team"),
+            revoked_by: PrincipalId::new("owner"),
+            request_id: "request-revoke-before-create".to_owned(),
+            revoked_at_epoch_seconds: 999,
+        })
+        .expect_err("revocation time must be causal");
+
+    assert_eq!(
+        error,
+        ApplicationError::Validation(
+            "invitation revocation predates invitation creation".to_owned()
+        )
+    );
+    assert_eq!(
+        store
+            .find_invitation(&WorkspaceId::new("team"), invitation.id())
+            .expect("lookup")
+            .expect("invitation")
+            .status(),
+        InvitationStatus::Pending
+    );
+}
+
+#[test]
+fn invitation_lifecycle_writes_content_free_audit_evidence_atomically() {
+    let mut store = shared_store();
+    let invitation = InvitationService::new(&mut store)
+        .create(command("guest"))
+        .expect("create");
+    InvitationService::new(&mut store)
+        .accept(accept_command(invitation.id(), "guest", 1_500))
+        .expect("accept");
+
+    let events = store
+        .list_administrative_audit(&WorkspaceId::new("team"), 0, 10)
+        .expect("audit");
+    assert_eq!(
+        events
+            .iter()
+            .map(rembrane_domain::AdministrativeAuditEvent::action)
+            .collect::<Vec<_>>(),
+        vec![
+            AdministrativeAction::InvitationCreated,
+            AdministrativeAction::InvitationAccepted,
+        ]
+    );
+    assert!(events.iter().all(|event| event.target_id() == "invite_01"));
 }

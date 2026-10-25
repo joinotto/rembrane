@@ -1,10 +1,11 @@
 use rembrane_application::{
-    ApplicationError, CreateInvitationCommand, InvitationRepository, InvitationService,
-    MembershipRepository, RevokeInvitationCommand, WorkspaceRepository,
+    AcceptInvitationCommand, AdministrativeAuditRepository, ApplicationError,
+    CreateInvitationCommand, InvitationRepository, InvitationService, MembershipRepository,
+    RevokeInvitationCommand, WorkspaceRepository,
 };
 use rembrane_domain::{
-    InvitationId, InvitationStatus, Membership, Principal, PrincipalId, Workspace, WorkspaceId,
-    WorkspaceRole,
+    AdministrativeAction, InvitationId, InvitationStatus, Membership, Principal, PrincipalId,
+    Workspace, WorkspaceId, WorkspaceRole,
 };
 use rembrane_store_sqlite::SqliteStore;
 
@@ -43,8 +44,23 @@ fn invitation_command() -> CreateInvitationCommand {
         invited_principal_id: PrincipalId::new("guest"),
         invited_by: PrincipalId::new("owner"),
         role: WorkspaceRole::Member,
+        request_id: "request-create-01".to_owned(),
         created_at_epoch_seconds: 1_000,
         expires_at_epoch_seconds: 2_000,
+    }
+}
+
+fn accept_command(
+    invitation_id: &InvitationId,
+    principal_id: &str,
+    accepted_at_epoch_seconds: u64,
+) -> AcceptInvitationCommand {
+    AcceptInvitationCommand {
+        invitation_id: invitation_id.clone(),
+        workspace_id: WorkspaceId::new("team"),
+        accepting_principal_id: PrincipalId::new(principal_id),
+        request_id: format!("request-accept-{principal_id}"),
+        accepted_at_epoch_seconds,
     }
 }
 
@@ -56,12 +72,7 @@ fn persists_and_atomically_accepts_invitation() {
         .expect("owner should create invitation");
 
     let membership = InvitationService::new(&mut store)
-        .accept(
-            &WorkspaceId::new("team"),
-            invitation.id(),
-            &PrincipalId::new("guest"),
-            1_500,
-        )
+        .accept(accept_command(invitation.id(), "guest", 1_500))
         .expect("guest should accept invitation");
 
     assert_eq!(membership.role(), WorkspaceRole::Member);
@@ -95,12 +106,7 @@ fn invitation_lookup_and_acceptance_do_not_cross_workspace_or_principal() {
             .is_none()
     );
     let error = InvitationService::new(&mut store)
-        .accept(
-            &WorkspaceId::new("team"),
-            invitation.id(),
-            &PrincipalId::new("attacker"),
-            1_500,
-        )
+        .accept(accept_command(invitation.id(), "attacker", 1_500))
         .expect_err("another principal must not accept");
     assert_eq!(error, ApplicationError::NotFound);
     assert!(
@@ -119,12 +125,7 @@ fn persisted_expired_invitation_cannot_create_membership() {
         .expect("owner should create invitation");
 
     let error = InvitationService::new(&mut store)
-        .accept(
-            &WorkspaceId::new("team"),
-            invitation.id(),
-            &PrincipalId::new("guest"),
-            2_000,
-        )
+        .accept(accept_command(invitation.id(), "guest", 2_000))
         .expect_err("expired invitation must fail");
 
     assert_eq!(
@@ -147,6 +148,7 @@ fn persisted_reinvitation_atomically_expires_previous_pending_record() {
         .expect("first invitation");
     let mut second_command = invitation_command();
     second_command.invitation_id = InvitationId::new("invite_02");
+    second_command.request_id = "request-create-02".to_owned();
     second_command.created_at_epoch_seconds = 2_000;
     second_command.expires_at_epoch_seconds = 3_000;
 
@@ -196,21 +198,11 @@ fn second_acceptance_does_not_mutate_membership() {
         .create(invitation_command())
         .expect("owner should create invitation");
     InvitationService::new(&mut store)
-        .accept(
-            &WorkspaceId::new("team"),
-            invitation.id(),
-            &PrincipalId::new("guest"),
-            1_500,
-        )
+        .accept(accept_command(invitation.id(), "guest", 1_500))
         .expect("first acceptance should succeed");
 
     let error = InvitationService::new(&mut store)
-        .accept(
-            &WorkspaceId::new("team"),
-            invitation.id(),
-            &PrincipalId::new("guest"),
-            1_500,
-        )
+        .accept(accept_command(invitation.id(), "guest", 1_500))
         .expect_err("accepted invitation must not be reusable");
     assert_eq!(
         error,
@@ -230,17 +222,14 @@ fn persisted_revocation_prevents_acceptance() {
             invitation_id: invitation.id().clone(),
             workspace_id: WorkspaceId::new("team"),
             revoked_by: PrincipalId::new("owner"),
+            request_id: "request-revoke-01".to_owned(),
+            revoked_at_epoch_seconds: 1_500,
         })
         .expect("owner should revoke invitation");
     assert_eq!(revoked.status(), InvitationStatus::Revoked);
 
     let error = InvitationService::new(&mut store)
-        .accept(
-            &WorkspaceId::new("team"),
-            invitation.id(),
-            &PrincipalId::new("guest"),
-            1_500,
-        )
+        .accept(accept_command(invitation.id(), "guest", 1_500))
         .expect_err("revoked invitation cannot be accepted");
     assert_eq!(
         error,
@@ -251,5 +240,30 @@ fn persisted_revocation_prevents_acceptance() {
             .find_membership(&WorkspaceId::new("team"), &PrincipalId::new("guest"))
             .expect("membership lookup should succeed")
             .is_none()
+    );
+}
+
+#[test]
+fn persisted_invitation_lifecycle_commits_audit_with_membership() {
+    let mut store = initialized_store();
+    let invitation = InvitationService::new(&mut store)
+        .create(invitation_command())
+        .expect("create");
+    InvitationService::new(&mut store)
+        .accept(accept_command(invitation.id(), "guest", 1_500))
+        .expect("accept");
+
+    let events = store
+        .list_administrative_audit(&WorkspaceId::new("team"), 0, 10)
+        .expect("audit");
+    assert_eq!(
+        events
+            .iter()
+            .map(rembrane_domain::AdministrativeAuditEvent::action)
+            .collect::<Vec<_>>(),
+        vec![
+            AdministrativeAction::InvitationCreated,
+            AdministrativeAction::InvitationAccepted,
+        ]
     );
 }

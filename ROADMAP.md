@@ -441,6 +441,8 @@ This roadmap describes sequencing, not release dates.
     expiry without creating membership.
     - [x] Atomically transition an expired pending invitation before creating
       a replacement so stale rows cannot block reinvitation.
+  - [x] Commit content-free invitation creation, acceptance, and revocation
+    audit evidence in the same transaction as each lifecycle mutation.
 - [x] Shared-workspace exact scope grants, including entity-level access.
 - [x] Private-to-shared memory proposals.
   - [x] Content-free, exact-source-version proposal aggregate with source-owner

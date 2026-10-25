@@ -120,6 +120,10 @@ done
 
 for invariant in \
     'administrative_audit_events_are_append_only' \
+    "'invitation-created'" \
+    "'invitation-accepted'" \
+    "'invitation-revoked'" \
+    "'invitation'" \
     'created_at_epoch_seconds bigint NOT NULL' \
     'expires_at_epoch_seconds bigint NOT NULL' \
     'expires_at_epoch_seconds - created_at_epoch_seconds <= 2592000' \

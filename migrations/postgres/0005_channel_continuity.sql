@@ -5,6 +5,9 @@ ALTER TABLE administrative_audit_events
 ALTER TABLE administrative_audit_events
     ADD CONSTRAINT administrative_audit_events_action_check CHECK (
         action IN (
+            'invitation-created',
+            'invitation-accepted',
+            'invitation-revoked',
             'member-removed',
             'key-rotation-required',
             'key-rotation-completed',
@@ -22,6 +25,7 @@ ALTER TABLE administrative_audit_events
 ALTER TABLE administrative_audit_events
     ADD CONSTRAINT administrative_audit_events_target_kind_check CHECK (
         target_kind IN (
+            'invitation',
             'principal',
             'key-rotation',
             'scope-grant',

@@ -85,7 +85,9 @@ const WORKSPACE_INVITATION_EXPIRY_MIGRATION: &str =
     include_str!("../../../migrations/sqlite/0026_workspace_invitation_expiry.sql");
 const EXPIRED_WORKSPACE_INVITATION_MIGRATION: &str =
     include_str!("../../../migrations/sqlite/0027_expired_workspace_invitations.sql");
-const CURRENT_SCHEMA_VERSION: u32 = 27;
+const INVITATION_AUDIT_MIGRATION: &str =
+    include_str!("../../../migrations/sqlite/0028_invitation_audit.sql");
+const CURRENT_SCHEMA_VERSION: u32 = 28;
 const CANONICAL_TABLES: [&str; 10] = [
     "activity_checkpoints",
     "disclosed_memories",
@@ -614,6 +616,9 @@ const fn legal_hold_status_label(status: LegalHoldStatus) -> &'static str {
 
 fn parse_administrative_action(value: &str) -> Result<AdministrativeAction, ApplicationError> {
     match value {
+        "invitation-created" => Ok(AdministrativeAction::InvitationCreated),
+        "invitation-accepted" => Ok(AdministrativeAction::InvitationAccepted),
+        "invitation-revoked" => Ok(AdministrativeAction::InvitationRevoked),
         "member-removed" => Ok(AdministrativeAction::MemberRemoved),
         "key-rotation-required" => Ok(AdministrativeAction::KeyRotationRequired),
         "key-rotation-completed" => Ok(AdministrativeAction::KeyRotationCompleted),
@@ -632,6 +637,7 @@ fn parse_administrative_target_kind(
     value: &str,
 ) -> Result<AdministrativeTargetKind, ApplicationError> {
     match value {
+        "invitation" => Ok(AdministrativeTargetKind::Invitation),
         "principal" => Ok(AdministrativeTargetKind::Principal),
         "key-rotation" => Ok(AdministrativeTargetKind::KeyRotation),
         "scope-grant" => Ok(AdministrativeTargetKind::ScopeGrant),
@@ -852,6 +858,12 @@ fn migrate(connection: &mut Connection) -> Result<(), ApplicationError> {
     if version == 26 {
         transaction
             .execute_batch(EXPIRED_WORKSPACE_INVITATION_MIGRATION)
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        version = 27;
+    }
+    if version == 27 {
+        transaction
+            .execute_batch(INVITATION_AUDIT_MIGRATION)
             .map_err(|_| ApplicationError::StorageUnavailable)?;
     }
     transaction
@@ -1445,7 +1457,13 @@ impl<C> InvitationRepository for SqliteStore<C> {
     fn insert_invitation_replacing_expired(
         &mut self,
         invitation: Invitation,
+        audit_event: AdministrativeAuditEvent,
     ) -> Result<(), ApplicationError> {
+        validate_invitation_audit(
+            &invitation,
+            &audit_event,
+            AdministrativeAction::InvitationCreated,
+        )?;
         let transaction = self
             .connection
             .transaction()
@@ -1463,6 +1481,7 @@ impl<C> InvitationRepository for SqliteStore<C> {
                 ],
             )
             .map_err(map_write_error)?;
+        insert_administrative_audit(&transaction, &audit_event)?;
         transaction
             .execute(
                 "INSERT INTO workspace_invitations (
@@ -1529,6 +1548,7 @@ impl<C> InvitationRepository for SqliteStore<C> {
         &mut self,
         invitation: Invitation,
         membership: Membership,
+        audit_event: AdministrativeAuditEvent,
     ) -> Result<(), ApplicationError> {
         if invitation.status() != InvitationStatus::Accepted
             || invitation.workspace_id() != membership.workspace_id()
@@ -1537,6 +1557,16 @@ impl<C> InvitationRepository for SqliteStore<C> {
         {
             return Err(ApplicationError::Validation(
                 "accepted invitation and membership must agree".to_owned(),
+            ));
+        }
+        validate_invitation_audit(
+            &invitation,
+            &audit_event,
+            AdministrativeAction::InvitationAccepted,
+        )?;
+        if audit_event.actor_id() != membership.principal_id() {
+            return Err(ApplicationError::Validation(
+                "invitation acceptance audit actor is invalid".to_owned(),
             ));
         }
         let transaction = self
@@ -1576,6 +1606,7 @@ impl<C> InvitationRepository for SqliteStore<C> {
                 ],
             )
             .map_err(map_write_error)?;
+        insert_administrative_audit(&transaction, &audit_event)?;
         transaction
             .commit()
             .map_err(|_| ApplicationError::StorageUnavailable)
@@ -1585,9 +1616,18 @@ impl<C> InvitationRepository for SqliteStore<C> {
         &mut self,
         invitation: Invitation,
         expected_status: InvitationStatus,
+        audit_event: AdministrativeAuditEvent,
     ) -> Result<(), ApplicationError> {
-        let changed = self
+        validate_invitation_audit(
+            &invitation,
+            &audit_event,
+            AdministrativeAction::InvitationRevoked,
+        )?;
+        let transaction = self
             .connection
+            .transaction()
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        let changed = transaction
             .execute(
                 "UPDATE workspace_invitations
                  SET status = ?6, updated_at = CURRENT_TIMESTAMP
@@ -1612,7 +1652,10 @@ impl<C> InvitationRepository for SqliteStore<C> {
         if changed != 1 {
             return Err(ApplicationError::VersionConflict);
         }
-        Ok(())
+        insert_administrative_audit(&transaction, &audit_event)?;
+        transaction
+            .commit()
+            .map_err(|_| ApplicationError::StorageUnavailable)
     }
 }
 
@@ -2202,6 +2245,23 @@ fn insert_administrative_audit(
             ],
         )
         .map_err(map_write_error)?;
+    Ok(())
+}
+
+fn validate_invitation_audit(
+    invitation: &Invitation,
+    event: &AdministrativeAuditEvent,
+    action: AdministrativeAction,
+) -> Result<(), ApplicationError> {
+    if event.workspace_id() != invitation.workspace_id()
+        || event.action() != action
+        || event.target_kind() != AdministrativeTargetKind::Invitation
+        || event.target_id() != invitation.id().as_str()
+    {
+        return Err(ApplicationError::Validation(
+            "invitation audit evidence is invalid".to_owned(),
+        ));
+    }
     Ok(())
 }
 

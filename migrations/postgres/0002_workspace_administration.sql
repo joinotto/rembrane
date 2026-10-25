@@ -118,6 +118,9 @@ CREATE TABLE administrative_audit_events (
     actor_id text NOT NULL,
     action text NOT NULL CONSTRAINT administrative_audit_events_action_check
         CHECK (action IN (
+        'invitation-created',
+        'invitation-accepted',
+        'invitation-revoked',
         'member-removed',
         'key-rotation-required',
         'key-rotation-completed',
@@ -129,6 +132,7 @@ CREATE TABLE administrative_audit_events (
     target_kind text NOT NULL
         CONSTRAINT administrative_audit_events_target_kind_check CHECK (
         target_kind IN (
+            'invitation',
         'principal',
         'key-rotation',
         'scope-grant',

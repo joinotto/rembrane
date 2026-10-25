@@ -495,6 +495,7 @@ pub trait InvitationRepository {
     fn insert_invitation_replacing_expired(
         &mut self,
         invitation: Invitation,
+        audit_event: AdministrativeAuditEvent,
     ) -> Result<(), ApplicationError>;
 
     fn find_invitation(
@@ -507,12 +508,14 @@ pub trait InvitationRepository {
         &mut self,
         invitation: Invitation,
         membership: Membership,
+        audit_event: AdministrativeAuditEvent,
     ) -> Result<(), ApplicationError>;
 
     fn replace_invitation(
         &mut self,
         invitation: Invitation,
         expected_status: InvitationStatus,
+        audit_event: AdministrativeAuditEvent,
     ) -> Result<(), ApplicationError>;
 }
 

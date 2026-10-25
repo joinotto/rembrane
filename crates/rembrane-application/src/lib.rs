@@ -44,7 +44,9 @@ pub use checkpoint::{
 };
 pub use error::ApplicationError;
 pub use graph_projection_worker::GraphProjectionWorker;
-pub use invitation::{CreateInvitationCommand, InvitationService, RevokeInvitationCommand};
+pub use invitation::{
+    AcceptInvitationCommand, CreateInvitationCommand, InvitationService, RevokeInvitationCommand,
+};
 pub use member_lifecycle::{
     CompleteKeyRotationCommand, MemberLifecycleService, RemoveMemberCommand,
 };

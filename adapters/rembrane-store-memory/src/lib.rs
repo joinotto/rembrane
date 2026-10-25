@@ -14,15 +14,16 @@ use rembrane_application::{
 };
 use rembrane_domain::{
     ActivityCheckpoint, ActivityId, AdministrativeAction, AdministrativeAuditEvent,
-    BookingResearch, BookingResearchId, CanonicalEvent, CheckpointDisclosureReceipt,
-    DisclosureReceipt, EntityId, EventPayload, GraphProjectionJob, GraphProjectionResource,
-    Invitation, InvitationId, InvitationStatus, KeyRotationId, KeyRotationReceipt,
-    KeyRotationStatus, KnowledgeEdge, KnowledgeEdgeId, KnowledgeNode, KnowledgeNodeId, LegalHoldId,
-    LegalHoldStatus, MemberScopeGrant, Membership, MemoryId, MemoryRecord, MemoryShareProposal,
-    MemoryStatus, Principal, PrincipalId, ProjectionJob, ProjectionJobId, ProjectionOperation,
-    ProjectionStatus, ProviderId, ReadScope, ShareProposalId, ShareProposalStatus,
-    TravelDisclosureReceipt, Trip, Workspace, WorkspaceId, WorkspaceKeyRotation, WorkspaceKind,
-    WorkspaceLegalHold, WorkspaceRetentionPolicy, WorkspaceRole,
+    AdministrativeTargetKind, BookingResearch, BookingResearchId, CanonicalEvent,
+    CheckpointDisclosureReceipt, DisclosureReceipt, EntityId, EventPayload, GraphProjectionJob,
+    GraphProjectionResource, Invitation, InvitationId, InvitationStatus, KeyRotationId,
+    KeyRotationReceipt, KeyRotationStatus, KnowledgeEdge, KnowledgeEdgeId, KnowledgeNode,
+    KnowledgeNodeId, LegalHoldId, LegalHoldStatus, MemberScopeGrant, Membership, MemoryId,
+    MemoryRecord, MemoryShareProposal, MemoryStatus, Principal, PrincipalId, ProjectionJob,
+    ProjectionJobId, ProjectionOperation, ProjectionStatus, ProviderId, ReadScope, ShareProposalId,
+    ShareProposalStatus, TravelDisclosureReceipt, Trip, Workspace, WorkspaceId,
+    WorkspaceKeyRotation, WorkspaceKind, WorkspaceLegalHold, WorkspaceRetentionPolicy,
+    WorkspaceRole,
 };
 
 #[derive(Debug, Default)]
@@ -1181,7 +1182,14 @@ impl InvitationRepository for InMemoryStore {
     fn insert_invitation_replacing_expired(
         &mut self,
         invitation: Invitation,
+        audit_event: AdministrativeAuditEvent,
     ) -> Result<(), ApplicationError> {
+        validate_invitation_audit(
+            &invitation,
+            &audit_event,
+            AdministrativeAction::InvitationCreated,
+        )?;
+        validate_new_audit_event(&self.administrative_audit, &audit_event)?;
         if self
             .invitations
             .iter()
@@ -1207,6 +1215,7 @@ impl InvitationRepository for InMemoryStore {
                 .map_err(|_| ApplicationError::StorageUnavailable)?;
         }
         self.invitations.push(invitation);
+        self.administrative_audit.push(audit_event);
         Ok(())
     }
 
@@ -1228,6 +1237,7 @@ impl InvitationRepository for InMemoryStore {
         &mut self,
         invitation: Invitation,
         membership: Membership,
+        audit_event: AdministrativeAuditEvent,
     ) -> Result<(), ApplicationError> {
         if invitation.status() != InvitationStatus::Accepted
             || invitation.workspace_id() != membership.workspace_id()
@@ -1238,6 +1248,17 @@ impl InvitationRepository for InMemoryStore {
                 "accepted invitation and membership must agree".to_owned(),
             ));
         }
+        validate_invitation_audit(
+            &invitation,
+            &audit_event,
+            AdministrativeAction::InvitationAccepted,
+        )?;
+        if audit_event.actor_id() != membership.principal_id() {
+            return Err(ApplicationError::Validation(
+                "invitation acceptance audit actor is invalid".to_owned(),
+            ));
+        }
+        validate_new_audit_event(&self.administrative_audit, &audit_event)?;
         let invitation_position = self
             .invitations
             .iter()
@@ -1256,6 +1277,7 @@ impl InvitationRepository for InMemoryStore {
 
         self.invitations[invitation_position] = invitation;
         self.memberships.push(membership);
+        self.administrative_audit.push(audit_event);
         Ok(())
     }
 
@@ -1263,7 +1285,14 @@ impl InvitationRepository for InMemoryStore {
         &mut self,
         invitation: Invitation,
         expected_status: InvitationStatus,
+        audit_event: AdministrativeAuditEvent,
     ) -> Result<(), ApplicationError> {
+        validate_invitation_audit(
+            &invitation,
+            &audit_event,
+            AdministrativeAction::InvitationRevoked,
+        )?;
+        validate_new_audit_event(&self.administrative_audit, &audit_event)?;
         let stored = self
             .invitations
             .iter_mut()
@@ -1279,6 +1308,7 @@ impl InvitationRepository for InMemoryStore {
             return Err(ApplicationError::VersionConflict);
         }
         *stored = invitation;
+        self.administrative_audit.push(audit_event);
         Ok(())
     }
 }
@@ -2002,6 +2032,23 @@ fn validate_share_approval_events(
     {
         return Err(ApplicationError::Validation(
             "events do not describe atomic share approval".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_invitation_audit(
+    invitation: &Invitation,
+    event: &AdministrativeAuditEvent,
+    action: AdministrativeAction,
+) -> Result<(), ApplicationError> {
+    if event.workspace_id() != invitation.workspace_id()
+        || event.action() != action
+        || event.target_kind() != AdministrativeTargetKind::Invitation
+        || event.target_id() != invitation.id().as_str()
+    {
+        return Err(ApplicationError::Validation(
+            "invitation audit evidence is invalid".to_owned(),
         ));
     }
     Ok(())
