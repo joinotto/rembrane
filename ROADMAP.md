@@ -326,6 +326,8 @@ This roadmap describes sequencing, not release dates.
         bounded subject reads with authenticated domain-record correlation.
         - [x] Add optimistic encrypted canonical-event append and bounded
           authenticated event-stream reads through the same tenant facade.
+        - [x] Atomically insert or revise encrypted memories with evidence,
+          canonical events, optimistic versions, and provider projection jobs.
       - [x] Add exact invitation lookup and bounded status-filtered listing
         with terminal-state restoration and full tenant/identifier correlation.
       - [x] Implement atomic invitation creation, acceptance, revocation,

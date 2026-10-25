@@ -9,21 +9,23 @@ use std::error::Error;
 use std::fmt::{self, Display, Formatter};
 
 use rembrane_application::{
-    AdministrativeAuditRepository, ApplicationError, EventRepository, InvitationRepository,
-    KeyRotationRepository, MAX_ADMINISTRATIVE_AUDIT_PAGE, MAXIMUM_INVITATION_LIST_ITEMS,
-    MemberLifecycleRepository, MemberScopeGrantRepository, MembershipRepository, MemoryRepository,
-    RetentionRepository, WorkspaceReadRepository, WorkspaceRepository, is_strict_successor,
+    AdministrativeAuditRepository, ApplicationError, CanonicalMutationRepository, EventRepository,
+    InvitationRepository, KeyRotationRepository, MAX_ADMINISTRATIVE_AUDIT_PAGE,
+    MAXIMUM_INVITATION_LIST_ITEMS, MemberLifecycleRepository, MemberScopeGrantRepository,
+    MembershipRepository, MemoryRepository, RetentionRepository, WorkspaceReadRepository,
+    WorkspaceRepository, is_strict_successor,
 };
-use rembrane_codec::{decode_event, decode_memory, encode_event};
+use rembrane_codec::{decode_event, decode_memory, encode_event, encode_memory};
 use rembrane_crypto::{EncryptedPayload, EncryptionContext, PayloadPurpose, RecordCipher};
 use rembrane_domain::{
     ActivityId, AdministrativeAction, AdministrativeAuditEvent, AdministrativeAuditEventId,
-    AdministrativeTargetKind, CanonicalEvent, EntityId, EventPayload, Invitation, InvitationId,
-    InvitationStatus, KeyRotationId, KeyRotationReceipt, KeyRotationStatus, LegalHoldId,
-    LegalHoldStatus, MAX_KEY_ROTATION_RECIPIENTS, MemberScopeGrant, Membership, MembershipStatus,
-    MemoryId, MemoryRecord, Principal, PrincipalId, ProviderId, ReadScope, RetentionPeriod,
-    RetentionResource, Workspace, WorkspaceId, WorkspaceKeyRotation, WorkspaceKind,
-    WorkspaceLegalHold, WorkspaceRetentionPolicy, WorkspaceRole,
+    AdministrativeTargetKind, CanonicalEvent, EntityId, EventPayload, EvidenceSource, Invitation,
+    InvitationId, InvitationStatus, KeyRotationId, KeyRotationReceipt, KeyRotationStatus,
+    LegalHoldId, LegalHoldStatus, MAX_KEY_ROTATION_RECIPIENTS, MemberScopeGrant, Membership,
+    MembershipStatus, MemoryId, MemoryKind, MemoryRecord, MemoryScope, MemoryStatus, Principal,
+    PrincipalId, ProjectionJob, ProjectionOperation, ProjectionStatus, ProviderId, ReadScope,
+    RetentionPeriod, RetentionResource, Workspace, WorkspaceId, WorkspaceKeyRotation,
+    WorkspaceKind, WorkspaceLegalHold, WorkspaceRetentionPolicy, WorkspaceRole,
 };
 
 pub const SET_TENANT_SQL: &str = "SELECT set_config('rembrane.workspace_id', $1, true);";
@@ -182,6 +184,22 @@ pub const LIST_EVENTS_SINCE_SQL: &str = "SELECT workspace_id, sequence, id, acto
     event_type, payload_ciphertext, encryption_key_id, encryption_algorithm, encryption_nonce \
     FROM workspace_events WHERE workspace_id = $1 AND sequence > $2 \
     ORDER BY sequence LIMIT 10001";
+pub const INSERT_MEMORY_SQL: &str = "INSERT INTO memories \
+    (workspace_id, id, subject_id, scope_type, scope_value, kind, status, content_ciphertext, \
+    encryption_key_id, encryption_algorithm, encryption_nonce, version) \
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)";
+pub const REPLACE_MEMORY_SQL: &str = "UPDATE memories SET subject_id = $3, scope_type = $4, \
+    scope_value = $5, kind = $6, status = $7, content_ciphertext = $8, \
+    encryption_key_id = $9, encryption_algorithm = $10, encryption_nonce = $11, \
+    version = $12, updated_at = CURRENT_TIMESTAMP \
+    WHERE workspace_id = $1 AND id = $2 AND version = $13";
+pub const DELETE_MEMORY_EVIDENCE_SQL: &str =
+    "DELETE FROM memory_evidence WHERE workspace_id = $1 AND memory_id = $2";
+pub const INSERT_MEMORY_EVIDENCE_SQL: &str = "INSERT INTO memory_evidence \
+    (workspace_id, memory_id, ordinal, evidence_id, source_type) VALUES ($1, $2, $3, $4, $5)";
+pub const INSERT_PROJECTION_SQL: &str = "INSERT INTO projection_outbox \
+    (id, workspace_id, memory_id, memory_version, provider_id, operation, status, attempts) \
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PostgresParameter<'value> {
@@ -2470,6 +2488,133 @@ where
     }
 }
 
+impl<Pool, Cipher> CanonicalMutationRepository for PostgresTenantMemoryStore<'_, '_, Pool, Cipher>
+where
+    Pool: PostgresPool,
+    Pool::Error: ClassifiedPostgresError,
+    <Pool::Transaction as PostgresTransaction>::Row: PostgresRow<Error = Pool::Error>,
+    Cipher: RecordCipher,
+{
+    fn insert_memory_with_event(
+        &mut self,
+        memory: MemoryRecord,
+        event: CanonicalEvent,
+        projections: Vec<ProjectionJob>,
+        expected_previous_sequence: u64,
+    ) -> Result<(), ApplicationError> {
+        persist_memory_mutation(
+            self,
+            &memory,
+            None,
+            &event,
+            &projections,
+            expected_previous_sequence,
+        )
+    }
+
+    fn replace_memory_with_event(
+        &mut self,
+        memory: MemoryRecord,
+        expected_memory_version: u64,
+        event: CanonicalEvent,
+        projections: Vec<ProjectionJob>,
+        expected_previous_sequence: u64,
+    ) -> Result<(), ApplicationError> {
+        if !is_strict_successor(expected_memory_version, memory.version()) {
+            return Err(ApplicationError::VersionConflict);
+        }
+        persist_memory_mutation(
+            self,
+            &memory,
+            Some(expected_memory_version),
+            &event,
+            &projections,
+            expected_previous_sequence,
+        )
+    }
+}
+
+fn persist_memory_mutation<Pool, Cipher>(
+    store: &PostgresTenantMemoryStore<'_, '_, Pool, Cipher>,
+    memory: &MemoryRecord,
+    expected_memory_version: Option<u64>,
+    event: &CanonicalEvent,
+    projections: &[ProjectionJob],
+    expected_previous_sequence: u64,
+) -> Result<(), ApplicationError>
+where
+    Pool: PostgresPool,
+    Pool::Error: ClassifiedPostgresError,
+    <Pool::Transaction as PostgresTransaction>::Row: PostgresRow<Error = Pool::Error>,
+    Cipher: RecordCipher,
+{
+    validate_memory_mutation(memory, event, projections)?;
+    if memory.workspace_id() != &store.workspace_id
+        || !is_strict_successor(expected_previous_sequence, event.sequence())
+    {
+        return Err(ApplicationError::SequenceConflict);
+    }
+    let memory_plaintext =
+        encode_memory(memory).map_err(|_| ApplicationError::StorageUnavailable)?;
+    let memory_context = EncryptionContext::new(
+        memory.workspace_id().clone(),
+        memory.id().as_str(),
+        memory.version(),
+        PayloadPurpose::MemoryContent,
+    )
+    .map_err(|_| ApplicationError::Validation("invalid memory context".to_owned()))?;
+    let encrypted_memory = store
+        .cipher
+        .seal(&memory_context, &memory_plaintext)
+        .map_err(|_| ApplicationError::StorageUnavailable)?;
+    let event_plaintext = encode_event(event).map_err(|_| ApplicationError::StorageUnavailable)?;
+    let event_context = EncryptionContext::new(
+        event.workspace_id().clone(),
+        event.id().as_str(),
+        event.sequence(),
+        PayloadPurpose::CanonicalEvent,
+    )
+    .map_err(|_| ApplicationError::Validation("invalid event context".to_owned()))?;
+    let encrypted_event = store
+        .cipher
+        .seal(&event_context, &event_plaintext)
+        .map_err(|_| ApplicationError::StorageUnavailable)?;
+    let mut transaction = store
+        .store
+        .begin_tenant(memory.workspace_id().clone())
+        .map_err(map_event_application_error)?;
+    require_event_sequence(
+        &mut transaction,
+        memory.workspace_id(),
+        expected_previous_sequence,
+    )?;
+    write_memory(
+        &mut transaction,
+        memory,
+        expected_memory_version,
+        &encrypted_memory,
+    )?;
+    if expected_memory_version.is_some() {
+        transaction
+            .execute(
+                DELETE_MEMORY_EVIDENCE_SQL,
+                &[
+                    PostgresParameter::Text(memory.workspace_id().as_str()),
+                    PostgresParameter::Text(memory.id().as_str()),
+                ],
+            )
+            .map_err(PostgresStoreError::Tenant)
+            .map_err(map_application_error)?;
+    }
+    insert_memory_evidence(&mut transaction, memory)?;
+    insert_canonical_event(&mut transaction, event, &encrypted_event)?;
+    insert_projection_jobs(&mut transaction, projections)?;
+    transaction
+        .commit()
+        .map_err(PostgresStoreError::Tenant)
+        .map_err(map_event_application_error)
+}
+
 impl<RuntimePool, ProvisioningPool> WorkspaceRepository
     for PostgresWorkspaceAdminStore<RuntimePool, ProvisioningPool>
 where
@@ -2752,6 +2897,175 @@ where
             PostgresParameter::I64(occurred_at),
         ],
     )
+}
+
+fn require_event_sequence<Transaction>(
+    transaction: &mut TenantTransaction<Transaction>,
+    workspace_id: &WorkspaceId,
+    expected_previous_sequence: u64,
+) -> Result<(), ApplicationError>
+where
+    Transaction: PostgresTransaction,
+    Transaction::Error: ClassifiedPostgresError,
+    Transaction::Row: PostgresRow<Error = Transaction::Error>,
+{
+    let rows = transaction
+        .query(
+            CURRENT_EVENT_SEQUENCE_SQL,
+            &[PostgresParameter::Text(workspace_id.as_str())],
+        )
+        .map_err(PostgresStoreError::Tenant)
+        .map_err(map_event_application_error)?;
+    if rows.len() != 1
+        || rows[0]
+            .u64("current_sequence")
+            .map_err(PostgresStoreError::Row)
+            .map_err(map_event_application_error)?
+            != expected_previous_sequence
+    {
+        return Err(ApplicationError::SequenceConflict);
+    }
+    Ok(())
+}
+
+fn write_memory<Transaction>(
+    transaction: &mut TenantTransaction<Transaction>,
+    memory: &MemoryRecord,
+    expected_version: Option<u64>,
+    encrypted: &EncryptedPayload,
+) -> Result<(), ApplicationError>
+where
+    Transaction: PostgresTransaction,
+    Transaction::Error: ClassifiedPostgresError,
+{
+    let (scope_type, scope_value) = encode_memory_scope(memory.scope());
+    let mut parameters = vec![
+        PostgresParameter::Text(memory.workspace_id().as_str()),
+        PostgresParameter::Text(memory.id().as_str()),
+        PostgresParameter::Text(memory.subject_id().as_str()),
+        PostgresParameter::Text(scope_type),
+        PostgresParameter::OptionalText(scope_value),
+        PostgresParameter::Text(memory_kind_name(memory.kind())),
+        PostgresParameter::Text(memory_status_name(memory.status())),
+        PostgresParameter::Bytes(encrypted.ciphertext()),
+        PostgresParameter::Text(encrypted.key_id()),
+        PostgresParameter::Text(encrypted.algorithm()),
+        PostgresParameter::Bytes(encrypted.nonce()),
+        PostgresParameter::I64(
+            postgres_epoch::<Transaction::Error>(memory.version())
+                .map_err(map_application_error)?,
+        ),
+    ];
+    let statement = if let Some(expected_version) = expected_version {
+        parameters.push(PostgresParameter::I64(
+            postgres_epoch::<Transaction::Error>(expected_version)
+                .map_err(map_application_error)?,
+        ));
+        REPLACE_MEMORY_SQL
+    } else {
+        INSERT_MEMORY_SQL
+    };
+    let changed = transaction
+        .execute(statement, &parameters)
+        .map_err(PostgresStoreError::Tenant)
+        .map_err(map_application_error)?;
+    if changed != 1 {
+        return Err(if expected_version.is_some() {
+            ApplicationError::VersionConflict
+        } else {
+            ApplicationError::StorageUnavailable
+        });
+    }
+    Ok(())
+}
+
+fn insert_memory_evidence<Transaction>(
+    transaction: &mut TenantTransaction<Transaction>,
+    memory: &MemoryRecord,
+) -> Result<(), ApplicationError>
+where
+    Transaction: PostgresTransaction,
+    Transaction::Error: ClassifiedPostgresError,
+{
+    for (ordinal, evidence) in memory.evidence().iter().enumerate() {
+        execute_exactly_one(
+            transaction,
+            INSERT_MEMORY_EVIDENCE_SQL,
+            &[
+                PostgresParameter::Text(memory.workspace_id().as_str()),
+                PostgresParameter::Text(memory.id().as_str()),
+                PostgresParameter::I64(i64::try_from(ordinal).map_err(|_| {
+                    ApplicationError::Validation("too many evidence references".to_owned())
+                })?),
+                PostgresParameter::Text(evidence.id.as_str()),
+                PostgresParameter::Text(evidence_source_name(evidence.source)),
+            ],
+        )
+        .map_err(map_application_error)?;
+    }
+    Ok(())
+}
+
+fn insert_canonical_event<Transaction>(
+    transaction: &mut TenantTransaction<Transaction>,
+    event: &CanonicalEvent,
+    encrypted: &EncryptedPayload,
+) -> Result<(), ApplicationError>
+where
+    Transaction: PostgresTransaction,
+    Transaction::Error: ClassifiedPostgresError,
+{
+    execute_exactly_one(
+        transaction,
+        INSERT_EVENT_SQL,
+        &[
+            PostgresParameter::Text(event.workspace_id().as_str()),
+            PostgresParameter::I64(
+                postgres_epoch::<Transaction::Error>(event.sequence())
+                    .map_err(map_event_application_error)?,
+            ),
+            PostgresParameter::Text(event.id().as_str()),
+            PostgresParameter::Text(event.actor_id().as_str()),
+            PostgresParameter::OptionalText(event.subject_id().map(PrincipalId::as_str)),
+            PostgresParameter::Text(event_type(event)),
+            PostgresParameter::Bytes(encrypted.ciphertext()),
+            PostgresParameter::Text(encrypted.key_id()),
+            PostgresParameter::Text(encrypted.algorithm()),
+            PostgresParameter::Bytes(encrypted.nonce()),
+        ],
+    )
+    .map_err(map_event_application_error)
+}
+
+fn insert_projection_jobs<Transaction>(
+    transaction: &mut TenantTransaction<Transaction>,
+    projections: &[ProjectionJob],
+) -> Result<(), ApplicationError>
+where
+    Transaction: PostgresTransaction,
+    Transaction::Error: ClassifiedPostgresError,
+{
+    for projection in projections {
+        execute_exactly_one(
+            transaction,
+            INSERT_PROJECTION_SQL,
+            &[
+                PostgresParameter::Text(projection.id().as_str()),
+                PostgresParameter::Text(projection.workspace_id().as_str()),
+                PostgresParameter::Text(projection.memory_id().as_str()),
+                PostgresParameter::I64(
+                    postgres_epoch::<Transaction::Error>(projection.memory_version())
+                        .map_err(map_application_error)?,
+                ),
+                PostgresParameter::Text(projection.provider_id().as_str()),
+                PostgresParameter::Text(projection_operation_name(projection.operation())),
+                PostgresParameter::Text(projection_status_name(projection.status())),
+                PostgresParameter::I64(i64::from(projection.attempts())),
+            ],
+        )
+        .map_err(map_application_error)?;
+    }
+    Ok(())
 }
 
 fn valid_invitation_audit(
@@ -3228,6 +3542,125 @@ const fn event_type(event: &CanonicalEvent) -> &'static str {
     }
 }
 
+fn validate_memory_mutation(
+    memory: &MemoryRecord,
+    event: &CanonicalEvent,
+    projections: &[ProjectionJob],
+) -> Result<(), ApplicationError> {
+    if memory.workspace_id() != event.workspace_id()
+        || event.subject_id() != Some(memory.subject_id())
+        || !event_describes_memory(event.payload(), memory)
+    {
+        return Err(ApplicationError::Validation(
+            "event does not describe canonical memory mutation".to_owned(),
+        ));
+    }
+    let expected_operation = if memory.status() == MemoryStatus::Deleted {
+        ProjectionOperation::Delete
+    } else {
+        ProjectionOperation::Upsert
+    };
+    if projections.iter().any(|projection| {
+        projection.workspace_id() != memory.workspace_id()
+            || projection.memory_id() != memory.id()
+            || projection.memory_version() != memory.version()
+            || projection.operation() != expected_operation
+            || projection.status() != ProjectionStatus::Pending
+            || projection.attempts() != 0
+    }) {
+        return Err(ApplicationError::Validation(
+            "projection does not match canonical memory mutation".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+fn event_describes_memory(payload: &EventPayload, memory: &MemoryRecord) -> bool {
+    let (memory_id, version, compatible_status) = match payload {
+        EventPayload::MemoryProposed { memory_id, version } => (
+            memory_id,
+            version,
+            memory.status() == MemoryStatus::Proposed,
+        ),
+        EventPayload::MemoryConfirmed { memory_id, version }
+        | EventPayload::MemoryCreated { memory_id, version }
+        | EventPayload::MemoryRevised { memory_id, version } => (
+            memory_id,
+            version,
+            memory.status() == MemoryStatus::Confirmed,
+        ),
+        EventPayload::MemoryDeleted { memory_id, version } => {
+            (memory_id, version, memory.status() == MemoryStatus::Deleted)
+        }
+        EventPayload::MemorySharedIn {
+            target_memory_id,
+            target_version,
+            ..
+        } => (
+            target_memory_id,
+            target_version,
+            memory.status() == MemoryStatus::Confirmed,
+        ),
+        _ => return false,
+    };
+    compatible_status && memory_id == memory.id() && *version == memory.version()
+}
+
+fn encode_memory_scope(scope: &MemoryScope) -> (&'static str, Option<&str>) {
+    match scope {
+        MemoryScope::Global => ("global", None),
+        MemoryScope::Domain { name } => ("domain", Some(name)),
+        MemoryScope::Entity { id } => ("entity", Some(id.as_str())),
+        MemoryScope::Activity { id } => ("activity", Some(id.as_str())),
+    }
+}
+
+const fn memory_kind_name(kind: MemoryKind) -> &'static str {
+    match kind {
+        MemoryKind::Preference => "preference",
+        MemoryKind::Semantic => "semantic",
+        MemoryKind::Episodic => "episodic",
+        MemoryKind::Procedural => "procedural",
+        MemoryKind::Observation => "observation",
+        MemoryKind::Working => "working",
+    }
+}
+
+const fn memory_status_name(status: MemoryStatus) -> &'static str {
+    match status {
+        MemoryStatus::Proposed => "proposed",
+        MemoryStatus::Confirmed => "confirmed",
+        MemoryStatus::Superseded => "superseded",
+        MemoryStatus::Deleted => "deleted",
+    }
+}
+
+const fn evidence_source_name(source: EvidenceSource) -> &'static str {
+    match source {
+        EvidenceSource::UserStatement => "user-statement",
+        EvidenceSource::AgentObservation => "agent-observation",
+        EvidenceSource::ToolResult => "tool-result",
+        EvidenceSource::ImportedRecord => "imported-record",
+        EvidenceSource::WorkspaceDecision => "workspace-decision",
+    }
+}
+
+const fn projection_operation_name(operation: ProjectionOperation) -> &'static str {
+    match operation {
+        ProjectionOperation::Upsert => "upsert",
+        ProjectionOperation::Delete => "delete",
+    }
+}
+
+const fn projection_status_name(status: ProjectionStatus) -> &'static str {
+    match status {
+        ProjectionStatus::Pending => "pending",
+        ProjectionStatus::Processing => "processing",
+        ProjectionStatus::Completed => "completed",
+        ProjectionStatus::Quarantined => "quarantined",
+    }
+}
+
 fn decode_key_rotation<Row, DriverError>(
     row: &Row,
     expected_workspace_id: &WorkspaceId,
@@ -3569,10 +4002,10 @@ mod tests {
 
     use rembrane_application::{
         AdministrativeAuditRepository, ApplicationError, AuthorizeClientCommand,
-        AuthorizeClientService, CreateInvitationCommand, EventRepository, InvitationRepository,
-        InvitationService, KeyRotationRepository, MemberLifecycleRepository,
-        MemberScopeGrantRepository, MembershipRepository, MemoryRepository, RetentionRepository,
-        WorkspaceRepository,
+        AuthorizeClientService, CanonicalMutationRepository, CreateInvitationCommand,
+        EventRepository, InvitationRepository, InvitationService, KeyRotationRepository,
+        MemberLifecycleRepository, MemberScopeGrantRepository, MembershipRepository,
+        MemoryRepository, RetentionRepository, WorkspaceRepository,
     };
     use rembrane_codec::encode_memory;
     use rembrane_crypto::{CryptoError, EncryptedPayload, EncryptionContext, RecordCipher};
@@ -3582,9 +4015,9 @@ mod tests {
         EvidenceId, EvidenceReference, EvidenceSource, Invitation, InvitationId, InvitationStatus,
         KeyRotationId, KeyRotationReceipt, KeyRotationStatus, LegalHoldId, LegalHoldStatus,
         MemberScopeGrant, MembershipStatus, MemoryId, MemoryRecord, MemoryScope, Principal,
-        PrincipalId, ProviderId, ReadScope, RetentionPeriod, RetentionResource, Workspace,
-        WorkspaceId, WorkspaceKeyRotation, WorkspaceRetentionPolicy, WorkspaceRole,
-        WritePermission,
+        PrincipalId, ProjectionJob, ProjectionJobId, ProjectionOperation, ProviderId, ReadScope,
+        RetentionPeriod, RetentionResource, Workspace, WorkspaceId, WorkspaceKeyRotation,
+        WorkspaceRetentionPolicy, WorkspaceRole, WritePermission,
     };
 
     use super::{
@@ -3595,7 +4028,8 @@ mod tests {
         FIND_PROVISIONING_PRINCIPAL_SQL, FIND_RETENTION_POLICY_SQL, FIND_WORKSPACE_SQL,
         INSERT_ADMINISTRATIVE_AUDIT_SQL, INSERT_EVENT_SQL, INSERT_INVITATION_SQL,
         INSERT_KEY_ROTATION_RECEIPT_SQL, INSERT_KEY_ROTATION_RECIPIENT_SQL, INSERT_LEGAL_HOLD_SQL,
-        INSERT_MEMBER_SCOPE_GRANT_SQL, INSERT_MEMBERSHIP_SQL, INSERT_PRINCIPAL_SQL,
+        INSERT_MEMBER_SCOPE_GRANT_SQL, INSERT_MEMBERSHIP_SQL, INSERT_MEMORY_EVIDENCE_SQL,
+        INSERT_MEMORY_SQL, INSERT_PRINCIPAL_SQL, INSERT_PROJECTION_SQL,
         INSERT_REQUIRED_KEY_ROTATION_SQL, INSERT_RETENTION_POLICY_SQL, INSERT_WORKSPACE_SQL,
         LATEST_KEY_ROTATION_SQL, LIST_ACTIVE_LEGAL_HOLDS_SQL, LIST_ACTIVE_MEMBERSHIPS_SQL,
         LIST_ADMINISTRATIVE_AUDIT_SQL, LIST_EVENTS_SINCE_SQL, LIST_INVITATIONS_BY_STATUS_SQL,
@@ -5712,6 +6146,86 @@ mod tests {
             LIST_EVENTS_SINCE_SQL.to_owned(),
             vec!["text:workspace_01".to_owned(), "i64:0".to_owned()]
         )));
+    }
+
+    #[test]
+    fn canonical_memory_insert_commits_ciphertext_event_evidence_and_projection() {
+        let memory = MemoryRecord::confirmed_preference(
+            MemoryId::new("memory_02"),
+            WorkspaceId::new("workspace_01"),
+            PrincipalId::new("principal_01"),
+            MemoryScope::Global,
+            "Preferred name is Hippo",
+            EvidenceReference::new(
+                EvidenceId::new("evidence_02"),
+                EvidenceSource::UserStatement,
+            ),
+        )
+        .expect("memory");
+        let event = CanonicalEvent::new(
+            EventId::new("event_02"),
+            WorkspaceId::new("workspace_01"),
+            PrincipalId::new("principal_01"),
+            Some(PrincipalId::new("principal_01")),
+            1,
+            EventPayload::MemoryCreated {
+                memory_id: MemoryId::new("memory_02"),
+                version: 1,
+            },
+        )
+        .expect("event");
+        let projection = ProjectionJob::new(
+            ProjectionJobId::new("projection_02"),
+            WorkspaceId::new("workspace_01"),
+            MemoryId::new("memory_02"),
+            1,
+            ProviderId::new("provider_native"),
+            ProjectionOperation::Upsert,
+        )
+        .expect("projection");
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let store = PostgresStore::new(FakePool {
+            calls: Rc::clone(&calls),
+            tenant_batches: RefCell::new(
+                [VecDeque::from([
+                    Ok(Some("workspace_01".to_owned())),
+                    Ok(Some("workspace_01".to_owned())),
+                    Ok(Some("workspace_01".to_owned())),
+                    Ok(Some("workspace_01".to_owned())),
+                    Ok(Some("workspace_01".to_owned())),
+                    Ok(Some("workspace_01".to_owned())),
+                ])]
+                .into(),
+            ),
+            row_batches: RefCell::new([vec![FakeRow::current_event_sequence(0)]].into()),
+        });
+        let tenant = store.for_workspace(WorkspaceId::new("workspace_01"));
+        let cipher = IdentityCipher;
+        let mut memories = tenant.with_cipher(&cipher);
+
+        CanonicalMutationRepository::insert_memory_with_event(
+            &mut memories,
+            memory,
+            event,
+            vec![projection],
+            0,
+        )
+        .expect("canonical insert");
+
+        let calls = calls.borrow();
+        for statement in [
+            INSERT_MEMORY_SQL,
+            INSERT_MEMORY_EVIDENCE_SQL,
+            INSERT_EVENT_SQL,
+            INSERT_PROJECTION_SQL,
+        ] {
+            assert!(
+                calls
+                    .iter()
+                    .any(|call| matches!(call, Call::Execute(actual, _) if actual == statement))
+            );
+        }
+        assert_eq!(calls.last(), Some(&Call::Commit));
     }
 
     #[test]

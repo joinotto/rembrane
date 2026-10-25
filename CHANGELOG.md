@@ -90,6 +90,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - PostgreSQL `EventRepository` support on the tenant-and-cipher facade with
   optimistic contiguous sequence checks, encrypted immutable append, bounded
   ordered reads, and authenticated event metadata correlation.
+- PostgreSQL `CanonicalMutationRepository` support with authenticated memory
+  and event encryption, optimistic record/stream versions, evidence renewal,
+  and pluggable provider projection jobs committed atomically.
 - PostgreSQL invitation lookup and bounded deterministic listing with optional
   status filtering, numeric lifetime decoding, terminal-state restoration,
   and exact tenant/invitation correlation.
