@@ -139,7 +139,11 @@ fn required_claim(
 }
 
 fn valid_claim(value: &str, maximum_bytes: usize) -> bool {
-    !value.is_empty() && value.len() <= maximum_bytes && !value.chars().any(char::is_control)
+    !value.is_empty()
+        && value.len() <= maximum_bytes
+        && !value
+            .chars()
+            .any(|character| character.is_control() || character.is_whitespace())
 }
 
 fn parse_scopes(value: &str) -> Result<BTreeSet<RemoteAccessScope>, RemoteTokenVerificationError> {
@@ -266,6 +270,14 @@ mod tests {
         let mut control_identity = active_response();
         control_identity.workspace_id = Some("workspace\ninjected".to_owned());
         assert!(verify(control_identity).is_err());
+
+        let mut whitespace_identity = active_response();
+        whitespace_identity.client_id = Some(" client_01".to_owned());
+        assert!(verify(whitespace_identity).is_err());
+
+        let mut whitespace_issuer = active_response();
+        whitespace_issuer.issuer = Some("https://identity.example.test ".to_owned());
+        assert!(verify(whitespace_issuer).is_err());
 
         let mut excessive_audiences = active_response();
         excessive_audiences.audience = vec!["audience".to_owned(); MAX_REMOTE_AUDIENCES + 1];

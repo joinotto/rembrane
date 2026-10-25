@@ -194,6 +194,8 @@ This roadmap describes sequencing, not release dates.
   - [x] Add a fail-closed verified-token claims contract.
     - [x] Bound and reject ambiguous issuer, resource, audience, subject,
       client, and workspace claims in the transport-neutral verifier contract.
+      - [x] Reject whitespace-bearing identity and authority claims before
+        they can become canonical tenant bindings.
   - [x] Add a transport-independent authentication boundary backed by a
     signature-verifying or authenticated-introspection adapter.
   - [x] Add an RFC 7662 authenticated-introspection adapter with a

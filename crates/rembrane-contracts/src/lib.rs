@@ -361,7 +361,11 @@ impl RemoteTokenClaims {
 }
 
 fn valid_remote_claim(value: &str, maximum_bytes: usize) -> bool {
-    !value.is_empty() && value.len() <= maximum_bytes && !value.chars().any(char::is_control)
+    !value.is_empty()
+        && value.len() <= maximum_bytes
+        && !value
+            .chars()
+            .any(|character| character.is_control() || character.is_whitespace())
 }
 
 impl VerifiedRemoteAccess {
@@ -642,6 +646,20 @@ mod tests {
         assert_eq!(
             validate(control_identity).expect_err("control-bearing identity must fail"),
             RemoteAccessError::Identity
+        );
+
+        let mut whitespace_identity = claims(&[RemoteAccessScope::ContextRead]);
+        whitespace_identity.client_id = ClientId::new(" client_01");
+        assert_eq!(
+            validate(whitespace_identity).expect_err("whitespace-bearing identity must fail"),
+            RemoteAccessError::Identity
+        );
+
+        let mut whitespace_audience = claims(&[RemoteAccessScope::ContextRead]);
+        whitespace_audience.audience = vec!["https://memory.example.test/mcp ".to_owned()];
+        assert_eq!(
+            validate(whitespace_audience).expect_err("whitespace-bearing audience must fail"),
+            RemoteAccessError::Audience
         );
 
         let mut oversized_identity = claims(&[RemoteAccessScope::ContextRead]);
