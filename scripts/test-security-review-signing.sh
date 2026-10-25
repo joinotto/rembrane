@@ -108,6 +108,22 @@ then
     exit 1
 fi
 
+cp -R "$temporary_directory/signed" "$temporary_directory/wildcard-checksum"
+wildcard_digest=$(
+    openssl dgst -sha256 \
+        "$temporary_directory/wildcard-checksum/security-review-manifest.json" |
+        awk '{print $NF}'
+)
+printf '%s  %s\n' "$wildcard_digest" security-review-manifestXjson \
+    >"$temporary_directory/wildcard-checksum/security-review-manifest.json.sha256"
+if sh "$review_repository/scripts/verify-security-review-bundle.sh" \
+    "$temporary_directory/wildcard-checksum" \
+    "$temporary_directory/public.pem" >/dev/null 2>&1
+then
+    echo "security review bundle accepted an inexact checksum filename" >&2
+    exit 1
+fi
+
 cp "$temporary_directory/signed/security-review-manifest.json.sig" \
     "$temporary_directory/oversized.sig"
 printf '\000' >>"$temporary_directory/oversized.sig"

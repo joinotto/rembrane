@@ -57,13 +57,13 @@ verify_checksum() {
     file=$1
     checksum=$2
     expected_name=$3
-    if ! grep -Eq "^[0-9a-f]{64}  ${expected_name}$" "$checksum"; then
-        echo "security review bundle checksum format is invalid: $expected_name" >&2
-        exit 1
-    fi
-    expected=$(awk '{ print $1 }' "$checksum")
     actual=$(openssl dgst -sha256 "$file" | awk '{print $NF}')
-    if [ "$expected" != "$actual" ]; then
+    expected_record=$(printf '%s  %s' "$actual" "$expected_name")
+    recorded_bytes=$(wc -c <"$checksum" | tr -d ' ')
+    expected_bytes=$((${#expected_record} + 1))
+    if [ "$recorded_bytes" -ne "$expected_bytes" ] ||
+        [ "$(cat "$checksum")" != "$expected_record" ]
+    then
         echo "security review bundle checksum is invalid: $expected_name" >&2
         exit 1
     fi
