@@ -1282,7 +1282,7 @@ dependencies = [
 name = "rembrane-key-provider-http"
 version = "0.1.0-alpha.1"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.23.1",
  "bytes",
  "rembrane-crypto",
  "rembrane-domain",
@@ -1393,7 +1393,7 @@ dependencies = [
 name = "rembrane-provider-registry"
 version = "0.1.0-alpha.1"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.23.1",
  "chrono",
  "rembrane-provider-sdk",
  "ring",
