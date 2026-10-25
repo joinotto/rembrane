@@ -34,8 +34,8 @@ pub use booking_research::{
     BookingResearch, BookingResearchError, BookingResearchKind, ResearchFreshness,
 };
 pub use disclosure::{
-    CheckpointDisclosureReceipt, DisclosedBookingResearch, DisclosedMemory, DisclosureReceipt,
-    TravelDisclosureReceipt,
+    CheckpointDisclosureReceipt, DisclosedBookingResearch, DisclosedKnowledgeEdge, DisclosedMemory,
+    DisclosureReceipt, GraphDisclosureDirection, GraphDisclosureReceipt, TravelDisclosureReceipt,
 };
 pub use event::{CanonicalEvent, EventError, EventPayload};
 pub use grant::{ReadGrant, ReadPermission, ReadScope, WriteGrant, WritePermission};

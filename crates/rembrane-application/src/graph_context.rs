@@ -1,30 +1,35 @@
-use rembrane_domain::{KnowledgeEdge, KnowledgeNodeId, ReadGrant};
+use rembrane_domain::{
+    DisclosedKnowledgeEdge, DisclosureId, GraphDisclosureDirection, GraphDisclosureReceipt,
+    KnowledgeEdge, KnowledgeNodeId, ReadGrant,
+};
 use rembrane_provider_sdk::{
     CURRENT_PROVIDER_PROTOCOL, Capability, GraphDirection, GraphNeighbourQuery,
     KnowledgeGraphProvider, ProviderPolicy, validate_graph_candidates,
 };
 
-use crate::{ApplicationError, KnowledgeGraphRepository};
+use crate::{ApplicationError, GraphContextRepository};
 
 pub struct ResolveGraphContextCommand {
     pub query: GraphNeighbourQuery,
     pub grant: ReadGrant,
+    pub disclosure_id: DisclosureId,
+    pub purpose: String,
 }
 
 /// Resolves graph-provider candidates only after exact canonical tenant,
 /// version, endpoint, direction, and temporal reauthorization.
 pub struct GraphContextService<'service, Repository, Provider> {
-    repository: &'service Repository,
+    repository: &'service mut Repository,
     provider: &'service Provider,
 }
 
 impl<'service, Repository, Provider> GraphContextService<'service, Repository, Provider>
 where
-    Repository: KnowledgeGraphRepository,
+    Repository: GraphContextRepository,
     Provider: KnowledgeGraphProvider,
 {
     #[must_use]
-    pub const fn new(repository: &'service Repository, provider: &'service Provider) -> Self {
+    pub const fn new(repository: &'service mut Repository, provider: &'service Provider) -> Self {
         Self {
             repository,
             provider,
@@ -32,7 +37,7 @@ where
     }
 
     pub fn execute(
-        &self,
+        &mut self,
         command: ResolveGraphContextCommand,
     ) -> Result<Vec<KnowledgeEdge>, ApplicationError> {
         if command.grant.workspace_id != command.query.workspace_id {
@@ -94,7 +99,33 @@ where
                 edges.push(edge);
             }
         }
+        self.repository
+            .append_graph_disclosure(GraphDisclosureReceipt {
+                id: command.disclosure_id,
+                workspace_id: provider_query.workspace_id,
+                subject_id: command.grant.subject_id,
+                client_id: command.grant.client_id,
+                purpose: command.purpose,
+                node_id: provider_query.node_id,
+                direction: disclosure_direction(provider_query.direction),
+                valid_at_epoch_seconds: provider_query.valid_at_epoch_seconds,
+                edges: edges
+                    .iter()
+                    .map(|edge| DisclosedKnowledgeEdge {
+                        id: edge.id().clone(),
+                        version: edge.version(),
+                    })
+                    .collect(),
+            })?;
         Ok(edges)
+    }
+}
+
+const fn disclosure_direction(direction: GraphDirection) -> GraphDisclosureDirection {
+    match direction {
+        GraphDirection::Incoming => GraphDisclosureDirection::Incoming,
+        GraphDirection::Outgoing => GraphDisclosureDirection::Outgoing,
+        GraphDirection::Both => GraphDisclosureDirection::Both,
     }
 }
 
@@ -113,7 +144,8 @@ fn matches_direction(
 #[cfg(test)]
 mod tests {
     use rembrane_domain::{
-        ClientId, EvidenceId, EvidenceReference, EvidenceSource, KnowledgeEdge, KnowledgeEdgeId,
+        ClientId, DisclosureId, EvidenceId, EvidenceReference, EvidenceSource,
+        GraphDisclosureDirection, GraphDisclosureReceipt, KnowledgeEdge, KnowledgeEdgeId,
         KnowledgeNode, KnowledgeNodeId, KnowledgeRelationType, PrincipalId, ReadGrant, ReadScope,
         TemporalValidity, WorkspaceId,
     };
@@ -123,12 +155,29 @@ mod tests {
         ProviderManifest,
     };
 
-    use crate::{ApplicationError, KnowledgeDirection, KnowledgeGraphRepository};
+    use crate::{
+        ApplicationError, GraphDisclosureRepository, KnowledgeDirection, KnowledgeGraphRepository,
+    };
 
     use super::{GraphContextService, ResolveGraphContextCommand};
 
     struct Repository {
         edges: Vec<KnowledgeEdge>,
+        disclosures: Vec<GraphDisclosureReceipt>,
+        fail_disclosure: bool,
+    }
+
+    impl GraphDisclosureRepository for Repository {
+        fn append_graph_disclosure(
+            &mut self,
+            receipt: GraphDisclosureReceipt,
+        ) -> Result<(), ApplicationError> {
+            if self.fail_disclosure {
+                return Err(ApplicationError::StorageUnavailable);
+            }
+            self.disclosures.push(receipt);
+            Ok(())
+        }
     }
 
     impl KnowledgeGraphRepository for Repository {
@@ -258,6 +307,8 @@ mod tests {
                 scopes: vec![ReadScope::Global],
                 permissions: Vec::new(),
             },
+            disclosure_id: DisclosureId::new("disclosure_01"),
+            purpose: "assistant_graph_context".to_owned(),
         }
     }
 
@@ -269,6 +320,8 @@ mod tests {
                 edge("wrong_direction", "workspace_01", "rust", "project", 1),
                 edge("other_workspace", "workspace_02", "project", "secret", 1),
             ],
+            disclosures: Vec::new(),
+            fail_disclosure: false,
         };
         let provider = Provider {
             candidates: vec![
@@ -291,12 +344,21 @@ mod tests {
             ],
         };
 
-        let edges = GraphContextService::new(&repository, &provider)
+        let mut repository = repository;
+        let edges = GraphContextService::new(&mut repository, &provider)
             .execute(command("workspace_01", 150))
             .expect("graph context");
 
         assert_eq!(edges.len(), 1);
         assert_eq!(edges[0].id().as_str(), "valid");
+        assert_eq!(repository.disclosures.len(), 1);
+        assert_eq!(repository.disclosures[0].edges.len(), 1);
+        assert_eq!(repository.disclosures[0].edges[0].id.as_str(), "valid");
+        assert_eq!(repository.disclosures[0].edges[0].version, 2);
+        assert_eq!(
+            repository.disclosures[0].direction,
+            GraphDisclosureDirection::Outgoing
+        );
     }
 
     #[test]
@@ -306,6 +368,8 @@ mod tests {
                 edge("stale", "workspace_01", "project", "rust", 2),
                 edge("expired", "workspace_01", "project", "old", 1),
             ],
+            disclosures: Vec::new(),
+            fail_disclosure: false,
         };
         let provider = Provider {
             candidates: vec![
@@ -322,16 +386,23 @@ mod tests {
 
         let mut command = command("workspace_01", 250);
         command.query.direction = GraphDirection::Both;
-        let edges = GraphContextService::new(&repository, &provider)
+        let mut repository = repository;
+        let edges = GraphContextService::new(&mut repository, &provider)
             .execute(command)
             .expect("graph context");
 
         assert!(edges.is_empty());
+        assert_eq!(repository.disclosures.len(), 1);
+        assert!(repository.disclosures[0].edges.is_empty());
     }
 
     #[test]
     fn rejects_a_grant_for_another_workspace() {
-        let repository = Repository { edges: Vec::new() };
+        let mut repository = Repository {
+            edges: Vec::new(),
+            disclosures: Vec::new(),
+            fail_disclosure: false,
+        };
         let provider = Provider {
             candidates: Vec::new(),
         };
@@ -339,8 +410,31 @@ mod tests {
         command.grant.workspace_id = WorkspaceId::new("workspace_02");
 
         assert_eq!(
-            GraphContextService::new(&repository, &provider).execute(command),
+            GraphContextService::new(&mut repository, &provider).execute(command),
             Err(ApplicationError::AccessDenied)
         );
+        assert!(repository.disclosures.is_empty());
+    }
+
+    #[test]
+    fn refuses_to_return_context_when_disclosure_persistence_fails() {
+        let mut repository = Repository {
+            edges: vec![edge("valid", "workspace_01", "project", "rust", 2)],
+            disclosures: Vec::new(),
+            fail_disclosure: true,
+        };
+        let provider = Provider {
+            candidates: vec![CandidateKnowledgeEdge {
+                edge_id: KnowledgeEdgeId::new("valid"),
+                version: 2,
+            }],
+        };
+
+        assert_eq!(
+            GraphContextService::new(&mut repository, &provider)
+                .execute(command("workspace_01", 150)),
+            Err(ApplicationError::StorageUnavailable)
+        );
+        assert!(repository.disclosures.is_empty());
     }
 }

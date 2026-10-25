@@ -413,6 +413,11 @@ This roadmap describes sequencing, not release dates.
     before exposing graph context.
     - [x] Require the graph-context command's verified read grant to match the
       requested workspace before invoking any provider or repository.
+    - [x] Require append-only disclosure evidence containing the exact
+      canonical edge revisions, query direction, validity time, client,
+      subject, and purpose before returning graph context.
+    - [ ] Persist graph disclosure evidence in the in-memory, SQLite, and
+      PostgreSQL repository adapters with tenant-isolation coverage.
   - [x] Add local SQLite graph persistence and Graphiti projection adapter.
     - [x] Construct Graphiti from validated provider profiles through any
       deployment-selected secret resolver without fixed credential names.

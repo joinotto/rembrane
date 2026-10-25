@@ -3,13 +3,14 @@ use rembrane_contracts::{
 };
 use rembrane_domain::{
     ActivityCheckpoint, ActivityId, AdministrativeAuditEvent, BookingResearch, BookingResearchId,
-    CanonicalEvent, CheckpointDisclosureReceipt, DisclosureReceipt, EntityId, GraphProjectionJob,
-    Invitation, InvitationId, InvitationStatus, KeyRotationId, KeyRotationReceipt, KnowledgeEdge,
-    KnowledgeEdgeId, KnowledgeNode, KnowledgeNodeId, LegalHoldId, MemberScopeGrant, Membership,
-    MembershipStatus, MemoryId, MemoryRecord, MemoryShareProposal, Principal, PrincipalId,
-    ProjectionJob, ProjectionJobId, ProjectionStatus, ProviderId, ShareProposalId,
-    ShareProposalStatus, TravelDisclosureReceipt, Trip, Workspace, WorkspaceId,
-    WorkspaceKeyRotation, WorkspaceLegalHold, WorkspaceRetentionPolicy,
+    CanonicalEvent, CheckpointDisclosureReceipt, DisclosureReceipt, EntityId,
+    GraphDisclosureReceipt, GraphProjectionJob, Invitation, InvitationId, InvitationStatus,
+    KeyRotationId, KeyRotationReceipt, KnowledgeEdge, KnowledgeEdgeId, KnowledgeNode,
+    KnowledgeNodeId, LegalHoldId, MemberScopeGrant, Membership, MembershipStatus, MemoryId,
+    MemoryRecord, MemoryShareProposal, Principal, PrincipalId, ProjectionJob, ProjectionJobId,
+    ProjectionStatus, ProviderId, ShareProposalId, ShareProposalStatus, TravelDisclosureReceipt,
+    Trip, Workspace, WorkspaceId, WorkspaceKeyRotation, WorkspaceLegalHold,
+    WorkspaceRetentionPolicy,
 };
 
 use crate::ApplicationError;
@@ -354,6 +355,17 @@ impl<T> TravelContextRepository for T where
     T: TripRepository + BookingResearchRepository + TravelDisclosureRepository
 {
 }
+
+pub trait GraphDisclosureRepository {
+    fn append_graph_disclosure(
+        &mut self,
+        receipt: GraphDisclosureReceipt,
+    ) -> Result<(), ApplicationError>;
+}
+
+pub trait GraphContextRepository: KnowledgeGraphRepository + GraphDisclosureRepository {}
+
+impl<T> GraphContextRepository for T where T: KnowledgeGraphRepository + GraphDisclosureRepository {}
 
 pub trait EventRepository {
     fn append_event(

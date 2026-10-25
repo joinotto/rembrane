@@ -1,6 +1,6 @@
 use crate::{
     ActivityId, BookingResearchId, CheckpointId, ClientId, ContextPackId, DisclosureId, EntityId,
-    MemoryId, PrincipalId, ResearchFreshness, WorkspaceId,
+    KnowledgeEdgeId, KnowledgeNodeId, MemoryId, PrincipalId, ResearchFreshness, WorkspaceId,
 };
 
 /// Identifies the exact memory revision disclosed to a client.
@@ -45,6 +45,35 @@ pub struct TravelDisclosureReceipt {
     pub source_references_included: bool,
     pub sensitive_profile_included: bool,
     pub research: Vec<DisclosedBookingResearch>,
+}
+
+/// Identifies the exact canonical knowledge-edge revision disclosed.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DisclosedKnowledgeEdge {
+    pub id: KnowledgeEdgeId,
+    pub version: u64,
+}
+
+/// Direction used for an audited graph-context disclosure.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum GraphDisclosureDirection {
+    Incoming,
+    Outgoing,
+    Both,
+}
+
+/// Append-only audit record for one canonical graph-context disclosure.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GraphDisclosureReceipt {
+    pub id: DisclosureId,
+    pub workspace_id: WorkspaceId,
+    pub subject_id: PrincipalId,
+    pub client_id: ClientId,
+    pub purpose: String,
+    pub node_id: KnowledgeNodeId,
+    pub direction: GraphDisclosureDirection,
+    pub valid_at_epoch_seconds: u64,
+    pub edges: Vec<DisclosedKnowledgeEdge>,
 }
 
 /// An append-only audit record created when memory crosses a trust boundary.
