@@ -164,6 +164,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Supermemory retrieval, readiness, and exact deletion now reject provider
   document-identity substitution instead of trusting uncorrelated canonical
   memory metadata returned by the external index.
+- Mem0 projections now include a deployment-keyed HMAC binding over workspace,
+  memory, and version identity; search, replacement, and deletion fail closed
+  on missing or altered bindings. Existing unbound namespaces require reindex.
 - PostgreSQL invitation lookup and bounded deterministic listing with optional
   status filtering, numeric lifetime decoding, terminal-state restoration,
   and exact tenant/invitation correlation.

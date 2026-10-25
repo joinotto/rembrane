@@ -838,6 +838,8 @@ This roadmap describes sequencing, not release dates.
     conformance run produces reviewable evidence.
     - [x] Fail closed when Supermemory search or exact-deletion responses bind
       canonical memory metadata to a substituted provider document identity.
+    - [x] Authenticate Mem0 workspace, memory, and version metadata with a
+      deployment-keyed binding before retrieval or lifecycle mutations.
 - [x] WhatsApp Business gateway.
   - [x] Verify webhook HMAC-SHA256 over the raw bounded payload before parsing
     and derive keyed pseudonymous sender/account lookup identifiers.

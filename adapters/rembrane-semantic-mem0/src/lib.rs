@@ -33,6 +33,7 @@ pub struct Mem0Record {
     provider_id: String,
     canonical_memory_id: MemoryId,
     canonical_version: u64,
+    canonical_binding: String,
     score_millionths: Option<u32>,
 }
 
@@ -41,13 +42,19 @@ impl Mem0Record {
         provider_id: impl Into<String>,
         canonical_memory_id: MemoryId,
         canonical_version: u64,
+        canonical_binding: impl Into<String>,
         score_millionths: Option<u32>,
     ) -> Result<Self, ProviderError> {
         let provider_id = provider_id.into();
+        let canonical_binding = canonical_binding.into();
         if provider_id.is_empty()
             || provider_id.len() > MAXIMUM_PROVIDER_ID_BYTES
             || provider_id.chars().any(char::is_control)
             || canonical_version == 0
+            || canonical_binding.len() != 64
+            || !canonical_binding
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit())
             || score_millionths.is_some_and(|score| score > 1_000_000)
         {
             return Err(ProviderError::Rejected(
@@ -58,6 +65,7 @@ impl Mem0Record {
             provider_id,
             canonical_memory_id,
             canonical_version,
+            canonical_binding,
             score_millionths,
         })
     }
@@ -75,6 +83,7 @@ pub trait Mem0Transport {
         &mut self,
         user_id: &str,
         projection: &AuthorizedMemoryProjection,
+        canonical_binding: &str,
     ) -> Result<(), ProviderError>;
 
     fn search(
@@ -178,6 +187,7 @@ impl Mem0Transport for HttpMem0Transport {
         &mut self,
         user_id: &str,
         projection: &AuthorizedMemoryProjection,
+        canonical_binding: &str,
     ) -> Result<(), ProviderError> {
         let body = AddMemoryBody {
             messages: [MemoryMessage {
@@ -188,6 +198,7 @@ impl Mem0Transport for HttpMem0Transport {
             metadata: ProjectionMetadata {
                 memory_id: projection.memory_id.as_str(),
                 version: projection.version,
+                binding: canonical_binding,
             },
             infer: false,
         };
@@ -240,6 +251,8 @@ struct ProjectionMetadata<'value> {
     memory_id: &'value str,
     #[serde(rename = "rembrane_version")]
     version: u64,
+    #[serde(rename = "rembrane_binding")]
+    binding: &'value str,
 }
 
 #[derive(Serialize)]
@@ -294,8 +307,12 @@ struct WireMemory {
 
 #[derive(Deserialize)]
 struct ProjectionMetadataWire {
-    rembrane_memory_id: String,
-    rembrane_version: u64,
+    #[serde(rename = "rembrane_memory_id")]
+    memory_id: String,
+    #[serde(rename = "rembrane_version")]
+    version: u64,
+    #[serde(rename = "rembrane_binding")]
+    binding: String,
 }
 
 impl WireMemory {
@@ -314,8 +331,9 @@ impl WireMemory {
             .transpose()?;
         Mem0Record::new(
             self.id,
-            MemoryId::new(self.metadata.rembrane_memory_id),
-            self.metadata.rembrane_version,
+            MemoryId::new(self.metadata.memory_id),
+            self.metadata.version,
+            self.metadata.binding,
             score_millionths,
         )
     }
@@ -496,14 +514,72 @@ impl<Transport> Mem0SemanticProvider<Transport> {
 
     fn user_id(&self, workspace_id: &WorkspaceId) -> String {
         let signature = hmac::sign(&self.workspace_lookup_key, workspace_id.as_str().as_bytes());
-        let mut encoded = String::with_capacity(16 + 64);
-        encoded.push_str("rembrane_ws_");
-        for byte in signature.as_ref() {
-            use std::fmt::Write;
-            let _ = write!(encoded, "{byte:02x}");
-        }
-        encoded
+        encode_signature("rembrane_ws_", signature.as_ref())
     }
+
+    fn record_binding(
+        &self,
+        workspace_id: &WorkspaceId,
+        memory_id: &MemoryId,
+        version: u64,
+    ) -> String {
+        let message = record_binding_message(workspace_id, memory_id, version);
+        encode_signature(
+            "",
+            hmac::sign(&self.workspace_lookup_key, &message).as_ref(),
+        )
+    }
+
+    fn record_is_bound(&self, workspace_id: &WorkspaceId, record: &Mem0Record) -> bool {
+        let Some(tag) = decode_signature(&record.canonical_binding) else {
+            return false;
+        };
+        let message = record_binding_message(
+            workspace_id,
+            &record.canonical_memory_id,
+            record.canonical_version,
+        );
+        hmac::verify(&self.workspace_lookup_key, &message, &tag).is_ok()
+    }
+}
+
+fn record_binding_message(
+    workspace_id: &WorkspaceId,
+    memory_id: &MemoryId,
+    version: u64,
+) -> Vec<u8> {
+    let mut message =
+        Vec::with_capacity(15 + workspace_id.as_str().len() + memory_id.as_str().len() + 10);
+    message.extend_from_slice(b"record-binding\0");
+    message.extend_from_slice(workspace_id.as_str().as_bytes());
+    message.push(0);
+    message.extend_from_slice(memory_id.as_str().as_bytes());
+    message.push(0);
+    message.extend_from_slice(&version.to_be_bytes());
+    message
+}
+
+fn encode_signature(prefix: &str, signature: &[u8]) -> String {
+    let mut encoded = String::with_capacity(prefix.len() + signature.len() * 2);
+    encoded.push_str(prefix);
+    for byte in signature {
+        use std::fmt::Write;
+        let _ = write!(encoded, "{byte:02x}");
+    }
+    encoded
+}
+
+fn decode_signature(encoded: &str) -> Option<[u8; 32]> {
+    if encoded.len() != 64 {
+        return None;
+    }
+    let mut decoded = [0_u8; 32];
+    for (index, pair) in encoded.as_bytes().chunks_exact(2).enumerate() {
+        let high = char::from(pair[0]).to_digit(16)?;
+        let low = char::from(pair[1]).to_digit(16)?;
+        decoded[index] = u8::try_from((high << 4) | low).ok()?;
+    }
+    Some(decoded)
 }
 
 impl<Transport> SemanticMemoryProvider for Mem0SemanticProvider<Transport>
@@ -543,12 +619,25 @@ where
         }
         let user_id = self.user_id(&projection.workspace_id);
         let existing = self.transport.list(&user_id)?;
+        if existing
+            .iter()
+            .any(|record| !self.record_is_bound(&projection.workspace_id, record))
+        {
+            return Err(ProviderError::Rejected(
+                "Mem0 returned unbound canonical projection metadata".to_owned(),
+            ));
+        }
         for record in existing {
             if record.canonical_memory_id == projection.memory_id {
                 self.transport.delete(record.provider_id())?;
             }
         }
-        self.transport.add_exact(&user_id, &projection)
+        let binding = self.record_binding(
+            &projection.workspace_id,
+            &projection.memory_id,
+            projection.version,
+        );
+        self.transport.add_exact(&user_id, &projection, &binding)
     }
 
     fn search(&self, query: &SemanticQuery) -> Result<Vec<CandidateMemory>, ProviderError> {
@@ -566,6 +655,11 @@ where
             .transport
             .search(&user_id, &query.text, query.maximum_candidates)?
         {
+            if !self.record_is_bound(&query.workspace_id, &record) {
+                return Err(ProviderError::Rejected(
+                    "Mem0 returned unbound canonical projection metadata".to_owned(),
+                ));
+            }
             let candidate = CandidateMemory {
                 memory_id: record.canonical_memory_id,
                 version: record.canonical_version,
@@ -597,7 +691,16 @@ where
         through_version: u64,
     ) -> Result<(), ProviderError> {
         let user_id = self.user_id(workspace_id);
-        for record in self.transport.list(&user_id)? {
+        let records = self.transport.list(&user_id)?;
+        if records
+            .iter()
+            .any(|record| !self.record_is_bound(workspace_id, record))
+        {
+            return Err(ProviderError::Rejected(
+                "Mem0 returned unbound canonical projection metadata".to_owned(),
+            ));
+        }
+        for record in records {
             if &record.canonical_memory_id == memory_id
                 && record.canonical_version <= through_version
             {
@@ -658,12 +761,14 @@ mod tests {
             &mut self,
             user_id: &str,
             projection: &AuthorizedMemoryProjection,
+            canonical_binding: &str,
         ) -> Result<(), ProviderError> {
             self.next_id += 1;
             let record = Mem0Record::new(
                 format!("mem0_{}", self.next_id),
                 projection.memory_id.clone(),
                 projection.version,
+                canonical_binding,
                 Some(1_000_000),
             )?;
             self.records
@@ -734,7 +839,7 @@ mod tests {
 
     #[test]
     fn rejects_invalid_records_and_queries() {
-        assert!(Mem0Record::new("provider", MemoryId::new("memory"), 0, None).is_err());
+        assert!(Mem0Record::new("provider", MemoryId::new("memory"), 0, "", None).is_err());
         let provider =
             Mem0SemanticProvider::new(FakeMem0::default(), vec![8; 32]).expect("valid secret");
         assert!(
@@ -776,9 +881,61 @@ mod tests {
     }
 
     #[test]
+    fn rejects_unbound_provider_metadata_before_read_or_mutation() {
+        let workspace_id = WorkspaceId::new("workspace");
+        let memory_id = MemoryId::new("memory");
+        let mut provider =
+            Mem0SemanticProvider::new(FakeMem0::default(), vec![10; 32]).expect("valid secret");
+        provider
+            .index(AuthorizedMemoryProjection {
+                workspace_id: workspace_id.clone(),
+                memory_id: memory_id.clone(),
+                version: 1,
+                scope: MemoryScope::Global,
+                kind: MemoryKind::Semantic,
+                content: "Call me Hippo".to_owned(),
+            })
+            .expect("initial projection");
+        let user_id = provider.user_id(&workspace_id);
+        let record = provider
+            .transport
+            .records
+            .get_mut(&user_id)
+            .expect("workspace partition")
+            .first_mut()
+            .expect("record");
+        record.0.canonical_binding.replace_range(0..1, "f");
+
+        assert!(matches!(
+            provider.search(&SemanticQuery {
+                workspace_id: workspace_id.clone(),
+                text: "Hippo".to_owned(),
+                maximum_candidates: 10,
+            }),
+            Err(ProviderError::Rejected(_))
+        ));
+        assert!(matches!(
+            provider.delete(&workspace_id, &memory_id, 1),
+            Err(ProviderError::Rejected(_))
+        ));
+        assert!(matches!(
+            provider.index(AuthorizedMemoryProjection {
+                workspace_id,
+                memory_id,
+                version: 2,
+                scope: MemoryScope::Global,
+                kind: MemoryKind::Semantic,
+                content: "Call me Hippo again".to_owned(),
+            }),
+            Err(ProviderError::Rejected(_))
+        ));
+        assert_eq!(provider.transport.next_id, 1);
+    }
+
+    #[test]
     fn decodes_mem0_result_metadata_and_rejects_invalid_scores() {
         let collection: WireCollection = serde_json::from_str(
-            r#"{"results":[{"id":"provider-01","memory":"Call me Hippo","metadata":{"rembrane_memory_id":"memory_01","rembrane_version":2},"score":0.75}]}"#,
+            r#"{"results":[{"id":"provider-01","memory":"Call me Hippo","metadata":{"rembrane_memory_id":"memory_01","rembrane_version":2,"rembrane_binding":"0000000000000000000000000000000000000000000000000000000000000000"},"score":0.75}]}"#,
         )
         .expect("wire result should decode");
         let record = collection
@@ -792,7 +949,7 @@ mod tests {
         assert_eq!(record.score_millionths, Some(750_000));
 
         let collection: WireCollection = serde_json::from_str(
-            r#"[{"id":"provider-01","metadata":{"rembrane_memory_id":"memory_01","rembrane_version":2},"score":1.1}]"#,
+            r#"[{"id":"provider-01","metadata":{"rembrane_memory_id":"memory_01","rembrane_version":2,"rembrane_binding":"0000000000000000000000000000000000000000000000000000000000000000"},"score":1.1}]"#,
         )
         .expect("wire shape should decode");
         assert!(

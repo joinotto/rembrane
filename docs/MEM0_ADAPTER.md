@@ -7,6 +7,11 @@ The Rust mapping adapter accepts only already-authorized canonical
 projections. It derives a provider `user_id` by HMAC-signing the workspace ID
 with a deployment-owned lookup secret, so raw workspace identifiers are not
 sent to Mem0. Records retain canonical memory ID and version metadata.
+Every projected record also carries an HMAC binding over the canonical
+workspace ID, memory ID, and version. Search, replacement, and deletion reject
+records whose returned metadata does not verify under that deployment-owned
+key, preventing an untrusted provider response from substituting canonical
+identity metadata.
 
 Indexing replaces every older provider record for the same canonical memory.
 Search returns bounded canonical candidates and collapses duplicate provider
@@ -45,6 +50,10 @@ cloud secret manager. Never reuse the API key as the workspace lookup secret.
 exactly two ordered references—API key first, independent workspace lookup
 secret second—and resolves both through the deployment-selected
 `SecretResolver`.
+
+Namespaces created by adapter versions that predate the metadata binding must
+be reindexed into a fresh disposable namespace. Legacy unbound records fail
+closed and are not read, replaced, or deleted automatically.
 
 The CLI can execute the destructive shared conformance suite against an
 operator-owned disposable Mem0 instance. It requires `MEM0_BASE_URL`,
