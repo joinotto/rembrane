@@ -812,6 +812,8 @@ This roadmap describes sequencing, not release dates.
     signature, and provider conformance semantics in one process.
     - [x] Self-verify each newly signed bundle before publishing its path and
       reject correctly signed registries with invalid semantics.
+    - [x] Publish the exact bundle separately from its independently trusted
+      public key and verify the bundle before release upload.
 - [x] Canonically parse and bound bring-your-own provider endpoints, allowing
   plaintext loopback only inside a declared trusted boundary.
 - [x] Enforce provider protocol and declared limits at projection and retrieval

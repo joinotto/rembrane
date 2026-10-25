@@ -55,6 +55,10 @@ To consume a newer release registry without rebuilding, provide the registry,
 its detached signature, and a separately trusted release public key together:
 
 ```sh
+./scripts/verify-provider-registry-bundle.sh \
+  provider-registry-bundle/ \
+  provider-registry-signing-public.pem
+
 target/debug/rembrane providers check \
   --provider rembrane.native \
   --adapter-version 0.1.0-alpha.1 \
@@ -68,6 +72,10 @@ target/debug/rembrane providers check \
 ```
 
 Do not obtain the public key from the same untrusted location as the registry.
+The bundle directory contains exactly `provider-registry.json`, its checksum,
+and its signature; keep the public key outside that directory. Verification
+checks the exact inventory, checksum, signature, registry schema, provider
+states, and conformance evidence before the registry reaches the CLI.
 The resulting selection receipt includes the SHA-256 fingerprint of the
 canonical Ed25519 public-key DER bytes for trust-anchor auditing.
 Persist the accepted receipt's `registrySha256` and `registryGeneratedAt` when

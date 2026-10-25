@@ -1034,6 +1034,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Provider-registry and security-review signing now share an Ed25519-only
   signer that opens owner-only private keys without following symlinks, zeros
   the input key buffer after construction, and writes signatures exclusively.
+- Provider-registry releases now publish the exact three-file signed bundle in
+  a dedicated directory, keep the public key outside that bundle, and execute
+  full checksum, signature, and semantic verification before upload.
 - Restored the complete dependency-enabled workspace build by declaring
   previously implicit crate dependencies and enabling rmcp's stdio transport.
 - Corrected Memory Provider selector field casing and URL path construction so

@@ -37,12 +37,13 @@ jobs:
         env:
           REMBRANE_REGISTRY_SIGNING_KEY: ${{ runner.temp }}/registry-signing-key.pem
         run: |
-          ./scripts/sign-provider-registry.sh
+          ./scripts/sign-provider-registry.sh \
+            spec/provider-registry.json \
+            dist/provider-registry/bundle
+          ./scripts/verify-provider-registry-bundle.sh \
+            dist/provider-registry/bundle \
+            "$RUNNER_TEMP/registry-signing-public.pem"
           cp "$RUNNER_TEMP/registry-signing-public.pem" \
-            dist/provider-registry/provider-registry-signing-public.pem
-          ./scripts/verify-provider-registry-signature.sh \
-            dist/provider-registry/provider-registry.json \
-            dist/provider-registry/provider-registry.json.sig \
             dist/provider-registry/provider-registry-signing-public.pem
       - name: Upload immutable workflow artifact
         uses: actions/upload-artifact@v4
@@ -57,7 +58,8 @@ jobs:
         run: >-
           gh release upload
           "${{ github.event.release.tag_name }}"
-          dist/provider-registry/*
+          dist/provider-registry/bundle/*
+          dist/provider-registry/provider-registry-signing-public.pem
           --clobber
       - name: Remove ephemeral private key
         if: always()
