@@ -40,6 +40,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Typed PostgreSQL workspace lookup through the verified tenant transaction,
   with exact identifier matching, closed workspace-kind decoding, bounded
   cardinality, and commit-on-success behavior.
+- Typed PostgreSQL membership lookup with exact tenant/principal correlation,
+  closed role and lifecycle-status decoding, bounded cardinality, and
+  rollback-on-invalid-row behavior.
 
 ### Changed
 

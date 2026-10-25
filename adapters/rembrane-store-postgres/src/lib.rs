@@ -7,12 +7,15 @@
 use std::error::Error;
 use std::fmt::{self, Display, Formatter};
 
-use rembrane_domain::{Workspace, WorkspaceId};
+use rembrane_domain::{Membership, PrincipalId, Workspace, WorkspaceId, WorkspaceRole};
 
 pub const SET_TENANT_SQL: &str = "SELECT set_config('rembrane.workspace_id', $1, true);";
 pub const READ_TENANT_SQL: &str = "SELECT rembrane.current_workspace_id();";
 pub const FIND_WORKSPACE_SQL: &str =
     "SELECT id, kind FROM workspaces WHERE id = $1 ORDER BY id LIMIT 2";
+pub const FIND_MEMBERSHIP_SQL: &str = "SELECT workspace_id, principal_id, role, status \
+    FROM memberships WHERE workspace_id = $1 AND principal_id = $2 \
+    ORDER BY workspace_id, principal_id LIMIT 2";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PostgresParameter<'value> {
@@ -166,6 +169,35 @@ impl<Pool: PostgresPool> PostgresStore<Pool> {
         transaction.commit().map_err(PostgresStoreError::Tenant)?;
         Ok(workspace)
     }
+
+    pub fn find_membership(
+        &self,
+        workspace_id: &WorkspaceId,
+        principal_id: &PrincipalId,
+    ) -> Result<Option<Membership>, PostgresStoreError<Pool::Error>>
+    where
+        <Pool::Transaction as PostgresTransaction>::Row: PostgresRow<Error = Pool::Error>,
+    {
+        let mut transaction = self.begin_tenant(workspace_id.clone())?;
+        let rows = transaction
+            .query(
+                FIND_MEMBERSHIP_SQL,
+                &[
+                    PostgresParameter::Text(workspace_id.as_str()),
+                    PostgresParameter::Text(principal_id.as_str()),
+                ],
+            )
+            .map_err(PostgresStoreError::Tenant)?;
+        if rows.len() > 1 {
+            return Err(PostgresStoreError::UnexpectedCardinality);
+        }
+        let membership = rows
+            .first()
+            .map(|row| decode_membership(row, workspace_id, principal_id))
+            .transpose()?;
+        transaction.commit().map_err(PostgresStoreError::Tenant)?;
+        Ok(membership)
+    }
 }
 
 fn decode_workspace<Row, DriverError>(
@@ -182,6 +214,45 @@ where
     match row.text("kind").map_err(PostgresStoreError::Row)?.as_str() {
         "personal" => Ok(Workspace::personal(WorkspaceId::new(id))),
         "shared" => Ok(Workspace::shared(WorkspaceId::new(id))),
+        _ => Err(PostgresStoreError::InvalidRow),
+    }
+}
+
+fn decode_membership<Row, DriverError>(
+    row: &Row,
+    expected_workspace_id: &WorkspaceId,
+    expected_principal_id: &PrincipalId,
+) -> Result<Membership, PostgresStoreError<DriverError>>
+where
+    Row: PostgresRow<Error = DriverError>,
+{
+    let workspace_id = row.text("workspace_id").map_err(PostgresStoreError::Row)?;
+    let principal_id = row.text("principal_id").map_err(PostgresStoreError::Row)?;
+    if workspace_id != expected_workspace_id.as_str()
+        || principal_id != expected_principal_id.as_str()
+    {
+        return Err(PostgresStoreError::InvalidRow);
+    }
+    let role = match row.text("role").map_err(PostgresStoreError::Row)?.as_str() {
+        "owner" => WorkspaceRole::Owner,
+        "admin" => WorkspaceRole::Admin,
+        "member" => WorkspaceRole::Member,
+        "viewer" => WorkspaceRole::Viewer,
+        _ => return Err(PostgresStoreError::InvalidRow),
+    };
+    let membership = Membership::new(
+        WorkspaceId::new(workspace_id),
+        PrincipalId::new(principal_id),
+        role,
+    );
+    match row
+        .text("status")
+        .map_err(PostgresStoreError::Row)?
+        .as_str()
+    {
+        "active" => Ok(membership),
+        "suspended" => Ok(membership.suspend()),
+        "removed" => Ok(membership.remove()),
         _ => Err(PostgresStoreError::InvalidRow),
     }
 }
@@ -324,14 +395,14 @@ impl<Transaction: PostgresTransaction> Drop for TenantTransaction<Transaction> {
 #[cfg(test)]
 mod tests {
     use std::cell::RefCell;
-    use std::collections::VecDeque;
+    use std::collections::{BTreeMap, VecDeque};
     use std::rc::Rc;
 
     use rembrane_domain::WorkspaceId;
 
     use super::{
-        FIND_WORKSPACE_SQL, PostgresParameter, PostgresPool, PostgresRow, PostgresStore,
-        PostgresStoreError, PostgresTransaction, READ_TENANT_SQL, SET_TENANT_SQL,
+        FIND_MEMBERSHIP_SQL, FIND_WORKSPACE_SQL, PostgresParameter, PostgresPool, PostgresRow,
+        PostgresStore, PostgresStoreError, PostgresTransaction, READ_TENANT_SQL, SET_TENANT_SQL,
         TenantTransaction, TenantTransactionError,
     };
 
@@ -349,15 +420,24 @@ mod tests {
 
     #[derive(Clone, Debug, Eq, PartialEq)]
     struct FakeRow {
-        id: String,
-        kind: String,
+        columns: BTreeMap<&'static str, String>,
     }
 
     impl FakeRow {
         fn workspace(id: &str, kind: &str) -> Self {
             Self {
-                id: id.to_owned(),
-                kind: kind.to_owned(),
+                columns: BTreeMap::from([("id", id.to_owned()), ("kind", kind.to_owned())]),
+            }
+        }
+
+        fn membership(workspace_id: &str, principal_id: &str, role: &str, status: &str) -> Self {
+            Self {
+                columns: BTreeMap::from([
+                    ("workspace_id", workspace_id.to_owned()),
+                    ("principal_id", principal_id.to_owned()),
+                    ("role", role.to_owned()),
+                    ("status", status.to_owned()),
+                ]),
             }
         }
     }
@@ -366,11 +446,7 @@ mod tests {
         type Error = &'static str;
 
         fn text(&self, column: &str) -> Result<String, Self::Error> {
-            match column {
-                "id" => Ok(self.id.clone()),
-                "kind" => Ok(self.kind.clone()),
-                _ => Err("unknown column"),
-            }
+            self.columns.get(column).cloned().ok_or("unknown column")
         }
     }
 
@@ -679,6 +755,109 @@ mod tests {
             assert!(
                 store
                     .find_workspace(&WorkspaceId::new("workspace_01"))
+                    .is_err()
+            );
+            assert_eq!(calls.borrow().last(), Some(&Call::Rollback));
+        }
+    }
+
+    #[test]
+    fn membership_lookup_decodes_exact_authorization_state() {
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let store = PostgresStore::new(FakePool {
+            calls: Rc::clone(&calls),
+            tenant_batches: RefCell::new(
+                [VecDeque::from([
+                    Ok(Some("workspace_01".to_owned())),
+                    Ok(Some("workspace_01".to_owned())),
+                ])]
+                .into(),
+            ),
+            row_batches: RefCell::new(
+                [vec![FakeRow::membership(
+                    "workspace_01",
+                    "principal_01",
+                    "admin",
+                    "suspended",
+                )]]
+                .into(),
+            ),
+        });
+
+        let membership = store
+            .find_membership(
+                &WorkspaceId::new("workspace_01"),
+                &rembrane_domain::PrincipalId::new("principal_01"),
+            )
+            .expect("membership lookup")
+            .expect("membership");
+        assert_eq!(membership.role(), rembrane_domain::WorkspaceRole::Admin);
+        assert_eq!(
+            membership.status(),
+            rembrane_domain::MembershipStatus::Suspended
+        );
+        assert!(calls.borrow().contains(&Call::Query(
+            FIND_MEMBERSHIP_SQL.to_owned(),
+            vec![
+                "text:workspace_01".to_owned(),
+                "text:principal_01".to_owned()
+            ]
+        )));
+        assert_eq!(calls.borrow().last(), Some(&Call::Commit));
+    }
+
+    #[test]
+    fn membership_lookup_rejects_mismatched_unknown_or_duplicate_rows() {
+        let invalid_rows = [
+            vec![FakeRow::membership(
+                "workspace_other",
+                "principal_01",
+                "member",
+                "active",
+            )],
+            vec![FakeRow::membership(
+                "workspace_01",
+                "principal_other",
+                "member",
+                "active",
+            )],
+            vec![FakeRow::membership(
+                "workspace_01",
+                "principal_01",
+                "root",
+                "active",
+            )],
+            vec![FakeRow::membership(
+                "workspace_01",
+                "principal_01",
+                "member",
+                "unknown",
+            )],
+            vec![
+                FakeRow::membership("workspace_01", "principal_01", "member", "active"),
+                FakeRow::membership("workspace_01", "principal_01", "member", "active"),
+            ],
+        ];
+        for rows in invalid_rows {
+            let calls = Rc::new(RefCell::new(Vec::new()));
+            let store = PostgresStore::new(FakePool {
+                calls: Rc::clone(&calls),
+                tenant_batches: RefCell::new(
+                    [VecDeque::from([
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                    ])]
+                    .into(),
+                ),
+                row_batches: RefCell::new([rows].into()),
+            });
+
+            assert!(
+                store
+                    .find_membership(
+                        &WorkspaceId::new("workspace_01"),
+                        &rembrane_domain::PrincipalId::new("principal_01"),
+                    )
                     .is_err()
             );
             assert_eq!(calls.borrow().last(), Some(&Call::Rollback));
