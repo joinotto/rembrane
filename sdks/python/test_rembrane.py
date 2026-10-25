@@ -57,6 +57,12 @@ class RembraneClientTests(unittest.TestCase):
             client.discover()
         self.assertEqual(captured.exception.code, "invalid_discovery")
 
+        discovery["endpoints"]["api"] = "http://127.0.0.1:8787/v1"
+        discovery["privacy"]["plaintextProcessingLocation"] = "browser-extension"
+        with self.assertRaises(RembraneError) as captured:
+            client.discover()
+        self.assertEqual(captured.exception.code, "invalid_discovery")
+
     def test_audit_request_is_authenticated_and_tenant_explicit(self) -> None:
         calls = []
 

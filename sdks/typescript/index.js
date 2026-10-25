@@ -11,6 +11,12 @@ const DISCOVERY_PROCESSING_MODES = new Set([
   "customer-gateway",
   "local-only",
 ]);
+const DISCOVERY_PLAINTEXT_LOCATIONS = new Set([
+  "provider",
+  "customer-gateway",
+  "user-device",
+  "mode-dependent",
+]);
 const CHANNEL_MESSAGE_KEYS = [
   "channel",
   "clientId",
@@ -380,7 +386,9 @@ function validateMemoryDiscovery(value, expectedApi) {
     new Set(privacy.processingModes).size !== privacy.processingModes.length ||
     !privacy.processingModes.every((mode) =>
       DISCOVERY_PROCESSING_MODES.has(mode),
-    )
+    ) ||
+    (privacy.plaintextProcessingLocation !== undefined &&
+      !DISCOVERY_PLAINTEXT_LOCATIONS.has(privacy.plaintextProcessingLocation))
   ) {
     throw new RembraneError(
       200,

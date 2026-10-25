@@ -18,6 +18,12 @@ CHANNEL_PROCESSOR_CHANNELS = {
 }
 CHANNEL_PROCESSOR_STATUSES = {"processed", "duplicate"}
 DISCOVERY_PROCESSING_MODES = {"hosted", "customer-gateway", "local-only"}
+DISCOVERY_PLAINTEXT_LOCATIONS = {
+    "provider",
+    "customer-gateway",
+    "user-device",
+    "mode-dependent",
+}
 CHANNEL_PROCESSOR_MESSAGE_KEYS = {
     "protocolVersion",
     "channel",
@@ -58,6 +64,60 @@ BookingResearchKind = Literal[
     "activity",
     "other",
 ]
+MemoryProcessingMode = Literal["hosted", "customer-gateway", "local-only"]
+PlaintextProcessingLocation = Literal[
+    "provider",
+    "customer-gateway",
+    "user-device",
+    "mode-dependent",
+]
+
+
+class MemoryProviderIdentity(TypedDict):
+    id: str
+    name: str
+    implementation: NotRequired[str]
+
+
+class MemoryEndpoints(TypedDict):
+    api: str
+    oauthAuthorization: NotRequired[str]
+    oauthToken: NotRequired[str]
+    mcp: NotRequired[str]
+
+
+class MemoryCapabilities(TypedDict):
+    contextResolution: bool
+    memoryProposal: bool
+    activityCheckpoint: bool
+    disclosureReceipt: bool
+    deletionPropagation: bool
+    questionResolution: NotRequired[bool]
+    sync: NotRequired[bool]
+    imports: NotRequired[list[str]]
+    exports: NotRequired[list[str]]
+
+
+class MemoryLimits(TypedDict):
+    maximumContextItems: NotRequired[int]
+    maximumContextBytes: NotRequired[int]
+    maximumEventBytes: NotRequired[int]
+
+
+class MemoryPrivacy(TypedDict):
+    processingModes: list[MemoryProcessingMode]
+    disclosureReceipts: Literal[True]
+    plaintextProcessingLocation: NotRequired[PlaintextProcessingLocation]
+
+
+class MemoryDiscovery(TypedDict):
+    provider: MemoryProviderIdentity
+    protocolVersions: list[str]
+    endpoints: MemoryEndpoints
+    capabilities: MemoryCapabilities
+    privacy: MemoryPrivacy
+    limits: NotRequired[MemoryLimits]
+    extensions: NotRequired[dict[str, Any]]
 
 
 class TravelRequest(TypedDict):
@@ -267,7 +327,7 @@ class RembraneClient:
     def resolve_context(self, request: Mapping[str, Any]) -> Any:
         return self._request("POST", "/context/resolve", request)
 
-    def discover(self) -> Any:
+    def discover(self) -> MemoryDiscovery:
         parsed = urlsplit(self._base_url)
         url = f"{parsed.scheme}://{parsed.netloc}/.well-known/ai-memory"
         value = self._request_url("GET", url, None, authenticated=False)
@@ -554,7 +614,7 @@ def _validate_travel_request_identity(
         _opaque_path_id(participant_id, "participantId")
 
 
-def _validate_memory_discovery(value: Any, expected_api: str) -> dict[str, Any]:
+def _validate_memory_discovery(value: Any, expected_api: str) -> MemoryDiscovery:
     if type(value) is not dict:
         raise _invalid_discovery()
     provider = value.get("provider")
@@ -596,9 +656,14 @@ def _validate_memory_discovery(value: Any, expected_api: str) -> dict[str, Any]:
         or not all(
             mode in DISCOVERY_PROCESSING_MODES for mode in privacy["processingModes"]
         )
+        or (
+            "plaintextProcessingLocation" in privacy
+            and privacy["plaintextProcessingLocation"]
+            not in DISCOVERY_PLAINTEXT_LOCATIONS
+        )
     ):
         raise _invalid_discovery()
-    return dict(value)
+    return value
 
 
 def _normalize_api_root(value: Any) -> str | None:

@@ -5,6 +5,17 @@ export interface RembraneClientOptions {
   maximumResponseBytes?: number;
 }
 
+export type MemoryProcessingMode =
+  | "hosted"
+  | "customer-gateway"
+  | "local-only";
+
+export type PlaintextProcessingLocation =
+  | "provider"
+  | "customer-gateway"
+  | "user-device"
+  | "mode-dependent";
+
 export interface MemoryDiscovery {
   provider: {
     id: string;
@@ -32,9 +43,9 @@ export interface MemoryDiscovery {
     maximumEventBytes?: number;
   };
   privacy: {
-    processingModes: string[];
+    processingModes: MemoryProcessingMode[];
     disclosureReceipts: true;
-    plaintextProcessingLocation?: string;
+    plaintextProcessingLocation?: PlaintextProcessingLocation;
   };
 }
 

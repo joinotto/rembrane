@@ -65,6 +65,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - SDK discovery now fails closed unless provider identity, protocol versions,
   required capabilities, privacy modes, and the advertised API root are valid;
   the advertised root must match the configured client endpoint.
+- TypeScript and Python discovery contracts now expose closed privacy modes
+  and plaintext-processing locations; runtime discovery rejects unknown
+  plaintext locations before a provider can be selected.
 - Protected `env:` and `file:` credential references for each workspace actor
   in the portable Memory Provider conformance runner, with opaque failures,
   strict local-file validation, raw-variable compatibility, and

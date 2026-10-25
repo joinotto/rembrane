@@ -224,6 +224,8 @@ This roadmap describes sequencing, not release dates.
 - [x] Fail SDK discovery closed on malformed capabilities, privacy metadata,
   protocol versions, or an advertised API root that differs from the
   configured endpoint.
+- [x] Publish closed discovery privacy types in both SDKs and reject unknown
+  plaintext-processing locations before provider selection.
 - [ ] Add remote Streamable HTTP MCP with OAuth.
   - [x] Define HTTPS endpoints, RFC 9728 discovery metadata, bearer challenges,
     verified connection identity, scope ceilings, and session security rules.

@@ -235,6 +235,30 @@ await assert.rejects(
     error instanceof RembraneError && error.code === "invalid_discovery",
 );
 
+const invalidPrivacyDiscovery = new RembraneClient({
+  baseUrl: "https://memory.example.test/v1",
+  token: "must-not-leak",
+  fetch: async () => ({
+    ok: true,
+    status: 200,
+    headers: { get: () => "application/json" },
+    text: async () =>
+      JSON.stringify({
+        ...discovery,
+        endpoints: { api: "https://memory.example.test/v1" },
+        privacy: {
+          ...discovery.privacy,
+          plaintextProcessingLocation: "browser-extension",
+        },
+      }),
+  }),
+});
+await assert.rejects(
+  invalidPrivacyDiscovery.discover(),
+  (error) =>
+    error instanceof RembraneError && error.code === "invalid_discovery",
+);
+
 const travelRequests = [
   [
     "createTrip",
