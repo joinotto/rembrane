@@ -818,6 +818,9 @@ This roadmap describes sequencing, not release dates.
         production readiness.
     - [ ] Complete independent security review and resolve or explicitly
       accept every finding.
+      - [x] Require an approving signed disposition in strict production
+        readiness while retaining verification support for changes-required
+        review bundles.
     - [x] Publish compatibility, deprecation, and mixed-version negotiation
       policy.
       - [x] Include the normative compatibility policy in the tamper-tested

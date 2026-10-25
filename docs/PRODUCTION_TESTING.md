@@ -21,7 +21,9 @@ Memory Provider release-evidence directory containing two independent passing
 providers, at least one externally maintained provider, and mixed-version
 compatibility evidence. Both the independent review and provider evidence must
 name the exact clean repository `HEAD`; evidence for an older or dirty source
-tree is rejected.
+tree is rejected. A structurally valid signed review with
+`changes_required` remains inspectable, but strict readiness accepts only
+`approved` or `approved_with_accepted_risks`.
 
 `available` mode runs every usable gate and reports missing infrastructure. It
 probes loopback binding before starting transport tests, so restricted

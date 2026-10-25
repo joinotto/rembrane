@@ -82,6 +82,32 @@ REMBRANE_SECURITY_REVIEW_SIGNING_KEY="$temporary_directory/private.pem" \
 sh "$review_repository/scripts/verify-security-review-bundle.sh" \
     "$temporary_directory/signed" \
     "$temporary_directory/public.pem" >/dev/null
+sh "$review_repository/scripts/verify-security-review-bundle.sh" \
+    "$temporary_directory/signed" \
+    "$temporary_directory/public.pem" \
+    --verify-repository \
+    --require-approval >/dev/null
+
+jq '.disposition = "changes_required"
+    | .findings.unresolved = 1' \
+    "$temporary_directory/attestation.json" \
+    >"$temporary_directory/changes-required.json"
+REMBRANE_SECURITY_REVIEW_SIGNING_KEY="$temporary_directory/private.pem" \
+    sh "$review_repository/scripts/sign-security-review-manifest.sh" \
+    "$temporary_directory/manifest.json" \
+    "$temporary_directory/changes-required-signed" \
+    "$temporary_directory/changes-required.json" >/dev/null
+sh "$review_repository/scripts/verify-security-review-bundle.sh" \
+    "$temporary_directory/changes-required-signed" \
+    "$temporary_directory/public.pem" >/dev/null
+if sh "$review_repository/scripts/verify-security-review-bundle.sh" \
+    "$temporary_directory/changes-required-signed" \
+    "$temporary_directory/public.pem" \
+    --require-approval >/dev/null 2>&1
+then
+    echo "production approval accepted a changes-required review" >&2
+    exit 1
+fi
 
 cp -R "$temporary_directory/signed" "$temporary_directory/extra-artifact"
 printf '%s\n' 'undeclared' >"$temporary_directory/extra-artifact/notes.txt"

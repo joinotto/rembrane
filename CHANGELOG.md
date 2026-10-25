@@ -22,6 +22,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Strict production readiness rejects independent-review or Memory Provider
   evidence for an older revision by binding both gates to the same clean
   repository `HEAD`.
+- Strict readiness now rejects signed security reviews whose valid disposition
+  is `changes_required`; generic bundle verification can still authenticate
+  those reports for remediation workflows.
 - A strict Memory Provider Protocol mixed-version evidence schema and verifier
   bind release tests to the reviewed profile and fixtures, pinned client and
   provider builds, distinct disposable namespaces, both supported-minor

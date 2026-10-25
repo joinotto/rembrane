@@ -68,7 +68,8 @@ then
     sh ./scripts/verify-security-review-bundle.sh \
         "$REMBRANE_SECURITY_REVIEW_BUNDLE" \
         "$REMBRANE_SECURITY_REVIEW_PUBLIC_KEY" \
-        --verify-repository
+        --verify-repository \
+        --require-approval
 else
     require_or_skip "independent security-review bundle" 0 || true
 fi

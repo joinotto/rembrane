@@ -3,14 +3,31 @@ set -eu
 
 bundle=${1:?usage: verify-security-review-bundle.sh BUNDLE_DIRECTORY PUBLIC_KEY}
 public_key=${2:?usage: verify-security-review-bundle.sh BUNDLE_DIRECTORY PUBLIC_KEY}
-verify_repository=${3:-}
-case "$verify_repository" in
-    ""|--verify-repository) ;;
-    *)
-        echo "usage: verify-security-review-bundle.sh BUNDLE_DIRECTORY PUBLIC_KEY [--verify-repository]" >&2
-        exit 2
-        ;;
-esac
+shift 2
+verify_repository=
+require_approval=0
+for option in "$@"; do
+    case "$option" in
+        --verify-repository)
+            test -z "$verify_repository" || {
+                echo "duplicate --verify-repository option" >&2
+                exit 2
+            }
+            verify_repository=--verify-repository
+            ;;
+        --require-approval)
+            test "$require_approval" = 0 || {
+                echo "duplicate --require-approval option" >&2
+                exit 2
+            }
+            require_approval=1
+            ;;
+        *)
+            echo "usage: verify-security-review-bundle.sh BUNDLE_DIRECTORY PUBLIC_KEY [--verify-repository] [--require-approval]" >&2
+            exit 2
+            ;;
+    esac
+done
 repository_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 
 if [ ! -d "$bundle" ] || [ -L "$bundle" ]; then
@@ -99,6 +116,16 @@ jq -e \
      and .sourceRevision == $revision
      and .scope.manifestFileCount == $file_count' \
     "$bundle/security-review-attestation.json" >/dev/null
+
+if [ "$require_approval" = 1 ]; then
+    jq -e '
+        .disposition == "approved"
+        or .disposition == "approved_with_accepted_risks"
+    ' "$bundle/security-review-attestation.json" >/dev/null || {
+        echo "security review has not approved the release" >&2
+        exit 1
+    }
+fi
 
 sh "$repository_root/scripts/verify-security-review-signature.sh" \
     "$bundle/security-review-manifest.json" \
