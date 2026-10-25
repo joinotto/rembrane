@@ -842,12 +842,39 @@ pub fn authorize_axum_stateless_body<Verifier>(
 where
     Verifier: RemoteTokenVerifier,
 {
+    authorize_axum_stateless_owned_body(
+        gate,
+        authorization,
+        headers,
+        Zeroizing::new(body.to_vec()),
+        now_epoch_seconds,
+    )
+}
+
+/// Consumes and authorizes one owned Axum request body without cloning its
+/// sensitive JSON-RPC bytes before SDK dispatch.
+///
+/// # Errors
+///
+/// Returns an HTTP-ready rejection for malformed or ambiguous headers,
+/// malformed JSON-RPC, invalid credentials, untrusted host/origin, or missing
+/// operation scope.
+pub fn authorize_axum_stateless_owned_body<Verifier>(
+    gate: &RemoteMcpHttpGate,
+    authorization: &RemoteHttpAuthorization<'_, '_, Verifier>,
+    headers: &HeaderMap,
+    body: Zeroizing<Vec<u8>>,
+    now_epoch_seconds: u64,
+) -> Result<AuthorizedRemoteMcpRequest, RemoteMcpHttpRejection>
+where
+    Verifier: RemoteTokenVerifier,
+{
     let mut protocol_headers = protocol_headers_from_axum(headers)?;
     let request = request_from_axum_headers(headers)?;
     protocol_headers.validated_host = request.host.map(str::to_owned);
     protocol_headers.validated_origin = request.origin.map(str::to_owned);
     let mut authorized =
-        gate.authorize_stateless_body(authorization, request, body, now_epoch_seconds)?;
+        gate.authorize_stateless_owned_body(authorization, request, body, now_epoch_seconds)?;
     authorized.protocol_headers = protocol_headers;
     Ok(authorized)
 }
@@ -1110,11 +1137,51 @@ where
     where
         Dispatcher: AuthorizedRemoteMcpDispatcher,
     {
-        self.authorize_stateless_body(headers, body, now_epoch_seconds)
-            .map_err(RemoteMcpDispatchError::Authorization)?
-            .dispatch_with(dispatcher)
-            .await
-            .map_err(RemoteMcpDispatchError::Dispatch)
+        self.authorize_and_dispatch_owned(
+            headers,
+            Zeroizing::new(body.to_vec()),
+            now_epoch_seconds,
+            dispatcher,
+        )
+        .await
+    }
+
+    /// Consumes, authorizes, and dispatches one owned stateless body without
+    /// creating a second plaintext request allocation.
+    ///
+    /// # Errors
+    ///
+    /// Distinguishes HTTP-ready authentication/authorization rejection from a
+    /// downstream protocol-dispatch failure.
+    pub async fn authorize_and_dispatch_owned<Dispatcher>(
+        &self,
+        headers: &HeaderMap,
+        body: Zeroizing<Vec<u8>>,
+        now_epoch_seconds: u64,
+        dispatcher: &Dispatcher,
+    ) -> Result<Dispatcher::Output, RemoteMcpDispatchError<Dispatcher::Error>>
+    where
+        Dispatcher: AuthorizedRemoteMcpDispatcher,
+    {
+        let authenticator =
+            RemoteAccessAuthenticator::new(&self.verifier, &self.issuer, &self.resource);
+        let trusted_origins = self
+            .trusted_origins
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>();
+        let authorization = RemoteHttpAuthorization::new(&authenticator, &trusted_origins);
+        authorize_axum_stateless_owned_body(
+            &self.gate,
+            &authorization,
+            headers,
+            body,
+            now_epoch_seconds,
+        )
+        .map_err(RemoteMcpDispatchError::Authorization)?
+        .dispatch_with(dispatcher)
+        .await
+        .map_err(RemoteMcpDispatchError::Dispatch)
     }
 
     /// Establishes and dispatches one exact session initialization through
@@ -1547,7 +1614,32 @@ impl RemoteMcpHttpGate {
     where
         Verifier: RemoteTokenVerifier,
     {
-        let invocation = classify_remote_mcp_request(body)?;
+        self.authorize_stateless_owned_body(
+            authorization,
+            request,
+            Zeroizing::new(body.to_vec()),
+            now_epoch_seconds,
+        )
+    }
+
+    /// Consumes and authorizes one owned stateless JSON-RPC body without
+    /// cloning the plaintext request buffer.
+    ///
+    /// # Errors
+    ///
+    /// Returns an HTTP-ready rejection for invalid JSON-RPC, credentials,
+    /// host, origin, method, tool, or OAuth scope.
+    pub fn authorize_stateless_owned_body<Verifier>(
+        &self,
+        authorization: &RemoteHttpAuthorization<'_, '_, Verifier>,
+        request: RemoteMcpHttpRequest<'_>,
+        body: Zeroizing<Vec<u8>>,
+        now_epoch_seconds: u64,
+    ) -> Result<AuthorizedRemoteMcpRequest, RemoteMcpHttpRejection>
+    where
+        Verifier: RemoteTokenVerifier,
+    {
+        let invocation = classify_remote_mcp_request(body.as_slice())?;
         let access = self.authorize_stateless(
             authorization,
             request,
@@ -1559,7 +1651,7 @@ impl RemoteMcpHttpGate {
             access,
             invocation,
             protocol_headers: RemoteMcpProtocolHeaders::transport_neutral(),
-            body: Zeroizing::new(body.to_vec()),
+            body,
         })
     }
 
@@ -1764,9 +1856,9 @@ mod tests {
         MCP_PROTOCOL_VERSION_HEADER_NAME, MCP_SESSION_HEADER_NAME, RemoteMcpAxumAuthorization,
         RemoteMcpDispatchError, RemoteMcpHttpGate, RemoteMcpHttpRejection, RemoteMcpHttpRequest,
         RemoteMcpInvocation, authorize_axum_session_body, authorize_axum_session_deletion,
-        authorize_axum_stateless_body, classify_remote_mcp_request,
-        establish_and_dispatch_axum_session, establish_axum_session_body,
-        request_from_axum_headers,
+        authorize_axum_stateless_body, authorize_axum_stateless_owned_body,
+        classify_remote_mcp_request, establish_and_dispatch_axum_session,
+        establish_axum_session_body, request_from_axum_headers,
     };
 
     struct Verifier;
@@ -1774,6 +1866,23 @@ mod tests {
 
     struct RecordingDispatcher;
     struct RecordingEventStreamDispatcher;
+    struct AllocationRecordingDispatcher;
+
+    impl AuthorizedRemoteMcpDispatcher for AllocationRecordingDispatcher {
+        type Output = (usize, Vec<u8>);
+        type Error = std::convert::Infallible;
+        type DispatchFuture = std::future::Ready<Result<Self::Output, Self::Error>>;
+
+        fn dispatch(
+            &self,
+            _access: rembrane_contracts::VerifiedRemoteAccess,
+            _invocation: RemoteMcpInvocation,
+            _protocol_headers: super::RemoteMcpProtocolHeaders,
+            body: zeroize::Zeroizing<Vec<u8>>,
+        ) -> Self::DispatchFuture {
+            std::future::ready(Ok((body.as_ptr() as usize, body.as_slice().to_vec())))
+        }
+    }
 
     impl AuthorizedRemoteMcpEventStreamDispatcher for RecordingEventStreamDispatcher {
         type Output = (
@@ -2656,6 +2765,49 @@ mod tests {
             "bearer credential must stop at OAuth boundary"
         );
         assert_eq!(dispatched.4, body);
+    }
+
+    #[tokio::test]
+    async fn owned_axum_authorization_preserves_one_zeroizing_body_allocation() {
+        let verifier = Verifier;
+        let authenticator = RemoteAccessAuthenticator::new(
+            &verifier,
+            "https://identity.example.test",
+            "https://memory.example.test/mcp",
+        );
+        let authorization = RemoteHttpAuthorization::new(&authenticator, &[]);
+        let gate = RemoteMcpHttpGate::new(
+            1,
+            "https://memory.example.test/.well-known/oauth-protected-resource/mcp",
+            &["memory.example.test"],
+        )
+        .expect("gate should be valid");
+        let mut headers = HeaderMap::new();
+        headers.insert(HOST, HeaderValue::from_static("memory.example.test"));
+        headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+        headers.insert(
+            ACCEPT,
+            HeaderValue::from_static("application/json, text/event-stream"),
+        );
+        headers.insert(
+            AUTHORIZATION,
+            HeaderValue::from_static("Bearer workspace-one"),
+        );
+        let body =
+            zeroize::Zeroizing::new(br#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#.to_vec());
+        let original_allocation = body.as_ptr() as usize;
+        let expected = body.as_slice().to_vec();
+
+        let authorized =
+            authorize_axum_stateless_owned_body(&gate, &authorization, &headers, body, 1_000)
+                .expect("owned request should authorize");
+        let (dispatched_allocation, dispatched_body) = authorized
+            .dispatch_with(&AllocationRecordingDispatcher)
+            .await
+            .expect("owned request should dispatch");
+
+        assert_eq!(dispatched_allocation, original_allocation);
+        assert_eq!(dispatched_body, expected);
     }
 
     #[test]
