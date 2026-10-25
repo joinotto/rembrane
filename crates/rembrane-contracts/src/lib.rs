@@ -47,6 +47,7 @@ pub enum RemoteAccessScope {
     CheckpointWrite,
     TravelRead,
     TravelWrite,
+    GraphRead,
 }
 
 impl RemoteAccessScope {
@@ -59,6 +60,7 @@ impl RemoteAccessScope {
             Self::CheckpointWrite => "rembrane:checkpoint:write",
             Self::TravelRead => "rembrane:travel:read",
             Self::TravelWrite => "rembrane:travel:write",
+            Self::GraphRead => "rembrane:graph:read",
         }
     }
 }
@@ -78,6 +80,7 @@ pub enum RemoteMcpOperation {
     AddTripConstraint,
     RecordTripDecision,
     ResolveTravelContext,
+    ResolveGraphContext,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -129,6 +132,7 @@ impl RemoteMcpOperation {
             Self::AddTripConstraint => "rembrane_add_trip_constraint",
             Self::RecordTripDecision => "rembrane_record_trip_decision",
             Self::ResolveTravelContext => "rembrane_resolve_travel_context",
+            Self::ResolveGraphContext => "rembrane_resolve_graph_context",
         }
     }
 
@@ -148,6 +152,7 @@ impl RemoteMcpOperation {
             "rembrane_add_trip_constraint" => Some(Self::AddTripConstraint),
             "rembrane_record_trip_decision" => Some(Self::RecordTripDecision),
             "rembrane_resolve_travel_context" => Some(Self::ResolveTravelContext),
+            "rembrane_resolve_graph_context" => Some(Self::ResolveGraphContext),
             _ => None,
         }
     }
@@ -168,6 +173,7 @@ impl RemoteMcpOperation {
             | Self::AddTripConstraint
             | Self::RecordTripDecision => RemoteAccessScope::TravelWrite,
             Self::ResolveTravelContext => RemoteAccessScope::TravelRead,
+            Self::ResolveGraphContext => RemoteAccessScope::GraphRead,
         }
     }
 }

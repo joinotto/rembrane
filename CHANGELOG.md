@@ -27,6 +27,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   cascade their exact disclosed-edge evidence in the same transaction.
 - Graph-context resolution now requires an explicitly granted memory scope and
   a non-empty disclosure purpose before any provider or repository access.
+- Dedicated `rembrane:graph:read` remote authorization scope and
+  `rembrane_resolve_graph_context` MCP operation classification.
 - Bounded shared-workspace invitation validity with persisted creation and
   expiry time, a 30-day maximum lifetime, and fail-closed acceptance at the
   expiry boundary.

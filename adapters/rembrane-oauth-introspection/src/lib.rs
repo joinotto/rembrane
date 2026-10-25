@@ -152,6 +152,7 @@ fn parse_scopes(value: &str) -> Result<BTreeSet<RemoteAccessScope>, RemoteTokenV
             "rembrane:checkpoint:write" => RemoteAccessScope::CheckpointWrite,
             "rembrane:travel:read" => RemoteAccessScope::TravelRead,
             "rembrane:travel:write" => RemoteAccessScope::TravelWrite,
+            "rembrane:graph:read" => RemoteAccessScope::GraphRead,
             _ => continue,
         };
         scopes.insert(scope);
