@@ -101,6 +101,7 @@ for deployment_file in \
     scripts/test-postgres-rls.sh \
     scripts/check-production-readiness.sh \
     scripts/verify-provider-registry.sh \
+    scripts/verify-provider-registry.mjs \
     scripts/test-provider-registry-validation.sh \
     scripts/sign-provider-registry.sh \
     scripts/verify-provider-registry-signature.sh \

@@ -41,6 +41,14 @@ reject_mutation mismatched-provider-build '
 '
 reject_mutation false-pass '.providers[0].conformance.cases[0].result = "fail"'
 reject_mutation unsafe-namespace '.providers[0].conformance.namespace = "cross tenant"'
+reject_mutation duplicate-protocol '
+    .providers[0].protocolVersions = ["0.1", "0.1"]
+'
+reject_mutation duplicate-deployment-mode '
+    .providers[0].deploymentModes = ["embedded", "embedded"]
+'
+reject_mutation unknown-provider-field '.providers[0].unexpected = true'
+reject_mutation future-generation '.generatedAt = "2999-01-01T00:00:00Z"'
 reject_mutation revoked-without-evidence '.providers[0].status = "revoked"'
 reject_mutation revocation-on-active-provider '
     .providers[0].revocation = {

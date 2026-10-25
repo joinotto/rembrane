@@ -1025,6 +1025,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Provider-registry signing now derives a temporary public key and self-verifies
   the complete bundle before reporting success; tests also reject correctly
   signed registries containing invalid semantic fields.
+- Standalone provider-registry validation now shares the exact byte-oriented
+  semantic engine used by signed bundles, including closed fields, unique
+  protocols and deployment modes, canonical timestamps, and local Git proof.
 - Restored the complete dependency-enabled workspace build by declaring
   previously implicit crate dependencies and enabling rmcp's stdio transport.
 - Corrected Memory Provider selector field casing and URL path construction so

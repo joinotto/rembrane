@@ -1118,6 +1118,8 @@ This roadmap describes sequencing, not release dates.
       state that cannot be attached to an active registry entry.
     - [x] Tamper-test missing, reordered, protocol-mismatched, false-pass, and
       unsafe-namespace conformance evidence.
+      - [x] Route standalone and signed-bundle verification through the same
+        byte-oriented semantic validator.
   - [x] Produce and tamper-test detached Ed25519 signatures using an
     externally supplied private key.
   - [x] Publish signed registry artifacts from published GitHub releases using
