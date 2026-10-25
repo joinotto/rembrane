@@ -800,6 +800,8 @@ This roadmap describes sequencing, not release dates.
       accept every finding.
     - [x] Publish compatibility, deprecation, and mixed-version negotiation
       policy.
+      - [x] Include the normative compatibility policy in the tamper-tested
+        protocol review lock.
     - [ ] Record mixed-version release-candidate evidence for the oldest and
       newest supported minor versions.
   - [x] Add a machine-verifiable compatibility lock over the canonical wire

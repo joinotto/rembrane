@@ -14,6 +14,7 @@ const lock = JSON.parse(await readFile(lockPath, "utf8"));
 assert.equal(lock.lockFormat, 1, "unsupported compatibility lock format");
 assert.match(lock.protocolVersion, /^\d+\.\d+$/, "invalid protocol version");
 const expectedArtifacts = [
+  "spec/MEMORY_PROVIDER_COMPATIBILITY_POLICY.md",
   "spec/memory-provider.schema.json",
   "spec/memory-provider-openapi.yaml",
   "spec/memory-provider-conformance.schema.json",

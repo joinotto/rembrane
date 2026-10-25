@@ -15,6 +15,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - A normative Memory Provider Protocol compatibility policy covering
   same-major minor negotiation, breaking changes, deprecation windows,
   supported generations, and release evidence.
+- The Memory Provider compatibility lock now covers that normative policy and
+  rejects policy tampering in the unconditional static gate.
 - A canonical semantic-provider core conformance profile with portable
   evidence bound to its exact SHA-256 across CLI output and provider registry.
 - A tamper-tested semantic-provider compatibility lock over the exact wire,

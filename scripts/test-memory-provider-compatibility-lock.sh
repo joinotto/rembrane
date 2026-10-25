@@ -48,6 +48,23 @@ fi
 
 cp "$repository_root/spec/memory-provider.schema.json" \
     "$test_root/spec/memory-provider.schema.json"
+printf '\n' >>"$test_root/spec/MEMORY_PROVIDER_COMPATIBILITY_POLICY.md"
+if node "$test_root/scripts/verify-memory-provider-compatibility.mjs" \
+    >"$test_root/policy-tamper.stdout" 2>"$test_root/policy-tamper.stderr"
+then
+    echo "compatibility verifier accepted a tampered compatibility policy" >&2
+    exit 1
+fi
+if ! rg -F \
+    "changed without a reviewed compatibility-lock update" \
+    "$test_root/policy-tamper.stderr" >/dev/null
+then
+    echo "compatibility verifier did not report the tampered policy" >&2
+    exit 1
+fi
+
+cp "$repository_root/spec/MEMORY_PROVIDER_COMPATIBILITY_POLICY.md" \
+    "$test_root/spec/MEMORY_PROVIDER_COMPATIBILITY_POLICY.md"
 jq 'del(.artifacts[-1])' \
     "$repository_root/spec/memory-provider-compatibility-lock.json" \
     >"$test_root/spec/memory-provider-compatibility-lock.json"

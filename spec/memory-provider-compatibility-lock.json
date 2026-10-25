@@ -3,6 +3,10 @@
   "protocolVersion": "0.1",
   "artifacts": [
     {
+      "path": "spec/MEMORY_PROVIDER_COMPATIBILITY_POLICY.md",
+      "sha256": "8a3f3b2cf213049e531dfc775e73b0a54c5c41fbbf8cfda0bf03c69afd7a088f"
+    },
+    {
       "path": "spec/memory-provider.schema.json",
       "sha256": "18c4ed5934d781f64a39e85267b4a90653126f3314d55b42c59a152cc6508989"
     },
