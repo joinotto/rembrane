@@ -22,6 +22,7 @@ ruby -e 'require "yaml"; YAML.load_file(ARGV.fetch(0))' spec/memory-provider-ope
 ruby -e 'require "yaml"; YAML.load_file(ARGV.fetch(0))' spec/mobile-share-openapi.yaml
 jq empty \
     spec/discovery.schema.json \
+    spec/memory-provider-compatibility-lock.json \
     spec/memory-provider.schema.json \
     spec/memory-provider-conformance.schema.json \
     spec/memory-provider-conformance-result.schema.json \
@@ -47,6 +48,8 @@ jq empty \
     spec/oauth-protected-resource.schema.json \
     spec/stdio-connection-manifest.schema.json \
     tests/postman/rembrane-local.postman_collection.json
+
+node scripts/verify-memory-provider-compatibility.mjs
 
 jq -e '
     .properties.command.minLength == 1

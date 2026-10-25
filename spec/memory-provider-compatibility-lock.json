@@ -1,0 +1,34 @@
+{
+  "lockFormat": 1,
+  "protocolVersion": "0.1",
+  "artifacts": [
+    {
+      "path": "spec/memory-provider.schema.json",
+      "sha256": "18c4ed5934d781f64a39e85267b4a90653126f3314d55b42c59a152cc6508989"
+    },
+    {
+      "path": "spec/memory-provider-openapi.yaml",
+      "sha256": "167b3b17404d689944b5c98fa9d729f1c8f0102e289cf2db4222865d478728fd"
+    },
+    {
+      "path": "spec/memory-provider-conformance.schema.json",
+      "sha256": "dcf7eb7b99980c3abb7695d2877b1cbb28457f01a381cc56c67cf2c04f14dc79"
+    },
+    {
+      "path": "spec/memory-provider-conformance-result.schema.json",
+      "sha256": "037b74093601b9f605d292ebf30a6964898795a8f7089b7cce439259fdb19f96"
+    },
+    {
+      "path": "spec/memory-provider-fixtures.schema.json",
+      "sha256": "34543b2f88b5918715c1bc1b8a398326e1a0546431a5d8bd41c3e9f4d6ce0093"
+    },
+    {
+      "path": "spec/conformance/memory-provider-core.json",
+      "sha256": "1d3bd84ca349414599d8df30981fec661288975f1d6e847993e3d7667162dd4b"
+    },
+    {
+      "path": "spec/conformance/memory-provider-core-fixtures.json",
+      "sha256": "c14caef57c52b17fc4cacab202805fe0d923e0ac07b6e7f4522e27fb6d9cf870"
+    }
+  ]
+}
