@@ -54,6 +54,18 @@ export class RembraneClient {
     return this.#request("POST", "/workspaces/key-rotation", request);
   }
 
+  createWorkspaceInvitation(request) {
+    return this.#request("POST", "/workspaces/invitations", request);
+  }
+
+  acceptWorkspaceInvitation(request) {
+    return this.#request("POST", "/workspaces/invitations/accept", request);
+  }
+
+  revokeWorkspaceInvitation(request) {
+    return this.#request("POST", "/workspaces/invitations/revoke", request);
+  }
+
   listAdministrativeAudit(query) {
     const parameters = new URLSearchParams({ workspaceId: query.workspaceId });
     if (query.afterEpochSeconds !== undefined) {

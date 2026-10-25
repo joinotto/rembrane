@@ -1,3 +1,4 @@
+import json
 import unittest
 
 from rembrane import RembraneClient, RembraneError
@@ -25,6 +26,56 @@ class RembraneClientTests(unittest.TestCase):
             "?workspaceId=team&afterEpochSeconds=10&limit=20",
         )
         self.assertEqual(calls[0][2]["Authorization"], "Bearer test-token")
+
+    def test_invitation_lifecycle_uses_exact_authenticated_routes(self) -> None:
+        calls = []
+
+        def transport(method, url, headers, body, maximum):
+            calls.append((method, url, headers, body, maximum))
+            return 200, {"Content-Type": "application/json"}, b'{"status":"pending"}'
+
+        client = RembraneClient(
+            "http://127.0.0.1:8787/v1", "test-token", transport=transport
+        )
+        create_request = {
+            "workspaceId": "team",
+            "invitationId": "invite-1",
+            "invitedPrincipalId": "principal-2",
+            "role": "member",
+            "ttlSeconds": 3600,
+            "requestId": "request-1",
+        }
+        transition_request = {
+            "workspaceId": "team",
+            "invitationId": "invite-1",
+            "requestId": "request-2",
+        }
+
+        client.create_workspace_invitation(create_request)
+        client.accept_workspace_invitation(transition_request)
+        client.revoke_workspace_invitation(
+            {**transition_request, "requestId": "request-3"}
+        )
+
+        expected_paths = (
+            "/workspaces/invitations",
+            "/workspaces/invitations/accept",
+            "/workspaces/invitations/revoke",
+        )
+        expected_bodies = (
+            create_request,
+            transition_request,
+            {**transition_request, "requestId": "request-3"},
+        )
+        for call, path, expected_body in zip(calls, expected_paths, expected_bodies):
+            self.assertEqual(call[0], "POST")
+            self.assertEqual(call[1], f"http://127.0.0.1:8787/v1{path}")
+            self.assertEqual(call[2]["Authorization"], "Bearer test-token")
+            self.assertEqual(call[2]["Content-Type"], "application/json")
+            self.assertEqual(
+                call[3],
+                json.dumps(expected_body, separators=(",", ":")).encode("utf-8"),
+            )
 
     def test_non_loopback_plain_http_is_rejected(self) -> None:
         with self.assertRaisesRegex(ValueError, "HTTPS or an explicit loopback"):

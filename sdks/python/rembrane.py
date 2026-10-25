@@ -81,6 +81,15 @@ class RembraneClient:
     def rotate_workspace_key(self, request: Mapping[str, Any]) -> Any:
         return self._request("POST", "/workspaces/key-rotation", request)
 
+    def create_workspace_invitation(self, request: Mapping[str, Any]) -> Any:
+        return self._request("POST", "/workspaces/invitations", request)
+
+    def accept_workspace_invitation(self, request: Mapping[str, Any]) -> Any:
+        return self._request("POST", "/workspaces/invitations/accept", request)
+
+    def revoke_workspace_invitation(self, request: Mapping[str, Any]) -> Any:
+        return self._request("POST", "/workspaces/invitations/revoke", request)
+
     def list_administrative_audit(
         self,
         workspace_id: str,

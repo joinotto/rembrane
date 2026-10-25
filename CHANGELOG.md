@@ -21,6 +21,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Authenticated REST invitation creation, acceptance, and revocation,
   including a pre-membership connection state with no memory scopes or
   mutation permissions.
+- Typed TypeScript and zero-dependency Python SDK operations for authenticated
+  shared-workspace invitation creation, acceptance, and revocation.
 - A parameter-bound PostgreSQL tenant-session contract with exact context
   read-back requirements and a live pooled-connection leakage regression.
 - A typed reference-only PostgreSQL connection profile with explicit

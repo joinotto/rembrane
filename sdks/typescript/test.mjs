@@ -28,6 +28,43 @@ assert.equal(
 assert.equal(calls[0].init.headers.Authorization, "Bearer test-token");
 assert.equal(calls[0].init.redirect, "error");
 
+const createInvitation = {
+  workspaceId: "team",
+  invitationId: "invite-1",
+  invitedPrincipalId: "principal-2",
+  role: "member",
+  ttlSeconds: 3600,
+  requestId: "request-1",
+};
+const transitionInvitation = {
+  workspaceId: "team",
+  invitationId: "invite-1",
+  requestId: "request-2",
+};
+await client.createWorkspaceInvitation(createInvitation);
+await client.acceptWorkspaceInvitation(transitionInvitation);
+await client.revokeWorkspaceInvitation({
+  ...transitionInvitation,
+  requestId: "request-3",
+});
+
+for (const [index, path] of [
+  [1, "/workspaces/invitations"],
+  [2, "/workspaces/invitations/accept"],
+  [3, "/workspaces/invitations/revoke"],
+]) {
+  assert.equal(calls[index].url, `http://127.0.0.1:8787/v1${path}`);
+  assert.equal(calls[index].init.method, "POST");
+  assert.equal(calls[index].init.headers.Authorization, "Bearer test-token");
+  assert.equal(calls[index].init.headers["Content-Type"], "application/json");
+}
+assert.deepEqual(JSON.parse(calls[1].init.body), createInvitation);
+assert.deepEqual(JSON.parse(calls[2].init.body), transitionInvitation);
+assert.deepEqual(JSON.parse(calls[3].init.body), {
+  ...transitionInvitation,
+  requestId: "request-3",
+});
+
 assert.throws(
   () =>
     new RembraneClient({

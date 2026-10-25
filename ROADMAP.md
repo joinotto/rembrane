@@ -447,6 +447,8 @@ This roadmap describes sequencing, not release dates.
     revoke workflows through the local CLI.
   - [x] Expose invitation creation, acceptance, and revocation through the
     authenticated REST API with a zero-authority pre-membership connection.
+  - [x] Expose the authenticated invitation lifecycle through the portable
+    TypeScript and Python SDKs with exact-route executable fixtures.
 - [x] Shared-workspace exact scope grants, including entity-level access.
 - [x] Private-to-shared memory proposals.
   - [x] Content-free, exact-source-version proposal aggregate with source-owner
