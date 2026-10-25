@@ -958,6 +958,8 @@ This roadmap describes sequencing, not release dates.
     conformance result schema and example.
 - [x] Evidence-backed provider compatibility registry schema and initial
   native-provider record.
+  - [x] Persist exact suite, protocol, disposable namespace, and six-case
+    evidence from a fresh native CLI conformance run.
 - [x] Expose the build-pinned compatibility registry through the CLI.
 - [x] Run installed native-provider conformance through the CLI.
 - [x] Automated external-provider registry verification and release signing.

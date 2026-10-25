@@ -91,7 +91,15 @@
         "conformance": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["result", "testedAt", "suiteVersion"],
+          "required": [
+            "result",
+            "testedAt",
+            "suiteId",
+            "suiteVersion",
+            "protocolVersion",
+            "namespace",
+            "cases"
+          ],
           "properties": {
             "result": {
               "enum": ["pass", "fail", "not-tested"]
@@ -100,10 +108,44 @@
               "type": ["string", "null"],
               "format": "date-time"
             },
+            "suiteId": {
+              "const": "rembrane.semantic-provider.core"
+            },
             "suiteVersion": {
+              "const": "0.1"
+            },
+            "protocolVersion": {
+              "const": "0.1"
+            },
+            "namespace": {
               "type": "string",
-              "minLength": 1,
-              "maxLength": 100
+              "pattern": "^[A-Za-z0-9._-]{1,100}$"
+            },
+            "cases": {
+              "type": "array",
+              "minItems": 6,
+              "maxItems": 6,
+              "uniqueItems": true,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["id", "result"],
+                "properties": {
+                  "id": {
+                    "enum": [
+                      "manifest.compatible",
+                      "index.visible",
+                      "workspace.isolated",
+                      "replacement.exact",
+                      "stale-delete.preserves-current",
+                      "exact-delete.propagates"
+                    ]
+                  },
+                  "result": {
+                    "enum": ["pass", "fail"]
+                  }
+                }
+              }
             },
             "notes": {
               "type": "string",

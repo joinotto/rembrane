@@ -1,13 +1,13 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-10-24T00:00:00Z",
+  "generatedAt": "2026-10-25T05:03:44Z",
   "providers": [
     {
       "id": "rembrane.native",
       "adapterVersion": "0.1.0-alpha.1",
       "source": {
         "repository": "https://github.com/mesh-ai-labs/rembrane",
-        "revision": "362c1e8"
+        "revision": "f3221f9"
       },
       "protocolVersions": ["0.1"],
       "deploymentModes": ["embedded", "local-service", "self-hosted"],
@@ -15,8 +15,19 @@
       "status": "experimental",
       "conformance": {
         "result": "pass",
-        "testedAt": "2026-10-24T00:00:00Z",
-        "suiteVersion": "0.1.0-alpha.1",
+        "testedAt": "2026-10-25T05:03:44Z",
+        "suiteId": "rembrane.semantic-provider.core",
+        "suiteVersion": "0.1",
+        "protocolVersion": "0.1",
+        "namespace": "registry-native-20261025-f3221f9",
+        "cases": [
+          {"id": "manifest.compatible", "result": "pass"},
+          {"id": "index.visible", "result": "pass"},
+          {"id": "workspace.isolated", "result": "pass"},
+          {"id": "replacement.exact", "result": "pass"},
+          {"id": "stale-delete.preserves-current", "result": "pass"},
+          {"id": "exact-delete.propagates", "result": "pass"}
+        ],
         "notes": "Passes the reusable in-process semantic-provider conformance suite. Pre-alpha status is not a security certification."
       }
     }

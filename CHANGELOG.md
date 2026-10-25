@@ -36,6 +36,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   key-provider conformance evidence.
 - Typed semantic-provider conformance reports and strict CLI JSON evidence
   covering provider build, suite, namespace, protocol, and six lifecycle cases.
+- Provider registry evidence upgraded with exact suite, protocol, namespace,
+  ordered cases, and a fresh build-pinned native conformance run.
 - Required bounded key-provider build versions in discovery, Rust negotiation,
   HTTP decoding, fixtures, and portable conformance evidence.
 - A tamper-tested key-provider compatibility lock over reviewed OpenAPI,

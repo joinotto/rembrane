@@ -121,6 +121,16 @@ jq -e --slurpfile example spec/examples/semantic-provider-conformance-result.jso
 ' spec/semantic-provider-conformance-result.schema.json >/dev/null
 
 jq -e '
+    ."$defs".provider.properties.conformance.additionalProperties == false
+    and ."$defs".provider.properties.conformance.properties.suiteId.const
+        == "rembrane.semantic-provider.core"
+    and ."$defs".provider.properties.conformance.properties.suiteVersion.const == "0.1"
+    and ."$defs".provider.properties.conformance.properties.protocolVersion.const == "0.1"
+    and ."$defs".provider.properties.conformance.properties.cases.minItems == 6
+    and ."$defs".provider.properties.conformance.properties.cases.maxItems == 6
+' spec/provider-registry.schema.json >/dev/null
+
+jq -e '
     .additionalProperties == false
     and .properties.profileId.const == "rembrane.memory-provider.core"
     and .properties.protocolVersion.const == "0.1"

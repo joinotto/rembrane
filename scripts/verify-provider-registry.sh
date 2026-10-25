@@ -33,6 +33,27 @@ jq -e '
         and (.plaintextProcessing | type == "boolean")
         and (.status | IN("experimental", "compatible", "deprecated"))
         and (.conformance.result | IN("pass", "fail"))
+        and .conformance.suiteId == "rembrane.semantic-provider.core"
+        and .conformance.suiteVersion == "0.1"
+        and .conformance.protocolVersion == "0.1"
+        and (. as $provider
+            | $provider.protocolVersions
+            | contains([$provider.conformance.protocolVersion]))
+        and (.conformance.namespace | test("^[A-Za-z0-9._-]{1,100}$"))
+        and ([.conformance.cases[].id] == [
+            "manifest.compatible",
+            "index.visible",
+            "workspace.isolated",
+            "replacement.exact",
+            "stale-delete.preserves-current",
+            "exact-delete.propagates"
+        ])
+        and (
+            if .conformance.result == "pass"
+            then all(.conformance.cases[]; .result == "pass")
+            else any(.conformance.cases[]; .result == "fail")
+            end
+        )
         and (.conformance.testedAt | fromdateiso8601) <= now
         and (.conformance.testedAt | fromdateiso8601)
             <= ($generatedAt | fromdateiso8601)
