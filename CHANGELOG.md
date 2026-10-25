@@ -9,6 +9,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- The API publishes RFC 9728 remote MCP metadata only from a complete validated
+  introspection profile with referenced client credentials, exact HTTPS
+  browser origins, and a resource bound to the served `/mcp` metadata path.
 - Remote MCP now offers consuming zeroizing-body authorization and dispatch
   APIs that preserve one plaintext request allocation through the OAuth gate,
   with an executable allocation-identity regression test.

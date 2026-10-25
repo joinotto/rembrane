@@ -208,6 +208,10 @@ rg -q 'REMBRANE_GRAPHITI_OPENAI_API_KEY_FILE' compose.graphiti.yaml
 rg -q '^REMBRANE_GRAPHITI_BASE_URL=$' .env.example
 rg -q '^REMBRANE_GRAPHITI_BEARER_TOKEN=$' .env.example
 rg -q '^REMBRANE_GRAPHITI_BEARER_TOKEN_REFERENCE=$' .env.example
+rg -q '^REMBRANE_OAUTH_INTROSPECTION_ENDPOINT=$' .env.example
+rg -q '^REMBRANE_OAUTH_INTROSPECTION_CLIENT_ID=$' .env.example
+rg -q '^REMBRANE_OAUTH_INTROSPECTION_CLIENT_SECRET_REFERENCE=$' .env.example
+rg -q '^REMBRANE_MCP_TRUSTED_ORIGINS=$' .env.example
 if rg -q '^(GRAPHITI_BASE_URL|GRAPHITI_CREDENTIALS)=' .env.example; then
     echo "Canonical environment template must use REMBRANE_GRAPHITI_* variables" >&2
     exit 1

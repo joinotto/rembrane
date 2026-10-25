@@ -242,6 +242,8 @@ This roadmap describes sequencing, not release dates.
     verified connection identity, scope ceilings, and session security rules.
   - [x] Serve opt-in RFC 9728 protected-resource metadata from the HTTP
     service, requiring an exact HTTPS resource and authorization-server pair.
+    - [x] Require the API metadata route to consume the complete validated
+      introspection profile and advertise exactly its public `/mcp` resource.
   - [x] Add a fail-closed verified-token claims contract.
     - [x] Bound and reject ambiguous issuer, resource, audience, subject,
       client, and workspace claims in the transport-neutral verifier contract.

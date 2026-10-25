@@ -23,7 +23,9 @@ use rembrane_application::{
     SetRetentionPolicyCommand, TravelContextResearch, TravelContextService, TravelContextTrip,
     TravelSensitiveProfile, TripService, UpdateCheckpointCommand, WorkspaceRepository,
 };
-use rembrane_config::{SecretReference, parse_read_permissions, parse_read_scopes};
+use rembrane_config::{
+    RemoteMcpConfig, SecretReference, parse_read_permissions, parse_read_scopes,
+};
 use rembrane_contracts::{ResolveContextRequest, ResolveGraphContextRequest};
 use rembrane_crypto_configured::ConfiguredRecordCipher;
 use rembrane_domain::{
@@ -2637,35 +2639,89 @@ fn required_environment(name: &str) -> Result<String> {
 }
 
 fn oauth_resource_metadata_from_environment() -> Result<Option<OAuthProtectedResourceMetadata>> {
-    let resource = std::env::var("REMBRANE_MCP_RESOURCE").ok();
-    let issuer = std::env::var("REMBRANE_OAUTH_ISSUER").ok();
-    match (resource, issuer) {
-        (None, None) => Ok(None),
-        (Some(resource), Some(issuer)) => {
-            anyhow::ensure!(
-                resource.starts_with("https://") && issuer.starts_with("https://"),
-                "remote MCP resource and OAuth issuer must use HTTPS"
-            );
-            Ok(Some(OAuthProtectedResourceMetadata {
-                resource,
-                authorization_servers: vec![issuer],
-                scopes_supported: vec![
-                    "rembrane:context:read",
-                    "rembrane:memory:write",
-                    "rembrane:checkpoint:read",
-                    "rembrane:checkpoint:write",
-                    "rembrane:travel:read",
-                    "rembrane:travel:write",
-                    "rembrane:graph:read",
-                ],
-                bearer_methods_supported: vec!["header"],
-                resource_name: "Rembrane remote MCP",
-            }))
-        }
-        _ => anyhow::bail!(
-            "REMBRANE_MCP_RESOURCE and REMBRANE_OAUTH_ISSUER must be configured together"
-        ),
+    let values = [
+        optional_environment("REMBRANE_MCP_RESOURCE"),
+        optional_environment("REMBRANE_OAUTH_ISSUER"),
+        optional_environment("REMBRANE_OAUTH_INTROSPECTION_ENDPOINT"),
+        optional_environment("REMBRANE_OAUTH_INTROSPECTION_CLIENT_ID"),
+        optional_environment("REMBRANE_OAUTH_INTROSPECTION_CLIENT_SECRET_REFERENCE"),
+    ];
+    if values.iter().all(Option::is_none) {
+        return Ok(None);
     }
+    let [
+        resource,
+        issuer,
+        introspection_endpoint,
+        client_id,
+        secret_reference,
+    ] = values.map(|value| value.context("complete remote MCP OAuth profile is required"));
+    let trusted_origins = optional_environment("REMBRANE_MCP_TRUSTED_ORIGINS")
+        .map(|origins| {
+            origins
+                .split(',')
+                .map(str::trim)
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default();
+    build_oauth_resource_metadata(
+        resource?,
+        issuer?,
+        introspection_endpoint?,
+        client_id?,
+        secret_reference?
+            .parse()
+            .context("invalid REMBRANE_OAUTH_INTROSPECTION_CLIENT_SECRET_REFERENCE")?,
+        trusted_origins,
+    )
+    .map(Some)
+}
+
+fn build_oauth_resource_metadata(
+    resource: String,
+    issuer: String,
+    introspection_endpoint: String,
+    client_id: String,
+    client_secret: SecretReference,
+    trusted_origins: Vec<String>,
+) -> Result<OAuthProtectedResourceMetadata> {
+    let config = RemoteMcpConfig::new(
+        resource,
+        issuer,
+        introspection_endpoint,
+        client_id,
+        client_secret,
+        trusted_origins,
+    )
+    .context("invalid remote MCP OAuth profile")?;
+    anyhow::ensure!(
+        config
+            .protected_resource_metadata_url()
+            .ends_with("/.well-known/oauth-protected-resource/mcp"),
+        "REMBRANE_MCP_RESOURCE must identify the exact public /mcp endpoint"
+    );
+    Ok(OAuthProtectedResourceMetadata {
+        resource: config.resource().to_owned(),
+        authorization_servers: vec![config.issuer().to_owned()],
+        scopes_supported: vec![
+            "rembrane:context:read",
+            "rembrane:memory:write",
+            "rembrane:checkpoint:read",
+            "rembrane:checkpoint:write",
+            "rembrane:travel:read",
+            "rembrane:travel:write",
+            "rembrane:graph:read",
+        ],
+        bearer_methods_supported: vec!["header"],
+        resource_name: "Rembrane remote MCP",
+    })
+}
+
+fn optional_environment(name: &str) -> Option<String> {
+    std::env::var(name)
+        .ok()
+        .filter(|value| !value.trim().is_empty())
 }
 
 fn memory_discovery_from_environment() -> Result<MemoryDiscovery> {
@@ -2811,9 +2867,10 @@ mod tests {
 
     use super::{
         ResolveGraphRequest, ResolveRequest, advance_identifier, build_memory_discovery,
-        graph_request_scope, invitation_only_grants, parse_invitation_role,
-        parse_invitation_status, request_is_within_grant, requested_memory_scope,
-        selected_api_token_reference, token_matches, valid_api_token, valid_opaque_id,
+        build_oauth_resource_metadata, graph_request_scope, invitation_only_grants,
+        parse_invitation_role, parse_invitation_status, request_is_within_grant,
+        requested_memory_scope, selected_api_token_reference, token_matches, valid_api_token,
+        valid_opaque_id,
     };
 
     #[test]
@@ -2968,6 +3025,47 @@ mod tests {
             assert!(
                 build_memory_discovery(invalid.to_owned()).is_err(),
                 "accepted invalid public API URL: {invalid}"
+            );
+        }
+    }
+
+    #[test]
+    fn oauth_metadata_requires_one_complete_exact_remote_mcp_profile() {
+        let metadata = build_oauth_resource_metadata(
+            "https://memory.example.test/mcp".to_owned(),
+            "https://identity.example.test".to_owned(),
+            "https://identity.example.test/introspect".to_owned(),
+            "rembrane-api".to_owned(),
+            "env:REMBRANE_OAUTH_CLIENT_SECRET"
+                .parse()
+                .expect("secret reference"),
+            vec!["https://agent.example.test".to_owned()],
+        )
+        .expect("complete profile should publish metadata");
+        assert_eq!(metadata.resource, "https://memory.example.test/mcp");
+        assert_eq!(
+            metadata.authorization_servers,
+            ["https://identity.example.test"]
+        );
+
+        for resource in [
+            "https://memory.example.test",
+            "https://memory.example.test/other",
+            "https://memory.example.test/mcp?token=secret",
+        ] {
+            assert!(
+                build_oauth_resource_metadata(
+                    resource.to_owned(),
+                    "https://identity.example.test".to_owned(),
+                    "https://identity.example.test/introspect".to_owned(),
+                    "rembrane-api".to_owned(),
+                    "env:REMBRANE_OAUTH_CLIENT_SECRET"
+                        .parse()
+                        .expect("secret reference"),
+                    Vec::new(),
+                )
+                .is_err(),
+                "accepted mismatched remote MCP resource: {resource}"
             );
         }
     }
