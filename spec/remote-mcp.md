@@ -2,11 +2,17 @@
 
 **Status:** Pre-alpha contract
 
-The remote MCP endpoint uses the same tools and application services as local
-stdio MCP. Transport selection never changes workspace authorization, scope
-intersection, sensitive-data permissions, or disclosure auditing.
+The OAuth-aware HTTP gate, request classifier, tenant-bound authorization, and
+owned dispatch handoff are implemented. The final official Rust SDK
+Streamable HTTP service remains under development and must not yet be
+advertised as a production endpoint.
 
-## Endpoints
+The completed endpoint will use the same tools and application services as
+local stdio MCP. Transport selection must never change workspace
+authorization, scope intersection, sensitive-data permissions, or disclosure
+auditing.
+
+## Target endpoints
 
 - `POST /mcp` accepts authenticated JSON-RPC requests.
 - `GET /mcp` may open the server-to-client event stream when negotiated by the
@@ -83,6 +89,7 @@ permission, and write permission checks still run for every operation.
 - `rembrane:checkpoint:write`
 - `rembrane:travel:read`
 - `rembrane:travel:write`
+- `rembrane:graph:read`
 
 Each tool name maps to exactly one required outer scope. Unknown tool names
 fail closed instead of inheriting a general MCP permission. Resume operations

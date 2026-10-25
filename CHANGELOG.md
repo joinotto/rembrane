@@ -247,6 +247,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Changed
 
+- MCP specifications now distinguish the implemented stdio server and remote
+  authorization/dispatch boundary from the unfinished official-SDK
+  Streamable HTTP service, and list the graph-read OAuth scope.
 - Corrected the local-alpha exclusion boundary to distinguish shipped OS key
   providers, invitation and rotation flows, OAuth contracts, and PostgreSQL
   RLS proofs from the remaining cloud-KMS sidecars, official remote MCP

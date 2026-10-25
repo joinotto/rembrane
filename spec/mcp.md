@@ -3,7 +3,11 @@
 **Status:** Pre-alpha  
 **Target:** MCP 2026-07-28 with compatibility for 2025-11-25 clients
 
-Rembrane uses the official Rust MCP SDK and exposes tools over local stdio and remote Streamable HTTP. Both transports call the same application services as REST.
+Rembrane uses the official Rust MCP SDK for its implemented local stdio
+transport. Remote Streamable HTTP is a pre-alpha target: its OAuth,
+request-classification, tenant-binding, and dispatch boundaries are
+implemented, but the final official-SDK HTTP service is not yet connected.
+Both transports are designed to call the same application services as REST.
 
 Official references:
 
