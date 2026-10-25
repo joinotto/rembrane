@@ -12,6 +12,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Remote MCP now offers consuming zeroizing-body authorization and dispatch
   APIs that preserve one plaintext request allocation through the OAuth gate,
   with an executable allocation-identity regression test.
+- Session initialization and established-session remote MCP requests now use
+  the same consuming zeroizing-body path, including rollback-safe dispatch and
+  allocation-identity coverage for both stateful POST stages.
 - Graphiti provider diagnostics, endpoint reporting, documentation, and the
   canonical environment profile now use the same `REMBRANE_GRAPHITI_*`
   configuration consumed by the graph worker, including protected bearer-token

@@ -363,6 +363,8 @@ This roadmap describes sequencing, not release dates.
     - [x] Classify the exact `initialize` body before authentication and
       session allocation so malformed or substituted requests cannot reserve
       tenant-bound session capacity.
+      - [x] Preserve one consuming zeroizing plaintext allocation through
+        stateful initialization and every established-session POST dispatch.
       - [x] Roll back the new session binding when downstream SDK
         initialization fails, retaining capacity only after successful
         dispatch.

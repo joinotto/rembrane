@@ -897,12 +897,39 @@ pub fn authorize_axum_session_body<Verifier>(
 where
     Verifier: RemoteTokenVerifier,
 {
+    authorize_axum_session_owned_body(
+        gate,
+        authorization,
+        headers,
+        Zeroizing::new(body.to_vec()),
+        now_epoch_seconds,
+    )
+}
+
+/// Consumes and authorizes one established-session Axum body without cloning
+/// its sensitive JSON-RPC bytes before SDK dispatch.
+///
+/// # Errors
+///
+/// Returns an HTTP-ready rejection for malformed or ambiguous headers,
+/// missing or foreign sessions, malformed JSON-RPC, invalid credentials,
+/// untrusted host/origin, or missing operation scope.
+pub fn authorize_axum_session_owned_body<Verifier>(
+    gate: &mut RemoteMcpHttpGate,
+    authorization: &RemoteHttpAuthorization<'_, '_, Verifier>,
+    headers: &HeaderMap,
+    body: Zeroizing<Vec<u8>>,
+    now_epoch_seconds: u64,
+) -> Result<AuthorizedRemoteMcpRequest, RemoteMcpHttpRejection>
+where
+    Verifier: RemoteTokenVerifier,
+{
     let mut protocol_headers = protocol_headers_from_axum(headers)?;
     let request = request_from_axum_headers(headers)?;
     protocol_headers.validated_host = request.host.map(str::to_owned);
     protocol_headers.validated_origin = request.origin.map(str::to_owned);
     let mut authorized =
-        gate.authorize_session_body(authorization, request, body, now_epoch_seconds)?;
+        gate.authorize_session_owned_body(authorization, request, body, now_epoch_seconds)?;
     authorized.protocol_headers = protocol_headers;
     Ok(authorized)
 }
@@ -928,12 +955,39 @@ pub fn establish_axum_session_body<Verifier>(
 where
     Verifier: RemoteTokenVerifier,
 {
+    establish_axum_session_owned_body(
+        gate,
+        authorization,
+        headers,
+        Zeroizing::new(body.to_vec()),
+        now_epoch_seconds,
+    )
+}
+
+/// Consumes, classifies, and authenticates one owned Axum `initialize` body
+/// before establishing its declared transport session.
+///
+/// # Errors
+///
+/// Returns an HTTP-ready rejection for malformed or ambiguous headers,
+/// non-initialize JSON-RPC, invalid credentials, untrusted host/origin,
+/// duplicate sessions, or capacity exhaustion.
+pub fn establish_axum_session_owned_body<Verifier>(
+    gate: &mut RemoteMcpHttpGate,
+    authorization: &RemoteHttpAuthorization<'_, '_, Verifier>,
+    headers: &HeaderMap,
+    body: Zeroizing<Vec<u8>>,
+    now_epoch_seconds: u64,
+) -> Result<AuthorizedRemoteMcpRequest, RemoteMcpHttpRejection>
+where
+    Verifier: RemoteTokenVerifier,
+{
     let mut protocol_headers = protocol_headers_from_axum(headers)?;
     let request = request_from_axum_headers(headers)?;
     protocol_headers.validated_host = request.host.map(str::to_owned);
     protocol_headers.validated_origin = request.origin.map(str::to_owned);
     let mut authorized =
-        gate.establish_session_body(authorization, request, body, now_epoch_seconds)?;
+        gate.establish_session_owned_body(authorization, request, body, now_epoch_seconds)?;
     authorized.protocol_headers = protocol_headers;
     Ok(authorized)
 }
@@ -957,11 +1011,41 @@ where
     Verifier: RemoteTokenVerifier,
     Dispatcher: AuthorizedRemoteMcpDispatcher,
 {
+    establish_and_dispatch_axum_owned_session(
+        gate,
+        authorization,
+        headers,
+        Zeroizing::new(body.to_vec()),
+        now_epoch_seconds,
+        dispatcher,
+    )
+    .await
+}
+
+/// Consumes, establishes, and dispatches one owned Axum `initialize` body,
+/// rolling its new session binding back when SDK initialization fails.
+///
+/// # Errors
+///
+/// Distinguishes HTTP-ready header, body, OAuth, tenant, or capacity rejection
+/// from downstream protocol-dispatch failure.
+pub async fn establish_and_dispatch_axum_owned_session<Verifier, Dispatcher>(
+    gate: &mut RemoteMcpHttpGate,
+    authorization: &RemoteHttpAuthorization<'_, '_, Verifier>,
+    headers: &HeaderMap,
+    body: Zeroizing<Vec<u8>>,
+    now_epoch_seconds: u64,
+    dispatcher: &Dispatcher,
+) -> Result<Dispatcher::Output, RemoteMcpDispatchError<Dispatcher::Error>>
+where
+    Verifier: RemoteTokenVerifier,
+    Dispatcher: AuthorizedRemoteMcpDispatcher,
+{
     let protocol_headers =
         protocol_headers_from_axum(headers).map_err(RemoteMcpDispatchError::Authorization)?;
     let request =
         request_from_axum_headers(headers).map_err(RemoteMcpDispatchError::Authorization)?;
-    gate.establish_and_dispatch_session_body(
+    gate.establish_and_dispatch_owned_session_body(
         authorization,
         request,
         protocol_headers,
@@ -1201,6 +1285,32 @@ where
     where
         Dispatcher: AuthorizedRemoteMcpDispatcher,
     {
+        self.establish_and_dispatch_owned_session(
+            headers,
+            Zeroizing::new(body.to_vec()),
+            now_epoch_seconds,
+            dispatcher,
+        )
+        .await
+    }
+
+    /// Consumes, establishes, and dispatches one owned session initialization
+    /// without creating a second plaintext request allocation.
+    ///
+    /// # Errors
+    ///
+    /// Distinguishes HTTP-ready initialization rejection from downstream
+    /// protocol failure and rolls back sessions after failed dispatch.
+    pub async fn establish_and_dispatch_owned_session<Dispatcher>(
+        &mut self,
+        headers: &HeaderMap,
+        body: Zeroizing<Vec<u8>>,
+        now_epoch_seconds: u64,
+        dispatcher: &Dispatcher,
+    ) -> Result<Dispatcher::Output, RemoteMcpDispatchError<Dispatcher::Error>>
+    where
+        Dispatcher: AuthorizedRemoteMcpDispatcher,
+    {
         let authenticator =
             RemoteAccessAuthenticator::new(&self.verifier, &self.issuer, &self.resource);
         let trusted_origins = self
@@ -1209,7 +1319,7 @@ where
             .map(String::as_str)
             .collect::<Vec<_>>();
         let authorization = RemoteHttpAuthorization::new(&authenticator, &trusted_origins);
-        establish_and_dispatch_axum_session(
+        establish_and_dispatch_axum_owned_session(
             &mut self.gate,
             &authorization,
             headers,
@@ -1237,6 +1347,32 @@ where
     where
         Dispatcher: AuthorizedRemoteMcpDispatcher,
     {
+        self.authorize_and_dispatch_owned_session(
+            headers,
+            Zeroizing::new(body.to_vec()),
+            now_epoch_seconds,
+            dispatcher,
+        )
+        .await
+    }
+
+    /// Consumes, reauthenticates, and dispatches one owned established-session
+    /// request without creating a second plaintext request allocation.
+    ///
+    /// # Errors
+    ///
+    /// Distinguishes HTTP-ready session, authentication, tenant, method, or
+    /// scope rejection from downstream protocol failure.
+    pub async fn authorize_and_dispatch_owned_session<Dispatcher>(
+        &mut self,
+        headers: &HeaderMap,
+        body: Zeroizing<Vec<u8>>,
+        now_epoch_seconds: u64,
+        dispatcher: &Dispatcher,
+    ) -> Result<Dispatcher::Output, RemoteMcpDispatchError<Dispatcher::Error>>
+    where
+        Dispatcher: AuthorizedRemoteMcpDispatcher,
+    {
         let authenticator =
             RemoteAccessAuthenticator::new(&self.verifier, &self.issuer, &self.resource);
         let trusted_origins = self
@@ -1245,7 +1381,7 @@ where
             .map(String::as_str)
             .collect::<Vec<_>>();
         let authorization = RemoteHttpAuthorization::new(&authenticator, &trusted_origins);
-        authorize_axum_session_body(
+        authorize_axum_session_owned_body(
             &mut self.gate,
             &authorization,
             headers,
@@ -1406,7 +1542,33 @@ impl RemoteMcpHttpGate {
     where
         Verifier: RemoteTokenVerifier,
     {
-        let invocation = classify_remote_mcp_request(body)?;
+        self.establish_session_owned_body(
+            authorization,
+            request,
+            Zeroizing::new(body.to_vec()),
+            now_epoch_seconds,
+        )
+    }
+
+    /// Consumes and classifies an owned `initialize` body before authentication
+    /// and session allocation.
+    ///
+    /// # Errors
+    ///
+    /// Returns an HTTP-ready rejection for invalid JSON-RPC, any method other
+    /// than `initialize`, invalid session or credentials, untrusted
+    /// host/origin, duplicate sessions, or capacity exhaustion.
+    pub fn establish_session_owned_body<Verifier>(
+        &mut self,
+        authorization: &RemoteHttpAuthorization<'_, '_, Verifier>,
+        request: RemoteMcpHttpRequest<'_>,
+        body: Zeroizing<Vec<u8>>,
+        now_epoch_seconds: u64,
+    ) -> Result<AuthorizedRemoteMcpRequest, RemoteMcpHttpRejection>
+    where
+        Verifier: RemoteTokenVerifier,
+    {
+        let invocation = classify_remote_mcp_request(body.as_slice())?;
         if invocation.method() != "initialize" || invocation.tool_name().is_some() {
             return Err(Self::forbidden());
         }
@@ -1415,7 +1577,7 @@ impl RemoteMcpHttpGate {
             access,
             invocation,
             protocol_headers: RemoteMcpProtocolHeaders::transport_neutral(),
-            body: Zeroizing::new(body.to_vec()),
+            body,
         })
     }
 
@@ -1431,8 +1593,40 @@ impl RemoteMcpHttpGate {
         &mut self,
         authorization: &RemoteHttpAuthorization<'_, '_, Verifier>,
         request: RemoteMcpHttpRequest<'_>,
-        mut protocol_headers: RemoteMcpProtocolHeaders,
+        protocol_headers: RemoteMcpProtocolHeaders,
         body: &[u8],
+        now_epoch_seconds: u64,
+        dispatcher: &Dispatcher,
+    ) -> Result<Dispatcher::Output, RemoteMcpDispatchError<Dispatcher::Error>>
+    where
+        Verifier: RemoteTokenVerifier,
+        Dispatcher: AuthorizedRemoteMcpDispatcher,
+    {
+        self.establish_and_dispatch_owned_session_body(
+            authorization,
+            request,
+            protocol_headers,
+            Zeroizing::new(body.to_vec()),
+            now_epoch_seconds,
+            dispatcher,
+        )
+        .await
+    }
+
+    /// Consumes and dispatches one owned initialization request, retaining the
+    /// session only after downstream SDK success.
+    ///
+    /// # Errors
+    ///
+    /// Distinguishes HTTP-ready authorization or capacity rejection from a
+    /// downstream dispatch failure. Failed dispatch rolls the newly allocated
+    /// session back before returning.
+    pub async fn establish_and_dispatch_owned_session_body<Verifier, Dispatcher>(
+        &mut self,
+        authorization: &RemoteHttpAuthorization<'_, '_, Verifier>,
+        request: RemoteMcpHttpRequest<'_>,
+        mut protocol_headers: RemoteMcpProtocolHeaders,
+        body: Zeroizing<Vec<u8>>,
         now_epoch_seconds: u64,
         dispatcher: &Dispatcher,
     ) -> Result<Dispatcher::Output, RemoteMcpDispatchError<Dispatcher::Error>>
@@ -1445,7 +1639,7 @@ impl RemoteMcpHttpGate {
         protocol_headers.validated_host = request.host.map(str::to_owned);
         protocol_headers.validated_origin = request.origin.map(str::to_owned);
         let mut authorized = self
-            .establish_session_body(authorization, request, body, now_epoch_seconds)
+            .establish_session_owned_body(authorization, request, body, now_epoch_seconds)
             .map_err(RemoteMcpDispatchError::Authorization)?;
         authorized.protocol_headers = protocol_headers;
         let access = authorized.access().clone();
@@ -1514,7 +1708,31 @@ impl RemoteMcpHttpGate {
     where
         Verifier: RemoteTokenVerifier,
     {
-        let invocation = classify_remote_mcp_request(body)?;
+        self.authorize_session_owned_body(
+            authorization,
+            request,
+            Zeroizing::new(body.to_vec()),
+            now_epoch_seconds,
+        )
+    }
+
+    /// Consumes and authorizes one owned established-session JSON-RPC body.
+    ///
+    /// # Errors
+    ///
+    /// Returns an HTTP-ready rejection for invalid JSON-RPC, session,
+    /// credentials, tenant binding, host, origin, method, tool, or scope.
+    pub fn authorize_session_owned_body<Verifier>(
+        &mut self,
+        authorization: &RemoteHttpAuthorization<'_, '_, Verifier>,
+        request: RemoteMcpHttpRequest<'_>,
+        body: Zeroizing<Vec<u8>>,
+        now_epoch_seconds: u64,
+    ) -> Result<AuthorizedRemoteMcpRequest, RemoteMcpHttpRejection>
+    where
+        Verifier: RemoteTokenVerifier,
+    {
+        let invocation = classify_remote_mcp_request(body.as_slice())?;
         let access = self.authorize(
             authorization,
             request,
@@ -1526,7 +1744,7 @@ impl RemoteMcpHttpGate {
             access,
             invocation,
             protocol_headers: RemoteMcpProtocolHeaders::transport_neutral(),
-            body: Zeroizing::new(body.to_vec()),
+            body,
         })
     }
 
@@ -3210,6 +3428,69 @@ mod tests {
                 RemoteMcpHttpRejection { status: 403, .. }
             ))
         ));
+    }
+
+    #[tokio::test]
+    async fn owned_session_lifecycle_preserves_each_zeroizing_body_allocation() {
+        let config = RemoteMcpConfig::new(
+            "https://memory.example.test/mcp".to_owned(),
+            "https://identity.example.test".to_owned(),
+            "https://identity.example.test/introspect".to_owned(),
+            "rembrane".to_owned(),
+            SecretReference::environment("OAUTH_SECRET").expect("reference should be valid"),
+            vec!["https://agent.example.test".to_owned()],
+        )
+        .expect("remote profile should be valid");
+        let mut authorization = RemoteMcpAxumAuthorization::from_config(16, &config, Verifier)
+            .expect("owned authorization service should initialize");
+        let mut headers = HeaderMap::new();
+        headers.insert(HOST, HeaderValue::from_static("memory.example.test"));
+        headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+        headers.insert(
+            ACCEPT,
+            HeaderValue::from_static("application/json, text/event-stream"),
+        );
+        headers.insert(
+            AUTHORIZATION,
+            HeaderValue::from_static("Bearer workspace-one"),
+        );
+        headers.insert(
+            ORIGIN,
+            HeaderValue::from_static("https://agent.example.test"),
+        );
+        headers.insert(
+            MCP_SESSION_HEADER_NAME,
+            HeaderValue::from_static("session_fedcba9876543210"),
+        );
+
+        let initialize = zeroize::Zeroizing::new(
+            br#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}"#.to_vec(),
+        );
+        let initialize_allocation = initialize.as_ptr() as usize;
+        let initialized = authorization
+            .establish_and_dispatch_owned_session(
+                &headers,
+                initialize,
+                1_000,
+                &AllocationRecordingDispatcher,
+            )
+            .await
+            .expect("owned initialization should dispatch");
+        assert_eq!(initialized.0, initialize_allocation);
+
+        let request =
+            zeroize::Zeroizing::new(br#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#.to_vec());
+        let request_allocation = request.as_ptr() as usize;
+        let dispatched = authorization
+            .authorize_and_dispatch_owned_session(
+                &headers,
+                request,
+                1_100,
+                &AllocationRecordingDispatcher,
+            )
+            .await
+            .expect("owned established-session request should dispatch");
+        assert_eq!(dispatched.0, request_allocation);
     }
 
     #[tokio::test]
