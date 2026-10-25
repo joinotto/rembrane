@@ -148,6 +148,7 @@ primary_auth="$test_directory/primary.header"
 other_auth="$test_directory/other.header"
 readonly_auth="$test_directory/readonly.header"
 response="$test_directory/response.json"
+response_headers="$test_directory/response.headers"
 payload="$test_directory/payload.json"
 chmod 700 "$test_directory"
 printf 'Authorization: Bearer %s\n' "$primary_token" >"$primary_auth"
@@ -171,14 +172,21 @@ call() {
     path=$3
     correlation=$4
     body_file=${5:-}
+    correlation_id=$(request_id "$correlation")
 
     set -- \
         --silent --show-error \
+        --connect-timeout 5 \
+        --max-time 15 \
+        --max-filesize 1500000 \
+        --noproxy '*' \
+        --proto '=https,http' \
         --request "$method" \
         --output "$response" \
+        --dump-header "$response_headers" \
         --write-out '%{http_code}' \
         --header "Accept: application/json" \
-        --header "X-Rembrane-Request-Id: $(request_id "$correlation")" \
+        --header "X-Rembrane-Request-Id: $correlation_id" \
         --header "X-Rembrane-Protocol-Version: 0.1"
     if [ -n "$auth_file" ]; then
         set -- "$@" --header "@$auth_file"
@@ -188,7 +196,51 @@ call() {
             --header "Content-Type: application/json" \
             --data-binary "@$body_file"
     fi
-    curl "$@" "${base_url%/}$path"
+    status=$(curl "$@" "${base_url%/}$path")
+    if [ "$(wc -c <"$response")" -gt 1500000 ]; then
+        echo "memory provider response exceeded the transport limit" >&2
+        return 1
+    fi
+    content_type=$(response_header content-type)
+    echoed_request_id=$(response_header x-rembrane-request-id)
+    echoed_protocol=$(response_header x-rembrane-protocol-version)
+    case "$content_type" in
+        application/json | application/json\;*) ;;
+        *)
+            echo "memory provider response is not JSON" >&2
+            return 1
+            ;;
+    esac
+    if [ "$echoed_request_id" != "$correlation_id" ] ||
+        [ "$echoed_protocol" != "0.1" ]
+    then
+        echo "memory provider response correlation mismatch" >&2
+        return 1
+    fi
+    printf '%s' "$status"
+}
+
+response_header() {
+    header_name=$1
+    awk -v expected="$header_name" '
+        BEGIN { count = 0 }
+        {
+            sub(/\r$/, "")
+            separator = index($0, ":")
+            if (separator > 0) {
+                name = tolower(substr($0, 1, separator - 1))
+                if (name == expected) {
+                    count += 1
+                    value = substr($0, separator + 1)
+                    sub(/^[[:space:]]+/, "", value)
+                }
+            }
+        }
+        END {
+            if (count != 1) exit 1
+            print value
+        }
+    ' "$response_headers"
 }
 
 encode_path() {

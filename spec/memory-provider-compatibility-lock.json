@@ -88,7 +88,7 @@
     },
     {
       "path": "scripts/test-memory-provider-http.sh",
-      "sha256": "776b4f5c241a5fd1f7b3156ffaefb6cfd6db89c5a6bdaa28a47f484f69791341"
+      "sha256": "b95661ae1beab72e75e5ef06431e55a5dde2450aa0fed92e4a4e2aefc78251ec"
     }
   ]
 }

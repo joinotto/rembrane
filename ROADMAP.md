@@ -975,6 +975,9 @@ This roadmap describes sequencing, not release dates.
     HTTPS or literal loopback HTTP, rejecting paths and `localhost`.
   - [x] Enforce the complete closed discovery manifest and canonical operation
     registry in the portable jq/shell conformance client.
+  - [x] Harden shell conformance HTTP with direct connections, strict timeout
+    and response-size ceilings, JSON media checks, and exact correlation
+    header validation.
     - [x] Add bounded context-resolution requests with global, domain, entity,
       and activity selectors constrained by provider-advertised limits.
       - [x] Seal selector representation so callers cannot bypass domain and
