@@ -31,6 +31,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - REST preference scopes and checkpoint entity references now reject
   ambiguous, oversized, control-bearing, or non-opaque selectors before
   authorization and persistence.
+- REST clients can record evidence-backed activity work traces as proposed
+  observation memories without promoting agent output to confirmed user truth.
 - The REST service now serves `/.well-known/ai-memory` without authentication,
   reporting its configured API root, implemented capabilities, limits, and
   local-only versus customer-gateway plaintext-processing boundary.

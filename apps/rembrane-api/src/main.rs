@@ -15,13 +15,13 @@ use rembrane_application::{
     CheckpointService, ClientGrantBundle, CreateCheckpointCommand, CreateInvitationCommand,
     CreateTripCommand, DeleteMemoryCommand, ExecuteRetentionPurgeCommand, GraphContextService,
     InvitationRepository, InvitationService, KeyRotationRepository, ListInvitationsQuery,
-    MemberLifecycleService, MembershipRepository, MemoryLifecycleService, PlaceLegalHoldCommand,
-    RecordTripDecisionCommand, ReleaseLegalHoldCommand, RememberPreferenceCommand,
-    RememberPreferenceService, ResolveContextCommand, ResolveContextService,
-    ResolveTravelContextCommand, ResumeActivityCommand, RetentionService, ReviseMemoryCommand,
-    RevokeInvitationCommand, SetRetentionPolicyCommand, TravelContextResearch,
-    TravelContextService, TravelContextTrip, TravelSensitiveProfile, TripService,
-    UpdateCheckpointCommand, WorkspaceRepository,
+    MemberLifecycleService, MembershipRepository, MemoryLifecycleService, MemoryProposalService,
+    PlaceLegalHoldCommand, ProposeMemoryCommand, RecordTripDecisionCommand,
+    ReleaseLegalHoldCommand, RememberPreferenceCommand, RememberPreferenceService,
+    ResolveContextCommand, ResolveContextService, ResolveTravelContextCommand,
+    ResumeActivityCommand, RetentionService, ReviseMemoryCommand, RevokeInvitationCommand,
+    SetRetentionPolicyCommand, TravelContextResearch, TravelContextService, TravelContextTrip,
+    TravelSensitiveProfile, TripService, UpdateCheckpointCommand, WorkspaceRepository,
 };
 use rembrane_config::{SecretReference, parse_read_permissions, parse_read_scopes};
 use rembrane_contracts::{ResolveContextRequest, ResolveGraphContextRequest};
@@ -104,6 +104,17 @@ struct RememberPreferenceRequest {
     domain: Option<String>,
     entity_id: Option<String>,
     activity_id: Option<String>,
+    expected_previous_sequence: u64,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct RecordWorkTraceRequest {
+    workspace_id: String,
+    subject_id: String,
+    activity_id: String,
+    entity_id: Option<String>,
+    summary: String,
     expected_previous_sequence: u64,
 }
 
@@ -723,6 +734,7 @@ impl AppState {
                 requested_read_permissions: read_permissions,
                 requested_write_permissions: vec![
                     WritePermission::CreateMemory,
+                    WritePermission::ProposeMemory,
                     WritePermission::ReviseMemory,
                     WritePermission::DeleteMemory,
                     WritePermission::WriteCheckpoint,
@@ -1379,6 +1391,63 @@ async fn remember_preference(
             memory_id: memory.id().to_string(),
             version: memory.version(),
             status: "confirmed",
+        }),
+    ))
+}
+
+async fn record_work_trace(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<RecordWorkTraceRequest>,
+) -> Result<(StatusCode, Json<MemoryMutationResponse>), ApiError> {
+    authorize_bearer(&state, &headers)?;
+    if !valid_opaque_id(&request.activity_id)
+        || request
+            .entity_id
+            .as_deref()
+            .is_some_and(|id| !valid_opaque_id(id))
+        || request.summary.trim().is_empty()
+    {
+        return Err(ApiError::invalid_request());
+    }
+    let scope = MemoryScope::Activity {
+        id: ActivityId::new(&request.activity_id),
+    };
+    let mut runtime = state
+        .inner
+        .runtime
+        .lock()
+        .map_err(|_| ApiError::internal())?;
+    authorize_memory_identity(&runtime, &request.workspace_id, &request.subject_id)?;
+    let write_grant = scoped_memory_write_grant(&runtime, &scope, WritePermission::ProposeMemory)?;
+    let suffix = next_id(&mut runtime)?;
+    let content = request
+        .entity_id
+        .map_or(request.summary.clone(), |entity_id| {
+            format!("[entity:{entity_id}] {}", request.summary)
+        });
+    let memory = MemoryProposalService::new(&mut runtime.store)
+        .propose(ProposeMemoryCommand {
+            grant: write_grant,
+            memory_id: MemoryId::new(format!("trace_{suffix}")),
+            scope,
+            kind: MemoryKind::Observation,
+            content,
+            evidence: EvidenceReference::new(
+                EvidenceId::new(format!("evidence_{suffix}")),
+                EvidenceSource::AgentObservation,
+            ),
+            event_id: EventId::new(format!("event_{suffix}")),
+            expected_previous_sequence: request.expected_previous_sequence,
+            projections: Vec::new(),
+        })
+        .map_err(ApiError::from_application)?;
+    Ok((
+        StatusCode::CREATED,
+        Json(MemoryMutationResponse {
+            memory_id: memory.id().to_string(),
+            version: memory.version(),
+            status: "proposed",
         }),
     ))
 }
@@ -2673,6 +2742,7 @@ async fn main() -> Result<()> {
         .route("/v1/context/resolve", post(resolve_context))
         .route("/v1/graph/context/resolve", post(resolve_graph_context))
         .route("/v1/memories/preferences", post(remember_preference))
+        .route("/v1/memories/work-traces", post(record_work_trace))
         .route("/v1/memories/{memory_id}/correction", post(correct_memory))
         .route("/v1/memories/{memory_id}/deletion", post(delete_memory))
         .route(
