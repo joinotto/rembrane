@@ -16,10 +16,11 @@ use rembrane_application::{
 };
 use rembrane_domain::{
     ActivityId, AdministrativeAction, AdministrativeAuditEvent, AdministrativeAuditEventId,
-    AdministrativeTargetKind, EntityId, Invitation, InvitationId, InvitationStatus, LegalHoldId,
-    LegalHoldStatus, MemberScopeGrant, Membership, Principal, PrincipalId, ReadScope,
-    RetentionPeriod, RetentionResource, Workspace, WorkspaceId, WorkspaceKind, WorkspaceLegalHold,
-    WorkspaceRetentionPolicy, WorkspaceRole,
+    AdministrativeTargetKind, EntityId, Invitation, InvitationId, InvitationStatus, KeyRotationId,
+    KeyRotationReceipt, KeyRotationStatus, LegalHoldId, LegalHoldStatus,
+    MAX_KEY_ROTATION_RECIPIENTS, MemberScopeGrant, Membership, Principal, PrincipalId, ProviderId,
+    ReadScope, RetentionPeriod, RetentionResource, Workspace, WorkspaceId, WorkspaceKeyRotation,
+    WorkspaceKind, WorkspaceLegalHold, WorkspaceRetentionPolicy, WorkspaceRole,
 };
 
 pub const SET_TENANT_SQL: &str = "SELECT set_config('rembrane.workspace_id', $1, true);";
@@ -123,6 +124,20 @@ pub const LIST_MEMBER_SCOPE_GRANTS_SQL: &str = "SELECT workspace_id, principal_i
     ORDER BY scope_type, scope_value LIMIT 10001";
 pub const DELETE_MEMBER_SCOPE_GRANT_SQL: &str = "DELETE FROM member_scope_grants \
     WHERE workspace_id = $1 AND principal_id = $2 AND scope_type = $3 AND scope_value = $4";
+pub const LATEST_KEY_ROTATION_SQL: &str = "SELECT workspace_id, id, generation, \
+    removed_principal_id, requested_by, status, \
+    COALESCE(completed_key_id, '') AS completed_key_id, \
+    COALESCE(completed_by, '') AS completed_by \
+    FROM workspace_key_rotations WHERE workspace_id = $1 \
+    ORDER BY generation DESC LIMIT 1";
+pub const FIND_KEY_ROTATION_RECEIPT_SQL: &str = "SELECT workspace_id, rotation_id, provider_id, \
+    request_id, generation, key_id FROM workspace_key_rotation_receipts \
+    WHERE workspace_id = $1 AND rotation_id = $2 \
+    ORDER BY workspace_id, rotation_id LIMIT 2";
+pub const LIST_KEY_ROTATION_RECIPIENTS_SQL: &str = "SELECT workspace_id, rotation_id, principal_id \
+    FROM workspace_key_rotation_recipients \
+    WHERE workspace_id = $1 AND rotation_id = $2 \
+    ORDER BY principal_id LIMIT 10001";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PostgresParameter<'value> {
@@ -1232,6 +1247,98 @@ impl<Pool: PostgresPool> PostgresStore<Pool> {
         insert_administrative_audit(&mut transaction, audit_event)?;
         transaction.commit().map_err(PostgresStoreError::Tenant)
     }
+
+    pub fn latest_key_rotation(
+        &self,
+        workspace_id: &WorkspaceId,
+    ) -> Result<Option<WorkspaceKeyRotation>, PostgresStoreError<Pool::Error>>
+    where
+        <Pool::Transaction as PostgresTransaction>::Row: PostgresRow<Error = Pool::Error>,
+    {
+        let mut transaction = self.begin_tenant(workspace_id.clone())?;
+        let rows = transaction
+            .query(
+                LATEST_KEY_ROTATION_SQL,
+                &[PostgresParameter::Text(workspace_id.as_str())],
+            )
+            .map_err(PostgresStoreError::Tenant)?;
+        if rows.len() > 1 {
+            return Err(PostgresStoreError::UnexpectedCardinality);
+        }
+        let rotation = rows
+            .first()
+            .map(|row| decode_key_rotation(row, workspace_id))
+            .transpose()?;
+        transaction.commit().map_err(PostgresStoreError::Tenant)?;
+        Ok(rotation)
+    }
+
+    pub fn find_key_rotation_receipt(
+        &self,
+        workspace_id: &WorkspaceId,
+        rotation_id: &KeyRotationId,
+    ) -> Result<Option<KeyRotationReceipt>, PostgresStoreError<Pool::Error>>
+    where
+        <Pool::Transaction as PostgresTransaction>::Row: PostgresRow<Error = Pool::Error>,
+    {
+        let mut transaction = self.begin_tenant(workspace_id.clone())?;
+        let header_rows = transaction
+            .query(
+                FIND_KEY_ROTATION_RECEIPT_SQL,
+                &[
+                    PostgresParameter::Text(workspace_id.as_str()),
+                    PostgresParameter::Text(rotation_id.as_str()),
+                ],
+            )
+            .map_err(PostgresStoreError::Tenant)?;
+        if header_rows.len() > 1 {
+            return Err(PostgresStoreError::UnexpectedCardinality);
+        }
+        let Some(header) = header_rows.first() else {
+            transaction.commit().map_err(PostgresStoreError::Tenant)?;
+            return Ok(None);
+        };
+        validate_rotation_receipt_header(header, workspace_id, rotation_id)?;
+        let recipient_rows = transaction
+            .query(
+                LIST_KEY_ROTATION_RECIPIENTS_SQL,
+                &[
+                    PostgresParameter::Text(workspace_id.as_str()),
+                    PostgresParameter::Text(rotation_id.as_str()),
+                ],
+            )
+            .map_err(PostgresStoreError::Tenant)?;
+        if recipient_rows.len() > MAX_KEY_ROTATION_RECIPIENTS {
+            return Err(PostgresStoreError::UnexpectedCardinality);
+        }
+        let mut recipient_ids = Vec::with_capacity(recipient_rows.len());
+        for row in &recipient_rows {
+            let row_workspace_id = row.text("workspace_id").map_err(PostgresStoreError::Row)?;
+            let row_rotation_id = row.text("rotation_id").map_err(PostgresStoreError::Row)?;
+            if row_workspace_id != workspace_id.as_str() || row_rotation_id != rotation_id.as_str()
+            {
+                return Err(PostgresStoreError::InvalidRow);
+            }
+            recipient_ids.push(PrincipalId::new(
+                row.text("principal_id").map_err(PostgresStoreError::Row)?,
+            ));
+        }
+        let receipt = KeyRotationReceipt::new(
+            ProviderId::new(
+                header
+                    .text("provider_id")
+                    .map_err(PostgresStoreError::Row)?,
+            ),
+            header.text("request_id").map_err(PostgresStoreError::Row)?,
+            workspace_id.clone(),
+            header.u64("generation").map_err(PostgresStoreError::Row)?,
+            header.text("key_id").map_err(PostgresStoreError::Row)?,
+            recipient_ids,
+        )
+        .map_err(|_| PostgresStoreError::InvalidRow)?;
+        transaction.commit().map_err(PostgresStoreError::Tenant)?;
+        Ok(Some(receipt))
+    }
 }
 
 impl<Pool> MembershipRepository for PostgresStore<Pool>
@@ -2330,6 +2437,64 @@ where
     ))
 }
 
+fn decode_key_rotation<Row, DriverError>(
+    row: &Row,
+    expected_workspace_id: &WorkspaceId,
+) -> Result<WorkspaceKeyRotation, PostgresStoreError<DriverError>>
+where
+    Row: PostgresRow<Error = DriverError>,
+{
+    let workspace_id = row.text("workspace_id").map_err(PostgresStoreError::Row)?;
+    if workspace_id != expected_workspace_id.as_str() {
+        return Err(PostgresStoreError::InvalidRow);
+    }
+    let status = match row
+        .text("status")
+        .map_err(PostgresStoreError::Row)?
+        .as_str()
+    {
+        "required" => KeyRotationStatus::Required,
+        "completed" => KeyRotationStatus::Completed,
+        _ => return Err(PostgresStoreError::InvalidRow),
+    };
+    let completed_key_id = row
+        .text("completed_key_id")
+        .map_err(PostgresStoreError::Row)?;
+    let completed_by = row.text("completed_by").map_err(PostgresStoreError::Row)?;
+    WorkspaceKeyRotation::restore(
+        KeyRotationId::new(row.text("id").map_err(PostgresStoreError::Row)?),
+        WorkspaceId::new(workspace_id),
+        row.u64("generation").map_err(PostgresStoreError::Row)?,
+        PrincipalId::new(
+            row.text("removed_principal_id")
+                .map_err(PostgresStoreError::Row)?,
+        ),
+        PrincipalId::new(row.text("requested_by").map_err(PostgresStoreError::Row)?),
+        status,
+        (!completed_key_id.is_empty()).then_some(completed_key_id),
+        (!completed_by.is_empty()).then(|| PrincipalId::new(completed_by)),
+    )
+    .map_err(|_| PostgresStoreError::InvalidRow)
+}
+
+fn validate_rotation_receipt_header<Row, DriverError>(
+    row: &Row,
+    expected_workspace_id: &WorkspaceId,
+    expected_rotation_id: &KeyRotationId,
+) -> Result<(), PostgresStoreError<DriverError>>
+where
+    Row: PostgresRow<Error = DriverError>,
+{
+    let workspace_id = row.text("workspace_id").map_err(PostgresStoreError::Row)?;
+    let rotation_id = row.text("rotation_id").map_err(PostgresStoreError::Row)?;
+    if workspace_id != expected_workspace_id.as_str()
+        || rotation_id != expected_rotation_id.as_str()
+    {
+        return Err(PostgresStoreError::InvalidRow);
+    }
+    Ok(())
+}
+
 fn decode_principal<Row, DriverError>(
     row: &Row,
     expected_id: &PrincipalId,
@@ -2614,24 +2779,25 @@ mod tests {
     };
     use rembrane_domain::{
         AdministrativeAction, AdministrativeAuditEvent, AdministrativeAuditEventId,
-        AdministrativeTargetKind, Invitation, InvitationId, InvitationStatus, LegalHoldId,
-        LegalHoldStatus, MemberScopeGrant, Principal, PrincipalId, ReadScope, RetentionPeriod,
-        RetentionResource, Workspace, WorkspaceId, WorkspaceRetentionPolicy, WorkspaceRole,
+        AdministrativeTargetKind, Invitation, InvitationId, InvitationStatus, KeyRotationId,
+        KeyRotationStatus, LegalHoldId, LegalHoldStatus, MemberScopeGrant, Principal, PrincipalId,
+        ReadScope, RetentionPeriod, RetentionResource, Workspace, WorkspaceId,
+        WorkspaceRetentionPolicy, WorkspaceRole,
     };
 
     use super::{
         ACCEPT_INVITATION_SQL, ClassifiedPostgresError, DELETE_MEMBER_SCOPE_GRANT_SQL,
-        EXPIRE_PENDING_INVITATION_SQL, FIND_INVITATION_SQL, FIND_LEGAL_HOLD_SQL,
-        FIND_MEMBERSHIP_SQL, FIND_PRINCIPAL_SQL, FIND_PROVISIONING_PRINCIPAL_SQL,
-        FIND_RETENTION_POLICY_SQL, FIND_WORKSPACE_SQL, INSERT_ADMINISTRATIVE_AUDIT_SQL,
-        INSERT_INVITATION_SQL, INSERT_LEGAL_HOLD_SQL, INSERT_MEMBER_SCOPE_GRANT_SQL,
-        INSERT_MEMBERSHIP_SQL, INSERT_PRINCIPAL_SQL, INSERT_RETENTION_POLICY_SQL,
-        INSERT_WORKSPACE_SQL, LIST_ACTIVE_LEGAL_HOLDS_SQL, LIST_ACTIVE_MEMBERSHIPS_SQL,
-        LIST_ADMINISTRATIVE_AUDIT_SQL, LIST_INVITATIONS_BY_STATUS_SQL,
-        LIST_MEMBER_SCOPE_GRANTS_SQL, MAX_ACTIVE_MEMBERSHIPS, PostgresFailureKind,
-        PostgresParameter, PostgresPool, PostgresProvisioner, PostgresProvisioningPool,
-        PostgresRow, PostgresStore, PostgresStoreError, PostgresTransaction,
-        PostgresWorkspaceAdminStore, ProvisioningTransaction, READ_TENANT_SQL,
+        EXPIRE_PENDING_INVITATION_SQL, FIND_INVITATION_SQL, FIND_KEY_ROTATION_RECEIPT_SQL,
+        FIND_LEGAL_HOLD_SQL, FIND_MEMBERSHIP_SQL, FIND_PRINCIPAL_SQL,
+        FIND_PROVISIONING_PRINCIPAL_SQL, FIND_RETENTION_POLICY_SQL, FIND_WORKSPACE_SQL,
+        INSERT_ADMINISTRATIVE_AUDIT_SQL, INSERT_INVITATION_SQL, INSERT_LEGAL_HOLD_SQL,
+        INSERT_MEMBER_SCOPE_GRANT_SQL, INSERT_MEMBERSHIP_SQL, INSERT_PRINCIPAL_SQL,
+        INSERT_RETENTION_POLICY_SQL, INSERT_WORKSPACE_SQL, LATEST_KEY_ROTATION_SQL,
+        LIST_ACTIVE_LEGAL_HOLDS_SQL, LIST_ACTIVE_MEMBERSHIPS_SQL, LIST_ADMINISTRATIVE_AUDIT_SQL,
+        LIST_INVITATIONS_BY_STATUS_SQL, LIST_MEMBER_SCOPE_GRANTS_SQL, MAX_ACTIVE_MEMBERSHIPS,
+        PostgresFailureKind, PostgresParameter, PostgresPool, PostgresProvisioner,
+        PostgresProvisioningPool, PostgresRow, PostgresStore, PostgresStoreError,
+        PostgresTransaction, PostgresWorkspaceAdminStore, ProvisioningTransaction, READ_TENANT_SQL,
         REPLACE_INVITATION_SQL, REPLACE_LEGAL_HOLD_SQL, REPLACE_MEMBERSHIP_SQL,
         REPLACE_RETENTION_POLICY_SQL, SET_TENANT_SQL, TenantTransaction, TenantTransactionError,
         map_application_error, map_invitation_application_error,
@@ -2702,6 +2868,28 @@ mod tests {
                     ("scope_value", scope_value.to_owned()),
                 ]),
                 numbers: BTreeMap::new(),
+            }
+        }
+
+        fn key_rotation(
+            workspace_id: &str,
+            id: &str,
+            generation: u64,
+            status: &str,
+            completed_key_id: &str,
+            completed_by: &str,
+        ) -> Self {
+            Self {
+                columns: BTreeMap::from([
+                    ("workspace_id", workspace_id.to_owned()),
+                    ("id", id.to_owned()),
+                    ("removed_principal_id", "principal_removed".to_owned()),
+                    ("requested_by", "principal_admin".to_owned()),
+                    ("status", status.to_owned()),
+                    ("completed_key_id", completed_key_id.to_owned()),
+                    ("completed_by", completed_by.to_owned()),
+                ]),
+                numbers: BTreeMap::from([("generation", generation)]),
             }
         }
 
@@ -4111,6 +4299,69 @@ mod tests {
             calls.iter().filter(|call| **call == Call::Commit).count(),
             3
         );
+    }
+
+    #[test]
+    fn key_rotation_reads_restore_latest_state_and_absent_receipt() {
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let store = PostgresStore::new(FakePool {
+            calls: Rc::clone(&calls),
+            tenant_batches: RefCell::new(
+                [
+                    VecDeque::from([
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                    ]),
+                    VecDeque::from([
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                    ]),
+                ]
+                .into(),
+            ),
+            row_batches: RefCell::new(
+                [
+                    vec![FakeRow::key_rotation(
+                        "workspace_01",
+                        "rotation_02",
+                        2,
+                        "completed",
+                        "key_02",
+                        "principal_admin",
+                    )],
+                    Vec::new(),
+                ]
+                .into(),
+            ),
+        });
+
+        let rotation = store
+            .latest_key_rotation(&WorkspaceId::new("workspace_01"))
+            .expect("latest rotation")
+            .expect("rotation");
+        assert_eq!(rotation.id().as_str(), "rotation_02");
+        assert_eq!(rotation.generation(), 2);
+        assert_eq!(rotation.status(), KeyRotationStatus::Completed);
+        assert_eq!(
+            store
+                .find_key_rotation_receipt(
+                    &WorkspaceId::new("workspace_01"),
+                    &KeyRotationId::new("rotation_02"),
+                )
+                .expect("receipt lookup"),
+            None
+        );
+        assert!(calls.borrow().contains(&Call::Query(
+            LATEST_KEY_ROTATION_SQL.to_owned(),
+            vec!["text:workspace_01".to_owned()]
+        )));
+        assert!(calls.borrow().contains(&Call::Query(
+            FIND_KEY_ROTATION_RECEIPT_SQL.to_owned(),
+            vec![
+                "text:workspace_01".to_owned(),
+                "text:rotation_02".to_owned(),
+            ]
+        )));
     }
 
     #[test]

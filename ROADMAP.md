@@ -314,6 +314,8 @@ This roadmap describes sequencing, not release dates.
           completing the PostgreSQL `RetentionRepository` port.
       - [x] Implement tenant-pinned member-scope grant insertion, bounded
         listing with closed scope decoding, and audited exact deletion.
+      - [x] Add tenant-verified latest key-rotation and provider-receipt reads
+        with strict row correlation and bounded recipient reconstruction.
       - [x] Add exact invitation lookup and bounded status-filtered listing
         with terminal-state restoration and full tenant/identifier correlation.
       - [x] Implement atomic invitation creation, acceptance, revocation,

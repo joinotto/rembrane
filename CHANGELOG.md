@@ -72,6 +72,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - PostgreSQL `MemberScopeGrantRepository` support with tenant-pinned atomic
   audited mutations, bounded deterministic reads, duplicate rejection, and
   closed global/domain/entity/activity scope decoding.
+- Tenant-verified PostgreSQL key-rotation reads with closed lifecycle
+  restoration, exact receipt identity correlation, and provider receipt
+  reconstruction capped at 10,000 canonical recipients.
 - PostgreSQL invitation lookup and bounded deterministic listing with optional
   status filtering, numeric lifetime decoding, terminal-state restoration,
   and exact tenant/invitation correlation.
