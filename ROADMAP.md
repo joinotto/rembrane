@@ -921,6 +921,8 @@ This roadmap describes sequencing, not release dates.
       modes.
       - [x] Publish a strict portable JSON Schema and canonical fixture, with
         the CLI serializer pinned to the fixture.
+      - [x] Prove every advertised client has a working secret-safe
+        configuration renderer.
 
 ## Release gates
 

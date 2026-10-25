@@ -766,23 +766,31 @@ fn print_mcp_config(arguments: &[String]) -> Result<(), String> {
     validate_mcp_server_binary(server_binary)?;
     let key_provider = optional_option(arguments, "--key-provider").unwrap_or("environment");
     let environment = mcp_environment_variables(key_provider)?;
-    let config = match client {
-        "codex" => codex_mcp_config(server_binary, &environment),
-        "claude-code" => claude_mcp_config(server_binary, &environment),
-        "gemini-cli" => gemini_mcp_config(server_binary, &environment),
-        "cursor" => cursor_mcp_config(server_binary, &environment),
-        "vscode" => vscode_mcp_config(server_binary, &environment),
+    let config = render_mcp_config(client, server_binary, &environment)?;
+    println!("{config}");
+    Ok(())
+}
+
+fn render_mcp_config(
+    client: &str,
+    server_binary: &str,
+    environment: &[&str],
+) -> Result<String, String> {
+    Ok(match client {
+        "codex" => codex_mcp_config(server_binary, environment),
+        "claude-code" => claude_mcp_config(server_binary, environment),
+        "gemini-cli" => gemini_mcp_config(server_binary, environment),
+        "cursor" => cursor_mcp_config(server_binary, environment),
+        "vscode" => vscode_mcp_config(server_binary, environment),
         "zed" => zed_mcp_config(server_binary),
-        "opencode" => opencode_mcp_config(server_binary, &environment),
-        "generic" => generic_mcp_config(server_binary, &environment),
+        "opencode" => opencode_mcp_config(server_binary, environment),
+        "generic" => generic_mcp_config(server_binary, environment),
         _ => {
             return Err(
                 "--client must be codex, claude-code, gemini-cli, cursor, vscode, zed, opencode, or generic".to_owned(),
             );
         }
-    };
-    println!("{config}");
-    Ok(())
+    })
 }
 
 #[derive(Serialize)]
@@ -2165,9 +2173,9 @@ mod tests {
         gemini_mcp_config, generic_mcp_config, mcp_client_catalog, mcp_environment_variables,
         memory_privacy_mode_name, memory_provider_check_policy, opencode_mcp_config, option,
         positive_u64, providers, read_export, recall_scope_context, redact_endpoint,
-        requested_memory_privacy, requested_memory_scope, run, selected_secret_reference,
-        test_provider, validate_external_conformance_namespace, validate_mcp_server_binary,
-        vscode_mcp_config, write_export, zed_mcp_config,
+        render_mcp_config, requested_memory_privacy, requested_memory_scope, run,
+        selected_secret_reference, test_provider, validate_external_conformance_namespace,
+        validate_mcp_server_binary, vscode_mcp_config, write_export, zed_mcp_config,
     };
 
     fn temporary_path(name: &str) -> std::path::PathBuf {
@@ -2720,12 +2728,21 @@ mod tests {
             Some("process-inherited")
         );
         let serialized =
-            serde_json::to_value(catalog).expect("catalog serialization should succeed");
+            serde_json::to_value(&catalog).expect("catalog serialization should succeed");
         let canonical: serde_json::Value = serde_json::from_str(include_str!(
             "../../../spec/examples/mcp-client-catalog.json"
         ))
         .expect("canonical client catalog fixture should be valid");
         assert_eq!(serialized, canonical);
+
+        let environment =
+            mcp_environment_variables("environment").expect("environment provider is valid");
+        for client in &catalog.clients {
+            let rendered = render_mcp_config(client.id, "/opt/rembrane-mcp", &environment)
+                .expect("every catalog client must have a renderer");
+            assert!(!rendered.is_empty());
+            assert!(!rendered.contains("REMBRANE_WORKSPACE_KEY_HEX"));
+        }
     }
 
     #[test]

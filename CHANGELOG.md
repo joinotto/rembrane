@@ -37,6 +37,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   environment mode.
 - A strict portable schema and canonical fixture for the MCP client catalog,
   with the CLI serializer pinned to the published representation.
+- Catalog-to-renderer parity checks preventing unsupported or raw-key-bearing
+  agent configurations from being advertised.
 - A parameter-bound PostgreSQL tenant-session contract with exact context
   read-back requirements and a live pooled-connection leakage regression.
 - A typed reference-only PostgreSQL connection profile with explicit
