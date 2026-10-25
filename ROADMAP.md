@@ -322,6 +322,8 @@ This roadmap describes sequencing, not release dates.
         next required key generation, and persist both lifecycle audit events.
       - [x] Compose PostgreSQL membership, scope, and key-rotation ports through
         client authorization, including fail-closed pending-rotation denial.
+      - [x] Add a tenant-and-cipher PostgreSQL memory facade for exact and
+        bounded subject reads with authenticated domain-record correlation.
       - [x] Add exact invitation lookup and bounded status-filtered listing
         with terminal-state restoration and full tenant/identifier correlation.
       - [x] Implement atomic invitation creation, acceptance, revocation,

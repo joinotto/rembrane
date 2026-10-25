@@ -9,6 +9,8 @@ rust-version.workspace = true
 
 [dependencies]
 rembrane-application = { path = "../../crates/rembrane-application" }
+rembrane-codec = { path = "../../crates/rembrane-codec" }
+rembrane-crypto = { path = "../../crates/rembrane-crypto" }
 rembrane-domain = { path = "../../crates/rembrane-domain" }
 
 [lints]

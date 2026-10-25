@@ -84,6 +84,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - End-to-end PostgreSQL client-authorization composition proving role-filtered
   write permissions, explicit member scopes, and fail-closed denial while a
   workspace key rotation remains required.
+- A dedicated tenant-and-cipher PostgreSQL `MemoryRepository` facade for exact
+  lookup and subject enumeration, with bounded reads, authenticated decryption,
+  and strict outer-row/domain-payload identity and version correlation.
 - PostgreSQL invitation lookup and bounded deterministic listing with optional
   status filtering, numeric lifetime decoding, terminal-state restoration,
   and exact tenant/invitation correlation.

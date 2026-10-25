@@ -11,17 +11,19 @@ use std::fmt::{self, Display, Formatter};
 use rembrane_application::{
     AdministrativeAuditRepository, ApplicationError, InvitationRepository, KeyRotationRepository,
     MAX_ADMINISTRATIVE_AUDIT_PAGE, MAXIMUM_INVITATION_LIST_ITEMS, MemberLifecycleRepository,
-    MemberScopeGrantRepository, MembershipRepository, RetentionRepository, WorkspaceReadRepository,
-    WorkspaceRepository, is_strict_successor,
+    MemberScopeGrantRepository, MembershipRepository, MemoryRepository, RetentionRepository,
+    WorkspaceReadRepository, WorkspaceRepository, is_strict_successor,
 };
+use rembrane_codec::decode_memory;
+use rembrane_crypto::{EncryptedPayload, EncryptionContext, PayloadPurpose, RecordCipher};
 use rembrane_domain::{
     ActivityId, AdministrativeAction, AdministrativeAuditEvent, AdministrativeAuditEventId,
     AdministrativeTargetKind, EntityId, Invitation, InvitationId, InvitationStatus, KeyRotationId,
     KeyRotationReceipt, KeyRotationStatus, LegalHoldId, LegalHoldStatus,
-    MAX_KEY_ROTATION_RECIPIENTS, MemberScopeGrant, Membership, MembershipStatus, Principal,
-    PrincipalId, ProviderId, ReadScope, RetentionPeriod, RetentionResource, Workspace, WorkspaceId,
-    WorkspaceKeyRotation, WorkspaceKind, WorkspaceLegalHold, WorkspaceRetentionPolicy,
-    WorkspaceRole,
+    MAX_KEY_ROTATION_RECIPIENTS, MemberScopeGrant, Membership, MembershipStatus, MemoryId,
+    MemoryRecord, Principal, PrincipalId, ProviderId, ReadScope, RetentionPeriod,
+    RetentionResource, Workspace, WorkspaceId, WorkspaceKeyRotation, WorkspaceKind,
+    WorkspaceLegalHold, WorkspaceRetentionPolicy, WorkspaceRole,
 };
 
 pub const SET_TENANT_SQL: &str = "SELECT set_config('rembrane.workspace_id', $1, true);";
@@ -160,6 +162,15 @@ pub const DELETE_MEMBER_SCOPE_GRANTS_SQL: &str = "DELETE FROM member_scope_grant
 pub const INSERT_REQUIRED_KEY_ROTATION_SQL: &str = "INSERT INTO workspace_key_rotations \
     (workspace_id, id, generation, removed_principal_id, requested_by, status) \
     VALUES ($1, $2, $3, $4, $5, 'required')";
+pub const FIND_MEMORY_SQL: &str = "SELECT workspace_id, id, subject_id, version, \
+    content_ciphertext, encryption_key_id, encryption_algorithm, encryption_nonce \
+    FROM memories WHERE workspace_id = $1 AND id = $2 \
+    ORDER BY workspace_id, id LIMIT 2";
+pub const MAX_SUBJECT_MEMORIES: usize = 10_000;
+pub const LIST_SUBJECT_MEMORIES_SQL: &str = "SELECT workspace_id, id, subject_id, version, \
+    content_ciphertext, encryption_key_id, encryption_algorithm, encryption_nonce \
+    FROM memories WHERE workspace_id = $1 AND subject_id = $2 \
+    ORDER BY id LIMIT 10001";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PostgresParameter<'value> {
@@ -176,6 +187,8 @@ pub trait PostgresRow {
     fn text(&self, column: &str) -> Result<String, Self::Error>;
 
     fn u64(&self, column: &str) -> Result<u64, Self::Error>;
+
+    fn bytes(&self, column: &str) -> Result<Vec<u8>, Self::Error>;
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -528,6 +541,15 @@ pub struct PostgresStore<Pool> {
 /// workspace before a database transaction can begin.
 pub struct PostgresTenantStore<'store, Pool> {
     store: &'store PostgresStore<Pool>,
+    workspace_id: WorkspaceId,
+}
+
+/// Tenant-pinned memory view with explicit access to an operator-selected
+/// record cipher. Administrative repository facades never receive this key
+/// capability.
+pub struct PostgresTenantMemoryStore<'store, 'cipher, Pool, Cipher> {
+    store: &'store PostgresStore<Pool>,
+    cipher: &'cipher Cipher,
     workspace_id: WorkspaceId,
 }
 
@@ -1799,6 +1821,18 @@ impl<Pool> PostgresTenantStore<'_, Pool> {
         }
     }
 
+    #[must_use]
+    pub fn with_cipher<'cipher, Cipher>(
+        &self,
+        cipher: &'cipher Cipher,
+    ) -> PostgresTenantMemoryStore<'_, 'cipher, Pool, Cipher> {
+        PostgresTenantMemoryStore {
+            store: self.store,
+            cipher,
+            workspace_id: self.workspace_id.clone(),
+        }
+    }
+
     pub fn find_retention_policy(
         &self,
         workspace_id: &WorkspaceId,
@@ -2205,6 +2239,101 @@ where
         self.store
             .replace_invitation(&invitation, expected_status, &audit_event)
             .map_err(map_invitation_application_error)
+    }
+}
+
+impl<Pool, Cipher> MemoryRepository for PostgresTenantMemoryStore<'_, '_, Pool, Cipher>
+where
+    Pool: PostgresPool,
+    Pool::Error: ClassifiedPostgresError,
+    <Pool::Transaction as PostgresTransaction>::Row: PostgresRow<Error = Pool::Error>,
+    Cipher: RecordCipher,
+{
+    fn find(
+        &self,
+        workspace_id: &WorkspaceId,
+        memory_id: &MemoryId,
+    ) -> Result<Option<MemoryRecord>, ApplicationError> {
+        if workspace_id != &self.workspace_id {
+            return Err(ApplicationError::AccessDenied);
+        }
+        let mut transaction = self
+            .store
+            .begin_tenant(workspace_id.clone())
+            .map_err(map_application_error)?;
+        let rows = transaction
+            .query(
+                FIND_MEMORY_SQL,
+                &[
+                    PostgresParameter::Text(workspace_id.as_str()),
+                    PostgresParameter::Text(memory_id.as_str()),
+                ],
+            )
+            .map_err(PostgresStoreError::Tenant)
+            .map_err(map_application_error)?;
+        if rows.len() > 1 {
+            return Err(ApplicationError::StorageUnavailable);
+        }
+        let memory = rows
+            .first()
+            .map(|row| decrypt_memory_row(self.cipher, row, workspace_id, memory_id, None))
+            .transpose()
+            .map_err(map_application_error)?;
+        transaction
+            .commit()
+            .map_err(PostgresStoreError::Tenant)
+            .map_err(map_application_error)?;
+        Ok(memory)
+    }
+
+    fn list_for_subject(
+        &self,
+        workspace_id: &WorkspaceId,
+        subject_id: &PrincipalId,
+    ) -> Result<Vec<MemoryRecord>, ApplicationError> {
+        if workspace_id != &self.workspace_id {
+            return Err(ApplicationError::AccessDenied);
+        }
+        let mut transaction = self
+            .store
+            .begin_tenant(workspace_id.clone())
+            .map_err(map_application_error)?;
+        let rows = transaction
+            .query(
+                LIST_SUBJECT_MEMORIES_SQL,
+                &[
+                    PostgresParameter::Text(workspace_id.as_str()),
+                    PostgresParameter::Text(subject_id.as_str()),
+                ],
+            )
+            .map_err(PostgresStoreError::Tenant)
+            .map_err(map_application_error)?;
+        if rows.len() > MAX_SUBJECT_MEMORIES {
+            return Err(ApplicationError::StorageUnavailable);
+        }
+        let mut ids = BTreeSet::new();
+        let memories = rows
+            .iter()
+            .map(|row| {
+                let id = row.text("id").map_err(PostgresStoreError::Row)?;
+                if !ids.insert(id.clone()) {
+                    return Err(PostgresStoreError::InvalidRow);
+                }
+                decrypt_memory_row(
+                    self.cipher,
+                    row,
+                    workspace_id,
+                    &MemoryId::new(id),
+                    Some(subject_id),
+                )
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(map_application_error)?;
+        transaction
+            .commit()
+            .map_err(PostgresStoreError::Tenant)
+            .map_err(map_application_error)?;
+        Ok(memories)
     }
 }
 
@@ -2812,6 +2941,59 @@ where
     ))
 }
 
+fn decrypt_memory_row<Row, Cipher, DriverError>(
+    cipher: &Cipher,
+    row: &Row,
+    expected_workspace_id: &WorkspaceId,
+    expected_memory_id: &MemoryId,
+    expected_subject_id: Option<&PrincipalId>,
+) -> Result<MemoryRecord, PostgresStoreError<DriverError>>
+where
+    Row: PostgresRow<Error = DriverError>,
+    Cipher: RecordCipher,
+{
+    let workspace_id = row.text("workspace_id").map_err(PostgresStoreError::Row)?;
+    let memory_id = row.text("id").map_err(PostgresStoreError::Row)?;
+    let subject_id = row.text("subject_id").map_err(PostgresStoreError::Row)?;
+    if workspace_id != expected_workspace_id.as_str()
+        || memory_id != expected_memory_id.as_str()
+        || expected_subject_id.is_some_and(|expected| subject_id != expected.as_str())
+    {
+        return Err(PostgresStoreError::InvalidRow);
+    }
+    let version = row.u64("version").map_err(PostgresStoreError::Row)?;
+    let context = EncryptionContext::new(
+        expected_workspace_id.clone(),
+        expected_memory_id.as_str(),
+        version,
+        PayloadPurpose::MemoryContent,
+    )
+    .map_err(|_| PostgresStoreError::InvalidRow)?;
+    let payload = EncryptedPayload::new(
+        row.bytes("content_ciphertext")
+            .map_err(PostgresStoreError::Row)?,
+        row.text("encryption_key_id")
+            .map_err(PostgresStoreError::Row)?,
+        row.text("encryption_algorithm")
+            .map_err(PostgresStoreError::Row)?,
+        row.bytes("encryption_nonce")
+            .map_err(PostgresStoreError::Row)?,
+    )
+    .map_err(|_| PostgresStoreError::InvalidRow)?;
+    let plaintext = cipher
+        .open(&context, &payload)
+        .map_err(|_| PostgresStoreError::InvalidRow)?;
+    let memory = decode_memory(&plaintext).map_err(|_| PostgresStoreError::InvalidRow)?;
+    if memory.workspace_id() != expected_workspace_id
+        || memory.id() != expected_memory_id
+        || memory.subject_id().as_str() != subject_id
+        || memory.version() != version
+    {
+        return Err(PostgresStoreError::InvalidRow);
+    }
+    Ok(memory)
+}
+
 fn decode_key_rotation<Row, DriverError>(
     row: &Row,
     expected_workspace_id: &WorkspaceId,
@@ -3155,29 +3337,32 @@ mod tests {
         AdministrativeAuditRepository, ApplicationError, AuthorizeClientCommand,
         AuthorizeClientService, CreateInvitationCommand, InvitationRepository, InvitationService,
         KeyRotationRepository, MemberLifecycleRepository, MemberScopeGrantRepository,
-        MembershipRepository, RetentionRepository, WorkspaceRepository,
+        MembershipRepository, MemoryRepository, RetentionRepository, WorkspaceRepository,
     };
+    use rembrane_codec::encode_memory;
+    use rembrane_crypto::{CryptoError, EncryptedPayload, EncryptionContext, RecordCipher};
     use rembrane_domain::{
         AdministrativeAction, AdministrativeAuditEvent, AdministrativeAuditEventId,
-        AdministrativeTargetKind, ClientId, EntityId, Invitation, InvitationId, InvitationStatus,
-        KeyRotationId, KeyRotationReceipt, KeyRotationStatus, LegalHoldId, LegalHoldStatus,
-        MemberScopeGrant, MembershipStatus, Principal, PrincipalId, ProviderId, ReadScope,
-        RetentionPeriod, RetentionResource, Workspace, WorkspaceId, WorkspaceKeyRotation,
-        WorkspaceRetentionPolicy, WorkspaceRole, WritePermission,
+        AdministrativeTargetKind, ClientId, EntityId, EvidenceId, EvidenceReference,
+        EvidenceSource, Invitation, InvitationId, InvitationStatus, KeyRotationId,
+        KeyRotationReceipt, KeyRotationStatus, LegalHoldId, LegalHoldStatus, MemberScopeGrant,
+        MembershipStatus, MemoryId, MemoryRecord, MemoryScope, Principal, PrincipalId, ProviderId,
+        ReadScope, RetentionPeriod, RetentionResource, Workspace, WorkspaceId,
+        WorkspaceKeyRotation, WorkspaceRetentionPolicy, WorkspaceRole, WritePermission,
     };
 
     use super::{
         ACCEPT_INVITATION_SQL, COMPLETE_KEY_ROTATION_SQL, ClassifiedPostgresError,
         DELETE_MEMBER_SCOPE_GRANT_SQL, DELETE_MEMBER_SCOPE_GRANTS_SQL,
         EXPIRE_PENDING_INVITATION_SQL, FIND_INVITATION_SQL, FIND_KEY_ROTATION_RECEIPT_SQL,
-        FIND_LEGAL_HOLD_SQL, FIND_MEMBERSHIP_SQL, FIND_PRINCIPAL_SQL,
+        FIND_LEGAL_HOLD_SQL, FIND_MEMBERSHIP_SQL, FIND_MEMORY_SQL, FIND_PRINCIPAL_SQL,
         FIND_PROVISIONING_PRINCIPAL_SQL, FIND_RETENTION_POLICY_SQL, FIND_WORKSPACE_SQL,
         INSERT_ADMINISTRATIVE_AUDIT_SQL, INSERT_INVITATION_SQL, INSERT_KEY_ROTATION_RECEIPT_SQL,
         INSERT_KEY_ROTATION_RECIPIENT_SQL, INSERT_LEGAL_HOLD_SQL, INSERT_MEMBER_SCOPE_GRANT_SQL,
         INSERT_MEMBERSHIP_SQL, INSERT_PRINCIPAL_SQL, INSERT_REQUIRED_KEY_ROTATION_SQL,
         INSERT_RETENTION_POLICY_SQL, INSERT_WORKSPACE_SQL, LATEST_KEY_ROTATION_SQL,
         LIST_ACTIVE_LEGAL_HOLDS_SQL, LIST_ACTIVE_MEMBERSHIPS_SQL, LIST_ADMINISTRATIVE_AUDIT_SQL,
-        LIST_INVITATIONS_BY_STATUS_SQL, LIST_MEMBER_SCOPE_GRANTS_SQL,
+        LIST_INVITATIONS_BY_STATUS_SQL, LIST_MEMBER_SCOPE_GRANTS_SQL, LIST_SUBJECT_MEMORIES_SQL,
         LOCK_WORKSPACE_FOR_ROTATION_SQL, MAX_ACTIVE_MEMBERSHIPS, NEXT_KEY_ROTATION_GENERATION_SQL,
         PostgresFailureKind, PostgresParameter, PostgresPool, PostgresProvisioner,
         PostgresProvisioningPool, PostgresRow, PostgresStore, PostgresStoreError,
@@ -3202,6 +3387,26 @@ mod tests {
     impl ClassifiedPostgresError for &'static str {
         fn kind(&self) -> PostgresFailureKind {
             PostgresFailureKind::Other
+        }
+    }
+
+    struct IdentityCipher;
+
+    impl RecordCipher for IdentityCipher {
+        fn seal(
+            &self,
+            _context: &EncryptionContext,
+            plaintext: &[u8],
+        ) -> Result<EncryptedPayload, CryptoError> {
+            EncryptedPayload::new(plaintext.to_vec(), "key_test", "identity-test", vec![7; 24])
+        }
+
+        fn open(
+            &self,
+            _context: &EncryptionContext,
+            payload: &EncryptedPayload,
+        ) -> Result<Vec<u8>, CryptoError> {
+            Ok(payload.ciphertext().to_vec())
         }
     }
 
@@ -3281,6 +3486,25 @@ mod tests {
             Self {
                 columns: BTreeMap::from([("id", workspace_id.to_owned())]),
                 numbers: BTreeMap::from([("next_generation", generation)]),
+            }
+        }
+
+        fn memory(memory: &MemoryRecord) -> Self {
+            let encoded = encode_memory(memory).expect("encode memory");
+            Self {
+                columns: BTreeMap::from([
+                    ("workspace_id", memory.workspace_id().as_str().to_owned()),
+                    ("id", memory.id().as_str().to_owned()),
+                    ("subject_id", memory.subject_id().as_str().to_owned()),
+                    (
+                        "content_ciphertext",
+                        String::from_utf8(encoded).expect("JSON payload"),
+                    ),
+                    ("encryption_key_id", "key_test".to_owned()),
+                    ("encryption_algorithm", "identity-test".to_owned()),
+                    ("encryption_nonce", "777777777777777777777777".to_owned()),
+                ]),
+                numbers: BTreeMap::from([("version", memory.version())]),
             }
         }
 
@@ -3391,6 +3615,13 @@ mod tests {
                 .get(column)
                 .copied()
                 .ok_or("unknown numeric column")
+        }
+
+        fn bytes(&self, column: &str) -> Result<Vec<u8>, Self::Error> {
+            self.columns
+                .get(column)
+                .map(|value| value.as_bytes().to_vec())
+                .ok_or("unknown bytes column")
         }
     }
 
@@ -5071,6 +5302,79 @@ mod tests {
         assert!(!calls.borrow().iter().any(
             |call| matches!(call, Call::Query(statement, _) if statement == LIST_MEMBER_SCOPE_GRANTS_SQL)
         ));
+    }
+
+    #[test]
+    fn tenant_cipher_store_decrypts_exact_and_subject_memory_reads() {
+        let expected = MemoryRecord::confirmed_preference(
+            MemoryId::new("memory_01"),
+            WorkspaceId::new("workspace_01"),
+            PrincipalId::new("principal_01"),
+            MemoryScope::Global,
+            "Call me Hippo",
+            EvidenceReference::new(
+                EvidenceId::new("evidence_01"),
+                EvidenceSource::UserStatement,
+            ),
+        )
+        .expect("memory");
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let store = PostgresStore::new(FakePool {
+            calls: Rc::clone(&calls),
+            tenant_batches: RefCell::new(
+                [
+                    VecDeque::from([
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                    ]),
+                    VecDeque::from([
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                    ]),
+                ]
+                .into(),
+            ),
+            row_batches: RefCell::new(
+                [
+                    vec![FakeRow::memory(&expected)],
+                    vec![FakeRow::memory(&expected)],
+                ]
+                .into(),
+            ),
+        });
+        let tenant = store.for_workspace(WorkspaceId::new("workspace_01"));
+        let cipher = IdentityCipher;
+        let memories = tenant.with_cipher(&cipher);
+
+        assert_eq!(
+            MemoryRepository::find(
+                &memories,
+                &WorkspaceId::new("workspace_01"),
+                &MemoryId::new("memory_01"),
+            )
+            .expect("find memory"),
+            Some(expected.clone())
+        );
+        assert_eq!(
+            MemoryRepository::list_for_subject(
+                &memories,
+                &WorkspaceId::new("workspace_01"),
+                &PrincipalId::new("principal_01"),
+            )
+            .expect("list memories"),
+            vec![expected]
+        );
+        assert!(calls.borrow().contains(&Call::Query(
+            FIND_MEMORY_SQL.to_owned(),
+            vec!["text:workspace_01".to_owned(), "text:memory_01".to_owned(),]
+        )));
+        assert!(calls.borrow().contains(&Call::Query(
+            LIST_SUBJECT_MEMORIES_SQL.to_owned(),
+            vec![
+                "text:workspace_01".to_owned(),
+                "text:principal_01".to_owned(),
+            ]
+        )));
     }
 
     #[test]

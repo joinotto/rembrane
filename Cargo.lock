@@ -1454,6 +1454,8 @@ name = "rembrane-store-postgres"
 version = "0.1.0-alpha.1"
 dependencies = [
  "rembrane-application",
+ "rembrane-codec",
+ "rembrane-crypto",
  "rembrane-domain",
 ]
 
