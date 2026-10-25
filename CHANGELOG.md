@@ -25,6 +25,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   transaction.
 - Bounded SQLite retention purges now include graph disclosure receipts and
   cascade their exact disclosed-edge evidence in the same transaction.
+- Graph-context resolution now requires an explicitly granted memory scope and
+  a non-empty disclosure purpose before any provider or repository access.
 - Bounded shared-workspace invitation validity with persisted creation and
   expiry time, a 30-day maximum lifetime, and fail-closed acceptance at the
   expiry boundary.

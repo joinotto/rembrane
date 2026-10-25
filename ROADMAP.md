@@ -416,6 +416,8 @@ This roadmap describes sequencing, not release dates.
     - [x] Require append-only disclosure evidence containing the exact
       canonical edge revisions, query direction, validity time, client,
       subject, and purpose before returning graph context.
+      - [x] Deny graph retrieval before provider access when the requested
+        domain/entity scope is absent or the disclosure purpose is empty.
     - [x] Persist graph disclosure evidence in the in-memory, SQLite, and
       PostgreSQL repository adapters with tenant-isolation coverage.
       - [x] Enforce exact tenant and edge-revision correlation in the

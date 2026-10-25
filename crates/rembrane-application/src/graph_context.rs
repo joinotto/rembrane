@@ -1,6 +1,6 @@
 use rembrane_domain::{
     DisclosedKnowledgeEdge, DisclosureId, GraphDisclosureDirection, GraphDisclosureReceipt,
-    KnowledgeEdge, KnowledgeNodeId, ReadGrant,
+    KnowledgeEdge, KnowledgeNodeId, MemoryScope, ReadGrant,
 };
 use rembrane_provider_sdk::{
     CURRENT_PROVIDER_PROTOCOL, Capability, GraphDirection, GraphNeighbourQuery,
@@ -12,6 +12,7 @@ use crate::{ApplicationError, GraphContextRepository};
 pub struct ResolveGraphContextCommand {
     pub query: GraphNeighbourQuery,
     pub grant: ReadGrant,
+    pub scope: MemoryScope,
     pub disclosure_id: DisclosureId,
     pub purpose: String,
 }
@@ -40,8 +41,15 @@ where
         &mut self,
         command: ResolveGraphContextCommand,
     ) -> Result<Vec<KnowledgeEdge>, ApplicationError> {
-        if command.grant.workspace_id != command.query.workspace_id {
+        if command.grant.workspace_id != command.query.workspace_id
+            || !command.grant.allows(&command.scope)
+        {
             return Err(ApplicationError::AccessDenied);
+        }
+        if command.purpose.trim().is_empty() {
+            return Err(ApplicationError::Validation(
+                "graph disclosure purpose must not be empty".to_owned(),
+            ));
         }
         let query = command.query;
         query
@@ -146,8 +154,8 @@ mod tests {
     use rembrane_domain::{
         ClientId, DisclosureId, EvidenceId, EvidenceReference, EvidenceSource,
         GraphDisclosureDirection, GraphDisclosureReceipt, KnowledgeEdge, KnowledgeEdgeId,
-        KnowledgeNode, KnowledgeNodeId, KnowledgeRelationType, PrincipalId, ReadGrant, ReadScope,
-        TemporalValidity, WorkspaceId,
+        KnowledgeNode, KnowledgeNodeId, KnowledgeRelationType, MemoryScope, PrincipalId, ReadGrant,
+        ReadScope, TemporalValidity, WorkspaceId,
     };
     use rembrane_provider_sdk::{
         CURRENT_PROVIDER_PROTOCOL, CandidateKnowledgeEdge, Capability, GraphDirection,
@@ -307,6 +315,7 @@ mod tests {
                 scopes: vec![ReadScope::Global],
                 permissions: Vec::new(),
             },
+            scope: MemoryScope::Global,
             disclosure_id: DisclosureId::new("disclosure_01"),
             purpose: "assistant_graph_context".to_owned(),
         }
@@ -413,6 +422,34 @@ mod tests {
             GraphContextService::new(&mut repository, &provider).execute(command),
             Err(ApplicationError::AccessDenied)
         );
+        assert!(repository.disclosures.is_empty());
+    }
+
+    #[test]
+    fn rejects_ungranted_scope_and_empty_purpose_before_disclosure() {
+        let mut repository = Repository {
+            edges: Vec::new(),
+            disclosures: Vec::new(),
+            fail_disclosure: false,
+        };
+        let provider = Provider {
+            candidates: Vec::new(),
+        };
+        let mut ungranted = command("workspace_01", 150);
+        ungranted.scope = MemoryScope::Entity {
+            id: rembrane_domain::EntityId::new("project_01"),
+        };
+        assert_eq!(
+            GraphContextService::new(&mut repository, &provider).execute(ungranted),
+            Err(ApplicationError::AccessDenied)
+        );
+
+        let mut empty_purpose = command("workspace_01", 150);
+        empty_purpose.purpose = "  ".to_owned();
+        assert!(matches!(
+            GraphContextService::new(&mut repository, &provider).execute(empty_purpose),
+            Err(ApplicationError::Validation(_))
+        ));
         assert!(repository.disclosures.is_empty());
     }
 
