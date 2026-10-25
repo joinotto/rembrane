@@ -536,6 +536,21 @@ enum JsonRpcId {
     Present(serde_json::Value),
 }
 
+impl JsonRpcId {
+    fn is_missing(&self) -> bool {
+        matches!(self, Self::Missing)
+    }
+
+    fn is_sdk_request_id(&self) -> bool {
+        match self {
+            Self::Missing => false,
+            Self::Present(serde_json::Value::Number(value)) => value.as_i64().is_some(),
+            Self::Present(serde_json::Value::String(_)) => true,
+            Self::Present(_) => false,
+        }
+    }
+}
+
 impl<'de> Deserialize<'de> for JsonRpcId {
     fn deserialize<Deserializer>(deserializer: Deserializer) -> Result<Self, Deserializer::Error>
     where
@@ -559,9 +574,12 @@ pub fn classify_remote_mcp_request(
     }
     let envelope: JsonRpcEnvelope =
         serde_json::from_slice(body).map_err(|_| RemoteMcpHttpGate::forbidden())?;
-    if envelope.jsonrpc != "2.0"
-        || matches!(envelope.id, JsonRpcId::Present(serde_json::Value::Null))
-    {
+    let valid_id = match envelope.method.as_str() {
+        "notifications/initialized" | "notifications/cancelled" => envelope.id.is_missing(),
+        "initialize" | "ping" | "tools/list" | "tools/call" => envelope.id.is_sdk_request_id(),
+        _ => false,
+    };
+    if envelope.jsonrpc != "2.0" || !valid_id {
         return Err(RemoteMcpHttpGate::forbidden());
     }
     let tool_name = if envelope.method == "tools/call" {
@@ -1971,6 +1989,10 @@ mod tests {
             br"[]".as_slice(),
             br#"{"jsonrpc":"1.0","id":1,"method":"tools/list"}"#,
             br#"{"jsonrpc":"2.0","id":null,"method":"tools/list"}"#,
+            br#"{"jsonrpc":"2.0","method":"tools/list"}"#,
+            br#"{"jsonrpc":"2.0","id":true,"method":"tools/list"}"#,
+            br#"{"jsonrpc":"2.0","id":1.5,"method":"tools/list"}"#,
+            br#"{"jsonrpc":"2.0","id":1,"method":"notifications/initialized"}"#,
             br#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{}}"#,
             br#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"future_tool"}}"#,
             br#"{"jsonrpc":"2.0","id":1,"method":"resources/list"}"#,
@@ -1980,6 +2002,15 @@ mod tests {
                 classify_remote_mcp_request(body).is_err(),
                 "unsupported body must fail closed"
             );
+        }
+
+        for body in [
+            br#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#.as_slice(),
+            br#"{"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":1}}"#,
+            br#"{"jsonrpc":"2.0","id":"request-01","method":"tools/list"}"#,
+            br#"{"jsonrpc":"2.0","id":-1,"method":"ping"}"#,
+        ] {
+            classify_remote_mcp_request(body).expect("valid SDK request shape should classify");
         }
     }
 

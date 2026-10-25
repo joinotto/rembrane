@@ -9,6 +9,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- Remote MCP authorization now rejects missing, null, boolean, object,
+  fractional, and out-of-range request IDs, and rejects IDs attached to MCP
+  notification methods before the official SDK dispatch boundary.
 - The canonical environment template now includes the complete macOS Keychain
   lookup profile, including metadata-only historical key generations, with a
   static regression gate for Mac and Mac mini self-hosting.
