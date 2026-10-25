@@ -290,6 +290,8 @@ This roadmap describes sequencing, not release dates.
         permanently close a transaction after detected context drift.
       - [x] Add a driver-neutral pool boundary that begins and verifies a fresh
         transaction for every tenant operation and sequential pool reuse.
+      - [x] Implement the first typed repository read for exact workspace
+        lookup with closed row decoding and cardinality enforcement.
     - [x] Define a reference-only PostgreSQL connection profile with explicit
       transport security and bounded pool capacity.
       - [x] Prevent derived debug logging of the database secret locator.

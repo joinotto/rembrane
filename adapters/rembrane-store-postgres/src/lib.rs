@@ -7,16 +7,24 @@
 use std::error::Error;
 use std::fmt::{self, Display, Formatter};
 
-use rembrane_domain::WorkspaceId;
+use rembrane_domain::{Workspace, WorkspaceId};
 
 pub const SET_TENANT_SQL: &str = "SELECT set_config('rembrane.workspace_id', $1, true);";
 pub const READ_TENANT_SQL: &str = "SELECT rembrane.current_workspace_id();";
+pub const FIND_WORKSPACE_SQL: &str =
+    "SELECT id, kind FROM workspaces WHERE id = $1 ORDER BY id LIMIT 2";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PostgresParameter<'value> {
     Text(&'value str),
     I64(i64),
     Bytes(&'value [u8]),
+}
+
+pub trait PostgresRow {
+    type Error;
+
+    fn text(&self, column: &str) -> Result<String, Self::Error>;
 }
 
 /// Minimal transaction surface required by the tenant-verifying adapter.
@@ -91,6 +99,9 @@ impl<DriverError> Error for TenantTransactionError<DriverError> where DriverErro
 pub enum PostgresStoreError<DriverError> {
     Begin(DriverError),
     Tenant(TenantTransactionError<DriverError>),
+    Row(DriverError),
+    InvalidRow,
+    UnexpectedCardinality,
 }
 
 impl<DriverError: Display> Display for PostgresStoreError<DriverError> {
@@ -100,6 +111,11 @@ impl<DriverError: Display> Display for PostgresStoreError<DriverError> {
                 write!(formatter, "could not begin PostgreSQL transaction: {error}")
             }
             Self::Tenant(error) => Display::fmt(error, formatter),
+            Self::Row(error) => write!(formatter, "could not decode PostgreSQL row: {error}"),
+            Self::InvalidRow => formatter.write_str("PostgreSQL returned an invalid canonical row"),
+            Self::UnexpectedCardinality => {
+                formatter.write_str("PostgreSQL returned unexpected row cardinality")
+            }
         }
     }
 }
@@ -124,6 +140,49 @@ impl<Pool: PostgresPool> PostgresStore<Pool> {
     ) -> Result<TenantTransaction<Pool::Transaction>, PostgresStoreError<Pool::Error>> {
         let transaction = self.pool.begin().map_err(PostgresStoreError::Begin)?;
         TenantTransaction::verify(transaction, workspace_id).map_err(PostgresStoreError::Tenant)
+    }
+
+    pub fn find_workspace(
+        &self,
+        workspace_id: &WorkspaceId,
+    ) -> Result<Option<Workspace>, PostgresStoreError<Pool::Error>>
+    where
+        <Pool::Transaction as PostgresTransaction>::Row: PostgresRow<Error = Pool::Error>,
+    {
+        let mut transaction = self.begin_tenant(workspace_id.clone())?;
+        let rows = transaction
+            .query(
+                FIND_WORKSPACE_SQL,
+                &[PostgresParameter::Text(workspace_id.as_str())],
+            )
+            .map_err(PostgresStoreError::Tenant)?;
+        if rows.len() > 1 {
+            return Err(PostgresStoreError::UnexpectedCardinality);
+        }
+        let workspace = rows
+            .first()
+            .map(|row| decode_workspace(row, workspace_id))
+            .transpose()?;
+        transaction.commit().map_err(PostgresStoreError::Tenant)?;
+        Ok(workspace)
+    }
+}
+
+fn decode_workspace<Row, DriverError>(
+    row: &Row,
+    expected_id: &WorkspaceId,
+) -> Result<Workspace, PostgresStoreError<DriverError>>
+where
+    Row: PostgresRow<Error = DriverError>,
+{
+    let id = row.text("id").map_err(PostgresStoreError::Row)?;
+    if id != expected_id.as_str() {
+        return Err(PostgresStoreError::InvalidRow);
+    }
+    match row.text("kind").map_err(PostgresStoreError::Row)?.as_str() {
+        "personal" => Ok(Workspace::personal(WorkspaceId::new(id))),
+        "shared" => Ok(Workspace::shared(WorkspaceId::new(id))),
+        _ => Err(PostgresStoreError::InvalidRow),
     }
 }
 
@@ -271,8 +330,9 @@ mod tests {
     use rembrane_domain::WorkspaceId;
 
     use super::{
-        PostgresParameter, PostgresPool, PostgresStore, PostgresStoreError, PostgresTransaction,
-        READ_TENANT_SQL, SET_TENANT_SQL, TenantTransaction, TenantTransactionError,
+        FIND_WORKSPACE_SQL, PostgresParameter, PostgresPool, PostgresRow, PostgresStore,
+        PostgresStoreError, PostgresTransaction, READ_TENANT_SQL, SET_TENANT_SQL,
+        TenantTransaction, TenantTransactionError,
     };
 
     #[derive(Clone, Debug, Eq, PartialEq)]
@@ -287,14 +347,43 @@ mod tests {
     type TenantRead = Result<Option<String>, &'static str>;
     type TenantReadBatch = VecDeque<TenantRead>;
 
+    #[derive(Clone, Debug, Eq, PartialEq)]
+    struct FakeRow {
+        id: String,
+        kind: String,
+    }
+
+    impl FakeRow {
+        fn workspace(id: &str, kind: &str) -> Self {
+            Self {
+                id: id.to_owned(),
+                kind: kind.to_owned(),
+            }
+        }
+    }
+
+    impl PostgresRow for FakeRow {
+        type Error = &'static str;
+
+        fn text(&self, column: &str) -> Result<String, Self::Error> {
+            match column {
+                "id" => Ok(self.id.clone()),
+                "kind" => Ok(self.kind.clone()),
+                _ => Err("unknown column"),
+            }
+        }
+    }
+
     struct FakeTransaction {
         calls: Rc<RefCell<Vec<Call>>>,
         tenants: TenantReadBatch,
+        rows: Vec<FakeRow>,
     }
 
     struct FakePool {
         calls: Rc<RefCell<Vec<Call>>>,
         tenant_batches: RefCell<VecDeque<TenantReadBatch>>,
+        row_batches: RefCell<VecDeque<Vec<FakeRow>>>,
     }
 
     impl PostgresPool for FakePool {
@@ -307,16 +396,22 @@ mod tests {
                 .borrow_mut()
                 .pop_front()
                 .ok_or("unexpected transaction begin")?;
+            let rows = self
+                .row_batches
+                .borrow_mut()
+                .pop_front()
+                .ok_or("unexpected row batch")?;
             Ok(FakeTransaction {
                 calls: Rc::clone(&self.calls),
                 tenants,
+                rows,
             })
         }
     }
 
     impl PostgresTransaction for FakeTransaction {
         type Error = &'static str;
-        type Row = String;
+        type Row = FakeRow;
 
         fn execute(
             &mut self,
@@ -337,7 +432,7 @@ mod tests {
             self.calls
                 .borrow_mut()
                 .push(Call::Query(statement.to_owned(), rendered(parameters)));
-            Ok(vec!["row".to_owned()])
+            Ok(self.rows.clone())
         }
 
         fn query_optional_text(
@@ -386,6 +481,7 @@ mod tests {
                     .into_iter()
                     .map(|tenant| tenant.map(|value| value.map(str::to_owned)))
                     .collect(),
+                rows: vec![FakeRow::workspace("workspace_01", "shared")],
             },
             calls,
         )
@@ -404,7 +500,7 @@ mod tests {
                     &[PostgresParameter::Text("workspace_01")],
                 )
                 .expect("query"),
-            vec!["row"]
+            vec![FakeRow::workspace("workspace_01", "shared")]
         );
         verified.commit().expect("commit");
 
@@ -480,6 +576,7 @@ mod tests {
                 ]
                 .into(),
             ),
+            row_batches: RefCell::new([Vec::new(), Vec::new()].into()),
         };
         let store = PostgresStore::new(pool);
 
@@ -526,5 +623,65 @@ mod tests {
             PostgresStore::new(FailingPool).begin_tenant(WorkspaceId::new("workspace_01")),
             Err(PostgresStoreError::Begin("pool unavailable"))
         ));
+    }
+
+    #[test]
+    fn workspace_lookup_decodes_exact_tenant_and_commits() {
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let store = PostgresStore::new(FakePool {
+            calls: Rc::clone(&calls),
+            tenant_batches: RefCell::new(
+                [VecDeque::from([
+                    Ok(Some("workspace_01".to_owned())),
+                    Ok(Some("workspace_01".to_owned())),
+                ])]
+                .into(),
+            ),
+            row_batches: RefCell::new([vec![FakeRow::workspace("workspace_01", "shared")]].into()),
+        });
+
+        let workspace = store
+            .find_workspace(&WorkspaceId::new("workspace_01"))
+            .expect("workspace lookup")
+            .expect("workspace");
+        assert_eq!(workspace.id().as_str(), "workspace_01");
+        assert_eq!(workspace.kind(), rembrane_domain::WorkspaceKind::Shared);
+        assert!(calls.borrow().contains(&Call::Query(
+            FIND_WORKSPACE_SQL.to_owned(),
+            vec!["text:workspace_01".to_owned()]
+        )));
+        assert_eq!(calls.borrow().last(), Some(&Call::Commit));
+    }
+
+    #[test]
+    fn workspace_lookup_rejects_invalid_or_excessive_rows() {
+        for rows in [
+            vec![FakeRow::workspace("workspace_other", "shared")],
+            vec![FakeRow::workspace("workspace_01", "unknown")],
+            vec![
+                FakeRow::workspace("workspace_01", "shared"),
+                FakeRow::workspace("workspace_01", "shared"),
+            ],
+        ] {
+            let calls = Rc::new(RefCell::new(Vec::new()));
+            let store = PostgresStore::new(FakePool {
+                calls: Rc::clone(&calls),
+                tenant_batches: RefCell::new(
+                    [VecDeque::from([
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                    ])]
+                    .into(),
+                ),
+                row_batches: RefCell::new([rows].into()),
+            });
+
+            assert!(
+                store
+                    .find_workspace(&WorkspaceId::new("workspace_01"))
+                    .is_err()
+            );
+            assert_eq!(calls.borrow().last(), Some(&Call::Rollback));
+        }
     }
 }

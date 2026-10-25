@@ -37,6 +37,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - A PostgreSQL pool boundary that begins and verifies a new transaction for
   every workspace operation, including sequential cross-tenant connection
   reuse.
+- Typed PostgreSQL workspace lookup through the verified tenant transaction,
+  with exact identifier matching, closed workspace-kind decoding, bounded
+  cardinality, and commit-on-success behavior.
 
 ### Changed
 
