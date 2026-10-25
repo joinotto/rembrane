@@ -12,15 +12,17 @@ use rembrane_application::{
     AdministrativeAuditRepository, ApplicationError, BookingResearchMutationRepository,
     BookingResearchRepository, CanonicalMutationRepository, CheckpointDisclosureRepository,
     CheckpointMutationRepository, CheckpointRepository, DisclosureRepository, EventRepository,
-    InvitationRepository, KeyRotationRepository, MAX_ADMINISTRATIVE_AUDIT_PAGE,
-    MAXIMUM_INVITATION_LIST_ITEMS, MemberLifecycleRepository, MemberScopeGrantRepository,
-    MembershipRepository, MemoryRepository, ProjectionOutboxRepository, RetentionRepository,
-    TravelDisclosureRepository, TripMutationRepository, TripRepository, WorkspaceReadRepository,
-    WorkspaceRepository, is_strict_successor,
+    InvitationRepository, KeyRotationRepository, KnowledgeDirection, KnowledgeGraphRepository,
+    MAX_ADMINISTRATIVE_AUDIT_PAGE, MAX_KNOWLEDGE_NEIGHBOURS, MAXIMUM_INVITATION_LIST_ITEMS,
+    MemberLifecycleRepository, MemberScopeGrantRepository, MembershipRepository, MemoryRepository,
+    ProjectionOutboxRepository, RetentionRepository, TravelDisclosureRepository,
+    TripMutationRepository, TripRepository, WorkspaceReadRepository, WorkspaceRepository,
+    is_strict_successor,
 };
 use rembrane_codec::{
-    decode_booking_research, decode_checkpoint, decode_event, decode_memory, decode_trip,
-    encode_booking_research, encode_checkpoint, encode_event, encode_memory, encode_trip,
+    decode_booking_research, decode_checkpoint, decode_event, decode_knowledge_edge,
+    decode_knowledge_node, decode_memory, decode_trip, encode_booking_research, encode_checkpoint,
+    encode_event, encode_memory, encode_trip,
 };
 use rembrane_crypto::{EncryptedPayload, EncryptionContext, PayloadPurpose, RecordCipher};
 use rembrane_domain::{
@@ -28,13 +30,14 @@ use rembrane_domain::{
     AdministrativeAuditEventId, AdministrativeTargetKind, BookingResearch, BookingResearchId,
     CanonicalEvent, CheckpointDisclosureReceipt, DisclosedBookingResearch, DisclosureReceipt,
     EntityId, EventPayload, EvidenceSource, Invitation, InvitationId, InvitationStatus,
-    KeyRotationId, KeyRotationReceipt, KeyRotationStatus, LegalHoldId, LegalHoldStatus,
-    MAX_KEY_ROTATION_RECIPIENTS, MemberScopeGrant, Membership, MembershipStatus, MemoryId,
-    MemoryKind, MemoryRecord, MemoryScope, MemoryStatus, Principal, PrincipalId, ProjectionJob,
-    ProjectionJobId, ProjectionOperation, ProjectionStatus, ProviderId, ReadScope,
-    ResearchFreshness, RetentionPeriod, RetentionResource, TravelDisclosureReceipt, Trip,
-    Workspace, WorkspaceId, WorkspaceKeyRotation, WorkspaceKind, WorkspaceLegalHold,
-    WorkspaceRetentionPolicy, WorkspaceRole,
+    KeyRotationId, KeyRotationReceipt, KeyRotationStatus, KnowledgeEdge, KnowledgeEdgeId,
+    KnowledgeNode, KnowledgeNodeId, LegalHoldId, LegalHoldStatus, MAX_KEY_ROTATION_RECIPIENTS,
+    MemberScopeGrant, Membership, MembershipStatus, MemoryId, MemoryKind, MemoryRecord,
+    MemoryScope, MemoryStatus, Principal, PrincipalId, ProjectionJob, ProjectionJobId,
+    ProjectionOperation, ProjectionStatus, ProviderId, ReadScope, ResearchFreshness,
+    RetentionPeriod, RetentionResource, TravelDisclosureReceipt, Trip, Workspace, WorkspaceId,
+    WorkspaceKeyRotation, WorkspaceKind, WorkspaceLegalHold, WorkspaceRetentionPolicy,
+    WorkspaceRole,
 };
 
 pub const SET_TENANT_SQL: &str = "SELECT set_config('rembrane.workspace_id', $1, true);";
@@ -294,6 +297,28 @@ pub const INSERT_TRAVEL_DISCLOSURE_SQL: &str = "INSERT INTO travel_disclosure_re
 pub const INSERT_DISCLOSED_BOOKING_RESEARCH_SQL: &str = "INSERT INTO disclosed_booking_research \
     (workspace_id, disclosure_id, research_id, research_version, freshness, ordinal) \
     VALUES ($1, $2, $3, $4, $5, $6)";
+pub const FIND_KNOWLEDGE_NODE_SQL: &str = "SELECT workspace_id, id, version, node_ciphertext, \
+    encryption_key_id, encryption_algorithm, encryption_nonce FROM knowledge_nodes \
+    WHERE workspace_id = $1 AND id = $2 ORDER BY workspace_id, id LIMIT 2";
+pub const FIND_KNOWLEDGE_EDGE_SQL: &str = "SELECT workspace_id, id, source_id, target_id, \
+    supersedes_id, version, edge_ciphertext, encryption_key_id, encryption_algorithm, \
+    encryption_nonce FROM knowledge_edges WHERE workspace_id = $1 AND id = $2 \
+    ORDER BY workspace_id, id LIMIT 2";
+pub const LIST_INCOMING_KNOWLEDGE_EDGES_SQL: &str = "SELECT workspace_id, id, source_id, \
+    target_id, supersedes_id, version, edge_ciphertext, encryption_key_id, encryption_algorithm, \
+    encryption_nonce FROM knowledge_edges WHERE workspace_id = $1 AND target_id = $2 \
+    AND valid_from <= $3 AND (valid_until IS NULL OR valid_until > $3) \
+    ORDER BY valid_from DESC, id LIMIT $4";
+pub const LIST_OUTGOING_KNOWLEDGE_EDGES_SQL: &str = "SELECT workspace_id, id, source_id, \
+    target_id, supersedes_id, version, edge_ciphertext, encryption_key_id, encryption_algorithm, \
+    encryption_nonce FROM knowledge_edges WHERE workspace_id = $1 AND source_id = $2 \
+    AND valid_from <= $3 AND (valid_until IS NULL OR valid_until > $3) \
+    ORDER BY valid_from DESC, id LIMIT $4";
+pub const LIST_BOTH_KNOWLEDGE_EDGES_SQL: &str = "SELECT workspace_id, id, source_id, target_id, \
+    supersedes_id, version, edge_ciphertext, encryption_key_id, encryption_algorithm, \
+    encryption_nonce FROM knowledge_edges WHERE workspace_id = $1 \
+    AND (source_id = $2 OR target_id = $2) AND valid_from <= $3 \
+    AND (valid_until IS NULL OR valid_until > $3) ORDER BY valid_from DESC, id LIMIT $4";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PostgresParameter<'value> {
@@ -2858,6 +2883,165 @@ where
     }
 }
 
+impl<Pool, Cipher> KnowledgeGraphRepository for PostgresTenantMemoryStore<'_, '_, Pool, Cipher>
+where
+    Pool: PostgresPool,
+    Pool::Error: ClassifiedPostgresError,
+    <Pool::Transaction as PostgresTransaction>::Row: PostgresRow<Error = Pool::Error>,
+    Cipher: RecordCipher,
+{
+    fn find_knowledge_node(
+        &self,
+        workspace_id: &WorkspaceId,
+        node_id: &KnowledgeNodeId,
+    ) -> Result<Option<KnowledgeNode>, ApplicationError> {
+        if workspace_id != &self.workspace_id {
+            return Err(ApplicationError::AccessDenied);
+        }
+        let mut transaction = self
+            .store
+            .begin_tenant(workspace_id.clone())
+            .map_err(map_application_error)?;
+        let rows = transaction
+            .query(
+                FIND_KNOWLEDGE_NODE_SQL,
+                &[
+                    PostgresParameter::Text(workspace_id.as_str()),
+                    PostgresParameter::Text(node_id.as_str()),
+                ],
+            )
+            .map_err(PostgresStoreError::Tenant)
+            .map_err(map_application_error)?;
+        if rows.len() > 1 {
+            return Err(ApplicationError::StorageUnavailable);
+        }
+        let node = rows
+            .first()
+            .map(|row| decrypt_knowledge_node_row(self.cipher, row, workspace_id, node_id))
+            .transpose()
+            .map_err(map_application_error)?;
+        transaction
+            .commit()
+            .map_err(PostgresStoreError::Tenant)
+            .map_err(map_application_error)?;
+        Ok(node)
+    }
+
+    fn find_knowledge_edge(
+        &self,
+        workspace_id: &WorkspaceId,
+        edge_id: &KnowledgeEdgeId,
+    ) -> Result<Option<KnowledgeEdge>, ApplicationError> {
+        if workspace_id != &self.workspace_id {
+            return Err(ApplicationError::AccessDenied);
+        }
+        let mut transaction = self
+            .store
+            .begin_tenant(workspace_id.clone())
+            .map_err(map_application_error)?;
+        let rows = transaction
+            .query(
+                FIND_KNOWLEDGE_EDGE_SQL,
+                &[
+                    PostgresParameter::Text(workspace_id.as_str()),
+                    PostgresParameter::Text(edge_id.as_str()),
+                ],
+            )
+            .map_err(PostgresStoreError::Tenant)
+            .map_err(map_application_error)?;
+        if rows.len() > 1 {
+            return Err(ApplicationError::StorageUnavailable);
+        }
+        let edge = rows
+            .first()
+            .map(|row| decrypt_knowledge_edge_row(self.cipher, row, workspace_id, Some(edge_id)))
+            .transpose()
+            .map_err(map_application_error)?;
+        transaction
+            .commit()
+            .map_err(PostgresStoreError::Tenant)
+            .map_err(map_application_error)?;
+        Ok(edge)
+    }
+
+    fn list_neighbour_edges(
+        &self,
+        workspace_id: &WorkspaceId,
+        node_id: &KnowledgeNodeId,
+        direction: KnowledgeDirection,
+        valid_at_epoch_seconds: u64,
+        limit: usize,
+    ) -> Result<Vec<KnowledgeEdge>, ApplicationError> {
+        if workspace_id != &self.workspace_id {
+            return Err(ApplicationError::AccessDenied);
+        }
+        if valid_at_epoch_seconds == 0 || limit == 0 || limit > MAX_KNOWLEDGE_NEIGHBOURS {
+            return Err(ApplicationError::Validation(
+                "knowledge neighbourhood query is outside canonical bounds".to_owned(),
+            ));
+        }
+        if self.find_knowledge_node(workspace_id, node_id)?.is_none() {
+            return Err(ApplicationError::NotFound);
+        }
+        let statement = match direction {
+            KnowledgeDirection::Incoming => LIST_INCOMING_KNOWLEDGE_EDGES_SQL,
+            KnowledgeDirection::Outgoing => LIST_OUTGOING_KNOWLEDGE_EDGES_SQL,
+            KnowledgeDirection::Both => LIST_BOTH_KNOWLEDGE_EDGES_SQL,
+        };
+        let mut transaction = self
+            .store
+            .begin_tenant(workspace_id.clone())
+            .map_err(map_application_error)?;
+        let rows = transaction
+            .query(
+                statement,
+                &[
+                    PostgresParameter::Text(workspace_id.as_str()),
+                    PostgresParameter::Text(node_id.as_str()),
+                    PostgresParameter::I64(
+                        postgres_epoch::<Pool::Error>(valid_at_epoch_seconds)
+                            .map_err(map_application_error)?,
+                    ),
+                    PostgresParameter::I64(i64::try_from(limit).map_err(|_| {
+                        ApplicationError::Validation("invalid knowledge neighbour limit".to_owned())
+                    })?),
+                ],
+            )
+            .map_err(PostgresStoreError::Tenant)
+            .map_err(map_application_error)?;
+        if rows.len() > limit {
+            return Err(ApplicationError::StorageUnavailable);
+        }
+        let mut ids = BTreeSet::new();
+        let edges = rows
+            .iter()
+            .map(|row| {
+                let edge = decrypt_knowledge_edge_row(self.cipher, row, workspace_id, None)?;
+                let matches_direction = match direction {
+                    KnowledgeDirection::Incoming => edge.target_id() == node_id,
+                    KnowledgeDirection::Outgoing => edge.source_id() == node_id,
+                    KnowledgeDirection::Both => {
+                        edge.source_id() == node_id || edge.target_id() == node_id
+                    }
+                };
+                if !matches_direction
+                    || !edge.validity().contains(valid_at_epoch_seconds)
+                    || !ids.insert(edge.id().as_str().to_owned())
+                {
+                    return Err(PostgresStoreError::InvalidRow);
+                }
+                Ok(edge)
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(map_application_error)?;
+        transaction
+            .commit()
+            .map_err(PostgresStoreError::Tenant)
+            .map_err(map_application_error)?;
+        Ok(edges)
+    }
+}
+
 impl<Pool, Cipher> TripRepository for PostgresTenantMemoryStore<'_, '_, Pool, Cipher>
 where
     Pool: PostgresPool,
@@ -4888,6 +5072,108 @@ where
     Ok(memory)
 }
 
+fn decrypt_knowledge_node_row<Row, Cipher, DriverError>(
+    cipher: &Cipher,
+    row: &Row,
+    expected_workspace_id: &WorkspaceId,
+    expected_node_id: &KnowledgeNodeId,
+) -> Result<KnowledgeNode, PostgresStoreError<DriverError>>
+where
+    Row: PostgresRow<Error = DriverError>,
+    Cipher: RecordCipher,
+{
+    let workspace_id = row.text("workspace_id").map_err(PostgresStoreError::Row)?;
+    let node_id = row.text("id").map_err(PostgresStoreError::Row)?;
+    let version = row.u64("version").map_err(PostgresStoreError::Row)?;
+    if workspace_id != expected_workspace_id.as_str() || node_id != expected_node_id.as_str() {
+        return Err(PostgresStoreError::InvalidRow);
+    }
+    let context = EncryptionContext::new(
+        expected_workspace_id.clone(),
+        &node_id,
+        version,
+        PayloadPurpose::KnowledgeNode,
+    )
+    .map_err(|_| PostgresStoreError::InvalidRow)?;
+    let encrypted = EncryptedPayload::new(
+        row.bytes("node_ciphertext")
+            .map_err(PostgresStoreError::Row)?,
+        row.text("encryption_key_id")
+            .map_err(PostgresStoreError::Row)?,
+        row.text("encryption_algorithm")
+            .map_err(PostgresStoreError::Row)?,
+        row.bytes("encryption_nonce")
+            .map_err(PostgresStoreError::Row)?,
+    )
+    .map_err(|_| PostgresStoreError::InvalidRow)?;
+    let plaintext = cipher
+        .open(&context, &encrypted)
+        .map_err(|_| PostgresStoreError::InvalidRow)?;
+    let node = decode_knowledge_node(&plaintext).map_err(|_| PostgresStoreError::InvalidRow)?;
+    if node.workspace_id() != expected_workspace_id
+        || node.id() != expected_node_id
+        || node.version() != version
+    {
+        return Err(PostgresStoreError::InvalidRow);
+    }
+    Ok(node)
+}
+
+fn decrypt_knowledge_edge_row<Row, Cipher, DriverError>(
+    cipher: &Cipher,
+    row: &Row,
+    expected_workspace_id: &WorkspaceId,
+    expected_edge_id: Option<&KnowledgeEdgeId>,
+) -> Result<KnowledgeEdge, PostgresStoreError<DriverError>>
+where
+    Row: PostgresRow<Error = DriverError>,
+    Cipher: RecordCipher,
+{
+    let workspace_id = row.text("workspace_id").map_err(PostgresStoreError::Row)?;
+    let edge_id = row.text("id").map_err(PostgresStoreError::Row)?;
+    let source_id = row.text("source_id").map_err(PostgresStoreError::Row)?;
+    let target_id = row.text("target_id").map_err(PostgresStoreError::Row)?;
+    let supersedes_id = optional_row_text(row, "supersedes_id")?;
+    let version = row.u64("version").map_err(PostgresStoreError::Row)?;
+    if workspace_id != expected_workspace_id.as_str()
+        || expected_edge_id.is_some_and(|expected| expected.as_str() != edge_id)
+    {
+        return Err(PostgresStoreError::InvalidRow);
+    }
+    let context = EncryptionContext::new(
+        expected_workspace_id.clone(),
+        &edge_id,
+        version,
+        PayloadPurpose::KnowledgeEdge,
+    )
+    .map_err(|_| PostgresStoreError::InvalidRow)?;
+    let encrypted = EncryptedPayload::new(
+        row.bytes("edge_ciphertext")
+            .map_err(PostgresStoreError::Row)?,
+        row.text("encryption_key_id")
+            .map_err(PostgresStoreError::Row)?,
+        row.text("encryption_algorithm")
+            .map_err(PostgresStoreError::Row)?,
+        row.bytes("encryption_nonce")
+            .map_err(PostgresStoreError::Row)?,
+    )
+    .map_err(|_| PostgresStoreError::InvalidRow)?;
+    let plaintext = cipher
+        .open(&context, &encrypted)
+        .map_err(|_| PostgresStoreError::InvalidRow)?;
+    let edge = decode_knowledge_edge(&plaintext).map_err(|_| PostgresStoreError::InvalidRow)?;
+    if edge.workspace_id() != expected_workspace_id
+        || edge.id().as_str() != edge_id
+        || edge.source_id().as_str() != source_id
+        || edge.target_id().as_str() != target_id
+        || edge.supersedes().map(KnowledgeEdgeId::as_str) != supersedes_id.as_deref()
+        || edge.version() != version
+    {
+        return Err(PostgresStoreError::InvalidRow);
+    }
+    Ok(edge)
+}
+
 fn decrypt_checkpoint_row<Row, Cipher, DriverError>(
     cipher: &Cipher,
     row: &Row,
@@ -5724,13 +6010,17 @@ mod tests {
         CanonicalMutationRepository, CheckpointDisclosureRepository, CheckpointMutationRepository,
         CheckpointRepository, CheckpointService, CreateInvitationCommand, DisclosureRepository,
         EventRepository, InvitationRepository, InvitationService, KeyRotationRepository,
-        MemberLifecycleRepository, MemberScopeGrantRepository, MembershipRepository,
-        MemoryRepository, ProjectionOutboxRepository, ProjectionOutcome, ProjectionWorker,
-        ResolveContextCommand, ResolveContextService, ResolveTravelContextCommand,
-        ResumeActivityCommand, RetentionRepository, TravelContextService,
-        TravelDisclosureRepository, TripMutationRepository, TripRepository, WorkspaceRepository,
+        KnowledgeDirection, KnowledgeGraphRepository, MemberLifecycleRepository,
+        MemberScopeGrantRepository, MembershipRepository, MemoryRepository,
+        ProjectionOutboxRepository, ProjectionOutcome, ProjectionWorker, ResolveContextCommand,
+        ResolveContextService, ResolveTravelContextCommand, ResumeActivityCommand,
+        RetentionRepository, TravelContextService, TravelDisclosureRepository,
+        TripMutationRepository, TripRepository, WorkspaceRepository,
     };
-    use rembrane_codec::{encode_booking_research, encode_checkpoint, encode_memory, encode_trip};
+    use rembrane_codec::{
+        encode_booking_research, encode_checkpoint, encode_knowledge_edge, encode_knowledge_node,
+        encode_memory, encode_trip,
+    };
     use rembrane_contracts::ResolveContextRequest;
     use rembrane_crypto::{CryptoError, EncryptedPayload, EncryptionContext, RecordCipher};
     use rembrane_domain::{
@@ -5740,11 +6030,13 @@ mod tests {
         ContextPackId, DisclosedBookingResearch, DisclosedMemory, DisclosureId, DisclosureReceipt,
         EntityId, EventId, EventPayload, EvidenceId, EvidenceReference, EvidenceSource, Invitation,
         InvitationId, InvitationStatus, KeyRotationId, KeyRotationReceipt, KeyRotationStatus,
-        LegalHoldId, LegalHoldStatus, MemberScopeGrant, MembershipStatus, MemoryId, MemoryRecord,
-        MemoryScope, Principal, PrincipalId, ProjectionJob, ProjectionJobId, ProjectionOperation,
-        ProjectionStatus, ProviderId, ReadGrant, ReadScope, ResearchFreshness, RetentionPeriod,
-        RetentionResource, TravelDateWindow, TravelDisclosureReceipt, Trip, Workspace, WorkspaceId,
-        WorkspaceKeyRotation, WorkspaceRetentionPolicy, WorkspaceRole, WritePermission,
+        KnowledgeEdge, KnowledgeEdgeId, KnowledgeNode, KnowledgeNodeId, KnowledgeNodeKind,
+        KnowledgeRelationType, LegalHoldId, LegalHoldStatus, MemberScopeGrant, MembershipStatus,
+        MemoryId, MemoryRecord, MemoryScope, Principal, PrincipalId, ProjectionJob,
+        ProjectionJobId, ProjectionOperation, ProjectionStatus, ProviderId, ReadGrant, ReadScope,
+        ResearchFreshness, RetentionPeriod, RetentionResource, TemporalValidity, TravelDateWindow,
+        TravelDisclosureReceipt, Trip, Workspace, WorkspaceId, WorkspaceKeyRotation,
+        WorkspaceRetentionPolicy, WorkspaceRole, WritePermission,
     };
     use rembrane_semantic_native::NativeSemanticProvider;
 
@@ -5754,11 +6046,11 @@ mod tests {
         EXPIRE_PENDING_INVITATION_SQL, FIND_BOOKING_RESEARCH_SQL,
         FIND_DISCLOSED_BOOKING_RESEARCH_VERSION_SQL, FIND_DISCLOSED_CHECKPOINT_VERSION_SQL,
         FIND_DISCLOSED_MEMORY_VERSION_SQL, FIND_DISCLOSED_TRIP_VERSION_SQL, FIND_INVITATION_SQL,
-        FIND_KEY_ROTATION_RECEIPT_SQL, FIND_LEGAL_HOLD_SQL, FIND_MEMBERSHIP_SQL, FIND_MEMORY_SQL,
-        FIND_PRINCIPAL_SQL, FIND_PROJECTION_SQL, FIND_PROVISIONING_PRINCIPAL_SQL,
-        FIND_RETENTION_POLICY_SQL, FIND_TRIP_SQL, FIND_WORKSPACE_SQL,
-        INSERT_ADMINISTRATIVE_AUDIT_SQL, INSERT_BOOKING_RESEARCH_SQL,
-        INSERT_CHECKPOINT_DISCLOSURE_SQL, INSERT_CHECKPOINT_SQL,
+        FIND_KEY_ROTATION_RECEIPT_SQL, FIND_KNOWLEDGE_EDGE_SQL, FIND_KNOWLEDGE_NODE_SQL,
+        FIND_LEGAL_HOLD_SQL, FIND_MEMBERSHIP_SQL, FIND_MEMORY_SQL, FIND_PRINCIPAL_SQL,
+        FIND_PROJECTION_SQL, FIND_PROVISIONING_PRINCIPAL_SQL, FIND_RETENTION_POLICY_SQL,
+        FIND_TRIP_SQL, FIND_WORKSPACE_SQL, INSERT_ADMINISTRATIVE_AUDIT_SQL,
+        INSERT_BOOKING_RESEARCH_SQL, INSERT_CHECKPOINT_DISCLOSURE_SQL, INSERT_CHECKPOINT_SQL,
         INSERT_DISCLOSED_BOOKING_RESEARCH_SQL, INSERT_DISCLOSED_MEMORY_SQL, INSERT_DISCLOSURE_SQL,
         INSERT_EVENT_SQL, INSERT_INVITATION_SQL, INSERT_KEY_ROTATION_RECEIPT_SQL,
         INSERT_KEY_ROTATION_RECIPIENT_SQL, INSERT_LEGAL_HOLD_SQL, INSERT_MEMBER_SCOPE_GRANT_SQL,
@@ -5766,18 +6058,18 @@ mod tests {
         INSERT_PROJECTION_SQL, INSERT_REQUIRED_KEY_ROTATION_SQL, INSERT_RETENTION_POLICY_SQL,
         INSERT_TRAVEL_DISCLOSURE_SQL, INSERT_TRIP_SQL, INSERT_WORKSPACE_SQL, LATEST_CHECKPOINT_SQL,
         LATEST_KEY_ROTATION_SQL, LIST_ACTIVE_LEGAL_HOLDS_SQL, LIST_ACTIVE_MEMBERSHIPS_SQL,
-        LIST_ADMINISTRATIVE_AUDIT_SQL, LIST_EVENTS_SINCE_SQL, LIST_INVITATIONS_BY_STATUS_SQL,
-        LIST_MEMBER_SCOPE_GRANTS_SQL, LIST_OWNER_TRIPS_SQL, LIST_PENDING_PROJECTIONS_SQL,
-        LIST_SUBJECT_CHECKPOINTS_SQL, LIST_SUBJECT_MEMORIES_SQL, LIST_TRIP_BOOKING_RESEARCH_SQL,
-        LOCK_WORKSPACE_FOR_ROTATION_SQL, MAX_ACTIVE_MEMBERSHIPS, NEXT_KEY_ROTATION_GENERATION_SQL,
-        PostgresFailureKind, PostgresParameter, PostgresPool, PostgresProvisioner,
-        PostgresProvisioningPool, PostgresRow, PostgresStore, PostgresStoreError,
-        PostgresTransaction, PostgresWorkspaceAdminStore, ProvisioningTransaction, READ_TENANT_SQL,
-        REMOVE_MEMBERSHIP_SQL, REPLACE_CHECKPOINT_SQL, REPLACE_INVITATION_SQL,
-        REPLACE_LEGAL_HOLD_SQL, REPLACE_MEMBERSHIP_SQL, REPLACE_PROJECTION_SQL,
-        REPLACE_RETENTION_POLICY_SQL, REPLACE_TRIP_SQL, SET_TENANT_SQL, TenantTransaction,
-        TenantTransactionError, insert_disclosed_booking_research, map_application_error,
-        map_invitation_application_error, verify_disclosed_booking_research,
+        LIST_ADMINISTRATIVE_AUDIT_SQL, LIST_BOTH_KNOWLEDGE_EDGES_SQL, LIST_EVENTS_SINCE_SQL,
+        LIST_INVITATIONS_BY_STATUS_SQL, LIST_MEMBER_SCOPE_GRANTS_SQL, LIST_OWNER_TRIPS_SQL,
+        LIST_PENDING_PROJECTIONS_SQL, LIST_SUBJECT_CHECKPOINTS_SQL, LIST_SUBJECT_MEMORIES_SQL,
+        LIST_TRIP_BOOKING_RESEARCH_SQL, LOCK_WORKSPACE_FOR_ROTATION_SQL, MAX_ACTIVE_MEMBERSHIPS,
+        NEXT_KEY_ROTATION_GENERATION_SQL, PostgresFailureKind, PostgresParameter, PostgresPool,
+        PostgresProvisioner, PostgresProvisioningPool, PostgresRow, PostgresStore,
+        PostgresStoreError, PostgresTransaction, PostgresWorkspaceAdminStore,
+        ProvisioningTransaction, READ_TENANT_SQL, REMOVE_MEMBERSHIP_SQL, REPLACE_CHECKPOINT_SQL,
+        REPLACE_INVITATION_SQL, REPLACE_LEGAL_HOLD_SQL, REPLACE_MEMBERSHIP_SQL,
+        REPLACE_PROJECTION_SQL, REPLACE_RETENTION_POLICY_SQL, REPLACE_TRIP_SQL, SET_TENANT_SQL,
+        TenantTransaction, TenantTransactionError, insert_disclosed_booking_research,
+        map_application_error, map_invitation_application_error, verify_disclosed_booking_research,
     };
 
     #[derive(Clone, Debug, Eq, PartialEq)]
@@ -5958,6 +6250,49 @@ mod tests {
                     ("encryption_nonce", "777777777777777777777777".to_owned()),
                 ]),
                 numbers: BTreeMap::from([("version", trip.version())]),
+            }
+        }
+
+        fn knowledge_node(node: &KnowledgeNode) -> Self {
+            let encoded = encode_knowledge_node(node).expect("encode knowledge node");
+            Self {
+                columns: BTreeMap::from([
+                    ("workspace_id", node.workspace_id().as_str().to_owned()),
+                    ("id", node.id().as_str().to_owned()),
+                    (
+                        "node_ciphertext",
+                        String::from_utf8(encoded).expect("JSON payload"),
+                    ),
+                    ("encryption_key_id", "key_test".to_owned()),
+                    ("encryption_algorithm", "identity-test".to_owned()),
+                    ("encryption_nonce", "777777777777777777777777".to_owned()),
+                ]),
+                numbers: BTreeMap::from([("version", node.version())]),
+            }
+        }
+
+        fn knowledge_edge(edge: &KnowledgeEdge) -> Self {
+            let encoded = encode_knowledge_edge(edge).expect("encode knowledge edge");
+            Self {
+                columns: BTreeMap::from([
+                    ("workspace_id", edge.workspace_id().as_str().to_owned()),
+                    ("id", edge.id().as_str().to_owned()),
+                    ("source_id", edge.source_id().as_str().to_owned()),
+                    ("target_id", edge.target_id().as_str().to_owned()),
+                    (
+                        "supersedes_id",
+                        edge.supersedes()
+                            .map_or_else(String::new, ToString::to_string),
+                    ),
+                    (
+                        "edge_ciphertext",
+                        String::from_utf8(encoded).expect("JSON payload"),
+                    ),
+                    ("encryption_key_id", "key_test".to_owned()),
+                    ("encryption_algorithm", "identity-test".to_owned()),
+                    ("encryption_nonce", "777777777777777777777777".to_owned()),
+                ]),
+                numbers: BTreeMap::from([("version", edge.version())]),
             }
         }
 
@@ -6359,6 +6694,41 @@ mod tests {
             sensitive_profile_included: false,
             research,
         }
+    }
+
+    fn knowledge_node(id: &str, kind: KnowledgeNodeKind, label: &str) -> KnowledgeNode {
+        KnowledgeNode::new(
+            KnowledgeNodeId::new(id),
+            WorkspaceId::new("workspace_01"),
+            kind,
+            label.to_owned(),
+            Vec::new(),
+            vec![EvidenceReference::new(
+                EvidenceId::new(format!("evidence_{id}")),
+                EvidenceSource::ImportedRecord,
+            )],
+            TemporalValidity::new(1_700_000_000, None, 1_700_000_100).expect("validity"),
+            1,
+        )
+        .expect("knowledge node")
+    }
+
+    fn knowledge_edge() -> KnowledgeEdge {
+        KnowledgeEdge::new(
+            KnowledgeEdgeId::new("edge_project_uses_rust"),
+            WorkspaceId::new("workspace_01"),
+            KnowledgeNodeId::new("node_project"),
+            KnowledgeNodeId::new("node_rust"),
+            KnowledgeRelationType::new("uses").expect("relation"),
+            vec![EvidenceReference::new(
+                EvidenceId::new("evidence_edge"),
+                EvidenceSource::ImportedRecord,
+            )],
+            TemporalValidity::new(1_700_000_000, None, 1_700_000_100).expect("validity"),
+            1,
+            None,
+        )
+        .expect("knowledge edge")
     }
 
     #[test]
@@ -7996,6 +8366,97 @@ mod tests {
             vec![
                 "text:workspace_01".to_owned(),
                 "text:principal_01".to_owned(),
+            ]
+        )));
+    }
+
+    #[test]
+    fn tenant_cipher_store_reads_authenticated_knowledge_neighbourhoods() {
+        let project = knowledge_node("node_project", KnowledgeNodeKind::Project, "Rembrane");
+        let edge = knowledge_edge();
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let tenant_reads = || {
+            VecDeque::from([
+                Ok(Some("workspace_01".to_owned())),
+                Ok(Some("workspace_01".to_owned())),
+            ])
+        };
+        let store = PostgresStore::new(FakePool {
+            calls: Rc::clone(&calls),
+            tenant_batches: RefCell::new(
+                [
+                    tenant_reads(),
+                    tenant_reads(),
+                    tenant_reads(),
+                    tenant_reads(),
+                ]
+                .into(),
+            ),
+            row_batches: RefCell::new(
+                [
+                    vec![FakeRow::knowledge_node(&project)],
+                    vec![FakeRow::knowledge_edge(&edge)],
+                    vec![FakeRow::knowledge_node(&project)],
+                    vec![FakeRow::knowledge_edge(&edge)],
+                ]
+                .into(),
+            ),
+        });
+        let tenant = store.for_workspace(WorkspaceId::new("workspace_01"));
+        let cipher = IdentityCipher;
+        let memories = tenant.with_cipher(&cipher);
+
+        assert_eq!(
+            KnowledgeGraphRepository::find_knowledge_node(
+                &memories,
+                &WorkspaceId::new("workspace_01"),
+                &KnowledgeNodeId::new("node_project"),
+            )
+            .expect("find node"),
+            Some(project)
+        );
+        assert_eq!(
+            KnowledgeGraphRepository::find_knowledge_edge(
+                &memories,
+                &WorkspaceId::new("workspace_01"),
+                &KnowledgeEdgeId::new("edge_project_uses_rust"),
+            )
+            .expect("find edge"),
+            Some(edge.clone())
+        );
+        assert_eq!(
+            KnowledgeGraphRepository::list_neighbour_edges(
+                &memories,
+                &WorkspaceId::new("workspace_01"),
+                &KnowledgeNodeId::new("node_project"),
+                KnowledgeDirection::Both,
+                1_700_000_200,
+                10,
+            )
+            .expect("list neighbours"),
+            vec![edge]
+        );
+        assert!(calls.borrow().contains(&Call::Query(
+            FIND_KNOWLEDGE_NODE_SQL.to_owned(),
+            vec![
+                "text:workspace_01".to_owned(),
+                "text:node_project".to_owned(),
+            ]
+        )));
+        assert!(calls.borrow().contains(&Call::Query(
+            FIND_KNOWLEDGE_EDGE_SQL.to_owned(),
+            vec![
+                "text:workspace_01".to_owned(),
+                "text:edge_project_uses_rust".to_owned(),
+            ]
+        )));
+        assert!(calls.borrow().contains(&Call::Query(
+            LIST_BOTH_KNOWLEDGE_EDGES_SQL.to_owned(),
+            vec![
+                "text:workspace_01".to_owned(),
+                "text:node_project".to_owned(),
+                "i64:1700000200".to_owned(),
+                "i64:10".to_owned(),
             ]
         )));
     }

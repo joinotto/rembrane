@@ -358,6 +358,8 @@ This roadmap describes sequencing, not release dates.
             verified trip/research revisions and sensitivity flags.
             - [x] Run travel-context resolution end to end over PostgreSQL,
               preserving trip ownership while auditing an authorized reader.
+      - [x] Add authenticated PostgreSQL knowledge-node, edge, and bounded
+        temporal neighbourhood reads for graph-aware context retrieval.
       - [x] Add exact invitation lookup and bounded status-filtered listing
         with terminal-state restoration and full tenant/identifier correlation.
       - [x] Implement atomic invitation creation, acceptance, revocation,

@@ -137,6 +137,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - End-to-end PostgreSQL travel-context resolution for shared-workspace readers,
   preserving canonical trip ownership while recording the authorized
   disclosure subject and client.
+- Tenant-and-cipher PostgreSQL knowledge-graph reads for exact nodes, exact
+  edges, and direction-aware temporal neighbourhoods with authenticated
+  decryption, bounded results, and strict endpoint/version correlation.
 - PostgreSQL invitation lookup and bounded deterministic listing with optional
   status filtering, numeric lifetime decoding, terminal-state restoration,
   and exact tenant/invitation correlation.
