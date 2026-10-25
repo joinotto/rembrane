@@ -108,6 +108,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - End-to-end PostgreSQL context-resolution coverage proving authenticated
   memory selection and mandatory exact-version disclosure persistence before
   returning personalization context to an AI client.
+- Tenant-and-cipher PostgreSQL checkpoint reads for exact latest activity state
+  and bounded subject history, with authenticated decryption and strict outer
+  row/domain payload correlation.
 - PostgreSQL invitation lookup and bounded deterministic listing with optional
   status filtering, numeric lifetime decoding, terminal-state restoration,
   and exact tenant/invitation correlation.
