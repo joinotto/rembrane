@@ -129,6 +129,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Tenant-and-cipher PostgreSQL booking-research reads for exact records and
   bounded trip histories, with authenticated decryption and strict tenant,
   trip, researcher, identifier, and version correlation.
+- Atomic encrypted PostgreSQL booking-research capture with researcher-bound
+  canonical events and optimistic workspace event sequencing.
 - PostgreSQL invitation lookup and bounded deterministic listing with optional
   status filtering, numeric lifetime decoding, terminal-state restoration,
   and exact tenant/invitation correlation.
