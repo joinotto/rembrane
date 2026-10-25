@@ -12,6 +12,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Project metadata, security reporting, API contact information, offline
   workspace fixtures, and provider provenance now consistently identify the
   canonical `joinotto/rembrane` repository.
+- Provider-selection fixtures and CLI snapshot tests pin the registry digest
+  produced by the canonical repository migration.
 - An executable cross-tool continuity proof writes a preference with the CLI,
   reads and corrects it through MCP, observes the correction through the CLI,
   and resumes an MCP-created project checkpoint from both a fresh MCP client
@@ -33,6 +35,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   authorization and persistence.
 - REST clients can record evidence-backed activity work traces as proposed
   observation memories without promoting agent output to confirmed user truth.
+- The local CLI can record the same evidence-backed proposed activity work
+  traces for scripts and coding tools that do not use REST or MCP.
 - OpenAPI plus the TypeScript and Python SDKs expose REST work-trace capture,
   with executable coverage proving encrypted proposed-observation persistence;
   capability discovery now advertises memory proposals.

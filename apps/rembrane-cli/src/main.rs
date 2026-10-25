@@ -5,11 +5,12 @@ use rembrane_application::{
     CheckpointService, ClientGrantBundle, CreateChannelBindingCommand, CreateCheckpointCommand,
     CreateInvitationCommand, DeleteMemoryCommand, EventRepository, ExecuteRetentionPurgeCommand,
     InvitationService, ListInvitationsQuery, MemberLifecycleService, MembershipRepository,
-    MemoryLifecycleService, MemoryRepository, PlaceLegalHoldCommand, ReleaseLegalHoldCommand,
-    RememberPreferenceCommand, RememberPreferenceService, RequeueChannelMessageCommand,
-    ResolveContextCommand, ResolveContextService, ResumeActivityCommand, RetentionService,
-    ReviseMemoryCommand, RevokeChannelBindingCommand, RevokeInvitationCommand,
-    SetRetentionPolicyCommand, UpdateCheckpointCommand, WorkspaceRepository,
+    MemoryLifecycleService, MemoryProposalService, MemoryRepository, PlaceLegalHoldCommand,
+    ProposeMemoryCommand, ReleaseLegalHoldCommand, RememberPreferenceCommand,
+    RememberPreferenceService, RequeueChannelMessageCommand, ResolveContextCommand,
+    ResolveContextService, ResumeActivityCommand, RetentionService, ReviseMemoryCommand,
+    RevokeChannelBindingCommand, RevokeInvitationCommand, SetRetentionPolicyCommand,
+    UpdateCheckpointCommand, WorkspaceRepository,
 };
 use rembrane_channel_mobile_share::derive_binding_lookup_keys as derive_mobile_binding_lookup_keys;
 use rembrane_channel_whatsapp::derive_binding_lookup_keys as derive_whatsapp_binding_lookup_keys;
@@ -19,9 +20,9 @@ use rembrane_crypto_configured::ConfiguredRecordCipher;
 use rembrane_domain::{
     ActivityCheckpoint, ActivityId, CanonicalEvent, CheckpointId, ClientId, ContextPackId,
     DisclosureId, EntityId, EventId, EventPayload, EvidenceId, EvidenceReference, EvidenceSource,
-    Invitation, InvitationStatus, LegalHoldId, Membership, MemoryId, MemoryRecord, MemoryScope,
-    Principal, PrincipalId, ReadGrant, ReadScope, RetentionPeriod, Workspace, WorkspaceId,
-    WorkspaceRetentionPolicy, WorkspaceRole, WritePermission,
+    Invitation, InvitationStatus, LegalHoldId, Membership, MemoryId, MemoryKind, MemoryRecord,
+    MemoryScope, Principal, PrincipalId, ReadGrant, ReadScope, RetentionPeriod, Workspace,
+    WorkspaceId, WorkspaceRetentionPolicy, WorkspaceRole, WritePermission,
 };
 use rembrane_memory_provider_configured::ConfiguredMemoryProvider;
 use rembrane_provider_registry::{ProviderSelectionPolicy, VerifiedProviderRegistry};
@@ -80,6 +81,7 @@ fn run(arguments: &[String]) -> Result<(), String> {
         Some("legal-hold") => legal_hold(&arguments[1..]),
         Some("channel") => channel(&arguments[1..]),
         Some("remember") => remember(&arguments[1..]),
+        Some("trace") => trace(&arguments[1..]),
         Some("recall") => recall(&arguments[1..]),
         Some("checkpoint") => checkpoint(&arguments[1..]),
         Some("resume") => resume(&arguments[1..]),
@@ -1853,6 +1855,49 @@ fn recall(arguments: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+fn trace(arguments: &[String]) -> Result<(), String> {
+    let activity_id = ActivityId::new(option(arguments, "--activity")?);
+    let summary = option(arguments, "--summary")?;
+    let entity_id = optional_option(arguments, "--entity");
+    let client_id = optional_option(arguments, "--client").unwrap_or("rembrane-cli");
+    let scope = MemoryScope::Activity {
+        id: activity_id.clone(),
+    };
+    let (mut store, principal_id, workspace_id) = encrypted_store(arguments)?;
+    let grants = authorize_client(
+        &store,
+        ClientId::new(client_id),
+        &workspace_id,
+        &principal_id,
+        vec![ReadScope::Activity { id: activity_id }],
+        vec![WritePermission::ProposeMemory],
+    )?;
+    let previous_sequence = current_sequence(&store, &workspace_id)?;
+    let suffix = unique_suffix()?;
+    let content = entity_id.map_or_else(
+        || summary.to_owned(),
+        |entity_id| format!("[entity:{entity_id}] {summary}"),
+    );
+    let memory = MemoryProposalService::new(&mut store)
+        .propose(ProposeMemoryCommand {
+            grant: grants.write,
+            memory_id: MemoryId::new(format!("trace_{suffix}")),
+            scope,
+            kind: MemoryKind::Observation,
+            content,
+            evidence: EvidenceReference::new(
+                EvidenceId::new(format!("evidence_{suffix}")),
+                EvidenceSource::AgentObservation,
+            ),
+            event_id: EventId::new(format!("event_{suffix}")),
+            expected_previous_sequence: previous_sequence,
+            projections: Vec::new(),
+        })
+        .map_err(|error| format!("cannot record work trace: {error}"))?;
+    println!("Proposed {}", memory.id());
+    Ok(())
+}
+
 fn checkpoint(arguments: &[String]) -> Result<(), String> {
     let activity_id = ActivityId::new(option(arguments, "--activity")?);
     let summary = option(arguments, "--summary")?;
@@ -2581,6 +2626,9 @@ fn print_help() {
            rembrane remember --database <path> --principal <id> \
              --workspace <id> --content <preference> \
              [--domain <name> | --entity <id> | --activity <id>]\n\
+           rembrane trace --database <path> --principal <id> \
+             --workspace <id> --activity <id> --summary <text> \
+             [--entity <id>] [--client <id>]\n\
            rembrane recall --database <path> --principal <id> \
              --workspace <id> --client <id> --purpose <purpose> --query <query> \
              [--limit <items>] [--max-bytes <bytes>] \
@@ -3016,7 +3064,7 @@ mod tests {
         assert_eq!(selected["registryGeneratedAt"], "2026-10-25T05:03:44Z");
         assert_eq!(
             selected["registrySha256"],
-            "abd7139c64eab7e61c110bce6de6f1f2645dae9e69582d69e099fe1e5935c044"
+            "e55eb3b09ebb82e344674b156aacb1965f88976ad417374b6edc95021460f48c"
         );
 
         let plaintext_denied = check_provider_registry(
@@ -3137,7 +3185,7 @@ mod tests {
         constrained.extend(
             [
                 "--expected-registry-sha256",
-                "abd7139c64eab7e61c110bce6de6f1f2645dae9e69582d69e099fe1e5935c044",
+                "e55eb3b09ebb82e344674b156aacb1965f88976ad417374b6edc95021460f48c",
                 "--minimum-registry-generated-at",
                 "2026-10-25T05:03:44Z",
             ]

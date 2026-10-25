@@ -647,6 +647,8 @@ This roadmap describes sequencing, not release dates.
 - [x] Project entities and scoped preferences.
 - [x] Layer global, domain, entity, and activity context in one request.
 - [x] Activity-scoped work-trace ingestion as proposed observation memory.
+- [x] Expose activity work-trace capture through the local CLI without
+  promoting agent observations to confirmed user truth.
 - [x] Model activity checkpoints and resumable handoffs.
 - [x] Expose encrypted checkpoint create, optimistic update, and audited resume
   operations through the local CLI.

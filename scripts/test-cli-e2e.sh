@@ -540,6 +540,18 @@ if printf '%s\n' "$final_recall" | rg -F "Captain Hippo" >/dev/null; then
     exit 1
 fi
 
+trace_output=$(
+    "$rembrane_binary" trace \
+        --database "$database" \
+        --principal principal_e2e \
+        --workspace workspace_e2e \
+        --activity activity_cli_e2e \
+        --entity project_e2e \
+        --summary "Completed the CLI memory lifecycle."
+)
+trace_id=$(printf '%s\n' "$trace_output" | awk '/^Proposed / { print $2 }')
+test -n "$trace_id"
+
 "$rembrane_binary" checkpoint \
     --database "$database" \
     --principal principal_e2e \
@@ -608,9 +620,14 @@ checkpoint_disclosure_count=$(
     sqlite3 "$database" \
         "SELECT count(*) FROM checkpoint_disclosures WHERE workspace_id = 'workspace_e2e' AND activity_id = 'activity_cli_e2e';"
 )
-test "$event_count" = "10"
+trace_count=$(
+    sqlite3 "$database" \
+        "SELECT count(*) FROM memories WHERE workspace_id = 'workspace_e2e' AND id = '$trace_id' AND kind = 'observation' AND status = 'proposed' AND scope_type = 'activity' AND scope_value = 'activity_cli_e2e';"
+)
+test "$event_count" = "11"
 test "$disclosure_count" = "8"
 test "$checkpoint_disclosure_count" = "2"
+test "$trace_count" = "1"
 test "$plaintext_count" = "0"
 
 if REMBRANE_WORKSPACE_KEY_HEX="ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff" \
