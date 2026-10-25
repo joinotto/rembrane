@@ -13,25 +13,27 @@ use rembrane_application::{
     AdministrativeAuditRepository, ApplicationError, AuthorizeClientCommand,
     AuthorizeClientService, CaptureBookingResearchCommand, CaptureBookingResearchService,
     ClientGrantBundle, CreateInvitationCommand, CreateTripCommand, ExecuteRetentionPurgeCommand,
-    InvitationRepository, InvitationService, KeyRotationRepository, ListInvitationsQuery,
-    MemberLifecycleService, MembershipRepository, PlaceLegalHoldCommand, RecordTripDecisionCommand,
-    ReleaseLegalHoldCommand, ResolveContextCommand, ResolveContextService,
-    ResolveTravelContextCommand, RetentionService, RevokeInvitationCommand,
+    GraphContextService, InvitationRepository, InvitationService, KeyRotationRepository,
+    ListInvitationsQuery, MemberLifecycleService, MembershipRepository, PlaceLegalHoldCommand,
+    RecordTripDecisionCommand, ReleaseLegalHoldCommand, ResolveContextCommand,
+    ResolveContextService, ResolveTravelContextCommand, RetentionService, RevokeInvitationCommand,
     SetRetentionPolicyCommand, TravelContextResearch, TravelContextService, TravelContextTrip,
     TravelSensitiveProfile, TripService, WorkspaceRepository,
 };
 use rembrane_config::{SecretReference, parse_read_permissions, parse_read_scopes};
-use rembrane_contracts::ResolveContextRequest;
+use rembrane_contracts::{ResolveContextRequest, ResolveGraphContextRequest};
 use rembrane_crypto_configured::ConfiguredRecordCipher;
 use rembrane_domain::{
     ActivityId, AdministrativeAuditEvent, BookingResearch, BookingResearchId, BookingResearchKind,
     ClientId, ContextPackId, DecisionStatus, DisclosureId, EntityId, EventId, EvidenceId,
-    EvidenceReference, EvidenceSource, InvitationId, InvitationStatus, KeyRotationStatus,
-    LegalHoldId, MemoryKind, MemoryScope, MemoryStatus, PrincipalId, ReadGrant, RetentionPeriod,
-    TravelDateWindow, Trip, TripConstraint, TripConstraintId, TripConstraintKind, TripDecision,
-    TripDecisionId, TripParticipant, TripParticipantId, WorkspaceId, WorkspaceKind,
-    WorkspaceRetentionPolicy, WorkspaceRole, WriteGrant, WritePermission,
+    EvidenceReference, EvidenceSource, GraphDisclosureDirection, InvitationId, InvitationStatus,
+    KeyRotationStatus, KnowledgeNodeId, LegalHoldId, MemoryKind, MemoryScope, MemoryStatus,
+    PrincipalId, ReadGrant, RetentionPeriod, TravelDateWindow, Trip, TripConstraint,
+    TripConstraintId, TripConstraintKind, TripDecision, TripDecisionId, TripParticipant,
+    TripParticipantId, WorkspaceId, WorkspaceKind, WorkspaceRetentionPolicy, WorkspaceRole,
+    WriteGrant, WritePermission,
 };
+use rembrane_graph_configured::ConfiguredGraphProvider;
 use rembrane_secret_local::{LocalSecretResolver, SecretResolver};
 use rembrane_store_sqlite::SqliteStore;
 use serde::{Deserialize, Serialize};
@@ -53,6 +55,7 @@ struct Inner {
 
 struct Runtime {
     store: SqliteStore<ConfiguredRecordCipher>,
+    graph_provider: ConfiguredGraphProvider,
     rotation_provider: ConfiguredRecordCipher,
     read_grant: ReadGrant,
     write_grant: WriteGrant,
@@ -71,6 +74,41 @@ struct ResolveRequest {
     query: String,
     maximum_items: usize,
     maximum_bytes: Option<usize>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct ResolveGraphRequest {
+    workspace_id: String,
+    subject_id: String,
+    node_id: String,
+    direction: String,
+    valid_at_epoch_seconds: u64,
+    maximum_candidates: Option<usize>,
+    purpose: String,
+    domain: Option<String>,
+    entity_id: Option<String>,
+    activity_id: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct GraphEdgeResponse {
+    edge_id: String,
+    source_node_id: String,
+    target_node_id: String,
+    relation: String,
+    version: u64,
+    valid_from_epoch_seconds: u64,
+    valid_until_epoch_seconds: Option<u64>,
+    recorded_at_epoch_seconds: u64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ResolveGraphResponse {
+    disclosure_id: String,
+    edges: Vec<GraphEdgeResponse>,
 }
 
 #[derive(Deserialize)]
@@ -512,6 +550,8 @@ impl AppState {
             .context("failed to load workspace cipher")?;
         let rotation_provider = ConfiguredRecordCipher::from_environment()
             .context("failed to load workspace rotation provider")?;
+        let graph_provider = ConfiguredGraphProvider::from_environment()
+            .context("failed to configure graph provider")?;
         let read_scopes = parse_read_scopes(
             &std::env::var("REMBRANE_READ_SCOPES").unwrap_or_else(|_| "global".to_owned()),
         )
@@ -564,6 +604,7 @@ impl AppState {
             inner: Arc::new(Inner {
                 runtime: Mutex::new(Runtime {
                     store,
+                    graph_provider,
                     rotation_provider,
                     read_grant: grants.read,
                     write_grant: grants.write,
@@ -1512,6 +1553,101 @@ async fn resolve_context(
     }))
 }
 
+async fn resolve_graph_context(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<ResolveGraphRequest>,
+) -> Result<Json<ResolveGraphResponse>, ApiError> {
+    authorize_bearer(&state, &headers)?;
+    let direction = match request.direction.as_str() {
+        "incoming" => GraphDisclosureDirection::Incoming,
+        "outgoing" => GraphDisclosureDirection::Outgoing,
+        "both" => GraphDisclosureDirection::Both,
+        _ => return Err(ApiError::invalid_request()),
+    };
+    let maximum_candidates = request.maximum_candidates.unwrap_or(20);
+    if request.purpose.trim().is_empty()
+        || request.valid_at_epoch_seconds == 0
+        || !(1..=100).contains(&maximum_candidates)
+    {
+        return Err(ApiError::invalid_request());
+    }
+    let scope = graph_request_scope(&request)?;
+    let mut runtime = state
+        .inner
+        .runtime
+        .lock()
+        .map_err(|_| ApiError::internal())?;
+    if request.workspace_id != runtime.read_grant.workspace_id.as_str()
+        || request.subject_id != runtime.read_grant.subject_id.as_str()
+        || !runtime.read_grant.allows(&scope)
+    {
+        return Err(ApiError::access_denied());
+    }
+    let disclosure_id = DisclosureId::new(format!("disclosure_{}", next_id(&mut runtime)?));
+    let grant = runtime.read_grant.clone();
+    let graph_request = ResolveGraphContextRequest {
+        workspace_id: grant.workspace_id.clone(),
+        principal_id: grant.subject_id.clone(),
+        node_id: KnowledgeNodeId::new(request.node_id),
+        scope,
+        direction,
+        valid_at_epoch_seconds: request.valid_at_epoch_seconds,
+        maximum_candidates,
+        purpose: request.purpose,
+    };
+    let Runtime {
+        store,
+        graph_provider,
+        ..
+    } = &mut *runtime;
+    let response = GraphContextService::new(store, graph_provider)
+        .execute_request(graph_request, grant, disclosure_id)
+        .map_err(ApiError::from_application)?;
+    Ok(Json(ResolveGraphResponse {
+        disclosure_id: response.disclosure_id.to_string(),
+        edges: response
+            .edges
+            .into_iter()
+            .map(|edge| {
+                let validity = edge.validity();
+                GraphEdgeResponse {
+                    edge_id: edge.id().to_string(),
+                    source_node_id: edge.source_id().to_string(),
+                    target_node_id: edge.target_id().to_string(),
+                    relation: edge.relation().as_str().to_owned(),
+                    version: edge.version(),
+                    valid_from_epoch_seconds: validity.valid_from_epoch_seconds(),
+                    valid_until_epoch_seconds: validity.valid_until_epoch_seconds(),
+                    recorded_at_epoch_seconds: validity.recorded_at_epoch_seconds(),
+                }
+            })
+            .collect(),
+    }))
+}
+
+fn graph_request_scope(request: &ResolveGraphRequest) -> Result<MemoryScope, ApiError> {
+    let selected = usize::from(request.domain.is_some())
+        + usize::from(request.entity_id.is_some())
+        + usize::from(request.activity_id.is_some());
+    if selected > 1 {
+        return Err(ApiError::invalid_request());
+    }
+    Ok(if let Some(name) = &request.domain {
+        MemoryScope::Domain { name: name.clone() }
+    } else if let Some(id) = &request.entity_id {
+        MemoryScope::Entity {
+            id: EntityId::new(id),
+        }
+    } else if let Some(id) = &request.activity_id {
+        MemoryScope::Activity {
+            id: ActivityId::new(id),
+        }
+    } else {
+        MemoryScope::Global
+    })
+}
+
 fn request_is_within_grant(request: &ResolveRequest, grant: &ReadGrant) -> bool {
     request
         .domain
@@ -1873,6 +2009,7 @@ fn oauth_resource_metadata_from_environment() -> Result<Option<OAuthProtectedRes
                     "rembrane:checkpoint:write",
                     "rembrane:travel:read",
                     "rembrane:travel:write",
+                    "rembrane:graph:read",
                 ],
                 bearer_methods_supported: vec!["header"],
                 resource_name: "Rembrane remote MCP",
@@ -1907,6 +2044,7 @@ async fn main() -> Result<()> {
             get(oauth_protected_resource),
         )
         .route("/v1/context/resolve", post(resolve_context))
+        .route("/v1/graph/context/resolve", post(resolve_graph_context))
         .route(
             "/v1/workspaces/invitations",
             get(list_invitations).post(create_invitation),
@@ -1941,15 +2079,15 @@ async fn main() -> Result<()> {
 mod tests {
     use rembrane_application::WorkspaceRepository;
     use rembrane_domain::{
-        ClientId, EntityId, InvitationStatus, Membership, Principal, PrincipalId, ReadGrant,
-        ReadScope, Workspace, WorkspaceId, WorkspaceRole,
+        ClientId, EntityId, InvitationStatus, Membership, MemoryScope, Principal, PrincipalId,
+        ReadGrant, ReadScope, Workspace, WorkspaceId, WorkspaceRole,
     };
     use rembrane_store_sqlite::SqliteStore;
 
     use super::{
-        ResolveRequest, advance_identifier, invitation_only_grants, parse_invitation_role,
-        parse_invitation_status, request_is_within_grant, selected_api_token_reference,
-        token_matches, valid_api_token,
+        ResolveGraphRequest, ResolveRequest, advance_identifier, graph_request_scope,
+        invitation_only_grants, parse_invitation_role, parse_invitation_status,
+        request_is_within_grant, selected_api_token_reference, token_matches, valid_api_token,
     };
 
     #[test]
@@ -2011,6 +2149,29 @@ mod tests {
         };
 
         assert!(!request_is_within_grant(&request, &grant));
+    }
+
+    #[test]
+    fn graph_request_scope_is_explicit_and_unambiguous() {
+        let mut request = ResolveGraphRequest {
+            workspace_id: "workspace_01".to_owned(),
+            subject_id: "principal_01".to_owned(),
+            node_id: "node_project".to_owned(),
+            direction: "outgoing".to_owned(),
+            valid_at_epoch_seconds: 100,
+            maximum_candidates: Some(20),
+            purpose: "continue-project".to_owned(),
+            domain: None,
+            entity_id: Some("project_01".to_owned()),
+            activity_id: None,
+        };
+        assert!(matches!(
+            graph_request_scope(&request),
+            Ok(MemoryScope::Entity { id }) if id == EntityId::new("project_01")
+        ));
+
+        request.domain = Some("development".to_owned());
+        assert!(graph_request_scope(&request).is_err());
     }
 
     #[test]

@@ -57,6 +57,36 @@ paths:
           $ref: "#/components/responses/AccessDenied"
         "409":
           $ref: "#/components/responses/Conflict"
+  /graph/context/resolve:
+    post:
+      operationId: resolveGraphContext
+      summary: Resolve an authorized temporal knowledge-graph neighbourhood
+      description: |
+        Queries the configured graph provider, then reauthorizes every
+        candidate against the exact canonical workspace, edge revision,
+        requested direction, and validity time. An exact disclosure receipt is
+        committed before canonical edge metadata is returned.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResolveGraphContextRequest"
+      responses:
+        "200":
+          description: Audited canonical graph context
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResolveGraphContextResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/AccessDenied"
+        "409":
+          $ref: "#/components/responses/Conflict"
   /workspaces/key-rotation:
     post:
       operationId: rotateWorkspaceKey
@@ -917,6 +947,121 @@ components:
           maxItems: 100
           items:
             $ref: "#/components/schemas/Memory"
+    ResolveGraphContextRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - workspaceId
+        - subjectId
+        - nodeId
+        - direction
+        - validAtEpochSeconds
+        - purpose
+      properties:
+        workspaceId:
+          $ref: "#/components/schemas/OpaqueId"
+        subjectId:
+          $ref: "#/components/schemas/OpaqueId"
+        nodeId:
+          $ref: "#/components/schemas/OpaqueId"
+        direction:
+          type: string
+          enum: [incoming, outgoing, both]
+        validAtEpochSeconds:
+          type: integer
+          minimum: 1
+        maximumCandidates:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+        purpose:
+          type: string
+          minLength: 1
+          maxLength: 255
+        domain:
+          type:
+            - string
+            - "null"
+          minLength: 1
+          maxLength: 100
+        entityId:
+          oneOf:
+            - $ref: "#/components/schemas/OpaqueId"
+            - type: "null"
+        activityId:
+          oneOf:
+            - $ref: "#/components/schemas/OpaqueId"
+            - type: "null"
+      oneOf:
+        - not:
+            anyOf:
+              - required: [domain]
+              - required: [entityId]
+              - required: [activityId]
+        - required: [domain]
+          not:
+            anyOf:
+              - required: [entityId]
+              - required: [activityId]
+        - required: [entityId]
+          not:
+            anyOf:
+              - required: [domain]
+              - required: [activityId]
+        - required: [activityId]
+          not:
+            anyOf:
+              - required: [domain]
+              - required: [entityId]
+    ResolveGraphContextResponse:
+      type: object
+      additionalProperties: false
+      required: [disclosureId, edges]
+      properties:
+        disclosureId:
+          $ref: "#/components/schemas/OpaqueId"
+        edges:
+          type: array
+          maxItems: 100
+          items:
+            $ref: "#/components/schemas/GraphEdge"
+    GraphEdge:
+      type: object
+      additionalProperties: false
+      required:
+        - edgeId
+        - sourceNodeId
+        - targetNodeId
+        - relation
+        - version
+        - validFromEpochSeconds
+        - recordedAtEpochSeconds
+      properties:
+        edgeId:
+          $ref: "#/components/schemas/OpaqueId"
+        sourceNodeId:
+          $ref: "#/components/schemas/OpaqueId"
+        targetNodeId:
+          $ref: "#/components/schemas/OpaqueId"
+        relation:
+          type: string
+          minLength: 2
+          maxLength: 100
+        version:
+          type: integer
+          minimum: 1
+        validFromEpochSeconds:
+          type: integer
+          minimum: 1
+        validUntilEpochSeconds:
+          type:
+            - integer
+            - "null"
+          minimum: 1
+        recordedAtEpochSeconds:
+          type: integer
+          minimum: 1
     ResolveTravelContextRequest:
       type: object
       additionalProperties: false

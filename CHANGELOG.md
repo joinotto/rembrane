@@ -37,6 +37,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - MCP `rembrane_resolve_graph_context` tool with explicit temporal direction,
   scope, purpose, and candidate bounds, using the configured native or
   Graphiti provider and returning canonical edge revisions.
+- Authenticated REST graph-context resolution using the same transport-neutral
+  contract, configured provider selection, canonical edge checks, and
+  disclosure-before-response boundary as MCP.
 - Bounded shared-workspace invitation validity with persisted creation and
   expiry time, a 30-day maximum lifetime, and fail-closed acceptance at the
   expiry boundary.

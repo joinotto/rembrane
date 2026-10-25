@@ -15,6 +15,7 @@ rembrane-config = { path = "../../crates/rembrane-config" }
 rembrane-contracts = { path = "../../crates/rembrane-contracts" }
 rembrane-crypto-configured = { path = "../../adapters/rembrane-crypto-configured" }
 rembrane-domain = { path = "../../crates/rembrane-domain" }
+rembrane-graph-configured = { path = "../../adapters/rembrane-graph-configured" }
 rembrane-secret-local = { path = "../../adapters/rembrane-secret-local" }
 rembrane-store-sqlite = { path = "../../adapters/rembrane-store-sqlite" }
 serde = { version = "1", features = ["derive"] }

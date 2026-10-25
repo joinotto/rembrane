@@ -430,6 +430,8 @@ This roadmap describes sequencing, not release dates.
       - [x] Add a local/remote MCP graph-context tool backed by the
         deployment-selected native or Graphiti provider and canonical SQLite
         reauthorization.
+      - [x] Add an authenticated REST graph-context endpoint sharing the same
+        configured provider, canonical reauthorization, and disclosure path.
     - [x] Persist graph disclosure evidence in the in-memory, SQLite, and
       PostgreSQL repository adapters with tenant-isolation coverage.
       - [x] Enforce exact tenant and edge-revision correlation in the
