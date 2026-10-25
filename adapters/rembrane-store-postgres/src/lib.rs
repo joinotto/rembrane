@@ -206,10 +206,25 @@ pub struct PostgresStore<Pool> {
     pool: Pool,
 }
 
+/// Application-facing view that pins every repository call to one canonical
+/// workspace before a database transaction can begin.
+pub struct PostgresTenantStore<'store, Pool> {
+    store: &'store PostgresStore<Pool>,
+    workspace_id: WorkspaceId,
+}
+
 impl<Pool: PostgresPool> PostgresStore<Pool> {
     #[must_use]
     pub const fn new(pool: Pool) -> Self {
         Self { pool }
+    }
+
+    #[must_use]
+    pub fn for_workspace(&self, workspace_id: WorkspaceId) -> PostgresTenantStore<'_, Pool> {
+        PostgresTenantStore {
+            store: self,
+            workspace_id,
+        }
     }
 
     pub fn begin_tenant(
@@ -682,6 +697,124 @@ where
         audit_event: AdministrativeAuditEvent,
     ) -> Result<(), ApplicationError> {
         PostgresStore::replace_invitation(self, &invitation, expected_status, &audit_event)
+            .map_err(map_invitation_application_error)
+    }
+}
+
+impl<Pool> PostgresTenantStore<'_, Pool> {
+    fn require_workspace(&self, workspace_id: &WorkspaceId) -> Result<(), ApplicationError> {
+        if workspace_id == &self.workspace_id {
+            Ok(())
+        } else {
+            Err(ApplicationError::AccessDenied)
+        }
+    }
+}
+
+impl<Pool> MembershipRepository for PostgresTenantStore<'_, Pool>
+where
+    Pool: PostgresPool,
+    Pool::Error: ClassifiedPostgresError,
+    <Pool::Transaction as PostgresTransaction>::Row: PostgresRow<Error = Pool::Error>,
+{
+    fn insert_membership(&mut self, membership: Membership) -> Result<(), ApplicationError> {
+        self.require_workspace(membership.workspace_id())?;
+        self.store
+            .insert_membership(&membership)
+            .map_err(map_application_error)
+    }
+
+    fn find_membership(
+        &self,
+        workspace_id: &WorkspaceId,
+        principal_id: &PrincipalId,
+    ) -> Result<Option<Membership>, ApplicationError> {
+        self.require_workspace(workspace_id)?;
+        self.store
+            .find_membership(workspace_id, principal_id)
+            .map_err(map_application_error)
+    }
+
+    fn list_active_memberships(
+        &self,
+        workspace_id: &WorkspaceId,
+    ) -> Result<Vec<Membership>, ApplicationError> {
+        self.require_workspace(workspace_id)?;
+        self.store
+            .list_active_memberships(workspace_id)
+            .map_err(map_application_error)
+    }
+
+    fn replace_membership(&mut self, membership: Membership) -> Result<(), ApplicationError> {
+        self.require_workspace(membership.workspace_id())?;
+        self.store
+            .replace_membership(&membership)
+            .map_err(map_application_error)
+    }
+}
+
+impl<Pool> InvitationRepository for PostgresTenantStore<'_, Pool>
+where
+    Pool: PostgresPool,
+    Pool::Error: ClassifiedPostgresError,
+    <Pool::Transaction as PostgresTransaction>::Row: PostgresRow<Error = Pool::Error>,
+{
+    fn insert_invitation_replacing_expired(
+        &mut self,
+        invitation: Invitation,
+        audit_event: AdministrativeAuditEvent,
+    ) -> Result<(), ApplicationError> {
+        self.require_workspace(invitation.workspace_id())?;
+        self.store
+            .insert_invitation_replacing_expired(&invitation, &audit_event)
+            .map_err(map_invitation_application_error)
+    }
+
+    fn find_invitation(
+        &self,
+        workspace_id: &WorkspaceId,
+        invitation_id: &InvitationId,
+    ) -> Result<Option<Invitation>, ApplicationError> {
+        self.require_workspace(workspace_id)?;
+        self.store
+            .find_invitation(workspace_id, invitation_id)
+            .map_err(map_invitation_application_error)
+    }
+
+    fn list_invitations(
+        &self,
+        workspace_id: &WorkspaceId,
+        status: Option<InvitationStatus>,
+        limit: usize,
+    ) -> Result<Vec<Invitation>, ApplicationError> {
+        self.require_workspace(workspace_id)?;
+        self.store
+            .list_invitations(workspace_id, status, limit)
+            .map_err(map_invitation_application_error)
+    }
+
+    fn accept_invitation_with_membership(
+        &mut self,
+        invitation: Invitation,
+        membership: Membership,
+        audit_event: AdministrativeAuditEvent,
+    ) -> Result<(), ApplicationError> {
+        self.require_workspace(invitation.workspace_id())?;
+        self.require_workspace(membership.workspace_id())?;
+        self.store
+            .accept_invitation_with_membership(&invitation, &membership, &audit_event)
+            .map_err(map_invitation_application_error)
+    }
+
+    fn replace_invitation(
+        &mut self,
+        invitation: Invitation,
+        expected_status: InvitationStatus,
+        audit_event: AdministrativeAuditEvent,
+    ) -> Result<(), ApplicationError> {
+        self.require_workspace(invitation.workspace_id())?;
+        self.store
+            .replace_invitation(&invitation, expected_status, &audit_event)
             .map_err(map_invitation_application_error)
     }
 }
@@ -2135,6 +2268,40 @@ mod tests {
             ),
             Err(ApplicationError::Validation(_))
         ));
+    }
+
+    #[test]
+    fn tenant_store_denies_cross_workspace_calls_before_pool_access() {
+        struct NeverBeginPool;
+
+        impl PostgresPool for NeverBeginPool {
+            type Error = &'static str;
+            type Transaction = FakeTransaction;
+
+            fn begin(&self) -> Result<Self::Transaction, Self::Error> {
+                Err("must not begin")
+            }
+        }
+
+        let store = PostgresStore::new(NeverBeginPool);
+        let tenant = store.for_workspace(WorkspaceId::new("workspace_01"));
+        assert_eq!(
+            MembershipRepository::find_membership(
+                &tenant,
+                &WorkspaceId::new("workspace_other"),
+                &PrincipalId::new("principal_01"),
+            ),
+            Err(ApplicationError::AccessDenied)
+        );
+        assert_eq!(
+            InvitationRepository::list_invitations(
+                &tenant,
+                &WorkspaceId::new("workspace_other"),
+                None,
+                10,
+            ),
+            Err(ApplicationError::AccessDenied)
+        );
     }
 
     #[test]

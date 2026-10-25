@@ -60,6 +60,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Complete PostgreSQL `InvitationRepository` mutations with atomic expired-row
   replacement, optimistic lifecycle transitions, membership activation,
   content-free administrative audit evidence, and closed aggregate validation.
+- A workspace-pinned PostgreSQL application facade for membership and
+  invitation ports that rejects cross-workspace calls before opening a pooled
+  transaction.
 
 ### Changed
 
