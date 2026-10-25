@@ -305,6 +305,8 @@ This roadmap describes sequencing, not release dates.
       MCP protocol headers, strips the bearer credential at the OAuth boundary,
       and injects verified tenant access into request extensions for the
       official SDK service.
+      - [x] Route authorized stateless event-stream GETs through the same
+        dispatcher with an empty body and verified tenant-only extensions.
   - [x] Add OAuth and cross-tenant transport integration tests.
     - [x] Prove verified remote identity is still constrained by canonical
       workspace membership, audience, expiry, and token validity.

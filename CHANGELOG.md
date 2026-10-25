@@ -52,6 +52,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Remote MCP authorization can now consume an authorized request through a
   Tower-compatible dispatcher, preserving exact body and verified tenant
   identity for the official Rust MCP SDK while withholding bearer credentials.
+- The Tower MCP bridge also supports authorized stateless event-stream GETs,
+  preserving validated host, origin, negotiation, and tenant identity without
+  forwarding OAuth credentials.
 - A strict portable key-provider conformance result schema and runner output
   containing provider identity and explicit pass evidence for eight
   authentication, encryption, limit, rotation, and replay cases.

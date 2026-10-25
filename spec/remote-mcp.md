@@ -11,6 +11,9 @@ The authorization gate can hand an accepted POST to a Tower-compatible MCP
 service. It rebuilds only protocol headers already validated by the gate,
 places verified tenant access and the classified invocation in request
 extensions, and deliberately does not forward the OAuth bearer credential.
+The same dispatcher opens an authorized stateless GET with an empty body,
+validated event-stream negotiation headers, and verified tenant access while
+still withholding the bearer credential.
 
 The completed endpoint will use the same tools and application services as
 local stdio MCP. Transport selection must never change workspace

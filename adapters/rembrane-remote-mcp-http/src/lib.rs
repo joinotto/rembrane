@@ -305,6 +305,57 @@ where
     }
 }
 
+impl<Service> AuthorizedRemoteMcpEventStreamDispatcher for AuthorizedTowerMcpDispatcher<Service>
+where
+    Service: tower::Service<Request<Body>> + Clone + Send + 'static,
+    Service::Future: Send + 'static,
+    Service::Response: Send + 'static,
+    Service::Error: Send + 'static,
+{
+    type Output = Service::Response;
+    type Error = TowerMcpDispatchError<Service::Error>;
+    type DispatchFuture =
+        Pin<Box<dyn Future<Output = Result<Self::Output, Self::Error>> + Send + 'static>>;
+
+    fn open(
+        &self,
+        access: VerifiedRemoteAccess,
+        accept: String,
+        protocol_version: Option<String>,
+        validated_host: Option<String>,
+        validated_origin: Option<String>,
+    ) -> Self::DispatchFuture {
+        let service = self.service.clone();
+        Box::pin(async move {
+            let mut request = Request::builder()
+                .method(Method::GET)
+                .body(Body::empty())
+                .map_err(|_| TowerMcpDispatchError::InvalidAuthorizedMetadata)?;
+            insert_validated_header(request.headers_mut(), ACCEPT, &accept)?;
+            insert_optional_validated_header(
+                request.headers_mut(),
+                MCP_PROTOCOL_VERSION_HEADER_NAME,
+                protocol_version.as_deref(),
+            )?;
+            insert_optional_validated_header(
+                request.headers_mut(),
+                HOST,
+                validated_host.as_deref(),
+            )?;
+            insert_optional_validated_header(
+                request.headers_mut(),
+                ORIGIN,
+                validated_origin.as_deref(),
+            )?;
+            request.extensions_mut().insert(access);
+            service
+                .oneshot(request)
+                .await
+                .map_err(TowerMcpDispatchError::Service)
+        })
+    }
+}
+
 fn insert_validated_header<ServiceError>(
     headers: &mut HeaderMap,
     name: HeaderName,
@@ -2368,6 +2419,68 @@ mod tests {
                 .expect_err("arbitrary GET protocol versions must fail")
                 .status,
             400
+        );
+    }
+
+    #[tokio::test]
+    async fn tower_dispatcher_opens_event_stream_with_verified_tenant_only() {
+        let config = RemoteMcpConfig::new(
+            "https://memory.example.test/mcp".to_owned(),
+            "https://identity.example.test".to_owned(),
+            "https://identity.example.test/introspect".to_owned(),
+            "rembrane".to_owned(),
+            SecretReference::environment("OAUTH_SECRET").expect("reference should be valid"),
+            vec!["https://agent.example.test".to_owned()],
+        )
+        .expect("remote profile should be valid");
+        let authorization = RemoteMcpAxumAuthorization::from_config(16, &config, Verifier)
+            .expect("owned authorization service should initialize");
+        let mut headers = HeaderMap::new();
+        headers.insert(HOST, HeaderValue::from_static("memory.example.test"));
+        headers.insert(
+            AUTHORIZATION,
+            HeaderValue::from_static("Bearer workspace-one"),
+        );
+        headers.insert(
+            ORIGIN,
+            HeaderValue::from_static("https://agent.example.test"),
+        );
+        headers.insert(ACCEPT, HeaderValue::from_static("text/event-stream"));
+        headers.insert(
+            MCP_PROTOCOL_VERSION_HEADER_NAME,
+            HeaderValue::from_static("2025-03-26"),
+        );
+        let service = tower::service_fn(
+            |mut request: axum::http::Request<axum::body::Body>| async move {
+                let access = request
+                    .extensions_mut()
+                    .remove::<rembrane_contracts::VerifiedRemoteAccess>()
+                    .expect("verified access extension");
+                let method = request.method().as_str().to_owned();
+                let has_authorization = request.headers().contains_key(AUTHORIZATION);
+                let body = axum::body::to_bytes(request.into_body(), 1)
+                    .await
+                    .expect("empty GET body");
+                Ok::<_, std::convert::Infallible>((
+                    access.workspace_id().to_string(),
+                    method,
+                    body.is_empty(),
+                    has_authorization,
+                ))
+            },
+        );
+
+        let dispatched = authorization
+            .authorize_and_dispatch_event_stream(
+                &headers,
+                1_000,
+                &AuthorizedTowerMcpDispatcher::new(service),
+            )
+            .await
+            .expect("authorized Tower event stream");
+        assert_eq!(
+            dispatched,
+            ("workspace_01".to_owned(), "GET".to_owned(), true, false)
         );
     }
 }
