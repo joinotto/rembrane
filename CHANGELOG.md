@@ -49,6 +49,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - `providers check` accepts `--expected-registry-sha256` and
   `--minimum-registry-generated-at` so CLI integrations can enforce the same
   snapshot rollback constraints.
+- Remote MCP authorization can now consume an authorized request through a
+  Tower-compatible dispatcher, preserving exact body and verified tenant
+  identity for the official Rust MCP SDK while withholding bearer credentials.
 - A strict portable key-provider conformance result schema and runner output
   containing provider identity and explicit pass evidence for eight
   authentication, encryption, limit, rotation, and replay cases.

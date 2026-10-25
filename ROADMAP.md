@@ -301,6 +301,10 @@ This roadmap describes sequencing, not release dates.
     duplicate/capacity controls, per-request revalidation, and authenticated
     deletion, reclaiming expired capacity before accepting new sessions.
   - [ ] Serve Streamable HTTP through the official Rust MCP SDK.
+    - [x] Add a consuming Tower dispatcher that reconstructs only validated
+      MCP protocol headers, strips the bearer credential at the OAuth boundary,
+      and injects verified tenant access into request extensions for the
+      official SDK service.
   - [x] Add OAuth and cross-tenant transport integration tests.
     - [x] Prove verified remote identity is still constrained by canonical
       workspace membership, audience, expiry, and token validity.

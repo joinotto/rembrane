@@ -7,6 +7,11 @@ owned dispatch handoff are implemented. The final official Rust SDK
 Streamable HTTP service remains under development and must not yet be
 advertised as a production endpoint.
 
+The authorization gate can hand an accepted POST to a Tower-compatible MCP
+service. It rebuilds only protocol headers already validated by the gate,
+places verified tenant access and the classified invocation in request
+extensions, and deliberately does not forward the OAuth bearer credential.
+
 The completed endpoint will use the same tools and application services as
 local stdio MCP. Transport selection must never change workspace
 authorization, scope intersection, sensitive-data permissions, or disclosure

@@ -14,13 +14,13 @@ rembrane-config = { path = "../../crates/rembrane-config" }
 rembrane-contracts = { path = "../../crates/rembrane-contracts" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+tower = "0.5"
 zeroize = "1"
 
 [dev-dependencies]
 rembrane-domain = { path = "../../crates/rembrane-domain" }
 rembrane-oauth-introspection = { path = "../rembrane-oauth-introspection" }
 tokio = { version = "1", features = ["macros", "rt"] }
-tower = "0.5"
 
 [lints]
 workspace = true

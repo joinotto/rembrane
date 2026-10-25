@@ -6,10 +6,12 @@
 //! already passed bearer, origin, method/tool, session, and tenant checks.
 
 use std::future::Future;
+use std::pin::Pin;
 
 use axum::{
+    body::Body,
     http::{
-        HeaderMap, HeaderName, HeaderValue, StatusCode,
+        HeaderMap, HeaderName, HeaderValue, Method, Request, StatusCode,
         header::{
             ACCEPT, AUTHORIZATION, CONTENT_TYPE, HOST, ORIGIN, RETRY_AFTER, WWW_AUTHENTICATE,
         },
@@ -23,6 +25,7 @@ use rembrane_application::{
 use rembrane_config::RemoteMcpConfig;
 use rembrane_contracts::{RemoteMcpRequestAuthorization, RemoteSessionId, VerifiedRemoteAccess};
 use serde::Deserialize;
+use tower::ServiceExt;
 use zeroize::Zeroizing;
 
 pub const MCP_SESSION_HEADER: &str = "Mcp-Session-Id";
@@ -221,6 +224,107 @@ pub trait AuthorizedRemoteMcpDispatcher {
         protocol_headers: RemoteMcpProtocolHeaders,
         body: Zeroizing<Vec<u8>>,
     ) -> Self::DispatchFuture;
+}
+
+/// Adapts authorized POST requests to a cloneable Tower MCP service.
+///
+/// The official Rust MCP SDK's `StreamableHttpService` implements this Tower
+/// contract. Verified access is inserted into request extensions, while only
+/// headers already validated by the outer authorization gate are rebuilt.
+#[derive(Clone)]
+pub struct AuthorizedTowerMcpDispatcher<Service> {
+    service: Service,
+}
+
+impl<Service> AuthorizedTowerMcpDispatcher<Service> {
+    #[must_use]
+    pub const fn new(service: Service) -> Self {
+        Self { service }
+    }
+}
+
+#[derive(Debug)]
+pub enum TowerMcpDispatchError<ServiceError> {
+    InvalidAuthorizedMetadata,
+    Service(ServiceError),
+}
+
+impl<Service> AuthorizedRemoteMcpDispatcher for AuthorizedTowerMcpDispatcher<Service>
+where
+    Service: tower::Service<Request<Body>> + Clone + Send + 'static,
+    Service::Future: Send + 'static,
+    Service::Response: Send + 'static,
+    Service::Error: Send + 'static,
+{
+    type Output = Service::Response;
+    type Error = TowerMcpDispatchError<Service::Error>;
+    type DispatchFuture =
+        Pin<Box<dyn Future<Output = Result<Self::Output, Self::Error>> + Send + 'static>>;
+
+    fn dispatch(
+        &self,
+        access: VerifiedRemoteAccess,
+        invocation: RemoteMcpInvocation,
+        protocol_headers: RemoteMcpProtocolHeaders,
+        body: Zeroizing<Vec<u8>>,
+    ) -> Self::DispatchFuture {
+        let service = self.service.clone();
+        Box::pin(async move {
+            let mut request = Request::builder()
+                .method(Method::POST)
+                .body(Body::from(body.as_slice().to_vec()))
+                .map_err(|_| TowerMcpDispatchError::InvalidAuthorizedMetadata)?;
+            insert_validated_header(
+                request.headers_mut(),
+                CONTENT_TYPE,
+                protocol_headers.content_type(),
+            )?;
+            insert_validated_header(request.headers_mut(), ACCEPT, protocol_headers.accept())?;
+            insert_optional_validated_header(
+                request.headers_mut(),
+                MCP_PROTOCOL_VERSION_HEADER_NAME,
+                protocol_headers.protocol_version(),
+            )?;
+            insert_optional_validated_header(
+                request.headers_mut(),
+                HOST,
+                protocol_headers.validated_host(),
+            )?;
+            insert_optional_validated_header(
+                request.headers_mut(),
+                ORIGIN,
+                protocol_headers.validated_origin(),
+            )?;
+            request.extensions_mut().insert(access);
+            request.extensions_mut().insert(invocation);
+            service
+                .oneshot(request)
+                .await
+                .map_err(TowerMcpDispatchError::Service)
+        })
+    }
+}
+
+fn insert_validated_header<ServiceError>(
+    headers: &mut HeaderMap,
+    name: HeaderName,
+    value: &str,
+) -> Result<(), TowerMcpDispatchError<ServiceError>> {
+    let value = HeaderValue::from_str(value)
+        .map_err(|_| TowerMcpDispatchError::InvalidAuthorizedMetadata)?;
+    headers.insert(name, value);
+    Ok(())
+}
+
+fn insert_optional_validated_header<ServiceError>(
+    headers: &mut HeaderMap,
+    name: HeaderName,
+    value: Option<&str>,
+) -> Result<(), TowerMcpDispatchError<ServiceError>> {
+    if let Some(value) = value {
+        insert_validated_header(headers, name, value)?;
+    }
+    Ok(())
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1102,10 +1206,11 @@ mod tests {
 
     use super::{
         AuthorizedRemoteMcpDispatcher, AuthorizedRemoteMcpEventStreamDispatcher,
-        MAX_REMOTE_MCP_HEADER_BYTES, MCP_PROTOCOL_VERSION_HEADER_NAME, MCP_SESSION_HEADER_NAME,
-        RemoteMcpAxumAuthorization, RemoteMcpDispatchError, RemoteMcpHttpGate,
-        RemoteMcpHttpRejection, RemoteMcpHttpRequest, RemoteMcpInvocation,
-        authorize_axum_stateless_body, classify_remote_mcp_request, request_from_axum_headers,
+        AuthorizedTowerMcpDispatcher, MAX_REMOTE_MCP_HEADER_BYTES,
+        MCP_PROTOCOL_VERSION_HEADER_NAME, MCP_SESSION_HEADER_NAME, RemoteMcpAxumAuthorization,
+        RemoteMcpDispatchError, RemoteMcpHttpGate, RemoteMcpHttpRejection, RemoteMcpHttpRequest,
+        RemoteMcpInvocation, authorize_axum_stateless_body, classify_remote_mcp_request,
+        request_from_axum_headers,
     };
 
     struct Verifier;
@@ -1567,6 +1672,83 @@ mod tests {
                 .status,
             403
         );
+    }
+
+    #[tokio::test]
+    async fn tower_dispatcher_preserves_verified_tenant_and_validated_protocol_input() {
+        let verifier = Verifier;
+        let authenticator = RemoteAccessAuthenticator::new(
+            &verifier,
+            "https://identity.example.test",
+            "https://memory.example.test/mcp",
+        );
+        let authorization = RemoteHttpAuthorization::new(&authenticator, &[]);
+        let gate = RemoteMcpHttpGate::new(
+            1,
+            "https://memory.example.test/.well-known/oauth-protected-resource/mcp",
+            &["memory.example.test"],
+        )
+        .expect("gate should be valid");
+        let mut headers = HeaderMap::new();
+        headers.insert(HOST, HeaderValue::from_static("memory.example.test"));
+        headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+        headers.insert(
+            ACCEPT,
+            HeaderValue::from_static("application/json, text/event-stream"),
+        );
+        headers.insert(
+            MCP_PROTOCOL_VERSION_HEADER_NAME,
+            HeaderValue::from_static("2025-03-26"),
+        );
+        headers.insert(
+            AUTHORIZATION,
+            HeaderValue::from_static("Bearer workspace-one"),
+        );
+        let body = br#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"rembrane_resolve_context","arguments":{}}}"#;
+        let authorized =
+            authorize_axum_stateless_body(&gate, &authorization, &headers, body, 1_000)
+                .expect("authorized request");
+        let service = tower::service_fn(
+            |mut request: axum::http::Request<axum::body::Body>| async move {
+                let access = request
+                    .extensions_mut()
+                    .remove::<rembrane_contracts::VerifiedRemoteAccess>()
+                    .expect("verified access extension");
+                let invocation = request
+                    .extensions_mut()
+                    .remove::<RemoteMcpInvocation>()
+                    .expect("classified invocation extension");
+                let protocol = request
+                    .headers()
+                    .get(MCP_PROTOCOL_VERSION_HEADER_NAME)
+                    .and_then(|value| value.to_str().ok())
+                    .map(str::to_owned);
+                let forwarded_authorization = request.headers().contains_key(AUTHORIZATION);
+                let bytes = axum::body::to_bytes(request.into_body(), 1_048_576)
+                    .await
+                    .expect("bounded body");
+                Ok::<_, std::convert::Infallible>((
+                    access.workspace_id().to_string(),
+                    invocation.tool_name().map(str::to_owned),
+                    protocol,
+                    forwarded_authorization,
+                    bytes.to_vec(),
+                ))
+            },
+        );
+        let dispatched = authorized
+            .dispatch_with(&AuthorizedTowerMcpDispatcher::new(service))
+            .await
+            .expect("Tower dispatch");
+
+        assert_eq!(dispatched.0, "workspace_01");
+        assert_eq!(dispatched.1.as_deref(), Some("rembrane_resolve_context"));
+        assert_eq!(dispatched.2.as_deref(), Some("2025-03-26"));
+        assert!(
+            !dispatched.3,
+            "bearer credential must stop at OAuth boundary"
+        );
+        assert_eq!(dispatched.4, body);
     }
 
     #[test]
