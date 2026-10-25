@@ -1047,8 +1047,7 @@ impl RembraneMcp {
             }],
             Vec::new(),
         )?;
-        let disclosure_id =
-            DisclosureId::new(format!("disclosure_{}", next_id(&mut state)?));
+        let disclosure_id = DisclosureId::new(format!("disclosure_{}", next_id(&mut state)?));
         let context = TravelContextService::new(&mut state.store)
             .resolve(&ResolveTravelContextCommand {
                 grant: grants.read,
@@ -1100,8 +1099,7 @@ impl RembraneMcp {
             }],
             Vec::new(),
         )?;
-        let disclosure_id =
-            DisclosureId::new(format!("disclosure_{}", next_id(&mut state)?));
+        let disclosure_id = DisclosureId::new(format!("disclosure_{}", next_id(&mut state)?));
         let checkpoint = CheckpointService::new(&mut state.store)
             .resume(&ResumeActivityCommand {
                 grant: grants.read,
