@@ -48,6 +48,12 @@ persist the wrapped reference before activating the new generation.
 buffer exactly once and returns the usable cipher together with only the
 opaque reference intended for persistence.
 
+`CustomerKmsKeyring::generate_and_persist_next` enforces rotation ordering. It
+generates only the strict successor of the active generation, asks a
+`CustomerKmsKeyReferenceStore` to atomically compare, append, and activate the
+opaque reference, and returns plaintext key ownership only after that durable
+operation succeeds. A failed persistence attempt drops and zeroizes plaintext.
+
 ## Required request binding
 
 Every seal and open operation must cryptographically bind the complete

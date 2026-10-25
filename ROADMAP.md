@@ -123,6 +123,9 @@ This roadmap describes sequencing, not release dates.
     - [x] Consume generated customer-KMS plaintext exactly once into the
       reference cipher while returning only its opaque wrapped reference for
       durable sidecar persistence.
+    - [x] Require atomic compare-and-activate persistence of the strict next
+      wrapped-key generation before releasing its zeroizing plaintext for
+      sidecar cipher activation.
   - [x] Add a provider-agnostic configured cipher that dispatches to local
     environment/macOS keyrings or a policy-negotiated HTTP key provider.
     - [x] Accept consumed customer key-provider configuration from

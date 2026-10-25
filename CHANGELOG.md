@@ -23,6 +23,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - A single-consumption customer-KMS rotation handoff that constructs the
   reference record cipher while returning only opaque wrapped metadata for
   durable persistence.
+- Fail-closed customer-KMS rotation ordering that atomically persists and
+  activates the strict next opaque generation before releasing zeroizing
+  plaintext key ownership to the sidecar.
 - A strict language-neutral authenticated channel-processor message schema and
   secret-free fixture carrying canonical tenant identity and event
   idempotency metadata to cooperative bots and agents.

@@ -252,6 +252,20 @@ pub trait CustomerKmsRotationAdapter: CustomerKmsAdapter {
     ) -> Result<CustomerKmsGeneratedKey, ProviderError>;
 }
 
+/// Durable customer-side storage for wrapped-key rotation state.
+///
+/// Implementations must atomically verify `expected_active_generation`,
+/// append `reference`, and make it active. Plaintext key material is never
+/// passed to this boundary.
+pub trait CustomerKmsKeyReferenceStore {
+    fn persist_and_activate(
+        &self,
+        workspace_id: &WorkspaceId,
+        expected_active_generation: u64,
+        reference: &CustomerKmsKeyReference,
+    ) -> Result<(), ProviderError>;
+}
+
 macro_rules! cloud_adapter {
     ($adapter:ident, $binding:expr) => {
         pub struct $adapter<Client> {
@@ -395,6 +409,33 @@ impl CustomerKmsKeyring {
         let context = CustomerKmsContext::new(workspace_id.clone(), generation)?;
         adapter.unwrap_key(&context, reference)
     }
+
+    /// Generates and durably persists the strict next generation before
+    /// returning plaintext key material to the caller for activation.
+    pub fn generate_and_persist_next<Adapter, Store>(
+        &self,
+        workspace_id: &WorkspaceId,
+        adapter: &Adapter,
+        store: &Store,
+    ) -> Result<CustomerKmsGeneratedKey, ProviderError>
+    where
+        Adapter: CustomerKmsRotationAdapter,
+        Store: CustomerKmsKeyReferenceStore,
+    {
+        let next_generation = self
+            .active_generation
+            .checked_add(1)
+            .ok_or(ProviderError::Unavailable)?;
+        let context = CustomerKmsContext::new(workspace_id.clone(), next_generation)?;
+        let generated = adapter.generate_key(&context)?;
+        if generated.reference().generation() != next_generation {
+            return Err(ProviderError::Rejected(
+                "customer KMS generated an unexpected key generation".to_owned(),
+            ));
+        }
+        store.persist_and_activate(workspace_id, self.active_generation, generated.reference())?;
+        Ok(generated)
+    }
 }
 
 #[cfg(test)]
@@ -407,8 +448,9 @@ mod tests {
     use super::{
         AwsKmsAdapter, AzureKeyVaultAdapter, CloudKmsBinding, CloudKmsDecryptClient,
         CloudKmsDecryptRequest, CloudKmsGenerateRequest, CloudKmsGeneratedKey, CloudKmsKeyClient,
-        CustomerKmsAdapter, CustomerKmsContext, CustomerKmsKeyReference, CustomerKmsKeyring,
-        CustomerKmsRotationAdapter, GoogleCloudKmsAdapter,
+        CustomerKmsAdapter, CustomerKmsContext, CustomerKmsKeyReference,
+        CustomerKmsKeyReferenceStore, CustomerKmsKeyring, CustomerKmsRotationAdapter,
+        GoogleCloudKmsAdapter,
     };
     use crate::ProviderError;
 
@@ -617,5 +659,72 @@ mod tests {
         let context = CustomerKmsContext::new(WorkspaceId::new("workspace-a"), 2).unwrap();
 
         assert!(adapter.generate_key(&context).is_err());
+    }
+
+    struct RecordingReferenceStore {
+        expected_active: RefCell<Option<u64>>,
+        persisted_generation: RefCell<Option<u64>>,
+        reject: bool,
+    }
+
+    impl CustomerKmsKeyReferenceStore for RecordingReferenceStore {
+        fn persist_and_activate(
+            &self,
+            _workspace_id: &WorkspaceId,
+            expected_active_generation: u64,
+            reference: &CustomerKmsKeyReference,
+        ) -> Result<(), ProviderError> {
+            *self.expected_active.borrow_mut() = Some(expected_active_generation);
+            *self.persisted_generation.borrow_mut() = Some(reference.generation());
+            if self.reject {
+                return Err(ProviderError::Unavailable);
+            }
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn rotation_persists_strict_next_generation_before_returning_plaintext() {
+        let adapter = GoogleCloudKmsAdapter::new(cloud_client());
+        let keyring = CustomerKmsKeyring::new(
+            7,
+            vec![CustomerKmsKeyReference::new(7, "provider-key-v7", vec![7; 48]).unwrap()],
+        )
+        .unwrap();
+        let store = RecordingReferenceStore {
+            expected_active: RefCell::new(None),
+            persisted_generation: RefCell::new(None),
+            reject: false,
+        };
+
+        let generated = keyring
+            .generate_and_persist_next(&WorkspaceId::new("workspace-a"), &adapter, &store)
+            .unwrap();
+
+        assert_eq!(generated.reference().generation(), 8);
+        assert_eq!(*store.expected_active.borrow(), Some(7));
+        assert_eq!(*store.persisted_generation.borrow(), Some(8));
+    }
+
+    #[test]
+    fn rotation_does_not_release_plaintext_when_persistence_fails() {
+        let adapter = GoogleCloudKmsAdapter::new(cloud_client());
+        let keyring = CustomerKmsKeyring::new(
+            7,
+            vec![CustomerKmsKeyReference::new(7, "provider-key-v7", vec![7; 48]).unwrap()],
+        )
+        .unwrap();
+        let store = RecordingReferenceStore {
+            expected_active: RefCell::new(None),
+            persisted_generation: RefCell::new(None),
+            reject: true,
+        };
+
+        assert!(
+            keyring
+                .generate_and_persist_next(&WorkspaceId::new("workspace-a"), &adapter, &store)
+                .is_err()
+        );
+        assert_eq!(*store.persisted_generation.borrow(), Some(8));
     }
 }
