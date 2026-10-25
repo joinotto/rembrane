@@ -6933,8 +6933,8 @@ mod tests {
         CanonicalGraphMutationRepository, CanonicalMutationRepository,
         CheckpointDisclosureRepository, CheckpointMutationRepository, CheckpointRepository,
         CheckpointService, CreateInvitationCommand, DisclosureRepository, EventRepository,
-        GraphProjectionOutboxRepository, GraphProjectionWorker, InvitationRepository,
-        InvitationService, KeyRotationRepository, KnowledgeDirection,
+        GraphDisclosureRepository, GraphProjectionOutboxRepository, GraphProjectionWorker,
+        InvitationRepository, InvitationService, KeyRotationRepository, KnowledgeDirection,
         KnowledgeGraphMutationRepository, KnowledgeGraphRepository, MemberLifecycleRepository,
         MemberScopeGrantRepository, MembershipRepository, MemoryRepository,
         ProjectionOutboxRepository, ProjectionOutcome, ProjectionWorker, ResolveContextCommand,
@@ -6952,8 +6952,9 @@ mod tests {
         ActivityCheckpoint, ActivityId, AdministrativeAction, AdministrativeAuditEvent,
         AdministrativeAuditEventId, AdministrativeTargetKind, BookingResearch, BookingResearchId,
         BookingResearchKind, CanonicalEvent, CheckpointDisclosureReceipt, CheckpointId, ClientId,
-        ContextPackId, DisclosedBookingResearch, DisclosedMemory, DisclosureId, DisclosureReceipt,
-        EntityId, EventId, EventPayload, EvidenceId, EvidenceReference, EvidenceSource,
+        ContextPackId, DisclosedBookingResearch, DisclosedKnowledgeEdge, DisclosedMemory,
+        DisclosureId, DisclosureReceipt, EntityId, EventId, EventPayload, EvidenceId,
+        EvidenceReference, EvidenceSource, GraphDisclosureDirection, GraphDisclosureReceipt,
         GraphProjectionJob, GraphProjectionResource, Invitation, InvitationId, InvitationStatus,
         KeyRotationId, KeyRotationReceipt, KeyRotationStatus, KnowledgeEdge, KnowledgeEdgeId,
         KnowledgeNode, KnowledgeNodeId, KnowledgeNodeKind, KnowledgeRelationType, LegalHoldId,
@@ -6972,15 +6973,16 @@ mod tests {
         ClassifiedPostgresError, DELETE_MEMBER_SCOPE_GRANT_SQL, DELETE_MEMBER_SCOPE_GRANTS_SQL,
         EXPIRE_PENDING_INVITATION_SQL, FIND_BOOKING_RESEARCH_SQL,
         FIND_DISCLOSED_BOOKING_RESEARCH_VERSION_SQL, FIND_DISCLOSED_CHECKPOINT_VERSION_SQL,
-        FIND_DISCLOSED_MEMORY_VERSION_SQL, FIND_DISCLOSED_TRIP_VERSION_SQL,
-        FIND_GRAPH_PROJECTION_SQL, FIND_INVITATION_SQL, FIND_KEY_ROTATION_RECEIPT_SQL,
-        FIND_KNOWLEDGE_EDGE_SQL, FIND_KNOWLEDGE_NODE_SQL, FIND_LEGAL_HOLD_SQL, FIND_MEMBERSHIP_SQL,
-        FIND_MEMORY_SQL, FIND_PRINCIPAL_SQL, FIND_PROJECTION_SQL, FIND_PROVISIONING_PRINCIPAL_SQL,
-        FIND_RETENTION_POLICY_SQL, FIND_TRIP_SQL, FIND_WORKSPACE_SQL,
-        INSERT_ADMINISTRATIVE_AUDIT_SQL, INSERT_BOOKING_RESEARCH_SQL,
-        INSERT_CHECKPOINT_DISCLOSURE_SQL, INSERT_CHECKPOINT_SQL,
-        INSERT_DISCLOSED_BOOKING_RESEARCH_SQL, INSERT_DISCLOSED_MEMORY_SQL, INSERT_DISCLOSURE_SQL,
-        INSERT_EVENT_SQL, INSERT_GRAPH_PROJECTION_SQL, INSERT_INVITATION_SQL,
+        FIND_DISCLOSED_KNOWLEDGE_EDGE_VERSION_SQL, FIND_DISCLOSED_MEMORY_VERSION_SQL,
+        FIND_DISCLOSED_TRIP_VERSION_SQL, FIND_GRAPH_PROJECTION_SQL, FIND_INVITATION_SQL,
+        FIND_KEY_ROTATION_RECEIPT_SQL, FIND_KNOWLEDGE_EDGE_SQL, FIND_KNOWLEDGE_NODE_SQL,
+        FIND_LEGAL_HOLD_SQL, FIND_MEMBERSHIP_SQL, FIND_MEMORY_SQL, FIND_PRINCIPAL_SQL,
+        FIND_PROJECTION_SQL, FIND_PROVISIONING_PRINCIPAL_SQL, FIND_RETENTION_POLICY_SQL,
+        FIND_TRIP_SQL, FIND_WORKSPACE_SQL, INSERT_ADMINISTRATIVE_AUDIT_SQL,
+        INSERT_BOOKING_RESEARCH_SQL, INSERT_CHECKPOINT_DISCLOSURE_SQL, INSERT_CHECKPOINT_SQL,
+        INSERT_DISCLOSED_BOOKING_RESEARCH_SQL, INSERT_DISCLOSED_KNOWLEDGE_EDGE_SQL,
+        INSERT_DISCLOSED_MEMORY_SQL, INSERT_DISCLOSURE_SQL, INSERT_EVENT_SQL,
+        INSERT_GRAPH_DISCLOSURE_SQL, INSERT_GRAPH_PROJECTION_SQL, INSERT_INVITATION_SQL,
         INSERT_KEY_ROTATION_RECEIPT_SQL, INSERT_KEY_ROTATION_RECIPIENT_SQL,
         INSERT_KNOWLEDGE_EDGE_SQL, INSERT_KNOWLEDGE_NODE_SQL, INSERT_LEGAL_HOLD_SQL,
         INSERT_MEMBER_SCOPE_GRANT_SQL, INSERT_MEMBERSHIP_SQL, INSERT_MEMORY_EVIDENCE_SQL,
@@ -10030,6 +10032,70 @@ mod tests {
                     && parameters.contains(&"text:fresh".to_owned())
                     && parameters.contains(&"i64:0".to_owned())
         )));
+    }
+
+    #[test]
+    fn graph_disclosure_persists_exact_edge_revision_atomically() {
+        let edge = knowledge_edge();
+        let receipt = GraphDisclosureReceipt {
+            id: DisclosureId::new("graph_disclosure_01"),
+            workspace_id: WorkspaceId::new("workspace_01"),
+            subject_id: PrincipalId::new("principal_01"),
+            client_id: ClientId::new("client_01"),
+            purpose: "assistant_graph_context".to_owned(),
+            node_id: KnowledgeNodeId::new("node_project"),
+            direction: GraphDisclosureDirection::Outgoing,
+            valid_at_epoch_seconds: 150,
+            edges: vec![DisclosedKnowledgeEdge {
+                id: edge.id().clone(),
+                version: edge.version(),
+            }],
+        };
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let store = PostgresStore::new(FakePool {
+            calls: Rc::clone(&calls),
+            tenant_batches: RefCell::new(
+                [VecDeque::from([
+                    Ok(Some("workspace_01".to_owned())),
+                    Ok(Some("workspace_01".to_owned())),
+                    Ok(Some("workspace_01".to_owned())),
+                    Ok(Some("workspace_01".to_owned())),
+                    Ok(Some("workspace_01".to_owned())),
+                ])]
+                .into(),
+            ),
+            row_batches: RefCell::new([vec![FakeRow::knowledge_edge(&edge)]].into()),
+        });
+        let tenant = store.for_workspace(WorkspaceId::new("workspace_01"));
+        let cipher = IdentityCipher;
+        let mut repository = tenant.with_cipher(&cipher);
+
+        GraphDisclosureRepository::append_graph_disclosure(&mut repository, receipt)
+            .expect("append graph disclosure");
+
+        let calls = calls.borrow();
+        assert!(calls.contains(&Call::Query(
+            FIND_DISCLOSED_KNOWLEDGE_EDGE_VERSION_SQL.to_owned(),
+            vec![
+                "text:workspace_01".to_owned(),
+                "text:edge_project_uses_rust".to_owned(),
+            ]
+        )));
+        assert!(calls.iter().any(|call| matches!(
+            call,
+            Call::Execute(statement, parameters)
+                if statement == INSERT_GRAPH_DISCLOSURE_SQL
+                    && parameters.contains(&"text:outgoing".to_owned())
+                    && parameters.contains(&"i64:150".to_owned())
+        )));
+        assert!(calls.iter().any(|call| matches!(
+            call,
+            Call::Execute(statement, parameters)
+                if statement == INSERT_DISCLOSED_KNOWLEDGE_EDGE_SQL
+                    && parameters.contains(&"text:edge_project_uses_rust".to_owned())
+                    && parameters.contains(&"i64:1".to_owned())
+        )));
+        assert!(calls.contains(&Call::Commit));
     }
 
     #[test]
