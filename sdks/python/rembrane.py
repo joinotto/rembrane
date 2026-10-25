@@ -10,6 +10,23 @@ from urllib.parse import urlencode, urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 DEFAULT_MAXIMUM_RESPONSE_BYTES = 1024 * 1024
+CHANNEL_PROCESSOR_PROTOCOL_VERSION = "0.1"
+CHANNEL_PROCESSOR_CHANNELS = {
+    "whatsapp-business",
+    "imessage-extension",
+    "mobile-share",
+}
+CHANNEL_PROCESSOR_STATUSES = {"processed", "duplicate"}
+CHANNEL_PROCESSOR_MESSAGE_KEYS = {
+    "protocolVersion",
+    "channel",
+    "eventId",
+    "workspaceId",
+    "principalId",
+    "clientId",
+    "text",
+    "receivedAtEpochSeconds",
+}
 Transport = Callable[
     [str, str, Mapping[str, str], bytes | None, int],
     tuple[int, Mapping[str, str], bytes],
@@ -105,9 +122,7 @@ class RembraneClient:
             query["status"] = status
         if limit is not None:
             query["limit"] = limit
-        return self._request(
-            "GET", f"/workspaces/invitations?{urlencode(query)}", None
-        )
+        return self._request("GET", f"/workspaces/invitations?{urlencode(query)}", None)
 
     def list_administrative_audit(
         self,
@@ -135,9 +150,7 @@ class RembraneClient:
     def execute_retention_purge(self, request: Mapping[str, Any]) -> Any:
         return self._request("POST", "/retention/purge", request)
 
-    def _request(
-        self, method: str, path: str, body: Mapping[str, Any] | None
-    ) -> Any:
+    def _request(self, method: str, path: str, body: Mapping[str, Any] | None) -> Any:
         encoded = (
             None
             if body is None
@@ -175,7 +188,11 @@ class RembraneClient:
                 status, "invalid_response", "Response was not valid JSON"
             ) from error
         if not 200 <= status < 300:
-            code = value.get("code", "request_failed") if isinstance(value, dict) else "request_failed"
+            code = (
+                value.get("code", "request_failed")
+                if isinstance(value, dict)
+                else "request_failed"
+            )
             message = (
                 value.get("message", "Rembrane request failed")
                 if isinstance(value, dict)
@@ -183,3 +200,47 @@ class RembraneClient:
             )
             raise RembraneError(status, str(code), str(message))
         return value
+
+
+def parse_channel_processor_message(value: Any) -> dict[str, Any]:
+    if type(value) is not dict or set(value) != CHANNEL_PROCESSOR_MESSAGE_KEYS:
+        raise ValueError("Invalid Rembrane channel processor message")
+    if (
+        value["protocolVersion"] != CHANNEL_PROCESSOR_PROTOCOL_VERSION
+        or value["channel"] not in CHANNEL_PROCESSOR_CHANNELS
+        or not _is_bounded_token(value["eventId"], 256)
+        or not _is_bounded_token(value["workspaceId"], 255)
+        or not _is_bounded_token(value["principalId"], 255)
+        or not _is_bounded_token(value["clientId"], 255)
+        or type(value["text"]) is not str
+        or not value["text"].strip()
+        or len(value["text"].encode("utf-8")) > 16_384
+        or type(value["receivedAtEpochSeconds"]) is not int
+        or value["receivedAtEpochSeconds"] < 1
+    ):
+        raise ValueError("Invalid Rembrane channel processor message")
+    return dict(value)
+
+
+def create_channel_processor_acknowledgement(
+    event_id: str, status: str
+) -> dict[str, str]:
+    if not _is_bounded_token(event_id, 256) or status not in CHANNEL_PROCESSOR_STATUSES:
+        raise ValueError("Invalid Rembrane channel processor acknowledgement")
+    return {
+        "protocolVersion": CHANNEL_PROCESSOR_PROTOCOL_VERSION,
+        "eventId": event_id,
+        "status": status,
+    }
+
+
+def _is_bounded_token(value: Any, maximum_bytes: int) -> bool:
+    return (
+        type(value) is str
+        and bool(value)
+        and len(value.encode("utf-8")) <= maximum_bytes
+        and not any(
+            character.isspace() or ord(character) < 32 or ord(character) == 127
+            for character in value
+        )
+    )

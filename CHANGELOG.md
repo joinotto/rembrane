@@ -23,6 +23,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Zero-dependency TypeScript SDK helpers for strict channel-message parsing and
   exact event-bound acknowledgement creation, tested against published
   protocol fixtures and UTF-8 byte limits.
+- Standard-library-only Python SDK helpers with matching strict message
+  parsing, event-bound acknowledgement creation, fixture parity, and
+  multibyte UTF-8 limit coverage.
 - Fail-closed graph-context disclosure receipts recording the exact canonical
   edge revisions, query direction and validity time, verified subject and
   client, and declared purpose before context crosses the application boundary.

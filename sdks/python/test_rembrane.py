@@ -1,7 +1,15 @@
 import json
 import unittest
+from pathlib import Path
 
-from rembrane import RembraneClient, RembraneError
+from rembrane import (
+    RembraneClient,
+    RembraneError,
+    create_channel_processor_acknowledgement,
+    parse_channel_processor_message,
+)
+
+SPEC_EXAMPLES = Path(__file__).parents[2] / "spec" / "examples"
 
 
 class RembraneClientTests(unittest.TestCase):
@@ -56,9 +64,7 @@ class RembraneClientTests(unittest.TestCase):
         client.revoke_workspace_invitation(
             {**transition_request, "requestId": "request-3"}
         )
-        client.list_workspace_invitations(
-            "team/name", status="accepted", limit=20
-        )
+        client.list_workspace_invitations("team/name", status="accepted", limit=20)
 
         expected_paths = (
             "/workspaces/invitations",
@@ -163,6 +169,54 @@ class RembraneClientTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(RembraneError, "Response exceeded limit"):
             client.resolve_context({})
+
+    def test_channel_processor_helpers_match_published_fixtures(self) -> None:
+        message = json.loads(
+            (SPEC_EXAMPLES / "channel-processor-message.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        acknowledgement = json.loads(
+            (SPEC_EXAMPLES / "channel-processor-acknowledgement.json").read_text(
+                encoding="utf-8"
+            )
+        )
+
+        self.assertEqual(parse_channel_processor_message(message), message)
+        self.assertEqual(
+            create_channel_processor_acknowledgement(message["eventId"], "processed"),
+            acknowledgement,
+        )
+
+    def test_channel_processor_helpers_reject_malformed_inputs(self) -> None:
+        message = json.loads(
+            (SPEC_EXAMPLES / "channel-processor-message.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        invalid_messages = (
+            None,
+            {**message, "protocolVersion": "0.2"},
+            {**message, "channel": "sms"},
+            {**message, "eventId": "unsafe event"},
+            {**message, "workspaceId": "x" * 256},
+            {**message, "text": " \n\t"},
+            {**message, "text": "😀" * 4_097},
+            {**message, "receivedAtEpochSeconds": True},
+            {**message, "receivedAtEpochSeconds": 0},
+            {**message, "ignored": True},
+        )
+        for invalid in invalid_messages:
+            with self.subTest(invalid=invalid):
+                with self.assertRaisesRegex(
+                    ValueError, "Invalid Rembrane channel processor message"
+                ):
+                    parse_channel_processor_message(invalid)
+
+        with self.assertRaisesRegex(
+            ValueError, "Invalid Rembrane channel processor acknowledgement"
+        ):
+            create_channel_processor_acknowledgement(message["eventId"], "accepted")
 
 
 if __name__ == "__main__":

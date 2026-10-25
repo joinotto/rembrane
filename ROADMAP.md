@@ -949,6 +949,8 @@ This roadmap describes sequencing, not release dates.
         version and channel event before completing inbox delivery.
       - [x] Add zero-dependency TypeScript helpers that strictly parse the
         published message and create event-bound acknowledgements.
+      - [x] Add standard-library-only Python helpers with the same strict
+        message and acknowledgement contract.
   - [x] Add a configured per-workspace channel worker executable for encrypted
     inbox recovery, retry, HTTP processor delivery, and completion.
   - [x] Package ingress and delivery workers together in the opt-in hardened

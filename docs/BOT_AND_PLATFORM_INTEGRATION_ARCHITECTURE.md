@@ -339,6 +339,12 @@ service must still authenticate the worker bearer token before parsing or
 processing the body, and its processing callback must enforce durable
 idempotency for `(channel, eventId)`.
 
+Python processors have equivalent standard-library-only helpers:
+`parse_channel_processor_message` and
+`create_channel_processor_acknowledgement` from the `rembrane` package. They
+apply the same exact-field and UTF-8 byte limits as the Rust and TypeScript
+implementations.
+
 ### 7.4 Explicit mobile and iMessage shares
 
 Rembrane can accept text that a user explicitly selects in an iOS share
