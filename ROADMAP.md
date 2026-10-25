@@ -162,6 +162,8 @@ This roadmap describes sequencing, not release dates.
           identities and disposable namespaces and no undeclared artifacts.
           - [x] Bound and structurally reject outer evidence documents before
             parsing provider identity at the release gate.
+          - [x] Require that complete provider set in strict production
+            readiness rather than treating external evidence as out of band.
         - [x] Bind a redacted cloud audit export so provider promotion proves
           the named KMS handled the disposable conformance operations.
           - [x] Reject common secret fields and recognizable credential
@@ -1344,5 +1346,7 @@ No stable release until:
         and file-count binding as one portable bundle.
         - [x] Reject undeclared bundle artifacts, ambiguous checksum records,
           and unbounded signature or public-key inputs before verification.
+        - [x] Require the verified independent-review bundle in strict
+          production-readiness checks rather than silently omitting it.
 - [x] Backup, restore, migration, revocation, and deletion have executable
   local-alpha coverage.

@@ -28,11 +28,15 @@ require_or_skip() {
 
 if command -v postman >/dev/null 2>&1 &&
     command -v cargo >/dev/null 2>&1 &&
+    command -v ruby >/dev/null 2>&1 &&
+    ruby -rsocket -e \
+        'server = TCPServer.new("127.0.0.1", 0); server.close' \
+        >/dev/null 2>&1 &&
     cargo metadata --format-version 1 >/dev/null 2>&1
 then
     ./scripts/test-all.sh
 else
-    require_or_skip "dependency-enabled Rust/Postman suite" 0 || true
+    require_or_skip "dependency-enabled Rust/Postman/loopback suite" 0 || true
 fi
 
 if command -v psql >/dev/null 2>&1 &&
@@ -56,6 +60,23 @@ then
     docker build --tag rembrane:readiness .
 else
     require_or_skip "container build" 0 || true
+fi
+
+if [ -n "${REMBRANE_SECURITY_REVIEW_BUNDLE:-}" ] &&
+    [ -n "${REMBRANE_SECURITY_REVIEW_PUBLIC_KEY:-}" ]
+then
+    sh ./scripts/verify-security-review-bundle.sh \
+        "$REMBRANE_SECURITY_REVIEW_BUNDLE" \
+        "$REMBRANE_SECURITY_REVIEW_PUBLIC_KEY"
+else
+    require_or_skip "independent security-review bundle" 0 || true
+fi
+
+if [ -n "${REMBRANE_CUSTOMER_KMS_EVIDENCE_DIRECTORY:-}" ]; then
+    node ./scripts/verify-customer-kms-provider-set.mjs \
+        "$REMBRANE_CUSTOMER_KMS_EVIDENCE_DIRECTORY"
+else
+    require_or_skip "AWS/Azure/GCP customer-KMS evidence set" 0 || true
 fi
 
 if [ -n "$missing" ]; then

@@ -19,6 +19,14 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   evidence directories for AWS KMS, Azure Key Vault, and Google Cloud KMS.
 - The customer-KMS release gate bounds evidence before parsing it and rejects
   malformed or non-object outer evidence documents.
+- Strict production readiness now fails closed unless it can verify both an
+  independently signed security-review bundle and the complete three-cloud
+  customer-KMS evidence set.
+- Production readiness probes ephemeral loopback binding before starting HTTP
+  integration tests, allowing restricted environments to report the suite as
+  unavailable while strict mode still fails closed.
+- The dependency-free offline core gate now copies the codec crate required by
+  the PostgreSQL adapter instead of constructing an incomplete test workspace.
 - Customer-KMS promotion evidence now also hash-binds a bounded redacted cloud
   audit export, preventing a protocol-compatible mock from being presented as
   proof that AWS, Azure, or Google Cloud KMS processed the disposable run.

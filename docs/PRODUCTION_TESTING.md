@@ -4,16 +4,25 @@ Run the complete release-candidate gate with:
 
 ```sh
 REMBRANE_POSTGRES_URL=postgresql://... \
+REMBRANE_SECURITY_REVIEW_BUNDLE=/secure/review-bundle \
+REMBRANE_SECURITY_REVIEW_PUBLIC_KEY=/secure/reviewer-public.pem \
+REMBRANE_CUSTOMER_KMS_EVIDENCE_DIRECTORY=/secure/kms-provider-evidence \
   ./scripts/check-production-readiness.sh --strict
 ```
 
 Strict mode requires dependency resolution, Rust and Postman tests, a live
 PostgreSQL database dedicated to the destructive RLS fixture, and a working
-Docker daemon. It fails rather than silently skipping unavailable gates.
+Docker daemon. The HTTP suites require permission to bind an ephemeral
+loopback socket. It also verifies the independently signed security-review
+bundle and exact AWS/Azure/GCP customer-KMS evidence set. It fails rather than
+silently skipping unavailable gates.
 
 `available` mode runs every usable gate and reports missing infrastructure. It
-is suitable during offline development but is not production approval.
+probes loopback binding before starting transport tests, so restricted
+sandboxes report that suite as unavailable instead of failing midway. It is
+suitable during offline development but is not production approval.
 
-Independent security review, platform credentials, external-provider
-conformance, and real WhatsApp/Apple integration accounts remain human or
-external-system release gates and cannot be self-certified by this script.
+Platform credentials and real WhatsApp/Apple integration accounts remain
+human or external-system release gates and cannot be self-certified by this
+script. The script can verify retained security-review and customer-KMS
+evidence, but it cannot create that independent evidence itself.
