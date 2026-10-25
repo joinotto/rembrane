@@ -5,6 +5,7 @@ use crate::ProviderError;
 
 pub const MAX_KMS_KEY_ID_BYTES: usize = 2_048;
 pub const MAX_WRAPPED_KEY_BYTES: usize = 65_536;
+pub const MAX_CUSTOMER_KMS_GENERATIONS: usize = 1_024;
 
 /// Tenant- and generation-bound context supplied to a customer KMS.
 ///
@@ -360,6 +361,7 @@ impl CustomerKmsKeyring {
         references.sort_by_key(CustomerKmsKeyReference::generation);
         if active_generation == 0
             || references.is_empty()
+            || references.len() > MAX_CUSTOMER_KMS_GENERATIONS
             || references
                 .windows(2)
                 .any(|pair| pair[0].generation() == pair[1].generation())
@@ -533,6 +535,22 @@ mod tests {
         assert!(CustomerKmsKeyReference::new(1, " key", vec![1]).is_err());
         assert!(CustomerKmsKeyReference::new(1, "key\nother", vec![1]).is_err());
         assert!(CustomerKmsKeyReference::new(1, "key", Vec::new()).is_err());
+    }
+
+    #[test]
+    fn keyrings_reject_unbounded_historical_generations() {
+        let references = (1..=super::MAX_CUSTOMER_KMS_GENERATIONS + 1)
+            .map(|generation| {
+                CustomerKmsKeyReference::new(
+                    generation as u64,
+                    format!("key-{generation}"),
+                    vec![1],
+                )
+                .unwrap()
+            })
+            .collect();
+
+        assert!(CustomerKmsKeyring::new(1, references).is_err());
     }
 
     struct RecordingCloudClient {

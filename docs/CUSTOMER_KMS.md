@@ -56,7 +56,8 @@ operation succeeds. A failed persistence attempt drops and zeroizes plaintext.
 The `rembrane-kms-keyring-sqlite` adapter provides a durable self-hosted
 implementation with per-workspace rows, one active generation, retained
 historical references, transactional compare-and-activate rotation, and
-thread-safe shared access for concurrent sidecar workers.
+thread-safe shared access for concurrent sidecar workers. Historical keyrings
+are capped at 1,024 generations and SQLite reads stop after one overflow row.
 
 ## Required request binding
 

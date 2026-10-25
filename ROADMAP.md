@@ -131,6 +131,8 @@ This roadmap describes sequencing, not release dates.
       and transactional stale-rotation denial.
       - [x] Support thread-safe shared worker access and prove concurrent
         attempts can activate only one successor generation.
+      - [x] Bound historical keyrings and durable loads to 1,024 generations
+        with explicit overflow rejection.
   - [x] Add a provider-agnostic configured cipher that dispatches to local
     environment/macOS keyrings or a policy-negotiated HTTP key provider.
     - [x] Accept consumed customer key-provider configuration from

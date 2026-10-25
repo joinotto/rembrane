@@ -5,7 +5,8 @@ use std::sync::Mutex;
 
 use rembrane_domain::WorkspaceId;
 use rembrane_provider_sdk::{
-    CustomerKmsKeyReference, CustomerKmsKeyReferenceStore, CustomerKmsKeyring, ProviderError,
+    CustomerKmsKeyReference, CustomerKmsKeyReferenceStore, CustomerKmsKeyring,
+    MAX_CUSTOMER_KMS_GENERATIONS, ProviderError,
 };
 use rusqlite::{Connection, OptionalExtension, params};
 
@@ -95,18 +96,24 @@ impl SqliteCustomerKmsKeyReferenceStore {
             .prepare(
                 "SELECT generation, provider_key_id, wrapped_key, is_active
                  FROM customer_kms_key_references
-                 WHERE workspace_id = ?1 ORDER BY generation",
+                 WHERE workspace_id = ?1 ORDER BY generation LIMIT ?2",
             )
             .map_err(|_| ProviderError::Unavailable)?;
         let rows = statement
-            .query_map([workspace_id.as_str()], |row| {
-                Ok((
-                    row.get::<_, u64>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, Vec<u8>>(2)?,
-                    row.get::<_, i64>(3)?,
-                ))
-            })
+            .query_map(
+                params![
+                    workspace_id.as_str(),
+                    MAX_CUSTOMER_KMS_GENERATIONS.saturating_add(1)
+                ],
+                |row| {
+                    Ok((
+                        row.get::<_, u64>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, Vec<u8>>(2)?,
+                        row.get::<_, i64>(3)?,
+                    ))
+                },
+            )
             .map_err(|_| ProviderError::Unavailable)?;
         let mut active = None;
         let mut references = Vec::new();
