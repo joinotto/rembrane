@@ -11,8 +11,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 - An executable cross-tool continuity proof writes a preference with the CLI,
   reads and corrects it through MCP, observes the correction through the CLI,
-  and resumes a project checkpoint from a fresh MCP client process over the
-  same encrypted workspace.
+  and resumes an MCP-created project checkpoint from both a fresh MCP client
+  process and the CLI over the same encrypted workspace.
 - Local CLI commands create and optimistically update encrypted activity
   checkpoints, then resume them with an audited disclosure receipt and
   optional stale external-state detection.

@@ -48,6 +48,24 @@ recall_output=$(
 )
 printf '%s\n' "$recall_output" | rg -F "Call me Captain Hippo" >/dev/null
 
+resume_output=$(
+    "$rembrane_binary" resume \
+        --database "$REMBRANE_DATABASE" \
+        --principal "$REMBRANE_PRINCIPAL_ID" \
+        --workspace "$REMBRANE_WORKSPACE_ID" \
+        --activity activity_handoff \
+        --client client_handoff_cli_checkpoint_reader \
+        --purpose continue-development \
+        --state-fingerprint "git:handoff123"
+)
+printf '%s\n' "$resume_output" | jq -e \
+    '.version == 1
+        and .entityId == "project_handoff"
+        and .summary == "CLI and the first MCP client share encrypted memory."
+        and .nextSteps == ["Resume from a fresh agent process"]
+        and .stale == false
+        and .disclosureId' >/dev/null
+
 test "$(
     sqlite3 "$REMBRANE_DATABASE" \
         "SELECT version FROM memories WHERE workspace_id = '$REMBRANE_WORKSPACE_ID' AND id = '$REMBRANE_HANDOFF_MEMORY_ID';"
@@ -59,11 +77,11 @@ test "$(
 test "$(
     sqlite3 "$REMBRANE_DATABASE" \
         "SELECT count(*) FROM checkpoint_disclosures WHERE workspace_id = '$REMBRANE_WORKSPACE_ID' AND activity_id = 'activity_handoff';"
-)" = "1"
+)" = "2"
 test "$(
     sqlite3 "$REMBRANE_DATABASE" \
-        "SELECT client_id FROM checkpoint_disclosures WHERE workspace_id = '$REMBRANE_WORKSPACE_ID' AND activity_id = 'activity_handoff';"
-)" = "client_handoff_reader"
+        "SELECT group_concat(client_id, ',') FROM (SELECT client_id FROM checkpoint_disclosures WHERE workspace_id = '$REMBRANE_WORKSPACE_ID' AND activity_id = 'activity_handoff' ORDER BY client_id);"
+)" = "client_handoff_cli_checkpoint_reader,client_handoff_reader"
 
 "$rembrane_binary" doctor \
     --database "$REMBRANE_DATABASE" \
