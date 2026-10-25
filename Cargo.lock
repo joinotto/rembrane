@@ -1457,6 +1457,7 @@ dependencies = [
  "rembrane-codec",
  "rembrane-crypto",
  "rembrane-domain",
+ "rembrane-semantic-native",
 ]
 
 [[package]]

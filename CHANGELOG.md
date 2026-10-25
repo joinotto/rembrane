@@ -99,6 +99,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Projection-worker-compatible PostgreSQL capability composition, exposing
   encrypted memory reads and tenant-pinned outbox operations through one
   cipher-bearing facade without granting key access to administrative stores.
+- End-to-end PostgreSQL projection-worker coverage from a pending durable job
+  through authenticated memory decryption, native provider indexing, and
+  optimistic completion.
 - PostgreSQL invitation lookup and bounded deterministic listing with optional
   status filtering, numeric lifetime decoding, terminal-state restoration,
   and exact tenant/invitation correlation.

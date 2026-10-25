@@ -332,6 +332,8 @@ This roadmap describes sequencing, not release dates.
         bounded pending reads and optimistic lifecycle transitions.
         - [x] Compose encrypted memory reads and projection outbox operations
           on one tenant facade suitable for the provider projection worker.
+        - [x] Run the real projection worker through PostgreSQL into the native
+          semantic provider and complete the durable outbox lifecycle.
       - [x] Add exact invitation lookup and bounded status-filtered listing
         with terminal-state restoration and full tenant/identifier correlation.
       - [x] Implement atomic invitation creation, acceptance, revocation,

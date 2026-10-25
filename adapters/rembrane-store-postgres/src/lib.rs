@@ -4277,7 +4277,8 @@ mod tests {
         AuthorizeClientService, CanonicalMutationRepository, CreateInvitationCommand,
         EventRepository, InvitationRepository, InvitationService, KeyRotationRepository,
         MemberLifecycleRepository, MemberScopeGrantRepository, MembershipRepository,
-        MemoryRepository, ProjectionOutboxRepository, RetentionRepository, WorkspaceRepository,
+        MemoryRepository, ProjectionOutboxRepository, ProjectionOutcome, ProjectionWorker,
+        RetentionRepository, WorkspaceRepository,
     };
     use rembrane_codec::encode_memory;
     use rembrane_crypto::{CryptoError, EncryptedPayload, EncryptionContext, RecordCipher};
@@ -4291,6 +4292,7 @@ mod tests {
         ProviderId, ReadScope, RetentionPeriod, RetentionResource, Workspace, WorkspaceId,
         WorkspaceKeyRotation, WorkspaceRetentionPolicy, WorkspaceRole, WritePermission,
     };
+    use rembrane_semantic_native::NativeSemanticProvider;
 
     use super::{
         ACCEPT_INVITATION_SQL, COMPLETE_KEY_ROTATION_SQL, CURRENT_EVENT_SEQUENCE_SQL,
@@ -6622,6 +6624,87 @@ mod tests {
         assert!(calls.iter().any(
             |call| matches!(call, Call::Query(statement, _) if statement == FIND_PROJECTION_SQL)
         ));
+    }
+
+    #[test]
+    fn projection_worker_indexes_postgres_memory_and_completes_job() {
+        let memory = MemoryRecord::confirmed_preference(
+            MemoryId::new("memory_04"),
+            WorkspaceId::new("workspace_01"),
+            PrincipalId::new("principal_01"),
+            MemoryScope::Global,
+            "Call me Hippo",
+            EvidenceReference::new(
+                EvidenceId::new("evidence_04"),
+                EvidenceSource::UserStatement,
+            ),
+        )
+        .expect("memory");
+        let pending = ProjectionJob::new(
+            ProjectionJobId::new("projection_04"),
+            WorkspaceId::new("workspace_01"),
+            MemoryId::new("memory_04"),
+            1,
+            ProviderId::new("rembrane.native"),
+            ProjectionOperation::Upsert,
+        )
+        .expect("projection");
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let store = PostgresStore::new(FakePool {
+            calls: Rc::clone(&calls),
+            tenant_batches: RefCell::new(
+                [
+                    VecDeque::from([
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                    ]),
+                    VecDeque::from([
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                    ]),
+                    VecDeque::from([
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                    ]),
+                    VecDeque::from([
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                    ]),
+                ]
+                .into(),
+            ),
+            row_batches: RefCell::new(
+                [
+                    vec![FakeRow::projection(&pending)],
+                    Vec::new(),
+                    vec![FakeRow::memory(&memory)],
+                    Vec::new(),
+                ]
+                .into(),
+            ),
+        });
+        let tenant = store.for_workspace(WorkspaceId::new("workspace_01"));
+        let cipher = IdentityCipher;
+        let mut repository = tenant.with_cipher(&cipher);
+        let mut provider = NativeSemanticProvider::new();
+
+        let outcome = ProjectionWorker::new(
+            &mut repository,
+            &mut provider,
+            ProviderId::new("rembrane.native"),
+            3,
+        )
+        .expect("worker")
+        .process_next()
+        .expect("process projection");
+
+        assert_eq!(outcome, ProjectionOutcome::Completed);
+        let replacement_calls = calls
+            .borrow()
+            .iter()
+            .filter(|call| matches!(call, Call::Execute(statement, _) if statement == REPLACE_PROJECTION_SQL))
+            .count();
+        assert_eq!(replacement_calls, 2);
     }
 
     #[test]

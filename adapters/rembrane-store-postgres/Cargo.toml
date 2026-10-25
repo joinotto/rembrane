@@ -13,5 +13,8 @@ rembrane-codec = { path = "../../crates/rembrane-codec" }
 rembrane-crypto = { path = "../../crates/rembrane-crypto" }
 rembrane-domain = { path = "../../crates/rembrane-domain" }
 
+[dev-dependencies]
+rembrane-semantic-native = { path = "../rembrane-semantic-native" }
+
 [lints]
 workspace = true
