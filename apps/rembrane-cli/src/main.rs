@@ -1581,15 +1581,34 @@ fn validate_configured_provider_profiles() -> Result<(), String> {
         if endpoint.trim().is_empty() {
             continue;
         }
-        let credentials = std::env::var(credential_variable)
-            .ok()
-            .filter(|value| !value.is_empty())
-            .map(|_| {
-                SecretReference::environment(credential_variable)
-                    .expect("built-in secret variable must be valid")
-            })
-            .into_iter()
-            .collect();
+        let credentials = match kind {
+            ProviderKind::Mem0 => vec![
+                configured_secret_reference("MEM0_API_KEY_REFERENCE", "MEM0_API_KEY")?,
+                configured_secret_reference(
+                    "MEM0_WORKSPACE_LOOKUP_SECRET_REFERENCE",
+                    "MEM0_WORKSPACE_LOOKUP_SECRET",
+                )?,
+            ],
+            ProviderKind::Supermemory => vec![
+                configured_secret_reference(
+                    "SUPERMEMORY_API_KEY_REFERENCE",
+                    "SUPERMEMORY_API_KEY",
+                )?,
+                configured_secret_reference(
+                    "SUPERMEMORY_WORKSPACE_LOOKUP_SECRET_REFERENCE",
+                    "SUPERMEMORY_WORKSPACE_LOOKUP_SECRET",
+                )?,
+            ],
+            _ => std::env::var(credential_variable)
+                .ok()
+                .filter(|value| !value.is_empty())
+                .map(|_| {
+                    SecretReference::environment(credential_variable)
+                        .expect("built-in secret variable must be valid")
+                })
+                .into_iter()
+                .collect(),
+        };
         ProviderConnection::remote(kind, endpoint, credentials, ProviderPlacement::External)
             .map_err(|error| format!("invalid {endpoint_variable} configuration: {error}"))?;
     }
@@ -1612,9 +1631,19 @@ fn configured_secret_sources() -> Vec<&'static str> {
             "MEM0_API_KEY_REFERENCE target",
         ),
         (
+            "MEM0_WORKSPACE_LOOKUP_SECRET",
+            "MEM0_WORKSPACE_LOOKUP_SECRET_REFERENCE",
+            "MEM0_WORKSPACE_LOOKUP_SECRET_REFERENCE target",
+        ),
+        (
             "SUPERMEMORY_API_KEY",
             "SUPERMEMORY_API_KEY_REFERENCE",
             "SUPERMEMORY_API_KEY_REFERENCE target",
+        ),
+        (
+            "SUPERMEMORY_WORKSPACE_LOOKUP_SECRET",
+            "SUPERMEMORY_WORKSPACE_LOOKUP_SECRET_REFERENCE",
+            "SUPERMEMORY_WORKSPACE_LOOKUP_SECRET_REFERENCE target",
         ),
         (
             "GRAPHITI_CREDENTIALS",

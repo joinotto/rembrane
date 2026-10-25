@@ -1397,6 +1397,8 @@ This roadmap describes sequencing, not release dates.
       raw-string validation failure path.
     - [x] Construct the direct adapter from ordered API-key and independent
       workspace-secret references through any deployment secret resolver.
+      - [x] Validate and report both Mem0 reference targets in CLI privacy
+        diagnostics without requiring raw secret variables.
   - [x] Add a Supermemory v5 semantic adapter with HMAC-derived namespaces,
     deterministic document identity, processing convergence, exact deletion,
     and shared disposable-provider conformance.
@@ -1450,6 +1452,8 @@ This roadmap describes sequencing, not release dates.
       raw-string validation failure path.
     - [x] Construct the direct adapter from ordered API-key and independent
       workspace-secret references through any deployment secret resolver.
+      - [x] Validate and report both Supermemory reference targets in CLI
+        privacy diagnostics without requiring raw secret variables.
   - [x] Generate a secret-reference-only local MCP configuration for OpenCode
     using its command-array and environment-substitution contract.
   - [x] Enforce one bounded control-free executable-command contract before

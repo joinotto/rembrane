@@ -9,6 +9,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- CLI privacy diagnostics now validate complete two-secret Mem0 and
+  Supermemory reference profiles and report both API and workspace-pseudonym
+  reference targets instead of assuming raw environment custody.
 - Mem0 and Supermemory CLI conformance workflows now construct validated
   reference-only provider profiles and resolve both API and independent
   workspace-pseudonym secrets through the deployment-owned resolver.
