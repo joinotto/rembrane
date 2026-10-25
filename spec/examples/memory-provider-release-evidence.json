@@ -1,6 +1,7 @@
 {
   "schemaVersion": 1,
   "candidateProtocolVersion": "0.1",
+  "candidateSourceRevision": "1111111111111111111111111111111111111111",
   "generatedAt": "2026-01-15T12:00:00Z",
   "profileSha256": "1d3bd84ca349414599d8df30981fec661288975f1d6e847993e3d7667162dd4b",
   "fixtureSha256": "c14caef57c52b17fc4cacab202805fe0d923e0ac07b6e7f4522e27fb6d9cf870",

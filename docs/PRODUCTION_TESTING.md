@@ -19,7 +19,9 @@ bundle and exact AWS/Azure/GCP customer-KMS evidence set. It fails rather than
 silently skipping unavailable gates. It also requires the exact
 Memory Provider release-evidence directory containing two independent passing
 providers, at least one externally maintained provider, and mixed-version
-compatibility evidence.
+compatibility evidence. Both the independent review and provider evidence must
+name the exact clean repository `HEAD`; evidence for an older or dirty source
+tree is rejected.
 
 `available` mode runs every usable gate and reports missing infrastructure. It
 probes loopback binding before starting transport tests, so restricted

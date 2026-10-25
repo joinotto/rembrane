@@ -19,6 +19,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Memory Provider release evidence now packages and hash-binds byte-exact
   copies of the reviewed compatibility lock and migration notes, rejecting
   locally rehashed substitutions.
+- Strict production readiness rejects independent-review or Memory Provider
+  evidence for an older revision by binding both gates to the same clean
+  repository `HEAD`.
 - A strict Memory Provider Protocol mixed-version evidence schema and verifier
   bind release tests to the reviewed profile and fixtures, pinned client and
   provider builds, distinct disposable namespaces, both supported-minor

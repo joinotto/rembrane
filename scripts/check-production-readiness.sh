@@ -67,7 +67,8 @@ if [ -n "${REMBRANE_SECURITY_REVIEW_BUNDLE:-}" ] &&
 then
     sh ./scripts/verify-security-review-bundle.sh \
         "$REMBRANE_SECURITY_REVIEW_BUNDLE" \
-        "$REMBRANE_SECURITY_REVIEW_PUBLIC_KEY"
+        "$REMBRANE_SECURITY_REVIEW_PUBLIC_KEY" \
+        --verify-repository
 else
     require_or_skip "independent security-review bundle" 0 || true
 fi
@@ -81,7 +82,8 @@ fi
 
 if [ -n "${REMBRANE_MEMORY_PROVIDER_EVIDENCE_DIRECTORY:-}" ]; then
     node ./scripts/verify-memory-provider-release-evidence.mjs \
-        "$REMBRANE_MEMORY_PROVIDER_EVIDENCE_DIRECTORY"
+        "$REMBRANE_MEMORY_PROVIDER_EVIDENCE_DIRECTORY" \
+        --verify-repository
 else
     require_or_skip "two-provider protocol release evidence set" 0 || true
 fi

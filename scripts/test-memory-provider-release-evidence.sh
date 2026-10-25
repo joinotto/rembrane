@@ -56,6 +56,7 @@ provider_b_sha256=$(openssl dgst -sha256 "$evidence_root/provider-b.json" |
 jq \
     --arg profile "$profile_sha256" \
     --arg fixture "$fixture_sha256" \
+    --arg revision 1111111111111111111111111111111111111111 \
     --arg lock "$lock_sha256" \
     --arg migration "$migration_sha256" \
     --arg mixed "$mixed_sha256" \
@@ -63,6 +64,7 @@ jq \
     --arg provider_b "$provider_b_sha256" \
     '.profileSha256 = $profile
      | .fixtureSha256 = $fixture
+     | .candidateSourceRevision = $revision
      | .compatibilityLockSha256 = $lock
      | .migrationNotesSha256 = $migration
      | .mixedVersionEvidenceSha256 = $mixed
@@ -73,6 +75,11 @@ jq \
 
 verifier="$repository_root/scripts/verify-memory-provider-release-evidence.mjs"
 node "$verifier" "$evidence_root" >/dev/null
+
+if node "$verifier" "$evidence_root" --verify-repository >/dev/null 2>&1; then
+    echo "release evidence accepted a different repository revision" >&2
+    exit 1
+fi
 
 cp -R "$evidence_root" "$test_root/no-external"
 jq '.providers[1].origin = "in-repository"' \

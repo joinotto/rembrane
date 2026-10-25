@@ -3,6 +3,14 @@ set -eu
 
 bundle=${1:?usage: verify-security-review-bundle.sh BUNDLE_DIRECTORY PUBLIC_KEY}
 public_key=${2:?usage: verify-security-review-bundle.sh BUNDLE_DIRECTORY PUBLIC_KEY}
+verify_repository=${3:-}
+case "$verify_repository" in
+    ""|--verify-repository) ;;
+    *)
+        echo "usage: verify-security-review-bundle.sh BUNDLE_DIRECTORY PUBLIC_KEY [--verify-repository]" >&2
+        exit 2
+        ;;
+esac
 repository_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 
 if [ ! -d "$bundle" ] || [ -L "$bundle" ]; then
@@ -49,7 +57,8 @@ do
 done
 
 node "$repository_root/scripts/verify-security-review-manifest.mjs" \
-    "$bundle/security-review-manifest.json" >/dev/null
+    "$bundle/security-review-manifest.json" \
+    ${verify_repository:+"$verify_repository"} >/dev/null
 node "$repository_root/scripts/verify-security-review-attestation.mjs" \
     "$bundle/security-review-attestation.json" >/dev/null
 

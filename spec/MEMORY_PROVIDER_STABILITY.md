@@ -63,6 +63,12 @@ one externally maintained provider. Passing the verifier proves artifact
 completeness; it does not substitute for actually obtaining the external run
 or independent security review.
 
+Release automation invokes the verifier with `--verify-repository`, requiring
+the candidate source revision to equal a clean repository `HEAD`. Strict
+production readiness applies the same binding to the independent security
+review, preventing two individually valid evidence sets for different source
+revisions from being combined.
+
 Strict production readiness reads the completed directory from
 `REMBRANE_MEMORY_PROVIDER_EVIDENCE_DIRECTORY`. Leaving it unset makes the gate
 unavailable in development mode and fails closed under `--strict`.

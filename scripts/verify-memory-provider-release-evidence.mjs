@@ -1,10 +1,11 @@
 import { createHash } from "node:crypto";
-import { spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { lstatSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const input = process.argv[2];
+const verifyRepository = process.argv.slice(3).includes("--verify-repository");
 if (!input) {
   throw new Error(
     "usage: verify-memory-provider-release-evidence.mjs EVIDENCE_DIRECTORY",
@@ -60,6 +61,7 @@ const manifest = parseObject(manifestBytes, "manifest");
 
 requireExactKeys(manifest, [
   "candidateProtocolVersion",
+  "candidateSourceRevision",
   "compatibilityLockSha256",
   "fixtureSha256",
   "generatedAt",
@@ -71,6 +73,7 @@ requireExactKeys(manifest, [
 ]);
 if (
   manifest.schemaVersion !== 1 ||
+  !/^[0-9a-f]{40}$/.test(manifest.candidateSourceRevision) ||
   canonicalTimestamp(manifest.generatedAt) === undefined ||
   canonicalTimestamp(manifest.generatedAt) > Date.now() + 5 * 60 * 1000 ||
   manifest.candidateProtocolVersion !== profile.protocolVersion ||
@@ -87,6 +90,21 @@ if (
   manifest.providers.length !== 2
 ) {
   throw new Error("memory-provider release evidence manifest is invalid");
+}
+
+if (verifyRepository) {
+  const status = execFileSync("git", ["status", "--porcelain=v1", "-z"], {
+    cwd: repositoryRoot,
+  });
+  const revision = execFileSync("git", ["rev-parse", "HEAD"], {
+    cwd: repositoryRoot,
+    encoding: "utf8",
+  }).trim();
+  if (status.length !== 0 || manifest.candidateSourceRevision !== revision) {
+    throw new Error(
+      "memory-provider release evidence does not match a clean repository",
+    );
+  }
 }
 
 const mixedVerifier = join(

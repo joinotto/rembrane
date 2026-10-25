@@ -832,6 +832,8 @@ This roadmap describes sequencing, not release dates.
         contract before the release candidate.
       - [x] Bind the exact candidate compatibility lock and migration notes
         into the two-provider release evidence set.
+      - [x] Require provider and independent-review evidence to match the same
+        clean release revision in strict production readiness.
   - [x] Add a machine-verifiable compatibility lock over the canonical wire
     schemas, HTTP binding, conformance profile, and lifecycle fixtures so
     protocol changes require explicit review.
