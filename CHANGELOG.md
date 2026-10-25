@@ -9,6 +9,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- Trusted channel-processor HTTP delivery now bounds and zeroizes serialized
+  canonical identity/message requests and acknowledgement response buffers.
 - OAuth introspection now percent-encodes bearer tokens into bounded
   zeroizing-owned form bodies, preventing form-parameter injection and wiping
   the duplicated token bytes after HTTP transmission.

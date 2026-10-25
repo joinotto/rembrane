@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
 const MAXIMUM_RESPONSE_BYTES: u64 = 4_096;
+const MAXIMUM_REQUEST_BYTES: usize = 262_144;
 const MAXIMUM_BEARER_BYTES: usize = 8_192;
 const PROTOCOL_VERSION: &str = "0.1";
 const PROCESSING_TIMEOUT_SECONDS: u64 = 20;
@@ -62,8 +63,12 @@ impl ChannelMessageProcessor for HttpChannelMessageProcessor {
         message: &VerifiedChannelMessage,
     ) -> Result<(), ApplicationError> {
         let body = DeliveryBody::from(message);
-        let encoded =
-            serde_json::to_vec(&body).map_err(|_| ApplicationError::StorageUnavailable)?;
+        let encoded = Zeroizing::new(
+            serde_json::to_vec(&body).map_err(|_| ApplicationError::StorageUnavailable)?,
+        );
+        if encoded.len() > MAXIMUM_REQUEST_BYTES {
+            return Err(ApplicationError::StorageUnavailable);
+        }
         let response = self
             .client
             .post(self.endpoint.clone())
@@ -72,7 +77,7 @@ impl ChannelMessageProcessor for HttpChannelMessageProcessor {
             .header("x-rembrane-protocol-version", PROTOCOL_VERSION)
             .header("x-rembrane-channel-event-id", message.event_id())
             .bearer_auth(self.bearer_token.as_str())
-            .body(encoded)
+            .body(bytes::Bytes::from_owner(encoded))
             .send()
             .map_err(|_| ApplicationError::StorageUnavailable)?;
         if !response.status().is_success()
@@ -90,7 +95,7 @@ impl ChannelMessageProcessor for HttpChannelMessageProcessor {
         {
             return Err(ApplicationError::StorageUnavailable);
         }
-        let mut bounded = Vec::new();
+        let mut bounded = Zeroizing::new(Vec::new());
         response
             .take(MAXIMUM_RESPONSE_BYTES + 1)
             .read_to_end(&mut bounded)
@@ -98,7 +103,7 @@ impl ChannelMessageProcessor for HttpChannelMessageProcessor {
         if bounded.len() as u64 > MAXIMUM_RESPONSE_BYTES {
             return Err(ApplicationError::StorageUnavailable);
         }
-        validate_acknowledgement(&bounded, message.event_id())
+        validate_acknowledgement(bounded.as_slice(), message.event_id())
     }
 }
 

@@ -216,6 +216,7 @@ rg -q 'Result<Zeroizing<Vec<u8>>, ProviderError>' adapters/rembrane-semantic-mem
 rg -q 'Result<Zeroizing<Vec<u8>>, ProviderError>' \
     adapters/rembrane-semantic-supermemory/src/lib.rs
 for zeroizing_response_adapter in \
+    adapters/rembrane-channel-processor-http/src/lib.rs \
     adapters/rembrane-graph-graphiti-http/src/lib.rs \
     adapters/rembrane-key-provider-http/src/lib.rs \
     adapters/rembrane-memory-provider-http/src/lib.rs \
@@ -227,6 +228,7 @@ do
     fi
 done
 for zeroizing_request_adapter in \
+    adapters/rembrane-channel-processor-http/src/lib.rs \
     adapters/rembrane-graph-graphiti-http/src/lib.rs \
     adapters/rembrane-key-provider-http/src/lib.rs \
     adapters/rembrane-memory-provider-http/src/lib.rs \

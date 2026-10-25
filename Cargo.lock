@@ -1088,6 +1088,7 @@ dependencies = [
 name = "rembrane-channel-processor-http"
 version = "0.1.0-alpha.1"
 dependencies = [
+ "bytes",
  "rembrane-application",
  "rembrane-contracts",
  "rembrane-domain",
