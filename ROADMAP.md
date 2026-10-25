@@ -418,6 +418,8 @@ This roadmap describes sequencing, not release dates.
       subject, and purpose before returning graph context.
     - [ ] Persist graph disclosure evidence in the in-memory, SQLite, and
       PostgreSQL repository adapters with tenant-isolation coverage.
+      - [x] Enforce exact tenant and edge-revision correlation in the
+        in-memory reference adapter.
   - [x] Add local SQLite graph persistence and Graphiti projection adapter.
     - [x] Construct Graphiti from validated provider profiles through any
       deployment-selected secret resolver without fixed credential names.

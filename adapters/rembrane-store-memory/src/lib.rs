@@ -4,24 +4,25 @@ use rembrane_application::{
     AdministrativeAuditRepository, ApplicationError, BookingResearchMutationRepository,
     BookingResearchRepository, CanonicalGraphMutationRepository, CanonicalMutationRepository,
     CheckpointDisclosureRepository, CheckpointMutationRepository, CheckpointRepository,
-    DisclosureRepository, EventRepository, GraphProjectionOutboxRepository, InvitationRepository,
-    KeyRotationRepository, KnowledgeDirection, KnowledgeGraphMutationRepository,
-    KnowledgeGraphRepository, MAX_ADMINISTRATIVE_AUDIT_PAGE, MAX_KNOWLEDGE_NEIGHBOURS,
-    MemberLifecycleRepository, MemberScopeGrantRepository, MembershipRepository, MemoryRepository,
-    ProjectionOutboxRepository, RetentionRepository, ShareProposalMutationRepository,
-    ShareProposalRepository, TravelDisclosureRepository, TripMutationRepository, TripRepository,
-    WorkspaceReadRepository, WorkspaceRepository, is_strict_successor,
+    DisclosureRepository, EventRepository, GraphDisclosureRepository,
+    GraphProjectionOutboxRepository, InvitationRepository, KeyRotationRepository,
+    KnowledgeDirection, KnowledgeGraphMutationRepository, KnowledgeGraphRepository,
+    MAX_ADMINISTRATIVE_AUDIT_PAGE, MAX_KNOWLEDGE_NEIGHBOURS, MemberLifecycleRepository,
+    MemberScopeGrantRepository, MembershipRepository, MemoryRepository, ProjectionOutboxRepository,
+    RetentionRepository, ShareProposalMutationRepository, ShareProposalRepository,
+    TravelDisclosureRepository, TripMutationRepository, TripRepository, WorkspaceReadRepository,
+    WorkspaceRepository, is_strict_successor,
 };
 use rembrane_domain::{
     ActivityCheckpoint, ActivityId, AdministrativeAction, AdministrativeAuditEvent,
     AdministrativeTargetKind, BookingResearch, BookingResearchId, CanonicalEvent,
-    CheckpointDisclosureReceipt, DisclosureReceipt, EntityId, EventPayload, GraphProjectionJob,
-    GraphProjectionResource, Invitation, InvitationId, InvitationStatus, KeyRotationId,
-    KeyRotationReceipt, KeyRotationStatus, KnowledgeEdge, KnowledgeEdgeId, KnowledgeNode,
-    KnowledgeNodeId, LegalHoldId, LegalHoldStatus, MemberScopeGrant, Membership, MemoryId,
-    MemoryRecord, MemoryShareProposal, MemoryStatus, Principal, PrincipalId, ProjectionJob,
-    ProjectionJobId, ProjectionOperation, ProjectionStatus, ProviderId, ReadScope, ShareProposalId,
-    ShareProposalStatus, TravelDisclosureReceipt, Trip, Workspace, WorkspaceId,
+    CheckpointDisclosureReceipt, DisclosureReceipt, EntityId, EventPayload, GraphDisclosureReceipt,
+    GraphProjectionJob, GraphProjectionResource, Invitation, InvitationId, InvitationStatus,
+    KeyRotationId, KeyRotationReceipt, KeyRotationStatus, KnowledgeEdge, KnowledgeEdgeId,
+    KnowledgeNode, KnowledgeNodeId, LegalHoldId, LegalHoldStatus, MemberScopeGrant, Membership,
+    MemoryId, MemoryRecord, MemoryShareProposal, MemoryStatus, Principal, PrincipalId,
+    ProjectionJob, ProjectionJobId, ProjectionOperation, ProjectionStatus, ProviderId, ReadScope,
+    ShareProposalId, ShareProposalStatus, TravelDisclosureReceipt, Trip, Workspace, WorkspaceId,
     WorkspaceKeyRotation, WorkspaceKind, WorkspaceLegalHold, WorkspaceRetentionPolicy,
     WorkspaceRole,
 };
@@ -34,6 +35,7 @@ pub struct InMemoryStore {
     disclosures: Vec<DisclosureReceipt>,
     checkpoint_disclosures: Vec<CheckpointDisclosureReceipt>,
     travel_disclosures: Vec<TravelDisclosureReceipt>,
+    graph_disclosures: Vec<GraphDisclosureReceipt>,
     events: Vec<CanonicalEvent>,
     checkpoints: Vec<ActivityCheckpoint>,
     invitations: Vec<Invitation>,
@@ -842,6 +844,11 @@ impl InMemoryStore {
     pub fn travel_disclosures(&self) -> &[TravelDisclosureReceipt] {
         &self.travel_disclosures
     }
+
+    #[must_use]
+    pub fn graph_disclosures(&self) -> &[GraphDisclosureReceipt] {
+        &self.graph_disclosures
+    }
 }
 
 fn validate_shared_bootstrap(
@@ -1039,6 +1046,47 @@ impl TravelDisclosureRepository for InMemoryStore {
             return Err(ApplicationError::VersionConflict);
         }
         self.travel_disclosures.push(receipt);
+        Ok(())
+    }
+}
+
+impl GraphDisclosureRepository for InMemoryStore {
+    fn append_graph_disclosure(
+        &mut self,
+        receipt: GraphDisclosureReceipt,
+    ) -> Result<(), ApplicationError> {
+        if receipt.purpose.trim().is_empty()
+            || receipt.valid_at_epoch_seconds == 0
+            || receipt.edges.iter().any(|edge| edge.version == 0)
+        {
+            return Err(ApplicationError::Validation(
+                "invalid graph disclosure".to_owned(),
+            ));
+        }
+        if self
+            .graph_disclosures
+            .iter()
+            .any(|stored| stored.id == receipt.id)
+        {
+            return Err(ApplicationError::AlreadyExists);
+        }
+        let mut disclosed_edges = std::collections::HashSet::new();
+        for disclosed in &receipt.edges {
+            if !disclosed_edges.insert(disclosed.id.as_str()) {
+                return Err(ApplicationError::Validation(
+                    "graph disclosure contains duplicate edges".to_owned(),
+                ));
+            }
+            let edge_exists = self.knowledge_edges.iter().any(|edge| {
+                edge.workspace_id() == &receipt.workspace_id
+                    && edge.id() == &disclosed.id
+                    && edge.version() == disclosed.version
+            });
+            if !edge_exists {
+                return Err(ApplicationError::VersionConflict);
+            }
+        }
+        self.graph_disclosures.push(receipt);
         Ok(())
     }
 }
@@ -2178,17 +2226,18 @@ fn validate_new_audit_event(
 mod tests {
     use rembrane_application::{
         AdministrativeAuditRepository, ApplicationError, CanonicalGraphMutationRepository,
-        CanonicalMutationRepository, EventRepository, GraphProjectionOutboxRepository,
-        KnowledgeDirection, KnowledgeGraphMutationRepository, KnowledgeGraphRepository,
-        MemoryRepository,
+        CanonicalMutationRepository, EventRepository, GraphDisclosureRepository,
+        GraphProjectionOutboxRepository, KnowledgeDirection, KnowledgeGraphMutationRepository,
+        KnowledgeGraphRepository, MemoryRepository,
     };
     use rembrane_domain::{
         AdministrativeAction, AdministrativeAuditEvent, AdministrativeAuditEventId,
-        AdministrativeTargetKind, CanonicalEvent, EventId, EventPayload, EvidenceId,
-        EvidenceReference, EvidenceSource, GraphProjectionJob, GraphProjectionResource,
-        KnowledgeEdge, KnowledgeEdgeId, KnowledgeNode, KnowledgeNodeId, KnowledgeNodeKind,
-        KnowledgeRelationType, MemoryId, MemoryRecord, MemoryScope, PrincipalId, ProjectionJobId,
-        ProjectionOperation, ProviderId, TemporalValidity, WorkspaceId,
+        AdministrativeTargetKind, CanonicalEvent, ClientId, DisclosedKnowledgeEdge, DisclosureId,
+        EventId, EventPayload, EvidenceId, EvidenceReference, EvidenceSource,
+        GraphDisclosureDirection, GraphDisclosureReceipt, GraphProjectionJob,
+        GraphProjectionResource, KnowledgeEdge, KnowledgeEdgeId, KnowledgeNode, KnowledgeNodeId,
+        KnowledgeNodeKind, KnowledgeRelationType, MemoryId, MemoryRecord, MemoryScope, PrincipalId,
+        ProjectionJobId, ProjectionOperation, ProviderId, TemporalValidity, WorkspaceId,
     };
 
     use super::InMemoryStore;
@@ -2404,6 +2453,57 @@ mod tests {
             store.replace_knowledge_node(revised, 2),
             Err(ApplicationError::VersionConflict)
         );
+    }
+
+    fn graph_disclosure(workspace_id: &str, edge_id: &str) -> GraphDisclosureReceipt {
+        GraphDisclosureReceipt {
+            id: DisclosureId::new("disclosure_graph_01"),
+            workspace_id: WorkspaceId::new(workspace_id),
+            subject_id: PrincipalId::new("principal_01"),
+            client_id: ClientId::new("client_01"),
+            purpose: "assistant_graph_context".to_owned(),
+            node_id: KnowledgeNodeId::new("node_project"),
+            direction: GraphDisclosureDirection::Outgoing,
+            valid_at_epoch_seconds: 150,
+            edges: vec![DisclosedKnowledgeEdge {
+                id: KnowledgeEdgeId::new(edge_id),
+                version: 1,
+            }],
+        }
+    }
+
+    #[test]
+    fn graph_disclosure_requires_exact_tenant_edge_revision() {
+        let mut store = InMemoryStore::new();
+        for node_id in ["node_project", "node_rust"] {
+            store
+                .insert_knowledge_node(knowledge_node(node_id, "workspace_one", 1))
+                .expect("node should insert");
+        }
+        store
+            .insert_knowledge_edge(knowledge_edge("edge_uses", "workspace_one"))
+            .expect("edge should insert");
+
+        store
+            .append_graph_disclosure(graph_disclosure("workspace_one", "edge_uses"))
+            .expect("exact disclosure should append");
+        assert_eq!(store.graph_disclosures().len(), 1);
+
+        let mut cross_workspace = graph_disclosure("workspace_two", "edge_uses");
+        cross_workspace.id = DisclosureId::new("disclosure_graph_02");
+        assert_eq!(
+            store.append_graph_disclosure(cross_workspace),
+            Err(ApplicationError::VersionConflict)
+        );
+
+        let mut stale = graph_disclosure("workspace_one", "edge_uses");
+        stale.id = DisclosureId::new("disclosure_graph_03");
+        stale.edges[0].version = 2;
+        assert_eq!(
+            store.append_graph_disclosure(stale),
+            Err(ApplicationError::VersionConflict)
+        );
+        assert_eq!(store.graph_disclosures().len(), 1);
     }
 
     fn preference(
