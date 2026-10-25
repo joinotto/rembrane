@@ -35,6 +35,7 @@ if (metadata.size === 0 || metadata.size > MAX_ATTESTATION_BYTES) {
 }
 
 const value = JSON.parse(readFileSync(path, "utf8"));
+const reviewedAtEpoch = canonicalTimestamp(value.reviewedAt);
 const attestationKeys = [
   "disposition",
   "findings",
@@ -53,7 +54,8 @@ if (
   value.schemaVersion !== 1 ||
   !REVISION.test(value.sourceRevision) ||
   !SHA256.test(value.manifestSha256) ||
-  !canonicalTimestamp(value.reviewedAt) ||
+  reviewedAtEpoch === undefined ||
+  reviewedAtEpoch > Date.now() + 5 * 60 * 1_000 ||
   !DISPOSITIONS.has(value.disposition) ||
   !optionalSafeText(value.reportReference, 500)
 ) {
@@ -136,11 +138,14 @@ function canonicalTimestamp(value) {
     typeof value !== "string" ||
     !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(value)
   ) {
-    return false;
+    return undefined;
   }
   const epoch = Date.parse(value);
-  return (
+  if (
     Number.isFinite(epoch) &&
     new Date(epoch).toISOString().replace(".000Z", "Z") === value
-  );
+  ) {
+    return epoch;
+  }
+  return undefined;
 }

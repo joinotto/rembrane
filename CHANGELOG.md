@@ -30,6 +30,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - A strict security-review attestation schema and verifier bind reviewer
   independence, source revision, manifest digest, exclusions, aggregate
   findings, and disposition without exposing confidential finding details.
+- Reviewers can sign a linked manifest-and-disposition bundle whose verifier
+  checks both Ed25519 signatures, checksums, source revision, manifest digest,
+  and reviewed file count; a manifest-only signature is explicitly not an
+  approval.
 - Explicit Memory Provider Protocol `1.0` stability gates separating the
   existing review-locked `0.1` wire surface from a future long-term
   compatibility promise.

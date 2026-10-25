@@ -19,18 +19,20 @@ repository, restrict it to owner-only mode (`0400` or `0600`), and run:
 ```sh
 REMBRANE_SECURITY_REVIEW_SIGNING_KEY=/protected/reviewer-private.pem \
   sh scripts/sign-security-review-manifest.sh \
-  security-review-manifest.json review-attestation
+  security-review-manifest.json review-bundle \
+  security-review-attestation.json
 ```
 
-Consumers verify the exact manifest bytes with the reviewer's independently
-trusted public key:
+Consumers verify the manifest, attestation, checksums, their exact linkage, and
+both signatures with the reviewer's independently trusted public key:
 
 ```sh
-sh scripts/verify-security-review-signature.sh \
-  review-attestation/security-review-manifest.json \
-  review-attestation/security-review-manifest.json.sig \
-  reviewer-public.pem
+sh scripts/verify-security-review-bundle.sh \
+  review-bundle reviewer-public.pem
 ```
+
+Omitting the optional attestation argument produces only a signed inventory.
+That proves integrity but must not be represented as reviewer approval.
 
 The generator refuses a dirty worktree by default. `--allow-dirty` exists only
 for deterministic local and CI validation and must not be used for review

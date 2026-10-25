@@ -37,4 +37,11 @@ if node "$verifier" "$test_root/unknown.json" >/dev/null 2>&1; then
     exit 1
 fi
 
+jq '.reviewedAt = "2999-01-01T00:00:00Z"' "$fixture" \
+    >"$test_root/future.json"
+if node "$verifier" "$test_root/future.json" >/dev/null 2>&1; then
+    echo "review attestation accepted a future review time" >&2
+    exit 1
+fi
+
 echo "security review attestation checks passed"

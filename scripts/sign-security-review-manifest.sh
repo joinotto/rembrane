@@ -1,8 +1,9 @@
 #!/bin/sh
 set -eu
 
-manifest=${1:?usage: sign-security-review-manifest.sh MANIFEST OUTPUT_DIRECTORY}
-output_directory=${2:?usage: sign-security-review-manifest.sh MANIFEST OUTPUT_DIRECTORY}
+manifest=${1:?usage: sign-security-review-manifest.sh MANIFEST OUTPUT_DIRECTORY [ATTESTATION]}
+output_directory=${2:?usage: sign-security-review-manifest.sh MANIFEST OUTPUT_DIRECTORY [ATTESTATION]}
+attestation=${3:-}
 private_key=${REMBRANE_SECURITY_REVIEW_SIGNING_KEY:-}
 repository_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 
@@ -27,6 +28,21 @@ case "$private_key_mode" in
 esac
 node "$repository_root/scripts/verify-security-review-manifest.mjs" \
     "$manifest" --verify-repository >/dev/null
+if [ -n "$attestation" ]; then
+    node "$repository_root/scripts/verify-security-review-attestation.mjs" \
+        "$attestation" >/dev/null
+    manifest_sha256=$(openssl dgst -sha256 "$manifest" | awk '{print $NF}')
+    manifest_revision=$(jq -r '.sourceRevision' "$manifest")
+    manifest_file_count=$(jq -r '.files | length' "$manifest")
+    jq -e \
+        --arg digest "$manifest_sha256" \
+        --arg revision "$manifest_revision" \
+        --argjson file_count "$manifest_file_count" \
+        '.manifestSha256 == $digest
+         and .sourceRevision == $revision
+         and .scope.manifestFileCount == $file_count' \
+        "$attestation" >/dev/null
+fi
 
 umask 077
 if [ -e "$output_directory" ] || [ -L "$output_directory" ]; then
@@ -50,5 +66,29 @@ openssl pkeyutl -sign -rawin \
     -inkey "$private_key" \
     -in "$output_directory/security-review-manifest.json" \
     -out "$output_directory/security-review-manifest.json.sig"
+
+if [ -n "$attestation" ]; then
+    cp "$attestation" "$output_directory/security-review-attestation.json"
+    node "$repository_root/scripts/verify-security-review-attestation.mjs" \
+        "$output_directory/security-review-attestation.json" >/dev/null
+    jq -e \
+        --arg digest "$manifest_sha256" \
+        --arg revision "$(jq -r '.sourceRevision' "$output_directory/security-review-manifest.json")" \
+        --argjson file_count "$(jq -r '.files | length' "$output_directory/security-review-manifest.json")" \
+        '.manifestSha256 == $digest
+         and .sourceRevision == $revision
+         and .scope.manifestFileCount == $file_count' \
+        "$output_directory/security-review-attestation.json" >/dev/null
+    attestation_sha256=$(
+        openssl dgst -sha256 "$output_directory/security-review-attestation.json" |
+            awk '{print $NF}'
+    )
+    printf '%s  %s\n' "$attestation_sha256" security-review-attestation.json \
+        >"$output_directory/security-review-attestation.json.sha256"
+    openssl pkeyutl -sign -rawin \
+        -inkey "$private_key" \
+        -in "$output_directory/security-review-attestation.json" \
+        -out "$output_directory/security-review-attestation.json.sig"
+fi
 
 echo "signed security review artifacts written to: $output_directory"

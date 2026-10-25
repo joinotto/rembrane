@@ -14,8 +14,10 @@ mkdir -p "$review_repository/scripts"
 for script in \
     generate-security-review-manifest.mjs \
     verify-security-review-manifest.mjs \
+    verify-security-review-attestation.mjs \
     sign-security-review-manifest.sh \
-    verify-security-review-signature.sh
+    verify-security-review-signature.sh \
+    verify-security-review-bundle.sh
 do
     cp "$repository_root/scripts/$script" "$review_repository/scripts/$script"
 done
@@ -33,6 +35,37 @@ git -C "$review_repository" commit -q -m "test fixture"
 )
 node "$review_repository/scripts/verify-security-review-manifest.mjs" \
     "$temporary_directory/manifest.json" --verify-repository >/dev/null
+manifest_sha256=$(
+    openssl dgst -sha256 "$temporary_directory/manifest.json" |
+        awk '{print $NF}'
+)
+jq -n \
+    --arg revision "$(jq -r '.sourceRevision' "$temporary_directory/manifest.json")" \
+    --arg digest "$manifest_sha256" \
+    --argjson file_count "$(jq -r '.files | length' "$temporary_directory/manifest.json")" \
+    '{
+        schemaVersion: 1,
+        sourceRevision: $revision,
+        manifestSha256: $digest,
+        reviewedAt: "2026-01-15T12:00:00Z",
+        reviewer: {
+            id: "independent-reviewer",
+            independent: true
+        },
+        scope: {
+            manifestFileCount: $file_count,
+            exclusions: []
+        },
+        findings: {
+            critical: 0,
+            high: 0,
+            moderate: 0,
+            low: 0,
+            informational: 0,
+            unresolved: 0
+        },
+        disposition: "approved"
+    }' >"$temporary_directory/attestation.json"
 
 openssl genpkey -algorithm Ed25519 \
     -out "$temporary_directory/private.pem" >/dev/null 2>&1
@@ -43,11 +76,11 @@ openssl pkey -in "$temporary_directory/private.pem" -pubout \
 REMBRANE_SECURITY_REVIEW_SIGNING_KEY="$temporary_directory/private.pem" \
     sh "$review_repository/scripts/sign-security-review-manifest.sh" \
     "$temporary_directory/manifest.json" \
-    "$temporary_directory/signed" >/dev/null
+    "$temporary_directory/signed" \
+    "$temporary_directory/attestation.json" >/dev/null
 
-sh "$review_repository/scripts/verify-security-review-signature.sh" \
-    "$temporary_directory/signed/security-review-manifest.json" \
-    "$temporary_directory/signed/security-review-manifest.json.sig" \
+sh "$review_repository/scripts/verify-security-review-bundle.sh" \
+    "$temporary_directory/signed" \
     "$temporary_directory/public.pem" >/dev/null
 
 cp "$temporary_directory/signed/security-review-manifest.json" \
