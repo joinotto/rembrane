@@ -23,6 +23,12 @@ const discovery = {
     disclosureReceipts: true,
   },
 };
+const canonicalDiscovery = JSON.parse(
+  await readFile(
+    new URL("../../spec/examples/discovery.json", import.meta.url),
+    "utf8",
+  ),
+);
 const calls = [];
 const client = new RembraneClient({
   baseUrl: "http://127.0.0.1:8787/v1",
@@ -214,6 +220,21 @@ assert.equal(
 assert.equal(calls[12].init.method, "GET");
 assert.equal(calls[12].init.headers.Authorization, undefined);
 assert.equal(calls[12].init.body, undefined);
+
+const canonicalDiscoveryClient = new RembraneClient({
+  baseUrl: canonicalDiscovery.endpoints.api,
+  token: "must-not-leak",
+  fetch: async (_url, init) => {
+    assert.equal(init.headers.Authorization, undefined);
+    return {
+      ok: true,
+      status: 200,
+      headers: { get: () => "application/json" },
+      text: async () => JSON.stringify(canonicalDiscovery),
+    };
+  },
+});
+assert.deepEqual(await canonicalDiscoveryClient.discover(), canonicalDiscovery);
 
 const invalidDiscovery = new RembraneClient({
   baseUrl: "https://memory.example.test/v1",

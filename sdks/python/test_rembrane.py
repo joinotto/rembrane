@@ -13,6 +13,28 @@ SPEC_EXAMPLES = Path(__file__).parents[2] / "spec" / "examples"
 
 
 class RembraneClientTests(unittest.TestCase):
+    def test_canonical_discovery_fixture_is_accepted_without_credentials(self) -> None:
+        discovery = json.loads(
+            (SPEC_EXAMPLES / "discovery.json").read_text(encoding="utf-8")
+        )
+
+        def transport(method, url, headers, body, maximum):
+            self.assertEqual(method, "GET")
+            self.assertNotIn("Authorization", headers)
+            self.assertIsNone(body)
+            return (
+                200,
+                {"Content-Type": "application/json"},
+                json.dumps(discovery).encode(),
+            )
+
+        client = RembraneClient(
+            discovery["endpoints"]["api"],
+            "must-not-leak",
+            transport=transport,
+        )
+        self.assertEqual(client.discover(), discovery)
+
     def test_discovery_uses_origin_without_bearer_credentials(self) -> None:
         calls = []
         discovery = {

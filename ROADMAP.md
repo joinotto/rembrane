@@ -230,6 +230,8 @@ This roadmap describes sequencing, not release dates.
   lists, and resource limits before provider selection.
 - [x] Enforce closed discovery objects, HTTPS OAuth endpoints, absolute MCP
   endpoints, bounded provider metadata, and namespaced extension keys in SDKs.
+- [x] Prove both SDKs accept the canonical full discovery fixture without
+  transmitting bearer credentials.
 - [ ] Add remote Streamable HTTP MCP with OAuth.
   - [x] Define HTTPS endpoints, RFC 9728 discovery metadata, bearer challenges,
     verified connection identity, scope ceilings, and session security rules.
