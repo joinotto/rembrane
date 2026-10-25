@@ -300,6 +300,8 @@ This roadmap describes sequencing, not release dates.
         correlation under the membership-mediated RLS policy.
       - [x] Add tenant-verified membership insert and lifecycle replacement
         with exact affected-row and commit enforcement.
+      - [x] Implement the complete application `MembershipRepository` port
+        with driver-neutral SQLSTATE classification and opaque error mapping.
     - [x] Define a reference-only PostgreSQL connection profile with explicit
       transport security and bounded pool capacity.
       - [x] Prevent derived debug logging of the database secret locator.

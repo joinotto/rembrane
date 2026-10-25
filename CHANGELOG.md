@@ -51,6 +51,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Tenant-verified PostgreSQL membership insertion and lifecycle replacement
   with canonical role/status encoding, exact affected-row enforcement, and
   rollback unless the mutation commits successfully.
+- Complete PostgreSQL `MembershipRepository` application-port implementation
+  with driver-neutral failure classification, duplicate and constraint
+  semantics, opaque storage failures, and not-found replacement handling.
 
 ### Changed
 

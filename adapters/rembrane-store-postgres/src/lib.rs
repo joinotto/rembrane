@@ -8,6 +8,7 @@ use std::collections::BTreeSet;
 use std::error::Error;
 use std::fmt::{self, Display, Formatter};
 
+use rembrane_application::{ApplicationError, MembershipRepository};
 use rembrane_domain::{Membership, Principal, PrincipalId, Workspace, WorkspaceId, WorkspaceRole};
 
 pub const SET_TENANT_SQL: &str = "SELECT set_config('rembrane.workspace_id', $1, true);";
@@ -38,6 +39,21 @@ pub trait PostgresRow {
     type Error;
 
     fn text(&self, column: &str) -> Result<String, Self::Error>;
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PostgresFailureKind {
+    UniqueViolation,
+    ForeignKeyViolation,
+    CheckViolation,
+    SerializationFailure,
+    Other,
+}
+
+/// Driver errors implement this without exposing SQL text, parameter values,
+/// credentials, or tenant identifiers through application errors.
+pub trait ClassifiedPostgresError {
+    fn kind(&self) -> PostgresFailureKind;
 }
 
 /// Minimal transaction surface required by the tenant-verifying adapter.
@@ -114,6 +130,7 @@ pub enum PostgresStoreError<DriverError> {
     Tenant(TenantTransactionError<DriverError>),
     Row(DriverError),
     InvalidRow,
+    MissingRow,
     UnexpectedCardinality,
 }
 
@@ -126,6 +143,7 @@ impl<DriverError: Display> Display for PostgresStoreError<DriverError> {
             Self::Tenant(error) => Display::fmt(error, formatter),
             Self::Row(error) => write!(formatter, "could not decode PostgreSQL row: {error}"),
             Self::InvalidRow => formatter.write_str("PostgreSQL returned an invalid canonical row"),
+            Self::MissingRow => formatter.write_str("PostgreSQL row was not found"),
             Self::UnexpectedCardinality => {
                 formatter.write_str("PostgreSQL returned unexpected row cardinality")
             }
@@ -274,20 +292,21 @@ impl<Pool: PostgresPool> PostgresStore<Pool> {
         &self,
         membership: &Membership,
     ) -> Result<(), PostgresStoreError<Pool::Error>> {
-        self.write_membership(INSERT_MEMBERSHIP_SQL, membership)
+        self.write_membership(INSERT_MEMBERSHIP_SQL, membership, false)
     }
 
     pub fn replace_membership(
         &self,
         membership: &Membership,
     ) -> Result<(), PostgresStoreError<Pool::Error>> {
-        self.write_membership(REPLACE_MEMBERSHIP_SQL, membership)
+        self.write_membership(REPLACE_MEMBERSHIP_SQL, membership, true)
     }
 
     fn write_membership(
         &self,
         statement: &str,
         membership: &Membership,
+        missing_is_not_found: bool,
     ) -> Result<(), PostgresStoreError<Pool::Error>> {
         let mut transaction = self.begin_tenant(membership.workspace_id().clone())?;
         let changed = transaction
@@ -301,10 +320,73 @@ impl<Pool: PostgresPool> PostgresStore<Pool> {
                 ],
             )
             .map_err(PostgresStoreError::Tenant)?;
+        if changed == 0 && missing_is_not_found {
+            return Err(PostgresStoreError::MissingRow);
+        }
         if changed != 1 {
             return Err(PostgresStoreError::UnexpectedCardinality);
         }
         transaction.commit().map_err(PostgresStoreError::Tenant)
+    }
+}
+
+impl<Pool> MembershipRepository for PostgresStore<Pool>
+where
+    Pool: PostgresPool,
+    Pool::Error: ClassifiedPostgresError,
+    <Pool::Transaction as PostgresTransaction>::Row: PostgresRow<Error = Pool::Error>,
+{
+    fn insert_membership(&mut self, membership: Membership) -> Result<(), ApplicationError> {
+        PostgresStore::insert_membership(self, &membership).map_err(map_application_error)
+    }
+
+    fn find_membership(
+        &self,
+        workspace_id: &WorkspaceId,
+        principal_id: &PrincipalId,
+    ) -> Result<Option<Membership>, ApplicationError> {
+        PostgresStore::find_membership(self, workspace_id, principal_id)
+            .map_err(map_application_error)
+    }
+
+    fn list_active_memberships(
+        &self,
+        workspace_id: &WorkspaceId,
+    ) -> Result<Vec<Membership>, ApplicationError> {
+        PostgresStore::list_active_memberships(self, workspace_id).map_err(map_application_error)
+    }
+
+    fn replace_membership(&mut self, membership: Membership) -> Result<(), ApplicationError> {
+        PostgresStore::replace_membership(self, &membership).map_err(map_application_error)
+    }
+}
+
+fn map_application_error<DriverError>(error: PostgresStoreError<DriverError>) -> ApplicationError
+where
+    DriverError: ClassifiedPostgresError,
+{
+    match error {
+        PostgresStoreError::MissingRow => ApplicationError::NotFound,
+        PostgresStoreError::Begin(error)
+        | PostgresStoreError::Row(error)
+        | PostgresStoreError::Tenant(TenantTransactionError::Driver(error)) => match error.kind() {
+            PostgresFailureKind::UniqueViolation => ApplicationError::AlreadyExists,
+            PostgresFailureKind::ForeignKeyViolation | PostgresFailureKind::CheckViolation => {
+                ApplicationError::Validation(
+                    "database constraint rejected the membership".to_owned(),
+                )
+            }
+            PostgresFailureKind::SerializationFailure | PostgresFailureKind::Other => {
+                ApplicationError::StorageUnavailable
+            }
+        },
+        PostgresStoreError::Tenant(
+            TenantTransactionError::MissingTenant
+            | TenantTransactionError::TenantMismatch
+            | TenantTransactionError::Closed,
+        )
+        | PostgresStoreError::InvalidRow
+        | PostgresStoreError::UnexpectedCardinality => ApplicationError::StorageUnavailable,
     }
 }
 
@@ -537,13 +619,15 @@ mod tests {
     use std::collections::{BTreeMap, VecDeque};
     use std::rc::Rc;
 
+    use rembrane_application::{ApplicationError, MembershipRepository};
     use rembrane_domain::WorkspaceId;
 
     use super::{
-        FIND_MEMBERSHIP_SQL, FIND_PRINCIPAL_SQL, FIND_WORKSPACE_SQL, INSERT_MEMBERSHIP_SQL,
-        LIST_ACTIVE_MEMBERSHIPS_SQL, MAX_ACTIVE_MEMBERSHIPS, PostgresParameter, PostgresPool,
-        PostgresRow, PostgresStore, PostgresStoreError, PostgresTransaction, READ_TENANT_SQL,
-        REPLACE_MEMBERSHIP_SQL, SET_TENANT_SQL, TenantTransaction, TenantTransactionError,
+        ClassifiedPostgresError, FIND_MEMBERSHIP_SQL, FIND_PRINCIPAL_SQL, FIND_WORKSPACE_SQL,
+        INSERT_MEMBERSHIP_SQL, LIST_ACTIVE_MEMBERSHIPS_SQL, MAX_ACTIVE_MEMBERSHIPS,
+        PostgresFailureKind, PostgresParameter, PostgresPool, PostgresRow, PostgresStore,
+        PostgresStoreError, PostgresTransaction, READ_TENANT_SQL, REPLACE_MEMBERSHIP_SQL,
+        SET_TENANT_SQL, TenantTransaction, TenantTransactionError, map_application_error,
     };
 
     #[derive(Clone, Debug, Eq, PartialEq)]
@@ -557,6 +641,12 @@ mod tests {
 
     type TenantRead = Result<Option<String>, &'static str>;
     type TenantReadBatch = VecDeque<TenantRead>;
+
+    impl ClassifiedPostgresError for &'static str {
+        fn kind(&self) -> PostgresFailureKind {
+            PostgresFailureKind::Other
+        }
+    }
 
     #[derive(Clone, Debug, Eq, PartialEq)]
     struct FakeRow {
@@ -1238,6 +1328,100 @@ mod tests {
                 .filter(|call| **call == Call::Commit)
                 .count(),
             2
+        );
+    }
+
+    #[test]
+    fn membership_application_port_is_usable_with_the_driver_boundary() {
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let mut store = PostgresStore::new(FakePool {
+            calls,
+            tenant_batches: RefCell::new(
+                [
+                    VecDeque::from([
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                    ]),
+                    VecDeque::from([
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                    ]),
+                ]
+                .into(),
+            ),
+            row_batches: RefCell::new(
+                [
+                    vec![FakeRow::membership(
+                        "workspace_01",
+                        "principal_01",
+                        "member",
+                        "active",
+                    )],
+                    Vec::new(),
+                ]
+                .into(),
+            ),
+        });
+        let workspace_id = WorkspaceId::new("workspace_01");
+        let principal_id = rembrane_domain::PrincipalId::new("principal_01");
+
+        let membership =
+            MembershipRepository::find_membership(&store, &workspace_id, &principal_id)
+                .expect("application membership lookup")
+                .expect("membership");
+        MembershipRepository::replace_membership(&mut store, membership)
+            .expect("application membership replacement");
+    }
+
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum ClassifiedError {
+        Unique,
+        ForeignKey,
+        Check,
+        Serialization,
+        Other,
+    }
+
+    impl ClassifiedPostgresError for ClassifiedError {
+        fn kind(&self) -> PostgresFailureKind {
+            match self {
+                Self::Unique => PostgresFailureKind::UniqueViolation,
+                Self::ForeignKey => PostgresFailureKind::ForeignKeyViolation,
+                Self::Check => PostgresFailureKind::CheckViolation,
+                Self::Serialization => PostgresFailureKind::SerializationFailure,
+                Self::Other => PostgresFailureKind::Other,
+            }
+        }
+    }
+
+    #[test]
+    fn classified_driver_failures_map_to_opaque_application_errors() {
+        assert_eq!(
+            map_application_error(PostgresStoreError::Tenant(TenantTransactionError::Driver(
+                ClassifiedError::Unique
+            ))),
+            ApplicationError::AlreadyExists
+        );
+        for failure in [ClassifiedError::ForeignKey, ClassifiedError::Check] {
+            assert!(matches!(
+                map_application_error(PostgresStoreError::Tenant(
+                    TenantTransactionError::Driver(failure)
+                )),
+                ApplicationError::Validation(message)
+                    if message == "database constraint rejected the membership"
+            ));
+        }
+        for failure in [ClassifiedError::Serialization, ClassifiedError::Other] {
+            assert_eq!(
+                map_application_error(PostgresStoreError::Tenant(TenantTransactionError::Driver(
+                    failure
+                ))),
+                ApplicationError::StorageUnavailable
+            );
+        }
+        assert_eq!(
+            map_application_error::<ClassifiedError>(PostgresStoreError::MissingRow),
+            ApplicationError::NotFound
         );
     }
 }
