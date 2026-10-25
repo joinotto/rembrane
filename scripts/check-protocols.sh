@@ -26,6 +26,7 @@ jq empty \
     spec/channel-processor-acknowledgement.schema.json \
     spec/mcp-client-catalog.schema.json \
     spec/memory-provider-compatibility-lock.json \
+    spec/key-provider-compatibility-lock.json \
     spec/memory-provider.schema.json \
     spec/memory-provider-conformance.schema.json \
     spec/memory-provider-conformance-result.schema.json \
@@ -170,6 +171,7 @@ jq -e '
 ' spec/examples/mcp-client-catalog.json >/dev/null
 
 node scripts/verify-memory-provider-compatibility.mjs
+node scripts/verify-key-provider-compatibility.mjs
 
 jq -e '
     .properties.command.minLength == 1

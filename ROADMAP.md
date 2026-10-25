@@ -885,6 +885,8 @@ This roadmap describes sequencing, not release dates.
       composition own any boxed client implementation.
 - [x] Versioned key-provider sidecar protocol for OS, HSM, and customer-KMS
   adapters.
+  - [x] Lock the reviewed OpenAPI, discovery fixture, conformance schema,
+    result fixture, and black-box runner with tamper-tested SHA-256 evidence.
   - [x] Add transport-independent Rust manifest, negotiation, request, context,
     and response-limit contracts to the offline verification gate.
   - [x] Add a secret-safe black-box HTTP conformance runner.

@@ -1,0 +1,26 @@
+{
+  "lockFormat": 1,
+  "protocolVersion": "0.1",
+  "artifacts": [
+    {
+      "path": "spec/key-provider-openapi.yaml",
+      "sha256": "fbfc4db730754dc0409748fbc0ea40f38f01af508fbb93367043b06049efe9c6"
+    },
+    {
+      "path": "spec/examples/key-provider-manifest.json",
+      "sha256": "ec70162236f00caef352b6a78d236da183ff474c4207dcf996817e2f6956c692"
+    },
+    {
+      "path": "spec/key-provider-conformance-result.schema.json",
+      "sha256": "a4137f3047cb62d21d6bb3b4239550c68fda97b1362ca9dd2361f6e380db7e38"
+    },
+    {
+      "path": "spec/examples/key-provider-conformance-result.json",
+      "sha256": "d779046fb6865f72cc29f01c6cd3819c02d52cbb6b4b0cb09149f827625cf225"
+    },
+    {
+      "path": "scripts/test-key-provider-http.sh",
+      "sha256": "3df44612f7f1346ea98dd6513a53c6ee4c752c2bffb32208acbf589437619ba4"
+    }
+  ]
+}
