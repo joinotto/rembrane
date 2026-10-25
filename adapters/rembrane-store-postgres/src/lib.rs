@@ -2528,6 +2528,63 @@ where
     }
 }
 
+impl<Pool, Cipher> ProjectionOutboxRepository for PostgresTenantMemoryStore<'_, '_, Pool, Cipher>
+where
+    Pool: PostgresPool,
+    Pool::Error: ClassifiedPostgresError,
+    <Pool::Transaction as PostgresTransaction>::Row: PostgresRow<Error = Pool::Error>,
+{
+    fn enqueue_projection(&mut self, job: ProjectionJob) -> Result<(), ApplicationError> {
+        let mut tenant = PostgresTenantStore {
+            store: self.store,
+            workspace_id: self.workspace_id.clone(),
+        };
+        ProjectionOutboxRepository::enqueue_projection(&mut tenant, job)
+    }
+
+    fn pending_projections(
+        &self,
+        provider_id: &ProviderId,
+        limit: usize,
+    ) -> Result<Vec<ProjectionJob>, ApplicationError> {
+        let tenant = PostgresTenantStore {
+            store: self.store,
+            workspace_id: self.workspace_id.clone(),
+        };
+        ProjectionOutboxRepository::pending_projections(&tenant, provider_id, limit)
+    }
+
+    fn replace_projection(
+        &mut self,
+        job: ProjectionJob,
+        expected_status: ProjectionStatus,
+        expected_attempts: u32,
+    ) -> Result<(), ApplicationError> {
+        let mut tenant = PostgresTenantStore {
+            store: self.store,
+            workspace_id: self.workspace_id.clone(),
+        };
+        ProjectionOutboxRepository::replace_projection(
+            &mut tenant,
+            job,
+            expected_status,
+            expected_attempts,
+        )
+    }
+
+    fn find_projection(
+        &self,
+        workspace_id: &WorkspaceId,
+        job_id: &ProjectionJobId,
+    ) -> Result<Option<ProjectionJob>, ApplicationError> {
+        let tenant = PostgresTenantStore {
+            store: self.store,
+            workspace_id: self.workspace_id.clone(),
+        };
+        ProjectionOutboxRepository::find_projection(&tenant, workspace_id, job_id)
+    }
+}
+
 impl<Pool, Cipher> EventRepository for PostgresTenantMemoryStore<'_, '_, Pool, Cipher>
 where
     Pool: PostgresPool,
@@ -6249,6 +6306,13 @@ mod tests {
 
     #[test]
     fn tenant_cipher_store_decrypts_exact_and_subject_memory_reads() {
+        fn assert_projection_worker_repository<
+            Repository: MemoryRepository + ProjectionOutboxRepository,
+        >(
+            _repository: &Repository,
+        ) {
+        }
+
         let expected = MemoryRecord::confirmed_preference(
             MemoryId::new("memory_01"),
             WorkspaceId::new("workspace_01"),
@@ -6288,6 +6352,7 @@ mod tests {
         let tenant = store.for_workspace(WorkspaceId::new("workspace_01"));
         let cipher = IdentityCipher;
         let memories = tenant.with_cipher(&cipher);
+        assert_projection_worker_repository(&memories);
 
         assert_eq!(
             MemoryRepository::find(

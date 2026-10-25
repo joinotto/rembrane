@@ -330,6 +330,8 @@ This roadmap describes sequencing, not release dates.
           canonical events, optimistic versions, and provider projection jobs.
       - [x] Add a tenant-pinned PostgreSQL provider projection outbox with
         bounded pending reads and optimistic lifecycle transitions.
+        - [x] Compose encrypted memory reads and projection outbox operations
+          on one tenant facade suitable for the provider projection worker.
       - [x] Add exact invitation lookup and bounded status-filtered listing
         with terminal-state restoration and full tenant/identifier correlation.
       - [x] Implement atomic invitation creation, acceptance, revocation,

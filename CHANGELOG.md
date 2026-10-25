@@ -96,6 +96,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Tenant-pinned PostgreSQL `ProjectionOutboxRepository` support with bounded,
   provider-filtered pending reads, closed job decoding, exact lookup, and
   optimistic status/attempt transitions.
+- Projection-worker-compatible PostgreSQL capability composition, exposing
+  encrypted memory reads and tenant-pinned outbox operations through one
+  cipher-bearing facade without granting key access to administrative stores.
 - PostgreSQL invitation lookup and bounded deterministic listing with optional
   status filtering, numeric lifetime decoding, terminal-state restoration,
   and exact tenant/invitation correlation.
