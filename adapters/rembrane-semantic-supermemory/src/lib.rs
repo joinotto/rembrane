@@ -33,6 +33,7 @@ pub struct SupermemoryRecord {
     provider_id: String,
     canonical_memory_id: MemoryId,
     canonical_version: u64,
+    canonical_binding: String,
     score_millionths: Option<u32>,
 }
 
@@ -41,13 +42,19 @@ impl SupermemoryRecord {
         provider_id: impl Into<String>,
         canonical_memory_id: MemoryId,
         canonical_version: u64,
+        canonical_binding: impl Into<String>,
         score_millionths: Option<u32>,
     ) -> Result<Self, ProviderError> {
         let provider_id = provider_id.into();
+        let canonical_binding = canonical_binding.into();
         if provider_id.is_empty()
             || provider_id.len() > MAXIMUM_PROVIDER_ID_BYTES
             || provider_id.chars().any(char::is_control)
             || canonical_version == 0
+            || canonical_binding.len() != 64
+            || !canonical_binding
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit())
             || score_millionths.is_some_and(|score| score > 1_000_000)
         {
             return Err(ProviderError::Rejected(
@@ -58,6 +65,7 @@ impl SupermemoryRecord {
             provider_id,
             canonical_memory_id,
             canonical_version,
+            canonical_binding,
             score_millionths,
         })
     }
@@ -84,8 +92,12 @@ struct WireRecord {
 
 #[derive(Deserialize)]
 struct WireMetadata {
-    rembrane_memory_id: String,
-    rembrane_version: u64,
+    #[serde(rename = "rembrane_memory_id")]
+    memory_id: String,
+    #[serde(rename = "rembrane_version")]
+    version: u64,
+    #[serde(rename = "rembrane_binding")]
+    binding: String,
 }
 
 #[derive(Deserialize)]
@@ -154,8 +166,9 @@ fn decode_wire_record(record: WireRecord) -> Result<SupermemoryRecord, ProviderE
         .transpose()?;
     SupermemoryRecord::new(
         provider_id,
-        MemoryId::new(record.metadata.rembrane_memory_id),
-        record.metadata.rembrane_version,
+        MemoryId::new(record.metadata.memory_id),
+        record.metadata.version,
+        record.metadata.binding,
         score,
     )
 }
@@ -184,12 +197,14 @@ pub trait SupermemoryTransport {
         namespace: &str,
         document_id: &str,
         projection: &AuthorizedMemoryProjection,
+        canonical_binding: &str,
     ) -> Result<(), ProviderError>;
     fn await_ready(
         &mut self,
         namespace: &str,
         document_id: &str,
         projection: &AuthorizedMemoryProjection,
+        canonical_binding: &str,
     ) -> Result<(), ProviderError>;
     fn search(
         &self,
@@ -366,6 +381,7 @@ impl SupermemoryTransport for HttpSupermemoryTransport {
         namespace: &str,
         document_id: &str,
         projection: &AuthorizedMemoryProjection,
+        canonical_binding: &str,
     ) -> Result<(), ProviderError> {
         if !valid_provider_identifier(document_id, 255) {
             return Err(ProviderError::Rejected(
@@ -375,6 +391,7 @@ impl SupermemoryTransport for HttpSupermemoryTransport {
         let metadata = MetadataBody {
             memory_id: projection.memory_id.as_str(),
             version: projection.version,
+            binding: canonical_binding,
         };
         let response = if self.get(namespace, document_id)?.is_some() {
             self.request(
@@ -414,6 +431,7 @@ impl SupermemoryTransport for HttpSupermemoryTransport {
         namespace: &str,
         document_id: &str,
         projection: &AuthorizedMemoryProjection,
+        canonical_binding: &str,
     ) -> Result<(), ProviderError> {
         let query = projection.content.chars().take(512).collect::<String>();
         for attempt in 0..READINESS_ATTEMPTS {
@@ -424,6 +442,7 @@ impl SupermemoryTransport for HttpSupermemoryTransport {
                     record.provider_id == document_id
                         && record.canonical_memory_id == projection.memory_id
                         && record.canonical_version == projection.version
+                        && record.canonical_binding == canonical_binding
                 });
             if ready {
                 return Ok(());
@@ -474,6 +493,8 @@ struct MetadataBody<'value> {
     memory_id: &'value str,
     #[serde(rename = "rembrane_version")]
     version: u64,
+    #[serde(rename = "rembrane_binding")]
+    binding: &'value str,
 }
 
 #[derive(Serialize)]
@@ -649,6 +670,66 @@ impl<Transport> SupermemorySemanticProvider<Transport> {
         output.copy_from_slice(context.sign().as_ref());
         output
     }
+
+    fn record_binding(
+        &self,
+        workspace_id: &WorkspaceId,
+        memory_id: &MemoryId,
+        version: u64,
+    ) -> String {
+        let message = record_binding_message(workspace_id, memory_id, version);
+        encode_signature(hmac::sign(&self.workspace_lookup_key, &message).as_ref())
+    }
+
+    fn record_is_bound(&self, workspace_id: &WorkspaceId, record: &SupermemoryRecord) -> bool {
+        let Some(tag) = decode_signature(&record.canonical_binding) else {
+            return false;
+        };
+        let message = record_binding_message(
+            workspace_id,
+            &record.canonical_memory_id,
+            record.canonical_version,
+        );
+        hmac::verify(&self.workspace_lookup_key, &message, &tag).is_ok()
+    }
+}
+
+fn record_binding_message(
+    workspace_id: &WorkspaceId,
+    memory_id: &MemoryId,
+    version: u64,
+) -> Vec<u8> {
+    let mut message =
+        Vec::with_capacity(15 + workspace_id.as_str().len() + memory_id.as_str().len() + 10);
+    message.extend_from_slice(b"record-binding\0");
+    message.extend_from_slice(workspace_id.as_str().as_bytes());
+    message.push(0);
+    message.extend_from_slice(memory_id.as_str().as_bytes());
+    message.push(0);
+    message.extend_from_slice(&version.to_be_bytes());
+    message
+}
+
+fn encode_signature(signature: &[u8]) -> String {
+    let mut encoded = String::with_capacity(signature.len() * 2);
+    for byte in signature {
+        use std::fmt::Write;
+        let _ = write!(encoded, "{byte:02x}");
+    }
+    encoded
+}
+
+fn decode_signature(encoded: &str) -> Option<[u8; 32]> {
+    if encoded.len() != 64 {
+        return None;
+    }
+    let mut decoded = [0_u8; 32];
+    for (index, pair) in encoded.as_bytes().chunks_exact(2).enumerate() {
+        let high = char::from(pair[0]).to_digit(16)?;
+        let low = char::from(pair[1]).to_digit(16)?;
+        decoded[index] = u8::try_from((high << 4) | low).ok()?;
+    }
+    Some(decoded)
 }
 
 fn valid_namespace(value: &str) -> bool {
@@ -699,10 +780,15 @@ impl<Transport: SupermemoryTransport> SemanticMemoryProvider
         }
         let namespace = self.namespace(&projection.workspace_id);
         let document_id = self.document_id(&projection.memory_id);
+        let binding = self.record_binding(
+            &projection.workspace_id,
+            &projection.memory_id,
+            projection.version,
+        );
         self.transport
-            .upsert_exact(&namespace, &document_id, &projection)?;
+            .upsert_exact(&namespace, &document_id, &projection, &binding)?;
         self.transport
-            .await_ready(&namespace, &document_id, &projection)
+            .await_ready(&namespace, &document_id, &projection, &binding)
     }
 
     fn search(&self, query: &SemanticQuery) -> Result<Vec<CandidateMemory>, ProviderError> {
@@ -720,7 +806,9 @@ impl<Transport: SupermemoryTransport> SemanticMemoryProvider
             .transport
             .search(&namespace, &query.text, query.maximum_candidates)?
         {
-            if record.provider_id != self.document_id(&record.canonical_memory_id) {
+            if record.provider_id != self.document_id(&record.canonical_memory_id)
+                || !self.record_is_bound(&query.workspace_id, &record)
+            {
                 return Err(ProviderError::Rejected(
                     "Supermemory returned mismatched canonical identity metadata".to_owned(),
                 ));
@@ -760,7 +848,10 @@ impl<Transport: SupermemoryTransport> SemanticMemoryProvider
         let Some(record) = self.transport.get(&namespace, &document_id)? else {
             return Ok(());
         };
-        if record.provider_id != document_id || &record.canonical_memory_id != memory_id {
+        if record.provider_id != document_id
+            || &record.canonical_memory_id != memory_id
+            || !self.record_is_bound(workspace_id, &record)
+        {
             return Err(ProviderError::Rejected(
                 "Supermemory returned mismatched canonical identity metadata".to_owned(),
             ));
@@ -863,6 +954,7 @@ mod tests {
             namespace: &str,
             document_id: &str,
             projection: &AuthorizedMemoryProjection,
+            canonical_binding: &str,
         ) -> Result<(), ProviderError> {
             self.next_id += 1;
             let records = self.records.entry(namespace.to_owned()).or_default();
@@ -871,6 +963,7 @@ mod tests {
                 document_id,
                 projection.memory_id.clone(),
                 projection.version,
+                canonical_binding,
                 Some(1_000_000),
             )?;
             records.push((record, projection.content.clone()));
@@ -898,6 +991,7 @@ mod tests {
             _namespace: &str,
             _document_id: &str,
             _projection: &AuthorizedMemoryProjection,
+            _canonical_binding: &str,
         ) -> Result<(), ProviderError> {
             if self.fail_readiness {
                 Err(ProviderError::Unavailable)
@@ -947,14 +1041,14 @@ mod tests {
     #[test]
     fn wire_records_require_canonical_metadata_and_valid_scores() {
         let records = decode_records(
-            br#"{"results":[{"documentId":"provider-01","metadata":{"rembrane_memory_id":"memory-01","rembrane_version":2},"score":0.75}]}"#,
+            br#"{"results":[{"documentId":"provider-01","metadata":{"rembrane_memory_id":"memory-01","rembrane_version":2,"rembrane_binding":"0000000000000000000000000000000000000000000000000000000000000000"},"score":0.75}]}"#,
         )
         .expect("valid response");
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].canonical_version, 2);
         assert_eq!(records[0].score_millionths, Some(750_000));
         let records = decode_records(
-            br#"{"documents":[{"id":"internal-01","customId":"rembrane-caller-01","metadata":{"rembrane_memory_id":"memory-01","rembrane_version":2}}]}"#,
+            br#"{"documents":[{"id":"internal-01","customId":"rembrane-caller-01","metadata":{"rembrane_memory_id":"memory-01","rembrane_version":2,"rembrane_binding":"0000000000000000000000000000000000000000000000000000000000000000"}}]}"#,
         )
         .expect("document response with both identities");
         assert_eq!(records[0].provider_id(), "rembrane-caller-01");
@@ -1005,6 +1099,7 @@ mod tests {
             metadata: super::MetadataBody {
                 memory_id: "memory-01",
                 version: 1,
+                binding: "0000000000000000000000000000000000000000000000000000000000000000",
             },
             dreaming: "instant",
         })
@@ -1021,6 +1116,7 @@ mod tests {
             metadata: super::MetadataBody {
                 memory_id: "memory-01",
                 version: 2,
+                binding: "0000000000000000000000000000000000000000000000000000000000000000",
             },
             dreaming: "instant",
         })
@@ -1186,6 +1282,53 @@ mod tests {
         record.0.canonical_memory_id = MemoryId::new("substituted-memory");
         assert!(matches!(
             provider.delete(&workspace_id, &memory_id, 1),
+            Err(ProviderError::Rejected(_))
+        ));
+    }
+
+    #[test]
+    fn provider_version_substitution_fails_closed() {
+        use rembrane_domain::{MemoryId, MemoryKind, MemoryScope, WorkspaceId};
+        use rembrane_provider_sdk::{
+            AuthorizedMemoryProjection, SemanticMemoryProvider, SemanticQuery,
+        };
+
+        let workspace_id = WorkspaceId::new("workspace");
+        let memory_id = MemoryId::new("memory");
+        let mut provider =
+            SupermemorySemanticProvider::new(FakeSupermemory::default(), vec![13; 32])
+                .expect("valid lookup secret");
+        provider
+            .index(AuthorizedMemoryProjection {
+                workspace_id: workspace_id.clone(),
+                memory_id: memory_id.clone(),
+                version: 1,
+                scope: MemoryScope::Global,
+                kind: MemoryKind::Semantic,
+                content: "Call me Hippo".to_owned(),
+            })
+            .expect("initial projection");
+        let namespace = provider.namespace(&workspace_id);
+        provider
+            .transport
+            .records
+            .get_mut(&namespace)
+            .expect("namespace")
+            .first_mut()
+            .expect("record")
+            .0
+            .canonical_version = 2;
+
+        assert!(matches!(
+            provider.search(&SemanticQuery {
+                workspace_id: workspace_id.clone(),
+                text: "Hippo".to_owned(),
+                maximum_candidates: 10,
+            }),
+            Err(ProviderError::Rejected(_))
+        ));
+        assert!(matches!(
+            provider.delete(&workspace_id, &memory_id, 2),
             Err(ProviderError::Rejected(_))
         ));
     }

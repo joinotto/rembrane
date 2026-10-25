@@ -167,6 +167,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Mem0 projections now include a deployment-keyed HMAC binding over workspace,
   memory, and version identity; search, replacement, and deletion fail closed
   on missing or altered bindings. Existing unbound namespaces require reindex.
+- Supermemory projections now carry the same deployment-keyed workspace,
+  memory, and version binding, preventing forged revision metadata beneath an
+  otherwise valid deterministic document pseudonym. Existing unbound
+  namespaces require reindex.
 - PostgreSQL invitation lookup and bounded deterministic listing with optional
   status filtering, numeric lifetime decoding, terminal-state restoration,
   and exact tenant/invitation correlation.

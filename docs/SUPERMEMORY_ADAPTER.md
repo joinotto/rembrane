@@ -44,6 +44,10 @@ The namespace lookup secret is independent from the API credential. The
 derived namespace must match Supermemory's documented 100-character safe
 pattern and must not reveal the canonical workspace ID. Namespace and document
 pseudonyms use distinct HMAC domain labels.
+Each record also carries a separate HMAC binding over workspace, memory ID,
+and version. The adapter verifies this binding before trusting readiness,
+search, or deletion metadata, so a valid document pseudonym cannot be paired
+with a forged canonical revision.
 `SupermemorySemanticProvider::from_connection` accepts a validated
 Supermemory profile with exactly two ordered references—API key first,
 independent workspace lookup secret second—and resolves both through the
@@ -75,8 +79,13 @@ The provider adapter must:
 10. require a one-item deletion count with no per-item errors;
 11. reject search, readiness, or deletion records whose provider document
     pseudonym does not match their claimed canonical memory identity;
-12. never delegate authorization, tenant identity, or canonical truth to
+12. authenticate the claimed workspace, memory identity, and version with the
+    deployment-owned lookup key;
+13. never delegate authorization, tenant identity, or canonical truth to
     Supermemory.
+
+Namespaces written by adapter versions that predate this binding must be
+reindexed into a fresh disposable namespace. Unbound records fail closed.
 
 ## Replacement semantics
 
