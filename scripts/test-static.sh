@@ -69,6 +69,7 @@ for deployment_file in \
     scripts/check-local-alpha.sh \
     scripts/derive-ed25519-public-key.mjs \
     scripts/ed25519-signing.mjs \
+    scripts/ed25519-verification.mjs \
     scripts/sign-ed25519-document.mjs \
     scripts/customer-kms-evidence.mjs \
     scripts/generate-customer-kms-evidence.mjs \

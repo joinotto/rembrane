@@ -1,8 +1,9 @@
-import { createHash, createPublicKey, verify } from "node:crypto";
+import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { relative, resolve, sep } from "node:path";
 
 import { readBoundedRegularFile } from "./read-bounded-regular-file.mjs";
+import { verifyEd25519Signature } from "./ed25519-verification.mjs";
 
 const safeTextPattern = /^[ -~]+$/;
 const sha256Pattern = /^[0-9a-f]{64}$/;
@@ -189,17 +190,11 @@ export function verifySecurityReviewSignature(
   signatureBytes,
   publicKeyBytes,
 ) {
-  let valid = false;
   try {
-    const publicKey = createPublicKey(publicKeyBytes);
-    valid =
-      publicKey.asymmetricKeyType === "ed25519" &&
-      signatureBytes.length === 64 &&
-      verify(null, documentBytes, publicKey, signatureBytes);
+    verifyEd25519Signature(documentBytes, signatureBytes, publicKeyBytes);
   } catch {
-    valid = false;
+    throw new Error("security review signature is invalid");
   }
-  if (!valid) throw new Error("security review signature is invalid");
 }
 
 export function sha256(bytes) {

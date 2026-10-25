@@ -808,6 +808,8 @@ This roadmap describes sequencing, not release dates.
     rejecting unsafe keys and cleaning partial output on failure.
     - [x] Share the no-follow, owner-mode-enforcing Ed25519 signer with
       independent-review artifacts.
+    - [x] Reject private-key material wherever a public verification trust
+      anchor is required.
   - [x] Verify the exact three-file registry bundle, checksum, Ed25519
     signature, and provider conformance semantics in one process.
     - [x] Self-verify each newly signed bundle before publishing its path and

@@ -32,6 +32,13 @@ verify() {
 verify "$test_root/provenance.json" "$test_root/result.json" \
     "$test_root/provenance.sig" "$test_root/public.pem" >/dev/null
 
+if verify "$test_root/provenance.json" "$test_root/result.json" \
+    "$test_root/provenance.sig" "$test_root/private.pem" >/dev/null 2>&1
+then
+    echo "external provenance verifier accepted a private trust anchor" >&2
+    exit 1
+fi
+
 ln -s "$test_root/provenance.json" "$test_root/provenance-link.json"
 if verify "$test_root/provenance-link.json" "$test_root/result.json" \
     "$test_root/provenance.sig" "$test_root/public.pem" >/dev/null 2>&1

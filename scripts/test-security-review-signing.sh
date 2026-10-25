@@ -14,6 +14,7 @@ mkdir -p "$review_repository/scripts"
 for script in \
     derive-ed25519-public-key.mjs \
     ed25519-signing.mjs \
+    ed25519-verification.mjs \
     generate-security-review-manifest.mjs \
     read-bounded-regular-file.mjs \
     security-review-evidence.mjs \

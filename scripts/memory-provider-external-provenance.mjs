@@ -1,4 +1,6 @@
-import { createHash, createPublicKey, verify } from "node:crypto";
+import { createHash } from "node:crypto";
+
+import { verifyEd25519Signature } from "./ed25519-verification.mjs";
 
 export function verifyExternalProviderProvenance({
   provenanceBytes,
@@ -39,17 +41,13 @@ export function verifyExternalProviderProvenance({
     throw new Error("external provider provenance is invalid");
   }
 
-  let signatureValid = false;
   try {
-    const publicKey = createPublicKey(publicKeyBytes);
-    signatureValid =
-      publicKey.asymmetricKeyType === "ed25519" &&
-      signatureBytes.length === 64 &&
-      verify(null, provenanceBytes, publicKey, signatureBytes);
+    verifyEd25519Signature(
+      provenanceBytes,
+      signatureBytes,
+      publicKeyBytes,
+    );
   } catch {
-    signatureValid = false;
-  }
-  if (!signatureValid) {
     throw new Error("external provider provenance signature is invalid");
   }
   return provenance;

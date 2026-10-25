@@ -25,6 +25,15 @@ REMBRANE_REGISTRY_SIGNING_KEY="$temporary_directory/private.pem" \
     "$temporary_directory/artifacts" \
     "$temporary_directory/public.pem" >/dev/null
 
+if "$repository_root/scripts/verify-provider-registry-signature.sh" \
+    "$temporary_directory/artifacts/provider-registry.json" \
+    "$temporary_directory/artifacts/provider-registry.json.sig" \
+    "$temporary_directory/private.pem" >/dev/null 2>&1
+then
+    echo "provider registry verifier accepted a private trust anchor" >&2
+    exit 1
+fi
+
 ln -s "$temporary_directory/artifacts/provider-registry.json" \
     "$temporary_directory/registry-link.json"
 if "$repository_root/scripts/verify-provider-registry-signature.sh" \

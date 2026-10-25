@@ -1040,6 +1040,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - External Memory Provider maintainers and the registry-release workflow now
   use the shared no-follow Ed25519 key tooling rather than signing or deriving
   public keys through direct OpenSSL path access.
+- Ed25519 verification is now shared across signed evidence and explicitly
+  rejects private-key PEM material when a public trust anchor is required.
 - Restored the complete dependency-enabled workspace build by declaring
   previously implicit crate dependencies and enabling rmcp's stdio transport.
 - Corrected Memory Provider selector field casing and URL path construction so
