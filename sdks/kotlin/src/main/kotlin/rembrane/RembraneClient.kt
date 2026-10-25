@@ -94,6 +94,15 @@ class RembraneClient(
     fun rotateWorkspaceKey(jsonBody: String): String =
         request("POST", "/workspaces/key-rotation", jsonBody)
 
+    fun createWorkspaceInvitation(jsonBody: String): String =
+        request("POST", "/workspaces/invitations", jsonBody)
+
+    fun acceptWorkspaceInvitation(jsonBody: String): String =
+        request("POST", "/workspaces/invitations/accept", jsonBody)
+
+    fun revokeWorkspaceInvitation(jsonBody: String): String =
+        request("POST", "/workspaces/invitations/revoke", jsonBody)
+
     fun setRetentionPolicy(jsonBody: String): String =
         request("POST", "/retention/policy", jsonBody)
 

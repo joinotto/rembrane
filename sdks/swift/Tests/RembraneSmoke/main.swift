@@ -9,16 +9,32 @@ private actor MockTransport: RembraneTransport {
         maximumResponseBytes: Int
     ) async throws -> RembraneHTTPResponse {
         self.request = request
+        let body = request.url?.path.hasSuffix("/administrative-audit") == true
+            ? Data(#"{"events":[]}"#.utf8)
+            : Data(#"{"status":"pending"}"#.utf8)
         return RembraneHTTPResponse(
             status: 200,
             headers: ["content-type": "application/json"],
-            body: Data(#"{"events":[]}"#.utf8)
+            body: body
         )
     }
 }
 
 private struct AuditResponse: Decodable {
     let events: [String]
+}
+
+private struct InvitationRequest: Encodable {
+    let workspaceId: String
+    let invitationId: String
+    let invitedPrincipalId: String?
+    let role: String?
+    let ttlSeconds: UInt64?
+    let requestId: String
+}
+
+private struct InvitationResponse: Decodable {
+    let status: String
 }
 
 private struct MockShareSigner: RembraneMobileShareSigner {
@@ -51,6 +67,62 @@ private struct RembraneSmoke {
             request?.url?.absoluteString
                 == "http://127.0.0.1:8787/v1/administrative-audit?workspaceId=team&afterEpochSeconds=10&limit=20"
         )
+
+        let createRequest = InvitationRequest(
+            workspaceId: "team",
+            invitationId: "invite-1",
+            invitedPrincipalId: "principal-2",
+            role: "member",
+            ttlSeconds: 3_600,
+            requestId: "request-1"
+        )
+        let created: InvitationResponse = try await client.createWorkspaceInvitation(
+            createRequest
+        )
+        precondition(created.status == "pending")
+        var invitationRequest = await transport.request
+        precondition(invitationRequest?.httpMethod == "POST")
+        precondition(
+            invitationRequest?.url?.absoluteString
+                == "http://127.0.0.1:8787/v1/workspaces/invitations"
+        )
+        precondition(
+            invitationRequest?.value(forHTTPHeaderField: "Authorization")
+                == "Bearer test-token"
+        )
+        precondition(
+            String(data: invitationRequest?.httpBody ?? Data(), encoding: .utf8)?
+                .contains(#""invitedPrincipalId":"principal-2""#) == true
+        )
+
+        let transitionRequest = InvitationRequest(
+            workspaceId: "team",
+            invitationId: "invite-1",
+            invitedPrincipalId: nil,
+            role: nil,
+            ttlSeconds: nil,
+            requestId: "request-2"
+        )
+        let accepted: InvitationResponse = try await client.acceptWorkspaceInvitation(
+            transitionRequest
+        )
+        precondition(accepted.status == "pending")
+        invitationRequest = await transport.request
+        precondition(
+            invitationRequest?.url?.absoluteString
+                == "http://127.0.0.1:8787/v1/workspaces/invitations/accept"
+        )
+
+        let revoked: InvitationResponse = try await client.revokeWorkspaceInvitation(
+            transitionRequest
+        )
+        precondition(revoked.status == "pending")
+        invitationRequest = await transport.request
+        precondition(
+            invitationRequest?.url?.absoluteString
+                == "http://127.0.0.1:8787/v1/workspaces/invitations/revoke"
+        )
+
         do {
             _ = try RembraneClient(
                 baseURL: URL(string: "http://memory.example.test/v1")!,

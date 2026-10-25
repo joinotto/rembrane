@@ -133,6 +133,27 @@ public struct RembraneClient<Transport: RembraneTransport>: Sendable {
         try await execute(method: "POST", path: path, body: encoder.encode(request), as: responseType)
     }
 
+    public func createWorkspaceInvitation<Request: Encodable, Response: Decodable>(
+        _ request: Request,
+        as responseType: Response.Type = Response.self
+    ) async throws -> Response {
+        try await post("/workspaces/invitations", request: request, as: responseType)
+    }
+
+    public func acceptWorkspaceInvitation<Request: Encodable, Response: Decodable>(
+        _ request: Request,
+        as responseType: Response.Type = Response.self
+    ) async throws -> Response {
+        try await post("/workspaces/invitations/accept", request: request, as: responseType)
+    }
+
+    public func revokeWorkspaceInvitation<Request: Encodable, Response: Decodable>(
+        _ request: Request,
+        as responseType: Response.Type = Response.self
+    ) async throws -> Response {
+        try await post("/workspaces/invitations/revoke", request: request, as: responseType)
+    }
+
     public func listAdministrativeAudit<Response: Decodable>(
         workspaceID: String,
         afterEpochSeconds: UInt64? = nil,
