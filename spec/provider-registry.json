@@ -6,7 +6,7 @@
       "id": "rembrane.native",
       "adapterVersion": "0.1.0-alpha.1",
       "source": {
-        "repository": "https://github.com/mesh-ai-labs/rembrane",
+        "repository": "https://github.com/joinotto/rembrane",
         "revision": "f3221f9"
       },
       "protocolVersions": ["0.1"],

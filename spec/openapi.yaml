@@ -10,7 +10,7 @@ info:
     name: Apache-2.0
     identifier: Apache-2.0
   contact:
-    url: https://github.com/mesh-ai-labs/rembrane
+    url: https://github.com/joinotto/rembrane
 servers:
   - url: https://memory.example.test/v1
 security:

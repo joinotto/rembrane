@@ -15,7 +15,9 @@ Do not open a public issue for vulnerabilities involving:
 - Credential, token, or plaintext-memory exposure.
 - Deletion, revocation, or audit-log failure.
 
-Use GitHub private vulnerability reporting for `mesh-ai-labs/rembrane`. If private reporting is unavailable, contact the maintainers privately before publishing details.
+Use GitHub private vulnerability reporting for `joinotto/rembrane`. If private
+reporting is unavailable, contact the maintainers privately before publishing
+details.
 
 Include affected versions or commits, reproduction steps, impact, and any suggested mitigation. Do not include real user memory or credentials.
 

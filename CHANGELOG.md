@@ -9,6 +9,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- Project metadata, security reporting, API contact information, offline
+  workspace fixtures, and provider provenance now consistently identify the
+  canonical `joinotto/rembrane` repository.
 - An executable cross-tool continuity proof writes a preference with the CLI,
   reads and corrects it through MCP, observes the correction through the CLI,
   and resumes an MCP-created project checkpoint from both a fresh MCP client
