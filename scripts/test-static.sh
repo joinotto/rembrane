@@ -27,6 +27,7 @@ sh ./scripts/check-security-review-manifest.sh
 sh ./scripts/test-security-review-signing.sh
 sh ./scripts/test-security-review-attestation.sh
 sh ./scripts/test-customer-kms-evidence.sh
+sh ./scripts/test-customer-kms-provider-set.sh
 ./scripts/check-protocols.sh
 ./scripts/test-semantic-provider-compatibility-lock.sh
 ./scripts/test-memory-provider-compatibility-lock.sh

@@ -15,6 +15,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   cleanup without storing cloud credentials or keys.
 - A credential-free customer-KMS evidence generator computes exact local
   artifact hashes and provider metadata before independent verification.
+- A customer-KMS release-set verifier requires exact, distinct, complete
+  evidence directories for AWS KMS, Azure Key Vault, and Google Cloud KMS.
 - Customer-KMS promotion evidence now also hash-binds a bounded redacted cloud
   audit export, preventing a protocol-compatible mock from being presented as
   proof that AWS, Azure, or Google Cloud KMS processed the disposable run.

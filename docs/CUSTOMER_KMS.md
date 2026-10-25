@@ -195,3 +195,13 @@ The generator reads only supplied evidence files and metadata, computes their
 digests locally, emits JSON to standard output, and never resolves cloud
 credentials.
 
+Before production promotion, place the four files for each provider under
+`aws-kms/`, `azure-key-vault/`, and `google-cloud-kms/`, then run:
+
+```sh
+node scripts/verify-customer-kms-provider-set.mjs provider-evidence/
+```
+
+The release gate requires exactly one valid set in each slot, distinct
+provider identities and disposable namespaces, and no undeclared artifacts.
+

@@ -158,6 +158,8 @@ This roadmap describes sequencing, not release dates.
         cleanup.
         - [x] Generate the envelope locally from reviewed artifacts and
           metadata without resolving or retaining cloud credentials.
+        - [x] Verify an exact three-provider release set with distinct sidecar
+          identities and disposable namespaces and no undeclared artifacts.
         - [x] Bind a redacted cloud audit export so provider promotion proves
           the named KMS handled the disposable conformance operations.
           - [x] Reject common secret fields and recognizable credential
