@@ -345,6 +345,12 @@ Python processors have equivalent standard-library-only helpers:
 apply the same exact-field and UTF-8 byte limits as the Rust and TypeScript
 implementations.
 
+Kotlin/JVM and Android processors can construct `ChannelProcessorMessage` and
+`ChannelProcessorAcknowledgement` from the dependency-free SDK. Because the
+SDK intentionally does not bundle a JSON parser, the hosting application must
+parse the request against the published schema before constructing the typed
+message.
+
 ### 7.4 Explicit mobile and iMessage shares
 
 Rembrane can accept text that a user explicitly selects in an iOS share

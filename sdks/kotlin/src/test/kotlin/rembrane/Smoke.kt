@@ -92,4 +92,57 @@ fun main() {
             )
         }.isFailure
     )
+
+    val channelMessage = ChannelProcessorMessage(
+        protocolVersion = "0.1",
+        channel = "whatsapp-business",
+        eventId = "wamid.opaque-example-event",
+        workspaceId = "workspace_example",
+        principalId = "principal_example",
+        clientId = "client_whatsapp_example",
+        text = "Continue my flight research",
+        receivedAtEpochSeconds = 1_792_890_000,
+    )
+    check(
+        channelMessage.toJson() ==
+            """{"protocolVersion":"0.1","channel":"whatsapp-business","eventId":"wamid.opaque-example-event","workspaceId":"workspace_example","principalId":"principal_example","clientId":"client_whatsapp_example","text":"Continue my flight research","receivedAtEpochSeconds":1792890000}"""
+    )
+    check(
+        ChannelProcessorAcknowledgement(
+            channelMessage.eventId,
+            ChannelProcessorStatus.PROCESSED,
+        ).toJson() ==
+            """{"protocolVersion":"0.1","eventId":"wamid.opaque-example-event","status":"processed"}"""
+    )
+    for (invalid in listOf<() -> Unit>(
+        {
+            ChannelProcessorMessage(
+                "0.2",
+                channelMessage.channel,
+                channelMessage.eventId,
+                channelMessage.workspaceId,
+                channelMessage.principalId,
+                channelMessage.clientId,
+                channelMessage.text,
+                channelMessage.receivedAtEpochSeconds,
+            )
+        },
+        {
+            channelMessage.copy(eventId = "unsafe event")
+        },
+        {
+            channelMessage.copy(workspaceId = "x".repeat(256))
+        },
+        {
+            channelMessage.copy(text = " \n\t")
+        },
+        {
+            channelMessage.copy(text = "😀".repeat(4_097))
+        },
+        {
+            channelMessage.copy(receivedAtEpochSeconds = 0)
+        },
+    )) {
+        check(runCatching(invalid).isFailure)
+    }
 }

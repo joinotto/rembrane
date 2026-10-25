@@ -8,6 +8,13 @@ import java.net.http.HttpResponse
 import java.nio.charset.StandardCharsets
 import java.time.Duration
 
+private const val CHANNEL_PROCESSOR_PROTOCOL_VERSION = "0.1"
+private val CHANNEL_PROCESSOR_CHANNELS = setOf(
+    "whatsapp-business",
+    "imessage-extension",
+    "mobile-share",
+)
+
 data class RembraneResponse(
     val status: Int,
     val headers: Map<String, List<String>>,
@@ -195,4 +202,89 @@ class RembraneClient(
         val pattern = Regex("\"${Regex.escape(field)}\"\\s*:\\s*\"([^\"\\\\]*)\"")
         return pattern.find(json)?.groupValues?.get(1)
     }
+}
+
+data class ChannelProcessorMessage(
+    val protocolVersion: String,
+    val channel: String,
+    val eventId: String,
+    val workspaceId: String,
+    val principalId: String,
+    val clientId: String,
+    val text: String,
+    val receivedAtEpochSeconds: Long,
+) {
+    init {
+        require(protocolVersion == CHANNEL_PROCESSOR_PROTOCOL_VERSION) {
+            "Invalid Rembrane channel processor protocol version"
+        }
+        require(channel in CHANNEL_PROCESSOR_CHANNELS) {
+            "Invalid Rembrane channel processor channel"
+        }
+        requireBoundedToken(eventId, 256, "eventId")
+        requireBoundedToken(workspaceId, 255, "workspaceId")
+        requireBoundedToken(principalId, 255, "principalId")
+        requireBoundedToken(clientId, 255, "clientId")
+        require(text.isNotBlank() && text.toByteArray(StandardCharsets.UTF_8).size <= 16_384) {
+            "Invalid Rembrane channel processor text"
+        }
+        require(receivedAtEpochSeconds > 0) {
+            "Invalid Rembrane channel processor receipt time"
+        }
+    }
+
+    fun toJson(): String =
+        """{"protocolVersion":${jsonQuote(protocolVersion)},"channel":${jsonQuote(channel)},"eventId":${jsonQuote(eventId)},"workspaceId":${jsonQuote(workspaceId)},"principalId":${jsonQuote(principalId)},"clientId":${jsonQuote(clientId)},"text":${jsonQuote(text)},"receivedAtEpochSeconds":$receivedAtEpochSeconds}"""
+}
+
+enum class ChannelProcessorStatus(val wireValue: String) {
+    PROCESSED("processed"),
+    DUPLICATE("duplicate"),
+}
+
+data class ChannelProcessorAcknowledgement(
+    val eventId: String,
+    val status: ChannelProcessorStatus,
+) {
+    init {
+        requireBoundedToken(eventId, 256, "eventId")
+    }
+
+    val protocolVersion: String = CHANNEL_PROCESSOR_PROTOCOL_VERSION
+
+    fun toJson(): String =
+        """{"protocolVersion":${jsonQuote(protocolVersion)},"eventId":${jsonQuote(eventId)},"status":${jsonQuote(status.wireValue)}}"""
+}
+
+private fun requireBoundedToken(value: String, maximumBytes: Int, field: String) {
+    require(
+        value.isNotEmpty() &&
+            value.toByteArray(StandardCharsets.UTF_8).size <= maximumBytes &&
+            value.none { it.isWhitespace() || it.code < 32 || it.code == 127 },
+    ) {
+        "Invalid Rembrane channel processor $field"
+    }
+}
+
+private fun jsonQuote(value: String): String = buildString {
+    append('"')
+    value.forEach { character ->
+        when (character) {
+            '"' -> append("\\\"")
+            '\\' -> append("\\\\")
+            '\b' -> append("\\b")
+            '\u000c' -> append("\\f")
+            '\n' -> append("\\n")
+            '\r' -> append("\\r")
+            '\t' -> append("\\t")
+            else ->
+                if (character.code < 32) {
+                    append("\\u")
+                    append(character.code.toString(16).padStart(4, '0'))
+                } else {
+                    append(character)
+                }
+        }
+    }
+    append('"')
 }

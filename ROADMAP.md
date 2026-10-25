@@ -951,6 +951,8 @@ This roadmap describes sequencing, not release dates.
         published message and create event-bound acknowledgements.
       - [x] Add standard-library-only Python helpers with the same strict
         message and acknowledgement contract.
+      - [x] Add dependency-free Kotlin/JVM typed processor messages and
+        event-bound acknowledgements with executable validation coverage.
   - [x] Add a configured per-workspace channel worker executable for encrypted
     inbox recovery, retry, HTTP processor delivery, and completion.
   - [x] Package ingress and delivery workers together in the opt-in hardened

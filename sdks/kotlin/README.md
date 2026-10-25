@@ -13,3 +13,9 @@ kotlinc src/main/kotlin/rembrane/RembraneClient.kt \
   -include-runtime -d rembrane-smoke.jar
 java -jar rembrane-smoke.jar
 ```
+
+`ChannelProcessorMessage` and `ChannelProcessorAcknowledgement` provide strict
+typed validation and canonical JSON serialization for cooperative JVM/Android
+bot processors. Parse inbound JSON with the host application's JSON library
+against the published Rembrane schema, then construct
+`ChannelProcessorMessage` before processing it.
