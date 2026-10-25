@@ -38,6 +38,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   record decryption.
 - Owner-only Unix customer-KMS database creation with rejection of permissive,
   non-regular, and symbolic-link targets.
+- Contract, schema, trigger, and query-bound limits for customer-KMS workspace
+  identities, provider key IDs, and wrapped ciphertext before SQLite row
+  materialization.
 - Completion of the framework-level customer-KMS resolution milestone while
   retaining an explicit acceptance gate for deployment-owned cloud SDK
   sidecars and IAM review.

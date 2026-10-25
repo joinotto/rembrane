@@ -137,6 +137,8 @@ This roadmap describes sequencing, not release dates.
         and historical decrypt as one executable sidecar rotation flow.
       - [x] Create file-backed Unix keyring databases owner-only and reject
         permissive, non-regular, or symbolic-link targets.
+      - [x] Enforce workspace, provider-key, and wrapped-ciphertext bounds in
+        both new and existing SQLite databases before row materialization.
   - [x] Add a provider-agnostic configured cipher that dispatches to local
     environment/macOS keyrings or a policy-negotiated HTTP key provider.
     - [x] Accept consumed customer key-provider configuration from

@@ -34,7 +34,7 @@ pub use customer_kms::{
     CustomerKmsAdapter, CustomerKmsContext, CustomerKmsGeneratedKey, CustomerKmsKeyReference,
     CustomerKmsKeyReferenceStore, CustomerKmsKeyring, CustomerKmsRotationAdapter,
     GoogleCloudKmsAdapter, MAX_CUSTOMER_KMS_GENERATIONS, MAX_KMS_KEY_ID_BYTES,
-    MAX_WRAPPED_KEY_BYTES,
+    MAX_KMS_WORKSPACE_ID_BYTES, MAX_WRAPPED_KEY_BYTES,
 };
 pub use error::ProviderError;
 pub use graph_conformance::verify_knowledge_graph_provider;

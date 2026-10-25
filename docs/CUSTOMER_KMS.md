@@ -63,6 +63,10 @@ persist-before-activate, seal with the new generation, reload the durable
 keyring, and decrypt records from both current and historical generations.
 On Unix, file-backed keyring databases are created owner-only and existing
 group/world-accessible, non-regular, or symbolic-link targets are rejected.
+Workspace identity, provider key identifiers, and wrapped ciphertext are
+bounded in both the provider contract and SQLite schema. Existing databases
+receive enforcement triggers, and bounded projections reject corrupt rows
+before allocating their oversized text or blob values.
 
 These framework adapters are complete, but cloud SDK implementations and
 their IAM policies remain deployment-owned. The top-level production-provider

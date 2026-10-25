@@ -4,6 +4,7 @@ use zeroize::Zeroizing;
 use crate::ProviderError;
 
 pub const MAX_KMS_KEY_ID_BYTES: usize = 2_048;
+pub const MAX_KMS_WORKSPACE_ID_BYTES: usize = 255;
 pub const MAX_WRAPPED_KEY_BYTES: usize = 65_536;
 pub const MAX_CUSTOMER_KMS_GENERATIONS: usize = 1_024;
 
@@ -20,7 +21,12 @@ pub struct CustomerKmsContext {
 
 impl CustomerKmsContext {
     pub fn new(workspace_id: WorkspaceId, generation: u64) -> Result<Self, ProviderError> {
-        if workspace_id.as_str().trim().is_empty() || generation == 0 {
+        if workspace_id.as_str().trim().is_empty()
+            || workspace_id.as_str().trim() != workspace_id.as_str()
+            || workspace_id.as_str().len() > MAX_KMS_WORKSPACE_ID_BYTES
+            || workspace_id.as_str().chars().any(char::is_control)
+            || generation == 0
+        {
             return Err(ProviderError::InvalidConfiguration(
                 "customer KMS context requires a workspace and non-zero generation".to_owned(),
             ));
@@ -535,6 +541,19 @@ mod tests {
         assert!(CustomerKmsKeyReference::new(1, " key", vec![1]).is_err());
         assert!(CustomerKmsKeyReference::new(1, "key\nother", vec![1]).is_err());
         assert!(CustomerKmsKeyReference::new(1, "key", Vec::new()).is_err());
+    }
+
+    #[test]
+    fn contexts_reject_unsafe_or_oversized_workspace_identity() {
+        assert!(CustomerKmsContext::new(WorkspaceId::new(" workspace"), 1).is_err());
+        assert!(CustomerKmsContext::new(WorkspaceId::new("workspace\nother"), 1).is_err());
+        assert!(
+            CustomerKmsContext::new(
+                WorkspaceId::new("x".repeat(super::MAX_KMS_WORKSPACE_ID_BYTES + 1)),
+                1,
+            )
+            .is_err()
+        );
     }
 
     #[test]

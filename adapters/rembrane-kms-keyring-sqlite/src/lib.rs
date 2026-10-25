@@ -11,21 +11,44 @@ use std::{
 use rembrane_domain::WorkspaceId;
 use rembrane_provider_sdk::{
     CustomerKmsKeyReference, CustomerKmsKeyReferenceStore, CustomerKmsKeyring,
-    MAX_CUSTOMER_KMS_GENERATIONS, ProviderError,
+    MAX_CUSTOMER_KMS_GENERATIONS, MAX_KMS_KEY_ID_BYTES, MAX_KMS_WORKSPACE_ID_BYTES,
+    MAX_WRAPPED_KEY_BYTES, ProviderError,
 };
 use rusqlite::{Connection, OptionalExtension, params};
 
 const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS customer_kms_key_references (
-    workspace_id TEXT NOT NULL,
+    workspace_id TEXT NOT NULL CHECK (
+        length(workspace_id) BETWEEN 1 AND 255
+    ),
     generation INTEGER NOT NULL CHECK (generation > 0),
-    provider_key_id TEXT NOT NULL,
-    wrapped_key BLOB NOT NULL CHECK (length(wrapped_key) > 0),
+    provider_key_id TEXT NOT NULL CHECK (
+        length(provider_key_id) BETWEEN 1 AND 2048
+    ),
+    wrapped_key BLOB NOT NULL CHECK (
+        length(wrapped_key) BETWEEN 1 AND 65536
+    ),
     is_active INTEGER NOT NULL CHECK (is_active IN (0, 1)),
     PRIMARY KEY (workspace_id, generation)
 );
 CREATE UNIQUE INDEX IF NOT EXISTS one_active_customer_kms_key
 ON customer_kms_key_references(workspace_id) WHERE is_active = 1;
+CREATE TRIGGER IF NOT EXISTS validate_customer_kms_key_insert
+BEFORE INSERT ON customer_kms_key_references
+WHEN length(NEW.workspace_id) NOT BETWEEN 1 AND 255
+  OR length(NEW.provider_key_id) NOT BETWEEN 1 AND 2048
+  OR length(NEW.wrapped_key) NOT BETWEEN 1 AND 65536
+BEGIN
+    SELECT RAISE(ABORT, 'invalid customer KMS key reference');
+END;
+CREATE TRIGGER IF NOT EXISTS validate_customer_kms_key_update
+BEFORE UPDATE ON customer_kms_key_references
+WHEN length(NEW.workspace_id) NOT BETWEEN 1 AND 255
+  OR length(NEW.provider_key_id) NOT BETWEEN 1 AND 2048
+  OR length(NEW.wrapped_key) NOT BETWEEN 1 AND 65536
+BEGIN
+    SELECT RAISE(ABORT, 'invalid customer KMS key reference');
+END;
 ";
 
 pub struct SqliteCustomerKmsKeyReferenceStore {
@@ -101,15 +124,25 @@ impl SqliteCustomerKmsKeyReferenceStore {
             .map_err(|_| ProviderError::Unavailable)?;
         let mut statement = connection
             .prepare(
-                "SELECT generation, provider_key_id, wrapped_key, is_active
+                "SELECT generation,
+                    CASE WHEN length(provider_key_id) BETWEEN 1 AND ?2
+                        THEN provider_key_id END,
+                    CASE WHEN length(wrapped_key) BETWEEN 1 AND ?3
+                        THEN wrapped_key END,
+                    is_active
                  FROM customer_kms_key_references
-                 WHERE workspace_id = ?1 ORDER BY generation LIMIT ?2",
+                 WHERE workspace_id = ?1
+                   AND length(workspace_id) BETWEEN 1 AND ?4
+                 ORDER BY generation LIMIT ?5",
             )
             .map_err(|_| ProviderError::Unavailable)?;
         let rows = statement
             .query_map(
                 params![
                     workspace_id.as_str(),
+                    MAX_KMS_KEY_ID_BYTES,
+                    MAX_WRAPPED_KEY_BYTES,
+                    MAX_KMS_WORKSPACE_ID_BYTES,
                     MAX_CUSTOMER_KMS_GENERATIONS.saturating_add(1)
                 ],
                 |row| {
@@ -266,7 +299,8 @@ mod tests {
     use rembrane_provider_sdk::{
         CloudKmsDecryptClient, CloudKmsDecryptRequest, CloudKmsGenerateRequest,
         CloudKmsGeneratedKey, CloudKmsKeyClient, CustomerKmsKeyReference,
-        CustomerKmsKeyReferenceStore, GoogleCloudKmsAdapter, ProviderError,
+        CustomerKmsKeyReferenceStore, GoogleCloudKmsAdapter, MAX_KMS_KEY_ID_BYTES,
+        MAX_KMS_WORKSPACE_ID_BYTES, ProviderError,
     };
     use zeroize::Zeroizing;
 
@@ -504,5 +538,32 @@ mod tests {
 
         fs::remove_file(link).unwrap();
         fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn schema_rejects_oversized_rows_before_keyring_loading() {
+        let store = SqliteCustomerKmsKeyReferenceStore::in_memory().unwrap();
+        let connection = store.connection.lock().unwrap();
+
+        assert!(
+            connection
+                .execute(
+                    "INSERT INTO customer_kms_key_references
+                     (workspace_id, generation, provider_key_id, wrapped_key, is_active)
+                     VALUES (?1, 1, 'key', X'01', 1)",
+                    ["x".repeat(MAX_KMS_WORKSPACE_ID_BYTES + 1)],
+                )
+                .is_err()
+        );
+        assert!(
+            connection
+                .execute(
+                    "INSERT INTO customer_kms_key_references
+                     (workspace_id, generation, provider_key_id, wrapped_key, is_active)
+                     VALUES ('workspace-a', 1, ?1, X'01', 1)",
+                    ["x".repeat(MAX_KMS_KEY_ID_BYTES + 1)],
+                )
+                .is_err()
+        );
     }
 }
