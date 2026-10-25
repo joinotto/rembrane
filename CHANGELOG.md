@@ -143,6 +143,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Encrypted PostgreSQL knowledge-node and edge creation/revision with strict
   successor versions, tenant pinning, temporal metadata, and preserved
   endpoint/relation lineage.
+- Tenant-pinned PostgreSQL graph projection outbox support with idempotent
+  node/edge resources, bounded provider-filtered reads, closed decoding, and
+  optimistic lifecycle transitions.
 - PostgreSQL invitation lookup and bounded deterministic listing with optional
   status filtering, numeric lifetime decoding, terminal-state restoration,
   and exact tenant/invitation correlation.

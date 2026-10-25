@@ -362,6 +362,8 @@ This roadmap describes sequencing, not release dates.
         temporal neighbourhood reads for graph-aware context retrieval.
         - [x] Add encrypted PostgreSQL node and edge creation/revision with
           strict versions and endpoint/relation lineage validation.
+        - [x] Add a tenant-pinned PostgreSQL graph projection outbox lifecycle
+          for pluggable native and Graphiti indexers.
       - [x] Add exact invitation lookup and bounded status-filtered listing
         with terminal-state restoration and full tenant/identifier correlation.
       - [x] Implement atomic invitation creation, acceptance, revocation,

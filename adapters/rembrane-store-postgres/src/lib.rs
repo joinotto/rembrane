@@ -12,12 +12,13 @@ use rembrane_application::{
     AdministrativeAuditRepository, ApplicationError, BookingResearchMutationRepository,
     BookingResearchRepository, CanonicalMutationRepository, CheckpointDisclosureRepository,
     CheckpointMutationRepository, CheckpointRepository, DisclosureRepository, EventRepository,
-    InvitationRepository, KeyRotationRepository, KnowledgeDirection,
-    KnowledgeGraphMutationRepository, KnowledgeGraphRepository, MAX_ADMINISTRATIVE_AUDIT_PAGE,
-    MAX_KNOWLEDGE_NEIGHBOURS, MAXIMUM_INVITATION_LIST_ITEMS, MemberLifecycleRepository,
-    MemberScopeGrantRepository, MembershipRepository, MemoryRepository, ProjectionOutboxRepository,
-    RetentionRepository, TravelDisclosureRepository, TripMutationRepository, TripRepository,
-    WorkspaceReadRepository, WorkspaceRepository, is_strict_successor,
+    GraphProjectionOutboxRepository, InvitationRepository, KeyRotationRepository,
+    KnowledgeDirection, KnowledgeGraphMutationRepository, KnowledgeGraphRepository,
+    MAX_ADMINISTRATIVE_AUDIT_PAGE, MAX_KNOWLEDGE_NEIGHBOURS, MAXIMUM_INVITATION_LIST_ITEMS,
+    MemberLifecycleRepository, MemberScopeGrantRepository, MembershipRepository, MemoryRepository,
+    ProjectionOutboxRepository, RetentionRepository, TravelDisclosureRepository,
+    TripMutationRepository, TripRepository, WorkspaceReadRepository, WorkspaceRepository,
+    is_strict_successor,
 };
 use rembrane_codec::{
     decode_booking_research, decode_checkpoint, decode_event, decode_knowledge_edge,
@@ -29,15 +30,15 @@ use rembrane_domain::{
     ActivityCheckpoint, ActivityId, AdministrativeAction, AdministrativeAuditEvent,
     AdministrativeAuditEventId, AdministrativeTargetKind, BookingResearch, BookingResearchId,
     CanonicalEvent, CheckpointDisclosureReceipt, DisclosedBookingResearch, DisclosureReceipt,
-    EntityId, EventPayload, EvidenceSource, Invitation, InvitationId, InvitationStatus,
-    KeyRotationId, KeyRotationReceipt, KeyRotationStatus, KnowledgeEdge, KnowledgeEdgeId,
-    KnowledgeNode, KnowledgeNodeId, LegalHoldId, LegalHoldStatus, MAX_KEY_ROTATION_RECIPIENTS,
-    MemberScopeGrant, Membership, MembershipStatus, MemoryId, MemoryKind, MemoryRecord,
-    MemoryScope, MemoryStatus, Principal, PrincipalId, ProjectionJob, ProjectionJobId,
-    ProjectionOperation, ProjectionStatus, ProviderId, ReadScope, ResearchFreshness,
-    RetentionPeriod, RetentionResource, TravelDisclosureReceipt, Trip, Workspace, WorkspaceId,
-    WorkspaceKeyRotation, WorkspaceKind, WorkspaceLegalHold, WorkspaceRetentionPolicy,
-    WorkspaceRole,
+    EntityId, EventPayload, EvidenceSource, GraphProjectionJob, GraphProjectionResource,
+    Invitation, InvitationId, InvitationStatus, KeyRotationId, KeyRotationReceipt,
+    KeyRotationStatus, KnowledgeEdge, KnowledgeEdgeId, KnowledgeNode, KnowledgeNodeId, LegalHoldId,
+    LegalHoldStatus, MAX_KEY_ROTATION_RECIPIENTS, MemberScopeGrant, Membership, MembershipStatus,
+    MemoryId, MemoryKind, MemoryRecord, MemoryScope, MemoryStatus, Principal, PrincipalId,
+    ProjectionJob, ProjectionJobId, ProjectionOperation, ProjectionStatus, ProviderId, ReadScope,
+    ResearchFreshness, RetentionPeriod, RetentionResource, TravelDisclosureReceipt, Trip,
+    Workspace, WorkspaceId, WorkspaceKeyRotation, WorkspaceKind, WorkspaceLegalHold,
+    WorkspaceRetentionPolicy, WorkspaceRole,
 };
 
 pub const SET_TENANT_SQL: &str = "SELECT set_config('rembrane.workspace_id', $1, true);";
@@ -336,6 +337,25 @@ pub const REPLACE_KNOWLEDGE_EDGE_SQL: &str = "UPDATE knowledge_edges SET source_
     encryption_algorithm = $8, encryption_nonce = $9, version = $10, valid_from = $11, \
     valid_until = $12, recorded_at = $13, updated_at = CURRENT_TIMESTAMP \
     WHERE workspace_id = $1 AND id = $2 AND version = $14";
+pub const MAX_PENDING_GRAPH_PROJECTIONS: usize = 1_000;
+pub const INSERT_GRAPH_PROJECTION_SQL: &str = "INSERT INTO graph_projection_outbox \
+    (id, workspace_id, resource_type, node_id, edge_id, resource_version, provider_id, operation, \
+    status, attempts) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)";
+pub const LIST_PENDING_GRAPH_PROJECTIONS_SQL: &str = "SELECT id, workspace_id, resource_type, \
+    node_id, edge_id, resource_version, provider_id, operation, status, attempts \
+    FROM graph_projection_outbox WHERE workspace_id = $1 AND provider_id = $2 \
+    AND status = 'pending' AND available_at <= CURRENT_TIMESTAMP \
+    ORDER BY available_at, id LIMIT $3";
+pub const REPLACE_GRAPH_PROJECTION_SQL: &str = "UPDATE graph_projection_outbox \
+    SET status = $2, attempts = $3, updated_at = CURRENT_TIMESTAMP \
+    WHERE id = $1 AND workspace_id = $4 AND resource_type = $5 \
+    AND node_id IS NOT DISTINCT FROM $6 AND edge_id IS NOT DISTINCT FROM $7 \
+    AND resource_version = $8 AND provider_id = $9 AND operation = $10 \
+    AND status = $11 AND attempts = $12";
+pub const FIND_GRAPH_PROJECTION_SQL: &str = "SELECT id, workspace_id, resource_type, node_id, \
+    edge_id, resource_version, provider_id, operation, status, attempts \
+    FROM graph_projection_outbox WHERE workspace_id = $1 AND id = $2 \
+    ORDER BY workspace_id, id LIMIT 2";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PostgresParameter<'value> {
@@ -3100,6 +3120,170 @@ where
     }
 }
 
+impl<Pool, Cipher> GraphProjectionOutboxRepository
+    for PostgresTenantMemoryStore<'_, '_, Pool, Cipher>
+where
+    Pool: PostgresPool,
+    Pool::Error: ClassifiedPostgresError,
+    <Pool::Transaction as PostgresTransaction>::Row: PostgresRow<Error = Pool::Error>,
+    Cipher: RecordCipher,
+{
+    fn enqueue_graph_projection(
+        &mut self,
+        job: GraphProjectionJob,
+    ) -> Result<(), ApplicationError> {
+        if job.workspace_id() != &self.workspace_id {
+            return Err(ApplicationError::AccessDenied);
+        }
+        let mut transaction = self
+            .store
+            .begin_tenant(self.workspace_id.clone())
+            .map_err(map_application_error)?;
+        insert_graph_projection_job(&mut transaction, &job)?;
+        transaction
+            .commit()
+            .map_err(PostgresStoreError::Tenant)
+            .map_err(map_application_error)
+    }
+
+    fn pending_graph_projections(
+        &self,
+        provider_id: &ProviderId,
+        limit: usize,
+    ) -> Result<Vec<GraphProjectionJob>, ApplicationError> {
+        if limit == 0 || limit > MAX_PENDING_GRAPH_PROJECTIONS {
+            return Err(ApplicationError::Validation(
+                "graph projection limit must be between 1 and 1000".to_owned(),
+            ));
+        }
+        let mut transaction = self
+            .store
+            .begin_tenant(self.workspace_id.clone())
+            .map_err(map_application_error)?;
+        let rows = transaction
+            .query(
+                LIST_PENDING_GRAPH_PROJECTIONS_SQL,
+                &[
+                    PostgresParameter::Text(self.workspace_id.as_str()),
+                    PostgresParameter::Text(provider_id.as_str()),
+                    PostgresParameter::I64(i64::try_from(limit).map_err(|_| {
+                        ApplicationError::Validation(
+                            "graph projection limit exceeds PostgreSQL range".to_owned(),
+                        )
+                    })?),
+                ],
+            )
+            .map_err(PostgresStoreError::Tenant)
+            .map_err(map_application_error)?;
+        if rows.len() > limit {
+            return Err(ApplicationError::StorageUnavailable);
+        }
+        let mut ids = BTreeSet::new();
+        let jobs = rows
+            .iter()
+            .map(|row| {
+                let job =
+                    decode_graph_projection(row, &self.workspace_id, None, Some(provider_id))?;
+                if job.status() != ProjectionStatus::Pending
+                    || !ids.insert(job.id().as_str().to_owned())
+                {
+                    return Err(PostgresStoreError::InvalidRow);
+                }
+                Ok(job)
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(map_application_error)?;
+        transaction
+            .commit()
+            .map_err(PostgresStoreError::Tenant)
+            .map_err(map_application_error)?;
+        Ok(jobs)
+    }
+
+    fn replace_graph_projection(
+        &mut self,
+        job: GraphProjectionJob,
+        expected_status: ProjectionStatus,
+        expected_attempts: u32,
+    ) -> Result<(), ApplicationError> {
+        if job.workspace_id() != &self.workspace_id {
+            return Err(ApplicationError::AccessDenied);
+        }
+        let (resource_type, node_id, edge_id) = encode_graph_resource(job.resource());
+        let mut transaction = self
+            .store
+            .begin_tenant(self.workspace_id.clone())
+            .map_err(map_application_error)?;
+        let changed = transaction
+            .execute(
+                REPLACE_GRAPH_PROJECTION_SQL,
+                &[
+                    PostgresParameter::Text(job.id().as_str()),
+                    PostgresParameter::Text(projection_status_name(job.status())),
+                    PostgresParameter::I64(i64::from(job.attempts())),
+                    PostgresParameter::Text(job.workspace_id().as_str()),
+                    PostgresParameter::Text(resource_type),
+                    PostgresParameter::OptionalText(node_id),
+                    PostgresParameter::OptionalText(edge_id),
+                    PostgresParameter::I64(
+                        postgres_epoch::<Pool::Error>(job.resource_version())
+                            .map_err(map_application_error)?,
+                    ),
+                    PostgresParameter::Text(job.provider_id().as_str()),
+                    PostgresParameter::Text(projection_operation_name(job.operation())),
+                    PostgresParameter::Text(projection_status_name(expected_status)),
+                    PostgresParameter::I64(i64::from(expected_attempts)),
+                ],
+            )
+            .map_err(PostgresStoreError::Tenant)
+            .map_err(map_application_error)?;
+        if changed != 1 {
+            return Err(ApplicationError::VersionConflict);
+        }
+        transaction
+            .commit()
+            .map_err(PostgresStoreError::Tenant)
+            .map_err(map_application_error)
+    }
+
+    fn find_graph_projection(
+        &self,
+        workspace_id: &WorkspaceId,
+        job_id: &ProjectionJobId,
+    ) -> Result<Option<GraphProjectionJob>, ApplicationError> {
+        if workspace_id != &self.workspace_id {
+            return Err(ApplicationError::AccessDenied);
+        }
+        let mut transaction = self
+            .store
+            .begin_tenant(self.workspace_id.clone())
+            .map_err(map_application_error)?;
+        let rows = transaction
+            .query(
+                FIND_GRAPH_PROJECTION_SQL,
+                &[
+                    PostgresParameter::Text(workspace_id.as_str()),
+                    PostgresParameter::Text(job_id.as_str()),
+                ],
+            )
+            .map_err(PostgresStoreError::Tenant)
+            .map_err(map_application_error)?;
+        if rows.len() > 1 {
+            return Err(ApplicationError::StorageUnavailable);
+        }
+        let job = rows
+            .first()
+            .map(|row| decode_graph_projection(row, workspace_id, Some(job_id), None))
+            .transpose()
+            .map_err(map_application_error)?;
+        transaction
+            .commit()
+            .map_err(PostgresStoreError::Tenant)
+            .map_err(map_application_error)?;
+        Ok(job)
+    }
+}
+
 fn persist_knowledge_node<Pool, Cipher>(
     store: &PostgresTenantMemoryStore<'_, '_, Pool, Cipher>,
     node: &KnowledgeNode,
@@ -4990,6 +5174,46 @@ where
     Ok(())
 }
 
+fn encode_graph_resource(
+    resource: &GraphProjectionResource,
+) -> (&'static str, Option<&str>, Option<&str>) {
+    match resource {
+        GraphProjectionResource::Node(id) => ("node", Some(id.as_str()), None),
+        GraphProjectionResource::Edge(id) => ("edge", None, Some(id.as_str())),
+    }
+}
+
+fn insert_graph_projection_job<Transaction>(
+    transaction: &mut TenantTransaction<Transaction>,
+    job: &GraphProjectionJob,
+) -> Result<(), ApplicationError>
+where
+    Transaction: PostgresTransaction,
+    Transaction::Error: ClassifiedPostgresError,
+{
+    let (resource_type, node_id, edge_id) = encode_graph_resource(job.resource());
+    execute_exactly_one(
+        transaction,
+        INSERT_GRAPH_PROJECTION_SQL,
+        &[
+            PostgresParameter::Text(job.id().as_str()),
+            PostgresParameter::Text(job.workspace_id().as_str()),
+            PostgresParameter::Text(resource_type),
+            PostgresParameter::OptionalText(node_id),
+            PostgresParameter::OptionalText(edge_id),
+            PostgresParameter::I64(
+                postgres_epoch::<Transaction::Error>(job.resource_version())
+                    .map_err(map_application_error)?,
+            ),
+            PostgresParameter::Text(job.provider_id().as_str()),
+            PostgresParameter::Text(projection_operation_name(job.operation())),
+            PostgresParameter::Text(projection_status_name(job.status())),
+            PostgresParameter::I64(i64::from(job.attempts())),
+        ],
+    )
+    .map_err(map_application_error)
+}
+
 fn valid_invitation_audit(
     invitation: &Invitation,
     event: &AdministrativeAuditEvent,
@@ -5975,6 +6199,75 @@ where
     .map_err(|_| PostgresStoreError::InvalidRow)
 }
 
+fn decode_graph_projection<Row, DriverError>(
+    row: &Row,
+    expected_workspace_id: &WorkspaceId,
+    expected_job_id: Option<&ProjectionJobId>,
+    expected_provider_id: Option<&ProviderId>,
+) -> Result<GraphProjectionJob, PostgresStoreError<DriverError>>
+where
+    Row: PostgresRow<Error = DriverError>,
+{
+    let workspace_id = row.text("workspace_id").map_err(PostgresStoreError::Row)?;
+    let job_id = row.text("id").map_err(PostgresStoreError::Row)?;
+    let provider_id = row.text("provider_id").map_err(PostgresStoreError::Row)?;
+    if workspace_id != expected_workspace_id.as_str()
+        || expected_job_id.is_some_and(|expected| job_id != expected.as_str())
+        || expected_provider_id.is_some_and(|expected| provider_id != expected.as_str())
+    {
+        return Err(PostgresStoreError::InvalidRow);
+    }
+    let resource = match (
+        row.text("resource_type")
+            .map_err(PostgresStoreError::Row)?
+            .as_str(),
+        optional_row_text(row, "node_id")?,
+        optional_row_text(row, "edge_id")?,
+    ) {
+        ("node", Some(node_id), None) => {
+            GraphProjectionResource::Node(KnowledgeNodeId::new(node_id))
+        }
+        ("edge", None, Some(edge_id)) => {
+            GraphProjectionResource::Edge(KnowledgeEdgeId::new(edge_id))
+        }
+        _ => return Err(PostgresStoreError::InvalidRow),
+    };
+    let operation = match row
+        .text("operation")
+        .map_err(PostgresStoreError::Row)?
+        .as_str()
+    {
+        "upsert" => ProjectionOperation::Upsert,
+        "delete" => ProjectionOperation::Delete,
+        _ => return Err(PostgresStoreError::InvalidRow),
+    };
+    let status = match row
+        .text("status")
+        .map_err(PostgresStoreError::Row)?
+        .as_str()
+    {
+        "pending" => ProjectionStatus::Pending,
+        "processing" => ProjectionStatus::Processing,
+        "completed" => ProjectionStatus::Completed,
+        "quarantined" => ProjectionStatus::Quarantined,
+        _ => return Err(PostgresStoreError::InvalidRow),
+    };
+    let attempts = u32::try_from(row.u64("attempts").map_err(PostgresStoreError::Row)?)
+        .map_err(|_| PostgresStoreError::InvalidRow)?;
+    GraphProjectionJob::restore(
+        ProjectionJobId::new(job_id),
+        WorkspaceId::new(workspace_id),
+        resource,
+        row.u64("resource_version")
+            .map_err(PostgresStoreError::Row)?,
+        ProviderId::new(provider_id),
+        operation,
+        status,
+        attempts,
+    )
+    .map_err(|_| PostgresStoreError::InvalidRow)
+}
+
 fn decode_key_rotation<Row, DriverError>(
     row: &Row,
     expected_workspace_id: &WorkspaceId,
@@ -6319,13 +6612,14 @@ mod tests {
         AuthorizeClientService, BookingResearchMutationRepository, BookingResearchRepository,
         CanonicalMutationRepository, CheckpointDisclosureRepository, CheckpointMutationRepository,
         CheckpointRepository, CheckpointService, CreateInvitationCommand, DisclosureRepository,
-        EventRepository, InvitationRepository, InvitationService, KeyRotationRepository,
-        KnowledgeDirection, KnowledgeGraphMutationRepository, KnowledgeGraphRepository,
-        MemberLifecycleRepository, MemberScopeGrantRepository, MembershipRepository,
-        MemoryRepository, ProjectionOutboxRepository, ProjectionOutcome, ProjectionWorker,
-        ResolveContextCommand, ResolveContextService, ResolveTravelContextCommand,
-        ResumeActivityCommand, RetentionRepository, TravelContextService,
-        TravelDisclosureRepository, TripMutationRepository, TripRepository, WorkspaceRepository,
+        EventRepository, GraphProjectionOutboxRepository, InvitationRepository, InvitationService,
+        KeyRotationRepository, KnowledgeDirection, KnowledgeGraphMutationRepository,
+        KnowledgeGraphRepository, MemberLifecycleRepository, MemberScopeGrantRepository,
+        MembershipRepository, MemoryRepository, ProjectionOutboxRepository, ProjectionOutcome,
+        ProjectionWorker, ResolveContextCommand, ResolveContextService,
+        ResolveTravelContextCommand, ResumeActivityCommand, RetentionRepository,
+        TravelContextService, TravelDisclosureRepository, TripMutationRepository, TripRepository,
+        WorkspaceRepository,
     };
     use rembrane_codec::{
         encode_booking_research, encode_checkpoint, encode_knowledge_edge, encode_knowledge_node,
@@ -6338,15 +6632,16 @@ mod tests {
         AdministrativeAuditEventId, AdministrativeTargetKind, BookingResearch, BookingResearchId,
         BookingResearchKind, CanonicalEvent, CheckpointDisclosureReceipt, CheckpointId, ClientId,
         ContextPackId, DisclosedBookingResearch, DisclosedMemory, DisclosureId, DisclosureReceipt,
-        EntityId, EventId, EventPayload, EvidenceId, EvidenceReference, EvidenceSource, Invitation,
-        InvitationId, InvitationStatus, KeyRotationId, KeyRotationReceipt, KeyRotationStatus,
-        KnowledgeEdge, KnowledgeEdgeId, KnowledgeNode, KnowledgeNodeId, KnowledgeNodeKind,
-        KnowledgeRelationType, LegalHoldId, LegalHoldStatus, MemberScopeGrant, MembershipStatus,
-        MemoryId, MemoryRecord, MemoryScope, Principal, PrincipalId, ProjectionJob,
-        ProjectionJobId, ProjectionOperation, ProjectionStatus, ProviderId, ReadGrant, ReadScope,
-        ResearchFreshness, RetentionPeriod, RetentionResource, TemporalValidity, TravelDateWindow,
-        TravelDisclosureReceipt, Trip, Workspace, WorkspaceId, WorkspaceKeyRotation,
-        WorkspaceRetentionPolicy, WorkspaceRole, WritePermission,
+        EntityId, EventId, EventPayload, EvidenceId, EvidenceReference, EvidenceSource,
+        GraphProjectionJob, GraphProjectionResource, Invitation, InvitationId, InvitationStatus,
+        KeyRotationId, KeyRotationReceipt, KeyRotationStatus, KnowledgeEdge, KnowledgeEdgeId,
+        KnowledgeNode, KnowledgeNodeId, KnowledgeNodeKind, KnowledgeRelationType, LegalHoldId,
+        LegalHoldStatus, MemberScopeGrant, MembershipStatus, MemoryId, MemoryRecord, MemoryScope,
+        Principal, PrincipalId, ProjectionJob, ProjectionJobId, ProjectionOperation,
+        ProjectionStatus, ProviderId, ReadGrant, ReadScope, ResearchFreshness, RetentionPeriod,
+        RetentionResource, TemporalValidity, TravelDateWindow, TravelDisclosureReceipt, Trip,
+        Workspace, WorkspaceId, WorkspaceKeyRotation, WorkspaceRetentionPolicy, WorkspaceRole,
+        WritePermission,
     };
     use rembrane_semantic_native::NativeSemanticProvider;
 
@@ -6355,28 +6650,31 @@ mod tests {
         ClassifiedPostgresError, DELETE_MEMBER_SCOPE_GRANT_SQL, DELETE_MEMBER_SCOPE_GRANTS_SQL,
         EXPIRE_PENDING_INVITATION_SQL, FIND_BOOKING_RESEARCH_SQL,
         FIND_DISCLOSED_BOOKING_RESEARCH_VERSION_SQL, FIND_DISCLOSED_CHECKPOINT_VERSION_SQL,
-        FIND_DISCLOSED_MEMORY_VERSION_SQL, FIND_DISCLOSED_TRIP_VERSION_SQL, FIND_INVITATION_SQL,
-        FIND_KEY_ROTATION_RECEIPT_SQL, FIND_KNOWLEDGE_EDGE_SQL, FIND_KNOWLEDGE_NODE_SQL,
-        FIND_LEGAL_HOLD_SQL, FIND_MEMBERSHIP_SQL, FIND_MEMORY_SQL, FIND_PRINCIPAL_SQL,
-        FIND_PROJECTION_SQL, FIND_PROVISIONING_PRINCIPAL_SQL, FIND_RETENTION_POLICY_SQL,
-        FIND_TRIP_SQL, FIND_WORKSPACE_SQL, INSERT_ADMINISTRATIVE_AUDIT_SQL,
-        INSERT_BOOKING_RESEARCH_SQL, INSERT_CHECKPOINT_DISCLOSURE_SQL, INSERT_CHECKPOINT_SQL,
+        FIND_DISCLOSED_MEMORY_VERSION_SQL, FIND_DISCLOSED_TRIP_VERSION_SQL,
+        FIND_GRAPH_PROJECTION_SQL, FIND_INVITATION_SQL, FIND_KEY_ROTATION_RECEIPT_SQL,
+        FIND_KNOWLEDGE_EDGE_SQL, FIND_KNOWLEDGE_NODE_SQL, FIND_LEGAL_HOLD_SQL, FIND_MEMBERSHIP_SQL,
+        FIND_MEMORY_SQL, FIND_PRINCIPAL_SQL, FIND_PROJECTION_SQL, FIND_PROVISIONING_PRINCIPAL_SQL,
+        FIND_RETENTION_POLICY_SQL, FIND_TRIP_SQL, FIND_WORKSPACE_SQL,
+        INSERT_ADMINISTRATIVE_AUDIT_SQL, INSERT_BOOKING_RESEARCH_SQL,
+        INSERT_CHECKPOINT_DISCLOSURE_SQL, INSERT_CHECKPOINT_SQL,
         INSERT_DISCLOSED_BOOKING_RESEARCH_SQL, INSERT_DISCLOSED_MEMORY_SQL, INSERT_DISCLOSURE_SQL,
-        INSERT_EVENT_SQL, INSERT_INVITATION_SQL, INSERT_KEY_ROTATION_RECEIPT_SQL,
-        INSERT_KEY_ROTATION_RECIPIENT_SQL, INSERT_KNOWLEDGE_EDGE_SQL, INSERT_KNOWLEDGE_NODE_SQL,
-        INSERT_LEGAL_HOLD_SQL, INSERT_MEMBER_SCOPE_GRANT_SQL, INSERT_MEMBERSHIP_SQL,
-        INSERT_MEMORY_EVIDENCE_SQL, INSERT_MEMORY_SQL, INSERT_PRINCIPAL_SQL, INSERT_PROJECTION_SQL,
+        INSERT_EVENT_SQL, INSERT_GRAPH_PROJECTION_SQL, INSERT_INVITATION_SQL,
+        INSERT_KEY_ROTATION_RECEIPT_SQL, INSERT_KEY_ROTATION_RECIPIENT_SQL,
+        INSERT_KNOWLEDGE_EDGE_SQL, INSERT_KNOWLEDGE_NODE_SQL, INSERT_LEGAL_HOLD_SQL,
+        INSERT_MEMBER_SCOPE_GRANT_SQL, INSERT_MEMBERSHIP_SQL, INSERT_MEMORY_EVIDENCE_SQL,
+        INSERT_MEMORY_SQL, INSERT_PRINCIPAL_SQL, INSERT_PROJECTION_SQL,
         INSERT_REQUIRED_KEY_ROTATION_SQL, INSERT_RETENTION_POLICY_SQL,
         INSERT_TRAVEL_DISCLOSURE_SQL, INSERT_TRIP_SQL, INSERT_WORKSPACE_SQL, LATEST_CHECKPOINT_SQL,
         LATEST_KEY_ROTATION_SQL, LIST_ACTIVE_LEGAL_HOLDS_SQL, LIST_ACTIVE_MEMBERSHIPS_SQL,
         LIST_ADMINISTRATIVE_AUDIT_SQL, LIST_BOTH_KNOWLEDGE_EDGES_SQL, LIST_EVENTS_SINCE_SQL,
         LIST_INVITATIONS_BY_STATUS_SQL, LIST_MEMBER_SCOPE_GRANTS_SQL, LIST_OWNER_TRIPS_SQL,
-        LIST_PENDING_PROJECTIONS_SQL, LIST_SUBJECT_CHECKPOINTS_SQL, LIST_SUBJECT_MEMORIES_SQL,
-        LIST_TRIP_BOOKING_RESEARCH_SQL, LOCK_WORKSPACE_FOR_ROTATION_SQL, MAX_ACTIVE_MEMBERSHIPS,
-        NEXT_KEY_ROTATION_GENERATION_SQL, PostgresFailureKind, PostgresParameter, PostgresPool,
-        PostgresProvisioner, PostgresProvisioningPool, PostgresRow, PostgresStore,
-        PostgresStoreError, PostgresTransaction, PostgresWorkspaceAdminStore,
-        ProvisioningTransaction, READ_TENANT_SQL, REMOVE_MEMBERSHIP_SQL, REPLACE_CHECKPOINT_SQL,
+        LIST_PENDING_GRAPH_PROJECTIONS_SQL, LIST_PENDING_PROJECTIONS_SQL,
+        LIST_SUBJECT_CHECKPOINTS_SQL, LIST_SUBJECT_MEMORIES_SQL, LIST_TRIP_BOOKING_RESEARCH_SQL,
+        LOCK_WORKSPACE_FOR_ROTATION_SQL, MAX_ACTIVE_MEMBERSHIPS, NEXT_KEY_ROTATION_GENERATION_SQL,
+        PostgresFailureKind, PostgresParameter, PostgresPool, PostgresProvisioner,
+        PostgresProvisioningPool, PostgresRow, PostgresStore, PostgresStoreError,
+        PostgresTransaction, PostgresWorkspaceAdminStore, ProvisioningTransaction, READ_TENANT_SQL,
+        REMOVE_MEMBERSHIP_SQL, REPLACE_CHECKPOINT_SQL, REPLACE_GRAPH_PROJECTION_SQL,
         REPLACE_INVITATION_SQL, REPLACE_KNOWLEDGE_EDGE_SQL, REPLACE_KNOWLEDGE_NODE_SQL,
         REPLACE_LEGAL_HOLD_SQL, REPLACE_MEMBERSHIP_SQL, REPLACE_PROJECTION_SQL,
         REPLACE_RETENTION_POLICY_SQL, REPLACE_TRIP_SQL, SET_TENANT_SQL, TenantTransaction,
@@ -6679,6 +6977,32 @@ mod tests {
                 ]),
                 numbers: BTreeMap::from([
                     ("memory_version", job.memory_version()),
+                    ("attempts", u64::from(job.attempts())),
+                ]),
+            }
+        }
+
+        fn graph_projection(job: &GraphProjectionJob) -> Self {
+            let (resource_type, node_id, edge_id) = super::encode_graph_resource(job.resource());
+            Self {
+                columns: BTreeMap::from([
+                    ("id", job.id().as_str().to_owned()),
+                    ("workspace_id", job.workspace_id().as_str().to_owned()),
+                    ("resource_type", resource_type.to_owned()),
+                    ("node_id", node_id.unwrap_or_default().to_owned()),
+                    ("edge_id", edge_id.unwrap_or_default().to_owned()),
+                    ("provider_id", job.provider_id().as_str().to_owned()),
+                    (
+                        "operation",
+                        super::projection_operation_name(job.operation()).to_owned(),
+                    ),
+                    (
+                        "status",
+                        super::projection_status_name(job.status()).to_owned(),
+                    ),
+                ]),
+                numbers: BTreeMap::from([
+                    ("resource_version", job.resource_version()),
                     ("attempts", u64::from(job.attempts())),
                 ]),
             }
@@ -9905,6 +10229,107 @@ mod tests {
         assert!(calls.iter().any(
             |call| matches!(call, Call::Query(statement, _) if statement == FIND_PROJECTION_SQL)
         ));
+    }
+
+    #[test]
+    fn tenant_graph_projection_outbox_is_workspace_pinned_and_optimistic() {
+        let pending = GraphProjectionJob::new(
+            ProjectionJobId::new("graph_projection_01"),
+            WorkspaceId::new("workspace_01"),
+            GraphProjectionResource::Node(KnowledgeNodeId::new("node_project")),
+            1,
+            ProviderId::new("provider_graphiti"),
+            ProjectionOperation::Upsert,
+        )
+        .expect("pending graph projection");
+        let processing = pending
+            .clone()
+            .begin()
+            .expect("processing graph projection");
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let store = PostgresStore::new(FakePool {
+            calls: Rc::clone(&calls),
+            tenant_batches: RefCell::new(
+                [
+                    VecDeque::from([
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                    ]),
+                    VecDeque::from([
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                    ]),
+                    VecDeque::from([
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                    ]),
+                    VecDeque::from([
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                    ]),
+                ]
+                .into(),
+            ),
+            row_batches: RefCell::new(
+                [
+                    Vec::new(),
+                    vec![FakeRow::graph_projection(&pending)],
+                    Vec::new(),
+                    vec![FakeRow::graph_projection(&processing)],
+                ]
+                .into(),
+            ),
+        });
+        let tenant = store.for_workspace(WorkspaceId::new("workspace_01"));
+        let cipher = IdentityCipher;
+        let mut repository = tenant.with_cipher(&cipher);
+
+        GraphProjectionOutboxRepository::enqueue_graph_projection(&mut repository, pending.clone())
+            .expect("enqueue graph projection");
+        assert_eq!(
+            GraphProjectionOutboxRepository::pending_graph_projections(
+                &repository,
+                &ProviderId::new("provider_graphiti"),
+                10,
+            )
+            .expect("pending graph projections"),
+            vec![pending]
+        );
+        GraphProjectionOutboxRepository::replace_graph_projection(
+            &mut repository,
+            processing.clone(),
+            ProjectionStatus::Pending,
+            0,
+        )
+        .expect("begin graph projection");
+        assert_eq!(
+            GraphProjectionOutboxRepository::find_graph_projection(
+                &repository,
+                &WorkspaceId::new("workspace_01"),
+                &ProjectionJobId::new("graph_projection_01"),
+            )
+            .expect("find graph projection"),
+            Some(processing)
+        );
+
+        let calls = calls.borrow();
+        for statement in [INSERT_GRAPH_PROJECTION_SQL, REPLACE_GRAPH_PROJECTION_SQL] {
+            assert!(
+                calls
+                    .iter()
+                    .any(|call| matches!(call, Call::Execute(actual, _) if actual == statement))
+            );
+        }
+        for statement in [
+            LIST_PENDING_GRAPH_PROJECTIONS_SQL,
+            FIND_GRAPH_PROJECTION_SQL,
+        ] {
+            assert!(
+                calls
+                    .iter()
+                    .any(|call| matches!(call, Call::Query(actual, _) if actual == statement))
+            );
+        }
     }
 
     #[test]
