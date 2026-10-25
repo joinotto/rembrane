@@ -1328,5 +1328,7 @@ No stable release until:
       - [x] Sign the linked manifest and review disposition with the same
         reviewer key and verify both signatures, checksums, revision, digest,
         and file-count binding as one portable bundle.
+        - [x] Reject undeclared bundle artifacts, ambiguous checksum records,
+          and unbounded signature or public-key inputs before verification.
 - [x] Backup, restore, migration, revocation, and deletion have executable
   local-alpha coverage.

@@ -9,6 +9,31 @@ if [ ! -d "$bundle" ] || [ -L "$bundle" ]; then
     echo "security review bundle must be a non-symbolic directory" >&2
     exit 1
 fi
+
+node -e '
+    const { lstatSync, readdirSync } = require("node:fs");
+    const { join } = require("node:path");
+    const expected = [
+        "security-review-attestation.json",
+        "security-review-attestation.json.sha256",
+        "security-review-attestation.json.sig",
+        "security-review-manifest.json",
+        "security-review-manifest.json.sha256",
+        "security-review-manifest.json.sig",
+    ];
+    const actual = readdirSync(process.argv[1]).sort();
+    if (actual.length !== expected.length ||
+        actual.some((name, index) => name !== expected[index])) {
+        throw new Error("security review bundle contains unexpected artifacts");
+    }
+    for (const name of actual) {
+        const metadata = lstatSync(join(process.argv[1], name));
+        if (!metadata.isFile() || metadata.isSymbolicLink()) {
+            throw new Error("security review bundle artifacts must be regular files");
+        }
+    }
+' "$bundle"
+
 for name in \
     security-review-manifest.json \
     security-review-manifest.json.sha256 \
@@ -32,12 +57,13 @@ verify_checksum() {
     file=$1
     checksum=$2
     expected_name=$3
-    expected=$(awk 'NR == 1 { print $1 }' "$checksum")
-    recorded_name=$(awk 'NR == 1 { print $2 }' "$checksum")
+    if ! grep -Eq "^[0-9a-f]{64}  ${expected_name}$" "$checksum"; then
+        echo "security review bundle checksum format is invalid: $expected_name" >&2
+        exit 1
+    fi
+    expected=$(awk '{ print $1 }' "$checksum")
     actual=$(openssl dgst -sha256 "$file" | awk '{print $NF}')
-    if [ "$expected" != "$actual" ] || [ "$recorded_name" != "$expected_name" ] ||
-        [ "$(wc -l <"$checksum" | tr -d ' ')" != 1 ]
-    then
+    if [ "$expected" != "$actual" ]; then
         echo "security review bundle checksum is invalid: $expected_name" >&2
         exit 1
     fi

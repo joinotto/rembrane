@@ -37,6 +37,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   checks both Ed25519 signatures, checksums, source revision, manifest digest,
   and reviewed file count; a manifest-only signature is explicitly not an
   approval.
+- Security-review bundle verification now rejects undeclared artifacts,
+  ambiguous checksum records, non-64-byte Ed25519 signatures, and unbounded
+  public-key inputs before cryptographic parsing.
 - Explicit Memory Provider Protocol `1.0` stability gates separating the
   existing review-locked `0.1` wire surface from a future long-term
   compatibility promise.

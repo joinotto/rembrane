@@ -83,6 +83,43 @@ sh "$review_repository/scripts/verify-security-review-bundle.sh" \
     "$temporary_directory/signed" \
     "$temporary_directory/public.pem" >/dev/null
 
+cp -R "$temporary_directory/signed" "$temporary_directory/extra-artifact"
+printf '%s\n' 'undeclared' >"$temporary_directory/extra-artifact/notes.txt"
+if sh "$review_repository/scripts/verify-security-review-bundle.sh" \
+    "$temporary_directory/extra-artifact" \
+    "$temporary_directory/public.pem" >/dev/null 2>&1
+then
+    echo "security review bundle accepted an undeclared artifact" >&2
+    exit 1
+fi
+
+cp -R "$temporary_directory/signed" "$temporary_directory/malformed-checksum"
+printf '%s  %s  trailing\n' \
+    "$(openssl dgst -sha256 \
+        "$temporary_directory/malformed-checksum/security-review-manifest.json" |
+        awk '{print $NF}')" \
+    security-review-manifest.json \
+    >"$temporary_directory/malformed-checksum/security-review-manifest.json.sha256"
+if sh "$review_repository/scripts/verify-security-review-bundle.sh" \
+    "$temporary_directory/malformed-checksum" \
+    "$temporary_directory/public.pem" >/dev/null 2>&1
+then
+    echo "security review bundle accepted an ambiguous checksum record" >&2
+    exit 1
+fi
+
+cp "$temporary_directory/signed/security-review-manifest.json.sig" \
+    "$temporary_directory/oversized.sig"
+printf '\000' >>"$temporary_directory/oversized.sig"
+if sh "$review_repository/scripts/verify-security-review-signature.sh" \
+    "$temporary_directory/signed/security-review-manifest.json" \
+    "$temporary_directory/oversized.sig" \
+    "$temporary_directory/public.pem" >/dev/null 2>&1
+then
+    echo "security review verifier accepted a non-Ed25519 signature length" >&2
+    exit 1
+fi
+
 cp "$temporary_directory/signed/security-review-manifest.json" \
     "$temporary_directory/tampered.json"
 printf '\n' >>"$temporary_directory/tampered.json"

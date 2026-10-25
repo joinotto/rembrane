@@ -12,6 +12,17 @@ for artifact in "$manifest" "$signature" "$public_key"; do
     fi
 done
 
+signature_bytes=$(wc -c <"$signature" | tr -d ' ')
+public_key_bytes=$(wc -c <"$public_key" | tr -d ' ')
+if [ "$signature_bytes" -ne 64 ]; then
+    echo "security review Ed25519 signature must be exactly 64 bytes" >&2
+    exit 1
+fi
+if [ "$public_key_bytes" -eq 0 ] || [ "$public_key_bytes" -gt 16384 ]; then
+    echo "security review public key exceeds the bounded size" >&2
+    exit 1
+fi
+
 openssl pkeyutl -verify -rawin -pubin \
     -inkey "$public_key" \
     -in "$manifest" \
