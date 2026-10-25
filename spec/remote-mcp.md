@@ -11,6 +11,8 @@ The authorization gate can hand an accepted POST to a Tower-compatible MCP
 service. It rebuilds only protocol headers already validated by the gate,
 places verified tenant access and the classified invocation in request
 extensions, and deliberately does not forward the OAuth bearer credential.
+POST bytes retain zeroizing ownership when transferred into the Tower body;
+the bridge does not create an ordinary duplicate request buffer.
 The same dispatcher opens an authorized stateless GET with an empty body,
 validated event-stream negotiation headers, and verified tenant access while
 still withholding the bearer credential.

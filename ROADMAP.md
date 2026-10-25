@@ -307,6 +307,8 @@ This roadmap describes sequencing, not release dates.
       official SDK service.
       - [x] Route authorized stateless event-stream GETs through the same
         dispatcher with an empty body and verified tenant-only extensions.
+      - [x] Transfer POST request bytes into the Tower body without copying
+        them out of zeroizing ownership.
   - [x] Add OAuth and cross-tenant transport integration tests.
     - [x] Prove verified remote identity is still constrained by canonical
       workspace membership, audience, expiry, and token validity.

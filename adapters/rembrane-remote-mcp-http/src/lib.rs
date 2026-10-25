@@ -272,7 +272,7 @@ where
         Box::pin(async move {
             let mut request = Request::builder()
                 .method(Method::POST)
-                .body(Body::from(body.as_slice().to_vec()))
+                .body(Body::from(bytes::Bytes::from_owner(body)))
                 .map_err(|_| TowerMcpDispatchError::InvalidAuthorizedMetadata)?;
             insert_validated_header(
                 request.headers_mut(),
