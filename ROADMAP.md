@@ -432,6 +432,8 @@ This roadmap describes sequencing, not release dates.
         reauthorization.
       - [x] Add an authenticated REST graph-context endpoint sharing the same
         configured provider, canonical reauthorization, and disclosure path.
+      - [x] Deny implicit global REST context requests when the connection has
+        only narrower domain, entity, or activity grants.
     - [x] Persist graph disclosure evidence in the in-memory, SQLite, and
       PostgreSQL repository adapters with tenant-isolation coverage.
       - [x] Enforce exact tenant and edge-revision correlation in the

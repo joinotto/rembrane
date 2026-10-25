@@ -40,6 +40,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Authenticated REST graph-context resolution using the same transport-neutral
   contract, configured provider selection, canonical edge checks, and
   disclosure-before-response boundary as MCP.
+- Generic REST context resolution now denies omitted-scope requests unless the
+  authenticated connection explicitly holds global read authority.
 - Bounded shared-workspace invitation validity with persisted creation and
   expiry time, a 30-day maximum lifetime, and fail-closed acceptance at the
   expiry boundary.

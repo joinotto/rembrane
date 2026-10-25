@@ -1649,10 +1649,13 @@ fn graph_request_scope(request: &ResolveGraphRequest) -> Result<MemoryScope, Api
 }
 
 fn request_is_within_grant(request: &ResolveRequest, grant: &ReadGrant) -> bool {
-    request
-        .domain
-        .as_ref()
-        .is_none_or(|name| grant.allows(&MemoryScope::Domain { name: name.clone() }))
+    let has_specific_scope =
+        request.domain.is_some() || request.entity_id.is_some() || request.activity_id.is_some();
+    (has_specific_scope || grant.allows(&MemoryScope::Global))
+        && request
+            .domain
+            .as_ref()
+            .is_none_or(|name| grant.allows(&MemoryScope::Domain { name: name.clone() }))
         && request.entity_id.as_ref().is_none_or(|id| {
             grant.allows(&MemoryScope::Entity {
                 id: EntityId::new(id),
@@ -2149,6 +2152,12 @@ mod tests {
         };
 
         assert!(!request_is_within_grant(&request, &grant));
+
+        let global_request = ResolveRequest {
+            entity_id: None,
+            ..request
+        };
+        assert!(!request_is_within_grant(&global_request, &grant));
     }
 
     #[test]
