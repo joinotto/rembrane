@@ -1116,6 +1116,80 @@ where
             .await
             .map_err(RemoteMcpDispatchError::Dispatch)
     }
+
+    /// Establishes and dispatches one exact session initialization through
+    /// the owned verifier and validated deployment profile.
+    ///
+    /// # Errors
+    ///
+    /// Distinguishes HTTP-ready initialization rejection from downstream
+    /// protocol failure and rolls back sessions after failed dispatch.
+    pub async fn establish_and_dispatch_session<Dispatcher>(
+        &mut self,
+        headers: &HeaderMap,
+        body: &[u8],
+        now_epoch_seconds: u64,
+        dispatcher: &Dispatcher,
+    ) -> Result<Dispatcher::Output, RemoteMcpDispatchError<Dispatcher::Error>>
+    where
+        Dispatcher: AuthorizedRemoteMcpDispatcher,
+    {
+        let authenticator =
+            RemoteAccessAuthenticator::new(&self.verifier, &self.issuer, &self.resource);
+        let trusted_origins = self
+            .trusted_origins
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>();
+        let authorization = RemoteHttpAuthorization::new(&authenticator, &trusted_origins);
+        establish_and_dispatch_axum_session(
+            &mut self.gate,
+            &authorization,
+            headers,
+            body,
+            now_epoch_seconds,
+            dispatcher,
+        )
+        .await
+    }
+
+    /// Reauthenticates and dispatches one exact established-session request
+    /// through the owned verifier and validated deployment profile.
+    ///
+    /// # Errors
+    ///
+    /// Distinguishes HTTP-ready session, authentication, tenant, method, or
+    /// scope rejection from downstream protocol failure.
+    pub async fn authorize_and_dispatch_session<Dispatcher>(
+        &mut self,
+        headers: &HeaderMap,
+        body: &[u8],
+        now_epoch_seconds: u64,
+        dispatcher: &Dispatcher,
+    ) -> Result<Dispatcher::Output, RemoteMcpDispatchError<Dispatcher::Error>>
+    where
+        Dispatcher: AuthorizedRemoteMcpDispatcher,
+    {
+        let authenticator =
+            RemoteAccessAuthenticator::new(&self.verifier, &self.issuer, &self.resource);
+        let trusted_origins = self
+            .trusted_origins
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>();
+        let authorization = RemoteHttpAuthorization::new(&authenticator, &trusted_origins);
+        authorize_axum_session_body(
+            &mut self.gate,
+            &authorization,
+            headers,
+            body,
+            now_epoch_seconds,
+        )
+        .map_err(RemoteMcpDispatchError::Authorization)?
+        .dispatch_with(dispatcher)
+        .await
+        .map_err(RemoteMcpDispatchError::Dispatch)
+    }
 }
 
 pub struct RemoteMcpHttpGate {
@@ -2848,6 +2922,69 @@ mod tests {
             .await
             .expect("in-memory router should respond");
         assert_eq!(denied.status(), 403);
+    }
+
+    #[tokio::test]
+    async fn owned_service_dispatches_exact_session_lifecycle_for_one_tenant() {
+        let config = RemoteMcpConfig::new(
+            "https://memory.example.test/mcp".to_owned(),
+            "https://identity.example.test".to_owned(),
+            "https://identity.example.test/introspect".to_owned(),
+            "rembrane".to_owned(),
+            SecretReference::environment("OAUTH_SECRET").expect("reference should be valid"),
+            vec!["https://agent.example.test".to_owned()],
+        )
+        .expect("remote profile should be valid");
+        let mut authorization = RemoteMcpAxumAuthorization::from_config(16, &config, Verifier)
+            .expect("owned authorization service should initialize");
+        let mut headers = HeaderMap::new();
+        headers.insert(HOST, HeaderValue::from_static("memory.example.test"));
+        headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+        headers.insert(
+            ACCEPT,
+            HeaderValue::from_static("application/json, text/event-stream"),
+        );
+        headers.insert(
+            AUTHORIZATION,
+            HeaderValue::from_static("Bearer workspace-one"),
+        );
+        headers.insert(
+            ORIGIN,
+            HeaderValue::from_static("https://agent.example.test"),
+        );
+        headers.insert(
+            MCP_SESSION_HEADER_NAME,
+            HeaderValue::from_static("session_0123456789abcdef"),
+        );
+        let initialize = br#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}"#;
+        let initialized = authorization
+            .establish_and_dispatch_session(&headers, initialize, 1_000, &RecordingDispatcher)
+            .await
+            .expect("owned service should establish and dispatch");
+        assert_eq!(initialized.workspace, "workspace_01");
+        assert_eq!(initialized.method, "initialize");
+        assert_eq!(initialized.body, initialize);
+
+        let body = br#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"rembrane_resolve_context","arguments":{}}}"#;
+        let dispatched = authorization
+            .authorize_and_dispatch_session(&headers, body, 1_100, &RecordingDispatcher)
+            .await
+            .expect("same tenant should reuse its established session");
+        assert_eq!(dispatched.workspace, "workspace_01");
+        assert_eq!(dispatched.body, body);
+
+        headers.insert(
+            AUTHORIZATION,
+            HeaderValue::from_static("Bearer workspace-two"),
+        );
+        assert!(matches!(
+            authorization
+                .authorize_and_dispatch_session(&headers, body, 1_100, &RecordingDispatcher)
+                .await,
+            Err(RemoteMcpDispatchError::Authorization(
+                RemoteMcpHttpRejection { status: 403, .. }
+            ))
+        ));
     }
 
     #[tokio::test]

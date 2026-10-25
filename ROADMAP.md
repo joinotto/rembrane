@@ -325,6 +325,9 @@ This roadmap describes sequencing, not release dates.
     - [x] Provide an owned Axum authorization service that reconstructs
       borrowing authenticators per request and preserves verified tenant
       identity through an in-memory HTTP router.
+      - [x] Expose exact-body session initialization and established-session
+        dispatch through the owned service, including failed-initialize
+        rollback.
       - [x] Authorize stateless server event-stream GET requests with
         GET-specific negotiation and no artificial JSON content requirement.
         - [x] Return an owned GET proof coupling tenant identity, negotiated

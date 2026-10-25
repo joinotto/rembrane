@@ -9,6 +9,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- The owned remote MCP Axum authorization service now composes exact-body
+  initialization and established-session dispatch with its deployment-owned
+  verifier, trusted origins, session registry, and rollback behavior.
 - Failed remote MCP SDK initialization now rolls back the newly allocated
   tenant session before returning the dispatch error, preventing ghost
   bindings and permanent capacity loss.
