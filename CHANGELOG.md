@@ -13,7 +13,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   read-back requirements and a live pooled-connection leakage regression.
 - A typed reference-only PostgreSQL connection profile with explicit
   full-verification versus trusted-boundary transport policy and bounded pool
-  capacity.
+  capacity, without a derived debug representation that could expose its
+  secret locator in logs.
 - A Zed local MCP configuration that safely inherits the application process
   environment instead of embedding unsupported `${VAR}` interpolation or raw
   credentials in settings.

@@ -51,7 +51,7 @@ pub enum PostgresTransportSecurity {
     TrustedBoundaryPlaintext,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct PostgresConnection {
     url_reference: SecretReference,
     transport_security: PostgresTransportSecurity,
@@ -803,21 +803,20 @@ mod tests {
             PostgresTransportSecurity::VerifyFull
         );
         assert_eq!(connection.max_connections(), 16);
-        assert!(!format!("{connection:?}").contains("postgresql://"));
     }
 
     #[test]
     fn postgres_configuration_bounds_connection_pool_capacity() {
         let reference = SecretReference::environment("REMBRANE_POSTGRES_URL").expect("reference");
         for invalid in [0, MAX_POSTGRES_POOL_CONNECTIONS + 1] {
-            assert_eq!(
+            assert!(matches!(
                 PostgresConnection::new(
                     reference.clone(),
                     PostgresTransportSecurity::TrustedBoundaryPlaintext,
                     invalid,
                 ),
                 Err(PostgresConnectionError::InvalidPoolSize)
-            );
+            ));
         }
     }
 

@@ -40,6 +40,8 @@ The Rust adapter configuration carries the database URL only as a
 protected file, or deployment-provided external secret resolver. The resolved
 URL, including any password, must remain short-lived and must never be
 serialized, logged, returned by diagnostics, or stored in a provider profile.
+The typed connection profile deliberately has no debug representation, so its
+secret locator cannot be included accidentally by derived structured logging.
 Remote deployments require full TLS verification; plaintext transport is an
 explicit trusted-boundary-only mode. Connection pools are bounded to prevent a
 tenant or configuration error from exhausting the database.
