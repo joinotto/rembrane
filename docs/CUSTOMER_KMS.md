@@ -44,6 +44,9 @@ Rembrane requests exactly 32 plaintext bytes and the adapter rejects any other
 length. The result separates a persistable opaque `CustomerKmsKeyReference`
 from a non-cloneable, non-debuggable, zeroizing plaintext buffer. Sidecars must
 persist the wrapped reference before activating the new generation.
+`RustCryptoRecordCipher::from_generated_customer_kms` consumes that plaintext
+buffer exactly once and returns the usable cipher together with only the
+opaque reference intended for persistence.
 
 ## Required request binding
 

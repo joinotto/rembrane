@@ -20,6 +20,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Customer-KMS rotation contracts for generating exact 256-bit data keys,
   separating persistable opaque references from non-cloneable zeroizing
   plaintext buffers inside the customer sidecar.
+- A single-consumption customer-KMS rotation handoff that constructs the
+  reference record cipher while returning only opaque wrapped metadata for
+  durable persistence.
 - A strict language-neutral authenticated channel-processor message schema and
   secret-free fixture carrying canonical tenant identity and event
   idempotency metadata to cooperative bots and agents.

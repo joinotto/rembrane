@@ -8,7 +8,9 @@ use chacha20poly1305::aead::{Aead, KeyInit, Payload};
 use chacha20poly1305::{Key, XChaCha20Poly1305, XNonce};
 use rembrane_crypto::{CryptoError, EncryptedPayload, EncryptionContext, RecordCipher};
 use rembrane_domain::WorkspaceId;
-use rembrane_provider_sdk::{CustomerKmsAdapter, CustomerKmsKeyring};
+use rembrane_provider_sdk::{
+    CustomerKmsAdapter, CustomerKmsGeneratedKey, CustomerKmsKeyReference, CustomerKmsKeyring,
+};
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 use std::process::Command;
 use zeroize::Zeroizing;
@@ -131,6 +133,21 @@ impl RustCryptoRecordCipher {
             key_id,
             key: Zeroizing::new(key),
         })
+    }
+
+    /// Consumes one newly generated customer-KMS data key and returns a record
+    /// cipher plus the opaque reference that the sidecar must persist.
+    pub fn from_generated_customer_kms(
+        generated: CustomerKmsGeneratedKey,
+    ) -> Result<(Self, CustomerKmsKeyReference), CryptoError> {
+        let reference = generated.reference().clone();
+        let key = generated.into_plaintext_key();
+        let key: [u8; 32] = key
+            .as_slice()
+            .try_into()
+            .map_err(|_| CryptoError::KeyUnavailable)?;
+        let cipher = Self::new(reference.provider_key_id(), key)?;
+        Ok((cipher, reference))
     }
 
     pub fn from_environment() -> Result<Self, CryptoError> {
@@ -738,8 +755,10 @@ mod tests {
     use rembrane_crypto::{CryptoError, EncryptionContext, PayloadPurpose, RecordCipher};
     use rembrane_domain::WorkspaceId;
     use rembrane_provider_sdk::{
-        CustomerKmsAdapter, CustomerKmsContext, CustomerKmsKeyReference, CustomerKmsKeyring,
-        ProviderError,
+        CloudKmsDecryptClient, CloudKmsDecryptRequest, CloudKmsGenerateRequest,
+        CloudKmsGeneratedKey, CloudKmsKeyClient, CustomerKmsAdapter, CustomerKmsContext,
+        CustomerKmsKeyReference, CustomerKmsKeyring, CustomerKmsRotationAdapter,
+        GoogleCloudKmsAdapter, ProviderError,
     };
     use zeroize::Zeroizing;
 
@@ -995,6 +1014,47 @@ mod tests {
             ),
             Err(CryptoError::KeyUnavailable)
         ));
+    }
+
+    struct RotationCloudClient;
+
+    impl CloudKmsDecryptClient for RotationCloudClient {
+        fn decrypt(
+            &self,
+            _request: CloudKmsDecryptRequest<'_>,
+        ) -> Result<Zeroizing<Vec<u8>>, ProviderError> {
+            Err(ProviderError::Unavailable)
+        }
+    }
+
+    impl CloudKmsKeyClient for RotationCloudClient {
+        fn generate_data_key(
+            &self,
+            request: CloudKmsGenerateRequest<'_>,
+        ) -> Result<CloudKmsGeneratedKey, ProviderError> {
+            assert_eq!(request.plaintext_key_bytes(), 32);
+            CloudKmsGeneratedKey::new("kms-key-v3", vec![3; 48], Zeroizing::new(vec![3; 32]))
+        }
+    }
+
+    #[test]
+    fn generated_customer_kms_key_is_consumed_into_cipher_and_opaque_reference() {
+        let adapter = GoogleCloudKmsAdapter::new(RotationCloudClient);
+        let generated = adapter
+            .generate_key(&CustomerKmsContext::new(WorkspaceId::new("workspace_01"), 3).unwrap())
+            .unwrap();
+
+        let (cipher, reference) =
+            RustCryptoRecordCipher::from_generated_customer_kms(generated).unwrap();
+        let encrypted = cipher.seal(&context("workspace_01"), b"rotated").unwrap();
+
+        assert_eq!(cipher.key_id(), "kms-key-v3");
+        assert_eq!(reference.generation(), 3);
+        assert_eq!(reference.wrapped_key(), &[3; 48]);
+        assert_eq!(
+            cipher.open(&context("workspace_01"), &encrypted).unwrap(),
+            b"rotated"
+        );
     }
 
     #[test]

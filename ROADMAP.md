@@ -120,6 +120,9 @@ This roadmap describes sequencing, not release dates.
     - [x] Support customer-cloud data-key generation for rotation with exact
       256-bit plaintext enforcement, persistable wrapped references, and
       non-cloneable zeroizing plaintext ownership.
+    - [x] Consume generated customer-KMS plaintext exactly once into the
+      reference cipher while returning only its opaque wrapped reference for
+      durable sidecar persistence.
   - [x] Add a provider-agnostic configured cipher that dispatches to local
     environment/macOS keyrings or a policy-negotiated HTTP key provider.
     - [x] Accept consumed customer key-provider configuration from
