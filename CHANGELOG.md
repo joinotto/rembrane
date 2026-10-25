@@ -18,6 +18,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Both Memory Provider conformance clients now require credential-free,
   origin-only base URLs and reject paths, query strings, fragments,
   non-loopback plaintext HTTP, and DNS-resolved `localhost`.
+- The portable shell conformance client now uses a reusable strict jq
+  validator for the complete discovery manifest, including exact capability,
+  OAuth scope, method, path, privacy, limit, and operation parity checks.
 - Project metadata, security reporting, API contact information, offline
   workspace fixtures, and provider provenance now consistently identify the
   canonical `joinotto/rembrane` repository.

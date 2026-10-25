@@ -228,18 +228,10 @@ trap cleanup EXIT HUP INT TERM
 
 status=$(call "" GET /.well-known/ai-memory discovery)
 test "$status" = 200
-jq -e --argjson requiredScopes "$required_actor_scopes" '
-    .protocolVersion == "0.1"
-    and ([.capabilities[]] | contains([
-        "resolve_context",
-        "propose_memory",
-        "delete_memory",
-        "sync_pull"
-    ]))
-    and ([.operations[].oauthScope] | contains($requiredScopes))
-    and .limits.maximumContextItems > 0
-    and .limits.maximumSyncBatchItems > 0
-' "$response" >/dev/null
+jq -e \
+    --argjson requiredScopes "$required_actor_scopes" \
+    -f "$repository_root/scripts/memory-provider-discovery.jq" \
+    "$response" >/dev/null
 provider_id=$(jq -er '.providerId' "$response")
 provider_version=$(jq -er '.providerVersion' "$response")
 maximum_context_items=$(jq -r --argjson fixture "$fixture_maximum_context_items" \

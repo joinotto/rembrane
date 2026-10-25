@@ -32,6 +32,7 @@ const expectedArtifacts = [
   "spec/examples/memory-provider-mixed-version-evidence.json",
   "spec/examples/memory-provider-release-evidence.json",
   "scripts/memory-provider-discovery.mjs",
+  "scripts/memory-provider-discovery.jq",
   "scripts/memory-provider-conformance-secrets.mjs",
   "scripts/run-memory-provider-conformance.mjs",
   "scripts/test-memory-provider-http.sh",

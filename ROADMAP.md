@@ -973,6 +973,8 @@ This roadmap describes sequencing, not release dates.
     bearer credential reference.
   - [x] Restrict both conformance clients to credential-free origin URLs using
     HTTPS or literal loopback HTTP, rejecting paths and `localhost`.
+  - [x] Enforce the complete closed discovery manifest and canonical operation
+    registry in the portable jq/shell conformance client.
     - [x] Add bounded context-resolution requests with global, domain, entity,
       and activity selectors constrained by provider-advertised limits.
       - [x] Seal selector representation so callers cannot bypass domain and
