@@ -816,6 +816,8 @@ This roadmap describes sequencing, not release dates.
         including external provenance and distinct maintainer enforcement.
       - [x] Provide a bounded dependency-light Node conformance runner for
         external providers and CI environments without curl or jq.
+        - [x] Resolve its three workspace credentials through protected
+          `env:` or `file:` references with opaque fail-closed errors.
       - [x] Require the completed two-provider evidence set in strict
         production readiness.
     - [ ] Complete independent security review and resolve or explicitly

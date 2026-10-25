@@ -32,6 +32,7 @@ sh ./scripts/test-memory-provider-mixed-version-evidence.sh
 sh ./scripts/test-memory-provider-release-evidence.sh
 sh ./scripts/test-memory-provider-external-provenance.sh
 sh ./scripts/test-package-memory-provider-release-evidence.sh
+node ./scripts/test-memory-provider-conformance-secrets.mjs
 ./scripts/check-protocols.sh
 ./scripts/test-semantic-provider-compatibility-lock.sh
 ./scripts/test-memory-provider-compatibility-lock.sh
@@ -73,7 +74,9 @@ for deployment_file in \
     scripts/test-ios-imessage-extension.sh \
     scripts/test-kotlin-sdk.sh \
     scripts/test-memory-provider-compatibility-lock.sh \
+    scripts/memory-provider-conformance-secrets.mjs \
     scripts/run-memory-provider-conformance.mjs \
+    scripts/test-memory-provider-conformance-secrets.mjs \
     scripts/test-memory-provider-mixed-version-evidence.sh \
     scripts/test-memory-provider-release-evidence.sh \
     scripts/test-memory-provider-external-provenance.sh \

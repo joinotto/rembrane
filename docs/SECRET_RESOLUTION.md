@@ -103,3 +103,11 @@ HTTP providers. When the locator is absent it resolves
 `REMBRANE_MEMORY_PROVIDER_TOKEN`; otherwise local `env:VARIABLE` and protected
 `file:path` locators are supported. Resolution failures remain opaque and the
 credential stays zeroizing across configuration and transport ownership.
+
+The portable Memory Provider conformance runner accepts separate
+`REMBRANE_MEMORY_PROVIDER_{PRIMARY,OTHER,READONLY}_TOKEN_REFERENCE` locators.
+Each supports `env:VARIABLE` or a protected regular `file:path` and applies the
+same 64 KiB, UTF-8, null-byte, symbolic-link, file-mode, and single trailing
+newline checks. The corresponding raw token variable remains a compatibility
+fallback only when its reference variable is absent. Unsupported external
+references and all resolution failures produce an opaque error.

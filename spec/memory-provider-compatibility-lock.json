@@ -71,8 +71,12 @@
       "sha256": "5def28857ac6bc0d55f0a7209c2e57084490a115a85b2ee69e659e36068c3de9"
     },
     {
+      "path": "scripts/memory-provider-conformance-secrets.mjs",
+      "sha256": "21d8fc3e1277f3f5d5d11c5a5446a427fa532b752660b54a1c9424f34b18e47d"
+    },
+    {
       "path": "scripts/run-memory-provider-conformance.mjs",
-      "sha256": "be33d450acb9cb9801710801b237e3a5d1f723a5bd41dafab35d8257a0c84d75"
+      "sha256": "c805591e468d977ec282c16624cd17baf8a197f232abf4f58db6be4808d3c9b7"
     },
     {
       "path": "scripts/test-memory-provider-http.sh",

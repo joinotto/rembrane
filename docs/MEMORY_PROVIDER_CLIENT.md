@@ -117,12 +117,18 @@ REMBRANE_MEMORY_PROVIDER_READONLY_TOKEN="$READONLY_TOKEN" \
 For a dependency-light runner requiring only Node.js, use:
 
 ```sh
+REMBRANE_MEMORY_PROVIDER_BASE_URL=https://memory.example.com \
+REMBRANE_MEMORY_PROVIDER_PRIMARY_TOKEN_REFERENCE=file:/run/secrets/rembrane_primary_token \
+REMBRANE_MEMORY_PROVIDER_OTHER_TOKEN_REFERENCE=file:/run/secrets/rembrane_other_token \
+REMBRANE_MEMORY_PROVIDER_READONLY_TOKEN_REFERENCE=file:/run/secrets/rembrane_readonly_token \
 node scripts/run-memory-provider-conformance.mjs unique-test-namespace
 ```
 
-It consumes the same three actor tokens and canonical profile/fixture
+It consumes the same three actor credentials and canonical profile/fixture
 environment variables, rejects redirects and oversized responses, cleans up
-created fixtures, and emits the same portable conformance result.
+created fixtures, and emits the same portable conformance result. `env:NAME`
+references are also supported. Raw token variables remain available only as a
+backward-compatible fallback; protected file references are recommended.
 
 Use isolated test workspaces and short-lived tokens. The client creates and
 deletes fixtures, verifies cross-workspace denial, and emits a credential-free

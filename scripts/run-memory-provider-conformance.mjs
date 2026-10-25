@@ -3,13 +3,15 @@ import { readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { resolveConformanceToken } from "./memory-provider-conformance-secrets.mjs";
+
 const namespace = process.argv[2];
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const base = new URL(required("REMBRANE_MEMORY_PROVIDER_BASE_URL"));
 const tokens = {
-  primary: required("REMBRANE_MEMORY_PROVIDER_PRIMARY_TOKEN"),
-  other: required("REMBRANE_MEMORY_PROVIDER_OTHER_TOKEN"),
-  readonly: required("REMBRANE_MEMORY_PROVIDER_READONLY_TOKEN"),
+  primary: await resolveConformanceToken("PRIMARY"),
+  other: await resolveConformanceToken("OTHER"),
+  readonly: await resolveConformanceToken("READONLY"),
 };
 const profilePath =
   process.env.REMBRANE_MEMORY_PROVIDER_PROFILE_FILE ??
