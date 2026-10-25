@@ -21,6 +21,13 @@ rotation orchestration, and receipt validation. Provider responses must contain
 only ciphertext, an opaque key identifier, algorithm metadata, nonce metadata,
 or a correlated rotation receipt.
 
+Provider implementations can use the `rembrane-provider-sdk`
+`CustomerKmsAdapter` and `CustomerKmsKeyring` contracts to resolve active and
+historical wrapped data keys. The contract supplies stable workspace and
+generation associated data, rejects duplicate generations, bounds opaque KMS
+ciphertext and provider key identifiers, and returns zeroizing plaintext key
+buffers only inside the customer-side process.
+
 ## Required request binding
 
 Every seal and open operation must cryptographically bind the complete

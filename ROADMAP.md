@@ -108,6 +108,9 @@ This roadmap describes sequencing, not release dates.
   - [ ] Resolve or unwrap keyring material through customer KMS adapters.
     - [x] Define the customer-sidecar trust boundary and AWS, Azure, and GCP
       mappings without giving Rembrane cloud credentials or master keys.
+    - [x] Publish a provider-side wrapped-key adapter contract with bounded
+      opaque references, tenant/generation associated data, duplicate-safe
+      active and historical generations, and zeroizing unwrap results.
   - [x] Add a provider-agnostic configured cipher that dispatches to local
     environment/macOS keyrings or a policy-negotiated HTTP key provider.
     - [x] Accept consumed customer key-provider configuration from

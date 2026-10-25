@@ -6,6 +6,7 @@
 
 mod capability;
 mod conformance;
+mod customer_kms;
 mod error;
 mod graph_conformance;
 mod graphiti_protocol;
@@ -27,6 +28,10 @@ pub use capability::{
     ProviderProtocolVersion,
 };
 pub use conformance::{ConformanceFailure, verify_semantic_provider};
+pub use customer_kms::{
+    CustomerKmsAdapter, CustomerKmsContext, CustomerKmsKeyReference, CustomerKmsKeyring,
+    MAX_KMS_KEY_ID_BYTES, MAX_WRAPPED_KEY_BYTES,
+};
 pub use error::ProviderError;
 pub use graph_conformance::verify_knowledge_graph_provider;
 pub use graphiti_protocol::{
