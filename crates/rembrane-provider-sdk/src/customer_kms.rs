@@ -160,6 +160,98 @@ pub trait CloudKmsDecryptClient {
     ) -> Result<Zeroizing<Vec<u8>>, ProviderError>;
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CloudKmsGenerateRequest<'request> {
+    binding: CloudKmsBinding,
+    associated_data: &'request [u8],
+    plaintext_key_bytes: usize,
+}
+
+impl CloudKmsGenerateRequest<'_> {
+    #[must_use]
+    pub const fn binding(&self) -> CloudKmsBinding {
+        self.binding
+    }
+
+    #[must_use]
+    pub const fn associated_data(&self) -> &[u8] {
+        self.associated_data
+    }
+
+    #[must_use]
+    pub const fn plaintext_key_bytes(&self) -> usize {
+        self.plaintext_key_bytes
+    }
+}
+
+/// Customer-cloud response containing one newly generated data key.
+///
+/// This type intentionally has no `Debug` or `Clone` implementation because
+/// it temporarily owns plaintext key material.
+pub struct CloudKmsGeneratedKey {
+    provider_key_id: String,
+    wrapped_key: Vec<u8>,
+    plaintext_key: Zeroizing<Vec<u8>>,
+}
+
+impl CloudKmsGeneratedKey {
+    pub fn new(
+        provider_key_id: impl Into<String>,
+        wrapped_key: Vec<u8>,
+        plaintext_key: Zeroizing<Vec<u8>>,
+    ) -> Result<Self, ProviderError> {
+        CustomerKmsKeyReference::new(1, provider_key_id.into(), wrapped_key).map(|validated| Self {
+            provider_key_id: validated.provider_key_id,
+            wrapped_key: validated.wrapped_key,
+            plaintext_key,
+        })
+    }
+
+    fn into_parts(self) -> (String, Vec<u8>, Zeroizing<Vec<u8>>) {
+        (self.provider_key_id, self.wrapped_key, self.plaintext_key)
+    }
+}
+
+pub trait CloudKmsKeyClient: CloudKmsDecryptClient {
+    fn generate_data_key(
+        &self,
+        request: CloudKmsGenerateRequest<'_>,
+    ) -> Result<CloudKmsGeneratedKey, ProviderError>;
+}
+
+/// Newly generated key material kept inside the customer-side process.
+///
+/// Persist `reference` durably before activating the accompanying plaintext
+/// key in a record cipher.
+pub struct CustomerKmsGeneratedKey {
+    reference: CustomerKmsKeyReference,
+    plaintext_key: Zeroizing<Vec<u8>>,
+}
+
+impl CustomerKmsGeneratedKey {
+    #[must_use]
+    pub const fn reference(&self) -> &CustomerKmsKeyReference {
+        &self.reference
+    }
+
+    #[must_use]
+    pub fn plaintext_key(&self) -> &[u8] {
+        &self.plaintext_key
+    }
+
+    #[must_use]
+    pub fn into_plaintext_key(self) -> Zeroizing<Vec<u8>> {
+        self.plaintext_key
+    }
+}
+
+pub trait CustomerKmsRotationAdapter: CustomerKmsAdapter {
+    fn generate_key(
+        &self,
+        context: &CustomerKmsContext,
+    ) -> Result<CustomerKmsGeneratedKey, ProviderError>;
+}
+
 macro_rules! cloud_adapter {
     ($adapter:ident, $binding:expr) => {
         pub struct $adapter<Client> {
@@ -195,6 +287,34 @@ macro_rules! cloud_adapter {
                     provider_key_id: reference.provider_key_id(),
                     wrapped_key: reference.wrapped_key(),
                     associated_data: &associated_data,
+                })
+            }
+        }
+
+        impl<Client: CloudKmsKeyClient> CustomerKmsRotationAdapter for $adapter<Client> {
+            fn generate_key(
+                &self,
+                context: &CustomerKmsContext,
+            ) -> Result<CustomerKmsGeneratedKey, ProviderError> {
+                let associated_data = context.associated_data();
+                let generated = self.client.generate_data_key(CloudKmsGenerateRequest {
+                    binding: $binding,
+                    associated_data: &associated_data,
+                    plaintext_key_bytes: 32,
+                })?;
+                let (provider_key_id, wrapped_key, plaintext_key) = generated.into_parts();
+                if plaintext_key.len() != 32 {
+                    return Err(ProviderError::Rejected(
+                        "customer KMS returned an invalid data-key length".to_owned(),
+                    ));
+                }
+                Ok(CustomerKmsGeneratedKey {
+                    reference: CustomerKmsKeyReference::new(
+                        context.generation(),
+                        provider_key_id,
+                        wrapped_key,
+                    )?,
+                    plaintext_key,
                 })
             }
         }
@@ -286,8 +406,9 @@ mod tests {
 
     use super::{
         AwsKmsAdapter, AzureKeyVaultAdapter, CloudKmsBinding, CloudKmsDecryptClient,
-        CloudKmsDecryptRequest, CustomerKmsAdapter, CustomerKmsContext, CustomerKmsKeyReference,
-        CustomerKmsKeyring, GoogleCloudKmsAdapter,
+        CloudKmsDecryptRequest, CloudKmsGenerateRequest, CloudKmsGeneratedKey, CloudKmsKeyClient,
+        CustomerKmsAdapter, CustomerKmsContext, CustomerKmsKeyReference, CustomerKmsKeyring,
+        CustomerKmsRotationAdapter, GoogleCloudKmsAdapter,
     };
     use crate::ProviderError;
 
@@ -389,6 +510,18 @@ mod tests {
         }
     }
 
+    impl CloudKmsKeyClient for RecordingCloudClient {
+        fn generate_data_key(
+            &self,
+            request: CloudKmsGenerateRequest<'_>,
+        ) -> Result<CloudKmsGeneratedKey, ProviderError> {
+            *self.binding.borrow_mut() = Some(request.binding());
+            *self.associated_data.borrow_mut() = request.associated_data().to_vec();
+            assert_eq!(request.plaintext_key_bytes(), 32);
+            CloudKmsGeneratedKey::new("provider-key-v8", vec![8; 48], Zeroizing::new(vec![8; 32]))
+        }
+    }
+
     fn cloud_client() -> RecordingCloudClient {
         RecordingCloudClient {
             binding: RefCell::new(None),
@@ -435,5 +568,54 @@ mod tests {
 
         assert!(adapter.unwrap_key(&context, &reference).is_err());
         assert_eq!(*adapter.client().binding.borrow(), None);
+    }
+
+    #[test]
+    fn cloud_rotation_returns_persistable_reference_and_zeroizing_plaintext() {
+        let adapter = GoogleCloudKmsAdapter::new(cloud_client());
+        let context = CustomerKmsContext::new(WorkspaceId::new("workspace-a"), 8).unwrap();
+
+        let generated = adapter.generate_key(&context).unwrap();
+
+        assert_eq!(generated.reference().generation(), 8);
+        assert_eq!(generated.reference().provider_key_id(), "provider-key-v8");
+        assert_eq!(generated.reference().wrapped_key(), &[8; 48]);
+        assert_eq!(generated.plaintext_key(), &[8; 32]);
+        assert_eq!(
+            *adapter.client().binding.borrow(),
+            Some(CloudKmsBinding::GoogleAdditionalAuthenticatedData)
+        );
+        assert_eq!(
+            *adapter.client().associated_data.borrow(),
+            context.associated_data()
+        );
+    }
+
+    struct WrongLengthCloudClient(RecordingCloudClient);
+
+    impl CloudKmsDecryptClient for WrongLengthCloudClient {
+        fn decrypt(
+            &self,
+            request: CloudKmsDecryptRequest<'_>,
+        ) -> Result<Zeroizing<Vec<u8>>, ProviderError> {
+            self.0.decrypt(request)
+        }
+    }
+
+    impl CloudKmsKeyClient for WrongLengthCloudClient {
+        fn generate_data_key(
+            &self,
+            _request: CloudKmsGenerateRequest<'_>,
+        ) -> Result<CloudKmsGeneratedKey, ProviderError> {
+            CloudKmsGeneratedKey::new("provider-key", vec![1; 48], Zeroizing::new(vec![1; 31]))
+        }
+    }
+
+    #[test]
+    fn cloud_rotation_rejects_non_256_bit_plaintext_keys() {
+        let adapter = AwsKmsAdapter::new(WrongLengthCloudClient(cloud_client()));
+        let context = CustomerKmsContext::new(WorkspaceId::new("workspace-a"), 2).unwrap();
+
+        assert!(adapter.generate_key(&context).is_err());
     }
 }

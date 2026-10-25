@@ -17,6 +17,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - AWS KMS, Azure Key Vault, and Google Cloud KMS bridge types that keep cloud
   SDK clients and credentials customer-owned while requiring canonical
   tenant/generation context through each provider's authenticated-data mode.
+- Customer-KMS rotation contracts for generating exact 256-bit data keys,
+  separating persistable opaque references from non-cloneable zeroizing
+  plaintext buffers inside the customer sidecar.
 - A strict language-neutral authenticated channel-processor message schema and
   secret-free fixture carrying canonical tenant identity and event
   idempotency metadata to cooperative bots and agents.

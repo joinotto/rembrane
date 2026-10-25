@@ -30,8 +30,10 @@ pub use capability::{
 pub use conformance::{ConformanceFailure, verify_semantic_provider};
 pub use customer_kms::{
     AwsKmsAdapter, AzureKeyVaultAdapter, CloudKmsBinding, CloudKmsDecryptClient,
-    CloudKmsDecryptRequest, CustomerKmsAdapter, CustomerKmsContext, CustomerKmsKeyReference,
-    CustomerKmsKeyring, GoogleCloudKmsAdapter, MAX_KMS_KEY_ID_BYTES, MAX_WRAPPED_KEY_BYTES,
+    CloudKmsDecryptRequest, CloudKmsGenerateRequest, CloudKmsGeneratedKey, CloudKmsKeyClient,
+    CustomerKmsAdapter, CustomerKmsContext, CustomerKmsGeneratedKey, CustomerKmsKeyReference,
+    CustomerKmsKeyring, CustomerKmsRotationAdapter, GoogleCloudKmsAdapter, MAX_KMS_KEY_ID_BYTES,
+    MAX_WRAPPED_KEY_BYTES,
 };
 pub use error::ProviderError;
 pub use graph_conformance::verify_knowledge_graph_provider;

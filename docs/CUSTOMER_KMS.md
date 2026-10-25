@@ -39,6 +39,12 @@ provider's encryption-context or additional-authenticated-data mechanism.
 Cloud SDK construction, workload identity, retries, and credentials remain in
 the customer sidecar.
 
+For rotation, clients implement `CloudKmsKeyClient::generate_data_key`.
+Rembrane requests exactly 32 plaintext bytes and the adapter rejects any other
+length. The result separates a persistable opaque `CustomerKmsKeyReference`
+from a non-cloneable, non-debuggable, zeroizing plaintext buffer. Sidecars must
+persist the wrapped reference before activating the new generation.
+
 ## Required request binding
 
 Every seal and open operation must cryptographically bind the complete

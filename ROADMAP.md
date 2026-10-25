@@ -117,6 +117,9 @@ This roadmap describes sequencing, not release dates.
     - [x] Add AWS KMS, Azure Key Vault, and Google Cloud KMS bridge types over
       injectable customer-owned clients with explicit provider-specific
       authenticated-context binding and generation-substitution denial.
+    - [x] Support customer-cloud data-key generation for rotation with exact
+      256-bit plaintext enforcement, persistable wrapped references, and
+      non-cloneable zeroizing plaintext ownership.
   - [x] Add a provider-agnostic configured cipher that dispatches to local
     environment/macOS keyrings or a policy-negotiated HTTP key provider.
     - [x] Accept consumed customer key-provider configuration from
