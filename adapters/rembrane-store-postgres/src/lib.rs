@@ -2747,7 +2747,10 @@ where
     <Pool::Transaction as PostgresTransaction>::Row: PostgresRow<Error = Pool::Error>,
 {
     fn append(&mut self, receipt: DisclosureReceipt) -> Result<(), ApplicationError> {
-        if receipt.workspace_id != self.workspace_id || receipt.purpose.trim().is_empty() {
+        if receipt.workspace_id != self.workspace_id {
+            return Err(ApplicationError::AccessDenied);
+        }
+        if receipt.purpose.trim().is_empty() {
             return Err(ApplicationError::Validation(
                 "disclosure receipt is invalid".to_owned(),
             ));
@@ -8961,6 +8964,28 @@ mod tests {
                 100,
                 10,
             ),
+            Err(ApplicationError::AccessDenied)
+        );
+    }
+
+    #[test]
+    fn tenant_cipher_store_classifies_foreign_disclosure_as_access_denied() {
+        let store = PostgresStore::new(NeverBeginPool);
+        let tenant = store.for_workspace(WorkspaceId::new("workspace_01"));
+        let cipher = IdentityCipher;
+        let mut repository = tenant.with_cipher(&cipher);
+        let receipt = DisclosureReceipt {
+            id: DisclosureId::new("disclosure_cross_tenant"),
+            context_pack_id: ContextPackId::new("context_cross_tenant"),
+            workspace_id: WorkspaceId::new("workspace_other"),
+            subject_id: PrincipalId::new("principal_01"),
+            client_id: ClientId::new("client_01"),
+            purpose: "assistant-personalization".to_owned(),
+            memories: Vec::new(),
+        };
+
+        assert_eq!(
+            DisclosureRepository::append(&mut repository, receipt),
             Err(ApplicationError::AccessDenied)
         );
     }

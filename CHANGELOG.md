@@ -69,6 +69,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - PostgreSQL tenant facades now have an exhaustive mismatched-workspace denial
   matrix across implemented point and collection reads, proving rejection
   occurs before acquiring a pooled transaction.
+- PostgreSQL disclosure persistence now reports a foreign workspace as
+  non-enumerating access denial before pool access instead of conflating it
+  with malformed receipt validation.
 - A strict portable key-provider conformance result schema and runner output
   containing provider identity and explicit pass evidence for eight
   authentication, encryption, limit, rotation, and replay cases.
