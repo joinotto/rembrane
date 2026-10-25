@@ -141,9 +141,10 @@ impl HttpMem0Transport {
 
     fn decode_records(response: Response) -> Result<Vec<Mem0Record>, ProviderError> {
         let bytes = decode_json_bytes(response)?;
-        let collection: WireCollection = serde_json::from_slice(&bytes).map_err(|_| {
-            ProviderError::Rejected("Mem0 returned malformed record JSON".to_owned())
-        })?;
+        let collection: WireCollection =
+            serde_json::from_slice(bytes.as_slice()).map_err(|_| {
+                ProviderError::Rejected("Mem0 returned malformed record JSON".to_owned())
+            })?;
         collection
             .into_records()
             .into_iter()
@@ -386,9 +387,9 @@ fn require_success(response: &Response) -> Result<(), ProviderError> {
     )
 }
 
-fn decode_json_bytes(response: Response) -> Result<Vec<u8>, ProviderError> {
+fn decode_json_bytes(response: Response) -> Result<Zeroizing<Vec<u8>>, ProviderError> {
     if !response.status().is_success() {
-        return require_success(&response).map(|()| Vec::new());
+        return require_success(&response).map(|()| Zeroizing::new(Vec::new()));
     }
     let is_json = response
         .headers()
@@ -411,7 +412,7 @@ fn decode_json_bytes(response: Response) -> Result<Vec<u8>, ProviderError> {
             "Mem0 returned an invalid response".to_owned(),
         ));
     }
-    let mut bytes = Vec::new();
+    let mut bytes = Zeroizing::new(Vec::new());
     response
         .take((MAXIMUM_RESPONSE_BYTES + 1) as u64)
         .read_to_end(&mut bytes)

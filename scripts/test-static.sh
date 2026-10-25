@@ -212,6 +212,13 @@ rg -q '^REMBRANE_OAUTH_INTROSPECTION_ENDPOINT=$' .env.example
 rg -q '^REMBRANE_OAUTH_INTROSPECTION_CLIENT_ID=$' .env.example
 rg -q '^REMBRANE_OAUTH_INTROSPECTION_CLIENT_SECRET_REFERENCE=$' .env.example
 rg -q '^REMBRANE_MCP_TRUSTED_ORIGINS=$' .env.example
+rg -q 'Result<Zeroizing<Vec<u8>>, ProviderError>' adapters/rembrane-semantic-mem0/src/lib.rs
+rg -q 'Result<Zeroizing<Vec<u8>>, ProviderError>' \
+    adapters/rembrane-semantic-supermemory/src/lib.rs
+if rg -q 'errors: Vec<serde_json::Value>' adapters/rembrane-semantic-supermemory/src/lib.rs; then
+    echo "Supermemory deletion errors must be streamed without arbitrary JSON retention" >&2
+    exit 1
+fi
 if rg -q 'REMBRANE_REMOTE_MCP_URL' apps/rembrane-cli/src/main.rs .env.example; then
     echo "CLI and environment template must use the canonical remote MCP profile" >&2
     exit 1

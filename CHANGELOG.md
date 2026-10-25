@@ -9,6 +9,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- Mem0 and Supermemory HTTP response bodies now remain in zeroizing buffers
+  while canonical metadata is decoded, and Supermemory deletion failures are
+  streamed past without materializing arbitrary provider error objects.
 - CLI privacy diagnostics now validate the same complete remote MCP OAuth
   profile consumed by the API, report its resource, issuer, and introspection
   origins, and identify referenced client-secret custody instead of a legacy

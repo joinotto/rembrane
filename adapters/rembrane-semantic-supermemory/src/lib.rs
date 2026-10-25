@@ -1,6 +1,7 @@
 //! Canonical-to-Supermemory semantic projection mapping.
 
 use std::collections::BTreeMap;
+use std::fmt;
 use std::io::Read;
 use std::thread;
 use std::time::Duration;
@@ -13,6 +14,7 @@ use rembrane_provider_sdk::{
 };
 use rembrane_secret_local::{SecretResolver, resolve_provider_credentials};
 use ring::hmac;
+use serde::de::{IgnoredAny, SeqAccess, Visitor};
 use serde::{Deserialize, Serialize};
 use zeroize::{Zeroize, Zeroizing};
 
@@ -111,7 +113,45 @@ struct WireRecords {
 struct WireDeletion {
     count: u64,
     #[serde(default)]
-    errors: Vec<serde_json::Value>,
+    errors: DeletionErrors,
+}
+
+#[derive(Default)]
+struct DeletionErrors {
+    present: bool,
+}
+
+impl<'de> Deserialize<'de> for DeletionErrors {
+    fn deserialize<Deserializer>(deserializer: Deserializer) -> Result<Self, Deserializer::Error>
+    where
+        Deserializer: serde::Deserializer<'de>,
+    {
+        struct ErrorSequenceVisitor;
+
+        impl<'de> Visitor<'de> for ErrorSequenceVisitor {
+            type Value = DeletionErrors;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str("a deletion error array")
+            }
+
+            fn visit_seq<Sequence>(
+                self,
+                mut sequence: Sequence,
+            ) -> Result<Self::Value, Sequence::Error>
+            where
+                Sequence: SeqAccess<'de>,
+            {
+                let mut present = false;
+                while sequence.next_element::<IgnoredAny>()?.is_some() {
+                    present = true;
+                }
+                Ok(DeletionErrors { present })
+            }
+        }
+
+        deserializer.deserialize_seq(ErrorSequenceVisitor)
+    }
 }
 
 #[derive(Deserialize)]
@@ -177,7 +217,7 @@ pub fn deletion_confirmed(bytes: &[u8], provider_id: &str) -> Result<bool, Provi
     let wire: WireDeletion = serde_json::from_slice(bytes)
         .map_err(|_| ProviderError::Rejected("Supermemory returned malformed JSON".to_owned()))?;
     let _ = provider_id;
-    Ok(wire.errors.is_empty() && wire.count == 1)
+    Ok(!wire.errors.present && wire.count == 1)
 }
 
 fn ingest_accepted(bytes: &[u8], document_id: &str) -> Result<bool, ProviderError> {
@@ -278,7 +318,7 @@ impl HttpSupermemoryTransport {
             .bearer_auth(self.api_key.as_str())
     }
 
-    fn decode(response: Response) -> Result<Vec<u8>, ProviderError> {
+    fn decode(response: Response) -> Result<Zeroizing<Vec<u8>>, ProviderError> {
         if !response.status().is_success() {
             return Err(classify_http_failure(response.status().as_u16()));
         }
@@ -303,7 +343,7 @@ impl HttpSupermemoryTransport {
                 "Supermemory returned an invalid response".to_owned(),
             ));
         }
-        let mut bytes = Vec::new();
+        let mut bytes = Zeroizing::new(Vec::new());
         response
             .take((MAXIMUM_RESPONSE_BYTES + 1) as u64)
             .read_to_end(&mut bytes)
@@ -332,7 +372,7 @@ impl HttpSupermemoryTransport {
             })
             .send()
             .map_err(|_| ProviderError::Unavailable)?;
-        decode_records(&Self::decode(response)?)
+        decode_records(Self::decode(response)?.as_slice())
     }
 }
 
@@ -370,7 +410,8 @@ impl SupermemoryTransport for HttpSupermemoryTransport {
         if response.status().as_u16() == 404 {
             return Ok(None);
         }
-        let wire: WireRecord = serde_json::from_slice(&Self::decode(response)?).map_err(|_| {
+        let response = Self::decode(response)?;
+        let wire: WireRecord = serde_json::from_slice(response.as_slice()).map_err(|_| {
             ProviderError::Rejected("Supermemory returned malformed JSON".to_owned())
         })?;
         decode_wire_record(wire).map(Some)
@@ -417,7 +458,7 @@ impl SupermemoryTransport for HttpSupermemoryTransport {
                 .send()
         }
         .map_err(|_| ProviderError::Unavailable)?;
-        if ingest_accepted(&Self::decode(response)?, document_id)? {
+        if ingest_accepted(Self::decode(response)?.as_slice(), document_id)? {
             Ok(())
         } else {
             Err(ProviderError::Rejected(
@@ -475,7 +516,7 @@ impl SupermemoryTransport for HttpSupermemoryTransport {
             .json(&DeleteBody { ids: [provider_id] })
             .send()
             .map_err(|_| ProviderError::Unavailable)?;
-        deletion_confirmed(&Self::decode(response)?, provider_id)
+        deletion_confirmed(Self::decode(response)?.as_slice(), provider_id)
     }
 }
 
