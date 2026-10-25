@@ -1316,5 +1316,7 @@ No stable release until:
         and non-symbolic output directories before signing.
       - [x] Reject invalid UTF-8, control-bearing, traversal, and ambiguous
         cross-platform paths before inventory generation or signing.
+      - [x] Create a new private attestation directory atomically and
+        revalidate the copied manifest bytes before hashing and signing.
 - [x] Backup, restore, migration, revocation, and deletion have executable
   local-alpha coverage.

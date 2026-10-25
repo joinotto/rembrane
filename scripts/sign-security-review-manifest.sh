@@ -28,48 +28,42 @@ if [ ! -f "$manifest" ] || [ -L "$manifest" ]; then
     echo "security review manifest must be a regular non-symbolic file" >&2
     exit 1
 fi
-jq -e '
-    def safe_path:
-        type == "string"
-        and length > 0
-        and length <= 4096
-        and test("^[A-Za-z0-9._@+/-]+$")
-        and (test("(^|/)\\.\\.?(/|$)") | not);
-    .schemaVersion == 1
-    and (.sourceRevision | test("^[0-9a-f]{40}$"))
-    and .workingTreeDirty == false
-    and (.files | length > 0)
-    and ([.files[].path] == ([.files[].path] | sort))
-    and (([.files[].path] | unique | length) == (.files | length))
-    and all(
-        .files[];
-        (.path | safe_path)
-        and (.bytes | type == "number" and . >= 0)
-        and (.sha256 | test("^[0-9a-f]{64}$"))
-    )
-' "$manifest" >/dev/null
+
+validate_manifest() {
+    jq -e '
+        def safe_path:
+            type == "string"
+            and length > 0
+            and length <= 4096
+            and test("^[A-Za-z0-9._@+/-]+$")
+            and (test("(^|/)\\.\\.?(/|$)") | not);
+        .schemaVersion == 1
+        and (.sourceRevision | test("^[0-9a-f]{40}$"))
+        and .workingTreeDirty == false
+        and (.files | length > 0)
+        and ([.files[].path] == ([.files[].path] | sort))
+        and (([.files[].path] | unique | length) == (.files | length))
+        and all(
+            .files[];
+            (.path | safe_path)
+            and (.bytes | type == "number" and . >= 0)
+            and (.sha256 | test("^[0-9a-f]{64}$"))
+        )
+    ' "$1" >/dev/null
+}
+
+validate_manifest "$manifest"
 
 umask 077
-if [ -L "$output_directory" ] ||
-    { [ -e "$output_directory" ] && [ ! -d "$output_directory" ]; }
-then
-    echo "security review output must be a non-symbolic directory" >&2
+if [ -e "$output_directory" ] || [ -L "$output_directory" ]; then
+    echo "security review output directory must not already exist" >&2
     exit 1
 fi
-mkdir -p "$output_directory"
+mkdir "$output_directory"
 chmod 700 "$output_directory"
-for artifact in \
-    security-review-manifest.json \
-    security-review-manifest.json.sha256 \
-    security-review-manifest.json.sig
-do
-    if [ -e "$output_directory/$artifact" ]; then
-        echo "refusing to overwrite security review artifact: $artifact" >&2
-        exit 1
-    fi
-done
 
 cp "$manifest" "$output_directory/security-review-manifest.json"
+validate_manifest "$output_directory/security-review-manifest.json"
 manifest_sha256=$(
     openssl dgst -sha256 "$output_directory/security-review-manifest.json" |
         awk '{print $NF}'
