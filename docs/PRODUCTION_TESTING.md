@@ -51,8 +51,8 @@ node scripts/package-memory-provider-release-evidence.mjs \
   /secure/runs/provider-a.json \
   in-repository rembrane-maintainers <provider-a-source-revision> \
   /secure/runs/provider-b.json \
-  external <external-maintainer-id> <provider-b-source-revision> \
-  /secure/runs/provider-b.json.sig \
+  /secure/runs/provider-b.provenance.json \
+  /secure/runs/provider-b.provenance.json.sig \
   /secure/external-provider-maintainer.pem
 ```
 
@@ -61,3 +61,7 @@ accepts only bounded regular input files, creates an owner-only directory,
 copies the reviewed compatibility lock and migration contract, verifies the
 complete result, and removes the new directory if verification fails. It
 never reads provider tokens or cloud credentials.
+
+The external maintainer creates the provenance JSON, signs those exact bytes,
+and supplies both files. The signed statement—not the release packager—binds
+their maintainer ID and source revision to the conformance-result digest.

@@ -16,8 +16,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   - Failed final verification is explicitly tested to leave no partial
     evidence directory behind.
 - External Memory Provider release evidence now requires a detached Ed25519
-  signature over the exact conformance result and binds the independently
-  supplied maintainer public key, replacing self-asserted provenance.
+  signature over provenance that binds the exact conformance result,
+  maintainer identity, source revision, and signing time, plus the
+  independently supplied maintainer public key.
 - A strict external-provider provenance statement and verifier bind the
   maintainer identity, implementation revision, exact conformance-result
   digest, and signing time under the maintainer signature.

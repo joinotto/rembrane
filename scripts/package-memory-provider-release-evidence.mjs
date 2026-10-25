@@ -23,9 +23,7 @@ const [
   providerAMaintainer,
   providerASourceRevision,
   providerBInput,
-  providerBOrigin,
-  providerBMaintainer,
-  providerBSourceRevision,
+  providerBProvenanceInput,
   providerBSignatureInput,
   externalPublicKeyInput,
 ] = process.argv.slice(2);
@@ -39,14 +37,12 @@ if (
   !providerAMaintainer ||
   !providerASourceRevision ||
   !providerBInput ||
-  !providerBOrigin ||
-  !providerBMaintainer ||
-  !providerBSourceRevision ||
+  !providerBProvenanceInput ||
   !providerBSignatureInput ||
   !externalPublicKeyInput
 ) {
   throw new Error(
-    "usage: package-memory-provider-release-evidence.mjs OUTPUT SOURCE_REVISION GENERATED_AT MIXED_VERSION PROVIDER_A_RESULT PROVIDER_A_ORIGIN PROVIDER_A_MAINTAINER PROVIDER_A_REVISION PROVIDER_B_RESULT external PROVIDER_B_MAINTAINER PROVIDER_B_REVISION PROVIDER_B_SIGNATURE EXTERNAL_PUBLIC_KEY",
+    "usage: package-memory-provider-release-evidence.mjs OUTPUT SOURCE_REVISION GENERATED_AT MIXED_VERSION PROVIDER_A_RESULT in-repository PROVIDER_A_MAINTAINER PROVIDER_A_REVISION PROVIDER_B_RESULT PROVIDER_B_PROVENANCE PROVIDER_B_PROVENANCE_SIGNATURE EXTERNAL_PUBLIC_KEY",
   );
 }
 
@@ -62,6 +58,11 @@ const providerB = readBoundedFile(
   providerBInput,
   128 * 1024,
   "provider-b result",
+);
+const providerBProvenance = readBoundedFile(
+  providerBProvenanceInput,
+  16 * 1024,
+  "provider-b provenance",
 );
 const providerBSignature = readBoundedFile(
   providerBSignatureInput,
@@ -102,21 +103,17 @@ if (
 ) {
   throw new Error("memory-provider release identity is invalid");
 }
-for (const [origin, maintainer, revision] of [
-  [providerAOrigin, providerAMaintainer, providerASourceRevision],
-  [providerBOrigin, providerBMaintainer, providerBSourceRevision],
-]) {
-  if (
-    !["in-repository", "external"].includes(origin) ||
-    !safeText(maintainer, 200) ||
-    !/^[0-9a-f]{40}$/.test(revision)
-  ) {
-    throw new Error("memory-provider provider provenance is invalid");
-  }
-}
+const externalProvenance = parseObject(
+  providerBProvenance,
+  "provider-b provenance",
+);
 if (
-  providerAMaintainer === providerBMaintainer ||
-  ![providerAOrigin, providerBOrigin].includes("external")
+  providerAOrigin !== "in-repository" ||
+  !safeText(providerAMaintainer, 200) ||
+  !/^[0-9a-f]{40}$/.test(providerASourceRevision) ||
+  !safeText(externalProvenance.maintainerId, 200) ||
+  !/^[0-9a-f]{40}$/.test(externalProvenance.sourceRevision) ||
+  providerAMaintainer === externalProvenance.maintainerId
 ) {
   throw new Error(
     "memory-provider release requires distinct maintainers and an external provider",
@@ -133,7 +130,8 @@ const manifest = {
   compatibilityLockSha256: sha256(lock),
   migrationNotesSha256: sha256(migration),
   mixedVersionEvidenceSha256: sha256(mixed),
-  externalResultSignatureSha256: sha256(providerBSignature),
+  externalProvenanceSha256: sha256(providerBProvenance),
+  externalProvenanceSignatureSha256: sha256(providerBSignature),
   externalPublicKeySha256: sha256(externalPublicKey),
   providers: [
     {
@@ -145,9 +143,9 @@ const manifest = {
     },
     {
       slot: "provider-b",
-      origin: providerBOrigin,
-      maintainerId: providerBMaintainer,
-      sourceRevision: providerBSourceRevision,
+      origin: "external",
+      maintainerId: externalProvenance.maintainerId,
+      sourceRevision: externalProvenance.sourceRevision,
       resultSha256: sha256(providerB),
     },
   ],
@@ -162,7 +160,11 @@ try {
   copyBytes(mixed, join(output, "mixed-version.json"));
   copyBytes(providerA, join(output, "provider-a.json"));
   copyBytes(providerB, join(output, "provider-b.json"));
-  copyBytes(providerBSignature, join(output, "provider-b.json.sig"));
+  copyBytes(providerBProvenance, join(output, "provider-b.provenance.json"));
+  copyBytes(
+    providerBSignature,
+    join(output, "provider-b.provenance.json.sig"),
+  );
   writeFileSync(
     join(output, "manifest.json"),
     `${JSON.stringify(manifest, null, 2)}\n`,

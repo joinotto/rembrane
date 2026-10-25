@@ -46,9 +46,15 @@ jq --arg profile "$profile_sha256" --arg fixture "$fixture_sha256" \
      | .namespace = "release-provider-b"' \
     "$repository_root/spec/examples/memory-provider-conformance-result.json" \
     >"$evidence_root/provider-b.json"
+provider_b_sha256=$(openssl dgst -sha256 "$evidence_root/provider-b.json" |
+    awk '{print $NF}')
+jq --arg digest "$provider_b_sha256" \
+    '.resultSha256 = $digest' \
+    "$repository_root/spec/examples/memory-provider-external-provenance.json" \
+    >"$evidence_root/provider-b.provenance.json"
 openssl pkeyutl -sign -inkey "$test_root/external-private.pem" -rawin \
-    -in "$evidence_root/provider-b.json" \
-    -out "$evidence_root/provider-b.json.sig"
+    -in "$evidence_root/provider-b.provenance.json" \
+    -out "$evidence_root/provider-b.provenance.json.sig"
 
 mixed_sha256=$(openssl dgst -sha256 "$evidence_root/mixed-version.json" |
     awk '{print $NF}')
@@ -58,10 +64,10 @@ migration_sha256=$(openssl dgst -sha256 "$evidence_root/migration.md" |
     awk '{print $NF}')
 provider_a_sha256=$(openssl dgst -sha256 "$evidence_root/provider-a.json" |
     awk '{print $NF}')
-provider_b_sha256=$(openssl dgst -sha256 "$evidence_root/provider-b.json" |
-    awk '{print $NF}')
+provenance_sha256=$(openssl dgst -sha256 \
+    "$evidence_root/provider-b.provenance.json" | awk '{print $NF}')
 signature_sha256=$(openssl dgst -sha256 \
-    "$evidence_root/provider-b.json.sig" | awk '{print $NF}')
+    "$evidence_root/provider-b.provenance.json.sig" | awk '{print $NF}')
 public_key_sha256=$(openssl dgst -sha256 "$test_root/external-public.pem" |
     awk '{print $NF}')
 jq \
@@ -73,6 +79,7 @@ jq \
     --arg mixed "$mixed_sha256" \
     --arg provider_a "$provider_a_sha256" \
     --arg provider_b "$provider_b_sha256" \
+    --arg provenance "$provenance_sha256" \
     --arg signature "$signature_sha256" \
     --arg public_key "$public_key_sha256" \
     '.profileSha256 = $profile
@@ -81,7 +88,8 @@ jq \
      | .compatibilityLockSha256 = $lock
      | .migrationNotesSha256 = $migration
      | .mixedVersionEvidenceSha256 = $mixed
-     | .externalResultSignatureSha256 = $signature
+     | .externalProvenanceSha256 = $provenance
+     | .externalProvenanceSignatureSha256 = $signature
      | .externalPublicKeySha256 = $public_key
      | .providers[0].resultSha256 = $provider_a
      | .providers[1].resultSha256 = $provider_b' \

@@ -26,7 +26,8 @@ requireExactEntries(root, [
   "mixed-version.json",
   "provider-a.json",
   "provider-b.json",
-  "provider-b.json.sig",
+  "provider-b.provenance.json",
+  "provider-b.provenance.json.sig",
 ]);
 
 const manifestBytes = readBoundedFile(
@@ -67,10 +68,15 @@ const externalPublicKeyBytes = readBoundedFile(
   16 * 1024,
   "external public key",
 );
+const externalProvenanceBytes = readBoundedFile(
+  join(root, "provider-b.provenance.json"),
+  16 * 1024,
+  "external provider provenance",
+);
 const externalSignatureBytes = readBoundedFile(
-  join(root, "provider-b.json.sig"),
+  join(root, "provider-b.provenance.json.sig"),
   64,
-  "external provider signature",
+  "external provider provenance signature",
 );
 const profile = JSON.parse(profileBytes.toString("utf8"));
 const manifest = parseObject(manifestBytes, "manifest");
@@ -80,7 +86,8 @@ requireExactKeys(manifest, [
   "candidateSourceRevision",
   "compatibilityLockSha256",
   "externalPublicKeySha256",
-  "externalResultSignatureSha256",
+  "externalProvenanceSha256",
+  "externalProvenanceSignatureSha256",
   "fixtureSha256",
   "generatedAt",
   "mixedVersionEvidenceSha256",
@@ -100,7 +107,8 @@ if (
   manifest.profileSha256 !== sha256(profileBytes) ||
   manifest.fixtureSha256 !== sha256(fixtureBytes) ||
   manifest.externalPublicKeySha256 !== sha256(externalPublicKeyBytes) ||
-  manifest.externalResultSignatureSha256 !== sha256(externalSignatureBytes) ||
+  manifest.externalProvenanceSha256 !== sha256(externalProvenanceBytes) ||
+  manifest.externalProvenanceSignatureSha256 !== sha256(externalSignatureBytes) ||
   manifest.compatibilityLockSha256 !== sha256(packagedLockBytes) ||
   manifest.migrationNotesSha256 !== sha256(packagedMigrationBytes) ||
   !packagedLockBytes.equals(canonicalLockBytes) ||
@@ -195,24 +203,39 @@ if (externalProviders < 1) {
   );
 }
 
-const signatureVerification = spawnSync(
-  "openssl",
+const provenanceVerifier = join(
+  repositoryRoot,
+  "scripts/verify-memory-provider-external-provenance.mjs",
+);
+const provenanceVerification = spawnSync(
+  process.execPath,
   [
-    "pkeyutl",
-    "-verify",
-    "-pubin",
-    "-inkey",
-    externalPublicKeyPath,
-    "-rawin",
-    "-in",
+    provenanceVerifier,
+    join(root, "provider-b.provenance.json"),
     join(root, "provider-b.json"),
-    "-sigfile",
-    join(root, "provider-b.json.sig"),
+    join(root, "provider-b.provenance.json.sig"),
+    externalPublicKeyPath,
   ],
   { encoding: "utf8" },
 );
-if (signatureVerification.status !== 0) {
-  throw new Error("external provider result signature is invalid");
+if (provenanceVerification.status !== 0) {
+  throw new Error(
+    `external provider provenance failed verification: ${boundedError(
+      provenanceVerification.stderr,
+    )}`,
+  );
+}
+const provenance = parseObject(
+  externalProvenanceBytes,
+  "external provider provenance",
+);
+const externalProvider = manifest.providers[1];
+if (
+  provenance.maintainerId !== externalProvider.maintainerId ||
+  provenance.sourceRevision !== externalProvider.sourceRevision ||
+  provenance.resultSha256 !== externalProvider.resultSha256
+) {
+  throw new Error("external provider provenance does not match the manifest");
 }
 
 process.stdout.write("memory-provider release evidence set verified\n");

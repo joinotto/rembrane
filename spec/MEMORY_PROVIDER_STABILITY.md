@@ -59,11 +59,13 @@ and two passing provider results. The manifest hash-binds every artifact and
 requires the packaged lock and migration notes to byte-match the reviewed
 repository versions, distinct maintainers, provider IDs, and disposable
 namespaces, pinned implementation revisions, ordered core cases, and at least
-one externally maintained provider. The external result has a detached
-Ed25519 signature verified against a separately supplied maintainer public
-key; the manifest binds both signature and trust-anchor bytes. Passing the
-verifier proves artifact completeness; it does not substitute for actually
-obtaining the external run or independent security review.
+one externally maintained provider. A detached Ed25519 signature covers an
+external provenance statement that binds maintainer identity, source
+revision, exact result digest, and signing time. It is verified against a
+separately supplied maintainer public key; the release manifest binds the
+statement, signature, and trust-anchor bytes. Passing the verifier proves
+artifact completeness; it does not substitute for actually obtaining the
+external run or independent security review.
 
 Release automation invokes the verifier with `--verify-repository`, requiring
 the candidate source revision to equal a clean repository `HEAD`. Strict
@@ -76,9 +78,9 @@ owner-only evidence directory from two conformance results and one
 mixed-version result. The packager validates bounded regular inputs, requires
 distinct maintainers and an external implementation, refuses to overwrite an
 existing path, copies the reviewed lock and migration notes, and removes its
-new directory if final verification fails. It also verifies the external
-provider signature under the operator-selected public key without copying the
-trust anchor into the evidence directory.
+new directory if final verification fails. It also verifies the signed
+external provenance statement under the operator-selected public key without
+copying the trust anchor into the evidence directory.
 
 Strict production readiness reads the completed directory from
 `REMBRANE_MEMORY_PROVIDER_EVIDENCE_DIRECTORY`. Leaving it unset makes the gate

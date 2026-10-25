@@ -8,7 +8,8 @@
   "compatibilityLockSha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
   "migrationNotesSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
   "mixedVersionEvidenceSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-  "externalResultSignatureSha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+  "externalProvenanceSha256": "8888888888888888888888888888888888888888888888888888888888888888",
+  "externalProvenanceSignatureSha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
   "externalPublicKeySha256": "9999999999999999999999999999999999999999999999999999999999999999",
   "providers": [
     {
