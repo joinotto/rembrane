@@ -31,6 +31,7 @@ jq empty \
     spec/memory-provider.schema.json \
     spec/memory-provider-conformance.schema.json \
     spec/memory-provider-conformance-result.schema.json \
+    spec/memory-provider-mixed-version-evidence.schema.json \
     spec/key-provider-conformance-result.schema.json \
     spec/key-provider-conformance.schema.json \
     spec/semantic-provider-conformance-result.schema.json \
@@ -49,6 +50,7 @@ jq empty \
     spec/examples/memory-provider-context-request.json \
     spec/examples/memory-provider-context-response.json \
     spec/examples/memory-provider-conformance-result.json \
+    spec/examples/memory-provider-mixed-version-evidence.json \
     spec/examples/memory-provider-proposal-request.json \
     spec/examples/memory-provider-sync-push-request.json \
     spec/examples/oauth-protected-resource.json \
@@ -515,6 +517,22 @@ jq -e --slurpfile profile spec/conformance/memory-provider-core.json '
     and ([.cases[].id] == [$profile[0].cases[].id])
     and all(.cases[]; .result == "pass")
 ' spec/examples/memory-provider-conformance-result.json >/dev/null
+
+jq -e --slurpfile example spec/examples/memory-provider-mixed-version-evidence.json '
+    .additionalProperties == false
+    and .properties.schemaVersion.const == 1
+    and .properties.runs.minItems == 3
+    and .properties.runs.maxItems == 3
+    and $example[0].schemaVersion == 1
+    and [$example[0].runs[].scenario] == [
+        "oldest-client-newest-provider",
+        "newest-client-oldest-provider",
+        "unsupported-major"
+    ]
+    and [$example[0].runs[].result] == ["pass", "pass", "rejected"]
+' spec/memory-provider-mixed-version-evidence.schema.json >/dev/null
+
+node --check scripts/verify-memory-provider-mixed-version-evidence.mjs
 
 jq -e '
     (.resource | startswith("https://"))

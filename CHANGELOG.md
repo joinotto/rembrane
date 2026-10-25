@@ -9,6 +9,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- A strict Memory Provider Protocol mixed-version evidence schema and verifier
+  bind release tests to the reviewed profile and fixtures, pinned client and
+  provider builds, distinct disposable namespaces, both supported-minor
+  directions, and fail-closed unsupported-major rejection.
 - A strict customer-KMS production-evidence envelope and verifier binding each
   disposable cloud run to its provider build, core conformance profile, exact
   result and explicitly approved IAM-policy bytes, and completed resource

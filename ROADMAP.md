@@ -820,6 +820,8 @@ This roadmap describes sequencing, not release dates.
         protocol review lock.
     - [ ] Record mixed-version release-candidate evidence for the oldest and
       newest supported minor versions.
+      - [x] Define and tamper-test a hash-bound evidence format covering both
+        supported-minor directions and unsupported-major rejection.
   - [x] Add a machine-verifiable compatibility lock over the canonical wire
     schemas, HTTP binding, conformance profile, and lifecycle fixtures so
     protocol changes require explicit review.

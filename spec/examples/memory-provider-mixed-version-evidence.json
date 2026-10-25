@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-01-15T12:00:00Z",
+  "harnessSourceRevision": "1111111111111111111111111111111111111111",
+  "profileSha256": "1d3bd84ca349414599d8df30981fec661288975f1d6e847993e3d7667162dd4b",
+  "fixtureSha256": "c14caef57c52b17fc4cacab202805fe0d923e0ac07b6e7f4522e27fb6d9cf870",
+  "oldestSupportedMinor": "1.0",
+  "newestSupportedMinor": "1.1",
+  "runs": [
+    {
+      "scenario": "oldest-client-newest-provider",
+      "client": {
+        "id": "rembrane.example-client",
+        "buildVersion": "1.0.0",
+        "sourceRevision": "2222222222222222222222222222222222222222",
+        "protocolVersion": "1.0"
+      },
+      "provider": {
+        "id": "rembrane.example-provider",
+        "buildVersion": "1.1.0",
+        "sourceRevision": "3333333333333333333333333333333333333333",
+        "protocolVersion": "1.1"
+      },
+      "namespace": "mixed-old-client",
+      "result": "pass"
+    },
+    {
+      "scenario": "newest-client-oldest-provider",
+      "client": {
+        "id": "rembrane.example-client",
+        "buildVersion": "1.1.0",
+        "sourceRevision": "4444444444444444444444444444444444444444",
+        "protocolVersion": "1.1"
+      },
+      "provider": {
+        "id": "rembrane.example-provider",
+        "buildVersion": "1.0.0",
+        "sourceRevision": "5555555555555555555555555555555555555555",
+        "protocolVersion": "1.0"
+      },
+      "namespace": "mixed-new-client",
+      "result": "pass"
+    },
+    {
+      "scenario": "unsupported-major",
+      "client": {
+        "id": "rembrane.example-client",
+        "buildVersion": "2.0.0",
+        "sourceRevision": "6666666666666666666666666666666666666666",
+        "protocolVersion": "2.0"
+      },
+      "provider": {
+        "id": "rembrane.example-provider",
+        "buildVersion": "1.1.0",
+        "sourceRevision": "3333333333333333333333333333333333333333",
+        "protocolVersion": "1.1"
+      },
+      "namespace": "mixed-major-rejection",
+      "result": "rejected"
+    }
+  ]
+}

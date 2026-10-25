@@ -40,3 +40,12 @@ to `1.0` and marking the roadmap milestone complete:
 
 Until these gates are met, integrations should pin protocol `0.1`, pin exact
 conformance evidence, and treat upgrades as reviewed deployment changes.
+
+Mixed-version release evidence uses
+`memory-provider-mixed-version-evidence.schema.json` and must pass
+`verify-memory-provider-mixed-version-evidence.mjs`. The verifier binds the
+current conformance profile and lifecycle fixtures, requires distinct
+disposable namespaces, pins every client and provider build to a source
+revision, proves both supported-minor directions, and requires rejection of an
+unsupported major generation. The checked-in example is illustrative test
+data, not release evidence.
