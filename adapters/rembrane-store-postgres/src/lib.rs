@@ -8660,6 +8660,86 @@ mod tests {
             ),
             Err(ApplicationError::AccessDenied)
         );
+        assert_eq!(
+            RetentionRepository::find_retention_policy(
+                &tenant,
+                &WorkspaceId::new("workspace_other"),
+            ),
+            Err(ApplicationError::AccessDenied)
+        );
+    }
+
+    #[test]
+    fn tenant_cipher_store_denies_cross_workspace_reads_before_pool_access() {
+        struct NeverBeginPool;
+
+        impl PostgresPool for NeverBeginPool {
+            type Error = &'static str;
+            type Transaction = FakeTransaction;
+
+            fn begin(&self) -> Result<Self::Transaction, Self::Error> {
+                Err("must not begin")
+            }
+        }
+
+        let store = PostgresStore::new(NeverBeginPool);
+        let tenant = store.for_workspace(WorkspaceId::new("workspace_01"));
+        let cipher = IdentityCipher;
+        let repository = tenant.with_cipher(&cipher);
+        let other = WorkspaceId::new("workspace_other");
+        assert_eq!(
+            MemoryRepository::find(&repository, &other, &MemoryId::new("memory_01")),
+            Err(ApplicationError::AccessDenied)
+        );
+        assert_eq!(
+            EventRepository::list_events_since(&repository, &other, 0),
+            Err(ApplicationError::AccessDenied)
+        );
+        assert_eq!(
+            CheckpointRepository::latest_checkpoint(
+                &repository,
+                &other,
+                &PrincipalId::new("principal_01"),
+                &ActivityId::new("activity_01"),
+            ),
+            Err(ApplicationError::AccessDenied)
+        );
+        assert_eq!(
+            TripRepository::find_trip(&repository, &other, &EntityId::new("trip_01")),
+            Err(ApplicationError::AccessDenied)
+        );
+        assert_eq!(
+            BookingResearchRepository::find_booking_research(
+                &repository,
+                &other,
+                &BookingResearchId::new("research_01"),
+            ),
+            Err(ApplicationError::AccessDenied)
+        );
+        assert_eq!(
+            KnowledgeGraphRepository::find_knowledge_node(
+                &repository,
+                &other,
+                &KnowledgeNodeId::new("node_01"),
+            ),
+            Err(ApplicationError::AccessDenied)
+        );
+        assert_eq!(
+            KnowledgeGraphRepository::find_knowledge_edge(
+                &repository,
+                &other,
+                &KnowledgeEdgeId::new("edge_01"),
+            ),
+            Err(ApplicationError::AccessDenied)
+        );
+        assert_eq!(
+            GraphProjectionOutboxRepository::find_graph_projection(
+                &repository,
+                &other,
+                &ProjectionJobId::new("graph_projection_01"),
+            ),
+            Err(ApplicationError::AccessDenied)
+        );
     }
 
     #[test]

@@ -152,6 +152,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - End-to-end PostgreSQL graph projection worker coverage that decrypts the
   exact canonical node, indexes it through the native graph provider, and
   completes the optimistic durable outbox lifecycle.
+- Pre-pool cross-workspace denial coverage across PostgreSQL memory, event,
+  checkpoint, trip, booking-research, knowledge-graph, retention, and graph
+  projection read ports.
 - PostgreSQL invitation lookup and bounded deterministic listing with optional
   status filtering, numeric lifetime decoding, terminal-state restoration,
   and exact tenant/invitation correlation.

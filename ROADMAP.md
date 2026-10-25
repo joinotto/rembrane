@@ -324,6 +324,9 @@ This roadmap describes sequencing, not release dates.
         client authorization, including fail-closed pending-rotation denial.
       - [x] Add a tenant-and-cipher PostgreSQL memory facade for exact and
         bounded subject reads with authenticated domain-record correlation.
+        - [x] Prove memory, event, checkpoint, travel, knowledge-graph, and
+          graph-outbox reads reject cross-workspace identifiers before pool
+          access.
         - [x] Add optimistic encrypted canonical-event append and bounded
           authenticated event-stream reads through the same tenant facade.
         - [x] Atomically insert or revise encrypted memories with evidence,
