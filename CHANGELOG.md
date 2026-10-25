@@ -16,6 +16,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Local CLI commands create and optimistically update encrypted activity
   checkpoints, then resume them with an audited disclosure receipt and
   optional stale external-state detection.
+- Authenticated REST and OpenAPI checkpoint/resume operations, with exact
+  activity-scope enforcement, optimistic event sequencing, audited reads, and
+  matching path-safe TypeScript and Python SDK methods.
 - Protected `env:` and `file:` credential references for each workspace actor
   in the portable Memory Provider conformance runner, with opaque failures,
   strict local-file validation, raw-variable compatibility, and

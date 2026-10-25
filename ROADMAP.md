@@ -211,6 +211,8 @@ This roadmap describes sequencing, not release dates.
 - [x] Create, correct, and delete authorized preferences through local MCP.
 - [x] Create, update, and resume encrypted activity checkpoints through MCP.
 - [x] Retrieve minimal context through authenticated local REST.
+- [x] Create, optimistically update, and audit encrypted activity handoffs
+  through REST, OpenAPI, and the TypeScript and Python SDKs.
 - [ ] Add remote Streamable HTTP MCP with OAuth.
   - [x] Define HTTPS endpoints, RFC 9728 discovery metadata, bearer challenges,
     verified connection identity, scope ceilings, and session security rules.

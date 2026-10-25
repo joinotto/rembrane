@@ -6,7 +6,7 @@ import json
 from dataclasses import dataclass
 from typing import Any, Callable, Mapping
 from urllib.error import HTTPError
-from urllib.parse import urlencode, urlsplit
+from urllib.parse import quote, urlencode, urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 DEFAULT_MAXIMUM_RESPONSE_BYTES = 1024 * 1024
@@ -97,6 +97,31 @@ class RembraneClient:
 
     def resolve_graph_context(self, request: Mapping[str, Any]) -> Any:
         return self._request("POST", "/graph/context/resolve", request)
+
+    def checkpoint_activity(
+        self, activity_id: str, request: Mapping[str, Any]
+    ) -> Any:
+        path_id = _activity_path_id(activity_id)
+        return self._request("POST", f"/activities/{path_id}/checkpoint", request)
+
+    def resume_activity(
+        self,
+        activity_id: str,
+        workspace_id: str,
+        subject_id: str,
+        *,
+        purpose: str | None = None,
+        state_fingerprint: str | None = None,
+    ) -> Any:
+        path_id = _activity_path_id(activity_id)
+        query = {"workspaceId": workspace_id, "subjectId": subject_id}
+        if purpose is not None:
+            query["purpose"] = purpose
+        if state_fingerprint is not None:
+            query["stateFingerprint"] = state_fingerprint
+        return self._request(
+            "GET", f"/activities/{path_id}/resume?{urlencode(query)}", None
+        )
 
     def rotate_workspace_key(self, request: Mapping[str, Any]) -> Any:
         return self._request("POST", "/workspaces/key-rotation", request)
@@ -244,3 +269,19 @@ def _is_bounded_token(value: Any, maximum_bytes: int) -> bool:
             for character in value
         )
     )
+
+
+def _activity_path_id(value: Any) -> str:
+    if (
+        type(value) is not str
+        or len(value.encode("utf-8")) > 255
+        or not value
+        or not value[0].isalnum()
+        or not all(
+            character.isascii()
+            and (character.isalnum() or character in {".", "_", ":", "-"})
+            for character in value
+        )
+    ):
+        raise ValueError("activity_id must be a bounded opaque identifier")
+    return quote(value, safe="")

@@ -99,6 +99,37 @@ assert.equal(calls[5].init.method, "POST");
 assert.equal(calls[5].init.headers.Authorization, "Bearer test-token");
 assert.deepEqual(JSON.parse(calls[5].init.body), graphRequest);
 
+const checkpointRequest = {
+  workspaceId: "team",
+  subjectId: "principal-1",
+  goal: "Ship continuity",
+  summary: "SDK checkpoint works.",
+  expectedPreviousSequence: 4,
+};
+await client.checkpointActivity("activity:project-1", checkpointRequest);
+await client.resumeActivity("activity:project-1", {
+  workspaceId: "team",
+  subjectId: "principal-1",
+  purpose: "continue development",
+  stateFingerprint: "git:abc/123",
+});
+assert.equal(
+  calls[6].url,
+  "http://127.0.0.1:8787/v1/activities/activity%3Aproject-1/checkpoint",
+);
+assert.equal(calls[6].init.method, "POST");
+assert.deepEqual(JSON.parse(calls[6].init.body), checkpointRequest);
+assert.equal(
+  calls[7].url,
+  "http://127.0.0.1:8787/v1/activities/activity%3Aproject-1/resume?workspaceId=team&subjectId=principal-1&purpose=continue+development&stateFingerprint=git%3Aabc%2F123",
+);
+assert.equal(calls[7].init.method, "GET");
+assert.equal(calls[7].init.body, undefined);
+assert.throws(
+  () => client.checkpointActivity("unsafe/activity", checkpointRequest),
+  /bounded opaque identifier/,
+);
+
 assert.throws(
   () =>
     new RembraneClient({

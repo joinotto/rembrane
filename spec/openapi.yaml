@@ -5,7 +5,7 @@ info:
   description: |
     Provider-independent API for user-owned AI memory. This pre-alpha
     contract currently covers capability discovery, scoped context resolution,
-    and authorized travel research capture.
+    resumable activity handoffs, and authorized travel continuity.
   license:
     name: Apache-2.0
     identifier: Apache-2.0
@@ -87,6 +87,86 @@ paths:
           $ref: "#/components/responses/AccessDenied"
         "409":
           $ref: "#/components/responses/Conflict"
+  /activities/{activityId}/checkpoint:
+    post:
+      operationId: checkpointActivity
+      summary: Create or optimistically update an encrypted activity checkpoint
+      parameters:
+        - $ref: "#/components/parameters/ActivityId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CheckpointActivityRequest"
+      responses:
+        "200":
+          description: Existing checkpoint updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActivityCheckpointResponse"
+        "201":
+          description: New checkpoint created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActivityCheckpointResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/AccessDenied"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /activities/{activityId}/resume:
+    get:
+      operationId: resumeActivity
+      summary: Resume the latest authorized encrypted activity checkpoint
+      parameters:
+        - $ref: "#/components/parameters/ActivityId"
+        - name: workspaceId
+          in: query
+          required: true
+          schema:
+            $ref: "#/components/schemas/OpaqueId"
+        - name: subjectId
+          in: query
+          required: true
+          schema:
+            $ref: "#/components/schemas/OpaqueId"
+        - name: purpose
+          in: query
+          required: false
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 255
+        - name: stateFingerprint
+          in: query
+          required: false
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 1024
+      responses:
+        "200":
+          description: Latest checkpoint with an audited disclosure identifier
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActivityCheckpointResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/AccessDenied"
+        "404":
+          $ref: "#/components/responses/NotFound"
   /workspaces/key-rotation:
     post:
       operationId: rotateWorkspaceKey
@@ -551,6 +631,13 @@ components:
       type: http
       scheme: bearer
       bearerFormat: opaque
+  parameters:
+    ActivityId:
+      name: activityId
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/OpaqueId"
   responses:
     InvalidRequest:
       description: Request validation failed
@@ -577,12 +664,119 @@ components:
           schema:
             $ref: "#/components/schemas/Problem"
     NotFound:
-      description: The canonical trip was not found
+      description: The requested canonical resource was not found
       content:
         application/problem+json:
           schema:
             $ref: "#/components/schemas/Problem"
   schemas:
+    CheckpointActivityRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - workspaceId
+        - subjectId
+        - summary
+        - expectedPreviousSequence
+      properties:
+        workspaceId:
+          $ref: "#/components/schemas/OpaqueId"
+        subjectId:
+          $ref: "#/components/schemas/OpaqueId"
+        entityId:
+          oneOf:
+            - $ref: "#/components/schemas/OpaqueId"
+            - type: "null"
+        goal:
+          type:
+            - string
+            - "null"
+          minLength: 1
+          maxLength: 8192
+          description: Required when creating version 1; ignored for updates.
+        summary:
+          type: string
+          minLength: 1
+          maxLength: 65536
+        nextSteps:
+          type: array
+          maxItems: 1000
+          items:
+            type: string
+            minLength: 1
+            maxLength: 8192
+        blockers:
+          type: array
+          maxItems: 1000
+          items:
+            type: string
+            minLength: 1
+            maxLength: 8192
+        stateFingerprint:
+          type:
+            - string
+            - "null"
+          minLength: 1
+          maxLength: 1024
+        expectedVersion:
+          type:
+            - integer
+            - "null"
+          minimum: 1
+        expectedPreviousSequence:
+          type: integer
+          minimum: 0
+    ActivityCheckpointResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - checkpointId
+        - workspaceId
+        - subjectId
+        - activityId
+        - goal
+        - summary
+        - nextSteps
+        - blockers
+        - version
+      properties:
+        checkpointId:
+          $ref: "#/components/schemas/OpaqueId"
+        workspaceId:
+          $ref: "#/components/schemas/OpaqueId"
+        subjectId:
+          $ref: "#/components/schemas/OpaqueId"
+        activityId:
+          $ref: "#/components/schemas/OpaqueId"
+        entityId:
+          oneOf:
+            - $ref: "#/components/schemas/OpaqueId"
+            - type: "null"
+        goal:
+          type: string
+          minLength: 1
+        summary:
+          type: string
+          minLength: 1
+        nextSteps:
+          type: array
+          items:
+            type: string
+        blockers:
+          type: array
+          items:
+            type: string
+        stateFingerprint:
+          type:
+            - string
+            - "null"
+        version:
+          type: integer
+          minimum: 1
+        stale:
+          type: boolean
+        disclosureId:
+          $ref: "#/components/schemas/OpaqueId"
     CreateInvitationRequest:
       type: object
       additionalProperties: false

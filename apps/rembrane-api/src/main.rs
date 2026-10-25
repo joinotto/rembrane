@@ -3,7 +3,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
 use axum::extract::DefaultBodyLimit;
-use axum::extract::{Query, State};
+use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
@@ -12,26 +12,27 @@ use rembrane_application::{
     AcceptInvitationCommand, AddTripConstraintCommand, AddTripParticipantCommand,
     AdministrativeAuditRepository, ApplicationError, AuthorizeClientCommand,
     AuthorizeClientService, CaptureBookingResearchCommand, CaptureBookingResearchService,
-    ClientGrantBundle, CreateInvitationCommand, CreateTripCommand, ExecuteRetentionPurgeCommand,
-    GraphContextService, InvitationRepository, InvitationService, KeyRotationRepository,
-    ListInvitationsQuery, MemberLifecycleService, MembershipRepository, PlaceLegalHoldCommand,
-    RecordTripDecisionCommand, ReleaseLegalHoldCommand, ResolveContextCommand,
-    ResolveContextService, ResolveTravelContextCommand, RetentionService, RevokeInvitationCommand,
+    CheckpointService, ClientGrantBundle, CreateCheckpointCommand, CreateInvitationCommand,
+    CreateTripCommand, ExecuteRetentionPurgeCommand, GraphContextService, InvitationRepository,
+    InvitationService, KeyRotationRepository, ListInvitationsQuery, MemberLifecycleService,
+    MembershipRepository, PlaceLegalHoldCommand, RecordTripDecisionCommand,
+    ReleaseLegalHoldCommand, ResolveContextCommand, ResolveContextService,
+    ResolveTravelContextCommand, ResumeActivityCommand, RetentionService, RevokeInvitationCommand,
     SetRetentionPolicyCommand, TravelContextResearch, TravelContextService, TravelContextTrip,
-    TravelSensitiveProfile, TripService, WorkspaceRepository,
+    TravelSensitiveProfile, TripService, UpdateCheckpointCommand, WorkspaceRepository,
 };
 use rembrane_config::{SecretReference, parse_read_permissions, parse_read_scopes};
 use rembrane_contracts::{ResolveContextRequest, ResolveGraphContextRequest};
 use rembrane_crypto_configured::ConfiguredRecordCipher;
 use rembrane_domain::{
-    ActivityId, AdministrativeAuditEvent, BookingResearch, BookingResearchId, BookingResearchKind,
-    ClientId, ContextPackId, DecisionStatus, DisclosureId, EntityId, EventId, EvidenceId,
-    EvidenceReference, EvidenceSource, GraphDisclosureDirection, InvitationId, InvitationStatus,
-    KeyRotationStatus, KnowledgeNodeId, LegalHoldId, MemoryKind, MemoryScope, MemoryStatus,
-    PrincipalId, ReadGrant, RetentionPeriod, TravelDateWindow, Trip, TripConstraint,
-    TripConstraintId, TripConstraintKind, TripDecision, TripDecisionId, TripParticipant,
-    TripParticipantId, WorkspaceId, WorkspaceKind, WorkspaceRetentionPolicy, WorkspaceRole,
-    WriteGrant, WritePermission,
+    ActivityCheckpoint, ActivityId, AdministrativeAuditEvent, BookingResearch, BookingResearchId,
+    BookingResearchKind, CheckpointId, ClientId, ContextPackId, DecisionStatus, DisclosureId,
+    EntityId, EventId, EvidenceId, EvidenceReference, EvidenceSource, GraphDisclosureDirection,
+    InvitationId, InvitationStatus, KeyRotationStatus, KnowledgeNodeId, LegalHoldId, MemoryKind,
+    MemoryScope, MemoryStatus, PrincipalId, ReadGrant, RetentionPeriod, TravelDateWindow, Trip,
+    TripConstraint, TripConstraintId, TripConstraintKind, TripDecision, TripDecisionId,
+    TripParticipant, TripParticipantId, WorkspaceId, WorkspaceKind, WorkspaceRetentionPolicy,
+    WorkspaceRole, WriteGrant, WritePermission,
 };
 use rembrane_graph_configured::ConfiguredGraphProvider;
 use rembrane_secret_local::{LocalSecretResolver, SecretResolver};
@@ -89,6 +90,52 @@ struct ResolveGraphRequest {
     domain: Option<String>,
     entity_id: Option<String>,
     activity_id: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct CheckpointActivityRequest {
+    workspace_id: String,
+    subject_id: String,
+    entity_id: Option<String>,
+    goal: Option<String>,
+    summary: String,
+    #[serde(default)]
+    next_steps: Vec<String>,
+    #[serde(default)]
+    blockers: Vec<String>,
+    state_fingerprint: Option<String>,
+    expected_version: Option<u64>,
+    expected_previous_sequence: u64,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct ResumeActivityQuery {
+    workspace_id: String,
+    subject_id: String,
+    purpose: Option<String>,
+    state_fingerprint: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ActivityCheckpointResponse {
+    checkpoint_id: String,
+    workspace_id: String,
+    subject_id: String,
+    activity_id: String,
+    entity_id: Option<String>,
+    goal: String,
+    summary: String,
+    next_steps: Vec<String>,
+    blockers: Vec<String>,
+    state_fingerprint: Option<String>,
+    version: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stale: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    disclosure_id: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -570,6 +617,7 @@ impl AppState {
                 requested_read_scopes: read_scopes,
                 requested_read_permissions: read_permissions,
                 requested_write_permissions: vec![
+                    WritePermission::WriteCheckpoint,
                     WritePermission::CreateTrip,
                     WritePermission::ReviseTrip,
                     WritePermission::CaptureBookingResearch,
@@ -1166,6 +1214,168 @@ fn advance_identifier(current: &mut u128) -> Option<u128> {
     let next = current.checked_add(1)?;
     *current = next;
     Some(next)
+}
+
+async fn checkpoint_activity(
+    State(state): State<AppState>,
+    Path(activity_id): Path<String>,
+    headers: HeaderMap,
+    Json(request): Json<CheckpointActivityRequest>,
+) -> Result<(StatusCode, Json<ActivityCheckpointResponse>), ApiError> {
+    authorize_bearer(&state, &headers)?;
+    if activity_id.trim().is_empty()
+        || request.summary.trim().is_empty()
+        || request.expected_version == Some(0)
+    {
+        return Err(ApiError::invalid_request());
+    }
+    let mut runtime = state
+        .inner
+        .runtime
+        .lock()
+        .map_err(|_| ApiError::internal())?;
+    if request.workspace_id != runtime.write_grant.workspace_id.as_str()
+        || request.subject_id != runtime.write_grant.subject_id.as_str()
+    {
+        return Err(ApiError::access_denied());
+    }
+    let activity_id = ActivityId::new(activity_id);
+    let suffix = next_id(&mut runtime)?;
+    let checkpoint = if let Some(expected_version) = request.expected_version {
+        let read_grant = runtime.read_grant.clone();
+        let current = CheckpointService::new(&mut runtime.store)
+            .load_for_update(&read_grant, &activity_id)
+            .map_err(ApiError::from_application)?
+            .ok_or_else(ApiError::not_found)?;
+        if current.version() != expected_version {
+            return Err(ApiError::conflict());
+        }
+        let mut updated = current
+            .update(request.summary, request.next_steps, request.blockers)
+            .map_err(|_| ApiError::invalid_request())?;
+        if let Some(fingerprint) = request.state_fingerprint {
+            updated = updated
+                .with_state_fingerprint(fingerprint)
+                .map_err(|_| ApiError::invalid_request())?;
+        }
+        let write_grant = runtime.write_grant.clone();
+        CheckpointService::new(&mut runtime.store)
+            .update(UpdateCheckpointCommand {
+                grant: write_grant,
+                checkpoint: updated,
+                expected_version,
+                event_id: EventId::new(format!("event_{suffix}")),
+                expected_previous_sequence: request.expected_previous_sequence,
+            })
+            .map_err(ApiError::from_application)?
+    } else {
+        let goal = request
+            .goal
+            .filter(|goal| !goal.trim().is_empty())
+            .ok_or_else(ApiError::invalid_request)?;
+        let mut created = ActivityCheckpoint::new(
+            CheckpointId::new(format!("checkpoint_{suffix}")),
+            runtime.write_grant.workspace_id.clone(),
+            runtime.write_grant.subject_id.clone(),
+            activity_id,
+            request.entity_id.map(EntityId::new),
+            goal,
+            request.summary,
+            request.next_steps,
+            request.blockers,
+        )
+        .map_err(|_| ApiError::invalid_request())?;
+        if let Some(fingerprint) = request.state_fingerprint {
+            created = created
+                .with_state_fingerprint(fingerprint)
+                .map_err(|_| ApiError::invalid_request())?;
+        }
+        let write_grant = runtime.write_grant.clone();
+        CheckpointService::new(&mut runtime.store)
+            .create(CreateCheckpointCommand {
+                grant: write_grant,
+                checkpoint: created,
+                event_id: EventId::new(format!("event_{suffix}")),
+                expected_previous_sequence: request.expected_previous_sequence,
+            })
+            .map_err(ApiError::from_application)?
+    };
+    let status = if checkpoint.version() == 1 {
+        StatusCode::CREATED
+    } else {
+        StatusCode::OK
+    };
+    Ok((
+        status,
+        Json(activity_checkpoint_response(&checkpoint, None, None)),
+    ))
+}
+
+async fn resume_activity(
+    State(state): State<AppState>,
+    Path(activity_id): Path<String>,
+    Query(query): Query<ResumeActivityQuery>,
+    headers: HeaderMap,
+) -> Result<Json<ActivityCheckpointResponse>, ApiError> {
+    authorize_bearer(&state, &headers)?;
+    if activity_id.trim().is_empty() {
+        return Err(ApiError::invalid_request());
+    }
+    let mut runtime = state
+        .inner
+        .runtime
+        .lock()
+        .map_err(|_| ApiError::internal())?;
+    if query.workspace_id != runtime.read_grant.workspace_id.as_str()
+        || query.subject_id != runtime.read_grant.subject_id.as_str()
+    {
+        return Err(ApiError::access_denied());
+    }
+    let suffix = next_id(&mut runtime)?;
+    let disclosure_id = DisclosureId::new(format!("disclosure_{suffix}"));
+    let read_grant = runtime.read_grant.clone();
+    let checkpoint = CheckpointService::new(&mut runtime.store)
+        .resume(&ResumeActivityCommand {
+            grant: read_grant,
+            activity_id: ActivityId::new(activity_id),
+            disclosure_id: disclosure_id.clone(),
+            purpose: query
+                .purpose
+                .unwrap_or_else(|| "resume-activity".to_owned()),
+        })
+        .map_err(ApiError::from_application)?
+        .ok_or_else(ApiError::not_found)?;
+    let stale_state = query
+        .state_fingerprint
+        .as_deref()
+        .map(|fingerprint| checkpoint.is_stale_against(fingerprint));
+    Ok(Json(activity_checkpoint_response(
+        &checkpoint,
+        stale_state,
+        Some(&disclosure_id),
+    )))
+}
+
+fn activity_checkpoint_response(
+    checkpoint: &ActivityCheckpoint,
+    stale: Option<bool>,
+    disclosure_id: Option<&DisclosureId>,
+) -> ActivityCheckpointResponse {
+    ActivityCheckpointResponse {
+        checkpoint_id: checkpoint.id().to_string(),
+        workspace_id: checkpoint.workspace_id().to_string(),
+        subject_id: checkpoint.subject_id().to_string(),
+        activity_id: checkpoint.activity_id().to_string(),
+        entity_id: checkpoint.entity_id().map(ToString::to_string),
+        goal: checkpoint.goal().to_owned(),
+        summary: checkpoint.summary().to_owned(),
+        next_steps: checkpoint.next_steps().to_vec(),
+        blockers: checkpoint.blockers().to_vec(),
+        state_fingerprint: checkpoint.state_fingerprint().map(str::to_owned),
+        version: checkpoint.version(),
+        stale,
+        disclosure_id: disclosure_id.map(ToString::to_string),
+    }
 }
 
 async fn create_trip(
@@ -2048,6 +2258,11 @@ async fn main() -> Result<()> {
         )
         .route("/v1/context/resolve", post(resolve_context))
         .route("/v1/graph/context/resolve", post(resolve_graph_context))
+        .route(
+            "/v1/activities/{activity_id}/checkpoint",
+            post(checkpoint_activity),
+        )
+        .route("/v1/activities/{activity_id}/resume", get(resume_activity))
         .route(
             "/v1/workspaces/invitations",
             get(list_invitations).post(create_invitation),

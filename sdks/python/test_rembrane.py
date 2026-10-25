@@ -141,6 +141,53 @@ class RembraneClientTests(unittest.TestCase):
             json.dumps(request, separators=(",", ":")).encode("utf-8"),
         )
 
+    def test_activity_handoff_uses_exact_authenticated_routes(self) -> None:
+        calls = []
+
+        def transport(method, url, headers, body, maximum):
+            calls.append((method, url, headers, body, maximum))
+            return 200, {"Content-Type": "application/json"}, b'{"version":1}'
+
+        client = RembraneClient(
+            "http://127.0.0.1:8787/v1", "test-token", transport=transport
+        )
+        request = {
+            "workspaceId": "team",
+            "subjectId": "principal-1",
+            "goal": "Ship continuity",
+            "summary": "SDK checkpoint works.",
+            "expectedPreviousSequence": 4,
+        }
+        client.checkpoint_activity("activity:project-1", request)
+        client.resume_activity(
+            "activity:project-1",
+            "team",
+            "principal-1",
+            purpose="continue development",
+            state_fingerprint="git:abc/123",
+        )
+
+        self.assertEqual(calls[0][0], "POST")
+        self.assertEqual(
+            calls[0][1],
+            "http://127.0.0.1:8787/v1/activities/"
+            "activity%3Aproject-1/checkpoint",
+        )
+        self.assertEqual(
+            calls[0][3],
+            json.dumps(request, separators=(",", ":")).encode("utf-8"),
+        )
+        self.assertEqual(calls[1][0], "GET")
+        self.assertEqual(
+            calls[1][1],
+            "http://127.0.0.1:8787/v1/activities/"
+            "activity%3Aproject-1/resume?workspaceId=team&subjectId=principal-1"
+            "&purpose=continue+development&stateFingerprint=git%3Aabc%2F123",
+        )
+        self.assertIsNone(calls[1][3])
+        with self.assertRaisesRegex(ValueError, "bounded opaque identifier"):
+            client.checkpoint_activity("unsafe/activity", request)
+
     def test_problem_response_becomes_typed_error(self) -> None:
         client = RembraneClient(
             "https://memory.example.test/v1",

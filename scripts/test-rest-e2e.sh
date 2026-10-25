@@ -31,7 +31,7 @@ invited_principal_id="principal_rest_invited"
 owner_personal_workspace="workspace_rest_owner_personal"
 invited_personal_workspace="workspace_rest_invited_personal"
 export REMBRANE_CLIENT_ID="client_rest_e2e"
-export REMBRANE_READ_SCOPES="global,domain:travel,entity:project_rest_e2e,entity:trip_missing"
+export REMBRANE_READ_SCOPES="global,domain:travel,entity:project_rest_e2e,entity:trip_missing,activity:activity_rest_e2e"
 export REMBRANE_API_TOKEN="rest-e2e-token"
 export REMBRANE_LISTEN="${REMBRANE_TEST_LISTEN:-127.0.0.1:18787}"
 
@@ -163,6 +163,61 @@ postman collection run \
     --env-var "invitationId=invitation_rest_e2e" \
     --env-var "tripId=trip_missing"
 
+denied_checkpoint_response="$test_directory/denied-checkpoint-response.json"
+denied_checkpoint_status=$(
+    curl -sS \
+        -o "$denied_checkpoint_response" \
+        -w '%{http_code}' \
+        -X POST "$base_url/v1/activities/activity_outside_grant/checkpoint" \
+        -H "Authorization: Bearer $REMBRANE_API_TOKEN" \
+        -H "Content-Type: application/json" \
+        --data "{\"workspaceId\":\"$REMBRANE_WORKSPACE_ID\",\"subjectId\":\"$REMBRANE_PRINCIPAL_ID\",\"goal\":\"Must not persist\",\"summary\":\"Outside activity grant\",\"expectedPreviousSequence\":7}"
+)
+test "$denied_checkpoint_status" = "403"
+test "$(jq -r '.code' "$denied_checkpoint_response")" = "access_denied"
+
+checkpoint_response="$test_directory/checkpoint-response.json"
+checkpoint_status=$(
+    curl -sS \
+        -o "$checkpoint_response" \
+        -w '%{http_code}' \
+        -X POST "$base_url/v1/activities/activity_rest_e2e/checkpoint" \
+        -H "Authorization: Bearer $REMBRANE_API_TOKEN" \
+        -H "Content-Type: application/json" \
+        --data "{\"workspaceId\":\"$REMBRANE_WORKSPACE_ID\",\"subjectId\":\"$REMBRANE_PRINCIPAL_ID\",\"entityId\":\"project_rest_e2e\",\"goal\":\"Ship REST continuity\",\"summary\":\"REST checkpoint creation works.\",\"nextSteps\":[\"Resume from another app\"],\"blockers\":[],\"stateFingerprint\":\"git:rest123\",\"expectedPreviousSequence\":7}"
+)
+test "$checkpoint_status" = "201"
+test "$(jq -r '.version' "$checkpoint_response")" = "1"
+test "$(jq -r '.activityId' "$checkpoint_response")" = "activity_rest_e2e"
+
+resume_response="$test_directory/resume-response.json"
+resume_status=$(
+    curl -sS \
+        -o "$resume_response" \
+        -w '%{http_code}' \
+        "$base_url/v1/activities/activity_rest_e2e/resume?workspaceId=$REMBRANE_WORKSPACE_ID&subjectId=$REMBRANE_PRINCIPAL_ID&purpose=continue-development&stateFingerprint=git%3Arest123" \
+        -H "Authorization: Bearer $REMBRANE_API_TOKEN"
+)
+test "$resume_status" = "200"
+jq -e \
+    '.version == 1
+        and .summary == "REST checkpoint creation works."
+        and .stale == false
+        and .disclosureId' "$resume_response" >/dev/null
+
+updated_checkpoint_response="$test_directory/updated-checkpoint-response.json"
+updated_checkpoint_status=$(
+    curl -sS \
+        -o "$updated_checkpoint_response" \
+        -w '%{http_code}' \
+        -X POST "$base_url/v1/activities/activity_rest_e2e/checkpoint" \
+        -H "Authorization: Bearer $REMBRANE_API_TOKEN" \
+        -H "Content-Type: application/json" \
+        --data "{\"workspaceId\":\"$REMBRANE_WORKSPACE_ID\",\"subjectId\":\"$REMBRANE_PRINCIPAL_ID\",\"summary\":\"REST checkpoint update works.\",\"nextSteps\":[\"Run all clients\"],\"blockers\":[],\"stateFingerprint\":\"git:rest456\",\"expectedVersion\":1,\"expectedPreviousSequence\":8}"
+)
+test "$updated_checkpoint_status" = "200"
+test "$(jq -r '.version' "$updated_checkpoint_response")" = "2"
+
 acceptance_invitation_id="invitation_rest_accept"
 acceptance_create_response="$test_directory/acceptance-create-response.json"
 acceptance_create_status=$(
@@ -265,6 +320,14 @@ test "$(
 test "$(
     sqlite3 "$database" \
         "SELECT count(*) FROM booking_research WHERE workspace_id = '$REMBRANE_WORKSPACE_ID';"
+)" = "1"
+test "$(
+    sqlite3 "$database" \
+        "SELECT version FROM activity_checkpoints WHERE workspace_id = '$REMBRANE_WORKSPACE_ID' AND activity_id = 'activity_rest_e2e';"
+)" = "2"
+test "$(
+    sqlite3 "$database" \
+        "SELECT count(*) FROM checkpoint_disclosures WHERE workspace_id = '$REMBRANE_WORKSPACE_ID' AND activity_id = 'activity_rest_e2e';"
 )" = "1"
 test "$(
     sqlite3 "$database" \

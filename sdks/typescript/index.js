@@ -71,6 +71,38 @@ export class RembraneClient {
     return this.#request("POST", "/graph/context/resolve", request);
   }
 
+  checkpointActivity(activityId, request) {
+    if (!isOpaqueId(activityId)) {
+      throw new TypeError("activityId must be a bounded opaque identifier");
+    }
+    return this.#request(
+      "POST",
+      `/activities/${encodeURIComponent(activityId)}/checkpoint`,
+      request,
+    );
+  }
+
+  resumeActivity(activityId, query) {
+    if (!isOpaqueId(activityId)) {
+      throw new TypeError("activityId must be a bounded opaque identifier");
+    }
+    const parameters = new URLSearchParams({
+      workspaceId: query.workspaceId,
+      subjectId: query.subjectId,
+    });
+    if (query.purpose !== undefined) {
+      parameters.set("purpose", query.purpose);
+    }
+    if (query.stateFingerprint !== undefined) {
+      parameters.set("stateFingerprint", query.stateFingerprint);
+    }
+    return this.#request(
+      "GET",
+      `/activities/${encodeURIComponent(activityId)}/resume?${parameters}`,
+      undefined,
+    );
+  }
+
   rotateWorkspaceKey(request) {
     return this.#request("POST", "/workspaces/key-rotation", request);
   }
@@ -211,6 +243,14 @@ function isBoundedToken(value, maximumBytes) {
     value.length > 0 &&
     utf8Length(value) <= maximumBytes &&
     !/[\s\u0000-\u001f\u007f]/u.test(value)
+  );
+}
+
+function isOpaqueId(value) {
+  return (
+    typeof value === "string" &&
+    utf8Length(value) <= 255 &&
+    /^[A-Za-z0-9][A-Za-z0-9._:-]*$/u.test(value)
   );
 }
 

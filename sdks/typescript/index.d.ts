@@ -72,6 +72,40 @@ export interface ResolveGraphContextResponse {
   edges: GraphEdge[];
 }
 
+export interface CheckpointActivityRequest extends WorkspaceRequest {
+  subjectId: string;
+  entityId?: string | null;
+  goal?: string | null;
+  summary: string;
+  nextSteps?: string[];
+  blockers?: string[];
+  stateFingerprint?: string | null;
+  expectedVersion?: number | null;
+  expectedPreviousSequence: number;
+}
+
+export interface ResumeActivityQuery extends WorkspaceRequest {
+  subjectId: string;
+  purpose?: string;
+  stateFingerprint?: string;
+}
+
+export interface ActivityCheckpoint {
+  checkpointId: string;
+  workspaceId: string;
+  subjectId: string;
+  activityId: string;
+  entityId: string | null;
+  goal: string;
+  summary: string;
+  nextSteps: string[];
+  blockers: string[];
+  stateFingerprint: string | null;
+  version: number;
+  stale?: boolean;
+  disclosureId?: string;
+}
+
 export type WorkspaceInvitationRole = "admin" | "member" | "viewer";
 export type WorkspaceInvitationStatus = "pending" | "accepted" | "revoked" | "expired";
 
@@ -149,6 +183,14 @@ export class RembraneClient {
   resolveGraphContext(
     request: ResolveGraphContextRequest,
   ): Promise<ResolveGraphContextResponse>;
+  checkpointActivity(
+    activityId: string,
+    request: CheckpointActivityRequest,
+  ): Promise<ActivityCheckpoint>;
+  resumeActivity(
+    activityId: string,
+    query: ResumeActivityQuery,
+  ): Promise<ActivityCheckpoint>;
   rotateWorkspaceKey<T = unknown>(request: WorkspaceRequest): Promise<T>;
   createWorkspaceInvitation(
     request: CreateWorkspaceInvitationRequest,
