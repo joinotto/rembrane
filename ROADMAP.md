@@ -355,6 +355,9 @@ This roadmap describes sequencing, not release dates.
     - [x] Classify the exact `initialize` body before authentication and
       session allocation so malformed or substituted requests cannot reserve
       tenant-bound session capacity.
+      - [x] Roll back the new session binding when downstream SDK
+        initialization fails, retaining capacity only after successful
+        dispatch.
   - [x] Add a bounded session registry with URL-safe identifiers,
     duplicate/capacity controls, per-request revalidation, and authenticated
     deletion, reclaiming expired capacity before accepting new sessions.

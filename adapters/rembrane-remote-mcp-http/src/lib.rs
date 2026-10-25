@@ -911,6 +911,40 @@ where
     Ok(authorized)
 }
 
+/// Establishes and dispatches an exact Axum `initialize` request, rolling the
+/// new session binding back when downstream SDK initialization fails.
+///
+/// # Errors
+///
+/// Distinguishes HTTP-ready header, body, OAuth, tenant, or capacity rejection
+/// from downstream protocol-dispatch failure.
+pub async fn establish_and_dispatch_axum_session<Verifier, Dispatcher>(
+    gate: &mut RemoteMcpHttpGate,
+    authorization: &RemoteHttpAuthorization<'_, '_, Verifier>,
+    headers: &HeaderMap,
+    body: &[u8],
+    now_epoch_seconds: u64,
+    dispatcher: &Dispatcher,
+) -> Result<Dispatcher::Output, RemoteMcpDispatchError<Dispatcher::Error>>
+where
+    Verifier: RemoteTokenVerifier,
+    Dispatcher: AuthorizedRemoteMcpDispatcher,
+{
+    let protocol_headers =
+        protocol_headers_from_axum(headers).map_err(RemoteMcpDispatchError::Authorization)?;
+    let request =
+        request_from_axum_headers(headers).map_err(RemoteMcpDispatchError::Authorization)?;
+    gate.establish_and_dispatch_session_body(
+        authorization,
+        request,
+        protocol_headers,
+        body,
+        now_epoch_seconds,
+        dispatcher,
+    )
+    .await
+}
+
 /// Reauthenticates an Axum session DELETE, dispatches it to the protocol
 /// service, and commits local deletion only after downstream success.
 ///
@@ -1207,6 +1241,51 @@ impl RemoteMcpHttpGate {
             protocol_headers: RemoteMcpProtocolHeaders::transport_neutral(),
             body: Zeroizing::new(body.to_vec()),
         })
+    }
+
+    /// Establishes and dispatches one exact initialization request, retaining
+    /// the session only after downstream SDK success.
+    ///
+    /// # Errors
+    ///
+    /// Distinguishes HTTP-ready authorization or capacity rejection from a
+    /// downstream dispatch failure. Failed dispatch rolls the newly allocated
+    /// session back before returning.
+    pub async fn establish_and_dispatch_session_body<Verifier, Dispatcher>(
+        &mut self,
+        authorization: &RemoteHttpAuthorization<'_, '_, Verifier>,
+        request: RemoteMcpHttpRequest<'_>,
+        mut protocol_headers: RemoteMcpProtocolHeaders,
+        body: &[u8],
+        now_epoch_seconds: u64,
+        dispatcher: &Dispatcher,
+    ) -> Result<Dispatcher::Output, RemoteMcpDispatchError<Dispatcher::Error>>
+    where
+        Verifier: RemoteTokenVerifier,
+        Dispatcher: AuthorizedRemoteMcpDispatcher,
+    {
+        let session_id =
+            Self::session_id(request.session_id).map_err(RemoteMcpDispatchError::Authorization)?;
+        protocol_headers.validated_host = request.host.map(str::to_owned);
+        protocol_headers.validated_origin = request.origin.map(str::to_owned);
+        let mut authorized = self
+            .establish_session_body(authorization, request, body, now_epoch_seconds)
+            .map_err(RemoteMcpDispatchError::Authorization)?;
+        authorized.protocol_headers = protocol_headers;
+        let access = authorized.access().clone();
+        match authorized.dispatch_with(dispatcher).await {
+            Ok(output) => Ok(output),
+            Err(error) => {
+                self.sessions
+                    .terminate(&session_id, &access, now_epoch_seconds)
+                    .map_err(|_| {
+                        RemoteMcpDispatchError::Authorization(
+                            self.rejection(RemoteSessionHttpError::Forbidden),
+                        )
+                    })?;
+                Err(RemoteMcpDispatchError::Dispatch(error))
+            }
+        }
     }
 
     /// Reauthenticates and authorizes one established MCP request before the
@@ -1576,7 +1655,8 @@ mod tests {
         MCP_PROTOCOL_VERSION_HEADER_NAME, MCP_SESSION_HEADER_NAME, RemoteMcpAxumAuthorization,
         RemoteMcpDispatchError, RemoteMcpHttpGate, RemoteMcpHttpRejection, RemoteMcpHttpRequest,
         RemoteMcpInvocation, authorize_axum_session_body, authorize_axum_session_deletion,
-        authorize_axum_stateless_body, classify_remote_mcp_request, establish_axum_session_body,
+        authorize_axum_stateless_body, classify_remote_mcp_request,
+        establish_and_dispatch_axum_session, establish_axum_session_body,
         request_from_axum_headers,
     };
 
@@ -2010,6 +2090,59 @@ mod tests {
                 .status,
             409
         );
+    }
+
+    #[tokio::test]
+    async fn failed_sdk_initialization_rolls_back_new_session_capacity() {
+        let verifier = Verifier;
+        let authenticator = RemoteAccessAuthenticator::new(
+            &verifier,
+            "https://identity.example.test",
+            "https://memory.example.test/mcp",
+        );
+        let authorization = RemoteHttpAuthorization::new(&authenticator, &[]);
+        let mut gate = RemoteMcpHttpGate::new(
+            1,
+            "https://memory.example.test/.well-known/oauth-protected-resource/mcp",
+            &["memory.example.test"],
+        )
+        .expect("gate should be valid");
+        let mut headers = HeaderMap::new();
+        headers.insert(HOST, HeaderValue::from_static("memory.example.test"));
+        headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+        headers.insert(
+            ACCEPT,
+            HeaderValue::from_static("application/json, text/event-stream"),
+        );
+        headers.insert(
+            MCP_SESSION_HEADER_NAME,
+            HeaderValue::from_static("session_0123456789abcdef"),
+        );
+        headers.insert(
+            AUTHORIZATION,
+            HeaderValue::from_static("Bearer workspace-one"),
+        );
+        let initialize = br#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}"#;
+        let failing = tower::service_fn(
+            |_request: axum::http::Request<axum::body::Body>| async move {
+                Err::<(), _>("SDK initialization failed")
+            },
+        );
+        assert!(matches!(
+            establish_and_dispatch_axum_session(
+                &mut gate,
+                &authorization,
+                &headers,
+                initialize,
+                1_000,
+                &AuthorizedTowerMcpDispatcher::new(failing),
+            )
+            .await,
+            Err(RemoteMcpDispatchError::Dispatch(_))
+        ));
+
+        establish_axum_session_body(&mut gate, &authorization, &headers, initialize, 1_000)
+            .expect("failed SDK dispatch must release the session identifier and capacity");
     }
 
     #[tokio::test]

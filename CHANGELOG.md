@@ -9,6 +9,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- Failed remote MCP SDK initialization now rolls back the newly allocated
+  tenant session before returning the dispatch error, preventing ghost
+  bindings and permanent capacity loss.
 - Remote MCP session initialization now classifies and couples the exact
   `initialize` JSON-RPC body before authentication or capacity mutation;
   malformed and substituted methods cannot allocate tenant-bound sessions.
