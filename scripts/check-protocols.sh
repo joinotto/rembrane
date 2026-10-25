@@ -98,6 +98,27 @@ jq -e --slurpfile example spec/examples/key-provider-conformance-result.json '
 ' spec/key-provider-conformance-result.schema.json >/dev/null
 
 jq -e '
+    .additionalProperties == false
+    and .properties.profileId.const == "rembrane.memory-provider.core"
+    and .properties.protocolVersion.const == "0.1"
+' spec/memory-provider-conformance.schema.json >/dev/null
+
+jq -e '
+    .additionalProperties == false
+    and .properties.profileId.const == "rembrane.memory-provider.core"
+    and .properties.fixtureId.const == "rembrane.memory-provider.core.lifecycle"
+    and .properties.protocolVersion.const == "0.1"
+' spec/memory-provider-fixtures.schema.json >/dev/null
+
+jq -e '
+    .additionalProperties == false
+    and .properties.profileId.const == "rembrane.memory-provider.core"
+    and .properties.fixtureId.const == "rembrane.memory-provider.core.lifecycle"
+    and .properties.protocolVersion.const == "0.1"
+    and .properties.result.const == "pass"
+' spec/memory-provider-conformance-result.schema.json >/dev/null
+
+jq -e '
     .profileId == "rembrane.key-provider.core"
     and .protocolVersion == "0.1"
     and (.cases | map(.id)) == [

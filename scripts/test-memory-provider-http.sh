@@ -56,6 +56,12 @@ jq -e '
         type == "number" and . >= 1 and floor == .
     )
 ' "$fixture_file" >/dev/null
+profile_id=$(jq -er '.profileId' "$profile_file")
+fixture_profile_id=$(jq -er '.profileId' "$fixture_file")
+if [ "$fixture_profile_id" != "$profile_id" ]; then
+    echo "memory provider fixture targets a different conformance profile" >&2
+    exit 1
+fi
 required_actor_scopes=$(jq -c '
     [
         .actors.primary.requiredScopes[],
@@ -390,7 +396,7 @@ jq -e \
     'all(.items[]; .content != $content)' "$response" >/dev/null
 
 jq -cn \
-    --arg profileId "rembrane.memory-provider.core" \
+    --arg profileId "$profile_id" \
     --arg fixtureId "$fixture_id" \
     --arg protocolVersion "0.1" \
     --arg providerId "$provider_id" \

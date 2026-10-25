@@ -755,6 +755,8 @@ This roadmap describes sequencing, not release dates.
     protocol changes require explicit review.
     - [x] Tamper-test the compatibility verifier against an independently
       copied canonical schema in the unconditional static gate.
+    - [x] Bind profile, lifecycle fixture, result schema, and example evidence
+      to exact reviewed profile and fixture identifiers.
   - [x] Add an immutable, versioned discovery manifest with standard well-known
     path, transports, operation capabilities, privacy mode, supported domains,
     and bounded context/event/sync limits.

@@ -116,4 +116,6 @@ REMBRANE_MEMORY_PROVIDER_READONLY_TOKEN="$READONLY_TOKEN" \
 
 Use isolated test workspaces and short-lived tokens. The client creates and
 deletes fixtures, verifies cross-workspace denial, and emits a credential-free
-JSON result.
+JSON result. The result carries the exact reviewed profile and lifecycle
+fixture identifiers; compatibility verification rejects evidence attributed to
+another test definition.

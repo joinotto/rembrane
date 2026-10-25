@@ -12,15 +12,15 @@
     },
     {
       "path": "spec/memory-provider-conformance.schema.json",
-      "sha256": "dcf7eb7b99980c3abb7695d2877b1cbb28457f01a381cc56c67cf2c04f14dc79"
+      "sha256": "7af5163d8432c72adf52cbb11f36109bc97d275daaac68b2a3ed0d8835b16177"
     },
     {
       "path": "spec/memory-provider-conformance-result.schema.json",
-      "sha256": "037b74093601b9f605d292ebf30a6964898795a8f7089b7cce439259fdb19f96"
+      "sha256": "df9f318fd491e171cd99aba331cc575313b4051312cf59e65876e34adc8e78d3"
     },
     {
       "path": "spec/memory-provider-fixtures.schema.json",
-      "sha256": "34543b2f88b5918715c1bc1b8a398326e1a0546431a5d8bd41c3e9f4d6ce0093"
+      "sha256": "c440aa173f28208c9da0df2a88cb539681cda5dbe7f4062c1e5e91451c19581a"
     },
     {
       "path": "spec/conformance/memory-provider-core.json",
@@ -29,6 +29,10 @@
     {
       "path": "spec/conformance/memory-provider-core-fixtures.json",
       "sha256": "c14caef57c52b17fc4cacab202805fe0d923e0ac07b6e7f4522e27fb6d9cf870"
+    },
+    {
+      "path": "spec/examples/memory-provider-conformance-result.json",
+      "sha256": "2ebb90f14910b18b573efe81b8699c457b8e3ff8af08baaa4e264da584e517bf"
     }
   ]
 }

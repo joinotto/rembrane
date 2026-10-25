@@ -15,14 +15,10 @@
   ],
   "properties": {
     "profileId": {
-      "type": "string",
-      "pattern": "^[a-z0-9][a-z0-9._-]+$",
-      "maxLength": 255
+      "const": "rembrane.memory-provider.core"
     },
     "fixtureId": {
-      "type": "string",
-      "pattern": "^[a-z0-9][a-z0-9._-]+$",
-      "maxLength": 255
+      "const": "rembrane.memory-provider.core.lifecycle"
     },
     "protocolVersion": {
       "const": "0.1"
