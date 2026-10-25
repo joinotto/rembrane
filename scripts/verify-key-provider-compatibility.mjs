@@ -20,6 +20,8 @@ const seenPaths = new Set();
 const requiredArtifacts = new Set([
   "spec/key-provider-openapi.yaml",
   "spec/examples/key-provider-manifest.json",
+  "spec/key-provider-conformance.schema.json",
+  "spec/conformance/key-provider-core.json",
   "spec/key-provider-conformance-result.schema.json",
   "spec/examples/key-provider-conformance-result.json",
   "scripts/test-key-provider-http.sh",
@@ -77,6 +79,18 @@ const resultSchema = JSON.parse(
     "utf8",
   ),
 );
+const conformanceSchema = JSON.parse(
+  await readFile(
+    resolve(repositoryRoot, "spec/key-provider-conformance.schema.json"),
+    "utf8",
+  ),
+);
+const conformanceProfile = JSON.parse(
+  await readFile(
+    resolve(repositoryRoot, "spec/conformance/key-provider-core.json"),
+    "utf8",
+  ),
+);
 const resultFixture = JSON.parse(
   await readFile(
     resolve(repositoryRoot, "spec/examples/key-provider-conformance-result.json"),
@@ -87,6 +101,16 @@ assert.equal(
   manifest.protocolVersion,
   lock.protocolVersion,
   "compatibility lock and discovery fixture protocol versions differ",
+);
+assert.equal(
+  conformanceSchema.properties.protocolVersion.const,
+  lock.protocolVersion,
+  "compatibility lock and conformance profile schema versions differ",
+);
+assert.equal(
+  conformanceProfile.protocolVersion,
+  lock.protocolVersion,
+  "compatibility lock and conformance profile versions differ",
 );
 assert.equal(
   resultSchema.properties.protocolVersion.const,

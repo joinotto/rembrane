@@ -31,8 +31,10 @@ jq empty \
     spec/memory-provider-conformance.schema.json \
     spec/memory-provider-conformance-result.schema.json \
     spec/key-provider-conformance-result.schema.json \
+    spec/key-provider-conformance.schema.json \
     spec/memory-provider-fixtures.schema.json \
     spec/conformance/memory-provider-core.json \
+    spec/conformance/key-provider-core.json \
     spec/conformance/memory-provider-core-fixtures.json \
     spec/examples/discovery.json \
     spec/examples/channel-processor-message.json \
@@ -92,6 +94,22 @@ jq -e --slurpfile example spec/examples/key-provider-conformance-result.json '
     and all($example[0].cases[]; .result == "pass")
     and $example[0].providerVersion == "0.1.0-test"
 ' spec/key-provider-conformance-result.schema.json >/dev/null
+
+jq -e '
+    .profileId == "rembrane.key-provider.core"
+    and .protocolVersion == "0.1"
+    and (.cases | map(.id)) == [
+        "authentication",
+        "manifest",
+        "roundtrip",
+        "context-substitution",
+        "unknown-key",
+        "plaintext-limit",
+        "rotation",
+        "repeated-rotation"
+    ]
+    and all(.cases[]; (.requirement | length) >= 1 and (.requirement | length) <= 500)
+' spec/conformance/key-provider-core.json >/dev/null
 
 jq -e --slurpfile schema spec/channel-processor-acknowledgement.schema.json '
     .protocolVersion == $schema[0].properties.protocolVersion.const

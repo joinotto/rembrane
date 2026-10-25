@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spec.rembrane.dev/key-provider/0.1/conformance.schema.json",
+  "title": "Rembrane Key Provider Conformance Profile",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["profileId", "protocolVersion", "cases"],
+  "properties": {
+    "profileId": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]+$",
+      "maxLength": 255
+    },
+    "protocolVersion": {
+      "const": "0.1"
+    },
+    "cases": {
+      "type": "array",
+      "minItems": 8,
+      "maxItems": 8,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "requirement"],
+        "properties": {
+          "id": {
+            "enum": [
+              "authentication",
+              "manifest",
+              "roundtrip",
+              "context-substitution",
+              "unknown-key",
+              "plaintext-limit",
+              "rotation",
+              "repeated-rotation"
+            ]
+          },
+          "requirement": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          }
+        }
+      }
+    }
+  }
+}

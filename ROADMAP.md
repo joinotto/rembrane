@@ -107,6 +107,8 @@ This roadmap describes sequencing, not release dates.
       provider conformance runner without exposing key material.
       - [x] Emit a strict portable conformance result with provider identity
         and explicit evidence for all eight key-provider security cases.
+        - [x] Publish strict machine-readable case requirements and derive
+          runner evidence from the reviewed core profile.
         - [x] Bind discovery and conformance evidence to an exact bounded
           provider build version rather than identity alone.
   - [x] Resolve or unwrap keyring material through customer KMS adapters.

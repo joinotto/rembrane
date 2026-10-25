@@ -11,6 +11,14 @@
       "sha256": "ec70162236f00caef352b6a78d236da183ff474c4207dcf996817e2f6956c692"
     },
     {
+      "path": "spec/key-provider-conformance.schema.json",
+      "sha256": "89feabb14da77976685e66da3aab9bb273e6a185836aa055e3a52e994be2135f"
+    },
+    {
+      "path": "spec/conformance/key-provider-core.json",
+      "sha256": "aee588eabba0f29a05fb633324e54203a1ff81899bedae7dad4bab562bb2fa7b"
+    },
+    {
       "path": "spec/key-provider-conformance-result.schema.json",
       "sha256": "a4137f3047cb62d21d6bb3b4239550c68fda97b1362ca9dd2361f6e380db7e38"
     },
@@ -20,7 +28,7 @@
     },
     {
       "path": "scripts/test-key-provider-http.sh",
-      "sha256": "3df44612f7f1346ea98dd6513a53c6ee4c752c2bffb32208acbf589437619ba4"
+      "sha256": "ac1a8679d824ba3cd59b29e4a243dd1d284097c7e37f491d152136b92aabce76"
     }
   ]
 }

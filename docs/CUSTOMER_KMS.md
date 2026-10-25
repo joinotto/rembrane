@@ -157,4 +157,7 @@ The runner emits a strict JSON conformance result containing the negotiated
 provider identity, exact provider version, and one pass record for each authentication, manifest,
 roundtrip, substitution, unknown-key, size-limit, rotation, and replay case.
 Retain this result with the reviewed deployment and IAM evidence.
+The case definitions and requirements live in the versioned
+`rembrane.key-provider.core` profile; runner output is generated from that
+profile so evidence case IDs cannot drift independently.
 

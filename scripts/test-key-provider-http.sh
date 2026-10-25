@@ -11,6 +11,8 @@ done
 base_url=${REMBRANE_KEY_PROVIDER_BASE_URL:-}
 token=${REMBRANE_KEY_PROVIDER_TOKEN:-}
 namespace=${1:-}
+repository_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+conformance_profile="$repository_root/spec/conformance/key-provider-core.json"
 
 case "$base_url" in
     https://* | http://127.0.0.1:* | http://localhost:* | http://\[::1\]:*) ;;
@@ -29,6 +31,19 @@ then
     echo "usage: test-key-provider-http.sh <unique-request-namespace>" >&2
     exit 1
 fi
+cases=$(
+    jq -ce '
+        .profileId == "rembrane.key-provider.core"
+        and .protocolVersion == "0.1"
+        and (.cases | length) == 8
+        | if . then
+            input_filename
+          else
+            error("invalid key-provider conformance profile")
+          end
+    ' "$conformance_profile" >/dev/null
+    jq -c '[.cases[] | {id, result: "pass"}]' "$conformance_profile"
+)
 
 test_directory=$(mktemp -d "${TMPDIR:-/tmp}/rembrane-key-provider-http.XXXXXX")
 auth_header="$test_directory/auth.header"
@@ -228,20 +243,12 @@ jq -cn \
     --arg providerId "$provider_id" \
     --arg providerVersion "$provider_version" \
     --arg namespace "$namespace" \
+    --argjson cases "$cases" \
     '{
         protocolVersion: "0.1",
         providerId: $providerId,
         providerVersion: $providerVersion,
         result: "pass",
         namespace: $namespace,
-        cases: [
-            {id: "authentication", result: "pass"},
-            {id: "manifest", result: "pass"},
-            {id: "roundtrip", result: "pass"},
-            {id: "context-substitution", result: "pass"},
-            {id: "unknown-key", result: "pass"},
-            {id: "plaintext-limit", result: "pass"},
-            {id: "rotation", result: "pass"},
-            {id: "repeated-rotation", result: "pass"}
-        ]
+        cases: $cases
     }'

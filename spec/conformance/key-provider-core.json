@@ -1,0 +1,38 @@
+{
+  "profileId": "rembrane.key-provider.core",
+  "protocolVersion": "0.1",
+  "cases": [
+    {
+      "id": "authentication",
+      "requirement": "Reject an unauthenticated manifest request."
+    },
+    {
+      "id": "manifest",
+      "requirement": "Advertise a valid versioned provider identity, algorithms, limits, historical-key support, and rotation support."
+    },
+    {
+      "id": "roundtrip",
+      "requirement": "Seal and open plaintext under the exact canonical encryption context."
+    },
+    {
+      "id": "context-substitution",
+      "requirement": "Reject opening an envelope under a substituted workspace context."
+    },
+    {
+      "id": "unknown-key",
+      "requirement": "Reject an envelope naming an unknown historical key."
+    },
+    {
+      "id": "plaintext-limit",
+      "requirement": "Reject plaintext exceeding the advertised provider limit."
+    },
+    {
+      "id": "rotation",
+      "requirement": "Return an exactly correlated content-free receipt for the next workspace generation and recipient set."
+    },
+    {
+      "id": "repeated-rotation",
+      "requirement": "Reject replaying or conflicting with an already accepted rotation generation."
+    }
+  ]
+}

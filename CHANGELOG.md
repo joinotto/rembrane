@@ -12,6 +12,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - A strict portable key-provider conformance result schema and runner output
   containing provider identity and explicit pass evidence for eight
   authentication, encryption, limit, rotation, and replay cases.
+- A strict versioned key-provider core conformance profile with
+  machine-readable case requirements that drive portable runner evidence.
 - Required bounded key-provider build versions in discovery, Rust negotiation,
   HTTP decoding, fixtures, and portable conformance evidence.
 - A tamper-tested key-provider compatibility lock over reviewed OpenAPI,
