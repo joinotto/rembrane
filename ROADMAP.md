@@ -945,6 +945,8 @@ This roadmap describes sequencing, not release dates.
         published language-neutral fixture.
       - [x] Align canonical identity and non-blank text bounds across the Rust
         authenticated-message constructor and published JSON Schema.
+      - [x] Require a bounded JSON acknowledgement tied to the exact protocol
+        version and channel event before completing inbox delivery.
   - [x] Add a configured per-workspace channel worker executable for encrypted
     inbox recovery, retry, HTTP processor delivery, and completion.
   - [x] Package ingress and delivery workers together in the opt-in hardened

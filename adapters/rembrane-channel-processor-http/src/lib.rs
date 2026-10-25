@@ -8,7 +8,7 @@ use rembrane_contracts::VerifiedChannelMessage;
 use reqwest::Url;
 use reqwest::blocking::Client;
 use reqwest::header::{ACCEPT, CONTENT_LENGTH, CONTENT_TYPE};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
 const MAXIMUM_RESPONSE_BYTES: u64 = 4_096;
@@ -76,6 +76,11 @@ impl ChannelMessageProcessor for HttpChannelMessageProcessor {
             .send()
             .map_err(|_| ApplicationError::StorageUnavailable)?;
         if !response.status().is_success()
+            || !response
+                .headers()
+                .get(CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok())
+                .is_some_and(is_json_content_type)
             || response
                 .headers()
                 .get(CONTENT_LENGTH)
@@ -93,8 +98,23 @@ impl ChannelMessageProcessor for HttpChannelMessageProcessor {
         if bounded.len() as u64 > MAXIMUM_RESPONSE_BYTES {
             return Err(ApplicationError::StorageUnavailable);
         }
-        Ok(())
+        validate_acknowledgement(&bounded, message.event_id())
     }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct DeliveryAcknowledgement {
+    protocol_version: String,
+    event_id: String,
+    status: DeliveryStatus,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum DeliveryStatus {
+    Processed,
+    Duplicate,
 }
 
 #[derive(Serialize)]
@@ -156,6 +176,30 @@ fn validate_bearer_token(value: &str) -> Result<(), ApplicationError> {
     Ok(())
 }
 
+fn is_json_content_type(value: &str) -> bool {
+    value
+        .split_once(';')
+        .map_or(value, |(media_type, _)| media_type)
+        .trim()
+        .eq_ignore_ascii_case("application/json")
+}
+
+fn validate_acknowledgement(
+    encoded: &[u8],
+    expected_event_id: &str,
+) -> Result<(), ApplicationError> {
+    let acknowledgement: DeliveryAcknowledgement =
+        serde_json::from_slice(encoded).map_err(|_| ApplicationError::StorageUnavailable)?;
+    if acknowledgement.protocol_version != PROTOCOL_VERSION
+        || acknowledgement.event_id != expected_event_id
+    {
+        return Err(ApplicationError::StorageUnavailable);
+    }
+    match acknowledgement.status {
+        DeliveryStatus::Processed | DeliveryStatus::Duplicate => Ok(()),
+    }
+}
+
 fn invalid_configuration() -> ApplicationError {
     ApplicationError::Validation("channel processor HTTP configuration is invalid".to_owned())
 }
@@ -165,7 +209,9 @@ mod tests {
     use rembrane_contracts::{ChannelKind, VerifiedChannelMessage};
     use rembrane_domain::{ClientId, PrincipalId, WorkspaceId};
 
-    use super::{DeliveryBody, HttpChannelMessageProcessor};
+    use super::{
+        DeliveryBody, HttpChannelMessageProcessor, is_json_content_type, validate_acknowledgement,
+    };
 
     #[test]
     fn accepts_https_and_exact_loopback_but_rejects_unsafe_origins() {
@@ -230,5 +276,31 @@ mod tests {
         .expect("published processor fixture should be valid JSON");
 
         assert_eq!(encoded, fixture);
+    }
+
+    #[test]
+    fn accepts_only_event_bound_json_acknowledgements() {
+        let fixture =
+            include_bytes!("../../../spec/examples/channel-processor-acknowledgement.json");
+        assert!(validate_acknowledgement(fixture, "wamid.opaque-example-event").is_ok());
+        assert!(is_json_content_type("application/json"));
+        assert!(is_json_content_type("Application/Json; charset=utf-8"));
+        assert!(!is_json_content_type("text/html"));
+
+        for invalid in [
+            br#"{"protocolVersion":"0.2","eventId":"wamid.opaque-example-event","status":"processed"}"#
+                .as_slice(),
+            br#"{"protocolVersion":"0.1","eventId":"other-event","status":"processed"}"#.as_slice(),
+            br#"{"protocolVersion":"0.1","eventId":"wamid.opaque-example-event","status":"unknown"}"#
+                .as_slice(),
+            br#"{"protocolVersion":"0.1","eventId":"wamid.opaque-example-event","status":"processed","ignored":true}"#
+                .as_slice(),
+            b"<html>accepted</html>".as_slice(),
+        ] {
+            assert!(
+                validate_acknowledgement(invalid, "wamid.opaque-example-event").is_err(),
+                "unbound or malformed acknowledgement must fail"
+            );
+        }
     }
 }

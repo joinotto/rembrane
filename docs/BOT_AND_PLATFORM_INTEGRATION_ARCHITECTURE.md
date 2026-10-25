@@ -325,6 +325,13 @@ webhook, and bot-adapter conformance tests. `workspaceId`, `principalId`, and
 `clientId` are assertions from the trusted worker and must never be replaced
 with identifiers supplied by message text or an upstream webhook body.
 
+The processor must return `Content-Type: application/json` with a body matching
+`spec/channel-processor-acknowledgement.schema.json`. It repeats the exact
+`eventId` and returns either `processed` or `duplicate`; both mean the
+idempotent downstream effect is durable. A generic 2xx response, mismatched
+event ID, unknown status, or malformed body leaves the encrypted inbox event
+retryable.
+
 ### 7.4 Explicit mobile and iMessage shares
 
 Rembrane can accept text that a user explicitly selects in an iOS share

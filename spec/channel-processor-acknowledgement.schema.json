@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rembrane.dev/spec/channel-processor-acknowledgement.schema.json",
+  "title": "Rembrane channel processor acknowledgement",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "protocolVersion",
+    "eventId",
+    "status"
+  ],
+  "properties": {
+    "protocolVersion": {
+      "const": "0.1"
+    },
+    "eventId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^\\S+$",
+      "x-rembrane-maxUtf8Bytes": 256
+    },
+    "status": {
+      "enum": [
+        "processed",
+        "duplicate"
+      ]
+    }
+  }
+}

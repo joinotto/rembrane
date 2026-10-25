@@ -17,6 +17,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Authenticated channel messages now reject empty, oversized, whitespace, or
   control-bearing canonical identities, with matching non-blank text and
   identity limits in the language-neutral processor schema.
+- Strict channel processor acknowledgements now require bounded JSON,
+  matching protocol and event identity, and a closed processed-or-duplicate
+  status before encrypted inbox delivery can complete.
 - Fail-closed graph-context disclosure receipts recording the exact canonical
   edge revisions, query direction and validity time, verified subject and
   client, and declared purpose before context crosses the application boundary.

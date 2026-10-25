@@ -33,6 +33,12 @@ workspace, principal, and client identity originate from the authenticated
 sender binding, never from the messaging webhook. The channel and event ID
 form the downstream idempotency key.
 
+`channel-processor-acknowledgement.schema.json` defines the required processor
+response. A worker completes an inbox event only after receiving bounded JSON
+that repeats the exact event ID and protocol version with a `processed` or
+`duplicate` status. An unrelated successful HTTP response is not an
+acknowledgement.
+
 ## MCP
 
 `mcp.md` maps application use cases to tools, resources, prompts, connection identity, permissions, and safety annotations. MCP parameters deliberately exclude canonical workspace and subject identity.

@@ -23,6 +23,7 @@ ruby -e 'require "yaml"; YAML.load_file(ARGV.fetch(0))' spec/mobile-share-openap
 jq empty \
     spec/discovery.schema.json \
     spec/channel-processor-message.schema.json \
+    spec/channel-processor-acknowledgement.schema.json \
     spec/mcp-client-catalog.schema.json \
     spec/memory-provider-compatibility-lock.json \
     spec/memory-provider.schema.json \
@@ -33,6 +34,7 @@ jq empty \
     spec/conformance/memory-provider-core-fixtures.json \
     spec/examples/discovery.json \
     spec/examples/channel-processor-message.json \
+    spec/examples/channel-processor-acknowledgement.json \
     spec/examples/memory-provider-discovery.json \
     spec/examples/memory-provider-context-request.json \
     spec/examples/memory-provider-context-response.json \
@@ -67,6 +69,20 @@ jq -e '
     and ."$defs".opaqueId["x-rembrane-maxUtf8Bytes"] == 255
     and ."$defs".opaqueId.additionalProperties == null
 ' spec/channel-processor-message.schema.json >/dev/null
+
+jq -e '
+    .additionalProperties == false
+    and .properties.protocolVersion.const == "0.1"
+    and .properties.eventId["x-rembrane-maxUtf8Bytes"] == 256
+    and .properties.status.enum == ["processed", "duplicate"]
+' spec/channel-processor-acknowledgement.schema.json >/dev/null
+
+jq -e --slurpfile schema spec/channel-processor-acknowledgement.schema.json '
+    .protocolVersion == $schema[0].properties.protocolVersion.const
+    and (.eventId | test("^\\S+$") and length <= 256)
+    and (.status as $status | $schema[0].properties.status.enum | index($status) != null)
+    and ((keys | sort) == ($schema[0].required | sort))
+' spec/examples/channel-processor-acknowledgement.json >/dev/null
 
 jq -e --slurpfile schema spec/channel-processor-message.schema.json '
     .protocolVersion == $schema[0].properties.protocolVersion.const
