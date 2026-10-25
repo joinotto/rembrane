@@ -18,6 +18,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Independent reviewers can produce non-overwriting detached Ed25519
   attestations over exact clean-revision manifest bytes, with tamper-tested
   verification and no private keys committed to the repository.
+- Security-review signing now rejects permissive or symbolic private keys,
+  dirty manifests, symbolic output directories, and existing artifact names.
 - Explicit Memory Provider Protocol `1.0` stability gates separating the
   existing review-locked `0.1` wire surface from a future long-term
   compatibility promise.

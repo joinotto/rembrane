@@ -13,6 +13,17 @@ if [ ! -f "$private_key" ] || [ -L "$private_key" ]; then
     echo "security review signing key must be a regular non-symbolic file" >&2
     exit 1
 fi
+private_key_mode=$(
+    stat -f '%Lp' "$private_key" 2>/dev/null ||
+        stat -c '%a' "$private_key" 2>/dev/null
+)
+case "$private_key_mode" in
+    400 | 600) ;;
+    *)
+        echo "security review signing key must be owner-only (0400 or 0600)" >&2
+        exit 1
+        ;;
+esac
 if [ ! -f "$manifest" ] || [ -L "$manifest" ]; then
     echo "security review manifest must be a regular non-symbolic file" >&2
     exit 1
@@ -33,7 +44,14 @@ jq -e '
 ' "$manifest" >/dev/null
 
 umask 077
+if [ -L "$output_directory" ] ||
+    { [ -e "$output_directory" ] && [ ! -d "$output_directory" ]; }
+then
+    echo "security review output must be a non-symbolic directory" >&2
+    exit 1
+fi
 mkdir -p "$output_directory"
+chmod 700 "$output_directory"
 for artifact in \
     security-review-manifest.json \
     security-review-manifest.json.sha256 \

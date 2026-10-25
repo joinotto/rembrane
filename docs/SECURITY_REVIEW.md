@@ -14,7 +14,7 @@ should sign or otherwise attest to the exact manifest they examined; a branch
 name or moving tag is not sufficient evidence.
 
 For detached Ed25519 attestation, keep the reviewer private key outside the
-repository and run:
+repository, restrict it to owner-only mode (`0400` or `0600`), and run:
 
 ```sh
 REMBRANE_SECURITY_REVIEW_SIGNING_KEY=/protected/reviewer-private.pem \
@@ -34,7 +34,8 @@ sh scripts/verify-security-review-signature.sh \
 
 The generator refuses a dirty worktree by default. `--allow-dirty` exists only
 for deterministic local and CI validation and must not be used for review
-evidence.
+evidence. The signer also rejects dirty manifests, permissive or symbolic
+private keys, symbolic output directories, and existing artifact names.
 
 An independent report should include:
 

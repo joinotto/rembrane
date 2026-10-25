@@ -11,6 +11,7 @@ trap cleanup EXIT HUP INT TERM
 
 openssl genpkey -algorithm Ed25519 \
     -out "$temporary_directory/private.pem" >/dev/null 2>&1
+chmod 600 "$temporary_directory/private.pem"
 openssl pkey -in "$temporary_directory/private.pem" -pubout \
     -out "$temporary_directory/public.pem" >/dev/null 2>&1
 
@@ -57,6 +58,39 @@ if REMBRANE_SECURITY_REVIEW_SIGNING_KEY="$temporary_directory/private.pem" \
     "$temporary_directory/signed" >/dev/null 2>&1
 then
     echo "security review signer overwrote existing evidence" >&2
+    exit 1
+fi
+
+cp "$temporary_directory/private.pem" "$temporary_directory/permissive.pem"
+chmod 644 "$temporary_directory/permissive.pem"
+if REMBRANE_SECURITY_REVIEW_SIGNING_KEY="$temporary_directory/permissive.pem" \
+    sh "$repository_root/scripts/sign-security-review-manifest.sh" \
+    "$temporary_directory/manifest.json" \
+    "$temporary_directory/permissive-output" >/dev/null 2>&1
+then
+    echo "security review signer accepted a permissive private key" >&2
+    exit 1
+fi
+
+jq '.workingTreeDirty = true' "$temporary_directory/manifest.json" \
+    >"$temporary_directory/dirty.json"
+if REMBRANE_SECURITY_REVIEW_SIGNING_KEY="$temporary_directory/private.pem" \
+    sh "$repository_root/scripts/sign-security-review-manifest.sh" \
+    "$temporary_directory/dirty.json" \
+    "$temporary_directory/dirty-output" >/dev/null 2>&1
+then
+    echo "security review signer accepted a dirty-worktree manifest" >&2
+    exit 1
+fi
+
+mkdir "$temporary_directory/real-output"
+ln -s "$temporary_directory/real-output" "$temporary_directory/symbolic-output"
+if REMBRANE_SECURITY_REVIEW_SIGNING_KEY="$temporary_directory/private.pem" \
+    sh "$repository_root/scripts/sign-security-review-manifest.sh" \
+    "$temporary_directory/manifest.json" \
+    "$temporary_directory/symbolic-output" >/dev/null 2>&1
+then
+    echo "security review signer accepted a symbolic output directory" >&2
     exit 1
 fi
 
