@@ -9,7 +9,7 @@ use std::error::Error;
 use std::fmt::{self, Display, Formatter};
 
 use rembrane_application::{
-    AdministrativeAuditRepository, ApplicationError, InvitationRepository,
+    AdministrativeAuditRepository, ApplicationError, InvitationRepository, KeyRotationRepository,
     MAX_ADMINISTRATIVE_AUDIT_PAGE, MAXIMUM_INVITATION_LIST_ITEMS, MemberScopeGrantRepository,
     MembershipRepository, RetentionRepository, WorkspaceReadRepository, WorkspaceRepository,
     is_strict_successor,
@@ -138,6 +138,15 @@ pub const LIST_KEY_ROTATION_RECIPIENTS_SQL: &str = "SELECT workspace_id, rotatio
     FROM workspace_key_rotation_recipients \
     WHERE workspace_id = $1 AND rotation_id = $2 \
     ORDER BY principal_id LIMIT 10001";
+pub const COMPLETE_KEY_ROTATION_SQL: &str = "UPDATE workspace_key_rotations \
+    SET status = 'completed', completed_key_id = $1, completed_by = $2, \
+    completed_at = CURRENT_TIMESTAMP WHERE workspace_id = $3 AND id = $4 \
+    AND generation = $5 AND status = 'required'";
+pub const INSERT_KEY_ROTATION_RECEIPT_SQL: &str = "INSERT INTO workspace_key_rotation_receipts \
+    (workspace_id, rotation_id, provider_id, request_id, generation, key_id) \
+    VALUES ($1, $2, $3, $4, $5, $6)";
+pub const INSERT_KEY_ROTATION_RECIPIENT_SQL: &str = "INSERT INTO workspace_key_rotation_recipients \
+    (workspace_id, rotation_id, principal_id) VALUES ($1, $2, $3)";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PostgresParameter<'value> {
@@ -1339,6 +1348,66 @@ impl<Pool: PostgresPool> PostgresStore<Pool> {
         transaction.commit().map_err(PostgresStoreError::Tenant)?;
         Ok(Some(receipt))
     }
+
+    pub fn complete_key_rotation(
+        &self,
+        rotation: &WorkspaceKeyRotation,
+        receipt: &KeyRotationReceipt,
+        expected_generation: u64,
+        audit_event: &AdministrativeAuditEvent,
+    ) -> Result<(), PostgresStoreError<Pool::Error>> {
+        if !valid_completed_rotation(rotation, receipt, expected_generation, audit_event) {
+            return Err(PostgresStoreError::InvalidInput);
+        }
+        let completed_key_id = rotation
+            .completed_key_id()
+            .ok_or(PostgresStoreError::InvalidInput)?;
+        let completed_by = rotation
+            .completed_by()
+            .ok_or(PostgresStoreError::InvalidInput)?;
+        let generation = postgres_epoch(expected_generation)?;
+        let mut transaction = self.begin_tenant(rotation.workspace_id().clone())?;
+        let changed = transaction
+            .execute(
+                COMPLETE_KEY_ROTATION_SQL,
+                &[
+                    PostgresParameter::Text(completed_key_id),
+                    PostgresParameter::Text(completed_by.as_str()),
+                    PostgresParameter::Text(rotation.workspace_id().as_str()),
+                    PostgresParameter::Text(rotation.id().as_str()),
+                    PostgresParameter::I64(generation),
+                ],
+            )
+            .map_err(PostgresStoreError::Tenant)?;
+        if changed != 1 {
+            return Err(PostgresStoreError::VersionConflict);
+        }
+        execute_exactly_one(
+            &mut transaction,
+            INSERT_KEY_ROTATION_RECEIPT_SQL,
+            &[
+                PostgresParameter::Text(receipt.workspace_id().as_str()),
+                PostgresParameter::Text(rotation.id().as_str()),
+                PostgresParameter::Text(receipt.provider_id().as_str()),
+                PostgresParameter::Text(receipt.request_id()),
+                PostgresParameter::I64(generation),
+                PostgresParameter::Text(receipt.key_id()),
+            ],
+        )?;
+        for recipient_id in receipt.recipient_ids() {
+            execute_exactly_one(
+                &mut transaction,
+                INSERT_KEY_ROTATION_RECIPIENT_SQL,
+                &[
+                    PostgresParameter::Text(receipt.workspace_id().as_str()),
+                    PostgresParameter::Text(rotation.id().as_str()),
+                    PostgresParameter::Text(recipient_id.as_str()),
+                ],
+            )?;
+        }
+        insert_administrative_audit(&mut transaction, audit_event)?;
+        transaction.commit().map_err(PostgresStoreError::Tenant)
+    }
 }
 
 impl<Pool> MembershipRepository for PostgresStore<Pool>
@@ -1549,6 +1618,47 @@ where
     ) -> Result<(), ApplicationError> {
         PostgresStore::delete_member_scope_grant(self, grant, &audit_event)
             .map_err(map_scope_application_error)
+    }
+}
+
+impl<Pool> KeyRotationRepository for PostgresStore<Pool>
+where
+    Pool: PostgresPool,
+    Pool::Error: ClassifiedPostgresError,
+    <Pool::Transaction as PostgresTransaction>::Row: PostgresRow<Error = Pool::Error>,
+{
+    fn latest_key_rotation(
+        &self,
+        workspace_id: &WorkspaceId,
+    ) -> Result<Option<WorkspaceKeyRotation>, ApplicationError> {
+        PostgresStore::latest_key_rotation(self, workspace_id)
+            .map_err(map_key_rotation_application_error)
+    }
+
+    fn find_key_rotation_receipt(
+        &self,
+        workspace_id: &WorkspaceId,
+        rotation_id: &KeyRotationId,
+    ) -> Result<Option<KeyRotationReceipt>, ApplicationError> {
+        PostgresStore::find_key_rotation_receipt(self, workspace_id, rotation_id)
+            .map_err(map_key_rotation_application_error)
+    }
+
+    fn complete_key_rotation(
+        &mut self,
+        rotation: WorkspaceKeyRotation,
+        receipt: KeyRotationReceipt,
+        expected_generation: u64,
+        audit_event: AdministrativeAuditEvent,
+    ) -> Result<(), ApplicationError> {
+        PostgresStore::complete_key_rotation(
+            self,
+            &rotation,
+            &receipt,
+            expected_generation,
+            &audit_event,
+        )
+        .map_err(map_key_rotation_application_error)
     }
 }
 
@@ -1769,6 +1879,49 @@ where
         self.store
             .delete_member_scope_grant(grant, &audit_event)
             .map_err(map_scope_application_error)
+    }
+}
+
+impl<Pool> KeyRotationRepository for PostgresTenantStore<'_, Pool>
+where
+    Pool: PostgresPool,
+    Pool::Error: ClassifiedPostgresError,
+    <Pool::Transaction as PostgresTransaction>::Row: PostgresRow<Error = Pool::Error>,
+{
+    fn latest_key_rotation(
+        &self,
+        workspace_id: &WorkspaceId,
+    ) -> Result<Option<WorkspaceKeyRotation>, ApplicationError> {
+        self.require_workspace(workspace_id)?;
+        self.store
+            .latest_key_rotation(workspace_id)
+            .map_err(map_key_rotation_application_error)
+    }
+
+    fn find_key_rotation_receipt(
+        &self,
+        workspace_id: &WorkspaceId,
+        rotation_id: &KeyRotationId,
+    ) -> Result<Option<KeyRotationReceipt>, ApplicationError> {
+        self.require_workspace(workspace_id)?;
+        self.store
+            .find_key_rotation_receipt(workspace_id, rotation_id)
+            .map_err(map_key_rotation_application_error)
+    }
+
+    fn complete_key_rotation(
+        &mut self,
+        rotation: WorkspaceKeyRotation,
+        receipt: KeyRotationReceipt,
+        expected_generation: u64,
+        audit_event: AdministrativeAuditEvent,
+    ) -> Result<(), ApplicationError> {
+        self.require_workspace(rotation.workspace_id())?;
+        self.require_workspace(receipt.workspace_id())?;
+        self.require_workspace(audit_event.workspace_id())?;
+        self.store
+            .complete_key_rotation(&rotation, &receipt, expected_generation, &audit_event)
+            .map_err(map_key_rotation_application_error)
     }
 }
 
@@ -2044,6 +2197,21 @@ where
     }
 }
 
+fn map_key_rotation_application_error<DriverError>(
+    error: PostgresStoreError<DriverError>,
+) -> ApplicationError
+where
+    DriverError: ClassifiedPostgresError,
+{
+    match error {
+        PostgresStoreError::InvalidInput => {
+            ApplicationError::Validation("invalid key rotation persistence request".to_owned())
+        }
+        PostgresStoreError::VersionConflict => ApplicationError::VersionConflict,
+        other => map_application_error(other),
+    }
+}
+
 fn map_invitation_application_error<DriverError>(
     error: PostgresStoreError<DriverError>,
 ) -> ApplicationError
@@ -2202,6 +2370,26 @@ fn valid_scope_audit(grant: &MemberScopeGrant, event: &AdministrativeAuditEvent)
         && event.action() == AdministrativeAction::ScopeGrantChanged
         && event.target_kind() == AdministrativeTargetKind::ScopeGrant
         && event.target_id() == expected_target
+}
+
+fn valid_completed_rotation(
+    rotation: &WorkspaceKeyRotation,
+    receipt: &KeyRotationReceipt,
+    expected_generation: u64,
+    audit_event: &AdministrativeAuditEvent,
+) -> bool {
+    rotation.status() == KeyRotationStatus::Completed
+        && rotation.generation() == expected_generation
+        && receipt.workspace_id() == rotation.workspace_id()
+        && receipt.generation() == expected_generation
+        && receipt.key_id() == rotation.completed_key_id().unwrap_or_default()
+        && rotation
+            .completed_by()
+            .is_some_and(|completed_by| audit_event.actor_id() == completed_by)
+        && audit_event.workspace_id() == rotation.workspace_id()
+        && audit_event.action() == AdministrativeAction::KeyRotationCompleted
+        && audit_event.target_kind() == AdministrativeTargetKind::KeyRotation
+        && audit_event.target_id() == rotation.id().as_str()
 }
 
 fn legal_hold_parameters<DriverError>(
@@ -2774,23 +2962,24 @@ mod tests {
 
     use rembrane_application::{
         AdministrativeAuditRepository, ApplicationError, CreateInvitationCommand,
-        InvitationRepository, InvitationService, MemberScopeGrantRepository, MembershipRepository,
-        RetentionRepository, WorkspaceRepository,
+        InvitationRepository, InvitationService, KeyRotationRepository, MemberScopeGrantRepository,
+        MembershipRepository, RetentionRepository, WorkspaceRepository,
     };
     use rembrane_domain::{
         AdministrativeAction, AdministrativeAuditEvent, AdministrativeAuditEventId,
         AdministrativeTargetKind, Invitation, InvitationId, InvitationStatus, KeyRotationId,
-        KeyRotationStatus, LegalHoldId, LegalHoldStatus, MemberScopeGrant, Principal, PrincipalId,
-        ReadScope, RetentionPeriod, RetentionResource, Workspace, WorkspaceId,
-        WorkspaceRetentionPolicy, WorkspaceRole,
+        KeyRotationReceipt, KeyRotationStatus, LegalHoldId, LegalHoldStatus, MemberScopeGrant,
+        Principal, PrincipalId, ProviderId, ReadScope, RetentionPeriod, RetentionResource,
+        Workspace, WorkspaceId, WorkspaceKeyRotation, WorkspaceRetentionPolicy, WorkspaceRole,
     };
 
     use super::{
-        ACCEPT_INVITATION_SQL, ClassifiedPostgresError, DELETE_MEMBER_SCOPE_GRANT_SQL,
-        EXPIRE_PENDING_INVITATION_SQL, FIND_INVITATION_SQL, FIND_KEY_ROTATION_RECEIPT_SQL,
-        FIND_LEGAL_HOLD_SQL, FIND_MEMBERSHIP_SQL, FIND_PRINCIPAL_SQL,
-        FIND_PROVISIONING_PRINCIPAL_SQL, FIND_RETENTION_POLICY_SQL, FIND_WORKSPACE_SQL,
-        INSERT_ADMINISTRATIVE_AUDIT_SQL, INSERT_INVITATION_SQL, INSERT_LEGAL_HOLD_SQL,
+        ACCEPT_INVITATION_SQL, COMPLETE_KEY_ROTATION_SQL, ClassifiedPostgresError,
+        DELETE_MEMBER_SCOPE_GRANT_SQL, EXPIRE_PENDING_INVITATION_SQL, FIND_INVITATION_SQL,
+        FIND_KEY_ROTATION_RECEIPT_SQL, FIND_LEGAL_HOLD_SQL, FIND_MEMBERSHIP_SQL,
+        FIND_PRINCIPAL_SQL, FIND_PROVISIONING_PRINCIPAL_SQL, FIND_RETENTION_POLICY_SQL,
+        FIND_WORKSPACE_SQL, INSERT_ADMINISTRATIVE_AUDIT_SQL, INSERT_INVITATION_SQL,
+        INSERT_KEY_ROTATION_RECEIPT_SQL, INSERT_KEY_ROTATION_RECIPIENT_SQL, INSERT_LEGAL_HOLD_SQL,
         INSERT_MEMBER_SCOPE_GRANT_SQL, INSERT_MEMBERSHIP_SQL, INSERT_PRINCIPAL_SQL,
         INSERT_RETENTION_POLICY_SQL, INSERT_WORKSPACE_SQL, LATEST_KEY_ROTATION_SQL,
         LIST_ACTIVE_LEGAL_HOLDS_SQL, LIST_ACTIVE_MEMBERSHIPS_SQL, LIST_ADMINISTRATIVE_AUDIT_SQL,
@@ -4197,6 +4386,13 @@ mod tests {
             ),
             Err(ApplicationError::AccessDenied)
         );
+        assert_eq!(
+            KeyRotationRepository::latest_key_rotation(
+                &tenant,
+                &WorkspaceId::new("workspace_other"),
+            ),
+            Err(ApplicationError::AccessDenied)
+        );
     }
 
     #[test]
@@ -4362,6 +4558,82 @@ mod tests {
                 "text:rotation_02".to_owned(),
             ]
         )));
+    }
+
+    #[test]
+    fn key_rotation_port_atomically_completes_receipt_recipients_and_audit() {
+        let rotation = WorkspaceKeyRotation::required(
+            KeyRotationId::new("rotation_03"),
+            WorkspaceId::new("workspace_01"),
+            3,
+            PrincipalId::new("principal_removed"),
+            PrincipalId::new("principal_admin"),
+        )
+        .expect("required rotation")
+        .complete("key_03", PrincipalId::new("principal_admin"))
+        .expect("completed rotation");
+        let receipt = KeyRotationReceipt::new(
+            ProviderId::new("provider_01"),
+            "request-provider-03",
+            WorkspaceId::new("workspace_01"),
+            3,
+            "key_03",
+            vec![
+                PrincipalId::new("principal_admin"),
+                PrincipalId::new("principal_member"),
+            ],
+        )
+        .expect("receipt");
+        let audit = AdministrativeAuditEvent::new(
+            AdministrativeAuditEventId::new("audit_rotation_03"),
+            WorkspaceId::new("workspace_01"),
+            PrincipalId::new("principal_admin"),
+            AdministrativeAction::KeyRotationCompleted,
+            AdministrativeTargetKind::KeyRotation,
+            "rotation_03",
+            "request_rotation_03",
+            200,
+        )
+        .expect("audit");
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let store = PostgresStore::new(FakePool {
+            calls: Rc::clone(&calls),
+            tenant_batches: RefCell::new(
+                [VecDeque::from([
+                    Ok(Some("workspace_01".to_owned())),
+                    Ok(Some("workspace_01".to_owned())),
+                    Ok(Some("workspace_01".to_owned())),
+                    Ok(Some("workspace_01".to_owned())),
+                    Ok(Some("workspace_01".to_owned())),
+                    Ok(Some("workspace_01".to_owned())),
+                ])]
+                .into(),
+            ),
+            row_batches: RefCell::new([Vec::new()].into()),
+        });
+        let mut tenant = store.for_workspace(WorkspaceId::new("workspace_01"));
+
+        KeyRotationRepository::complete_key_rotation(&mut tenant, rotation, receipt, 3, audit)
+            .expect("complete rotation");
+
+        let calls = calls.borrow();
+        assert!(calls.iter().any(
+            |call| matches!(call, Call::Execute(statement, _) if statement == COMPLETE_KEY_ROTATION_SQL)
+        ));
+        assert!(calls.iter().any(
+            |call| matches!(call, Call::Execute(statement, _) if statement == INSERT_KEY_ROTATION_RECEIPT_SQL)
+        ));
+        assert_eq!(
+            calls
+                .iter()
+                .filter(|call| matches!(call, Call::Execute(statement, _) if statement == INSERT_KEY_ROTATION_RECIPIENT_SQL))
+                .count(),
+            2
+        );
+        assert!(calls.iter().any(
+            |call| matches!(call, Call::Execute(statement, _) if statement == INSERT_ADMINISTRATIVE_AUDIT_SQL)
+        ));
+        assert_eq!(calls.last(), Some(&Call::Commit));
     }
 
     #[test]

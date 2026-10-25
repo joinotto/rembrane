@@ -316,6 +316,8 @@ This roadmap describes sequencing, not release dates.
         listing with closed scope decoding, and audited exact deletion.
       - [x] Add tenant-verified latest key-rotation and provider-receipt reads
         with strict row correlation and bounded recipient reconstruction.
+        - [x] Complete the tenant-pinned `KeyRotationRepository` with atomic
+          optimistic completion, receipt/recipient writes, and audit evidence.
       - [x] Add exact invitation lookup and bounded status-filtered listing
         with terminal-state restoration and full tenant/identifier correlation.
       - [x] Implement atomic invitation creation, acceptance, revocation,

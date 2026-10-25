@@ -75,6 +75,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Tenant-verified PostgreSQL key-rotation reads with closed lifecycle
   restoration, exact receipt identity correlation, and provider receipt
   reconstruction capped at 10,000 canonical recipients.
+- Complete PostgreSQL `KeyRotationRepository` support with tenant-pinned,
+  generation-checked atomic completion plus provider receipt, canonical
+  recipient, and administrative audit persistence.
 - PostgreSQL invitation lookup and bounded deterministic listing with optional
   status filtering, numeric lifetime decoding, terminal-state restoration,
   and exact tenant/invitation correlation.
