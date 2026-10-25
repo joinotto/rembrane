@@ -16,6 +16,7 @@
     "conformanceResultSha256",
     "iamPolicySha256",
     "iamPolicyReview",
+    "cloudAuditEvidenceSha256",
     "cleanup"
   ],
   "properties": {
@@ -77,6 +78,10 @@
         },
         "approved": { "const": true }
       }
+    },
+    "cloudAuditEvidenceSha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
     },
     "cleanup": {
       "type": "object",

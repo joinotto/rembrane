@@ -156,6 +156,8 @@ This roadmap describes sequencing, not release dates.
         exact provider build, disposable namespace, conformance result,
         explicitly approved IAM policy, core profile, and completed resource
         cleanup.
+        - [x] Bind a redacted cloud audit export so provider promotion proves
+          the named KMS handled the disposable conformance operations.
       - [x] Create file-backed Unix keyring databases owner-only and reject
         permissive, non-regular, or symbolic-link targets.
       - [x] Enforce workspace, provider-key, and wrapped-ciphertext bounds in

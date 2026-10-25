@@ -15,16 +15,20 @@ jq '.providerId = "example.aws-kms-sidecar"
     "$repository_root/spec/examples/key-provider-conformance-result.json" \
     >"$test_root/result.json"
 printf '%s\n' '{"Version":"2012-10-17","Statement":[]}' >"$test_root/iam-policy.json"
+printf '%s\n' '{"events":[{"operation":"GenerateDataKey"},{"operation":"Decrypt"}]}' \
+    >"$test_root/cloud-audit.json"
 
 profile_sha256=$(openssl dgst -sha256 \
     "$repository_root/spec/conformance/key-provider-core.json" | awk '{print $NF}')
 result_sha256=$(openssl dgst -sha256 "$test_root/result.json" | awk '{print $NF}')
 policy_sha256=$(openssl dgst -sha256 "$test_root/iam-policy.json" | awk '{print $NF}')
+audit_sha256=$(openssl dgst -sha256 "$test_root/cloud-audit.json" | awk '{print $NF}')
 
 jq -n \
     --arg profile "$profile_sha256" \
     --arg result "$result_sha256" \
     --arg policy "$policy_sha256" \
+    --arg audit "$audit_sha256" \
     '{
         schemaVersion: 1,
         cloudProvider: "aws-kms",
@@ -41,6 +45,7 @@ jq -n \
             reviewedAt: "2026-01-15T11:30:00Z",
             approved: true
         },
+        cloudAuditEvidenceSha256: $audit,
         cleanup: {
             completedAt: "2026-01-15T12:30:00Z",
             resourcesDeleted: true
@@ -49,16 +54,16 @@ jq -n \
 
 verify() {
     node "$repository_root/scripts/verify-customer-kms-evidence.mjs" \
-        "$1" "$2" "$3"
+        "$1" "$2" "$3" "$4"
 }
 
 verify "$test_root/evidence.json" "$test_root/result.json" \
-    "$test_root/iam-policy.json" >/dev/null
+    "$test_root/iam-policy.json" "$test_root/cloud-audit.json" >/dev/null
 
 jq '.cleanup.resourcesDeleted = false' "$test_root/evidence.json" \
     >"$test_root/not-cleaned.json"
 if verify "$test_root/not-cleaned.json" "$test_root/result.json" \
-    "$test_root/iam-policy.json" >/dev/null 2>&1
+    "$test_root/iam-policy.json" "$test_root/cloud-audit.json" >/dev/null 2>&1
 then
     echo "customer KMS evidence accepted incomplete cleanup" >&2
     exit 1
@@ -67,7 +72,7 @@ fi
 jq '.iamPolicyReview.approved = false' "$test_root/evidence.json" \
     >"$test_root/unapproved-policy.json"
 if verify "$test_root/unapproved-policy.json" "$test_root/result.json" \
-    "$test_root/iam-policy.json" >/dev/null 2>&1
+    "$test_root/iam-policy.json" "$test_root/cloud-audit.json" >/dev/null 2>&1
 then
     echo "customer KMS evidence accepted an unapproved IAM policy" >&2
     exit 1
@@ -76,7 +81,7 @@ fi
 jq '.iamPolicyReview.reviewedAt = "2026-01-15T12:31:00Z"' \
     "$test_root/evidence.json" >"$test_root/late-policy-review.json"
 if verify "$test_root/late-policy-review.json" "$test_root/result.json" \
-    "$test_root/iam-policy.json" >/dev/null 2>&1
+    "$test_root/iam-policy.json" "$test_root/cloud-audit.json" >/dev/null 2>&1
 then
     echo "customer KMS evidence accepted policy review after cleanup" >&2
     exit 1
@@ -85,7 +90,7 @@ fi
 jq '.cleanup.completedAt = "2026-01-15T11:59:59Z"' "$test_root/evidence.json" \
     >"$test_root/backwards-cleanup.json"
 if verify "$test_root/backwards-cleanup.json" "$test_root/result.json" \
-    "$test_root/iam-policy.json" >/dev/null 2>&1
+    "$test_root/iam-policy.json" "$test_root/cloud-audit.json" >/dev/null 2>&1
 then
     echo "customer KMS evidence accepted cleanup before execution" >&2
     exit 1
@@ -94,7 +99,7 @@ fi
 jq '.namespace = "different-run"' "$test_root/result.json" \
     >"$test_root/wrong-namespace.json"
 if verify "$test_root/evidence.json" "$test_root/wrong-namespace.json" \
-    "$test_root/iam-policy.json" >/dev/null 2>&1
+    "$test_root/iam-policy.json" "$test_root/cloud-audit.json" >/dev/null 2>&1
 then
     echo "customer KMS evidence accepted a different namespace" >&2
     exit 1
@@ -102,9 +107,19 @@ fi
 
 printf ' ' >>"$test_root/iam-policy.json"
 if verify "$test_root/evidence.json" "$test_root/result.json" \
-    "$test_root/iam-policy.json" >/dev/null 2>&1
+    "$test_root/iam-policy.json" "$test_root/cloud-audit.json" >/dev/null 2>&1
 then
     echo "customer KMS evidence accepted a changed IAM policy" >&2
+    exit 1
+fi
+
+printf '%s\n' '{"Version":"2012-10-17","Statement":[]}' >"$test_root/iam-policy.json"
+printf ' ' >>"$test_root/cloud-audit.json"
+if verify "$test_root/evidence.json" "$test_root/result.json" \
+    "$test_root/iam-policy.json" \
+    "$test_root/cloud-audit.json" >/dev/null 2>&1
+then
+    echo "customer KMS evidence accepted changed cloud audit bytes" >&2
     exit 1
 fi
 

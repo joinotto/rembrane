@@ -13,6 +13,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   disposable cloud run to its provider build, core conformance profile, exact
   result and explicitly approved IAM-policy bytes, and completed resource
   cleanup without storing cloud credentials or keys.
+- Customer-KMS promotion evidence now also hash-binds a bounded redacted cloud
+  audit export, preventing a protocol-compatible mock from being presented as
+  proof that AWS, Azure, or Google Cloud KMS processed the disposable run.
 - A deterministic security-review manifest generator and validation gate that
   hash-pin the exact sensitive source, protocol, migration, workflow, threat
   model, and dependency files supplied to an independent reviewer.

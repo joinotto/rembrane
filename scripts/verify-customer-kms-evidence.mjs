@@ -3,10 +3,11 @@ import { lstatSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const [evidenceInput, resultInput, policyInput] = process.argv.slice(2);
-if (!evidenceInput || !resultInput || !policyInput) {
+const [evidenceInput, resultInput, policyInput, auditInput] =
+  process.argv.slice(2);
+if (!evidenceInput || !resultInput || !policyInput || !auditInput) {
   throw new Error(
-    "usage: verify-customer-kms-evidence.mjs EVIDENCE RESULT IAM_POLICY",
+    "usage: verify-customer-kms-evidence.mjs EVIDENCE RESULT IAM_POLICY CLOUD_AUDIT",
   );
 }
 
@@ -16,6 +17,11 @@ const evidence = JSON.parse(
 );
 const resultBytes = readBoundedFile(resultInput, 64 * 1024, "result");
 const policyBytes = readBoundedFile(policyInput, 1024 * 1024, "IAM policy");
+const auditBytes = readBoundedFile(
+  auditInput,
+  4 * 1024 * 1024,
+  "cloud audit evidence",
+);
 const profileBytes = readBoundedFile(
   join(repositoryRoot, "spec/conformance/key-provider-core.json"),
   64 * 1024,
@@ -26,6 +32,7 @@ const result = JSON.parse(resultBytes.toString("utf8"));
 requireExactKeys(evidence, [
   "cleanup",
   "cloudProvider",
+  "cloudAuditEvidenceSha256",
   "conformanceProfileSha256",
   "conformanceResultSha256",
   "executedAt",
@@ -74,10 +81,13 @@ if (
 }
 
 const profileSha256 = sha256(profileBytes);
+requireJsonDocument(policyBytes, "IAM policy");
+requireJsonDocument(auditBytes, "cloud audit evidence");
 if (
   evidence.conformanceProfileSha256 !== profileSha256 ||
   evidence.conformanceResultSha256 !== sha256(resultBytes) ||
-  evidence.iamPolicySha256 !== sha256(policyBytes)
+  evidence.iamPolicySha256 !== sha256(policyBytes) ||
+  evidence.cloudAuditEvidenceSha256 !== sha256(auditBytes)
 ) {
   throw new Error("customer KMS evidence digest binding is invalid");
 }
@@ -173,4 +183,16 @@ function canonicalTimestamp(value) {
 
 function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
+}
+
+function requireJsonDocument(bytes, label) {
+  let value;
+  try {
+    value = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+  } catch {
+    throw new Error(`customer KMS ${label} must be valid UTF-8 JSON`);
+  }
+  if (value === null || typeof value !== "object") {
+    throw new Error(`customer KMS ${label} must contain a JSON object or array`);
+  }
 }

@@ -169,13 +169,17 @@ Record each live cloud run as
 
 ```sh
 node scripts/verify-customer-kms-evidence.mjs \
-  evidence.json conformance-result.json reviewed-iam-policy.json
+  evidence.json conformance-result.json reviewed-iam-policy.json \
+  redacted-cloud-audit.json
 ```
 
 The evidence binds the exact provider build and source revision, disposable
 namespace, current core profile, result bytes, and reviewed IAM-policy bytes.
 It records the bounded identity and time of an explicit IAM-policy approval
-and is eligible only after the disposable resources are recorded as deleted.
+and binds a redacted cloud audit export proving that the named KMS processed
+the disposable operations. It is eligible only after the disposable resources
+are recorded as deleted.
 Keep one verified artifact set for AWS KMS, Azure Key Vault, and Google Cloud
 KMS; these records contain hashes and identifiers, never credentials or keys.
+Audit exports must be reviewed and redacted before retention.
 
