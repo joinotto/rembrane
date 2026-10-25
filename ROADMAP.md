@@ -447,6 +447,8 @@ This roadmap describes sequencing, not release dates.
     owner/admin authorization across in-memory and SQLite repositories.
     - [x] Expose bounded invitation listing through the local CLI with closed
       status filters and structured JSON output.
+    - [x] Expose bounded invitation listing through the authenticated REST API
+      and portable OpenAPI contract.
   - [x] Expose shared-workspace creation plus invitation create, accept, and
     revoke workflows through the local CLI.
   - [x] Expose invitation creation, acceptance, and revocation through the

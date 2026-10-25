@@ -89,6 +89,39 @@ paths:
         "409":
           $ref: "#/components/responses/Conflict"
   /workspaces/invitations:
+    get:
+      operationId: listWorkspaceInvitations
+      summary: List bounded shared-workspace invitations as an administrator
+      parameters:
+        - in: query
+          name: workspaceId
+          required: true
+          schema:
+            $ref: "#/components/schemas/OpaqueId"
+        - in: query
+          name: status
+          schema:
+            enum: [pending, accepted, revoked, expired]
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 100
+      responses:
+        "200":
+          description: Bounded invitation lifecycle records
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvitationListResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/AccessDenied"
     post:
       operationId: createWorkspaceInvitation
       summary: Create a bounded role-specific shared-workspace invitation
@@ -580,6 +613,49 @@ components:
         expiresAtEpochSeconds:
           type: integer
           minimum: 1
+    InvitationListItem:
+      type: object
+      additionalProperties: false
+      required:
+        - workspaceId
+        - invitationId
+        - invitedPrincipalId
+        - invitedBy
+        - role
+        - status
+        - createdAtEpochSeconds
+        - expiresAtEpochSeconds
+      properties:
+        workspaceId:
+          $ref: "#/components/schemas/OpaqueId"
+        invitationId:
+          $ref: "#/components/schemas/OpaqueId"
+        invitedPrincipalId:
+          $ref: "#/components/schemas/OpaqueId"
+        invitedBy:
+          $ref: "#/components/schemas/OpaqueId"
+        role:
+          enum: [admin, member, viewer]
+        status:
+          enum: [pending, accepted, revoked, expired]
+        createdAtEpochSeconds:
+          type: integer
+          minimum: 1
+        expiresAtEpochSeconds:
+          type: integer
+          minimum: 1
+    InvitationListResponse:
+      type: object
+      additionalProperties: false
+      required: [workspaceId, invitations]
+      properties:
+        workspaceId:
+          $ref: "#/components/schemas/OpaqueId"
+        invitations:
+          type: array
+          maxItems: 100
+          items:
+            $ref: "#/components/schemas/InvitationListItem"
     RotateWorkspaceKeyRequest:
       type: object
       additionalProperties: false

@@ -13,8 +13,8 @@ use rembrane_application::{
     AdministrativeAuditRepository, ApplicationError, AuthorizeClientCommand,
     AuthorizeClientService, CaptureBookingResearchCommand, CaptureBookingResearchService,
     ClientGrantBundle, CreateInvitationCommand, CreateTripCommand, ExecuteRetentionPurgeCommand,
-    InvitationRepository, InvitationService, KeyRotationRepository, MemberLifecycleService,
-    MembershipRepository, PlaceLegalHoldCommand, RecordTripDecisionCommand,
+    InvitationRepository, InvitationService, KeyRotationRepository, ListInvitationsQuery,
+    MemberLifecycleService, MembershipRepository, PlaceLegalHoldCommand, RecordTripDecisionCommand,
     ReleaseLegalHoldCommand, ResolveContextCommand, ResolveContextService,
     ResolveTravelContextCommand, RetentionService, RevokeInvitationCommand,
     SetRetentionPolicyCommand, TravelContextResearch, TravelContextService, TravelContextTrip,
@@ -137,6 +137,14 @@ struct InvitationTransitionRequest {
     request_id: String,
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct InvitationListQuery {
+    workspace_id: String,
+    status: Option<String>,
+    limit: Option<usize>,
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct InvitationResponse {
@@ -146,6 +154,26 @@ struct InvitationResponse {
     role: &'static str,
     status: &'static str,
     expires_at_epoch_seconds: u64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct InvitationListItemResponse {
+    workspace_id: String,
+    invitation_id: String,
+    invited_principal_id: String,
+    invited_by: String,
+    role: &'static str,
+    status: &'static str,
+    created_at_epoch_seconds: u64,
+    expires_at_epoch_seconds: u64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct InvitationListResponse {
+    workspace_id: String,
+    invitations: Vec<InvitationListItemResponse>,
 }
 
 #[derive(Deserialize)]
@@ -688,6 +716,43 @@ async fn create_invitation(
     Ok((StatusCode::CREATED, Json(invitation_response(&invitation))))
 }
 
+async fn list_invitations(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<InvitationListQuery>,
+) -> Result<Json<InvitationListResponse>, ApiError> {
+    authorize_bearer(&state, &headers)?;
+    let mut runtime = state
+        .inner
+        .runtime
+        .lock()
+        .map_err(|_| ApiError::internal())?;
+    authorize_management_workspace(&runtime, &query.workspace_id)?;
+    let status = query
+        .status
+        .as_deref()
+        .map(parse_invitation_status)
+        .transpose()
+        .map_err(|()| ApiError::invalid_request())?;
+    let workspace_id = runtime.write_grant.workspace_id.clone();
+    let requested_by = runtime.write_grant.subject_id.clone();
+    let invitations = InvitationService::new(&mut runtime.store)
+        .list(&ListInvitationsQuery {
+            workspace_id: workspace_id.clone(),
+            requested_by,
+            status,
+            limit: query.limit.unwrap_or(100),
+        })
+        .map_err(ApiError::from_application)?;
+    Ok(Json(InvitationListResponse {
+        workspace_id: workspace_id.to_string(),
+        invitations: invitations
+            .iter()
+            .map(invitation_list_item_response)
+            .collect(),
+    }))
+}
+
 async fn accept_invitation(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -759,6 +824,21 @@ fn invitation_response(invitation: &rembrane_domain::Invitation) -> InvitationRe
     }
 }
 
+fn invitation_list_item_response(
+    invitation: &rembrane_domain::Invitation,
+) -> InvitationListItemResponse {
+    InvitationListItemResponse {
+        workspace_id: invitation.workspace_id().to_string(),
+        invitation_id: invitation.id().to_string(),
+        invited_principal_id: invitation.invited_principal_id().to_string(),
+        invited_by: invitation.invited_by().to_string(),
+        role: workspace_role_name(invitation.role()),
+        status: invitation_status_name(invitation.status()),
+        created_at_epoch_seconds: invitation.created_at_epoch_seconds(),
+        expires_at_epoch_seconds: invitation.expires_at_epoch_seconds(),
+    }
+}
+
 const fn invitation_status_name(status: InvitationStatus) -> &'static str {
     match status {
         InvitationStatus::Pending => "pending",
@@ -774,6 +854,16 @@ fn parse_invitation_role(value: &str) -> Option<WorkspaceRole> {
         "member" => Some(WorkspaceRole::Member),
         "viewer" => Some(WorkspaceRole::Viewer),
         _ => None,
+    }
+}
+
+fn parse_invitation_status(value: &str) -> Result<InvitationStatus, ()> {
+    match value {
+        "pending" => Ok(InvitationStatus::Pending),
+        "accepted" => Ok(InvitationStatus::Accepted),
+        "revoked" => Ok(InvitationStatus::Revoked),
+        "expired" => Ok(InvitationStatus::Expired),
+        _ => Err(()),
     }
 }
 
@@ -1817,7 +1907,10 @@ async fn main() -> Result<()> {
             get(oauth_protected_resource),
         )
         .route("/v1/context/resolve", post(resolve_context))
-        .route("/v1/workspaces/invitations", post(create_invitation))
+        .route(
+            "/v1/workspaces/invitations",
+            get(list_invitations).post(create_invitation),
+        )
         .route("/v1/workspaces/invitations/accept", post(accept_invitation))
         .route("/v1/workspaces/invitations/revoke", post(revoke_invitation))
         .route("/v1/workspaces/key-rotation", post(rotate_workspace_key))
@@ -1848,14 +1941,15 @@ async fn main() -> Result<()> {
 mod tests {
     use rembrane_application::WorkspaceRepository;
     use rembrane_domain::{
-        ClientId, EntityId, Membership, Principal, PrincipalId, ReadGrant, ReadScope, Workspace,
-        WorkspaceId, WorkspaceRole,
+        ClientId, EntityId, InvitationStatus, Membership, Principal, PrincipalId, ReadGrant,
+        ReadScope, Workspace, WorkspaceId, WorkspaceRole,
     };
     use rembrane_store_sqlite::SqliteStore;
 
     use super::{
         ResolveRequest, advance_identifier, invitation_only_grants, parse_invitation_role,
-        request_is_within_grant, selected_api_token_reference, token_matches, valid_api_token,
+        parse_invitation_status, request_is_within_grant, selected_api_token_reference,
+        token_matches, valid_api_token,
     };
 
     #[test]
@@ -1863,6 +1957,16 @@ mod tests {
         assert!(token_matches("secret-token", "secret-token"));
         assert!(!token_matches("secret-token", "secret-other"));
         assert!(!token_matches("secret-token", "short"));
+    }
+
+    #[test]
+    fn invitation_status_filter_is_closed() {
+        assert_eq!(
+            parse_invitation_status("accepted"),
+            Ok(InvitationStatus::Accepted)
+        );
+        assert!(parse_invitation_status("all").is_err());
+        assert!(parse_invitation_status("PENDING").is_err());
     }
 
     #[test]
