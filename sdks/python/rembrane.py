@@ -106,6 +106,9 @@ class RembraneClient:
     def remember_preference(self, request: Mapping[str, Any]) -> Any:
         return self._request("POST", "/memories/preferences", request)
 
+    def record_work_trace(self, request: Mapping[str, Any]) -> Any:
+        return self._request("POST", "/memories/work-traces", request)
+
     def correct_memory(
         self, memory_id: str, request: Mapping[str, Any]
     ) -> Any:

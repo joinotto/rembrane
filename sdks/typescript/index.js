@@ -80,6 +80,10 @@ export class RembraneClient {
     return this.#request("POST", "/memories/preferences", request);
   }
 
+  recordWorkTrace(request) {
+    return this.#request("POST", "/memories/work-traces", request);
+  }
+
   correctMemory(memoryId, request) {
     if (!isOpaqueId(memoryId)) {
       throw new TypeError("memoryId must be a bounded opaque identifier");

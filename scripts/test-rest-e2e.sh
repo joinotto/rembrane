@@ -109,7 +109,7 @@ jq -e \
         and .capabilities.contextResolution == true
         and .capabilities.activityCheckpoint == true
         and .capabilities.disclosureReceipt == true
-        and .capabilities.memoryProposal == false
+        and .capabilities.memoryProposal == true
         and .privacy.processingModes == ["local-only"]
         and .privacy.plaintextProcessingLocation == "user-device"' \
     "$discovery_response" >/dev/null
@@ -293,6 +293,21 @@ test "$deletion_status" = "200"
 test "$(jq -r '.version' "$deletion_response")" = "3"
 test "$(jq -r '.status' "$deletion_response")" = "deleted"
 
+work_trace_response="$test_directory/work-trace-response.json"
+work_trace_status=$(
+    curl -sS \
+        -o "$work_trace_response" \
+        -w '%{http_code}' \
+        -X POST "$base_url/v1/memories/work-traces" \
+        -H "Authorization: Bearer $REMBRANE_API_TOKEN" \
+        -H "Content-Type: application/json" \
+        --data "{\"workspaceId\":\"$REMBRANE_WORKSPACE_ID\",\"subjectId\":\"$REMBRANE_PRINCIPAL_ID\",\"activityId\":\"activity_rest_e2e\",\"entityId\":\"project_rest_e2e\",\"summary\":\"Completed the REST memory lifecycle.\",\"expectedPreviousSequence\":12}"
+)
+test "$work_trace_status" = "201"
+test "$(jq -r '.version' "$work_trace_response")" = "1"
+test "$(jq -r '.status' "$work_trace_response")" = "proposed"
+rest_trace_id=$(jq -er '.memoryId' "$work_trace_response")
+
 acceptance_invitation_id="invitation_rest_accept"
 acceptance_create_response="$test_directory/acceptance-create-response.json"
 acceptance_create_status=$(
@@ -408,6 +423,10 @@ test "$(
     sqlite3 "$database" \
         "SELECT version || ':' || status FROM memories WHERE workspace_id = '$REMBRANE_WORKSPACE_ID' AND id = '$rest_memory_id';"
 )" = "3:deleted"
+test "$(
+    sqlite3 "$database" \
+        "SELECT kind || ':' || status || ':' || scope_type || ':' || scope_value FROM memories WHERE workspace_id = '$REMBRANE_WORKSPACE_ID' AND id = '$rest_trace_id';"
+)" = "observation:proposed:activity:activity_rest_e2e"
 test "$(
     sqlite3 "$database" \
         "SELECT status FROM workspace_invitations WHERE workspace_id = '$REMBRANE_WORKSPACE_ID' AND id = 'invitation_rest_e2e';"

@@ -2695,7 +2695,7 @@ fn build_memory_discovery(api: String) -> Result<MemoryDiscovery> {
         capabilities: DiscoveryCapabilities {
             context_resolution: true,
             question_resolution: false,
-            memory_proposal: false,
+            memory_proposal: true,
             activity_checkpoint: true,
             disclosure_receipt: true,
             deletion_propagation: false,

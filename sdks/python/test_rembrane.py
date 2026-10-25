@@ -237,9 +237,18 @@ class RembraneClientTests(unittest.TestCase):
             "expectedVersion": 2,
             "expectedPreviousSequence": 7,
         }
+        work_trace = {
+            "workspaceId": "team",
+            "subjectId": "principal-1",
+            "activityId": "activity:project-1",
+            "entityId": "project-1",
+            "summary": "Ran the integration tests.",
+            "expectedPreviousSequence": 8,
+        }
         client.remember_preference(remember)
         client.correct_memory("memory:preference-1", correction)
         client.delete_memory("memory:preference-1", deletion)
+        client.record_work_trace(work_trace)
 
         self.assertEqual(
             [call[1] for call in calls],
@@ -249,11 +258,12 @@ class RembraneClientTests(unittest.TestCase):
                 "memory%3Apreference-1/correction",
                 "http://127.0.0.1:8787/v1/memories/"
                 "memory%3Apreference-1/deletion",
+                "http://127.0.0.1:8787/v1/memories/work-traces",
             ],
         )
         self.assertEqual(
             [json.loads(call[3]) for call in calls],
-            [remember, correction, deletion],
+            [remember, correction, deletion, work_trace],
         )
         with self.assertRaisesRegex(ValueError, "bounded opaque identifier"):
             client.correct_memory("../memory", correction)

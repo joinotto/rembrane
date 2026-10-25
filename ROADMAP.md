@@ -215,6 +215,8 @@ This roadmap describes sequencing, not release dates.
   through REST, OpenAPI, and the TypeScript and Python SDKs.
 - [x] Create, correct, and delete confirmed scoped preferences through REST,
   OpenAPI, and path-safe TypeScript and Python SDK methods.
+- [x] Record evidence-backed activity work traces as proposed observations
+  through REST, OpenAPI, and the TypeScript and Python SDKs.
 - [x] Serve unauthenticated, credential-free REST capability discovery with
   deployment-accurate API location, privacy mode, limits, and handoff support.
 - [x] Fetch public capability discovery through the TypeScript and Python SDKs

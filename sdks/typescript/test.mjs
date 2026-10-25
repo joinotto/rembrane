@@ -153,6 +153,15 @@ const deletionRequest = {
 await client.rememberPreference(rememberRequest);
 await client.correctMemory("memory:preference-1", correctionRequest);
 await client.deleteMemory("memory:preference-1", deletionRequest);
+const workTraceRequest = {
+  workspaceId: "team",
+  subjectId: "principal-1",
+  activityId: "activity:project-1",
+  entityId: "project-1",
+  summary: "Ran the integration tests.",
+  expectedPreviousSequence: 8,
+};
+await client.recordWorkTrace(workTraceRequest);
 assert.equal(
   calls[8].url,
   "http://127.0.0.1:8787/v1/memories/preferences",
@@ -168,6 +177,11 @@ assert.equal(
   "http://127.0.0.1:8787/v1/memories/memory%3Apreference-1/deletion",
 );
 assert.deepEqual(JSON.parse(calls[10].init.body), deletionRequest);
+assert.equal(
+  calls[11].url,
+  "http://127.0.0.1:8787/v1/memories/work-traces",
+);
+assert.deepEqual(JSON.parse(calls[11].init.body), workTraceRequest);
 assert.throws(
   () => client.correctMemory("../memory", correctionRequest),
   /bounded opaque identifier/,
@@ -175,12 +189,12 @@ assert.throws(
 
 await client.discover();
 assert.equal(
-  calls[11].url,
+  calls[12].url,
   "http://127.0.0.1:8787/.well-known/ai-memory",
 );
-assert.equal(calls[11].init.method, "GET");
-assert.equal(calls[11].init.headers.Authorization, undefined);
-assert.equal(calls[11].init.body, undefined);
+assert.equal(calls[12].init.method, "GET");
+assert.equal(calls[12].init.headers.Authorization, undefined);
+assert.equal(calls[12].init.body, undefined);
 
 assert.throws(
   () =>

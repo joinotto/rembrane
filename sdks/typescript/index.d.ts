@@ -151,6 +151,14 @@ export interface RememberPreferenceRequest extends MemoryScopeRequest {
   content: string;
 }
 
+export interface RecordWorkTraceRequest extends WorkspaceRequest {
+  subjectId: string;
+  activityId: string;
+  entityId?: string | null;
+  summary: string;
+  expectedPreviousSequence: number;
+}
+
 export interface CorrectMemoryRequest extends MemoryScopeRequest {
   replacement: string;
   expectedVersion: number;
@@ -164,7 +172,7 @@ export interface DeleteMemoryRequest extends MemoryScopeRequest {
 export interface MemoryMutation {
   memoryId: string;
   version: number;
-  status: "confirmed" | "deleted";
+  status: "proposed" | "confirmed" | "deleted";
 }
 
 export type WorkspaceInvitationRole = "admin" | "member" | "viewer";
@@ -246,6 +254,7 @@ export class RembraneClient {
     request: ResolveGraphContextRequest,
   ): Promise<ResolveGraphContextResponse>;
   rememberPreference(request: RememberPreferenceRequest): Promise<MemoryMutation>;
+  recordWorkTrace(request: RecordWorkTraceRequest): Promise<MemoryMutation>;
   correctMemory(
     memoryId: string,
     request: CorrectMemoryRequest,

@@ -147,6 +147,31 @@ paths:
           $ref: "#/components/responses/AccessDenied"
         "409":
           $ref: "#/components/responses/Conflict"
+  /memories/work-traces:
+    post:
+      operationId: recordWorkTrace
+      summary: Record an activity-scoped agent observation as proposed memory
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RecordWorkTraceRequest"
+      responses:
+        "201":
+          description: Work trace proposed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemoryMutationResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/AccessDenied"
+        "409":
+          $ref: "#/components/responses/Conflict"
   /memories/{memoryId}/correction:
     post:
       operationId: correctMemory
@@ -787,6 +812,33 @@ components:
         expectedPreviousSequence:
           type: integer
           minimum: 0
+    RecordWorkTraceRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - workspaceId
+        - subjectId
+        - activityId
+        - summary
+        - expectedPreviousSequence
+      properties:
+        workspaceId:
+          $ref: "#/components/schemas/OpaqueId"
+        subjectId:
+          $ref: "#/components/schemas/OpaqueId"
+        activityId:
+          $ref: "#/components/schemas/OpaqueId"
+        entityId:
+          oneOf:
+            - $ref: "#/components/schemas/OpaqueId"
+            - type: "null"
+        summary:
+          type: string
+          minLength: 1
+          maxLength: 65536
+        expectedPreviousSequence:
+          type: integer
+          minimum: 0
     CorrectMemoryRequest:
       type: object
       additionalProperties: false
@@ -870,7 +922,7 @@ components:
           type: integer
           minimum: 1
         status:
-          enum: [confirmed, deleted]
+          enum: [proposed, confirmed, deleted]
     CheckpointActivityRequest:
       type: object
       additionalProperties: false

@@ -33,6 +33,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   authorization and persistence.
 - REST clients can record evidence-backed activity work traces as proposed
   observation memories without promoting agent output to confirmed user truth.
+- OpenAPI plus the TypeScript and Python SDKs expose REST work-trace capture,
+  with executable coverage proving encrypted proposed-observation persistence;
+  capability discovery now advertises memory proposals.
 - The REST service now serves `/.well-known/ai-memory` without authentication,
   reporting its configured API root, implemented capabilities, limits, and
   local-only versus customer-gateway plaintext-processing boundary.
