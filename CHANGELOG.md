@@ -146,6 +146,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Tenant-pinned PostgreSQL graph projection outbox support with idempotent
   node/edge resources, bounded provider-filtered reads, closed decoding, and
   optimistic lifecycle transitions.
+- Atomic PostgreSQL canonical graph mutations that validate projection batches
+  before committing encrypted node or edge revisions and provider outbox jobs
+  together.
 - PostgreSQL invitation lookup and bounded deterministic listing with optional
   status filtering, numeric lifetime decoding, terminal-state restoration,
   and exact tenant/invitation correlation.

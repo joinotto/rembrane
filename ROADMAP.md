@@ -364,6 +364,8 @@ This roadmap describes sequencing, not release dates.
           strict versions and endpoint/relation lineage validation.
         - [x] Add a tenant-pinned PostgreSQL graph projection outbox lifecycle
           for pluggable native and Graphiti indexers.
+          - [x] Commit encrypted PostgreSQL graph revisions and their validated
+            provider projection jobs in one tenant transaction.
       - [x] Add exact invitation lookup and bounded status-filtered listing
         with terminal-state restoration and full tenant/identifier correlation.
       - [x] Implement atomic invitation creation, acceptance, revocation,

@@ -10,15 +10,15 @@ use std::fmt::{self, Display, Formatter};
 
 use rembrane_application::{
     AdministrativeAuditRepository, ApplicationError, BookingResearchMutationRepository,
-    BookingResearchRepository, CanonicalMutationRepository, CheckpointDisclosureRepository,
-    CheckpointMutationRepository, CheckpointRepository, DisclosureRepository, EventRepository,
-    GraphProjectionOutboxRepository, InvitationRepository, KeyRotationRepository,
-    KnowledgeDirection, KnowledgeGraphMutationRepository, KnowledgeGraphRepository,
-    MAX_ADMINISTRATIVE_AUDIT_PAGE, MAX_KNOWLEDGE_NEIGHBOURS, MAXIMUM_INVITATION_LIST_ITEMS,
-    MemberLifecycleRepository, MemberScopeGrantRepository, MembershipRepository, MemoryRepository,
-    ProjectionOutboxRepository, RetentionRepository, TravelDisclosureRepository,
-    TripMutationRepository, TripRepository, WorkspaceReadRepository, WorkspaceRepository,
-    is_strict_successor,
+    BookingResearchRepository, CanonicalGraphMutationRepository, CanonicalMutationRepository,
+    CheckpointDisclosureRepository, CheckpointMutationRepository, CheckpointRepository,
+    DisclosureRepository, EventRepository, GraphProjectionOutboxRepository, InvitationRepository,
+    KeyRotationRepository, KnowledgeDirection, KnowledgeGraphMutationRepository,
+    KnowledgeGraphRepository, MAX_ADMINISTRATIVE_AUDIT_PAGE, MAX_KNOWLEDGE_NEIGHBOURS,
+    MAXIMUM_INVITATION_LIST_ITEMS, MemberLifecycleRepository, MemberScopeGrantRepository,
+    MembershipRepository, MemoryRepository, ProjectionOutboxRepository, RetentionRepository,
+    TravelDisclosureRepository, TripMutationRepository, TripRepository, WorkspaceReadRepository,
+    WorkspaceRepository, is_strict_successor,
 };
 use rembrane_codec::{
     decode_booking_research, decode_checkpoint, decode_event, decode_knowledge_edge,
@@ -3120,6 +3120,57 @@ where
     }
 }
 
+impl<Pool, Cipher> CanonicalGraphMutationRepository
+    for PostgresTenantMemoryStore<'_, '_, Pool, Cipher>
+where
+    Pool: PostgresPool,
+    Pool::Error: ClassifiedPostgresError,
+    <Pool::Transaction as PostgresTransaction>::Row: PostgresRow<Error = Pool::Error>,
+    Cipher: RecordCipher,
+{
+    fn insert_knowledge_node_with_projections(
+        &mut self,
+        node: KnowledgeNode,
+        projections: Vec<GraphProjectionJob>,
+    ) -> Result<(), ApplicationError> {
+        persist_knowledge_node_with_projections(self, &node, None, &projections)
+    }
+
+    fn replace_knowledge_node_with_projections(
+        &mut self,
+        node: KnowledgeNode,
+        expected_version: u64,
+        projections: Vec<GraphProjectionJob>,
+    ) -> Result<(), ApplicationError> {
+        if !is_strict_successor(expected_version, node.version()) {
+            return Err(ApplicationError::VersionConflict);
+        }
+        persist_knowledge_node_with_projections(self, &node, Some(expected_version), &projections)
+    }
+
+    fn insert_knowledge_edge_with_projections(
+        &mut self,
+        edge: KnowledgeEdge,
+        projections: Vec<GraphProjectionJob>,
+    ) -> Result<(), ApplicationError> {
+        validate_knowledge_edge_lineage(self, &edge, None)?;
+        persist_knowledge_edge_with_projections(self, &edge, None, &projections)
+    }
+
+    fn replace_knowledge_edge_with_projections(
+        &mut self,
+        edge: KnowledgeEdge,
+        expected_version: u64,
+        projections: Vec<GraphProjectionJob>,
+    ) -> Result<(), ApplicationError> {
+        if !is_strict_successor(expected_version, edge.version()) {
+            return Err(ApplicationError::VersionConflict);
+        }
+        validate_knowledge_edge_lineage(self, &edge, Some(expected_version))?;
+        persist_knowledge_edge_with_projections(self, &edge, Some(expected_version), &projections)
+    }
+}
+
 impl<Pool, Cipher> GraphProjectionOutboxRepository
     for PostgresTenantMemoryStore<'_, '_, Pool, Cipher>
 where
@@ -3356,6 +3407,117 @@ where
         .commit()
         .map_err(PostgresStoreError::Tenant)
         .map_err(map_application_error)
+}
+
+fn persist_knowledge_node_with_projections<Pool, Cipher>(
+    store: &PostgresTenantMemoryStore<'_, '_, Pool, Cipher>,
+    node: &KnowledgeNode,
+    expected_version: Option<u64>,
+    projections: &[GraphProjectionJob],
+) -> Result<(), ApplicationError>
+where
+    Pool: PostgresPool,
+    Pool::Error: ClassifiedPostgresError,
+    Cipher: RecordCipher,
+{
+    if node.workspace_id() != &store.workspace_id {
+        return Err(ApplicationError::AccessDenied);
+    }
+    validate_graph_projection_batch(
+        node.workspace_id(),
+        &GraphProjectionResource::Node(node.id().clone()),
+        node.version(),
+        projections,
+    )?;
+    let plaintext =
+        encode_knowledge_node(node).map_err(|_| ApplicationError::StorageUnavailable)?;
+    let context = EncryptionContext::new(
+        node.workspace_id().clone(),
+        node.id().as_str(),
+        node.version(),
+        PayloadPurpose::KnowledgeNode,
+    )
+    .map_err(|_| ApplicationError::Validation("invalid knowledge node context".to_owned()))?;
+    let encrypted = store
+        .cipher
+        .seal(&context, &plaintext)
+        .map_err(|_| ApplicationError::StorageUnavailable)?;
+    let mut transaction = store
+        .store
+        .begin_tenant(node.workspace_id().clone())
+        .map_err(map_application_error)?;
+    write_knowledge_node(&mut transaction, node, expected_version, &encrypted)?;
+    insert_graph_projection_jobs(&mut transaction, projections)?;
+    transaction
+        .commit()
+        .map_err(PostgresStoreError::Tenant)
+        .map_err(map_application_error)
+}
+
+fn persist_knowledge_edge_with_projections<Pool, Cipher>(
+    store: &PostgresTenantMemoryStore<'_, '_, Pool, Cipher>,
+    edge: &KnowledgeEdge,
+    expected_version: Option<u64>,
+    projections: &[GraphProjectionJob],
+) -> Result<(), ApplicationError>
+where
+    Pool: PostgresPool,
+    Pool::Error: ClassifiedPostgresError,
+    Cipher: RecordCipher,
+{
+    if edge.workspace_id() != &store.workspace_id {
+        return Err(ApplicationError::AccessDenied);
+    }
+    validate_graph_projection_batch(
+        edge.workspace_id(),
+        &GraphProjectionResource::Edge(edge.id().clone()),
+        edge.version(),
+        projections,
+    )?;
+    let plaintext =
+        encode_knowledge_edge(edge).map_err(|_| ApplicationError::StorageUnavailable)?;
+    let context = EncryptionContext::new(
+        edge.workspace_id().clone(),
+        edge.id().as_str(),
+        edge.version(),
+        PayloadPurpose::KnowledgeEdge,
+    )
+    .map_err(|_| ApplicationError::Validation("invalid knowledge edge context".to_owned()))?;
+    let encrypted = store
+        .cipher
+        .seal(&context, &plaintext)
+        .map_err(|_| ApplicationError::StorageUnavailable)?;
+    let mut transaction = store
+        .store
+        .begin_tenant(edge.workspace_id().clone())
+        .map_err(map_application_error)?;
+    write_knowledge_edge(&mut transaction, edge, expected_version, &encrypted)?;
+    insert_graph_projection_jobs(&mut transaction, projections)?;
+    transaction
+        .commit()
+        .map_err(PostgresStoreError::Tenant)
+        .map_err(map_application_error)
+}
+
+fn validate_graph_projection_batch(
+    workspace_id: &WorkspaceId,
+    resource: &GraphProjectionResource,
+    resource_version: u64,
+    projections: &[GraphProjectionJob],
+) -> Result<(), ApplicationError> {
+    if projections.iter().any(|job| {
+        job.workspace_id() != workspace_id
+            || job.resource() != resource
+            || job.resource_version() != resource_version
+            || job.operation() != ProjectionOperation::Upsert
+            || job.status() != ProjectionStatus::Pending
+            || job.attempts() != 0
+    }) {
+        return Err(ApplicationError::Validation(
+            "graph projection does not describe the canonical mutation".to_owned(),
+        ));
+    }
+    Ok(())
 }
 
 fn validate_knowledge_edge_lineage<Pool, Cipher>(
@@ -5214,6 +5376,20 @@ where
     .map_err(map_application_error)
 }
 
+fn insert_graph_projection_jobs<Transaction>(
+    transaction: &mut TenantTransaction<Transaction>,
+    projections: &[GraphProjectionJob],
+) -> Result<(), ApplicationError>
+where
+    Transaction: PostgresTransaction,
+    Transaction::Error: ClassifiedPostgresError,
+{
+    for projection in projections {
+        insert_graph_projection_job(transaction, projection)?;
+    }
+    Ok(())
+}
+
 fn valid_invitation_audit(
     invitation: &Invitation,
     event: &AdministrativeAuditEvent,
@@ -6610,9 +6786,10 @@ mod tests {
     use rembrane_application::{
         AdministrativeAuditRepository, ApplicationError, AuthorizeClientCommand,
         AuthorizeClientService, BookingResearchMutationRepository, BookingResearchRepository,
-        CanonicalMutationRepository, CheckpointDisclosureRepository, CheckpointMutationRepository,
-        CheckpointRepository, CheckpointService, CreateInvitationCommand, DisclosureRepository,
-        EventRepository, GraphProjectionOutboxRepository, InvitationRepository, InvitationService,
+        CanonicalGraphMutationRepository, CanonicalMutationRepository,
+        CheckpointDisclosureRepository, CheckpointMutationRepository, CheckpointRepository,
+        CheckpointService, CreateInvitationCommand, DisclosureRepository, EventRepository,
+        GraphProjectionOutboxRepository, InvitationRepository, InvitationService,
         KeyRotationRepository, KnowledgeDirection, KnowledgeGraphMutationRepository,
         KnowledgeGraphRepository, MemberLifecycleRepository, MemberScopeGrantRepository,
         MembershipRepository, MemoryRepository, ProjectionOutboxRepository, ProjectionOutcome,
@@ -9173,6 +9350,59 @@ mod tests {
         assert_eq!(
             calls.iter().filter(|call| **call == Call::Commit).count(),
             2
+        );
+    }
+
+    #[test]
+    fn canonical_knowledge_node_and_graph_projections_commit_atomically() {
+        let node = knowledge_node("node_project", KnowledgeNodeKind::Project, "Rembrane");
+        let projection = GraphProjectionJob::new(
+            ProjectionJobId::new("graph_projection_node_01"),
+            WorkspaceId::new("workspace_01"),
+            GraphProjectionResource::Node(node.id().clone()),
+            node.version(),
+            ProviderId::new("provider_graphiti"),
+            ProjectionOperation::Upsert,
+        )
+        .expect("graph projection");
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let store = PostgresStore::new(FakePool {
+            calls: Rc::clone(&calls),
+            tenant_batches: RefCell::new(
+                [VecDeque::from([
+                    Ok(Some("workspace_01".to_owned())),
+                    Ok(Some("workspace_01".to_owned())),
+                    Ok(Some("workspace_01".to_owned())),
+                ])]
+                .into(),
+            ),
+            row_batches: RefCell::new([Vec::new()].into()),
+        });
+        let tenant = store.for_workspace(WorkspaceId::new("workspace_01"));
+        let cipher = IdentityCipher;
+        let mut repository = tenant.with_cipher(&cipher);
+
+        CanonicalGraphMutationRepository::insert_knowledge_node_with_projections(
+            &mut repository,
+            node,
+            vec![projection],
+        )
+        .expect("canonical graph insert");
+
+        let calls = calls.borrow();
+        assert!(calls.iter().any(|call| matches!(
+            call,
+            Call::Execute(statement, parameters)
+                if statement == INSERT_KNOWLEDGE_NODE_SQL
+                    && parameters.contains(&"bytes:24".to_owned())
+        )));
+        assert!(calls.iter().any(
+            |call| matches!(call, Call::Execute(statement, _) if statement == INSERT_GRAPH_PROJECTION_SQL)
+        ));
+        assert_eq!(calls.last(), Some(&Call::Commit));
+        assert_eq!(
+            calls.iter().filter(|call| **call == Call::Commit).count(),
+            1
         );
     }
 
