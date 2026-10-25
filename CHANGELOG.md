@@ -158,6 +158,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Remote MCP consuming dispatch now carries the exact host and optional browser
   origin that passed OAuth transport authorization, alongside negotiated
   content headers, identity, invocation, and the zeroizing request body.
+- Authorized remote MCP event-stream dispatch now preserves the same validated
+  public host and browser-origin context through its consuming asynchronous
+  SDK handoff.
 - PostgreSQL invitation lookup and bounded deterministic listing with optional
   status filtering, numeric lifetime decoding, terminal-state restoration,
   and exact tenant/invitation correlation.

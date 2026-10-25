@@ -220,6 +220,8 @@ This roadmap describes sequencing, not release dates.
           event-stream acceptance, and bounded protocol version.
         - [x] Add an asynchronous consuming event-stream dispatcher port for
           the official SDK transport.
+          - [x] Preserve the validated public host and optional browser origin
+            through the consuming event-stream dispatch handoff.
         - [x] Compose GET authorization and asynchronous stream dispatch in
           one operation with typed authorization-versus-transport failures.
     - [x] Provide a consuming dispatch handoff that keeps verified identity,

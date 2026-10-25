@@ -104,6 +104,8 @@ pub struct AuthorizedRemoteMcpEventStream {
     access: VerifiedRemoteAccess,
     accept: String,
     protocol_version: Option<String>,
+    validated_host: Option<String>,
+    validated_origin: Option<String>,
 }
 
 pub trait AuthorizedRemoteMcpEventStreamDispatcher {
@@ -116,6 +118,8 @@ pub trait AuthorizedRemoteMcpEventStreamDispatcher {
         access: VerifiedRemoteAccess,
         accept: String,
         protocol_version: Option<String>,
+        validated_host: Option<String>,
+        validated_origin: Option<String>,
     ) -> Self::DispatchFuture;
 }
 
@@ -136,8 +140,32 @@ impl AuthorizedRemoteMcpEventStream {
     }
 
     #[must_use]
-    pub fn into_parts(self) -> (VerifiedRemoteAccess, String, Option<String>) {
-        (self.access, self.accept, self.protocol_version)
+    pub fn validated_host(&self) -> Option<&str> {
+        self.validated_host.as_deref()
+    }
+
+    #[must_use]
+    pub fn validated_origin(&self) -> Option<&str> {
+        self.validated_origin.as_deref()
+    }
+
+    #[must_use]
+    pub fn into_parts(
+        self,
+    ) -> (
+        VerifiedRemoteAccess,
+        String,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+    ) {
+        (
+            self.access,
+            self.accept,
+            self.protocol_version,
+            self.validated_host,
+            self.validated_origin,
+        )
     }
 
     /// Consumes the authorization proof and opens the server event stream
@@ -153,8 +181,17 @@ impl AuthorizedRemoteMcpEventStream {
     where
         Dispatcher: AuthorizedRemoteMcpEventStreamDispatcher,
     {
-        let (access, accept, protocol_version) = self.into_parts();
-        dispatcher.open(access, accept, protocol_version).await
+        let (access, accept, protocol_version, validated_host, validated_origin) =
+            self.into_parts();
+        dispatcher
+            .open(
+                access,
+                accept,
+                protocol_version,
+                validated_host,
+                validated_origin,
+            )
+            .await
     }
 }
 
@@ -651,6 +688,8 @@ where
             access,
             accept,
             protocol_version,
+            validated_host: request.host.map(str::to_owned),
+            validated_origin: request.origin.map(str::to_owned),
         })
     }
 
@@ -1071,7 +1110,13 @@ mod tests {
     struct RecordingEventStreamDispatcher;
 
     impl AuthorizedRemoteMcpEventStreamDispatcher for RecordingEventStreamDispatcher {
-        type Output = (String, String, Option<String>);
+        type Output = (
+            String,
+            String,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+        );
         type Error = std::convert::Infallible;
         type DispatchFuture = std::future::Ready<Result<Self::Output, Self::Error>>;
 
@@ -1080,11 +1125,15 @@ mod tests {
             access: rembrane_contracts::VerifiedRemoteAccess,
             accept: String,
             protocol_version: Option<String>,
+            validated_host: Option<String>,
+            validated_origin: Option<String>,
         ) -> Self::DispatchFuture {
             std::future::ready(Ok((
                 access.workspace_id().to_string(),
                 accept,
                 protocol_version,
+                validated_host,
+                validated_origin,
             )))
         }
     }
@@ -1675,7 +1724,7 @@ mod tests {
             .authorize_and_dispatch_event_stream(&headers, 1_000, &RecordingEventStreamDispatcher)
             .await
         {
-            Ok((workspace, _, _)) => Ok(workspace),
+            Ok((workspace, _, _, _, _)) => Ok(workspace),
             Err(RemoteMcpDispatchError::Authorization(rejection)) => Err(rejection),
             Err(RemoteMcpDispatchError::Dispatch(infallible)) => match infallible {},
         }
@@ -1891,6 +1940,8 @@ mod tests {
         assert_eq!(dispatched.0, "workspace_01");
         assert_eq!(dispatched.1, "text/event-stream");
         assert_eq!(dispatched.2.as_deref(), Some("2025-03-26"));
+        assert_eq!(dispatched.3.as_deref(), Some("memory.example.test"));
+        assert_eq!(dispatched.4.as_deref(), Some("https://agent.example.test"));
 
         headers.insert(ACCEPT, HeaderValue::from_static("application/json"));
         assert!(matches!(
