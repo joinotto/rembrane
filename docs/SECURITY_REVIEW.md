@@ -68,6 +68,8 @@ node scripts/verify-security-review-attestation.mjs review-attestation.json
 ```
 
 An `approved` disposition requires no exclusions or unresolved findings.
-`approved_with_accepted_risks` still requires zero unresolved findings;
-accepted risks belong in the referenced private or coordinated report.
+`approved_with_accepted_risks` still requires zero unresolved findings, a
+bounded `reportReference`, and at least one non-informational finding or
+explicit scope exclusion. Accepted-risk rationale and owner-approved treatment
+belong in the referenced private or coordinated report.
 `changes_required` requires at least one unresolved finding.

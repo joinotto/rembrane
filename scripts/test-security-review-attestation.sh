@@ -32,6 +32,29 @@ if node "$verifier" "$test_root/accepted-risk-unresolved.json" >/dev/null 2>&1; 
     exit 1
 fi
 
+jq '.disposition = "approved_with_accepted_risks"
+    | .findings.low = 1
+    | del(.reportReference)' \
+    "$fixture" >"$test_root/accepted-risk-no-report.json"
+if node "$verifier" "$test_root/accepted-risk-no-report.json" >/dev/null 2>&1; then
+    echo "accepted-risk review attestation accepted no report reference" >&2
+    exit 1
+fi
+
+jq '.disposition = "approved_with_accepted_risks"
+    | .reportReference = "review-system:REM-2026-001"' \
+    "$fixture" >"$test_root/accepted-risk-empty.json"
+if node "$verifier" "$test_root/accepted-risk-empty.json" >/dev/null 2>&1; then
+    echo "accepted-risk review attestation accepted no documented risk" >&2
+    exit 1
+fi
+
+jq '.disposition = "approved_with_accepted_risks"
+    | .findings.low = 1
+    | .reportReference = "review-system:REM-2026-001"' \
+    "$fixture" >"$test_root/accepted-risk.json"
+node "$verifier" "$test_root/accepted-risk.json" >/dev/null
+
 jq '.disposition = "changes_required"' "$fixture" \
     >"$test_root/changes-without-unresolved.json"
 if node "$verifier" "$test_root/changes-without-unresolved.json" >/dev/null 2>&1; then

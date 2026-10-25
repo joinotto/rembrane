@@ -25,6 +25,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Strict readiness now rejects signed security reviews whose valid disposition
   is `changes_required`; generic bundle verification can still authenticate
   those reports for remediation workflows.
+- Accepted-risk security approvals now require a bounded report reference and
+  at least one non-informational finding or explicit scope exclusion, making
+  the rationale traceable without publishing sensitive details.
 - A strict Memory Provider Protocol mixed-version evidence schema and verifier
   bind release tests to the reviewed profile and fixtures, pinned client and
   provider builds, distinct disposable namespaces, both supported-minor

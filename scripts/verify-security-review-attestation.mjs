@@ -99,7 +99,13 @@ if (
   (value.disposition === "approved" &&
     (value.findings.unresolved !== 0 || value.scope.exclusions.length !== 0)) ||
   (value.disposition === "approved_with_accepted_risks" &&
-    value.findings.unresolved !== 0) ||
+    (value.findings.unresolved !== 0 ||
+      value.reportReference === undefined ||
+      (value.findings.critical === 0 &&
+        value.findings.high === 0 &&
+        value.findings.moderate === 0 &&
+        value.findings.low === 0 &&
+        value.scope.exclusions.length === 0))) ||
   (value.disposition === "changes_required" &&
     value.findings.unresolved === 0)
 ) {

@@ -821,6 +821,8 @@ This roadmap describes sequencing, not release dates.
       - [x] Require an approving signed disposition in strict production
         readiness while retaining verification support for changes-required
         review bundles.
+      - [x] Require accepted-risk approvals to identify their retained review
+        record and contain an actual finding or explicit exclusion.
     - [x] Publish compatibility, deprecation, and mixed-version negotiation
       policy.
       - [x] Include the normative compatibility policy in the tamper-tested
