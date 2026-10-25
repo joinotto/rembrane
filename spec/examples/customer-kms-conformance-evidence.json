@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "cloudProvider": "aws-kms",
+  "providerId": "example.aws-kms-sidecar",
+  "providerVersion": "0.1.0",
+  "sidecarSourceRevision": "1111111111111111111111111111111111111111",
+  "namespace": "example-disposable-run",
+  "executedAt": "2026-01-15T12:00:00Z",
+  "conformanceProfileSha256": "aee588eabba0f29a05fb633324e54203a1ff81899bedae7dad4bab562bb2fa7b",
+  "conformanceResultSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "iamPolicySha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "cleanup": {
+    "completedAt": "2026-01-15T12:30:00Z",
+    "resourcesDeleted": true
+  }
+}

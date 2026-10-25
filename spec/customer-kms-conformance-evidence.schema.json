@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rembrane.dev/spec/customer-kms-conformance-evidence.schema.json",
+  "title": "Rembrane Customer KMS Conformance Evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "cloudProvider",
+    "providerId",
+    "providerVersion",
+    "sidecarSourceRevision",
+    "namespace",
+    "executedAt",
+    "conformanceProfileSha256",
+    "conformanceResultSha256",
+    "iamPolicySha256",
+    "cleanup"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "cloudProvider": {
+      "enum": ["aws-kms", "azure-key-vault", "google-cloud-kms"]
+    },
+    "providerId": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]+$",
+      "maxLength": 255
+    },
+    "providerVersion": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100,
+      "pattern": "^[!-~](?:[ -~]*[!-~])?$"
+    },
+    "sidecarSourceRevision": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "namespace": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._-]{1,80}$"
+    },
+    "executedAt": {
+      "type": "string",
+      "maxLength": 20,
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+    },
+    "conformanceProfileSha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "conformanceResultSha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "iamPolicySha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "cleanup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["completedAt", "resourcesDeleted"],
+      "properties": {
+        "completedAt": {
+          "type": "string",
+          "maxLength": 20,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+        },
+        "resourcesDeleted": { "const": true }
+      }
+    }
+  }
+}

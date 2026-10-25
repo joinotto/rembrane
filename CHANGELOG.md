@@ -9,6 +9,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- A strict customer-KMS production-evidence envelope and verifier binding each
+  disposable cloud run to its provider build, core conformance profile, exact
+  result and IAM-policy bytes, and completed resource cleanup without storing
+  cloud credentials or keys.
 - A deterministic security-review manifest generator and validation gate that
   hash-pin the exact sensitive source, protocol, migration, workflow, threat
   model, and dependency files supplied to an independent reviewer.

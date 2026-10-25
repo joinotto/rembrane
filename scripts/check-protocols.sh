@@ -35,6 +35,7 @@ jq empty \
     spec/key-provider-conformance.schema.json \
     spec/semantic-provider-conformance-result.schema.json \
     spec/provider-selection-result.schema.json \
+    spec/customer-kms-conformance-evidence.schema.json \
     spec/security-review-attestation.schema.json \
     spec/memory-provider-fixtures.schema.json \
     spec/conformance/memory-provider-core.json \
@@ -59,6 +60,7 @@ jq empty \
     spec/examples/key-provider-conformance-result.json \
     spec/examples/semantic-provider-conformance-result.json \
     spec/examples/provider-selection-result.json \
+    spec/examples/customer-kms-conformance-evidence.json \
     spec/examples/security-review-attestation.json \
     spec/examples/mcp-client-catalog.json \
     spec/provider-manifest.schema.json \
@@ -67,6 +69,19 @@ jq empty \
     spec/oauth-protected-resource.schema.json \
     spec/stdio-connection-manifest.schema.json \
     tests/postman/rembrane-local.postman_collection.json
+
+jq -e --slurpfile example spec/examples/customer-kms-conformance-evidence.json '
+    .additionalProperties == false
+    and .properties.schemaVersion.const == 1
+    and .properties.cloudProvider.enum
+        == ["aws-kms", "azure-key-vault", "google-cloud-kms"]
+    and .properties.conformanceProfileSha256.pattern == "^[0-9a-f]{64}$"
+    and .properties.conformanceResultSha256.pattern == "^[0-9a-f]{64}$"
+    and .properties.iamPolicySha256.pattern == "^[0-9a-f]{64}$"
+    and .properties.cleanup.properties.resourcesDeleted.const == true
+    and $example[0].schemaVersion == 1
+    and $example[0].cleanup.resourcesDeleted == true
+' spec/customer-kms-conformance-evidence.schema.json >/dev/null
 
 jq -e --slurpfile example spec/examples/security-review-attestation.json '
     .additionalProperties == false

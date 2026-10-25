@@ -164,3 +164,17 @@ different test definition. It also carries the lowercase SHA-256 of the exact
 profile bytes so evidence remains unambiguous if a pre-stable profile is later
 reviewed and changed.
 
+Record each live cloud run as
+`spec/customer-kms-conformance-evidence.schema.json` and validate it with:
+
+```sh
+node scripts/verify-customer-kms-evidence.mjs \
+  evidence.json conformance-result.json reviewed-iam-policy.json
+```
+
+The evidence binds the exact provider build and source revision, disposable
+namespace, current core profile, result bytes, and reviewed IAM-policy bytes.
+It is eligible only after the disposable resources are recorded as deleted.
+Keep one verified artifact set for AWS KMS, Azure Key Vault, and Google Cloud
+KMS; these records contain hashes and identifiers, never credentials or keys.
+
