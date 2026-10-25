@@ -46,6 +46,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - TypeScript and Python clients now expose trip creation, participant and
   constraint updates, attributed decisions, booking-research capture, and
   travel-context continuation across the full implemented REST lifecycle.
+- TypeScript travel methods now return protocol-accurate response models and
+  use closed unions for evidence, constraint, decision, and research kinds.
 - REST travel operations now reject malformed or oversized opaque trip and
   participant references before authorization or storage access.
 - The REST service now serves `/.well-known/ai-memory` without authentication,

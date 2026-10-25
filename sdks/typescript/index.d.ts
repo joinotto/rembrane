@@ -162,27 +162,53 @@ export interface AddTripParticipantRequest extends TripRevisionRequest {
   label: string;
 }
 
+export type EvidenceSource =
+  | "user-statement"
+  | "agent-observation"
+  | "tool-result"
+  | "imported-record"
+  | "workspace-decision";
+
+export type TripConstraintKind =
+  | "accessibility"
+  | "accommodation"
+  | "budget"
+  | "dietary"
+  | "documentation"
+  | "schedule"
+  | "transport"
+  | "other";
+
+export type TripDecisionStatus = "proposed" | "selected" | "rejected";
+
+export type BookingResearchKind =
+  | "flight"
+  | "lodging"
+  | "ground-transport"
+  | "activity"
+  | "other";
+
 export interface AddTripConstraintRequest extends TripRevisionRequest {
   participantId?: string | null;
-  kind: string;
+  kind: TripConstraintKind;
   statement: string;
-  evidenceSource: string;
+  evidenceSource: EvidenceSource;
 }
 
 export interface RecordTripDecisionRequest extends TripRevisionRequest {
-  status: string;
+  status: TripDecisionStatus;
   summary: string;
   rationale?: string | null;
-  evidenceSource: string;
+  evidenceSource: EvidenceSource;
 }
 
 export interface CaptureBookingResearchRequest extends TravelRequest {
   tripId: string;
-  kind: string;
+  kind: BookingResearchKind;
   provider: string;
   summary: string;
   sourceReference: string;
-  evidenceSource: string;
+  evidenceSource: EvidenceSource;
   observedAt: string;
   expiresAt: string;
   expectedPreviousSequence: number;
@@ -194,6 +220,93 @@ export interface ResolveTravelContextRequest extends TravelRequest {
   asOf: string;
   includeSourceReferences?: boolean;
   includeSensitiveProfile?: boolean;
+}
+
+export interface Trip {
+  tripId: string;
+  workspaceId: string;
+  ownerSubjectId: string;
+  version: number;
+}
+
+export interface TripParticipant {
+  tripId: string;
+  participantId: string;
+  label: string;
+  tripVersion: number;
+}
+
+export interface TripRevision {
+  tripId: string;
+  recordId: string;
+  tripVersion: number;
+}
+
+export interface BookingResearch {
+  id: string;
+  workspaceId: string;
+  tripId: string;
+  observedBy: string;
+  version: number;
+  expiresAt: string;
+}
+
+export interface TravelParticipant {
+  participantId: string;
+  label: string;
+}
+
+export interface TravelConstraint {
+  constraintId: string;
+  participantId?: string | null;
+  kind: TripConstraintKind;
+  statement: string;
+  evidenceId: string;
+}
+
+export interface TravelDecision {
+  decisionId: string;
+  status: TripDecisionStatus;
+  summary: string;
+  rationale?: string | null;
+  decidedBy: string;
+  evidenceId: string;
+}
+
+export interface TravelSensitiveProfile {
+  participants: TravelParticipant[];
+  constraints: TravelConstraint[];
+  decisions: TravelDecision[];
+}
+
+export interface TravelTrip {
+  tripId: string;
+  title: string;
+  origin: string;
+  destinations: string[];
+  departNotBefore: string;
+  returnNotAfter: string;
+  version: number;
+  sensitiveProfile?: TravelSensitiveProfile;
+}
+
+export interface TravelResearch {
+  researchId: string;
+  kind: BookingResearchKind;
+  provider: string;
+  summary: string;
+  evidenceId: string;
+  observedAt: string;
+  expiresAt: string;
+  version: number;
+  sourceReference?: string;
+}
+
+export interface TravelContext {
+  disclosureId: string;
+  trip: TravelTrip;
+  freshResearch: TravelResearch[];
+  expiredResearch: TravelResearch[];
 }
 
 export interface MemoryScopeRequest extends WorkspaceRequest {
@@ -328,20 +441,22 @@ export class RembraneClient {
     activityId: string,
     query: ResumeActivityQuery,
   ): Promise<ActivityCheckpoint>;
-  createTrip<T = unknown>(request: CreateTripRequest): Promise<T>;
-  addTripParticipant<T = unknown>(
+  createTrip(request: CreateTripRequest): Promise<Trip>;
+  addTripParticipant(
     request: AddTripParticipantRequest,
-  ): Promise<T>;
-  addTripConstraint<T = unknown>(request: AddTripConstraintRequest): Promise<T>;
-  recordTripDecision<T = unknown>(
+  ): Promise<TripParticipant>;
+  addTripConstraint(
+    request: AddTripConstraintRequest,
+  ): Promise<TripRevision>;
+  recordTripDecision(
     request: RecordTripDecisionRequest,
-  ): Promise<T>;
-  captureBookingResearch<T = unknown>(
+  ): Promise<TripRevision>;
+  captureBookingResearch(
     request: CaptureBookingResearchRequest,
-  ): Promise<T>;
-  resolveTravelContext<T = unknown>(
+  ): Promise<BookingResearch>;
+  resolveTravelContext(
     request: ResolveTravelContextRequest,
-  ): Promise<T>;
+  ): Promise<TravelContext>;
   rotateWorkspaceKey<T = unknown>(request: WorkspaceRequest): Promise<T>;
   createWorkspaceInvitation(
     request: CreateWorkspaceInvitationRequest,
