@@ -95,14 +95,23 @@ printf '%s\n' "$codex_config" |
     rg -F '[mcp_servers.rembrane]' >/dev/null
 printf '%s\n' "$codex_config" |
     rg -F 'env_vars = [' >/dev/null
+printf '%s\n' "$codex_config" |
+    rg -F 'REMBRANE_WORKSPACE_KEY_REFERENCE' >/dev/null
+if printf '%s\n' "$codex_config" | rg -F 'REMBRANE_WORKSPACE_KEY_HEX' >/dev/null
+then
+    echo "Codex config unexpectedly requested a raw workspace key" >&2
+    exit 1
+fi
 claude_config=$(
     "$rembrane_binary" mcp-config \
         --client claude-code \
         --server-binary "$repository_root/target/debug/rembrane-mcp"
 )
 printf '%s\n' "$claude_config" | jq -e \
-    '.mcpServers.rembrane.env.REMBRANE_WORKSPACE_KEY_HEX
-        == "${REMBRANE_WORKSPACE_KEY_HEX}"' >/dev/null
+    '.mcpServers.rembrane.env.REMBRANE_WORKSPACE_KEY_REFERENCE
+        == "${REMBRANE_WORKSPACE_KEY_REFERENCE}"
+        and (.mcpServers.rembrane.env | has("REMBRANE_WORKSPACE_KEY_HEX") | not)' \
+    >/dev/null
 gemini_config=$(
     "$rembrane_binary" mcp-config \
         --client gemini-cli \
@@ -111,8 +120,10 @@ gemini_config=$(
 printf '%s\n' "$gemini_config" | jq -e \
     '.mcpServers.rembrane.command
         and .mcpServers.rembrane.args == []
-        and .mcpServers.rembrane.env.REMBRANE_WORKSPACE_KEY_HEX
-            == "${REMBRANE_WORKSPACE_KEY_HEX}"' >/dev/null
+        and .mcpServers.rembrane.env.REMBRANE_WORKSPACE_KEY_REFERENCE
+            == "${REMBRANE_WORKSPACE_KEY_REFERENCE}"
+        and (.mcpServers.rembrane.env | has("REMBRANE_WORKSPACE_KEY_HEX") | not)' \
+    >/dev/null
 generic_config=$(
     "$rembrane_binary" mcp-config \
         --client generic \
@@ -121,7 +132,8 @@ generic_config=$(
 printf '%s\n' "$generic_config" | jq -e \
     '.schemaVersion == 1
         and .transport == "stdio"
-        and (.requiredEnvironment | index("REMBRANE_WORKSPACE_KEY_HEX"))' \
+        and (.requiredEnvironment | index("REMBRANE_WORKSPACE_KEY_REFERENCE"))
+        and (.requiredEnvironment | index("REMBRANE_WORKSPACE_KEY_HEX") | not)' \
     >/dev/null
 
 provider_registry=$("$rembrane_binary" providers list)
@@ -167,8 +179,18 @@ restored_recall=$(
 printf '%s\n' "$restored_recall" |
     rg -F "$memory_id: Call me Hippo" >/dev/null
 
+if MEM0_BASE_URL="https://operator:secret@memory.example/v1?token=hidden" \
+    "$rembrane_binary" doctor \
+        --database "$database" \
+        --principal principal_e2e \
+        --workspace workspace_e2e \
+        --privacy >/dev/null 2>&1
+then
+    echo "privacy diagnostics accepted credentials in a provider endpoint" >&2
+    exit 1
+fi
 doctor_output=$(
-    MEM0_BASE_URL="https://operator:secret@memory.example/v1?token=hidden" \
+    MEM0_BASE_URL="https://memory.example/v1" \
     "$rembrane_binary" doctor \
         --database "$database" \
         --principal principal_e2e \
@@ -439,6 +461,14 @@ then
 fi
 test ! -e "$invalid_restore"
 
+if sqlite3 "$database" \
+    "UPDATE workspace_events SET payload_ciphertext = X'00' WHERE workspace_id = 'workspace_e2e' AND sequence = 1;" \
+    >/dev/null 2>&1
+then
+    echo "workspace event immutability trigger accepted an update" >&2
+    exit 1
+fi
+sqlite3 "$database" "DROP TRIGGER workspace_events_are_immutable;"
 sqlite3 "$database" \
     "UPDATE workspace_events SET payload_ciphertext = X'00' WHERE workspace_id = 'workspace_e2e' AND sequence = 1;"
 if "$rembrane_binary" doctor \

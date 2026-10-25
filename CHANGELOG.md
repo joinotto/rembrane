@@ -9,6 +9,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- Reference-only workspace-key and HTTP key-provider credential locators in
+  every generated MCP client configuration, removing raw key and bearer-token
+  variable requests from launcher manifests.
 - Checked optimistic version and event-sequence progression across application,
   in-memory, SQLite, REST, and CLI paths, rejecting exhaustion instead of
   accepting repeated saturated revisions.

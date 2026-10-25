@@ -882,6 +882,8 @@ This roadmap describes sequencing, not release dates.
     rendering any supported agent's TOML or JSON MCP configuration.
   - [x] Encode bounded control-free command and argument invariants in the
     implementation-independent stdio connection manifest schema.
+  - [x] Generate reference-only credential environment contracts for every
+    supported MCP client and the implementation-independent bot manifest.
 
 ## Release gates
 

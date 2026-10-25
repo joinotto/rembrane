@@ -786,9 +786,10 @@ fn validate_mcp_server_binary(server_binary: &str) -> Result<(), String> {
 fn mcp_environment_variables(key_provider: &str) -> Result<Vec<&'static str>, String> {
     let mut variables = MCP_BASE_ENVIRONMENT_VARIABLES.to_vec();
     match key_provider {
-        "environment" => {
-            variables.extend(["REMBRANE_WORKSPACE_KEY_ID", "REMBRANE_WORKSPACE_KEY_HEX"]);
-        }
+        "environment" => variables.extend([
+            "REMBRANE_WORKSPACE_KEY_ID",
+            "REMBRANE_WORKSPACE_KEY_REFERENCE",
+        ]),
         "macos-keychain" => variables.extend([
             "REMBRANE_KEY_PROVIDER",
             "REMBRANE_WORKSPACE_KEY_ID",
@@ -812,7 +813,7 @@ fn mcp_environment_variables(key_provider: &str) -> Result<Vec<&'static str>, St
         "http" => variables.extend([
             "REMBRANE_KEY_PROVIDER",
             "REMBRANE_KEY_PROVIDER_BASE_URL",
-            "REMBRANE_KEY_PROVIDER_TOKEN",
+            "REMBRANE_KEY_PROVIDER_TOKEN_REFERENCE",
         ]),
         provider => {
             return Err(format!(
@@ -876,15 +877,24 @@ fn claude_mcp_config(server_binary: &str, variables: &[&str]) -> String {
 fn gemini_mcp_config(server_binary: &str, variables: &[&str]) -> String {
     let environment = variables
         .iter()
-        .map(|variable| format!("\"{variable}\":\"${{{variable}}}\""))
-        .collect::<Vec<_>>()
-        .join(",");
-    format!(
-        "{{\"mcpServers\":{{\"rembrane\":{{\
-         \"command\":\"{}\",\"args\":[],\"env\":{{{environment}}},\
-         \"description\":\"Encrypted central memory through local Rembrane MCP\"}}}}}}}}",
-        escape_config_string(server_binary)
-    )
+        .map(|variable| {
+            (
+                (*variable).to_owned(),
+                serde_json::Value::String(format!("${{{variable}}}")),
+            )
+        })
+        .collect::<serde_json::Map<_, _>>();
+    serde_json::json!({
+        "mcpServers": {
+            "rembrane": {
+                "command": server_binary,
+                "args": [],
+                "env": environment,
+                "description": "Encrypted central memory through local Rembrane MCP"
+            }
+        }
+    })
+    .to_string()
 }
 
 fn cursor_mcp_config(server_binary: &str, variables: &[&str]) -> String {
@@ -2274,30 +2284,35 @@ mod tests {
             mcp_environment_variables("environment").expect("built-in provider should be valid");
         let codex = codex_mcp_config("/opt/rembrane-mcp", &environment);
         assert!(codex.contains("env_vars = ["));
-        assert!(codex.contains("\"REMBRANE_WORKSPACE_KEY_HEX\""));
+        assert!(codex.contains("\"REMBRANE_WORKSPACE_KEY_REFERENCE\""));
+        assert!(!codex.contains("REMBRANE_WORKSPACE_KEY_HEX"));
         assert!(!codex.contains("00010203"));
 
         let claude = claude_mcp_config("/opt/rembrane-mcp", &environment);
-        assert!(
-            claude.contains("\"REMBRANE_WORKSPACE_KEY_HEX\":\"${REMBRANE_WORKSPACE_KEY_HEX}\"")
-        );
+        assert!(claude.contains(
+            "\"REMBRANE_WORKSPACE_KEY_REFERENCE\":\"${REMBRANE_WORKSPACE_KEY_REFERENCE}\""
+        ));
+        assert!(!claude.contains("REMBRANE_WORKSPACE_KEY_HEX"));
         assert!(!claude.contains("00010203"));
 
         let gemini = gemini_mcp_config("/opt/rembrane-mcp", &environment);
         assert!(gemini.contains("\"mcpServers\":{\"rembrane\""));
-        assert!(
-            gemini.contains("\"REMBRANE_WORKSPACE_KEY_HEX\":\"${REMBRANE_WORKSPACE_KEY_HEX}\"")
-        );
+        assert!(gemini.contains(
+            "\"REMBRANE_WORKSPACE_KEY_REFERENCE\":\"${REMBRANE_WORKSPACE_KEY_REFERENCE}\""
+        ));
+        assert!(!gemini.contains("REMBRANE_WORKSPACE_KEY_HEX"));
         assert!(!gemini.contains("00010203"));
 
         let cursor = cursor_mcp_config("/opt/rembrane-mcp", &environment);
         assert!(cursor.contains("\"mcpServers\":{\"rembrane\""));
-        assert!(cursor.contains("\"${env:REMBRANE_WORKSPACE_KEY_HEX}\""));
+        assert!(cursor.contains("\"${env:REMBRANE_WORKSPACE_KEY_REFERENCE}\""));
+        assert!(!cursor.contains("REMBRANE_WORKSPACE_KEY_HEX"));
         assert!(!cursor.contains("00010203"));
 
         let vscode = vscode_mcp_config("/opt/rembrane-mcp", &environment);
         assert!(vscode.contains("\"servers\":{\"rembrane\""));
-        assert!(vscode.contains("\"${env:REMBRANE_WORKSPACE_KEY_HEX}\""));
+        assert!(vscode.contains("\"${env:REMBRANE_WORKSPACE_KEY_REFERENCE}\""));
+        assert!(!vscode.contains("REMBRANE_WORKSPACE_KEY_HEX"));
         assert!(!vscode.contains("00010203"));
 
         let zed = zed_mcp_config("/opt/rembrane-mcp");
@@ -2309,16 +2324,18 @@ mod tests {
         assert!(opencode.contains("\"$schema\":\"https://opencode.ai/config.json\""));
         assert!(opencode.contains("\"type\":\"local\""));
         assert!(opencode.contains("\"command\":[\"/opt/rembrane-mcp\"]"));
-        assert!(
-            opencode
-                .contains("\"REMBRANE_WORKSPACE_KEY_HEX\":\"{env:REMBRANE_WORKSPACE_KEY_HEX}\"")
-        );
+        assert!(opencode.contains(
+            "\"REMBRANE_WORKSPACE_KEY_REFERENCE\":\"{env:REMBRANE_WORKSPACE_KEY_REFERENCE}\""
+        ));
+        assert!(!opencode.contains("REMBRANE_WORKSPACE_KEY_HEX"));
         assert!(!opencode.contains("00010203"));
 
         let generic = generic_mcp_config("/opt/rembrane-mcp", &environment);
         assert!(generic.contains("\"schemaVersion\":1"));
         assert!(generic.contains("\"transport\":\"stdio\""));
         assert!(generic.contains("\"requiredEnvironment\""));
+        assert!(generic.contains("REMBRANE_WORKSPACE_KEY_REFERENCE"));
+        assert!(!generic.contains("REMBRANE_WORKSPACE_KEY_HEX"));
         assert!(!generic.contains("00010203"));
     }
 
@@ -2352,6 +2369,13 @@ mod tests {
     }
 
     #[test]
+    fn http_key_provider_mcp_config_requires_only_a_token_reference() {
+        let environment = mcp_environment_variables("http").expect("HTTP provider should be valid");
+        assert!(environment.contains(&"REMBRANE_KEY_PROVIDER_TOKEN_REFERENCE"));
+        assert!(!environment.contains(&"REMBRANE_KEY_PROVIDER_TOKEN"));
+    }
+
+    #[test]
     fn linux_secret_service_config_passes_only_lookup_metadata() {
         let environment = mcp_environment_variables("linux-secret-service")
             .expect("Linux Secret Service provider should be valid");
@@ -2381,7 +2405,8 @@ mod tests {
         let config = codex_mcp_config("/opt/rembrane-mcp", &environment);
 
         assert!(config.contains("\"REMBRANE_KEY_PROVIDER_BASE_URL\""));
-        assert!(config.contains("\"REMBRANE_KEY_PROVIDER_TOKEN\""));
+        assert!(config.contains("\"REMBRANE_KEY_PROVIDER_TOKEN_REFERENCE\""));
+        assert!(!environment.contains(&"REMBRANE_KEY_PROVIDER_TOKEN"));
         assert!(!config.contains("replace-from-secret-store"));
         assert!(!config.contains("REMBRANE_WORKSPACE_KEY_HEX"));
     }

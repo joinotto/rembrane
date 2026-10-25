@@ -289,6 +289,12 @@ target/debug/rembrane mcp-config \
   --server-binary "$PWD/target/debug/rembrane-mcp"
 ```
 
+Generated MCP configurations pass only credential locators such as
+`REMBRANE_WORKSPACE_KEY_REFERENCE` or
+`REMBRANE_KEY_PROVIDER_TOKEN_REFERENCE`. Point these at protected files or
+another deployment-owned resolver; generated client configuration never asks
+the launcher to serialize raw key or bearer-token values.
+
 Inspect the compatibility evidence embedded in this CLI build:
 
 ```sh
