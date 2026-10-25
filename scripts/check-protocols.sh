@@ -51,6 +51,44 @@ jq empty \
     spec/stdio-connection-manifest.schema.json \
     tests/postman/rembrane-local.postman_collection.json
 
+ruby -ryaml -e '
+document = YAML.load_file(ARGV.fetch(0))
+operation = document.fetch("paths").fetch("/graph/context/resolve").fetch("post")
+request_schema = operation
+  .fetch("requestBody")
+  .fetch("content")
+  .fetch("application/json")
+  .fetch("schema")
+response_schema = operation
+  .fetch("responses")
+  .fetch("200")
+  .fetch("content")
+  .fetch("application/json")
+  .fetch("schema")
+abort("graph request schema binding differs") unless request_schema.fetch("$ref") == "#/components/schemas/ResolveGraphContextRequest"
+abort("graph response schema binding differs") unless response_schema.fetch("$ref") == "#/components/schemas/ResolveGraphContextResponse"
+%w[400 401 403 409].each do |status|
+  abort("graph error response #{status} is missing") unless operation.fetch("responses").key?(status)
+end
+' spec/openapi.yaml
+
+jq -e '
+    ([.item[] | select(.request.url == "{{baseUrl}}/v1/graph/context/resolve")] | length == 2)
+    and any(
+        .item[];
+        .name == "Reject graph context outside connection scope"
+        and (.request.body.raw | contains("\"entityId\":\"project_outside_grant\""))
+        and (.event[].script.exec | any(contains("status(403)")))
+    )
+    and any(
+        .item[];
+        .name == "Resolve audited graph context"
+        and (.request.body.raw | contains("\"entityId\":\"project_rest_e2e\""))
+        and (.event[].script.exec | any(contains("body.disclosureId")))
+        and (.event[].script.exec | any(contains("body.edges")))
+    )
+' tests/postman/rembrane-local.postman_collection.json >/dev/null
+
 jq -e '
     .schemaVersion == 1
     and (.clients | length == 8)

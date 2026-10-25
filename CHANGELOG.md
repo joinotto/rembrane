@@ -54,6 +54,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   neighbourhood disclosures against a canonical tenant node.
 - Portable Postman graph-context coverage for denied entity scope, canonical
   empty output, and an independently persisted disclosure receipt.
+- Unconditional protocol checks pinning the graph OpenAPI request/response
+  schemas and both denied and authorized Postman acceptance cases.
 - Bounded shared-workspace invitation validity with persisted creation and
   expiry time, a 30-day maximum lifetime, and fail-closed acceptance at the
   expiry boundary.
