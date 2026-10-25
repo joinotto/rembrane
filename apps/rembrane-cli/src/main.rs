@@ -3,12 +3,12 @@ use rembrane_application::{
     AuthorizeClientCommand, AuthorizeClientService, CanonicalMutationRepository,
     ChannelBindingService, ChannelInboxAdministrationService, CheckpointRepository,
     ClientGrantBundle, CreateChannelBindingCommand, CreateInvitationCommand, DeleteMemoryCommand,
-    EventRepository, ExecuteRetentionPurgeCommand, InvitationService, MemberLifecycleService,
-    MembershipRepository, MemoryLifecycleService, MemoryRepository, PlaceLegalHoldCommand,
-    ReleaseLegalHoldCommand, RememberPreferenceCommand, RememberPreferenceService,
-    RequeueChannelMessageCommand, ResolveContextCommand, ResolveContextService, RetentionService,
-    ReviseMemoryCommand, RevokeChannelBindingCommand, RevokeInvitationCommand,
-    SetRetentionPolicyCommand, WorkspaceRepository,
+    EventRepository, ExecuteRetentionPurgeCommand, InvitationService, ListInvitationsQuery,
+    MemberLifecycleService, MembershipRepository, MemoryLifecycleService, MemoryRepository,
+    PlaceLegalHoldCommand, ReleaseLegalHoldCommand, RememberPreferenceCommand,
+    RememberPreferenceService, RequeueChannelMessageCommand, ResolveContextCommand,
+    ResolveContextService, RetentionService, ReviseMemoryCommand, RevokeChannelBindingCommand,
+    RevokeInvitationCommand, SetRetentionPolicyCommand, WorkspaceRepository,
 };
 use rembrane_channel_mobile_share::derive_binding_lookup_keys as derive_mobile_binding_lookup_keys;
 use rembrane_channel_whatsapp::derive_binding_lookup_keys as derive_whatsapp_binding_lookup_keys;
@@ -17,9 +17,10 @@ use rembrane_contracts::{ChannelKind, ChannelSenderBinding, ResolveContextReques
 use rembrane_crypto_configured::ConfiguredRecordCipher;
 use rembrane_domain::{
     CanonicalEvent, ClientId, ContextPackId, DisclosureId, EventId, EventPayload, EvidenceId,
-    EvidenceReference, EvidenceSource, LegalHoldId, Membership, MemoryId, MemoryRecord,
-    MemoryScope, Principal, PrincipalId, ReadGrant, ReadScope, RetentionPeriod, Workspace,
-    WorkspaceId, WorkspaceRetentionPolicy, WorkspaceRole, WritePermission,
+    EvidenceReference, EvidenceSource, Invitation, InvitationStatus, LegalHoldId, Membership,
+    MemoryId, MemoryRecord, MemoryScope, Principal, PrincipalId, ReadGrant, ReadScope,
+    RetentionPeriod, Workspace, WorkspaceId, WorkspaceRetentionPolicy, WorkspaceRole,
+    WritePermission,
 };
 use rembrane_memory_provider_configured::ConfiguredMemoryProvider;
 use rembrane_provider_sdk::{
@@ -1830,13 +1831,31 @@ fn invitation(arguments: &[String]) -> Result<(), String> {
     let database = option(arguments, "--database")?;
     let principal_id = PrincipalId::new(option(arguments, "--principal")?);
     let workspace_id = WorkspaceId::new(option(arguments, "--workspace")?);
-    let invitation_id = rembrane_domain::InvitationId::new(option(arguments, "--invitation")?);
-    let request_id = option(arguments, "--request")?.to_owned();
-    let now = now_epoch_seconds()?;
     let mut store =
         SqliteStore::open(database).map_err(|error| format!("cannot open database: {error}"))?;
     let mut service = InvitationService::new(&mut store);
 
+    if operation == "list" {
+        let status = optional_option(arguments, "--status")
+            .map(invitation_status)
+            .transpose()?;
+        let limit = optional_option(arguments, "--limit")
+            .map_or(Ok(100), |value| parse_usize(value, "--limit"))?;
+        let invitations = service
+            .list(&ListInvitationsQuery {
+                workspace_id: workspace_id.clone(),
+                requested_by: principal_id,
+                status,
+                limit,
+            })
+            .map_err(|error| format!("cannot list invitations: {error}"))?;
+        println!("{}", invitation_list_json(&workspace_id, &invitations));
+        return Ok(());
+    }
+
+    let invitation_id = rembrane_domain::InvitationId::new(option(arguments, "--invitation")?);
+    let request_id = option(arguments, "--request")?.to_owned();
+    let now = now_epoch_seconds()?;
     let (status, subject_id, role) = match operation {
         "create" => {
             let subject_id = PrincipalId::new(option(arguments, "--subject")?);
@@ -1911,6 +1930,48 @@ fn invitation_role(value: &str) -> Result<WorkspaceRole, String> {
     }
 }
 
+fn invitation_status(value: &str) -> Result<InvitationStatus, String> {
+    match value {
+        "pending" => Ok(InvitationStatus::Pending),
+        "accepted" => Ok(InvitationStatus::Accepted),
+        "revoked" => Ok(InvitationStatus::Revoked),
+        "expired" => Ok(InvitationStatus::Expired),
+        _ => Err("--status must be pending, accepted, revoked, or expired".to_owned()),
+    }
+}
+
+const fn invitation_status_label(status: InvitationStatus) -> &'static str {
+    match status {
+        InvitationStatus::Pending => "pending",
+        InvitationStatus::Accepted => "accepted",
+        InvitationStatus::Revoked => "revoked",
+        InvitationStatus::Expired => "expired",
+    }
+}
+
+fn invitation_list_json(
+    workspace_id: &WorkspaceId,
+    invitations: &[Invitation],
+) -> serde_json::Value {
+    serde_json::json!({
+        "workspaceId": workspace_id.as_str(),
+        "invitations": invitations
+            .iter()
+            .map(|invitation| {
+                serde_json::json!({
+                    "invitationId": invitation.id().as_str(),
+                    "invitedPrincipalId": invitation.invited_principal_id().as_str(),
+                    "invitedBy": invitation.invited_by().as_str(),
+                    "role": workspace_role_label(invitation.role()),
+                    "status": invitation_status_label(invitation.status()),
+                    "createdAtEpochSeconds": invitation.created_at_epoch_seconds(),
+                    "expiresAtEpochSeconds": invitation.expires_at_epoch_seconds()
+                })
+            })
+            .collect::<Vec<_>>()
+    })
+}
+
 const fn workspace_role_label(role: WorkspaceRole) -> &'static str {
     match role {
         WorkspaceRole::Owner => "owner",
@@ -1921,7 +1982,7 @@ const fn workspace_role_label(role: WorkspaceRole) -> &'static str {
 }
 
 const fn invitation_usage() -> &'static str {
-    "usage: rembrane invitation <create|accept|revoke> --database <path> --principal <id> --workspace <id> --invitation <id> --request <id> [--subject <id> --role <admin|member|viewer> --ttl-seconds <seconds>]"
+    "usage: rembrane invitation <create|accept|revoke|list> --database <path> --principal <id> --workspace <id> [--invitation <id> --request <id>] [--subject <id> --role <admin|member|viewer> --ttl-seconds <seconds>] [--status <pending|accepted|revoked|expired> --limit <1-100>]"
 }
 
 fn initialize(arguments: &[String]) -> Result<(), String> {
@@ -2105,6 +2166,8 @@ fn print_help() {
              --workspace <id> --invitation <id> --request <id>\n\
            rembrane invitation revoke --database <path> --principal <owner-or-admin-id> \
              --workspace <id> --invitation <id> --request <id>\n\
+           rembrane invitation list --database <path> --principal <owner-or-admin-id> \
+             --workspace <id> [--status <pending|accepted|revoked|expired>] [--limit <1-100>]\n\
            rembrane doctor --database <path> --principal <id> --workspace <id> \
              [--privacy]\n\
            rembrane backup --database <path> --principal <id> \
@@ -2163,19 +2226,20 @@ fn print_help() {
 mod tests {
     use rembrane_application::{AdministrativeAuditRepository, MembershipRepository};
     use rembrane_domain::{
-        AdministrativeAction, EntityId, MemoryScope, PrincipalId, ReadScope, WorkspaceId,
-        WorkspaceRole,
+        AdministrativeAction, EntityId, Invitation, InvitationId, InvitationStatus, MemoryScope,
+        PrincipalId, ReadScope, WorkspaceId, WorkspaceRole,
     };
     use rembrane_store_sqlite::SqliteStore;
 
     use super::{
         EXPORT_MAGIC, claude_mcp_config, codex_mcp_config, cursor_mcp_config, format_read_scopes,
-        gemini_mcp_config, generic_mcp_config, mcp_client_catalog, mcp_environment_variables,
-        memory_privacy_mode_name, memory_provider_check_policy, opencode_mcp_config, option,
-        positive_u64, providers, read_export, recall_scope_context, redact_endpoint,
-        render_mcp_config, requested_memory_privacy, requested_memory_scope, run,
-        selected_secret_reference, test_provider, validate_external_conformance_namespace,
-        validate_mcp_server_binary, vscode_mcp_config, write_export, zed_mcp_config,
+        gemini_mcp_config, generic_mcp_config, invitation_list_json, invitation_status,
+        mcp_client_catalog, mcp_environment_variables, memory_privacy_mode_name,
+        memory_provider_check_policy, opencode_mcp_config, option, positive_u64, providers,
+        read_export, recall_scope_context, redact_endpoint, render_mcp_config,
+        requested_memory_privacy, requested_memory_scope, run, selected_secret_reference,
+        test_provider, validate_external_conformance_namespace, validate_mcp_server_binary,
+        vscode_mcp_config, write_export, zed_mcp_config,
     };
 
     fn temporary_path(name: &str) -> std::path::PathBuf {
@@ -2194,6 +2258,40 @@ mod tests {
             .iter()
             .map(|argument| (*argument).to_owned())
             .collect::<Vec<_>>())
+    }
+
+    fn initialize_shared_fixture(database: &str) {
+        request_run(&[
+            "init",
+            "--database",
+            database,
+            "--principal",
+            "owner",
+            "--workspace",
+            "owner-personal",
+        ])
+        .expect("owner initialization");
+        request_run(&[
+            "init",
+            "--database",
+            database,
+            "--principal",
+            "guest",
+            "--workspace",
+            "guest-personal",
+        ])
+        .expect("guest initialization");
+        request_run(&[
+            "workspace",
+            "create-shared",
+            "--database",
+            database,
+            "--principal",
+            "owner",
+            "--workspace",
+            "team",
+        ])
+        .expect("shared workspace");
     }
 
     #[test]
@@ -2215,37 +2313,7 @@ mod tests {
     fn cli_creates_shared_workspace_and_accepts_audited_invitation() {
         let database = temporary_path("shared-workspace.db");
         let database = database.to_string_lossy().into_owned();
-        request_run(&[
-            "init",
-            "--database",
-            &database,
-            "--principal",
-            "owner",
-            "--workspace",
-            "owner-personal",
-        ])
-        .expect("owner initialization");
-        request_run(&[
-            "init",
-            "--database",
-            &database,
-            "--principal",
-            "guest",
-            "--workspace",
-            "guest-personal",
-        ])
-        .expect("guest initialization");
-        request_run(&[
-            "workspace",
-            "create-shared",
-            "--database",
-            &database,
-            "--principal",
-            "owner",
-            "--workspace",
-            "team",
-        ])
-        .expect("shared workspace");
+        initialize_shared_fixture(&database);
         request_run(&[
             "invitation",
             "create",
@@ -2269,6 +2337,21 @@ mod tests {
         .expect("invitation");
         request_run(&[
             "invitation",
+            "list",
+            "--database",
+            &database,
+            "--principal",
+            "owner",
+            "--workspace",
+            "team",
+            "--status",
+            "pending",
+            "--limit",
+            "1",
+        ])
+        .expect("owner can list pending invitations");
+        request_run(&[
+            "invitation",
             "accept",
             "--database",
             &database,
@@ -2282,6 +2365,30 @@ mod tests {
             "request_cli_accept",
         ])
         .expect("acceptance");
+        request_run(&[
+            "invitation",
+            "list",
+            "--database",
+            &database,
+            "--principal",
+            "owner",
+            "--workspace",
+            "team",
+            "--status",
+            "accepted",
+        ])
+        .expect("owner can list accepted invitations");
+        let member_listing = request_run(&[
+            "invitation",
+            "list",
+            "--database",
+            &database,
+            "--principal",
+            "guest",
+            "--workspace",
+            "team",
+        ]);
+        assert!(member_listing.is_err());
 
         let store = SqliteStore::open(&database).expect("database");
         let membership = store
@@ -2301,6 +2408,41 @@ mod tests {
         assert!(actions.contains(&AdministrativeAction::InvitationAccepted));
 
         std::fs::remove_file(database).expect("fixture database should be removed");
+    }
+
+    #[test]
+    fn invitation_listing_uses_closed_statuses_and_structured_output() {
+        assert_eq!(
+            invitation_status("expired").expect("known status"),
+            InvitationStatus::Expired
+        );
+        assert!(invitation_status("all").is_err());
+
+        let invitation = Invitation::new(
+            InvitationId::new("invite_cli_json"),
+            WorkspaceId::new("team"),
+            PrincipalId::new("guest"),
+            PrincipalId::new("owner"),
+            WorkspaceRole::Viewer,
+            100,
+            200,
+        )
+        .expect("valid invitation");
+        assert_eq!(
+            invitation_list_json(&WorkspaceId::new("team"), &[invitation]),
+            serde_json::json!({
+                "workspaceId": "team",
+                "invitations": [{
+                    "invitationId": "invite_cli_json",
+                    "invitedPrincipalId": "guest",
+                    "invitedBy": "owner",
+                    "role": "viewer",
+                    "status": "pending",
+                    "createdAtEpochSeconds": 100,
+                    "expiresAtEpochSeconds": 200
+                }]
+            })
+        );
     }
 
     #[test]

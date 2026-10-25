@@ -134,6 +134,13 @@ cargo run -p rembrane-cli -- invitation accept \
   --invitation invite_01 \
   --request request_accept_01
 
+cargo run -p rembrane-cli -- invitation list \
+  --database .rembrane/rembrane.db \
+  --principal principal_local \
+  --workspace workspace_team \
+  --status accepted \
+  --limit 50
+
 export REMBRANE_WORKSPACE_KEY_ID=local-key-v1
 export REMBRANE_WORKSPACE_KEY_HEX=<64-hex-character-development-key>
 

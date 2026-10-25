@@ -445,6 +445,8 @@ This roadmap describes sequencing, not release dates.
     audit evidence in the same transaction as each lifecycle mutation.
   - [x] Add bounded, status-filtered, deterministic invitation listing with
     owner/admin authorization across in-memory and SQLite repositories.
+    - [x] Expose bounded invitation listing through the local CLI with closed
+      status filters and structured JSON output.
   - [x] Expose shared-workspace creation plus invitation create, accept, and
     revoke workflows through the local CLI.
   - [x] Expose invitation creation, acceptance, and revocation through the

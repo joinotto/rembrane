@@ -19,6 +19,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Bounded owner/admin-only shared-workspace invitation listing with optional
   status filtering, deterministic ordering, and tenant-isolation proofs across
   in-memory and SQLite repositories.
+- Local CLI invitation listing with bounded results, closed status filters,
+  management-role authorization, and structured lifecycle metadata.
 - Local CLI commands for creating shared workspaces and creating, accepting,
   or revoking bounded role-specific invitations.
 - Authenticated REST invitation creation, acceptance, and revocation,
