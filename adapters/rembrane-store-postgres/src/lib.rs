@@ -12,17 +12,17 @@ use rembrane_application::{
     AdministrativeAuditRepository, ApplicationError, BookingResearchMutationRepository,
     BookingResearchRepository, CanonicalMutationRepository, CheckpointDisclosureRepository,
     CheckpointMutationRepository, CheckpointRepository, DisclosureRepository, EventRepository,
-    InvitationRepository, KeyRotationRepository, KnowledgeDirection, KnowledgeGraphRepository,
-    MAX_ADMINISTRATIVE_AUDIT_PAGE, MAX_KNOWLEDGE_NEIGHBOURS, MAXIMUM_INVITATION_LIST_ITEMS,
-    MemberLifecycleRepository, MemberScopeGrantRepository, MembershipRepository, MemoryRepository,
-    ProjectionOutboxRepository, RetentionRepository, TravelDisclosureRepository,
-    TripMutationRepository, TripRepository, WorkspaceReadRepository, WorkspaceRepository,
-    is_strict_successor,
+    InvitationRepository, KeyRotationRepository, KnowledgeDirection,
+    KnowledgeGraphMutationRepository, KnowledgeGraphRepository, MAX_ADMINISTRATIVE_AUDIT_PAGE,
+    MAX_KNOWLEDGE_NEIGHBOURS, MAXIMUM_INVITATION_LIST_ITEMS, MemberLifecycleRepository,
+    MemberScopeGrantRepository, MembershipRepository, MemoryRepository, ProjectionOutboxRepository,
+    RetentionRepository, TravelDisclosureRepository, TripMutationRepository, TripRepository,
+    WorkspaceReadRepository, WorkspaceRepository, is_strict_successor,
 };
 use rembrane_codec::{
     decode_booking_research, decode_checkpoint, decode_event, decode_knowledge_edge,
     decode_knowledge_node, decode_memory, decode_trip, encode_booking_research, encode_checkpoint,
-    encode_event, encode_memory, encode_trip,
+    encode_event, encode_knowledge_edge, encode_knowledge_node, encode_memory, encode_trip,
 };
 use rembrane_crypto::{EncryptedPayload, EncryptionContext, PayloadPurpose, RecordCipher};
 use rembrane_domain::{
@@ -319,6 +319,23 @@ pub const LIST_BOTH_KNOWLEDGE_EDGES_SQL: &str = "SELECT workspace_id, id, source
     encryption_nonce FROM knowledge_edges WHERE workspace_id = $1 \
     AND (source_id = $2 OR target_id = $2) AND valid_from <= $3 \
     AND (valid_until IS NULL OR valid_until > $3) ORDER BY valid_from DESC, id LIMIT $4";
+pub const INSERT_KNOWLEDGE_NODE_SQL: &str = "INSERT INTO knowledge_nodes \
+    (workspace_id, id, node_ciphertext, encryption_key_id, encryption_algorithm, \
+    encryption_nonce, version, valid_from, valid_until, recorded_at) \
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)";
+pub const REPLACE_KNOWLEDGE_NODE_SQL: &str = "UPDATE knowledge_nodes SET node_ciphertext = $3, \
+    encryption_key_id = $4, encryption_algorithm = $5, encryption_nonce = $6, version = $7, \
+    valid_from = $8, valid_until = $9, recorded_at = $10, updated_at = CURRENT_TIMESTAMP \
+    WHERE workspace_id = $1 AND id = $2 AND version = $11";
+pub const INSERT_KNOWLEDGE_EDGE_SQL: &str = "INSERT INTO knowledge_edges \
+    (workspace_id, id, source_id, target_id, supersedes_id, edge_ciphertext, encryption_key_id, \
+    encryption_algorithm, encryption_nonce, version, valid_from, valid_until, recorded_at) \
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)";
+pub const REPLACE_KNOWLEDGE_EDGE_SQL: &str = "UPDATE knowledge_edges SET source_id = $3, \
+    target_id = $4, supersedes_id = $5, edge_ciphertext = $6, encryption_key_id = $7, \
+    encryption_algorithm = $8, encryption_nonce = $9, version = $10, valid_from = $11, \
+    valid_until = $12, recorded_at = $13, updated_at = CURRENT_TIMESTAMP \
+    WHERE workspace_id = $1 AND id = $2 AND version = $14";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PostgresParameter<'value> {
@@ -3042,6 +3059,164 @@ where
     }
 }
 
+impl<Pool, Cipher> KnowledgeGraphMutationRepository
+    for PostgresTenantMemoryStore<'_, '_, Pool, Cipher>
+where
+    Pool: PostgresPool,
+    Pool::Error: ClassifiedPostgresError,
+    <Pool::Transaction as PostgresTransaction>::Row: PostgresRow<Error = Pool::Error>,
+    Cipher: RecordCipher,
+{
+    fn insert_knowledge_node(&mut self, node: KnowledgeNode) -> Result<(), ApplicationError> {
+        persist_knowledge_node(self, &node, None)
+    }
+
+    fn replace_knowledge_node(
+        &mut self,
+        node: KnowledgeNode,
+        expected_version: u64,
+    ) -> Result<(), ApplicationError> {
+        if !is_strict_successor(expected_version, node.version()) {
+            return Err(ApplicationError::VersionConflict);
+        }
+        persist_knowledge_node(self, &node, Some(expected_version))
+    }
+
+    fn insert_knowledge_edge(&mut self, edge: KnowledgeEdge) -> Result<(), ApplicationError> {
+        validate_knowledge_edge_lineage(self, &edge, None)?;
+        persist_knowledge_edge(self, &edge, None)
+    }
+
+    fn replace_knowledge_edge(
+        &mut self,
+        edge: KnowledgeEdge,
+        expected_version: u64,
+    ) -> Result<(), ApplicationError> {
+        if !is_strict_successor(expected_version, edge.version()) {
+            return Err(ApplicationError::VersionConflict);
+        }
+        validate_knowledge_edge_lineage(self, &edge, Some(expected_version))?;
+        persist_knowledge_edge(self, &edge, Some(expected_version))
+    }
+}
+
+fn persist_knowledge_node<Pool, Cipher>(
+    store: &PostgresTenantMemoryStore<'_, '_, Pool, Cipher>,
+    node: &KnowledgeNode,
+    expected_version: Option<u64>,
+) -> Result<(), ApplicationError>
+where
+    Pool: PostgresPool,
+    Pool::Error: ClassifiedPostgresError,
+    Cipher: RecordCipher,
+{
+    if node.workspace_id() != &store.workspace_id {
+        return Err(ApplicationError::AccessDenied);
+    }
+    let plaintext =
+        encode_knowledge_node(node).map_err(|_| ApplicationError::StorageUnavailable)?;
+    let context = EncryptionContext::new(
+        node.workspace_id().clone(),
+        node.id().as_str(),
+        node.version(),
+        PayloadPurpose::KnowledgeNode,
+    )
+    .map_err(|_| ApplicationError::Validation("invalid knowledge node context".to_owned()))?;
+    let encrypted = store
+        .cipher
+        .seal(&context, &plaintext)
+        .map_err(|_| ApplicationError::StorageUnavailable)?;
+    let mut transaction = store
+        .store
+        .begin_tenant(node.workspace_id().clone())
+        .map_err(map_application_error)?;
+    write_knowledge_node(&mut transaction, node, expected_version, &encrypted)?;
+    transaction
+        .commit()
+        .map_err(PostgresStoreError::Tenant)
+        .map_err(map_application_error)
+}
+
+fn persist_knowledge_edge<Pool, Cipher>(
+    store: &PostgresTenantMemoryStore<'_, '_, Pool, Cipher>,
+    edge: &KnowledgeEdge,
+    expected_version: Option<u64>,
+) -> Result<(), ApplicationError>
+where
+    Pool: PostgresPool,
+    Pool::Error: ClassifiedPostgresError,
+    Cipher: RecordCipher,
+{
+    if edge.workspace_id() != &store.workspace_id {
+        return Err(ApplicationError::AccessDenied);
+    }
+    let plaintext =
+        encode_knowledge_edge(edge).map_err(|_| ApplicationError::StorageUnavailable)?;
+    let context = EncryptionContext::new(
+        edge.workspace_id().clone(),
+        edge.id().as_str(),
+        edge.version(),
+        PayloadPurpose::KnowledgeEdge,
+    )
+    .map_err(|_| ApplicationError::Validation("invalid knowledge edge context".to_owned()))?;
+    let encrypted = store
+        .cipher
+        .seal(&context, &plaintext)
+        .map_err(|_| ApplicationError::StorageUnavailable)?;
+    let mut transaction = store
+        .store
+        .begin_tenant(edge.workspace_id().clone())
+        .map_err(map_application_error)?;
+    write_knowledge_edge(&mut transaction, edge, expected_version, &encrypted)?;
+    transaction
+        .commit()
+        .map_err(PostgresStoreError::Tenant)
+        .map_err(map_application_error)
+}
+
+fn validate_knowledge_edge_lineage<Pool, Cipher>(
+    store: &PostgresTenantMemoryStore<'_, '_, Pool, Cipher>,
+    edge: &KnowledgeEdge,
+    expected_version: Option<u64>,
+) -> Result<(), ApplicationError>
+where
+    Pool: PostgresPool,
+    Pool::Error: ClassifiedPostgresError,
+    <Pool::Transaction as PostgresTransaction>::Row: PostgresRow<Error = Pool::Error>,
+    Cipher: RecordCipher,
+{
+    if let Some(expected_version) = expected_version {
+        let current = store
+            .find_knowledge_edge(edge.workspace_id(), edge.id())?
+            .ok_or(ApplicationError::NotFound)?;
+        if current.version() != expected_version
+            || current.source_id() != edge.source_id()
+            || current.target_id() != edge.target_id()
+            || current.relation() != edge.relation()
+        {
+            return Err(ApplicationError::VersionConflict);
+        }
+    }
+    if let Some(superseded_id) = edge.supersedes() {
+        let superseded = store
+            .find_knowledge_edge(edge.workspace_id(), superseded_id)?
+            .ok_or_else(|| {
+                ApplicationError::Validation(
+                    "superseded knowledge edge must exist in the same workspace".to_owned(),
+                )
+            })?;
+        if superseded.source_id() != edge.source_id()
+            || superseded.target_id() != edge.target_id()
+            || superseded.relation() != edge.relation()
+        {
+            return Err(ApplicationError::Validation(
+                "knowledge edge supersession must preserve endpoints and relation".to_owned(),
+            ));
+        }
+    }
+    Ok(())
+}
+
 impl<Pool, Cipher> TripRepository for PostgresTenantMemoryStore<'_, '_, Pool, Cipher>
 where
     Pool: PostgresPool,
@@ -4459,6 +4634,141 @@ where
         .map_err(map_application_error)?;
     if changed != 1 {
         return Err(if expected_version.is_some() {
+            ApplicationError::VersionConflict
+        } else {
+            ApplicationError::StorageUnavailable
+        });
+    }
+    Ok(())
+}
+
+fn write_knowledge_node<Transaction>(
+    transaction: &mut TenantTransaction<Transaction>,
+    node: &KnowledgeNode,
+    expected_version: Option<u64>,
+    encrypted: &EncryptedPayload,
+) -> Result<(), ApplicationError>
+where
+    Transaction: PostgresTransaction,
+    Transaction::Error: ClassifiedPostgresError,
+{
+    let validity = node.validity();
+    let mut parameters = vec![
+        PostgresParameter::Text(node.workspace_id().as_str()),
+        PostgresParameter::Text(node.id().as_str()),
+        PostgresParameter::Bytes(encrypted.ciphertext()),
+        PostgresParameter::Text(encrypted.key_id()),
+        PostgresParameter::Text(encrypted.algorithm()),
+        PostgresParameter::Bytes(encrypted.nonce()),
+        PostgresParameter::I64(
+            postgres_epoch::<Transaction::Error>(node.version()).map_err(map_application_error)?,
+        ),
+        PostgresParameter::I64(
+            postgres_epoch::<Transaction::Error>(validity.valid_from_epoch_seconds())
+                .map_err(map_application_error)?,
+        ),
+        PostgresParameter::OptionalI64(
+            validity
+                .valid_until_epoch_seconds()
+                .map(postgres_epoch::<Transaction::Error>)
+                .transpose()
+                .map_err(map_application_error)?,
+        ),
+        PostgresParameter::I64(
+            postgres_epoch::<Transaction::Error>(validity.recorded_at_epoch_seconds())
+                .map_err(map_application_error)?,
+        ),
+    ];
+    let statement = if let Some(expected_version) = expected_version {
+        parameters.push(PostgresParameter::I64(
+            postgres_epoch::<Transaction::Error>(expected_version)
+                .map_err(map_application_error)?,
+        ));
+        REPLACE_KNOWLEDGE_NODE_SQL
+    } else {
+        INSERT_KNOWLEDGE_NODE_SQL
+    };
+    write_graph_record(
+        transaction,
+        statement,
+        &parameters,
+        expected_version.is_some(),
+    )
+}
+
+fn write_knowledge_edge<Transaction>(
+    transaction: &mut TenantTransaction<Transaction>,
+    edge: &KnowledgeEdge,
+    expected_version: Option<u64>,
+    encrypted: &EncryptedPayload,
+) -> Result<(), ApplicationError>
+where
+    Transaction: PostgresTransaction,
+    Transaction::Error: ClassifiedPostgresError,
+{
+    let validity = edge.validity();
+    let mut parameters = vec![
+        PostgresParameter::Text(edge.workspace_id().as_str()),
+        PostgresParameter::Text(edge.id().as_str()),
+        PostgresParameter::Text(edge.source_id().as_str()),
+        PostgresParameter::Text(edge.target_id().as_str()),
+        PostgresParameter::OptionalText(edge.supersedes().map(KnowledgeEdgeId::as_str)),
+        PostgresParameter::Bytes(encrypted.ciphertext()),
+        PostgresParameter::Text(encrypted.key_id()),
+        PostgresParameter::Text(encrypted.algorithm()),
+        PostgresParameter::Bytes(encrypted.nonce()),
+        PostgresParameter::I64(
+            postgres_epoch::<Transaction::Error>(edge.version()).map_err(map_application_error)?,
+        ),
+        PostgresParameter::I64(
+            postgres_epoch::<Transaction::Error>(validity.valid_from_epoch_seconds())
+                .map_err(map_application_error)?,
+        ),
+        PostgresParameter::OptionalI64(
+            validity
+                .valid_until_epoch_seconds()
+                .map(postgres_epoch::<Transaction::Error>)
+                .transpose()
+                .map_err(map_application_error)?,
+        ),
+        PostgresParameter::I64(
+            postgres_epoch::<Transaction::Error>(validity.recorded_at_epoch_seconds())
+                .map_err(map_application_error)?,
+        ),
+    ];
+    let statement = if let Some(expected_version) = expected_version {
+        parameters.push(PostgresParameter::I64(
+            postgres_epoch::<Transaction::Error>(expected_version)
+                .map_err(map_application_error)?,
+        ));
+        REPLACE_KNOWLEDGE_EDGE_SQL
+    } else {
+        INSERT_KNOWLEDGE_EDGE_SQL
+    };
+    write_graph_record(
+        transaction,
+        statement,
+        &parameters,
+        expected_version.is_some(),
+    )
+}
+
+fn write_graph_record<Transaction>(
+    transaction: &mut TenantTransaction<Transaction>,
+    statement: &str,
+    parameters: &[PostgresParameter<'_>],
+    replacing: bool,
+) -> Result<(), ApplicationError>
+where
+    Transaction: PostgresTransaction,
+    Transaction::Error: ClassifiedPostgresError,
+{
+    let changed = transaction
+        .execute(statement, parameters)
+        .map_err(PostgresStoreError::Tenant)
+        .map_err(map_application_error)?;
+    if changed != 1 {
+        return Err(if replacing {
             ApplicationError::VersionConflict
         } else {
             ApplicationError::StorageUnavailable
@@ -6010,12 +6320,12 @@ mod tests {
         CanonicalMutationRepository, CheckpointDisclosureRepository, CheckpointMutationRepository,
         CheckpointRepository, CheckpointService, CreateInvitationCommand, DisclosureRepository,
         EventRepository, InvitationRepository, InvitationService, KeyRotationRepository,
-        KnowledgeDirection, KnowledgeGraphRepository, MemberLifecycleRepository,
-        MemberScopeGrantRepository, MembershipRepository, MemoryRepository,
-        ProjectionOutboxRepository, ProjectionOutcome, ProjectionWorker, ResolveContextCommand,
-        ResolveContextService, ResolveTravelContextCommand, ResumeActivityCommand,
-        RetentionRepository, TravelContextService, TravelDisclosureRepository,
-        TripMutationRepository, TripRepository, WorkspaceRepository,
+        KnowledgeDirection, KnowledgeGraphMutationRepository, KnowledgeGraphRepository,
+        MemberLifecycleRepository, MemberScopeGrantRepository, MembershipRepository,
+        MemoryRepository, ProjectionOutboxRepository, ProjectionOutcome, ProjectionWorker,
+        ResolveContextCommand, ResolveContextService, ResolveTravelContextCommand,
+        ResumeActivityCommand, RetentionRepository, TravelContextService,
+        TravelDisclosureRepository, TripMutationRepository, TripRepository, WorkspaceRepository,
     };
     use rembrane_codec::{
         encode_booking_research, encode_checkpoint, encode_knowledge_edge, encode_knowledge_node,
@@ -6053,9 +6363,10 @@ mod tests {
         INSERT_BOOKING_RESEARCH_SQL, INSERT_CHECKPOINT_DISCLOSURE_SQL, INSERT_CHECKPOINT_SQL,
         INSERT_DISCLOSED_BOOKING_RESEARCH_SQL, INSERT_DISCLOSED_MEMORY_SQL, INSERT_DISCLOSURE_SQL,
         INSERT_EVENT_SQL, INSERT_INVITATION_SQL, INSERT_KEY_ROTATION_RECEIPT_SQL,
-        INSERT_KEY_ROTATION_RECIPIENT_SQL, INSERT_LEGAL_HOLD_SQL, INSERT_MEMBER_SCOPE_GRANT_SQL,
-        INSERT_MEMBERSHIP_SQL, INSERT_MEMORY_EVIDENCE_SQL, INSERT_MEMORY_SQL, INSERT_PRINCIPAL_SQL,
-        INSERT_PROJECTION_SQL, INSERT_REQUIRED_KEY_ROTATION_SQL, INSERT_RETENTION_POLICY_SQL,
+        INSERT_KEY_ROTATION_RECIPIENT_SQL, INSERT_KNOWLEDGE_EDGE_SQL, INSERT_KNOWLEDGE_NODE_SQL,
+        INSERT_LEGAL_HOLD_SQL, INSERT_MEMBER_SCOPE_GRANT_SQL, INSERT_MEMBERSHIP_SQL,
+        INSERT_MEMORY_EVIDENCE_SQL, INSERT_MEMORY_SQL, INSERT_PRINCIPAL_SQL, INSERT_PROJECTION_SQL,
+        INSERT_REQUIRED_KEY_ROTATION_SQL, INSERT_RETENTION_POLICY_SQL,
         INSERT_TRAVEL_DISCLOSURE_SQL, INSERT_TRIP_SQL, INSERT_WORKSPACE_SQL, LATEST_CHECKPOINT_SQL,
         LATEST_KEY_ROTATION_SQL, LIST_ACTIVE_LEGAL_HOLDS_SQL, LIST_ACTIVE_MEMBERSHIPS_SQL,
         LIST_ADMINISTRATIVE_AUDIT_SQL, LIST_BOTH_KNOWLEDGE_EDGES_SQL, LIST_EVENTS_SINCE_SQL,
@@ -6066,10 +6377,11 @@ mod tests {
         PostgresProvisioner, PostgresProvisioningPool, PostgresRow, PostgresStore,
         PostgresStoreError, PostgresTransaction, PostgresWorkspaceAdminStore,
         ProvisioningTransaction, READ_TENANT_SQL, REMOVE_MEMBERSHIP_SQL, REPLACE_CHECKPOINT_SQL,
-        REPLACE_INVITATION_SQL, REPLACE_LEGAL_HOLD_SQL, REPLACE_MEMBERSHIP_SQL,
-        REPLACE_PROJECTION_SQL, REPLACE_RETENTION_POLICY_SQL, REPLACE_TRIP_SQL, SET_TENANT_SQL,
-        TenantTransaction, TenantTransactionError, insert_disclosed_booking_research,
-        map_application_error, map_invitation_application_error, verify_disclosed_booking_research,
+        REPLACE_INVITATION_SQL, REPLACE_KNOWLEDGE_EDGE_SQL, REPLACE_KNOWLEDGE_NODE_SQL,
+        REPLACE_LEGAL_HOLD_SQL, REPLACE_MEMBERSHIP_SQL, REPLACE_PROJECTION_SQL,
+        REPLACE_RETENTION_POLICY_SQL, REPLACE_TRIP_SQL, SET_TENANT_SQL, TenantTransaction,
+        TenantTransactionError, insert_disclosed_booking_research, map_application_error,
+        map_invitation_application_error, verify_disclosed_booking_research,
     };
 
     #[derive(Clone, Debug, Eq, PartialEq)]
@@ -6729,6 +7041,41 @@ mod tests {
             None,
         )
         .expect("knowledge edge")
+    }
+
+    fn revised_knowledge_node() -> KnowledgeNode {
+        KnowledgeNode::new(
+            KnowledgeNodeId::new("node_project"),
+            WorkspaceId::new("workspace_01"),
+            KnowledgeNodeKind::Project,
+            "Rembrane framework".to_owned(),
+            Vec::new(),
+            vec![EvidenceReference::new(
+                EvidenceId::new("evidence_node_project_v2"),
+                EvidenceSource::ImportedRecord,
+            )],
+            TemporalValidity::new(1_700_000_000, None, 1_700_000_200).expect("validity"),
+            2,
+        )
+        .expect("revised knowledge node")
+    }
+
+    fn revised_knowledge_edge() -> KnowledgeEdge {
+        KnowledgeEdge::new(
+            KnowledgeEdgeId::new("edge_project_uses_rust"),
+            WorkspaceId::new("workspace_01"),
+            KnowledgeNodeId::new("node_project"),
+            KnowledgeNodeId::new("node_rust"),
+            KnowledgeRelationType::new("uses").expect("relation"),
+            vec![EvidenceReference::new(
+                EvidenceId::new("evidence_edge_v2"),
+                EvidenceSource::ImportedRecord,
+            )],
+            TemporalValidity::new(1_700_000_000, None, 1_700_000_200).expect("validity"),
+            2,
+            None,
+        )
+        .expect("revised knowledge edge")
     }
 
     #[test]
@@ -8459,6 +8806,99 @@ mod tests {
                 "i64:10".to_owned(),
             ]
         )));
+    }
+
+    #[test]
+    fn knowledge_node_mutations_encrypt_and_enforce_successor_versions() {
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let tenant_reads = || {
+            VecDeque::from([
+                Ok(Some("workspace_01".to_owned())),
+                Ok(Some("workspace_01".to_owned())),
+            ])
+        };
+        let store = PostgresStore::new(FakePool {
+            calls: Rc::clone(&calls),
+            tenant_batches: RefCell::new([tenant_reads(), tenant_reads()].into()),
+            row_batches: RefCell::new([Vec::new(), Vec::new()].into()),
+        });
+        let tenant = store.for_workspace(WorkspaceId::new("workspace_01"));
+        let cipher = IdentityCipher;
+        let mut memories = tenant.with_cipher(&cipher);
+
+        KnowledgeGraphMutationRepository::insert_knowledge_node(
+            &mut memories,
+            knowledge_node("node_project", KnowledgeNodeKind::Project, "Rembrane"),
+        )
+        .expect("insert node");
+        KnowledgeGraphMutationRepository::replace_knowledge_node(
+            &mut memories,
+            revised_knowledge_node(),
+            1,
+        )
+        .expect("replace node");
+
+        let calls = calls.borrow();
+        for statement in [INSERT_KNOWLEDGE_NODE_SQL, REPLACE_KNOWLEDGE_NODE_SQL] {
+            assert!(calls.iter().any(|call| matches!(
+                call,
+                Call::Execute(actual, parameters)
+                    if actual == statement && parameters.contains(&"bytes:24".to_owned())
+            )));
+        }
+        assert_eq!(
+            calls.iter().filter(|call| **call == Call::Commit).count(),
+            2
+        );
+    }
+
+    #[test]
+    fn knowledge_edge_mutations_validate_lineage_and_encrypt_revisions() {
+        let current = knowledge_edge();
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let tenant_reads = || {
+            VecDeque::from([
+                Ok(Some("workspace_01".to_owned())),
+                Ok(Some("workspace_01".to_owned())),
+            ])
+        };
+        let store = PostgresStore::new(FakePool {
+            calls: Rc::clone(&calls),
+            tenant_batches: RefCell::new([tenant_reads(), tenant_reads(), tenant_reads()].into()),
+            row_batches: RefCell::new(
+                [
+                    Vec::new(),
+                    vec![FakeRow::knowledge_edge(&current)],
+                    Vec::new(),
+                ]
+                .into(),
+            ),
+        });
+        let tenant = store.for_workspace(WorkspaceId::new("workspace_01"));
+        let cipher = IdentityCipher;
+        let mut memories = tenant.with_cipher(&cipher);
+
+        KnowledgeGraphMutationRepository::insert_knowledge_edge(&mut memories, current)
+            .expect("insert edge");
+        KnowledgeGraphMutationRepository::replace_knowledge_edge(
+            &mut memories,
+            revised_knowledge_edge(),
+            1,
+        )
+        .expect("replace edge");
+
+        let calls = calls.borrow();
+        for statement in [INSERT_KNOWLEDGE_EDGE_SQL, REPLACE_KNOWLEDGE_EDGE_SQL] {
+            assert!(calls.iter().any(|call| matches!(
+                call,
+                Call::Execute(actual, parameters)
+                    if actual == statement && parameters.contains(&"bytes:24".to_owned())
+            )));
+        }
+        assert_eq!(
+            calls.iter().filter(|call| **call == Call::Commit).count(),
+            3
+        );
     }
 
     #[test]
