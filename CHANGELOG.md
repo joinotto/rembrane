@@ -17,6 +17,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   artifact hashes and provider metadata before independent verification.
 - A customer-KMS release-set verifier requires exact, distinct, complete
   evidence directories for AWS KMS, Azure Key Vault, and Google Cloud KMS.
+- The customer-KMS release gate bounds evidence before parsing it and rejects
+  malformed or non-object outer evidence documents.
 - Customer-KMS promotion evidence now also hash-binds a bounded redacted cloud
   audit export, preventing a protocol-compatible mock from being presented as
   proof that AWS, Azure, or Google Cloud KMS processed the disposable run.

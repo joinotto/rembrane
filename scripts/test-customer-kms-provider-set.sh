@@ -70,6 +70,15 @@ if node "$verifier" "$test_root/reused-namespace" >/dev/null 2>&1; then
     exit 1
 fi
 
+cp -R "$test_root/providers" "$test_root/oversized-evidence"
+dd if=/dev/zero bs=1024 count=65 2>/dev/null |
+    tr '\000' 'x' \
+        >"$test_root/oversized-evidence/aws-kms/evidence.json"
+if node "$verifier" "$test_root/oversized-evidence" >/dev/null 2>&1; then
+    echo "customer KMS provider set accepted oversized evidence" >&2
+    exit 1
+fi
+
 touch "$test_root/providers/notes.txt"
 if node "$verifier" "$test_root/providers" >/dev/null 2>&1; then
     echo "customer KMS provider set accepted an undeclared artifact" >&2

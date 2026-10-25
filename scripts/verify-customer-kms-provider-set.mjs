@@ -45,9 +45,20 @@ for (const provider of providers) {
     }
   }
 
-  const evidence = JSON.parse(
-    readFileSync(join(directory, "evidence.json"), "utf8"),
-  );
+  const evidencePath = join(directory, "evidence.json");
+  const evidenceMetadata = lstatSync(evidencePath);
+  if (evidenceMetadata.size === 0 || evidenceMetadata.size > 64 * 1024) {
+    throw new Error("customer KMS evidence document exceeds the bounded size");
+  }
+  let evidence;
+  try {
+    evidence = JSON.parse(readFileSync(evidencePath, "utf8"));
+  } catch {
+    throw new Error("customer KMS evidence document is not valid JSON");
+  }
+  if (evidence === null || typeof evidence !== "object" || Array.isArray(evidence)) {
+    throw new Error("customer KMS evidence document must be an object");
+  }
   if (evidence.cloudProvider !== provider) {
     throw new Error("customer KMS evidence provider does not match its slot");
   }
@@ -61,7 +72,7 @@ for (const provider of providers) {
     process.execPath,
     [
       verifier,
-      join(directory, "evidence.json"),
+      evidencePath,
       join(directory, "conformance-result.json"),
       join(directory, "iam-policy.json"),
       join(directory, "cloud-audit.json"),
