@@ -23,13 +23,13 @@ use rembrane_domain::{
     WritePermission,
 };
 use rembrane_memory_provider_configured::ConfiguredMemoryProvider;
-use rembrane_provider_registry::{RegistryTrust, VerifiedProviderRegistry};
+use rembrane_provider_registry::{ProviderSelectionPolicy, VerifiedProviderRegistry};
 use rembrane_provider_sdk::{
     CURRENT_MEMORY_PROVIDER_PROTOCOL, MemoryProviderCapability, MemoryProviderLimits,
     MemoryProviderPolicy, MemoryProviderPrivacyMode, MemoryProviderTransport,
-    SEMANTIC_PROVIDER_CONFORMANCE_CASES, SEMANTIC_PROVIDER_CONFORMANCE_PROFILE_SHA256,
-    SEMANTIC_PROVIDER_CONFORMANCE_SUITE_ID, SEMANTIC_PROVIDER_CONFORMANCE_SUITE_VERSION,
-    SemanticProviderConformanceReport, verify_semantic_provider,
+    SEMANTIC_PROVIDER_CONFORMANCE_PROFILE_SHA256, SEMANTIC_PROVIDER_CONFORMANCE_SUITE_ID,
+    SEMANTIC_PROVIDER_CONFORMANCE_SUITE_VERSION, SemanticProviderConformanceReport,
+    verify_semantic_provider,
 };
 use rembrane_secret_local::{LocalSecretResolver, SecretResolver};
 use rembrane_semantic_mem0::Mem0SemanticProvider;
@@ -751,224 +751,17 @@ fn check_verified_provider_registry(
     allow_experimental: bool,
     allow_provider_plaintext: bool,
 ) -> Result<String, String> {
-    let registry_sha256 = verified_registry.sha256();
-    let registry = std::str::from_utf8(verified_registry.bytes())
-        .map_err(|_| "provider registry is not UTF-8".to_owned())?;
-    let registry: serde_json::Value = serde_json::from_str(registry)
-        .map_err(|_| "provider registry is not valid JSON".to_owned())?;
-    let generated_at = registry
-        .get("generatedAt")
-        .and_then(serde_json::Value::as_str)
-        .and_then(parse_registry_timestamp)
-        .ok_or_else(|| "provider registry generation timestamp is invalid".to_owned())?;
-    if generated_at > chrono::Utc::now().timestamp() {
-        return Err("provider registry generation timestamp is in the future".to_owned());
-    }
-    let generated_at_text = registry["generatedAt"]
-        .as_str()
-        .ok_or_else(|| "provider registry generation timestamp is invalid".to_owned())?;
-    let providers = registry
-        .get("providers")
-        .and_then(serde_json::Value::as_array)
-        .ok_or_else(|| "provider registry has no provider array".to_owned())?;
-    let matches = providers
-        .iter()
-        .filter(|provider| {
-            provider.get("id").and_then(serde_json::Value::as_str) == Some(provider_id)
+    let receipt = verified_registry
+        .select(&ProviderSelectionPolicy {
+            provider_id,
+            adapter_version,
+            allow_experimental,
+            allow_provider_plaintext,
+            now_epoch_seconds: chrono::Utc::now().timestamp(),
         })
-        .collect::<Vec<_>>();
-    let [provider] = matches.as_slice() else {
-        return Err("provider registry does not contain exactly one matching provider".to_owned());
-    };
-    if provider
-        .get("adapterVersion")
-        .and_then(serde_json::Value::as_str)
-        != Some(adapter_version)
-    {
-        return Err("provider adapter version does not match registry evidence".to_owned());
-    }
-    validate_provider_selection_evidence(provider, adapter_version)?;
-    let status = provider
-        .get("status")
-        .and_then(serde_json::Value::as_str)
-        .ok_or_else(|| "provider registry status is invalid".to_owned())?;
-    let eligibility = provider_eligibility(status, allow_experimental)?;
-    let plaintext_processing = provider
-        .get("plaintextProcessing")
-        .and_then(serde_json::Value::as_bool)
-        .ok_or_else(|| "provider plaintext policy is invalid".to_owned())?;
-    if plaintext_processing && !allow_provider_plaintext {
-        return Err("plaintext provider requires --allow-provider-plaintext".to_owned());
-    }
-    let conformance = provider
-        .get("conformance")
-        .and_then(serde_json::Value::as_object)
-        .ok_or_else(|| "provider conformance evidence is missing".to_owned())?;
-    let source_revision = provider
-        .pointer("/source/revision")
-        .and_then(serde_json::Value::as_str)
-        .ok_or_else(|| "provider source revision is invalid".to_owned())?;
-    let tested_at = conformance
-        .get("testedAt")
-        .and_then(serde_json::Value::as_str)
-        .ok_or_else(|| "provider conformance timestamp is invalid".to_owned())?;
-    let tested_at_epoch = parse_registry_timestamp(tested_at)
-        .ok_or_else(|| "provider conformance timestamp is invalid".to_owned())?;
-    if tested_at_epoch > generated_at {
-        return Err("provider conformance postdates its registry snapshot".to_owned());
-    }
-    serde_json::to_string(&serde_json::json!({
-        "schemaVersion": 1,
-        "registryGeneratedAt": generated_at_text,
-        "registrySha256": registry_sha256,
-        "registryTrust": match verified_registry.trust() {
-            RegistryTrust::Ed25519 { public_key_sha256 } => serde_json::json!({
-                "mode": "ed25519",
-                "publicKeySha256": public_key_sha256,
-            }),
-            RegistryTrust::Embedded => serde_json::json!({
-                "mode": "embedded",
-            }),
-        },
-        "provider": provider_id,
-        "adapterVersion": adapter_version,
-        "status": status,
-        "eligibility": eligibility,
-        "protocolVersion": conformance.get("protocolVersion"),
-        "deploymentModes": provider.get("deploymentModes"),
-        "plaintextProcessing": plaintext_processing,
-        "approvals": {
-            "experimental": status == "experimental" && allow_experimental,
-            "providerPlaintext": plaintext_processing && allow_provider_plaintext,
-        },
-        "evidence": {
-            "suiteId": conformance.get("suiteId"),
-            "suiteVersion": conformance.get("suiteVersion"),
-            "profileSha256": conformance.get("profileSha256"),
-            "testedAt": tested_at,
-            "sourceRevision": source_revision,
-        },
-    }))
-    .map_err(|_| "could not serialize provider eligibility".to_owned())
-}
-
-fn provider_eligibility(status: &str, allow_experimental: bool) -> Result<&'static str, String> {
-    Ok(match status {
-        "compatible" => "compatible",
-        "experimental" if allow_experimental => "experimental-opt-in",
-        "experimental" => {
-            return Err("experimental provider requires --allow-experimental".to_owned());
-        }
-        "deprecated" => {
-            return Err("deprecated provider is not eligible for new selection".to_owned());
-        }
-        "revoked" => return Err("revoked provider is not eligible for selection".to_owned()),
-        _ => return Err("provider registry status is invalid".to_owned()),
-    })
-}
-
-fn parse_registry_timestamp(value: &str) -> Option<i64> {
-    let parsed = chrono::DateTime::parse_from_rfc3339(value).ok()?;
-    if parsed.to_rfc3339_opts(chrono::SecondsFormat::Secs, true) == value {
-        Some(parsed.timestamp())
-    } else {
-        None
-    }
-}
-
-fn validate_provider_selection_evidence(
-    provider: &serde_json::Value,
-    adapter_version: &str,
-) -> Result<(), String> {
-    let protocols = provider
-        .get("protocolVersions")
-        .and_then(serde_json::Value::as_array)
-        .filter(|protocols| {
-            !protocols.is_empty()
-                && protocols.iter().all(|protocol| {
-                    protocol.as_str().is_some_and(|value| {
-                        value.len() >= 3
-                            && value.len() <= 20
-                            && value.split_once('.').is_some_and(|(major, minor)| {
-                                !major.is_empty()
-                                    && !minor.is_empty()
-                                    && major.bytes().all(|byte| byte.is_ascii_digit())
-                                    && minor.bytes().all(|byte| byte.is_ascii_digit())
-                            })
-                    })
-                })
-        })
-        .ok_or_else(|| "provider protocol evidence is invalid".to_owned())?;
-    let _deployment_modes = provider
-        .get("deploymentModes")
-        .and_then(serde_json::Value::as_array)
-        .filter(|modes| !modes.is_empty() && modes.iter().all(serde_json::Value::is_string))
-        .ok_or_else(|| "provider deployment evidence is invalid".to_owned())?;
-    let _source_revision = provider
-        .pointer("/source/revision")
-        .and_then(serde_json::Value::as_str)
-        .filter(|revision| {
-            (7..=64).contains(&revision.len())
-                && revision
-                    .bytes()
-                    .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
-        })
-        .ok_or_else(|| "provider source revision is invalid".to_owned())?;
-    let conformance = provider
-        .get("conformance")
-        .and_then(serde_json::Value::as_object)
-        .ok_or_else(|| "provider conformance evidence is missing".to_owned())?;
-    let protocol = conformance
-        .get("protocolVersion")
-        .and_then(serde_json::Value::as_str)
-        .ok_or_else(|| "provider conformance protocol is invalid".to_owned())?;
-    conformance
-        .get("testedAt")
-        .and_then(serde_json::Value::as_str)
-        .and_then(parse_registry_timestamp)
-        .ok_or_else(|| "provider conformance timestamp is invalid".to_owned())?;
-    if conformance
-        .get("result")
-        .and_then(serde_json::Value::as_str)
-        != Some("pass")
-        || conformance
-            .get("suiteId")
-            .and_then(serde_json::Value::as_str)
-            != Some(SEMANTIC_PROVIDER_CONFORMANCE_SUITE_ID)
-        || conformance
-            .get("suiteVersion")
-            .and_then(serde_json::Value::as_str)
-            != Some(SEMANTIC_PROVIDER_CONFORMANCE_SUITE_VERSION)
-        || conformance
-            .get("profileSha256")
-            .and_then(serde_json::Value::as_str)
-            != Some(SEMANTIC_PROVIDER_CONFORMANCE_PROFILE_SHA256)
-        || conformance
-            .get("providerVersion")
-            .and_then(serde_json::Value::as_str)
-            != Some(adapter_version)
-        || !protocols
-            .iter()
-            .any(|candidate| candidate.as_str() == Some(protocol))
-    {
-        return Err("provider conformance evidence is not eligible".to_owned());
-    }
-    let cases = conformance
-        .get("cases")
-        .and_then(serde_json::Value::as_array)
-        .ok_or_else(|| "provider conformance cases are invalid".to_owned())?;
-    if cases.len() != SEMANTIC_PROVIDER_CONFORMANCE_CASES.len()
-        || cases
-            .iter()
-            .zip(SEMANTIC_PROVIDER_CONFORMANCE_CASES)
-            .any(|(case, expected)| {
-                case.get("id").and_then(serde_json::Value::as_str) != Some(expected)
-                    || case.get("result").and_then(serde_json::Value::as_str) != Some("pass")
-            })
-    {
-        return Err("provider conformance cases are not eligible".to_owned());
-    }
-    Ok(())
+        .map_err(|error| error.to_string())?;
+    serde_json::to_string(&receipt)
+        .map_err(|_| "could not serialize provider eligibility".to_owned())
 }
 
 fn test_provider(arguments: &[String]) -> Result<String, String> {

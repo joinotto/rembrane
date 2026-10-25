@@ -989,6 +989,8 @@ This roadmap describes sequencing, not release dates.
           provenance into a reusable Rust crate for non-CLI integrations.
         - [x] Expose typed reusable provider-selection policy and receipt
           contracts with build, conformance, time, status, and privacy checks.
+          - [x] Route CLI eligibility through the shared typed selection API
+            and remove its duplicate policy engine.
 - [x] Run installed native-provider conformance through the CLI.
 - [x] Automated external-provider registry verification and release signing.
   - [x] Verify registry identity, timestamps, conformance status, and pinned
