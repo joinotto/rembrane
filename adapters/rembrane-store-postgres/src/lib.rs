@@ -16,7 +16,8 @@ use rembrane_application::{
 use rembrane_domain::{
     AdministrativeAction, AdministrativeAuditEvent, AdministrativeAuditEventId,
     AdministrativeTargetKind, Invitation, InvitationId, InvitationStatus, Membership, Principal,
-    PrincipalId, Workspace, WorkspaceId, WorkspaceKind, WorkspaceRole,
+    PrincipalId, RetentionPeriod, Workspace, WorkspaceId, WorkspaceKind, WorkspaceRetentionPolicy,
+    WorkspaceRole,
 };
 
 pub const SET_TENANT_SQL: &str = "SELECT set_config('rembrane.workspace_id', $1, true);";
@@ -77,6 +78,15 @@ pub const LIST_ADMINISTRATIVE_AUDIT_SQL: &str = "SELECT workspace_id, id, actor_
     FROM administrative_audit_events \
     WHERE workspace_id = $1 AND occurred_at_epoch_seconds > $2 \
     ORDER BY occurred_at_epoch_seconds, id LIMIT $3";
+pub const FIND_RETENTION_POLICY_SQL: &str = "SELECT workspace_id, version, \
+    COALESCE(user_memory_days, 0) AS user_memory_days, \
+    COALESCE(activity_checkpoint_days, 0) AS activity_checkpoint_days, \
+    COALESCE(travel_research_days, 0) AS travel_research_days, \
+    COALESCE(disclosure_receipt_days, 0) AS disclosure_receipt_days, \
+    COALESCE(canonical_event_days, 0) AS canonical_event_days, \
+    COALESCE(administrative_audit_days, 0) AS administrative_audit_days \
+    FROM workspace_retention_policies WHERE workspace_id = $1 \
+    ORDER BY workspace_id LIMIT 2";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PostgresParameter<'value> {
@@ -894,6 +904,31 @@ impl<Pool: PostgresPool> PostgresStore<Pool> {
         transaction.commit().map_err(PostgresStoreError::Tenant)?;
         Ok(events)
     }
+
+    pub fn find_retention_policy(
+        &self,
+        workspace_id: &WorkspaceId,
+    ) -> Result<Option<WorkspaceRetentionPolicy>, PostgresStoreError<Pool::Error>>
+    where
+        <Pool::Transaction as PostgresTransaction>::Row: PostgresRow<Error = Pool::Error>,
+    {
+        let mut transaction = self.begin_tenant(workspace_id.clone())?;
+        let rows = transaction
+            .query(
+                FIND_RETENTION_POLICY_SQL,
+                &[PostgresParameter::Text(workspace_id.as_str())],
+            )
+            .map_err(PostgresStoreError::Tenant)?;
+        if rows.len() > 1 {
+            return Err(PostgresStoreError::UnexpectedCardinality);
+        }
+        let policy = rows
+            .first()
+            .map(|row| decode_retention_policy(row, workspace_id))
+            .transpose()?;
+        transaction.commit().map_err(PostgresStoreError::Tenant)?;
+        Ok(policy)
+    }
 }
 
 impl<Pool> MembershipRepository for PostgresStore<Pool>
@@ -1019,6 +1054,21 @@ impl<Pool> PostgresTenantStore<'_, Pool> {
         } else {
             Err(ApplicationError::AccessDenied)
         }
+    }
+
+    pub fn find_retention_policy(
+        &self,
+        workspace_id: &WorkspaceId,
+    ) -> Result<Option<WorkspaceRetentionPolicy>, ApplicationError>
+    where
+        Pool: PostgresPool,
+        Pool::Error: ClassifiedPostgresError,
+        <Pool::Transaction as PostgresTransaction>::Row: PostgresRow<Error = Pool::Error>,
+    {
+        self.require_workspace(workspace_id)?;
+        self.store
+            .find_retention_policy(workspace_id)
+            .map_err(map_application_error)
     }
 }
 
@@ -1468,6 +1518,45 @@ where
     .map_err(|_| PostgresStoreError::InvalidRow)
 }
 
+fn decode_retention_policy<Row, DriverError>(
+    row: &Row,
+    expected_workspace_id: &WorkspaceId,
+) -> Result<WorkspaceRetentionPolicy, PostgresStoreError<DriverError>>
+where
+    Row: PostgresRow<Error = DriverError>,
+{
+    let workspace_id = row.text("workspace_id").map_err(PostgresStoreError::Row)?;
+    if workspace_id != expected_workspace_id.as_str() {
+        return Err(PostgresStoreError::InvalidRow);
+    }
+    WorkspaceRetentionPolicy::new(
+        WorkspaceId::new(workspace_id),
+        row.u64("version").map_err(PostgresStoreError::Row)?,
+        decode_retention_period(row, "user_memory_days")?,
+        decode_retention_period(row, "activity_checkpoint_days")?,
+        decode_retention_period(row, "travel_research_days")?,
+        decode_retention_period(row, "disclosure_receipt_days")?,
+        decode_retention_period(row, "canonical_event_days")?,
+        decode_retention_period(row, "administrative_audit_days")?,
+    )
+    .map_err(|_| PostgresStoreError::InvalidRow)
+}
+
+fn decode_retention_period<Row, DriverError>(
+    row: &Row,
+    column: &str,
+) -> Result<RetentionPeriod, PostgresStoreError<DriverError>>
+where
+    Row: PostgresRow<Error = DriverError>,
+{
+    let days = row.u64(column).map_err(PostgresStoreError::Row)?;
+    if days == 0 {
+        return Ok(RetentionPeriod::Forever);
+    }
+    let days = u32::try_from(days).map_err(|_| PostgresStoreError::InvalidRow)?;
+    RetentionPeriod::days(days).map_err(|_| PostgresStoreError::InvalidRow)
+}
+
 fn decode_workspace<Row, DriverError>(
     row: &Row,
     expected_id: &WorkspaceId,
@@ -1770,21 +1859,21 @@ mod tests {
     use rembrane_domain::{
         AdministrativeAction, AdministrativeAuditEvent, AdministrativeAuditEventId,
         AdministrativeTargetKind, Invitation, InvitationId, InvitationStatus, Principal,
-        PrincipalId, Workspace, WorkspaceId, WorkspaceRole,
+        PrincipalId, RetentionPeriod, RetentionResource, Workspace, WorkspaceId, WorkspaceRole,
     };
 
     use super::{
         ACCEPT_INVITATION_SQL, ClassifiedPostgresError, EXPIRE_PENDING_INVITATION_SQL,
         FIND_INVITATION_SQL, FIND_MEMBERSHIP_SQL, FIND_PRINCIPAL_SQL,
-        FIND_PROVISIONING_PRINCIPAL_SQL, FIND_WORKSPACE_SQL, INSERT_ADMINISTRATIVE_AUDIT_SQL,
-        INSERT_INVITATION_SQL, INSERT_MEMBERSHIP_SQL, INSERT_PRINCIPAL_SQL, INSERT_WORKSPACE_SQL,
-        LIST_ACTIVE_MEMBERSHIPS_SQL, LIST_ADMINISTRATIVE_AUDIT_SQL, LIST_INVITATIONS_BY_STATUS_SQL,
-        MAX_ACTIVE_MEMBERSHIPS, PostgresFailureKind, PostgresParameter, PostgresPool,
-        PostgresProvisioner, PostgresProvisioningPool, PostgresRow, PostgresStore,
-        PostgresStoreError, PostgresTransaction, PostgresWorkspaceAdminStore,
-        ProvisioningTransaction, READ_TENANT_SQL, REPLACE_INVITATION_SQL, REPLACE_MEMBERSHIP_SQL,
-        SET_TENANT_SQL, TenantTransaction, TenantTransactionError, map_application_error,
-        map_invitation_application_error,
+        FIND_PROVISIONING_PRINCIPAL_SQL, FIND_RETENTION_POLICY_SQL, FIND_WORKSPACE_SQL,
+        INSERT_ADMINISTRATIVE_AUDIT_SQL, INSERT_INVITATION_SQL, INSERT_MEMBERSHIP_SQL,
+        INSERT_PRINCIPAL_SQL, INSERT_WORKSPACE_SQL, LIST_ACTIVE_MEMBERSHIPS_SQL,
+        LIST_ADMINISTRATIVE_AUDIT_SQL, LIST_INVITATIONS_BY_STATUS_SQL, MAX_ACTIVE_MEMBERSHIPS,
+        PostgresFailureKind, PostgresParameter, PostgresPool, PostgresProvisioner,
+        PostgresProvisioningPool, PostgresRow, PostgresStore, PostgresStoreError,
+        PostgresTransaction, PostgresWorkspaceAdminStore, ProvisioningTransaction, READ_TENANT_SQL,
+        REPLACE_INVITATION_SQL, REPLACE_MEMBERSHIP_SQL, SET_TENANT_SQL, TenantTransaction,
+        TenantTransactionError, map_application_error, map_invitation_application_error,
     };
 
     #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1887,6 +1976,21 @@ mod tests {
                     ("request_id", request_id.to_owned()),
                 ]),
                 numbers: BTreeMap::from([("occurred_at_epoch_seconds", occurred_at)]),
+            }
+        }
+
+        fn retention_policy(workspace_id: &str, version: u64, audit_days: u64) -> Self {
+            Self {
+                columns: BTreeMap::from([("workspace_id", workspace_id.to_owned())]),
+                numbers: BTreeMap::from([
+                    ("version", version),
+                    ("user_memory_days", 30),
+                    ("activity_checkpoint_days", 7),
+                    ("travel_research_days", 14),
+                    ("disclosure_receipt_days", 90),
+                    ("canonical_event_days", 365),
+                    ("administrative_audit_days", audit_days),
+                ]),
             }
         }
     }
@@ -3162,6 +3266,41 @@ mod tests {
                 .count(),
             2
         );
+    }
+
+    #[test]
+    fn tenant_store_decodes_retention_policy_with_forever_periods() {
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let mut row = FakeRow::retention_policy("workspace_01", 3, 365);
+        row.numbers.insert("travel_research_days", 0);
+        let store = PostgresStore::new(FakePool {
+            calls: Rc::clone(&calls),
+            tenant_batches: RefCell::new(
+                [VecDeque::from([
+                    Ok(Some("workspace_01".to_owned())),
+                    Ok(Some("workspace_01".to_owned())),
+                ])]
+                .into(),
+            ),
+            row_batches: RefCell::new([vec![row]].into()),
+        });
+        let tenant = store.for_workspace(WorkspaceId::new("workspace_01"));
+
+        let policy = tenant
+            .find_retention_policy(&WorkspaceId::new("workspace_01"))
+            .expect("retention lookup")
+            .expect("retention policy");
+
+        assert_eq!(policy.version(), 3);
+        assert_eq!(
+            policy.period(RetentionResource::TravelResearch),
+            RetentionPeriod::Forever
+        );
+        assert!(calls.borrow().contains(&Call::Query(
+            FIND_RETENTION_POLICY_SQL.to_owned(),
+            vec!["text:workspace_01".to_owned()]
+        )));
+        assert_eq!(calls.borrow().last(), Some(&Call::Commit));
     }
 
     #[test]

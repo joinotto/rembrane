@@ -57,6 +57,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - PostgreSQL `AdministrativeAuditRepository` support with atomic append,
   bounded chronological reads, tenant and duplicate correlation, and closed
   decoding for every supported administrative action and target kind.
+- PostgreSQL retention-policy lookup with exact tenant correlation, bounded
+  cardinality, validated policy restoration, and explicit `NULL`-to-forever
+  period decoding.
 - PostgreSQL invitation lookup and bounded deterministic listing with optional
   status filtering, numeric lifetime decoding, terminal-state restoration,
   and exact tenant/invitation correlation.

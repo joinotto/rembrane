@@ -304,6 +304,8 @@ This roadmap describes sequencing, not release dates.
         with driver-neutral SQLSTATE classification and opaque error mapping.
       - [x] Implement tenant-pinned administrative audit append and bounded
         chronological reads with closed action/target decoding.
+      - [x] Add exact tenant-scoped retention-policy lookup with bounded
+        cardinality and closed finite/forever period decoding.
       - [x] Add exact invitation lookup and bounded status-filtered listing
         with terminal-state restoration and full tenant/identifier correlation.
       - [x] Implement atomic invitation creation, acceptance, revocation,
