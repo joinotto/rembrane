@@ -90,6 +90,22 @@ class RembraneClient:
     def revoke_workspace_invitation(self, request: Mapping[str, Any]) -> Any:
         return self._request("POST", "/workspaces/invitations/revoke", request)
 
+    def list_workspace_invitations(
+        self,
+        workspace_id: str,
+        *,
+        status: str | None = None,
+        limit: int | None = None,
+    ) -> Any:
+        query: dict[str, str | int] = {"workspaceId": workspace_id}
+        if status is not None:
+            query["status"] = status
+        if limit is not None:
+            query["limit"] = limit
+        return self._request(
+            "GET", f"/workspaces/invitations?{urlencode(query)}", None
+        )
+
     def list_administrative_audit(
         self,
         workspace_id: str,

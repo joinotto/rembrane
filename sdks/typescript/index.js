@@ -66,6 +66,17 @@ export class RembraneClient {
     return this.#request("POST", "/workspaces/invitations/revoke", request);
   }
 
+  listWorkspaceInvitations(query) {
+    const parameters = new URLSearchParams({ workspaceId: query.workspaceId });
+    if (query.status !== undefined) {
+      parameters.set("status", query.status);
+    }
+    if (query.limit !== undefined) {
+      parameters.set("limit", String(query.limit));
+    }
+    return this.#request("GET", `/workspaces/invitations?${parameters}`, undefined);
+  }
+
   listAdministrativeAudit(query) {
     const parameters = new URLSearchParams({ workspaceId: query.workspaceId });
     if (query.afterEpochSeconds !== undefined) {

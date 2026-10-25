@@ -34,6 +34,21 @@ export interface WorkspaceInvitation {
   expiresAtEpochSeconds: number;
 }
 
+export interface WorkspaceInvitationListItem extends WorkspaceInvitation {
+  invitedBy: string;
+  createdAtEpochSeconds: number;
+}
+
+export interface WorkspaceInvitationListQuery extends WorkspaceRequest {
+  status?: WorkspaceInvitationStatus;
+  limit?: number;
+}
+
+export interface WorkspaceInvitationList {
+  workspaceId: string;
+  invitations: WorkspaceInvitationListItem[];
+}
+
 export interface AuditQuery extends WorkspaceRequest {
   afterEpochSeconds?: number;
   limit?: number;
@@ -78,6 +93,9 @@ export class RembraneClient {
   revokeWorkspaceInvitation(
     request: WorkspaceInvitationTransitionRequest,
   ): Promise<WorkspaceInvitation>;
+  listWorkspaceInvitations(
+    query: WorkspaceInvitationListQuery,
+  ): Promise<WorkspaceInvitationList>;
   listAdministrativeAudit<T = unknown>(query: AuditQuery): Promise<T>;
   setRetentionPolicy<T = unknown>(request: RetentionPolicyRequest): Promise<T>;
   placeLegalHold<T = unknown>(request: LegalHoldRequest): Promise<T>;

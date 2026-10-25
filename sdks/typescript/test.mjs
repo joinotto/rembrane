@@ -47,6 +47,11 @@ await client.revokeWorkspaceInvitation({
   ...transitionInvitation,
   requestId: "request-3",
 });
+await client.listWorkspaceInvitations({
+  workspaceId: "team/name",
+  status: "accepted",
+  limit: 20,
+});
 
 for (const [index, path] of [
   [1, "/workspaces/invitations"],
@@ -64,6 +69,13 @@ assert.deepEqual(JSON.parse(calls[3].init.body), {
   ...transitionInvitation,
   requestId: "request-3",
 });
+assert.equal(
+  calls[4].url,
+  "http://127.0.0.1:8787/v1/workspaces/invitations?workspaceId=team%2Fname&status=accepted&limit=20",
+);
+assert.equal(calls[4].init.method, "GET");
+assert.equal(calls[4].init.headers.Authorization, "Bearer test-token");
+assert.equal(calls[4].init.body, undefined);
 
 assert.throws(
   () =>

@@ -24,6 +24,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Authenticated REST invitation listing with owner/admin authorization,
   optional closed status filtering, bounded results, and a portable OpenAPI
   response contract.
+- TypeScript, Python, Swift, and Kotlin invitation-listing operations with
+  percent-encoded tenant identifiers and exact authenticated GET-route tests.
 - Local CLI commands for creating shared workspaces and creating, accepting,
   or revoking bounded role-specific invitations.
 - Authenticated REST invitation creation, acceptance, and revocation,

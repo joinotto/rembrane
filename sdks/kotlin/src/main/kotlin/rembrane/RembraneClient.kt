@@ -103,6 +103,19 @@ class RembraneClient(
     fun revokeWorkspaceInvitation(jsonBody: String): String =
         request("POST", "/workspaces/invitations/revoke", jsonBody)
 
+    fun listWorkspaceInvitations(
+        workspaceId: String,
+        status: String? = null,
+        limit: Int? = null,
+    ): String {
+        val query = buildList {
+            add("workspaceId=${encode(workspaceId)}")
+            status?.let { add("status=${encode(it)}") }
+            limit?.let { add("limit=$it") }
+        }.joinToString("&")
+        return request("GET", "/workspaces/invitations?$query", null)
+    }
+
     fun setRetentionPolicy(jsonBody: String): String =
         request("POST", "/retention/policy", jsonBody)
 

@@ -9,9 +9,14 @@ private actor MockTransport: RembraneTransport {
         maximumResponseBytes: Int
     ) async throws -> RembraneHTTPResponse {
         self.request = request
-        let body = request.url?.path.hasSuffix("/administrative-audit") == true
-            ? Data(#"{"events":[]}"#.utf8)
-            : Data(#"{"status":"pending"}"#.utf8)
+        let body: Data
+        if request.url?.path.hasSuffix("/administrative-audit") == true {
+            body = Data(#"{"events":[]}"#.utf8)
+        } else if request.httpMethod == "GET" {
+            body = Data(#"{"workspaceId":"team/name","invitations":[]}"#.utf8)
+        } else {
+            body = Data(#"{"status":"pending"}"#.utf8)
+        }
         return RembraneHTTPResponse(
             status: 200,
             headers: ["content-type": "application/json"],
@@ -35,6 +40,11 @@ private struct InvitationRequest: Encodable {
 
 private struct InvitationResponse: Decodable {
     let status: String
+}
+
+private struct InvitationListResponse: Decodable {
+    let workspaceId: String
+    let invitations: [String]
 }
 
 private struct MockShareSigner: RembraneMobileShareSigner {
@@ -121,6 +131,21 @@ private struct RembraneSmoke {
         precondition(
             invitationRequest?.url?.absoluteString
                 == "http://127.0.0.1:8787/v1/workspaces/invitations/revoke"
+        )
+
+        let invitations: InvitationListResponse = try await client.listWorkspaceInvitations(
+            workspaceID: "team/name",
+            status: "accepted",
+            limit: 20
+        )
+        precondition(invitations.workspaceId == "team/name")
+        precondition(invitations.invitations.isEmpty)
+        invitationRequest = await transport.request
+        precondition(invitationRequest?.httpMethod == "GET")
+        precondition(invitationRequest?.httpBody == nil)
+        precondition(
+            invitationRequest?.url?.absoluteString
+                == "http://127.0.0.1:8787/v1/workspaces/invitations?workspaceId=team/name&status=accepted&limit=20"
         )
 
         do {

@@ -154,6 +154,26 @@ public struct RembraneClient<Transport: RembraneTransport>: Sendable {
         try await post("/workspaces/invitations/revoke", request: request, as: responseType)
     }
 
+    public func listWorkspaceInvitations<Response: Decodable>(
+        workspaceID: String,
+        status: String? = nil,
+        limit: Int? = nil,
+        as responseType: Response.Type = Response.self
+    ) async throws -> Response {
+        var components = URLComponents()
+        components.queryItems = [
+            URLQueryItem(name: "workspaceId", value: workspaceID),
+            status.map { URLQueryItem(name: "status", value: $0) },
+            limit.map { URLQueryItem(name: "limit", value: String($0)) },
+        ].compactMap { $0 }
+        return try await execute(
+            method: "GET",
+            path: "/workspaces/invitations?\(components.percentEncodedQuery ?? "")",
+            body: nil,
+            as: responseType
+        )
+    }
+
     public func listAdministrativeAudit<Response: Decodable>(
         workspaceID: String,
         afterEpochSeconds: UInt64? = nil,

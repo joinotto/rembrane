@@ -56,6 +56,9 @@ class RembraneClientTests(unittest.TestCase):
         client.revoke_workspace_invitation(
             {**transition_request, "requestId": "request-3"}
         )
+        client.list_workspace_invitations(
+            "team/name", status="accepted", limit=20
+        )
 
         expected_paths = (
             "/workspaces/invitations",
@@ -76,6 +79,15 @@ class RembraneClientTests(unittest.TestCase):
                 call[3],
                 json.dumps(expected_body, separators=(",", ":")).encode("utf-8"),
             )
+        listing = calls[3]
+        self.assertEqual(listing[0], "GET")
+        self.assertEqual(
+            listing[1],
+            "http://127.0.0.1:8787/v1/workspaces/invitations"
+            "?workspaceId=team%2Fname&status=accepted&limit=20",
+        )
+        self.assertEqual(listing[2]["Authorization"], "Bearer test-token")
+        self.assertIsNone(listing[3])
 
     def test_non_loopback_plain_http_is_rejected(self) -> None:
         with self.assertRaisesRegex(ValueError, "HTTPS or an explicit loopback"):

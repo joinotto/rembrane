@@ -449,6 +449,8 @@ This roadmap describes sequencing, not release dates.
       status filters and structured JSON output.
     - [x] Expose bounded invitation listing through the authenticated REST API
       and portable OpenAPI contract.
+    - [x] Add exact-route invitation listing operations to the TypeScript,
+      Python, Swift, and Kotlin SDKs.
   - [x] Expose shared-workspace creation plus invitation create, accept, and
     revoke workflows through the local CLI.
   - [x] Expose invitation creation, acceptance, and revocation through the

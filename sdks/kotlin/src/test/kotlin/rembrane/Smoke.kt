@@ -43,6 +43,7 @@ fun main() {
     client.revokeWorkspaceInvitation(
         """{"workspaceId":"team","invitationId":"invite-1","requestId":"request-3"}"""
     )
+    client.listWorkspaceInvitations("team/name", "accepted", 20)
     val invitationPaths = listOf(
         "/workspaces/invitations",
         "/workspaces/invitations/accept",
@@ -60,6 +61,14 @@ fun main() {
         check(request.headers["Content-Type"] == "application/json")
         check(request.body?.toString(StandardCharsets.UTF_8) == expected.second)
     }
+    val listing = captured[4]
+    check(listing.method == "GET")
+    check(
+        listing.uri.toString() ==
+            "http://127.0.0.1:8787/v1/workspaces/invitations?workspaceId=team%2Fname&status=accepted&limit=20"
+    )
+    check(listing.headers["Authorization"] == "Bearer test-token")
+    check(listing.body == null)
 
     check(
         runCatching {
