@@ -57,6 +57,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - PostgreSQL invitation lookup and bounded deterministic listing with optional
   status filtering, numeric lifetime decoding, terminal-state restoration,
   and exact tenant/invitation correlation.
+- Complete PostgreSQL `InvitationRepository` mutations with atomic expired-row
+  replacement, optimistic lifecycle transitions, membership activation,
+  content-free administrative audit evidence, and closed aggregate validation.
 
 ### Changed
 

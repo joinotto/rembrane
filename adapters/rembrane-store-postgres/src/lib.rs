@@ -8,10 +8,13 @@ use std::collections::BTreeSet;
 use std::error::Error;
 use std::fmt::{self, Display, Formatter};
 
-use rembrane_application::{ApplicationError, MAXIMUM_INVITATION_LIST_ITEMS, MembershipRepository};
+use rembrane_application::{
+    ApplicationError, InvitationRepository, MAXIMUM_INVITATION_LIST_ITEMS, MembershipRepository,
+};
 use rembrane_domain::{
-    Invitation, InvitationId, InvitationStatus, Membership, Principal, PrincipalId, Workspace,
-    WorkspaceId, WorkspaceRole,
+    AdministrativeAction, AdministrativeAuditEvent, AdministrativeTargetKind, Invitation,
+    InvitationId, InvitationStatus, Membership, Principal, PrincipalId, Workspace, WorkspaceId,
+    WorkspaceRole,
 };
 
 pub const SET_TENANT_SQL: &str = "SELECT set_config('rembrane.workspace_id', $1, true);";
@@ -42,6 +45,27 @@ pub const LIST_INVITATIONS_BY_STATUS_SQL: &str = "SELECT workspace_id, id, invit
     invited_by, role, status, created_at_epoch_seconds, expires_at_epoch_seconds \
     FROM workspace_invitations WHERE workspace_id = $1 AND status = $2 \
     ORDER BY created_at_epoch_seconds DESC, id ASC LIMIT $3";
+pub const EXPIRE_PENDING_INVITATION_SQL: &str = "UPDATE workspace_invitations \
+    SET status = 'expired', updated_at = CURRENT_TIMESTAMP \
+    WHERE workspace_id = $1 AND invited_principal_id = $2 \
+    AND status = 'pending' AND expires_at_epoch_seconds <= $3";
+pub const INSERT_INVITATION_SQL: &str = "INSERT INTO workspace_invitations \
+    (workspace_id, id, invited_principal_id, invited_by, role, status, \
+    created_at_epoch_seconds, expires_at_epoch_seconds) \
+    VALUES ($1, $2, $3, $4, $5, 'pending', $6, $7)";
+pub const ACCEPT_INVITATION_SQL: &str = "UPDATE workspace_invitations \
+    SET status = 'accepted', updated_at = CURRENT_TIMESTAMP \
+    WHERE workspace_id = $1 AND id = $2 AND status = 'pending' \
+    AND invited_principal_id = $3 AND role = $4 \
+    AND created_at_epoch_seconds = $5 AND expires_at_epoch_seconds = $6";
+pub const REPLACE_INVITATION_SQL: &str = "UPDATE workspace_invitations \
+    SET status = $6, updated_at = CURRENT_TIMESTAMP \
+    WHERE workspace_id = $1 AND id = $2 AND invited_principal_id = $3 \
+    AND invited_by = $4 AND role = $5 AND status = $7 \
+    AND created_at_epoch_seconds = $8 AND expires_at_epoch_seconds = $9";
+pub const INSERT_ADMINISTRATIVE_AUDIT_SQL: &str = "INSERT INTO administrative_audit_events \
+    (workspace_id, id, actor_id, action, target_kind, target_id, request_id, \
+    occurred_at_epoch_seconds) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PostgresParameter<'value> {
@@ -147,8 +171,10 @@ pub enum PostgresStoreError<DriverError> {
     Tenant(TenantTransactionError<DriverError>),
     Row(DriverError),
     InvalidRow,
+    InvalidInput,
     InvalidLimit,
     MissingRow,
+    VersionConflict,
     UnexpectedCardinality,
 }
 
@@ -161,8 +187,10 @@ impl<DriverError: Display> Display for PostgresStoreError<DriverError> {
             Self::Tenant(error) => Display::fmt(error, formatter),
             Self::Row(error) => write!(formatter, "could not decode PostgreSQL row: {error}"),
             Self::InvalidRow => formatter.write_str("PostgreSQL returned an invalid canonical row"),
+            Self::InvalidInput => formatter.write_str("PostgreSQL mutation input is invalid"),
             Self::InvalidLimit => formatter.write_str("PostgreSQL query limit is invalid"),
             Self::MissingRow => formatter.write_str("PostgreSQL row was not found"),
+            Self::VersionConflict => formatter.write_str("PostgreSQL row version changed"),
             Self::UnexpectedCardinality => {
                 formatter.write_str("PostgreSQL returned unexpected row cardinality")
             }
@@ -426,6 +454,145 @@ impl<Pool: PostgresPool> PostgresStore<Pool> {
         transaction.commit().map_err(PostgresStoreError::Tenant)?;
         Ok(invitations)
     }
+
+    pub fn insert_invitation_replacing_expired(
+        &self,
+        invitation: &Invitation,
+        audit_event: &AdministrativeAuditEvent,
+    ) -> Result<(), PostgresStoreError<Pool::Error>> {
+        if invitation.status() != InvitationStatus::Pending
+            || !valid_invitation_audit(
+                invitation,
+                audit_event,
+                AdministrativeAction::InvitationCreated,
+            )
+        {
+            return Err(PostgresStoreError::InvalidInput);
+        }
+        let created_at = postgres_epoch(invitation.created_at_epoch_seconds())?;
+        let expires_at = postgres_epoch(invitation.expires_at_epoch_seconds())?;
+        let mut transaction = self.begin_tenant(invitation.workspace_id().clone())?;
+        let expired = transaction
+            .execute(
+                EXPIRE_PENDING_INVITATION_SQL,
+                &[
+                    PostgresParameter::Text(invitation.workspace_id().as_str()),
+                    PostgresParameter::Text(invitation.invited_principal_id().as_str()),
+                    PostgresParameter::I64(created_at),
+                ],
+            )
+            .map_err(PostgresStoreError::Tenant)?;
+        if expired > 1 {
+            return Err(PostgresStoreError::UnexpectedCardinality);
+        }
+        insert_administrative_audit(&mut transaction, audit_event)?;
+        execute_exactly_one(
+            &mut transaction,
+            INSERT_INVITATION_SQL,
+            &[
+                PostgresParameter::Text(invitation.workspace_id().as_str()),
+                PostgresParameter::Text(invitation.id().as_str()),
+                PostgresParameter::Text(invitation.invited_principal_id().as_str()),
+                PostgresParameter::Text(invitation.invited_by().as_str()),
+                PostgresParameter::Text(membership_role_name(invitation.role())),
+                PostgresParameter::I64(created_at),
+                PostgresParameter::I64(expires_at),
+            ],
+        )?;
+        transaction.commit().map_err(PostgresStoreError::Tenant)
+    }
+
+    pub fn accept_invitation_with_membership(
+        &self,
+        invitation: &Invitation,
+        membership: &Membership,
+        audit_event: &AdministrativeAuditEvent,
+    ) -> Result<(), PostgresStoreError<Pool::Error>> {
+        if invitation.status() != InvitationStatus::Accepted
+            || invitation.workspace_id() != membership.workspace_id()
+            || invitation.invited_principal_id() != membership.principal_id()
+            || invitation.role() != membership.role()
+            || !membership.is_active()
+            || !valid_invitation_audit(
+                invitation,
+                audit_event,
+                AdministrativeAction::InvitationAccepted,
+            )
+            || audit_event.actor_id() != membership.principal_id()
+        {
+            return Err(PostgresStoreError::InvalidInput);
+        }
+        let created_at = postgres_epoch(invitation.created_at_epoch_seconds())?;
+        let expires_at = postgres_epoch(invitation.expires_at_epoch_seconds())?;
+        let mut transaction = self.begin_tenant(invitation.workspace_id().clone())?;
+        let changed = transaction
+            .execute(
+                ACCEPT_INVITATION_SQL,
+                &[
+                    PostgresParameter::Text(invitation.workspace_id().as_str()),
+                    PostgresParameter::Text(invitation.id().as_str()),
+                    PostgresParameter::Text(invitation.invited_principal_id().as_str()),
+                    PostgresParameter::Text(membership_role_name(invitation.role())),
+                    PostgresParameter::I64(created_at),
+                    PostgresParameter::I64(expires_at),
+                ],
+            )
+            .map_err(PostgresStoreError::Tenant)?;
+        if changed != 1 {
+            return Err(PostgresStoreError::VersionConflict);
+        }
+        execute_exactly_one(
+            &mut transaction,
+            INSERT_MEMBERSHIP_SQL,
+            &[
+                PostgresParameter::Text(membership.workspace_id().as_str()),
+                PostgresParameter::Text(membership.principal_id().as_str()),
+                PostgresParameter::Text(membership_role_name(membership.role())),
+                PostgresParameter::Text("active"),
+            ],
+        )?;
+        insert_administrative_audit(&mut transaction, audit_event)?;
+        transaction.commit().map_err(PostgresStoreError::Tenant)
+    }
+
+    pub fn replace_invitation(
+        &self,
+        invitation: &Invitation,
+        expected_status: InvitationStatus,
+        audit_event: &AdministrativeAuditEvent,
+    ) -> Result<(), PostgresStoreError<Pool::Error>> {
+        if !valid_invitation_audit(
+            invitation,
+            audit_event,
+            AdministrativeAction::InvitationRevoked,
+        ) {
+            return Err(PostgresStoreError::InvalidInput);
+        }
+        let created_at = postgres_epoch(invitation.created_at_epoch_seconds())?;
+        let expires_at = postgres_epoch(invitation.expires_at_epoch_seconds())?;
+        let mut transaction = self.begin_tenant(invitation.workspace_id().clone())?;
+        let changed = transaction
+            .execute(
+                REPLACE_INVITATION_SQL,
+                &[
+                    PostgresParameter::Text(invitation.workspace_id().as_str()),
+                    PostgresParameter::Text(invitation.id().as_str()),
+                    PostgresParameter::Text(invitation.invited_principal_id().as_str()),
+                    PostgresParameter::Text(invitation.invited_by().as_str()),
+                    PostgresParameter::Text(membership_role_name(invitation.role())),
+                    PostgresParameter::Text(invitation_status_name(invitation.status())),
+                    PostgresParameter::Text(invitation_status_name(expected_status)),
+                    PostgresParameter::I64(created_at),
+                    PostgresParameter::I64(expires_at),
+                ],
+            )
+            .map_err(PostgresStoreError::Tenant)?;
+        if changed != 1 {
+            return Err(PostgresStoreError::VersionConflict);
+        }
+        insert_administrative_audit(&mut transaction, audit_event)?;
+        transaction.commit().map_err(PostgresStoreError::Tenant)
+    }
 }
 
 impl<Pool> MembershipRepository for PostgresStore<Pool>
@@ -459,6 +626,66 @@ where
     }
 }
 
+impl<Pool> InvitationRepository for PostgresStore<Pool>
+where
+    Pool: PostgresPool,
+    Pool::Error: ClassifiedPostgresError,
+    <Pool::Transaction as PostgresTransaction>::Row: PostgresRow<Error = Pool::Error>,
+{
+    fn insert_invitation_replacing_expired(
+        &mut self,
+        invitation: Invitation,
+        audit_event: AdministrativeAuditEvent,
+    ) -> Result<(), ApplicationError> {
+        PostgresStore::insert_invitation_replacing_expired(self, &invitation, &audit_event)
+            .map_err(map_invitation_application_error)
+    }
+
+    fn find_invitation(
+        &self,
+        workspace_id: &WorkspaceId,
+        invitation_id: &InvitationId,
+    ) -> Result<Option<Invitation>, ApplicationError> {
+        PostgresStore::find_invitation(self, workspace_id, invitation_id)
+            .map_err(map_invitation_application_error)
+    }
+
+    fn list_invitations(
+        &self,
+        workspace_id: &WorkspaceId,
+        status: Option<InvitationStatus>,
+        limit: usize,
+    ) -> Result<Vec<Invitation>, ApplicationError> {
+        PostgresStore::list_invitations(self, workspace_id, status, limit)
+            .map_err(map_invitation_application_error)
+    }
+
+    fn accept_invitation_with_membership(
+        &mut self,
+        invitation: Invitation,
+        membership: Membership,
+        audit_event: AdministrativeAuditEvent,
+    ) -> Result<(), ApplicationError> {
+        PostgresStore::accept_invitation_with_membership(
+            self,
+            &invitation,
+            &membership,
+            &audit_event,
+        )
+        .map_err(map_invitation_application_error)
+    }
+
+    fn replace_invitation(
+        &mut self,
+        invitation: Invitation,
+        expected_status: InvitationStatus,
+        audit_event: AdministrativeAuditEvent,
+    ) -> Result<(), ApplicationError> {
+        PostgresStore::replace_invitation(self, &invitation, expected_status, &audit_event)
+            .map_err(map_invitation_application_error)
+    }
+}
+
 fn map_application_error<DriverError>(error: PostgresStoreError<DriverError>) -> ApplicationError
 where
     DriverError: ClassifiedPostgresError,
@@ -485,8 +712,81 @@ where
         )
         | PostgresStoreError::InvalidRow
         | PostgresStoreError::InvalidLimit
+        | PostgresStoreError::InvalidInput
+        | PostgresStoreError::VersionConflict
         | PostgresStoreError::UnexpectedCardinality => ApplicationError::StorageUnavailable,
     }
+}
+
+fn map_invitation_application_error<DriverError>(
+    error: PostgresStoreError<DriverError>,
+) -> ApplicationError
+where
+    DriverError: ClassifiedPostgresError,
+{
+    match error {
+        PostgresStoreError::InvalidInput | PostgresStoreError::InvalidLimit => {
+            ApplicationError::Validation("invalid invitation persistence request".to_owned())
+        }
+        PostgresStoreError::VersionConflict => ApplicationError::VersionConflict,
+        other => map_application_error(other),
+    }
+}
+
+fn postgres_epoch<DriverError>(epoch_seconds: u64) -> Result<i64, PostgresStoreError<DriverError>> {
+    i64::try_from(epoch_seconds).map_err(|_| PostgresStoreError::InvalidInput)
+}
+
+fn execute_exactly_one<Transaction>(
+    transaction: &mut TenantTransaction<Transaction>,
+    statement: &str,
+    parameters: &[PostgresParameter<'_>],
+) -> Result<(), PostgresStoreError<Transaction::Error>>
+where
+    Transaction: PostgresTransaction,
+{
+    let changed = transaction
+        .execute(statement, parameters)
+        .map_err(PostgresStoreError::Tenant)?;
+    if changed != 1 {
+        return Err(PostgresStoreError::UnexpectedCardinality);
+    }
+    Ok(())
+}
+
+fn insert_administrative_audit<Transaction>(
+    transaction: &mut TenantTransaction<Transaction>,
+    event: &AdministrativeAuditEvent,
+) -> Result<(), PostgresStoreError<Transaction::Error>>
+where
+    Transaction: PostgresTransaction,
+{
+    let occurred_at = postgres_epoch(event.occurred_at_epoch_seconds())?;
+    execute_exactly_one(
+        transaction,
+        INSERT_ADMINISTRATIVE_AUDIT_SQL,
+        &[
+            PostgresParameter::Text(event.workspace_id().as_str()),
+            PostgresParameter::Text(event.id().as_str()),
+            PostgresParameter::Text(event.actor_id().as_str()),
+            PostgresParameter::Text(event.action().label()),
+            PostgresParameter::Text(event.target_kind().label()),
+            PostgresParameter::Text(event.target_id()),
+            PostgresParameter::Text(event.request_id()),
+            PostgresParameter::I64(occurred_at),
+        ],
+    )
+}
+
+fn valid_invitation_audit(
+    invitation: &Invitation,
+    event: &AdministrativeAuditEvent,
+    action: AdministrativeAction,
+) -> bool {
+    event.workspace_id() == invitation.workspace_id()
+        && event.action() == action
+        && event.target_kind() == AdministrativeTargetKind::Invitation
+        && event.target_id() == invitation.id().as_str()
 }
 
 fn decode_workspace<Row, DriverError>(
@@ -784,16 +1084,22 @@ mod tests {
     use std::collections::{BTreeMap, VecDeque};
     use std::rc::Rc;
 
-    use rembrane_application::{ApplicationError, MembershipRepository};
-    use rembrane_domain::{InvitationId, InvitationStatus, WorkspaceId};
+    use rembrane_application::{ApplicationError, InvitationRepository, MembershipRepository};
+    use rembrane_domain::{
+        AdministrativeAction, AdministrativeAuditEvent, AdministrativeAuditEventId,
+        AdministrativeTargetKind, Invitation, InvitationId, InvitationStatus, PrincipalId,
+        WorkspaceId, WorkspaceRole,
+    };
 
     use super::{
-        ClassifiedPostgresError, FIND_INVITATION_SQL, FIND_MEMBERSHIP_SQL, FIND_PRINCIPAL_SQL,
-        FIND_WORKSPACE_SQL, INSERT_MEMBERSHIP_SQL, LIST_ACTIVE_MEMBERSHIPS_SQL,
-        LIST_INVITATIONS_BY_STATUS_SQL, MAX_ACTIVE_MEMBERSHIPS, PostgresFailureKind,
-        PostgresParameter, PostgresPool, PostgresRow, PostgresStore, PostgresStoreError,
-        PostgresTransaction, READ_TENANT_SQL, REPLACE_MEMBERSHIP_SQL, SET_TENANT_SQL,
-        TenantTransaction, TenantTransactionError, map_application_error,
+        ACCEPT_INVITATION_SQL, ClassifiedPostgresError, EXPIRE_PENDING_INVITATION_SQL,
+        FIND_INVITATION_SQL, FIND_MEMBERSHIP_SQL, FIND_PRINCIPAL_SQL, FIND_WORKSPACE_SQL,
+        INSERT_ADMINISTRATIVE_AUDIT_SQL, INSERT_INVITATION_SQL, INSERT_MEMBERSHIP_SQL,
+        LIST_ACTIVE_MEMBERSHIPS_SQL, LIST_INVITATIONS_BY_STATUS_SQL, MAX_ACTIVE_MEMBERSHIPS,
+        PostgresFailureKind, PostgresParameter, PostgresPool, PostgresRow, PostgresStore,
+        PostgresStoreError, PostgresTransaction, READ_TENANT_SQL, REPLACE_INVITATION_SQL,
+        REPLACE_MEMBERSHIP_SQL, SET_TENANT_SQL, TenantTransaction, TenantTransactionError,
+        map_application_error,
     };
 
     #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1642,6 +1948,193 @@ mod tests {
             );
             assert_eq!(calls.borrow().last(), Some(&Call::Rollback));
         }
+    }
+
+    #[test]
+    #[allow(clippy::too_many_lines)]
+    fn invitation_mutations_commit_lifecycle_membership_and_audit_atomically() {
+        fn audit(
+            invitation: &Invitation,
+            actor: &str,
+            action: AdministrativeAction,
+            suffix: &str,
+        ) -> AdministrativeAuditEvent {
+            AdministrativeAuditEvent::new(
+                AdministrativeAuditEventId::new(format!("audit_{suffix}")),
+                invitation.workspace_id().clone(),
+                PrincipalId::new(actor),
+                action,
+                AdministrativeTargetKind::Invitation,
+                invitation.id().as_str(),
+                format!("request_{suffix}"),
+                150,
+            )
+            .expect("valid audit")
+        }
+
+        let pending = Invitation::new(
+            InvitationId::new("invitation_01"),
+            WorkspaceId::new("workspace_01"),
+            PrincipalId::new("principal_guest"),
+            PrincipalId::new("principal_admin"),
+            WorkspaceRole::Member,
+            100,
+            200,
+        )
+        .expect("valid invitation");
+        let accepted = pending.clone().accept_at(150).expect("accepted invitation");
+        let revoked = pending.clone().revoke().expect("revoked invitation");
+        let membership = rembrane_domain::Membership::new(
+            WorkspaceId::new("workspace_01"),
+            PrincipalId::new("principal_guest"),
+            WorkspaceRole::Member,
+        );
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let store = PostgresStore::new(FakePool {
+            calls: Rc::clone(&calls),
+            tenant_batches: RefCell::new(
+                [
+                    VecDeque::from([
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                    ]),
+                    VecDeque::from([
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                    ]),
+                    VecDeque::from([
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                    ]),
+                ]
+                .into(),
+            ),
+            row_batches: RefCell::new([Vec::new(), Vec::new(), Vec::new()].into()),
+        });
+
+        store
+            .insert_invitation_replacing_expired(
+                &pending,
+                &audit(
+                    &pending,
+                    "principal_admin",
+                    AdministrativeAction::InvitationCreated,
+                    "created",
+                ),
+            )
+            .expect("insert invitation");
+        store
+            .accept_invitation_with_membership(
+                &accepted,
+                &membership,
+                &audit(
+                    &accepted,
+                    "principal_guest",
+                    AdministrativeAction::InvitationAccepted,
+                    "accepted",
+                ),
+            )
+            .expect("accept invitation");
+        store
+            .replace_invitation(
+                &revoked,
+                InvitationStatus::Pending,
+                &audit(
+                    &revoked,
+                    "principal_admin",
+                    AdministrativeAction::InvitationRevoked,
+                    "revoked",
+                ),
+            )
+            .expect("replace invitation");
+
+        let executed = calls
+            .borrow()
+            .iter()
+            .filter_map(|call| match call {
+                Call::Execute(statement, _) => Some(statement.clone()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        for statement in [
+            EXPIRE_PENDING_INVITATION_SQL,
+            INSERT_INVITATION_SQL,
+            ACCEPT_INVITATION_SQL,
+            INSERT_MEMBERSHIP_SQL,
+            REPLACE_INVITATION_SQL,
+        ] {
+            assert!(executed.iter().any(|executed| executed == statement));
+        }
+        assert_eq!(
+            executed
+                .iter()
+                .filter(|statement| statement.as_str() == INSERT_ADMINISTRATIVE_AUDIT_SQL)
+                .count(),
+            3
+        );
+        assert_eq!(
+            calls
+                .borrow()
+                .iter()
+                .filter(|call| **call == Call::Commit)
+                .count(),
+            3
+        );
+    }
+
+    #[test]
+    fn invitation_application_port_rejects_mismatched_atomic_acceptance() {
+        struct NeverBeginPool;
+
+        impl PostgresPool for NeverBeginPool {
+            type Error = &'static str;
+            type Transaction = FakeTransaction;
+
+            fn begin(&self) -> Result<Self::Transaction, Self::Error> {
+                Err("must not begin")
+            }
+        }
+
+        let pending = Invitation::new(
+            InvitationId::new("invitation_01"),
+            WorkspaceId::new("workspace_01"),
+            PrincipalId::new("principal_guest"),
+            PrincipalId::new("principal_admin"),
+            WorkspaceRole::Member,
+            100,
+            200,
+        )
+        .expect("valid invitation");
+        let accepted = pending.accept_at(150).expect("accepted invitation");
+        let audit = AdministrativeAuditEvent::new(
+            AdministrativeAuditEventId::new("audit_accept"),
+            WorkspaceId::new("workspace_01"),
+            PrincipalId::new("principal_guest"),
+            AdministrativeAction::InvitationAccepted,
+            AdministrativeTargetKind::Invitation,
+            "invitation_01",
+            "request_accept",
+            150,
+        )
+        .expect("valid audit");
+        let mismatched = rembrane_domain::Membership::new(
+            WorkspaceId::new("workspace_01"),
+            PrincipalId::new("principal_other"),
+            WorkspaceRole::Member,
+        );
+        let mut store = PostgresStore::new(NeverBeginPool);
+
+        assert!(matches!(
+            InvitationRepository::accept_invitation_with_membership(
+                &mut store, accepted, mismatched, audit,
+            ),
+            Err(ApplicationError::Validation(_))
+        ));
     }
 
     #[test]

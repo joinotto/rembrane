@@ -304,6 +304,8 @@ This roadmap describes sequencing, not release dates.
         with driver-neutral SQLSTATE classification and opaque error mapping.
       - [x] Add exact invitation lookup and bounded status-filtered listing
         with terminal-state restoration and full tenant/identifier correlation.
+      - [x] Implement atomic invitation creation, acceptance, revocation,
+        membership activation, and content-free administrative audit writes.
     - [x] Define a reference-only PostgreSQL connection profile with explicit
       transport security and bounded pool capacity.
       - [x] Prevent derived debug logging of the database secret locator.
