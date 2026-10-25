@@ -15,6 +15,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Security-review manifests now cover every tracked regular repository file,
   preventing filter omissions of applications, adapters, deployment assets,
   or the review tooling itself.
+- Independent reviewers can produce non-overwriting detached Ed25519
+  attestations over exact clean-revision manifest bytes, with tamper-tested
+  verification and no private keys committed to the repository.
 - Explicit Memory Provider Protocol `1.0` stability gates separating the
   existing review-locked `0.1` wire surface from a future long-term
   compatibility promise.

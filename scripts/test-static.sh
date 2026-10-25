@@ -24,6 +24,7 @@ require_command "$python_command"
 ./scripts/check-sensitive-files.sh
 ./scripts/check-ci-security.sh
 sh ./scripts/check-security-review-manifest.sh
+sh ./scripts/test-security-review-signing.sh
 ./scripts/check-protocols.sh
 ./scripts/test-semantic-provider-compatibility-lock.sh
 ./scripts/test-memory-provider-compatibility-lock.sh

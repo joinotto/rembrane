@@ -1310,5 +1310,7 @@ No stable release until:
     SHA-256 inventory and an external-review evidence checklist.
     - [x] Cover every tracked regular file, including the manifest generator,
       application entry points, adapters, deployment assets, and static gates.
+    - [x] Support non-overwriting detached Ed25519 reviewer attestations with
+      exact-byte tamper detection and independently trusted public keys.
 - [x] Backup, restore, migration, revocation, and deletion have executable
   local-alpha coverage.
