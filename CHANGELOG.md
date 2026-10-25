@@ -24,6 +24,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Shell conformance requests now bypass environment proxies, enforce connect,
   total-time, and response-size ceilings, require JSON response media, and
   reject missing, duplicate, or mismatched correlation headers.
+- The shell conformance client now validates public provider discovery before
+  validating bearer values or materializing them into owner-only curl header
+  files; loopback CI verifies invalid discovery wins over invalid credentials.
 - Project metadata, security reporting, API contact information, offline
   workspace fixtures, and provider provenance now consistently identify the
   canonical `joinotto/rembrane` repository.

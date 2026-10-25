@@ -978,6 +978,8 @@ This roadmap describes sequencing, not release dates.
   - [x] Harden shell conformance HTTP with direct connections, strict timeout
     and response-size ceilings, JSON media checks, and exact correlation
     header validation.
+  - [x] Validate shell-provider discovery before validating or materializing
+    bearer credentials into owner-only curl header files.
     - [x] Add bounded context-resolution requests with global, domain, entity,
       and activity selectors constrained by provider-advertised limits.
       - [x] Seal selector representation so callers cannot bypass domain and

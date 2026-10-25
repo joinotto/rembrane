@@ -209,7 +209,7 @@ const server = http.createServer(async (request, response) => {
             maximumSyncBatchItems: 100,
           },
           operations,
-          ...(discoveryRequests === 1 ? { unexpected: true } : {}),
+          ...(discoveryRequests <= 2 ? { unexpected: true } : {}),
         },
         request,
       );
@@ -417,6 +417,36 @@ const invalidDiscoveryStatus = await new Promise((resolve) =>
 assert.notEqual(invalidDiscoveryStatus, 0);
 assert.match(invalidDiscoveryStderr, /provider discovery is not conformance-compatible/);
 assert.doesNotMatch(invalidDiscoveryStderr, /does-not-exist|secret reference/);
+
+const shellScript = fileURLToPath(
+  new URL("./test-memory-provider-http.sh", import.meta.url),
+);
+const invalidShellDiscoveryChild = spawn(
+  "sh",
+  [shellScript, "invalid-shell-discovery"],
+  {
+    env: {
+      ...process.env,
+      REMBRANE_MEMORY_PROVIDER_BASE_URL: `http://127.0.0.1:${address.port}`,
+      REMBRANE_MEMORY_PROVIDER_PRIMARY_TOKEN: "",
+      REMBRANE_MEMORY_PROVIDER_OTHER_TOKEN: "",
+      REMBRANE_MEMORY_PROVIDER_READONLY_TOKEN: "",
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  },
+);
+let invalidShellDiscoveryStderr = "";
+invalidShellDiscoveryChild.stderr.setEncoding("utf8").on("data", (chunk) => {
+  invalidShellDiscoveryStderr += chunk;
+});
+const invalidShellDiscoveryStatus = await new Promise((resolve) =>
+  invalidShellDiscoveryChild.on("close", resolve),
+);
+assert.notEqual(invalidShellDiscoveryStatus, 0);
+assert.doesNotMatch(
+  invalidShellDiscoveryStderr,
+  /bearer tokens must be non-empty|tokens must represent distinct connections/,
+);
 
 const child = spawn(process.execPath, [script, "mock-runner"], {
   env: {

@@ -121,21 +121,6 @@ case "$provider_authority" in
         exit 1
         ;;
 esac
-for token in "$primary_token" "$other_token" "$readonly_token"; do
-    if [ -z "$token" ] ||
-        ! printf '%s' "$token" | rg '^[A-Za-z0-9._~+/=-]+$' >/dev/null
-    then
-        echo "all memory provider conformance bearer tokens must be non-empty" >&2
-        exit 1
-    fi
-done
-if [ "$primary_token" = "$other_token" ] ||
-    [ "$primary_token" = "$readonly_token" ] ||
-    [ "$other_token" = "$readonly_token" ]
-then
-    echo "memory provider conformance tokens must represent distinct connections" >&2
-    exit 1
-fi
 if [ -z "$namespace" ] ||
     ! printf '%s' "$namespace" | rg '^[A-Za-z0-9._-]{1,64}$' >/dev/null
 then
@@ -151,10 +136,6 @@ response="$test_directory/response.json"
 response_headers="$test_directory/response.headers"
 payload="$test_directory/payload.json"
 chmod 700 "$test_directory"
-printf 'Authorization: Bearer %s\n' "$primary_token" >"$primary_auth"
-printf 'Authorization: Bearer %s\n' "$other_token" >"$other_auth"
-printf 'Authorization: Bearer %s\n' "$readonly_token" >"$readonly_auth"
-chmod 600 "$primary_auth" "$other_auth" "$readonly_auth"
 
 primary_memory_id=
 primary_version=
@@ -284,6 +265,25 @@ jq -e \
     --argjson requiredScopes "$required_actor_scopes" \
     -f "$repository_root/scripts/memory-provider-discovery.jq" \
     "$response" >/dev/null
+for token in "$primary_token" "$other_token" "$readonly_token"; do
+    if [ -z "$token" ] ||
+        ! printf '%s' "$token" | rg '^[A-Za-z0-9._~+/=-]+$' >/dev/null
+    then
+        echo "all memory provider conformance bearer tokens must be non-empty" >&2
+        exit 1
+    fi
+done
+if [ "$primary_token" = "$other_token" ] ||
+    [ "$primary_token" = "$readonly_token" ] ||
+    [ "$other_token" = "$readonly_token" ]
+then
+    echo "memory provider conformance tokens must represent distinct connections" >&2
+    exit 1
+fi
+printf 'Authorization: Bearer %s\n' "$primary_token" >"$primary_auth"
+printf 'Authorization: Bearer %s\n' "$other_token" >"$other_auth"
+printf 'Authorization: Bearer %s\n' "$readonly_token" >"$readonly_auth"
+chmod 600 "$primary_auth" "$other_auth" "$readonly_auth"
 provider_id=$(jq -er '.providerId' "$response")
 provider_version=$(jq -er '.providerVersion' "$response")
 maximum_context_items=$(jq -r --argjson fixture "$fixture_maximum_context_items" \
