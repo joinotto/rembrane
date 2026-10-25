@@ -29,7 +29,8 @@
     "reviewedAt": {
       "type": "string",
       "format": "date-time",
-      "maxLength": 32
+      "maxLength": 20,
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
     },
     "reviewer": {
       "type": "object",
@@ -40,13 +41,13 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 200,
-          "pattern": "^[ -~]+$"
+          "pattern": "^[!-~](?:[ -~]*[!-~])?$"
         },
         "organization": {
           "type": "string",
           "minLength": 1,
           "maxLength": 200,
-          "pattern": "^[ -~]+$"
+          "pattern": "^[!-~](?:[ -~]*[!-~])?$"
         },
         "independent": {
           "const": true
@@ -71,7 +72,7 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 500,
-            "pattern": "^[ -~]+$"
+            "pattern": "^[!-~](?:[ -~]*[!-~])?$"
           }
         }
       }
@@ -131,7 +132,79 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 500,
-      "pattern": "^[ -~]+$"
+      "pattern": "^[!-~](?:[ -~]*[!-~])?$"
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "disposition": {
+            "const": "approved"
+          }
+        },
+        "required": ["disposition"]
+      },
+      "then": {
+        "properties": {
+          "scope": {
+            "properties": {
+              "exclusions": {
+                "maxItems": 0
+              }
+            }
+          },
+          "findings": {
+            "properties": {
+              "unresolved": {
+                "const": 0
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "disposition": {
+            "const": "approved_with_accepted_risks"
+          }
+        },
+        "required": ["disposition"]
+      },
+      "then": {
+        "properties": {
+          "findings": {
+            "properties": {
+              "unresolved": {
+                "const": 0
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "disposition": {
+            "const": "changes_required"
+          }
+        },
+        "required": ["disposition"]
+      },
+      "then": {
+        "properties": {
+          "findings": {
+            "properties": {
+              "unresolved": {
+                "minimum": 1
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
 }

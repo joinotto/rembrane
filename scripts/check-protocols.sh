@@ -35,6 +35,7 @@ jq empty \
     spec/key-provider-conformance.schema.json \
     spec/semantic-provider-conformance-result.schema.json \
     spec/provider-selection-result.schema.json \
+    spec/security-review-attestation.schema.json \
     spec/memory-provider-fixtures.schema.json \
     spec/conformance/memory-provider-core.json \
     spec/conformance/key-provider-core.json \
@@ -58,6 +59,7 @@ jq empty \
     spec/examples/key-provider-conformance-result.json \
     spec/examples/semantic-provider-conformance-result.json \
     spec/examples/provider-selection-result.json \
+    spec/examples/security-review-attestation.json \
     spec/examples/mcp-client-catalog.json \
     spec/provider-manifest.schema.json \
     spec/provider-registry.json \
@@ -65,6 +67,27 @@ jq empty \
     spec/oauth-protected-resource.schema.json \
     spec/stdio-connection-manifest.schema.json \
     tests/postman/rembrane-local.postman_collection.json
+
+jq -e --slurpfile example spec/examples/security-review-attestation.json '
+    .additionalProperties == false
+    and .properties.schemaVersion.const == 1
+    and .properties.sourceRevision.pattern == "^[0-9a-f]{40}$"
+    and .properties.manifestSha256.pattern == "^[0-9a-f]{64}$"
+    and .properties.reviewedAt.pattern
+        == "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+    and .properties.reviewer.properties.independent.const == true
+    and .properties.disposition.enum == [
+        "approved",
+        "approved_with_accepted_risks",
+        "changes_required"
+    ]
+    and (.allOf | length) == 3
+    and $example[0].schemaVersion == 1
+    and $example[0].reviewer.independent == true
+    and $example[0].disposition == "approved"
+    and $example[0].findings.unresolved == 0
+    and $example[0].scope.exclusions == []
+' spec/security-review-attestation.schema.json >/dev/null
 
 jq -e '
     .additionalProperties == false

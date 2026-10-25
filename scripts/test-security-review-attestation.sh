@@ -25,6 +25,20 @@ if node "$verifier" "$test_root/unresolved.json" >/dev/null 2>&1; then
     exit 1
 fi
 
+jq '.disposition = "approved_with_accepted_risks"
+    | .findings.unresolved = 1' "$fixture" >"$test_root/accepted-risk-unresolved.json"
+if node "$verifier" "$test_root/accepted-risk-unresolved.json" >/dev/null 2>&1; then
+    echo "accepted-risk review attestation accepted unresolved findings" >&2
+    exit 1
+fi
+
+jq '.disposition = "changes_required"' "$fixture" \
+    >"$test_root/changes-without-unresolved.json"
+if node "$verifier" "$test_root/changes-without-unresolved.json" >/dev/null 2>&1; then
+    echo "changes-required review attestation accepted zero unresolved findings" >&2
+    exit 1
+fi
+
 jq '.scope.exclusions = ["authentication"]' "$fixture" >"$test_root/excluded.json"
 if node "$verifier" "$test_root/excluded.json" >/dev/null 2>&1; then
     echo "approved review attestation accepted scope exclusions" >&2

@@ -1323,6 +1323,8 @@ No stable release until:
     - [x] Define and validate a content-free independent-review result binding
       reviewer independence, manifest digest, scope, aggregate findings, and
       disposition without publishing confidential vulnerability details.
+      - [x] Keep the public JSON Schema and executable verifier aligned on
+        canonical timestamps, bounded text, and disposition semantics.
       - [x] Sign the linked manifest and review disposition with the same
         reviewer key and verify both signatures, checksums, revision, digest,
         and file-count binding as one portable bundle.

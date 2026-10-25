@@ -30,6 +30,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - A strict security-review attestation schema and verifier bind reviewer
   independence, source revision, manifest digest, exclusions, aggregate
   findings, and disposition without exposing confidential finding details.
+- The published review-attestation schema now matches executable policy for
+  canonical timestamps, trimmed printable text, and disposition-dependent
+  unresolved findings and exclusions.
 - Reviewers can sign a linked manifest-and-disposition bundle whose verifier
   checks both Ed25519 signatures, checksums, source revision, manifest digest,
   and reviewed file count; a manifest-only signature is explicitly not an
