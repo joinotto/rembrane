@@ -66,6 +66,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - A separate PostgreSQL provisioning-pool contract and rollback-on-drop
   transaction guard for first-principal/workspace bootstrap, keeping
   privileged credentials out of ordinary tenant request paths.
+- Atomic PostgreSQL personal and shared workspace provisioning with closed
+  aggregate validation, exact existing-owner correlation, and exact affected
+  row enforcement.
 
 ### Changed
 

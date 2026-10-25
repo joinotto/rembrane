@@ -311,6 +311,8 @@ This roadmap describes sequencing, not release dates.
       - [x] Separate privileged first-workspace provisioning into an explicit
         rollback-on-drop pool boundary that runtime request paths cannot use
         accidentally.
+        - [x] Atomically provision personal identities and shared workspaces
+          with correlated active owner memberships and exact write counts.
     - [x] Define a reference-only PostgreSQL connection profile with explicit
       transport security and bounded pool capacity.
       - [x] Prevent derived debug logging of the database secret locator.

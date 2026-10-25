@@ -14,7 +14,7 @@ use rembrane_application::{
 use rembrane_domain::{
     AdministrativeAction, AdministrativeAuditEvent, AdministrativeTargetKind, Invitation,
     InvitationId, InvitationStatus, Membership, Principal, PrincipalId, Workspace, WorkspaceId,
-    WorkspaceRole,
+    WorkspaceKind, WorkspaceRole,
 };
 
 pub const SET_TENANT_SQL: &str = "SELECT set_config('rembrane.workspace_id', $1, true);";
@@ -66,6 +66,10 @@ pub const REPLACE_INVITATION_SQL: &str = "UPDATE workspace_invitations \
 pub const INSERT_ADMINISTRATIVE_AUDIT_SQL: &str = "INSERT INTO administrative_audit_events \
     (workspace_id, id, actor_id, action, target_kind, target_id, request_id, \
     occurred_at_epoch_seconds) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)";
+pub const INSERT_PRINCIPAL_SQL: &str = "INSERT INTO principals (id) VALUES ($1)";
+pub const INSERT_WORKSPACE_SQL: &str = "INSERT INTO workspaces (id, kind) VALUES ($1, $2)";
+pub const FIND_PROVISIONING_PRINCIPAL_SQL: &str =
+    "SELECT id FROM principals WHERE id = $1 ORDER BY id LIMIT 2";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PostgresParameter<'value> {
@@ -157,6 +161,101 @@ pub trait PostgresProvisioningPool {
 /// Rollback-on-drop guard for one privileged provisioning transaction.
 pub struct ProvisioningTransaction<Transaction: PostgresTransaction> {
     transaction: Option<Transaction>,
+}
+
+pub struct PostgresProvisioner<Pool> {
+    pool: Pool,
+}
+
+impl<Pool> PostgresProvisioner<Pool>
+where
+    Pool: PostgresProvisioningPool,
+{
+    #[must_use]
+    pub const fn new(pool: Pool) -> Self {
+        Self { pool }
+    }
+
+    pub fn initialize_personal_workspace(
+        &self,
+        principal: &Principal,
+        workspace: &Workspace,
+        owner_membership: &Membership,
+    ) -> Result<(), PostgresStoreError<Pool::Error>> {
+        if !valid_personal_bootstrap(principal, workspace, owner_membership) {
+            return Err(PostgresStoreError::InvalidInput);
+        }
+        let mut transaction =
+            ProvisioningTransaction::begin(&self.pool).map_err(PostgresStoreError::Begin)?;
+        provisioning_execute_exactly_one(
+            &mut transaction,
+            INSERT_PRINCIPAL_SQL,
+            &[PostgresParameter::Text(principal.id().as_str())],
+        )?;
+        provisioning_execute_exactly_one(
+            &mut transaction,
+            INSERT_WORKSPACE_SQL,
+            &[
+                PostgresParameter::Text(workspace.id().as_str()),
+                PostgresParameter::Text("personal"),
+            ],
+        )?;
+        provisioning_execute_exactly_one(
+            &mut transaction,
+            INSERT_MEMBERSHIP_SQL,
+            &[
+                PostgresParameter::Text(owner_membership.workspace_id().as_str()),
+                PostgresParameter::Text(owner_membership.principal_id().as_str()),
+                PostgresParameter::Text("owner"),
+                PostgresParameter::Text("active"),
+            ],
+        )?;
+        transaction.commit().map_err(PostgresStoreError::Tenant)
+    }
+
+    pub fn initialize_shared_workspace(
+        &self,
+        workspace: &Workspace,
+        owner_membership: &Membership,
+    ) -> Result<(), PostgresStoreError<Pool::Error>> {
+        if !valid_shared_bootstrap(workspace, owner_membership) {
+            return Err(PostgresStoreError::InvalidInput);
+        }
+        let mut transaction =
+            ProvisioningTransaction::begin(&self.pool).map_err(PostgresStoreError::Begin)?;
+        let principal_id = transaction
+            .query_optional_text(
+                FIND_PROVISIONING_PRINCIPAL_SQL,
+                &[PostgresParameter::Text(
+                    owner_membership.principal_id().as_str(),
+                )],
+            )
+            .map_err(PostgresStoreError::Tenant)?;
+        match principal_id {
+            Some(id) if id == owner_membership.principal_id().as_str() => {}
+            Some(_) => return Err(PostgresStoreError::InvalidRow),
+            None => return Err(PostgresStoreError::MissingRow),
+        }
+        provisioning_execute_exactly_one(
+            &mut transaction,
+            INSERT_WORKSPACE_SQL,
+            &[
+                PostgresParameter::Text(workspace.id().as_str()),
+                PostgresParameter::Text("shared"),
+            ],
+        )?;
+        provisioning_execute_exactly_one(
+            &mut transaction,
+            INSERT_MEMBERSHIP_SQL,
+            &[
+                PostgresParameter::Text(owner_membership.workspace_id().as_str()),
+                PostgresParameter::Text(owner_membership.principal_id().as_str()),
+                PostgresParameter::Text("owner"),
+                PostgresParameter::Text("active"),
+            ],
+        )?;
+        transaction.commit().map_err(PostgresStoreError::Tenant)
+    }
 }
 
 impl<Transaction: PostgresTransaction> ProvisioningTransaction<Transaction> {
@@ -955,6 +1054,42 @@ fn postgres_epoch<DriverError>(epoch_seconds: u64) -> Result<i64, PostgresStoreE
     i64::try_from(epoch_seconds).map_err(|_| PostgresStoreError::InvalidInput)
 }
 
+fn provisioning_execute_exactly_one<Transaction>(
+    transaction: &mut ProvisioningTransaction<Transaction>,
+    statement: &str,
+    parameters: &[PostgresParameter<'_>],
+) -> Result<(), PostgresStoreError<Transaction::Error>>
+where
+    Transaction: PostgresTransaction,
+{
+    let changed = transaction
+        .execute(statement, parameters)
+        .map_err(PostgresStoreError::Tenant)?;
+    if changed != 1 {
+        return Err(PostgresStoreError::UnexpectedCardinality);
+    }
+    Ok(())
+}
+
+fn valid_personal_bootstrap(
+    principal: &Principal,
+    workspace: &Workspace,
+    membership: &Membership,
+) -> bool {
+    workspace.kind() == WorkspaceKind::Personal
+        && membership.workspace_id() == workspace.id()
+        && membership.principal_id() == principal.id()
+        && membership.role() == WorkspaceRole::Owner
+        && membership.is_active()
+}
+
+fn valid_shared_bootstrap(workspace: &Workspace, membership: &Membership) -> bool {
+    workspace.kind() == WorkspaceKind::Shared
+        && membership.workspace_id() == workspace.id()
+        && membership.role() == WorkspaceRole::Owner
+        && membership.is_active()
+}
+
 fn execute_exactly_one<Transaction>(
     transaction: &mut TenantTransaction<Transaction>,
     statement: &str,
@@ -1305,19 +1440,21 @@ mod tests {
     use rembrane_application::{ApplicationError, InvitationRepository, MembershipRepository};
     use rembrane_domain::{
         AdministrativeAction, AdministrativeAuditEvent, AdministrativeAuditEventId,
-        AdministrativeTargetKind, Invitation, InvitationId, InvitationStatus, PrincipalId,
-        WorkspaceId, WorkspaceRole,
+        AdministrativeTargetKind, Invitation, InvitationId, InvitationStatus, Principal,
+        PrincipalId, Workspace, WorkspaceId, WorkspaceRole,
     };
 
     use super::{
         ACCEPT_INVITATION_SQL, ClassifiedPostgresError, EXPIRE_PENDING_INVITATION_SQL,
-        FIND_INVITATION_SQL, FIND_MEMBERSHIP_SQL, FIND_PRINCIPAL_SQL, FIND_WORKSPACE_SQL,
-        INSERT_ADMINISTRATIVE_AUDIT_SQL, INSERT_INVITATION_SQL, INSERT_MEMBERSHIP_SQL,
+        FIND_INVITATION_SQL, FIND_MEMBERSHIP_SQL, FIND_PRINCIPAL_SQL,
+        FIND_PROVISIONING_PRINCIPAL_SQL, FIND_WORKSPACE_SQL, INSERT_ADMINISTRATIVE_AUDIT_SQL,
+        INSERT_INVITATION_SQL, INSERT_MEMBERSHIP_SQL, INSERT_PRINCIPAL_SQL, INSERT_WORKSPACE_SQL,
         LIST_ACTIVE_MEMBERSHIPS_SQL, LIST_INVITATIONS_BY_STATUS_SQL, MAX_ACTIVE_MEMBERSHIPS,
-        PostgresFailureKind, PostgresParameter, PostgresPool, PostgresProvisioningPool,
-        PostgresRow, PostgresStore, PostgresStoreError, PostgresTransaction,
-        ProvisioningTransaction, READ_TENANT_SQL, REPLACE_INVITATION_SQL, REPLACE_MEMBERSHIP_SQL,
-        SET_TENANT_SQL, TenantTransaction, TenantTransactionError, map_application_error,
+        PostgresFailureKind, PostgresParameter, PostgresPool, PostgresProvisioner,
+        PostgresProvisioningPool, PostgresRow, PostgresStore, PostgresStoreError,
+        PostgresTransaction, ProvisioningTransaction, READ_TENANT_SQL, REPLACE_INVITATION_SQL,
+        REPLACE_MEMBERSHIP_SQL, SET_TENANT_SQL, TenantTransaction, TenantTransactionError,
+        map_application_error,
     };
 
     #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1573,6 +1710,86 @@ mod tests {
         assert!(!calls.borrow().iter().any(
             |call| matches!(call, Call::QueryText(statement) if statement == READ_TENANT_SQL)
         ));
+    }
+
+    #[test]
+    fn provisioner_atomically_bootstraps_personal_and_shared_workspaces() {
+        struct FakeProvisioningPool {
+            calls: Rc<RefCell<Vec<Call>>>,
+            tenant_batches: RefCell<VecDeque<TenantReadBatch>>,
+        }
+
+        impl PostgresProvisioningPool for FakeProvisioningPool {
+            type Error = &'static str;
+            type Transaction = FakeTransaction;
+
+            fn begin_provisioning(&self) -> Result<Self::Transaction, Self::Error> {
+                Ok(FakeTransaction {
+                    calls: Rc::clone(&self.calls),
+                    tenants: self
+                        .tenant_batches
+                        .borrow_mut()
+                        .pop_front()
+                        .ok_or("unexpected provisioning begin")?,
+                    rows: Vec::new(),
+                })
+            }
+        }
+
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let provisioner = PostgresProvisioner::new(FakeProvisioningPool {
+            calls: Rc::clone(&calls),
+            tenant_batches: RefCell::new(
+                [
+                    VecDeque::new(),
+                    VecDeque::from([Ok(Some("principal_01".to_owned()))]),
+                ]
+                .into(),
+            ),
+        });
+        let principal = Principal::new(PrincipalId::new("principal_01"));
+        let personal = Workspace::personal(WorkspaceId::new("workspace_personal"));
+        let personal_owner = rembrane_domain::Membership::new(
+            personal.id().clone(),
+            principal.id().clone(),
+            WorkspaceRole::Owner,
+        );
+        provisioner
+            .initialize_personal_workspace(&principal, &personal, &personal_owner)
+            .expect("personal bootstrap");
+
+        let shared = Workspace::shared(WorkspaceId::new("workspace_shared"));
+        let shared_owner = rembrane_domain::Membership::new(
+            shared.id().clone(),
+            principal.id().clone(),
+            WorkspaceRole::Owner,
+        );
+        provisioner
+            .initialize_shared_workspace(&shared, &shared_owner)
+            .expect("shared bootstrap");
+
+        let calls = calls.borrow();
+        for statement in [
+            INSERT_PRINCIPAL_SQL,
+            INSERT_WORKSPACE_SQL,
+            INSERT_MEMBERSHIP_SQL,
+        ] {
+            assert!(
+                calls.iter().any(
+                    |call| matches!(call, Call::Execute(executed, _) if executed == statement)
+                )
+            );
+        }
+        assert!(calls.iter().any(|call| {
+            matches!(
+                call,
+                Call::QueryText(statement) if statement == FIND_PROVISIONING_PRINCIPAL_SQL
+            )
+        }));
+        assert_eq!(
+            calls.iter().filter(|call| **call == Call::Commit).count(),
+            2
+        );
     }
 
     #[test]
