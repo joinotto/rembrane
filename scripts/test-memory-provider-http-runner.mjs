@@ -371,9 +371,9 @@ await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
 const address = server.address();
 assert.equal(typeof address, "object");
 const script = fileURLToPath(
-  new URL("./test-memory-provider-http.sh", import.meta.url),
+  new URL("./run-memory-provider-conformance.mjs", import.meta.url),
 );
-const child = spawn(script, ["mock-runner"], {
+const child = spawn(process.execPath, [script, "mock-runner"], {
   env: {
     ...process.env,
     REMBRANE_MEMORY_PROVIDER_BASE_URL: `http://127.0.0.1:${address.port}`,

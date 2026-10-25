@@ -73,6 +73,7 @@ for deployment_file in \
     scripts/test-ios-imessage-extension.sh \
     scripts/test-kotlin-sdk.sh \
     scripts/test-memory-provider-compatibility-lock.sh \
+    scripts/run-memory-provider-conformance.mjs \
     scripts/test-memory-provider-mixed-version-evidence.sh \
     scripts/test-memory-provider-release-evidence.sh \
     scripts/test-memory-provider-external-provenance.sh \

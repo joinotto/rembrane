@@ -577,6 +577,7 @@ sh -n scripts/test-key-provider-http.sh
 node --check scripts/test-key-provider-http-runner.mjs
 sh -n scripts/test-memory-provider-http.sh
 node --check scripts/test-memory-provider-http-runner.mjs
+node --check scripts/run-memory-provider-conformance.mjs
 if [ "${REMBRANE_RUN_LOOPBACK_TESTS:-0}" = "1" ]; then
     node scripts/test-provider-http-runner.mjs
     node scripts/test-key-provider-http-runner.mjs

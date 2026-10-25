@@ -114,6 +114,16 @@ REMBRANE_MEMORY_PROVIDER_READONLY_TOKEN="$READONLY_TOKEN" \
 ./scripts/test-memory-provider-http.sh unique-test-namespace
 ```
 
+For a dependency-light runner requiring only Node.js, use:
+
+```sh
+node scripts/run-memory-provider-conformance.mjs unique-test-namespace
+```
+
+It consumes the same three actor tokens and canonical profile/fixture
+environment variables, rejects redirects and oversized responses, cleans up
+created fixtures, and emits the same portable conformance result.
+
 Use isolated test workspaces and short-lived tokens. The client creates and
 deletes fixtures, verifies cross-workspace denial, and emits a credential-free
 JSON result. The result carries the exact reviewed profile and lifecycle

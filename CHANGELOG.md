@@ -9,6 +9,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- A dependency-light Node Memory Provider conformance runner executes the
+  canonical authentication, scope, idempotency, tenant-isolation, optimistic
+  deletion, sync-ordering, and cleanup cases with bounded redirect-free HTTP.
 - A credential-free Memory Provider release packager creates a new owner-only
   evidence directory from bounded regular inputs, copies the reviewed lock and
   migration contract, refuses overwrites and symlinks, and removes incomplete
