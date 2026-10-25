@@ -72,7 +72,9 @@ snapshot, refuses to replace an existing destination, and verifies SQLite
 integrity plus the required keyring schema before reporting success.
 `restore_to` accepts only an owner-only verified source, refuses to replace an
 existing destination, restores into a newly protected file, re-verifies the
-result, and opens the recovered store only after every check succeeds.
+result, and opens the recovered store only after every check succeeds. Callers
+must provide a trusted generation floor for every workspace; snapshots with a
+missing, extra, or older active generation are rejected and removed.
 
 These framework adapters are complete, but cloud SDK implementations and
 their IAM policies remain deployment-owned. The top-level production-provider

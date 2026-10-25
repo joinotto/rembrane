@@ -45,6 +45,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   behavior and post-backup SQLite integrity and schema verification.
 - Non-overwriting customer-KMS keyring restore with protected source and
   destination checks plus pre- and post-restore integrity verification.
+- Bounded per-workspace recovery generation floors that reject valid but stale
+  keyring snapshots and workspace-set drift before restored state can open.
 - Completion of the framework-level customer-KMS resolution milestone while
   retaining an explicit acceptance gate for deployment-owned cloud SDK
   sidecars and IAM review.

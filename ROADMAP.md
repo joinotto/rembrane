@@ -143,6 +143,8 @@ This roadmap describes sequencing, not release dates.
         snapshot integrity and schema before reporting success.
       - [x] Restore only from verified owner-only snapshots into new
         destinations and re-verify before opening recovered keyrings.
+        - [x] Require a complete bounded set of trusted per-workspace
+          generation floors and reject rollback or workspace-set drift.
   - [x] Add a provider-agnostic configured cipher that dispatches to local
     environment/macOS keyrings or a policy-negotiated HTTP key provider.
     - [x] Accept consumed customer key-provider configuration from

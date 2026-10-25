@@ -16,6 +16,8 @@ use rembrane_provider_sdk::{
 };
 use rusqlite::{Connection, MAIN_DB, OptionalExtension, params};
 
+pub const MAX_KMS_RECOVERY_WORKSPACES: usize = 10_000;
+
 const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS customer_kms_key_references (
     workspace_id TEXT NOT NULL CHECK (
@@ -53,6 +55,32 @@ END;
 
 pub struct SqliteCustomerKmsKeyReferenceStore {
     connection: Mutex<Connection>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CustomerKmsRecoveryFloor {
+    workspace_id: WorkspaceId,
+    minimum_generation: u64,
+}
+
+impl CustomerKmsRecoveryFloor {
+    pub fn new(workspace_id: WorkspaceId, minimum_generation: u64) -> Result<Self, ProviderError> {
+        rembrane_provider_sdk::CustomerKmsContext::new(workspace_id.clone(), minimum_generation)?;
+        Ok(Self {
+            workspace_id,
+            minimum_generation,
+        })
+    }
+
+    #[must_use]
+    pub const fn workspace_id(&self) -> &WorkspaceId {
+        &self.workspace_id
+    }
+
+    #[must_use]
+    pub const fn minimum_generation(&self) -> u64 {
+        self.minimum_generation
+    }
 }
 
 impl SqliteCustomerKmsKeyReferenceStore {
@@ -207,11 +235,13 @@ impl SqliteCustomerKmsKeyReferenceStore {
     pub fn restore_to(
         source: impl AsRef<Path>,
         destination: impl AsRef<Path>,
+        recovery_floors: &[CustomerKmsRecoveryFloor],
     ) -> Result<Self, ProviderError> {
         let source = source.as_ref();
         let destination = destination.as_ref();
         validate_private_database_file(source)?;
         verify_backup(source)?;
+        validate_recovery_floors(recovery_floors)?;
         if destination.exists() {
             return Err(ProviderError::Rejected(
                 "customer KMS restore destination already exists".to_owned(),
@@ -226,6 +256,7 @@ impl SqliteCustomerKmsKeyReferenceStore {
                 .map_err(|_| ProviderError::Unavailable)?;
             drop(connection);
             verify_backup(destination)?;
+            verify_recovery_floors(destination, recovery_floors)?;
             Self::open(destination)
         })();
         if result.is_err() {
@@ -233,6 +264,81 @@ impl SqliteCustomerKmsKeyReferenceStore {
         }
         result
     }
+}
+
+fn validate_recovery_floors(
+    recovery_floors: &[CustomerKmsRecoveryFloor],
+) -> Result<(), ProviderError> {
+    if recovery_floors.is_empty() || recovery_floors.len() > MAX_KMS_RECOVERY_WORKSPACES {
+        return Err(ProviderError::InvalidConfiguration(
+            "customer KMS recovery floors are empty or unbounded".to_owned(),
+        ));
+    }
+    for (index, floor) in recovery_floors.iter().enumerate() {
+        if recovery_floors[..index]
+            .iter()
+            .any(|earlier| earlier.workspace_id() == floor.workspace_id())
+        {
+            return Err(ProviderError::InvalidConfiguration(
+                "customer KMS recovery floors contain a duplicate workspace".to_owned(),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn verify_recovery_floors(
+    path: &Path,
+    recovery_floors: &[CustomerKmsRecoveryFloor],
+) -> Result<(), ProviderError> {
+    let connection = Connection::open(path).map_err(|_| ProviderError::Unavailable)?;
+    let mut statement = connection
+        .prepare(
+            "SELECT CASE WHEN length(workspace_id) BETWEEN 1 AND ?1
+                    THEN workspace_id END,
+                    generation
+             FROM customer_kms_key_references
+             WHERE is_active = 1
+             ORDER BY workspace_id
+             LIMIT ?2",
+        )
+        .map_err(|_| ProviderError::Unavailable)?;
+    let rows = statement
+        .query_map(
+            params![
+                MAX_KMS_WORKSPACE_ID_BYTES,
+                MAX_KMS_RECOVERY_WORKSPACES.saturating_add(1)
+            ],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, u64>(1)?)),
+        )
+        .map_err(|_| ProviderError::Unavailable)?;
+    let mut observed = Vec::new();
+    for row in rows {
+        observed.push(row.map_err(|_| ProviderError::Unavailable)?);
+    }
+    if observed.len() > MAX_KMS_RECOVERY_WORKSPACES || observed.len() != recovery_floors.len() {
+        return Err(ProviderError::Rejected(
+            "customer KMS recovery workspace set does not match trusted floors".to_owned(),
+        ));
+    }
+    for floor in recovery_floors {
+        let generation = observed
+            .iter()
+            .find_map(|(workspace, generation)| {
+                (workspace == floor.workspace_id().as_str()).then_some(*generation)
+            })
+            .ok_or_else(|| {
+                ProviderError::Rejected(
+                    "customer KMS recovery workspace is missing from snapshot".to_owned(),
+                )
+            })?;
+        if generation < floor.minimum_generation() {
+            return Err(ProviderError::Rejected(
+                "customer KMS snapshot violates a trusted generation floor".to_owned(),
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn verify_backup(path: &Path) -> Result<(), ProviderError> {
@@ -415,7 +521,7 @@ mod tests {
     };
     use zeroize::Zeroizing;
 
-    use super::SqliteCustomerKmsKeyReferenceStore;
+    use super::{CustomerKmsRecoveryFloor, SqliteCustomerKmsKeyReferenceStore};
 
     #[test]
     fn persists_active_and_historical_generations_per_workspace() {
@@ -723,8 +829,12 @@ mod tests {
             .unwrap();
         store.backup_to(&backup).unwrap();
 
-        let restored =
-            SqliteCustomerKmsKeyReferenceStore::restore_to(&backup, &restored_path).unwrap();
+        let restored = SqliteCustomerKmsKeyReferenceStore::restore_to(
+            &backup,
+            &restored_path,
+            &[CustomerKmsRecoveryFloor::new(workspace.clone(), 1).unwrap()],
+        )
+        .unwrap();
 
         assert_eq!(
             restored
@@ -755,10 +865,50 @@ mod tests {
             fs::set_permissions(path, fs::Permissions::from_mode(0o600)).unwrap();
         }
 
-        assert!(SqliteCustomerKmsKeyReferenceStore::restore_to(&source, &destination).is_err());
+        assert!(
+            SqliteCustomerKmsKeyReferenceStore::restore_to(
+                &source,
+                &destination,
+                &[CustomerKmsRecoveryFloor::new(WorkspaceId::new("workspace-a"), 1).unwrap()],
+            )
+            .is_err()
+        );
         assert_eq!(fs::read(&destination).unwrap(), b"preserve");
         fs::remove_file(source).unwrap();
         fs::remove_file(destination).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn restore_rejects_snapshot_below_trusted_generation_floor() {
+        let source = temporary_database_path("rollback-source");
+        let backup = temporary_database_path("rollback-backup");
+        let destination = temporary_database_path("rollback-target");
+        for path in [&source, &backup, &destination] {
+            let _ = fs::remove_file(path);
+        }
+        let store = SqliteCustomerKmsKeyReferenceStore::open(&source).unwrap();
+        let workspace = WorkspaceId::new("workspace-a");
+        store
+            .initialize_workspace(
+                &workspace,
+                &CustomerKmsKeyReference::new(1, "key-v1", vec![1]).unwrap(),
+            )
+            .unwrap();
+        store.backup_to(&backup).unwrap();
+
+        assert!(
+            SqliteCustomerKmsKeyReferenceStore::restore_to(
+                &backup,
+                &destination,
+                &[CustomerKmsRecoveryFloor::new(workspace, 2).unwrap()],
+            )
+            .is_err()
+        );
+        assert!(!destination.exists());
+        drop(store);
+        fs::remove_file(source).unwrap();
+        fs::remove_file(backup).unwrap();
     }
 
     #[test]
