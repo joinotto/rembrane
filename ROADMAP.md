@@ -760,6 +760,8 @@ This roadmap describes sequencing, not release dates.
       - [x] Reject compatibility locks that omit any reviewed artifact.
       - [x] Reject semantically rebound conformance evidence even when its
         attacker-modified hash is present in the lock.
+      - [x] Reject reordered conformance cases even when the modified result
+        digest is present in the lock.
     - [x] Bind profile, lifecycle fixture, result schema, and example evidence
       to exact reviewed profile and fixture identifiers.
       - [x] Require result case identity and order to match the reviewed
@@ -907,6 +909,8 @@ This roadmap describes sequencing, not release dates.
       across OpenAPI, discovery, conformance schema, and result fixture.
     - [x] Reject semantically rebound result evidence even when an updated
       digest matches the attacker-modified artifact.
+    - [x] Reject reordered result cases even when an updated digest matches
+      the attacker-modified artifact.
   - [x] Add transport-independent Rust manifest, negotiation, request, context,
     and response-limit contracts to the offline verification gate.
   - [x] Add a secret-safe black-box HTTP conformance runner.

@@ -102,4 +102,41 @@ then
     exit 1
 fi
 
+cp "$repository_root/spec/key-provider-compatibility-lock.json" \
+    "$test_root/spec/key-provider-compatibility-lock.json"
+jq '.cases = ([.cases[1], .cases[0]] + .cases[2:])' \
+    "$repository_root/spec/examples/key-provider-conformance-result.json" \
+    >"$test_root/spec/examples/key-provider-conformance-result.json"
+reordered_hash=$(
+    node -e '
+        const {createHash} = require("node:crypto");
+        const {readFileSync} = require("node:fs");
+        process.stdout.write(
+            createHash("sha256").update(readFileSync(process.argv[1])).digest("hex")
+        );
+    ' "$test_root/spec/examples/key-provider-conformance-result.json"
+)
+jq --arg hash "$reordered_hash" '
+    .artifacts |= map(
+        if .path == "spec/examples/key-provider-conformance-result.json"
+        then .sha256 = $hash
+        else .
+        end
+    )
+' "$repository_root/spec/key-provider-compatibility-lock.json" \
+    >"$test_root/spec/key-provider-compatibility-lock.json"
+if node "$test_root/scripts/verify-key-provider-compatibility.mjs" \
+    >"$test_root/reordered.stdout" 2>"$test_root/reordered.stderr"
+then
+    echo "key-provider compatibility verifier accepted reordered cases" >&2
+    exit 1
+fi
+if ! rg -F \
+    "conformance result fixture cases differ from the reviewed profile" \
+    "$test_root/reordered.stderr" >/dev/null
+then
+    echo "key-provider compatibility verifier missed reordered cases" >&2
+    exit 1
+fi
+
 echo "key provider compatibility tamper test passed"

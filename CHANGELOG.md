@@ -23,6 +23,7 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   evidence are rejected for both memory and key providers.
 - Exact ordered conformance-case binding between reviewed profiles and result
   evidence for memory and key providers.
+- Tamper tests for rehashed provider evidence with reordered security cases.
 - Required bounded key-provider build versions in discovery, Rust negotiation,
   HTTP decoding, fixtures, and portable conformance evidence.
 - A tamper-tested key-provider compatibility lock over reviewed OpenAPI,
