@@ -80,9 +80,9 @@ impl HttpGraphitiTransport {
     }
 
     fn post<Body: Serialize>(&self, endpoint: Url, body: &Body) -> Result<Response, ProviderError> {
-        let encoded = serde_json::to_vec(body).map_err(|_| {
+        let encoded = Zeroizing::new(serde_json::to_vec(body).map_err(|_| {
             ProviderError::InvalidConfiguration("Graphiti request could not be encoded".to_owned())
-        })?;
+        })?);
         if encoded.len() > MAX_GRAPHITI_REQUEST_BYTES {
             return Err(ProviderError::InvalidConfiguration(
                 "Graphiti request exceeds the transport limit".to_owned(),
@@ -93,7 +93,7 @@ impl HttpGraphitiTransport {
             .header(ACCEPT, "application/json")
             .header(CONTENT_TYPE, "application/json")
             .bearer_auth(self.bearer_token.as_str())
-            .body(encoded)
+            .body(bytes::Bytes::from_owner(encoded))
             .send()
             .map_err(|_| ProviderError::Unavailable)
     }

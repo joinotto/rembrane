@@ -656,6 +656,8 @@ This roadmap describes sequencing, not release dates.
       - [x] Add authenticated bounded HTTP transport with strict origin,
         credential, timeout, redirect, response-size, manifest, and response
         correlation validation.
+        - [x] Transfer serialized graph mutations and queries to HTTP through
+          zeroizing request-body ownership.
         - [x] Zeroize bounded raw Graphiti response bodies after typed
           decoding.
       - [x] Add executable Graphiti sidecar contract and integration tests.
@@ -1149,6 +1151,8 @@ This roadmap describes sequencing, not release dates.
   - [x] Define an object-safe transport-neutral Rust client boundary covering
     every portable operation and implement it for the authenticated HTTP
     transport.
+    - [x] Transfer serialized portable memory operations through zeroizing
+      request-body ownership.
     - [x] Zeroize bounded raw portable-provider responses after typed
       operation decoding.
     - [x] Include discovery and policy negotiation, and let configured

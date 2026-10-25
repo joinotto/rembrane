@@ -8,6 +8,7 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+bytes = "1"
 rembrane-domain = { path = "../../crates/rembrane-domain" }
 rembrane-graph-graphiti = { path = "../rembrane-graph-graphiti" }
 rembrane-provider-sdk = { path = "../../crates/rembrane-provider-sdk" }

@@ -9,6 +9,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- Graphiti and portable memory-provider HTTP requests now transfer serialized
+  memory and graph payloads through `Bytes` backed by zeroizing owners, keeping
+  the plaintext request allocation wipe-on-drop through transport ownership.
 - Graphiti, portable memory-provider, customer key-provider, and OAuth
   introspection HTTP transports now zeroize their bounded raw response buffers
   immediately after typed decoding.

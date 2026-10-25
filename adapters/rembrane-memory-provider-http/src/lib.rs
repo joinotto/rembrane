@@ -321,7 +321,7 @@ impl HttpMemoryProviderClient {
             .header(REQUEST_ID_HEADER, request_id)
             .header(PROTOCOL_VERSION_HEADER, "0.1")
             .bearer_auth(self.bearer_token.as_str())
-            .body(encoded)
+            .body(bytes::Bytes::from_owner(encoded))
             .build()
             .map_err(|_| ProviderError::Unavailable)
     }
@@ -403,12 +403,14 @@ impl MemoryProviderClient for HttpMemoryProviderClient {
     }
 }
 
-fn encode_operation_body<Body: Serialize>(body: &Body) -> Result<Vec<u8>, ProviderError> {
-    let encoded = serde_json::to_vec(body).map_err(|_| {
+fn encode_operation_body<Body: Serialize>(
+    body: &Body,
+) -> Result<Zeroizing<Vec<u8>>, ProviderError> {
+    let encoded = Zeroizing::new(serde_json::to_vec(body).map_err(|_| {
         ProviderError::InvalidConfiguration(
             "memory provider request could not be encoded".to_owned(),
         )
-    })?;
+    })?);
     if encoded.len() as u64 > MAXIMUM_OPERATION_BYTES {
         return Err(ProviderError::InvalidConfiguration(
             "memory provider request exceeds the transport limit".to_owned(),
