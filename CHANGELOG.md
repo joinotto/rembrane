@@ -75,6 +75,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - PostgreSQL canonical memory, event, checkpoint, travel, booking-research,
   and knowledge-graph mutations now reject foreign workspaces before
   validation, version or sequence checks, encryption, and pool access.
+- PostgreSQL canonical graph batches now authorize every projection job
+  before optimistic version checks or edge-lineage database reads.
 - PostgreSQL tenant-bound invitation mutations now reject foreign-workspace
   administrative audit evidence before acquiring a pooled transaction.
 - A strict portable key-provider conformance result schema and runner output

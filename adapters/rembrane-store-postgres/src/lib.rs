@@ -3158,6 +3158,13 @@ where
         node: KnowledgeNode,
         projections: Vec<GraphProjectionJob>,
     ) -> Result<(), ApplicationError> {
+        if node.workspace_id() != &self.workspace_id
+            || projections
+                .iter()
+                .any(|projection| projection.workspace_id() != &self.workspace_id)
+        {
+            return Err(ApplicationError::AccessDenied);
+        }
         persist_knowledge_node_with_projections(self, &node, None, &projections)
     }
 
@@ -3167,7 +3174,11 @@ where
         expected_version: u64,
         projections: Vec<GraphProjectionJob>,
     ) -> Result<(), ApplicationError> {
-        if node.workspace_id() != &self.workspace_id {
+        if node.workspace_id() != &self.workspace_id
+            || projections
+                .iter()
+                .any(|projection| projection.workspace_id() != &self.workspace_id)
+        {
             return Err(ApplicationError::AccessDenied);
         }
         if !is_strict_successor(expected_version, node.version()) {
@@ -3181,7 +3192,11 @@ where
         edge: KnowledgeEdge,
         projections: Vec<GraphProjectionJob>,
     ) -> Result<(), ApplicationError> {
-        if edge.workspace_id() != &self.workspace_id {
+        if edge.workspace_id() != &self.workspace_id
+            || projections
+                .iter()
+                .any(|projection| projection.workspace_id() != &self.workspace_id)
+        {
             return Err(ApplicationError::AccessDenied);
         }
         validate_knowledge_edge_lineage(self, &edge, None)?;
@@ -3194,7 +3209,11 @@ where
         expected_version: u64,
         projections: Vec<GraphProjectionJob>,
     ) -> Result<(), ApplicationError> {
-        if edge.workspace_id() != &self.workspace_id {
+        if edge.workspace_id() != &self.workspace_id
+            || projections
+                .iter()
+                .any(|projection| projection.workspace_id() != &self.workspace_id)
+        {
             return Err(ApplicationError::AccessDenied);
         }
         if !is_strict_successor(expected_version, edge.version()) {
@@ -3454,7 +3473,11 @@ where
     Pool::Error: ClassifiedPostgresError,
     Cipher: RecordCipher,
 {
-    if node.workspace_id() != &store.workspace_id {
+    if node.workspace_id() != &store.workspace_id
+        || projections
+            .iter()
+            .any(|projection| projection.workspace_id() != &store.workspace_id)
+    {
         return Err(ApplicationError::AccessDenied);
     }
     validate_graph_projection_batch(
@@ -3499,7 +3522,11 @@ where
     Pool::Error: ClassifiedPostgresError,
     Cipher: RecordCipher,
 {
-    if edge.workspace_id() != &store.workspace_id {
+    if edge.workspace_id() != &store.workspace_id
+        || projections
+            .iter()
+            .any(|projection| projection.workspace_id() != &store.workspace_id)
+    {
         return Err(ApplicationError::AccessDenied);
     }
     validate_graph_projection_batch(
@@ -9267,6 +9294,57 @@ mod tests {
                 memory_event,
                 vec![projection],
                 99,
+            ),
+            Err(ApplicationError::AccessDenied)
+        );
+    }
+
+    #[test]
+    fn tenant_cipher_store_authorizes_graph_projection_batches_before_lineage_or_versions() {
+        let store = PostgresStore::new(NeverBeginPool);
+        let tenant = store.for_workspace(WorkspaceId::new("workspace_01"));
+        let cipher = IdentityCipher;
+        let mut repository = tenant.with_cipher(&cipher);
+
+        let node = knowledge_node(
+            "node_projection_boundary",
+            KnowledgeNodeKind::Project,
+            "Projection boundary",
+        );
+        let foreign_node_projection = GraphProjectionJob::new(
+            ProjectionJobId::new("graph_projection_foreign_node"),
+            WorkspaceId::new("workspace_other"),
+            GraphProjectionResource::Node(node.id().clone()),
+            node.version(),
+            ProviderId::new("provider_graphiti"),
+            ProjectionOperation::Upsert,
+        )
+        .expect("foreign node projection");
+        assert_eq!(
+            CanonicalGraphMutationRepository::replace_knowledge_node_with_projections(
+                &mut repository,
+                node,
+                99,
+                vec![foreign_node_projection],
+            ),
+            Err(ApplicationError::AccessDenied)
+        );
+
+        let edge = knowledge_edge();
+        let foreign_edge_projection = GraphProjectionJob::new(
+            ProjectionJobId::new("graph_projection_foreign_edge"),
+            WorkspaceId::new("workspace_other"),
+            GraphProjectionResource::Edge(edge.id().clone()),
+            edge.version(),
+            ProviderId::new("provider_graphiti"),
+            ProjectionOperation::Upsert,
+        )
+        .expect("foreign edge projection");
+        assert_eq!(
+            CanonicalGraphMutationRepository::insert_knowledge_edge_with_projections(
+                &mut repository,
+                edge,
+                vec![foreign_edge_projection],
             ),
             Err(ApplicationError::AccessDenied)
         );

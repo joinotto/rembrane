@@ -383,6 +383,9 @@ This roadmap describes sequencing, not release dates.
       - [x] Authorize foreign-workspace canonical, checkpoint, travel, event,
         and graph mutations before structural validation, optimistic
         concurrency checks, encryption, or pooled transaction acquisition.
+        - [x] Authorize every graph projection job in a canonical node or edge
+          batch before version checks, lineage reads, encryption, or pool
+          access.
       - [x] Reject foreign-workspace administrative audit evidence across
         tenant-bound invitation creation, acceptance, and revocation before
         transaction acquisition.
