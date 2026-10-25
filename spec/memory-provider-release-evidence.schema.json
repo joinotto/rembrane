@@ -14,6 +14,8 @@
     "compatibilityLockSha256",
     "migrationNotesSha256",
     "mixedVersionEvidenceSha256",
+    "externalResultSignatureSha256",
+    "externalPublicKeySha256",
     "providers"
   ],
   "properties": {
@@ -51,6 +53,14 @@
       "pattern": "^[0-9a-f]{64}$"
     },
     "mixedVersionEvidenceSha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "externalResultSignatureSha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "externalPublicKeySha256": {
       "type": "string",
       "pattern": "^[0-9a-f]{64}$"
     },

@@ -33,6 +33,12 @@ jq --arg profile "$profile_sha256" --arg fixture "$fixture_sha256" \
      | .namespace = "package-provider-b"' \
     "$repository_root/spec/examples/memory-provider-conformance-result.json" \
     >"$test_root/provider-b.json"
+openssl genpkey -algorithm Ed25519 \
+    -out "$test_root/external-private.pem" >/dev/null 2>&1
+openssl pkey -in "$test_root/external-private.pem" -pubout \
+    -out "$test_root/external-public.pem" >/dev/null 2>&1
+openssl pkeyutl -sign -inkey "$test_root/external-private.pem" -rawin \
+    -in "$test_root/provider-b.json" -out "$test_root/provider-b.json.sig"
 
 packager="$repository_root/scripts/package-memory-provider-release-evidence.mjs"
 node "$packager" \
@@ -47,11 +53,13 @@ node "$packager" \
     "$test_root/provider-b.json" \
     external \
     independent-provider-maintainer \
-    3333333333333333333333333333333333333333 >/dev/null
+    3333333333333333333333333333333333333333 \
+    "$test_root/provider-b.json.sig" \
+    "$test_root/external-public.pem" >/dev/null
 
 node "$repository_root/scripts/verify-memory-provider-release-evidence.mjs" \
-    "$test_root/evidence" >/dev/null
-test "$(find "$test_root/evidence" -type f | wc -l | tr -d ' ')" -eq 6
+    "$test_root/evidence" "$test_root/external-public.pem" >/dev/null
+test "$(find "$test_root/evidence" -type f | wc -l | tr -d ' ')" -eq 7
 if stat -f '%Lp' "$test_root/evidence" >/dev/null 2>&1; then
     directory_mode=$(stat -f '%Lp' "$test_root/evidence")
 else
@@ -81,7 +89,9 @@ if node "$packager" \
     "$test_root/provider-b.json" \
     external \
     independent-provider-maintainer \
-    3333333333333333333333333333333333333333 >/dev/null 2>&1
+    3333333333333333333333333333333333333333 \
+    "$test_root/provider-b.json.sig" \
+    "$test_root/external-public.pem" >/dev/null 2>&1
 then
     echo "release packager overwrote an existing evidence directory" >&2
     exit 1
@@ -100,7 +110,9 @@ if node "$packager" \
     "$test_root/provider-b-link.json" \
     external \
     independent-provider-maintainer \
-    3333333333333333333333333333333333333333 >/dev/null 2>&1
+    3333333333333333333333333333333333333333 \
+    "$test_root/provider-b.json.sig" \
+    "$test_root/external-public.pem" >/dev/null 2>&1
 then
     echo "release packager accepted symbolic provider evidence" >&2
     exit 1
@@ -109,6 +121,9 @@ test ! -e "$test_root/symbolic"
 
 printf '%s\n' '{"not":"a conformance result"}' \
     >"$test_root/invalid-provider.json"
+openssl pkeyutl -sign -inkey "$test_root/external-private.pem" -rawin \
+    -in "$test_root/invalid-provider.json" \
+    -out "$test_root/invalid-provider.json.sig"
 if node "$packager" \
     "$test_root/verification-failure" \
     1111111111111111111111111111111111111111 \
@@ -121,7 +136,9 @@ if node "$packager" \
     "$test_root/invalid-provider.json" \
     external \
     independent-provider-maintainer \
-    3333333333333333333333333333333333333333 >/dev/null 2>&1
+    3333333333333333333333333333333333333333 \
+    "$test_root/invalid-provider.json.sig" \
+    "$test_root/external-public.pem" >/dev/null 2>&1
 then
     echo "release packager accepted an invalid provider result" >&2
     exit 1

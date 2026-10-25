@@ -841,6 +841,8 @@ This roadmap describes sequencing, not release dates.
         clean release revision in strict production readiness.
       - [x] Package exact two-provider release evidence through a
         non-overwriting, symlink-rejecting, self-verifying local tool.
+      - [x] Replace self-asserted external provenance with a detached provider
+        result signature under an operator-selected Ed25519 trust anchor.
   - [x] Add a machine-verifiable compatibility lock over the canonical wire
     schemas, HTTP binding, conformance profile, and lifecycle fixtures so
     protocol changes require explicit review.

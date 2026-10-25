@@ -10,6 +10,10 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 mkdir -p "$evidence_root"
+openssl genpkey -algorithm Ed25519 \
+    -out "$test_root/external-private.pem" >/dev/null 2>&1
+openssl pkey -in "$test_root/external-private.pem" -pubout \
+    -out "$test_root/external-public.pem" >/dev/null 2>&1
 cp "$repository_root/spec/memory-provider-compatibility-lock.json" \
     "$evidence_root/compatibility-lock.json"
 cp "$repository_root/spec/MEMORY_PROVIDER_0.1_TO_1.0_MIGRATION.md" \
@@ -42,6 +46,9 @@ jq --arg profile "$profile_sha256" --arg fixture "$fixture_sha256" \
      | .namespace = "release-provider-b"' \
     "$repository_root/spec/examples/memory-provider-conformance-result.json" \
     >"$evidence_root/provider-b.json"
+openssl pkeyutl -sign -inkey "$test_root/external-private.pem" -rawin \
+    -in "$evidence_root/provider-b.json" \
+    -out "$evidence_root/provider-b.json.sig"
 
 mixed_sha256=$(openssl dgst -sha256 "$evidence_root/mixed-version.json" |
     awk '{print $NF}')
@@ -53,6 +60,10 @@ provider_a_sha256=$(openssl dgst -sha256 "$evidence_root/provider-a.json" |
     awk '{print $NF}')
 provider_b_sha256=$(openssl dgst -sha256 "$evidence_root/provider-b.json" |
     awk '{print $NF}')
+signature_sha256=$(openssl dgst -sha256 \
+    "$evidence_root/provider-b.json.sig" | awk '{print $NF}')
+public_key_sha256=$(openssl dgst -sha256 "$test_root/external-public.pem" |
+    awk '{print $NF}')
 jq \
     --arg profile "$profile_sha256" \
     --arg fixture "$fixture_sha256" \
@@ -62,21 +73,34 @@ jq \
     --arg mixed "$mixed_sha256" \
     --arg provider_a "$provider_a_sha256" \
     --arg provider_b "$provider_b_sha256" \
+    --arg signature "$signature_sha256" \
+    --arg public_key "$public_key_sha256" \
     '.profileSha256 = $profile
      | .fixtureSha256 = $fixture
      | .candidateSourceRevision = $revision
      | .compatibilityLockSha256 = $lock
      | .migrationNotesSha256 = $migration
      | .mixedVersionEvidenceSha256 = $mixed
+     | .externalResultSignatureSha256 = $signature
+     | .externalPublicKeySha256 = $public_key
      | .providers[0].resultSha256 = $provider_a
      | .providers[1].resultSha256 = $provider_b' \
     "$repository_root/spec/examples/memory-provider-release-evidence.json" \
     >"$evidence_root/manifest.json"
 
 verifier="$repository_root/scripts/verify-memory-provider-release-evidence.mjs"
-node "$verifier" "$evidence_root" >/dev/null
+verify() {
+    evidence=$1
+    option=${2:-}
+    if [ -n "$option" ]; then
+        node "$verifier" "$evidence" "$test_root/external-public.pem" "$option"
+    else
+        node "$verifier" "$evidence" "$test_root/external-public.pem"
+    fi
+}
+node "$verifier" "$evidence_root" "$test_root/external-public.pem" >/dev/null
 
-if node "$verifier" "$evidence_root" --verify-repository >/dev/null 2>&1; then
+if verify "$evidence_root" --verify-repository >/dev/null 2>&1; then
     echo "release evidence accepted a different repository revision" >&2
     exit 1
 fi
@@ -85,7 +109,7 @@ cp -R "$evidence_root" "$test_root/no-external"
 jq '.providers[1].origin = "in-repository"' \
     "$test_root/no-external/manifest.json" >"$test_root/manifest.next"
 mv "$test_root/manifest.next" "$test_root/no-external/manifest.json"
-if node "$verifier" "$test_root/no-external" >/dev/null 2>&1; then
+if verify "$test_root/no-external" >/dev/null 2>&1; then
     echo "release evidence accepted no external provider" >&2
     exit 1
 fi
@@ -99,8 +123,22 @@ new_digest=$(openssl dgst -sha256 \
 jq --arg digest "$new_digest" '.providers[1].resultSha256 = $digest' \
     "$test_root/reused-provider/manifest.json" >"$test_root/manifest.next"
 mv "$test_root/manifest.next" "$test_root/reused-provider/manifest.json"
-if node "$verifier" "$test_root/reused-provider" >/dev/null 2>&1; then
+if verify "$test_root/reused-provider" >/dev/null 2>&1; then
     echo "release evidence accepted duplicate provider identity" >&2
+    exit 1
+fi
+
+cp -R "$evidence_root" "$test_root/forged-external"
+jq '.provider.version = "forged"' \
+    "$test_root/forged-external/provider-b.json" >"$test_root/provider.next"
+mv "$test_root/provider.next" "$test_root/forged-external/provider-b.json"
+new_digest=$(openssl dgst -sha256 \
+    "$test_root/forged-external/provider-b.json" | awk '{print $NF}')
+jq --arg digest "$new_digest" '.providers[1].resultSha256 = $digest' \
+    "$test_root/forged-external/manifest.json" >"$test_root/manifest.next"
+mv "$test_root/manifest.next" "$test_root/forged-external/manifest.json"
+if verify "$test_root/forged-external" >/dev/null 2>&1; then
+    echo "release evidence accepted a forged external provider result" >&2
     exit 1
 fi
 
@@ -113,7 +151,7 @@ new_digest=$(openssl dgst -sha256 "$test_root/reordered/provider-a.json" |
 jq --arg digest "$new_digest" '.providers[0].resultSha256 = $digest' \
     "$test_root/reordered/manifest.json" >"$test_root/manifest.next"
 mv "$test_root/manifest.next" "$test_root/reordered/manifest.json"
-if node "$verifier" "$test_root/reordered" >/dev/null 2>&1; then
+if verify "$test_root/reordered" >/dev/null 2>&1; then
     echo "release evidence accepted reordered conformance cases" >&2
     exit 1
 fi
@@ -125,7 +163,7 @@ new_digest=$(openssl dgst -sha256 \
 jq --arg digest "$new_digest" '.compatibilityLockSha256 = $digest' \
     "$test_root/substituted-lock/manifest.json" >"$test_root/manifest.next"
 mv "$test_root/manifest.next" "$test_root/substituted-lock/manifest.json"
-if node "$verifier" "$test_root/substituted-lock" >/dev/null 2>&1; then
+if verify "$test_root/substituted-lock" >/dev/null 2>&1; then
     echo "release evidence accepted a substituted compatibility lock" >&2
     exit 1
 fi
@@ -137,13 +175,13 @@ new_digest=$(openssl dgst -sha256 \
 jq --arg digest "$new_digest" '.migrationNotesSha256 = $digest' \
     "$test_root/substituted-migration/manifest.json" >"$test_root/manifest.next"
 mv "$test_root/manifest.next" "$test_root/substituted-migration/manifest.json"
-if node "$verifier" "$test_root/substituted-migration" >/dev/null 2>&1; then
+if verify "$test_root/substituted-migration" >/dev/null 2>&1; then
     echo "release evidence accepted substituted migration notes" >&2
     exit 1
 fi
 
 touch "$evidence_root/notes.txt"
-if node "$verifier" "$evidence_root" >/dev/null 2>&1; then
+if verify "$evidence_root" >/dev/null 2>&1; then
     echo "release evidence accepted an undeclared artifact" >&2
     exit 1
 fi

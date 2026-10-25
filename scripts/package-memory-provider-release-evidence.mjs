@@ -26,6 +26,8 @@ const [
   providerBOrigin,
   providerBMaintainer,
   providerBSourceRevision,
+  providerBSignatureInput,
+  externalPublicKeyInput,
 ] = process.argv.slice(2);
 if (
   !outputInput ||
@@ -39,10 +41,12 @@ if (
   !providerBInput ||
   !providerBOrigin ||
   !providerBMaintainer ||
-  !providerBSourceRevision
+  !providerBSourceRevision ||
+  !providerBSignatureInput ||
+  !externalPublicKeyInput
 ) {
   throw new Error(
-    "usage: package-memory-provider-release-evidence.mjs OUTPUT SOURCE_REVISION GENERATED_AT MIXED_VERSION PROVIDER_A_RESULT PROVIDER_A_ORIGIN PROVIDER_A_MAINTAINER PROVIDER_A_REVISION PROVIDER_B_RESULT PROVIDER_B_ORIGIN PROVIDER_B_MAINTAINER PROVIDER_B_REVISION",
+    "usage: package-memory-provider-release-evidence.mjs OUTPUT SOURCE_REVISION GENERATED_AT MIXED_VERSION PROVIDER_A_RESULT PROVIDER_A_ORIGIN PROVIDER_A_MAINTAINER PROVIDER_A_REVISION PROVIDER_B_RESULT external PROVIDER_B_MAINTAINER PROVIDER_B_REVISION PROVIDER_B_SIGNATURE EXTERNAL_PUBLIC_KEY",
   );
 }
 
@@ -58,6 +62,16 @@ const providerB = readBoundedFile(
   providerBInput,
   128 * 1024,
   "provider-b result",
+);
+const providerBSignature = readBoundedFile(
+  providerBSignatureInput,
+  64,
+  "provider-b signature",
+);
+const externalPublicKey = readBoundedFile(
+  externalPublicKeyInput,
+  16 * 1024,
+  "external public key",
 );
 const lockPath = join(
   repositoryRoot,
@@ -119,6 +133,8 @@ const manifest = {
   compatibilityLockSha256: sha256(lock),
   migrationNotesSha256: sha256(migration),
   mixedVersionEvidenceSha256: sha256(mixed),
+  externalResultSignatureSha256: sha256(providerBSignature),
+  externalPublicKeySha256: sha256(externalPublicKey),
   providers: [
     {
       slot: "provider-a",
@@ -146,6 +162,7 @@ try {
   copyBytes(mixed, join(output, "mixed-version.json"));
   copyBytes(providerA, join(output, "provider-a.json"));
   copyBytes(providerB, join(output, "provider-b.json"));
+  copyBytes(providerBSignature, join(output, "provider-b.json.sig"));
   writeFileSync(
     join(output, "manifest.json"),
     `${JSON.stringify(manifest, null, 2)}\n`,
@@ -160,6 +177,7 @@ try {
         "scripts/verify-memory-provider-release-evidence.mjs",
       ),
       output,
+      resolve(process.cwd(), externalPublicKeyInput),
     ],
     { encoding: "utf8" },
   );

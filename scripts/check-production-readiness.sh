@@ -81,12 +81,15 @@ else
     require_or_skip "AWS/Azure/GCP customer-KMS evidence set" 0 || true
 fi
 
-if [ -n "${REMBRANE_MEMORY_PROVIDER_EVIDENCE_DIRECTORY:-}" ]; then
+if [ -n "${REMBRANE_MEMORY_PROVIDER_EVIDENCE_DIRECTORY:-}" ] &&
+    [ -n "${REMBRANE_MEMORY_PROVIDER_EXTERNAL_PUBLIC_KEY:-}" ]
+then
     node ./scripts/verify-memory-provider-release-evidence.mjs \
         "$REMBRANE_MEMORY_PROVIDER_EVIDENCE_DIRECTORY" \
+        "$REMBRANE_MEMORY_PROVIDER_EXTERNAL_PUBLIC_KEY" \
         --verify-repository
 else
-    require_or_skip "two-provider protocol release evidence set" 0 || true
+    require_or_skip "signed two-provider protocol release evidence set" 0 || true
 fi
 
 if [ -n "$missing" ]; then

@@ -8,6 +8,7 @@ REMBRANE_SECURITY_REVIEW_BUNDLE=/secure/review-bundle \
 REMBRANE_SECURITY_REVIEW_PUBLIC_KEY=/secure/reviewer-public.pem \
 REMBRANE_CUSTOMER_KMS_EVIDENCE_DIRECTORY=/secure/kms-provider-evidence \
 REMBRANE_MEMORY_PROVIDER_EVIDENCE_DIRECTORY=/secure/memory-provider-evidence \
+REMBRANE_MEMORY_PROVIDER_EXTERNAL_PUBLIC_KEY=/secure/external-provider-maintainer.pem \
   ./scripts/check-production-readiness.sh --strict
 ```
 
@@ -21,7 +22,9 @@ Memory Provider release-evidence directory containing two independent passing
 providers, at least one externally maintained provider, and mixed-version
 compatibility evidence. Both the independent review and provider evidence must
 name the exact clean repository `HEAD`; evidence for an older or dirty source
-tree is rejected. A structurally valid signed review with
+tree is rejected. The external provider result must carry a detached Ed25519
+signature valid under the separately supplied maintainer trust anchor; an
+`"external"` label alone is not evidence. A structurally valid signed review with
 `changes_required` remains inspectable, but strict readiness accepts only
 `approved` or `approved_with_accepted_risks`.
 
@@ -48,7 +51,9 @@ node scripts/package-memory-provider-release-evidence.mjs \
   /secure/runs/provider-a.json \
   in-repository rembrane-maintainers <provider-a-source-revision> \
   /secure/runs/provider-b.json \
-  external <external-maintainer-id> <provider-b-source-revision>
+  external <external-maintainer-id> <provider-b-source-revision> \
+  /secure/runs/provider-b.json.sig \
+  /secure/external-provider-maintainer.pem
 ```
 
 Use the actual UTC packaging time. The destination must not exist. The tool

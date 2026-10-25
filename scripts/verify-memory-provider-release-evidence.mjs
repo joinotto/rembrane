@@ -4,11 +4,15 @@ import { lstatSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const input = process.argv[2];
-const verifyRepository = process.argv.slice(3).includes("--verify-repository");
-if (!input) {
+const [input, externalPublicKeyInput, ...options] = process.argv.slice(2);
+const verifyRepository = options.includes("--verify-repository");
+if (
+  !input ||
+  !externalPublicKeyInput ||
+  options.some((option) => option !== "--verify-repository")
+) {
   throw new Error(
-    "usage: verify-memory-provider-release-evidence.mjs EVIDENCE_DIRECTORY",
+    "usage: verify-memory-provider-release-evidence.mjs EVIDENCE_DIRECTORY EXTERNAL_PUBLIC_KEY [--verify-repository]",
   );
 }
 
@@ -22,6 +26,7 @@ requireExactEntries(root, [
   "mixed-version.json",
   "provider-a.json",
   "provider-b.json",
+  "provider-b.json.sig",
 ]);
 
 const manifestBytes = readBoundedFile(
@@ -56,6 +61,17 @@ const profileBytes = readFileSync(
 const fixtureBytes = readFileSync(
   join(repositoryRoot, "spec/conformance/memory-provider-core-fixtures.json"),
 );
+const externalPublicKeyPath = resolve(process.cwd(), externalPublicKeyInput);
+const externalPublicKeyBytes = readBoundedFile(
+  externalPublicKeyPath,
+  16 * 1024,
+  "external public key",
+);
+const externalSignatureBytes = readBoundedFile(
+  join(root, "provider-b.json.sig"),
+  64,
+  "external provider signature",
+);
 const profile = JSON.parse(profileBytes.toString("utf8"));
 const manifest = parseObject(manifestBytes, "manifest");
 
@@ -63,6 +79,8 @@ requireExactKeys(manifest, [
   "candidateProtocolVersion",
   "candidateSourceRevision",
   "compatibilityLockSha256",
+  "externalPublicKeySha256",
+  "externalResultSignatureSha256",
   "fixtureSha256",
   "generatedAt",
   "mixedVersionEvidenceSha256",
@@ -81,6 +99,8 @@ if (
     parseObject(packagedLockBytes, "compatibility lock").protocolVersion ||
   manifest.profileSha256 !== sha256(profileBytes) ||
   manifest.fixtureSha256 !== sha256(fixtureBytes) ||
+  manifest.externalPublicKeySha256 !== sha256(externalPublicKeyBytes) ||
+  manifest.externalResultSignatureSha256 !== sha256(externalSignatureBytes) ||
   manifest.compatibilityLockSha256 !== sha256(packagedLockBytes) ||
   manifest.migrationNotesSha256 !== sha256(packagedMigrationBytes) ||
   !packagedLockBytes.equals(canonicalLockBytes) ||
@@ -139,7 +159,7 @@ for (const [index, provider] of manifest.providers.entries()) {
   const expectedSlot = `provider-${index === 0 ? "a" : "b"}`;
   if (
     provider.slot !== expectedSlot ||
-    !["in-repository", "external"].includes(provider.origin) ||
+    provider.origin !== (index === 0 ? "in-repository" : "external") ||
     !safeText(provider.maintainerId, 200) ||
     !/^[0-9a-f]{40}$/.test(provider.sourceRevision) ||
     maintainers.has(provider.maintainerId)
@@ -173,6 +193,26 @@ if (externalProviders < 1) {
   throw new Error(
     "memory-provider release evidence requires an external provider",
   );
+}
+
+const signatureVerification = spawnSync(
+  "openssl",
+  [
+    "pkeyutl",
+    "-verify",
+    "-pubin",
+    "-inkey",
+    externalPublicKeyPath,
+    "-rawin",
+    "-in",
+    join(root, "provider-b.json"),
+    "-sigfile",
+    join(root, "provider-b.json.sig"),
+  ],
+  { encoding: "utf8" },
+);
+if (signatureVerification.status !== 0) {
+  throw new Error("external provider result signature is invalid");
 }
 
 process.stdout.write("memory-provider release evidence set verified\n");
