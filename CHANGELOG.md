@@ -72,6 +72,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - PostgreSQL disclosure persistence now reports a foreign workspace as
   non-enumerating access denial before pool access instead of conflating it
   with malformed receipt validation.
+- PostgreSQL canonical memory, event, checkpoint, travel, booking-research,
+  and knowledge-graph mutations now reject foreign workspaces before
+  validation, version or sequence checks, encryption, and pool access.
 - A strict portable key-provider conformance result schema and runner output
   containing provider identity and explicit pass evidence for eight
   authentication, encryption, limit, rotation, and replay cases.

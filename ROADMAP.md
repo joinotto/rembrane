@@ -380,6 +380,9 @@ This roadmap describes sequencing, not release dates.
         graph, event, and projection reads.
       - [x] Classify foreign-workspace disclosure writes as access denial
         before transaction acquisition rather than input validation.
+      - [x] Authorize foreign-workspace canonical, checkpoint, travel, event,
+        and graph mutations before structural validation, optimistic
+        concurrency checks, encryption, or pooled transaction acquisition.
       - [x] Add tenant-visible principal lookup with exact identity
         correlation under the membership-mediated RLS policy.
       - [x] Add tenant-verified membership insert and lifecycle replacement

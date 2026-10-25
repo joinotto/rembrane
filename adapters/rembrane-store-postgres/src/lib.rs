@@ -3109,6 +3109,9 @@ where
         node: KnowledgeNode,
         expected_version: u64,
     ) -> Result<(), ApplicationError> {
+        if node.workspace_id() != &self.workspace_id {
+            return Err(ApplicationError::AccessDenied);
+        }
         if !is_strict_successor(expected_version, node.version()) {
             return Err(ApplicationError::VersionConflict);
         }
@@ -3116,6 +3119,9 @@ where
     }
 
     fn insert_knowledge_edge(&mut self, edge: KnowledgeEdge) -> Result<(), ApplicationError> {
+        if edge.workspace_id() != &self.workspace_id {
+            return Err(ApplicationError::AccessDenied);
+        }
         validate_knowledge_edge_lineage(self, &edge, None)?;
         persist_knowledge_edge(self, &edge, None)
     }
@@ -3125,6 +3131,9 @@ where
         edge: KnowledgeEdge,
         expected_version: u64,
     ) -> Result<(), ApplicationError> {
+        if edge.workspace_id() != &self.workspace_id {
+            return Err(ApplicationError::AccessDenied);
+        }
         if !is_strict_successor(expected_version, edge.version()) {
             return Err(ApplicationError::VersionConflict);
         }
@@ -3155,6 +3164,9 @@ where
         expected_version: u64,
         projections: Vec<GraphProjectionJob>,
     ) -> Result<(), ApplicationError> {
+        if node.workspace_id() != &self.workspace_id {
+            return Err(ApplicationError::AccessDenied);
+        }
         if !is_strict_successor(expected_version, node.version()) {
             return Err(ApplicationError::VersionConflict);
         }
@@ -3166,6 +3178,9 @@ where
         edge: KnowledgeEdge,
         projections: Vec<GraphProjectionJob>,
     ) -> Result<(), ApplicationError> {
+        if edge.workspace_id() != &self.workspace_id {
+            return Err(ApplicationError::AccessDenied);
+        }
         validate_knowledge_edge_lineage(self, &edge, None)?;
         persist_knowledge_edge_with_projections(self, &edge, None, &projections)
     }
@@ -3176,6 +3191,9 @@ where
         expected_version: u64,
         projections: Vec<GraphProjectionJob>,
     ) -> Result<(), ApplicationError> {
+        if edge.workspace_id() != &self.workspace_id {
+            return Err(ApplicationError::AccessDenied);
+        }
         if !is_strict_successor(expected_version, edge.version()) {
             return Err(ApplicationError::VersionConflict);
         }
@@ -3783,10 +3801,12 @@ where
         event: CanonicalEvent,
         expected_previous_sequence: u64,
     ) -> Result<(), ApplicationError> {
-        validate_booking_research_event(&research, &event)?;
-        if research.workspace_id() != &self.workspace_id {
+        if research.workspace_id() != &self.workspace_id
+            || event.workspace_id() != &self.workspace_id
+        {
             return Err(ApplicationError::AccessDenied);
         }
+        validate_booking_research_event(&research, &event)?;
         if !is_strict_successor(expected_previous_sequence, event.sequence()) {
             return Err(ApplicationError::SequenceConflict);
         }
@@ -3857,9 +3877,6 @@ where
         event: CanonicalEvent,
         expected_previous_sequence: u64,
     ) -> Result<(), ApplicationError> {
-        if !is_strict_successor(expected_trip_version, trip.version()) {
-            return Err(ApplicationError::VersionConflict);
-        }
         persist_trip_mutation(
             self,
             &trip,
@@ -3883,10 +3900,15 @@ where
     <Pool::Transaction as PostgresTransaction>::Row: PostgresRow<Error = Pool::Error>,
     Cipher: RecordCipher,
 {
-    validate_trip_event(trip, event, expected_trip_version.is_some())?;
-    if trip.workspace_id() != &store.workspace_id {
+    if trip.workspace_id() != &store.workspace_id || event.workspace_id() != &store.workspace_id {
         return Err(ApplicationError::AccessDenied);
     }
+    if expected_trip_version
+        .is_some_and(|expected_version| !is_strict_successor(expected_version, trip.version()))
+    {
+        return Err(ApplicationError::VersionConflict);
+    }
+    validate_trip_event(trip, event, expected_trip_version.is_some())?;
     if !is_strict_successor(expected_previous_sequence, event.sequence()) {
         return Err(ApplicationError::SequenceConflict);
     }
@@ -3959,9 +3981,6 @@ where
         event: CanonicalEvent,
         expected_previous_sequence: u64,
     ) -> Result<(), ApplicationError> {
-        if !is_strict_successor(expected_checkpoint_version, checkpoint.version()) {
-            return Err(ApplicationError::VersionConflict);
-        }
         persist_checkpoint_mutation(
             self,
             &checkpoint,
@@ -4468,10 +4487,17 @@ where
     <Pool::Transaction as PostgresTransaction>::Row: PostgresRow<Error = Pool::Error>,
     Cipher: RecordCipher,
 {
-    validate_checkpoint_event(checkpoint, event)?;
-    if checkpoint.workspace_id() != &store.workspace_id {
+    if checkpoint.workspace_id() != &store.workspace_id
+        || event.workspace_id() != &store.workspace_id
+    {
         return Err(ApplicationError::AccessDenied);
     }
+    if expected_checkpoint_version.is_some_and(|expected_version| {
+        !is_strict_successor(expected_version, checkpoint.version())
+    }) {
+        return Err(ApplicationError::VersionConflict);
+    }
+    validate_checkpoint_event(checkpoint, event)?;
     if !is_strict_successor(expected_previous_sequence, event.sequence()) {
         return Err(ApplicationError::SequenceConflict);
     }
@@ -4534,9 +4560,10 @@ where
         event: CanonicalEvent,
         expected_previous_sequence: u64,
     ) -> Result<(), ApplicationError> {
-        if event.workspace_id() != &self.workspace_id
-            || !is_strict_successor(expected_previous_sequence, event.sequence())
-        {
+        if event.workspace_id() != &self.workspace_id {
+            return Err(ApplicationError::AccessDenied);
+        }
+        if !is_strict_successor(expected_previous_sequence, event.sequence()) {
             return Err(ApplicationError::SequenceConflict);
         }
         let plaintext = encode_event(&event).map_err(|_| ApplicationError::StorageUnavailable)?;
@@ -4676,9 +4703,6 @@ where
         projections: Vec<ProjectionJob>,
         expected_previous_sequence: u64,
     ) -> Result<(), ApplicationError> {
-        if !is_strict_successor(expected_memory_version, memory.version()) {
-            return Err(ApplicationError::VersionConflict);
-        }
         persist_memory_mutation(
             self,
             &memory,
@@ -4704,10 +4728,21 @@ where
     <Pool::Transaction as PostgresTransaction>::Row: PostgresRow<Error = Pool::Error>,
     Cipher: RecordCipher,
 {
-    validate_memory_mutation(memory, event, projections)?;
     if memory.workspace_id() != &store.workspace_id
-        || !is_strict_successor(expected_previous_sequence, event.sequence())
+        || event.workspace_id() != &store.workspace_id
+        || projections
+            .iter()
+            .any(|projection| projection.workspace_id() != &store.workspace_id)
     {
+        return Err(ApplicationError::AccessDenied);
+    }
+    if expected_memory_version
+        .is_some_and(|expected_version| !is_strict_successor(expected_version, memory.version()))
+    {
+        return Err(ApplicationError::VersionConflict);
+    }
+    validate_memory_mutation(memory, event, projections)?;
+    if !is_strict_successor(expected_previous_sequence, event.sequence()) {
         return Err(ApplicationError::SequenceConflict);
     }
     let memory_plaintext =
@@ -8986,6 +9021,187 @@ mod tests {
 
         assert_eq!(
             DisclosureRepository::append(&mut repository, receipt),
+            Err(ApplicationError::AccessDenied)
+        );
+    }
+
+    #[test]
+    #[allow(clippy::too_many_lines)]
+    fn tenant_cipher_store_authorizes_foreign_mutations_before_validation_or_concurrency() {
+        let other = WorkspaceId::new("workspace_other");
+        let principal = PrincipalId::new("principal_01");
+        let store = PostgresStore::new(NeverBeginPool);
+        let tenant = store.for_workspace(WorkspaceId::new("workspace_01"));
+        let cipher = IdentityCipher;
+        let mut repository = tenant.with_cipher(&cipher);
+
+        let standalone_event = CanonicalEvent::new(
+            EventId::new("event_foreign"),
+            other.clone(),
+            principal.clone(),
+            Some(principal.clone()),
+            1,
+            EventPayload::MemoryCreated {
+                memory_id: MemoryId::new("memory_foreign"),
+                version: 1,
+            },
+        )
+        .expect("foreign event");
+        assert_eq!(
+            EventRepository::append_event(&mut repository, standalone_event, 99),
+            Err(ApplicationError::AccessDenied)
+        );
+
+        let checkpoint = ActivityCheckpoint::new(
+            CheckpointId::new("checkpoint_foreign"),
+            other.clone(),
+            principal.clone(),
+            ActivityId::new("activity_foreign"),
+            None,
+            "Continue foreign work",
+            "Foreign checkpoint state",
+            Vec::new(),
+            Vec::new(),
+        )
+        .expect("foreign checkpoint");
+        let checkpoint_event = CanonicalEvent::new(
+            EventId::new("event_checkpoint_foreign"),
+            other.clone(),
+            principal.clone(),
+            Some(principal.clone()),
+            1,
+            EventPayload::ActivityCheckpointed {
+                activity_id: ActivityId::new("activity_foreign"),
+                version: 1,
+            },
+        )
+        .expect("foreign checkpoint event");
+        assert_eq!(
+            CheckpointMutationRepository::replace_checkpoint_with_event(
+                &mut repository,
+                checkpoint,
+                99,
+                checkpoint_event,
+                99,
+            ),
+            Err(ApplicationError::AccessDenied)
+        );
+
+        let trip = Trip::new(
+            EntityId::new("trip_foreign"),
+            other.clone(),
+            principal.clone(),
+            "Foreign trip",
+            "Bengaluru",
+            vec!["Tokyo".to_owned()],
+            TravelDateWindow::new("2027-03-10", "2027-03-20").expect("date window"),
+        )
+        .expect("foreign trip");
+        let trip_event = CanonicalEvent::new(
+            EventId::new("event_trip_foreign"),
+            other.clone(),
+            principal.clone(),
+            Some(principal.clone()),
+            1,
+            EventPayload::TripRevised {
+                trip_id: EntityId::new("trip_foreign"),
+                version: 1,
+            },
+        )
+        .expect("foreign trip event");
+        assert_eq!(
+            TripMutationRepository::replace_trip_with_event(
+                &mut repository,
+                trip,
+                99,
+                trip_event,
+                99,
+            ),
+            Err(ApplicationError::AccessDenied)
+        );
+
+        let research = BookingResearch::new(
+            BookingResearchId::new("research_foreign"),
+            other.clone(),
+            EntityId::new("trip_foreign"),
+            principal.clone(),
+            BookingResearchKind::Flight,
+            "Example Airline",
+            "Foreign flight option",
+            "provider://flight/foreign",
+            EvidenceReference::new(
+                EvidenceId::new("evidence_research_foreign"),
+                EvidenceSource::ImportedRecord,
+            ),
+            "2026-10-25T08:00:00Z",
+            "2026-10-26T08:00:00Z",
+        )
+        .expect("foreign booking research");
+        let research_event = CanonicalEvent::new(
+            EventId::new("event_research_foreign"),
+            other.clone(),
+            principal.clone(),
+            Some(principal.clone()),
+            1,
+            EventPayload::BookingResearchCaptured {
+                research_id: BookingResearchId::new("different_research"),
+                trip_id: EntityId::new("trip_foreign"),
+                version: 1,
+            },
+        )
+        .expect("foreign research event");
+        assert_eq!(
+            BookingResearchMutationRepository::insert_booking_research_with_event(
+                &mut repository,
+                research,
+                research_event,
+                99,
+            ),
+            Err(ApplicationError::AccessDenied)
+        );
+
+        let memory = MemoryRecord::confirmed_preference(
+            MemoryId::new("memory_foreign"),
+            other.clone(),
+            principal.clone(),
+            MemoryScope::Global,
+            "Call me Hippo",
+            EvidenceReference::new(
+                EvidenceId::new("evidence_foreign"),
+                EvidenceSource::UserStatement,
+            ),
+        )
+        .expect("foreign memory");
+        let memory_event = CanonicalEvent::new(
+            EventId::new("event_memory_foreign"),
+            other.clone(),
+            principal,
+            Some(PrincipalId::new("principal_01")),
+            1,
+            EventPayload::MemoryCreated {
+                memory_id: MemoryId::new("different_memory"),
+                version: 1,
+            },
+        )
+        .expect("foreign memory event");
+        let projection = ProjectionJob::new(
+            ProjectionJobId::new("projection_foreign"),
+            other,
+            MemoryId::new("memory_foreign"),
+            1,
+            ProviderId::new("provider_native"),
+            ProjectionOperation::Upsert,
+        )
+        .expect("foreign projection");
+        assert_eq!(
+            CanonicalMutationRepository::replace_memory_with_event(
+                &mut repository,
+                memory,
+                99,
+                memory_event,
+                vec![projection],
+                99,
+            ),
             Err(ApplicationError::AccessDenied)
         );
     }
