@@ -82,6 +82,8 @@ for deployment_file in \
     scripts/verify-security-review-bundle.mjs \
     scripts/test-graphiti-http-e2e.sh \
     scripts/test-graphiti-sidecar.sh \
+    scripts/test-cross-tool-continuity.sh \
+    scripts/test-cross-tool-continuity.mjs \
     scripts/test-swift-sdk.sh \
     scripts/test-ios-share-extension.sh \
     scripts/test-ios-imessage-extension.sh \
@@ -126,6 +128,7 @@ done
 sh -n scripts/check-local-alpha.sh
 sh -n scripts/test-graphiti-http-e2e.sh
 sh -n scripts/test-graphiti-sidecar.sh
+sh -n scripts/test-cross-tool-continuity.sh
 sh -n scripts/test-container-entrypoint.sh
 sh -n docker/rembrane-stage-secrets
 sh -n sidecars/rembrane-graphiti/docker/entrypoint.sh

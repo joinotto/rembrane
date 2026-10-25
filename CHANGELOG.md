@@ -9,6 +9,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- An executable cross-tool continuity proof writes a preference with the CLI,
+  reads and corrects it through MCP, observes the correction through the CLI,
+  and resumes a project checkpoint from a fresh MCP client process over the
+  same encrypted workspace.
 - Protected `env:` and `file:` credential references for each workspace actor
   in the portable Memory Provider conformance runner, with opaque failures,
   strict local-file validation, raw-variable compatibility, and

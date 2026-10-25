@@ -33,6 +33,7 @@ cargo build --workspace
 ./scripts/test-graphiti-sidecar.sh
 ./scripts/test-cli-e2e.sh
 ./scripts/test-mcp-e2e.sh
+./scripts/test-cross-tool-continuity.sh
 ./scripts/test-rest-e2e.sh
 
 echo "all Rembrane checks passed"

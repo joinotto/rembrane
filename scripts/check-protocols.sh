@@ -571,6 +571,7 @@ do
     fi
 done
 node --check scripts/test-mcp-e2e.mjs
+node --check scripts/test-cross-tool-continuity.mjs
 node --check scripts/derive-ed25519-public-key.mjs
 node --check scripts/ed25519-signing.mjs
 node --check scripts/ed25519-verification.mjs

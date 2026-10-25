@@ -56,6 +56,8 @@ This roadmap describes sequencing, not release dates.
 - [x] Add an executable encrypted CLI lifecycle smoke test.
 - [x] Add Postman REST authentication and tenant-isolation smoke tests.
 - [x] Add an MCP initialize/list/call protocol smoke test.
+- [x] Prove encrypted cross-tool continuity from CLI to MCP and back, plus
+  project-checkpoint resumption by a fresh agent process.
 - [x] Add a single full preflight test command and operator testing guide.
 - [x] Publish an executable local-alpha acceptance contract with independent
   static, Rust/E2E, and container CI gates.
@@ -645,6 +647,8 @@ This roadmap describes sequencing, not release dates.
 - [x] Deterministic item and plaintext-byte context budgets.
 - [x] Enforce canonical memory and checkpoint payload ceilings.
 - [x] Optional external-state fingerprints and stale handoff detection.
+- [x] Executable CLI/MCP preference and project-checkpoint handoff proof using
+  independent clients over one encrypted workspace store.
 
 ## Phase 3 — Travel continuity
 
