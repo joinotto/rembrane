@@ -9,6 +9,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- Graphiti HTTP neighbour responses now reject candidate collections above the
+  exact limit negotiated by the originating canonical request.
 - Mem0 HTTP responses now reject record collections above the negotiated
   1,000-record ceiling before canonical metadata mapping.
 - OAuth introspection now rejects query-bearing endpoints and successful

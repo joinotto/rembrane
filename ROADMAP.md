@@ -664,6 +664,8 @@ This roadmap describes sequencing, not release dates.
           zeroizing request-body ownership.
         - [x] Zeroize bounded raw Graphiti response bodies after typed
           decoding.
+        - [x] Reject neighbour collections above the exact candidate count
+          negotiated by each canonical request.
       - [x] Add executable Graphiti sidecar contract and integration tests.
         - [x] Implement and test a dependency-free contract core for workspace
           isolation, physical identity, idempotency, optimistic versions,

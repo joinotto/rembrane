@@ -197,21 +197,7 @@ impl GraphitiTransport for HttpGraphitiTransport {
         )?;
         let wire: WireResponse<NeighbourResult> = Self::decode(response)?;
         wire.into_response(request, |result| {
-            result
-                .candidates
-                .into_iter()
-                .map(|candidate| {
-                    if candidate.edge_id.is_empty() || candidate.version == 0 {
-                        return Err(ProviderError::Rejected(
-                            "Graphiti sidecar returned an invalid candidate".to_owned(),
-                        ));
-                    }
-                    Ok(CandidateKnowledgeEdge {
-                        edge_id: KnowledgeEdgeId::new(candidate.edge_id),
-                        version: candidate.version,
-                    })
-                })
-                .collect()
+            decode_neighbour_candidates(result, request.payload().maximum_candidates)
         })
     }
 
@@ -573,13 +559,40 @@ struct WireCandidate {
     version: u64,
 }
 
+fn decode_neighbour_candidates(
+    result: NeighbourResult,
+    maximum_candidates: usize,
+) -> Result<Vec<CandidateKnowledgeEdge>, ProviderError> {
+    if result.candidates.len() > maximum_candidates {
+        return Err(ProviderError::Rejected(
+            "Graphiti sidecar returned too many candidates".to_owned(),
+        ));
+    }
+    result
+        .candidates
+        .into_iter()
+        .map(|candidate| {
+            if candidate.edge_id.is_empty() || candidate.version == 0 {
+                return Err(ProviderError::Rejected(
+                    "Graphiti sidecar returned an invalid candidate".to_owned(),
+                ));
+            }
+            Ok(CandidateKnowledgeEdge {
+                edge_id: KnowledgeEdgeId::new(candidate.edge_id),
+                version: candidate.version,
+            })
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use rembrane_provider_sdk::{GraphitiConnection, GraphitiIdempotencyKey};
 
     use super::{
-        Acknowledgement, Envelope, GraphitiNodeDeletion, ManifestBody, ProviderManifest,
-        WireResponse, validate_base_url, validate_bearer_token,
+        Acknowledgement, Envelope, GraphitiNodeDeletion, ManifestBody, NeighbourResult,
+        ProviderManifest, WireCandidate, WireResponse, decode_neighbour_candidates,
+        validate_base_url, validate_bearer_token,
     };
 
     #[test]
@@ -656,5 +669,23 @@ mod tests {
         );
         let envelope = Envelope::new(&request, super::NodeDeletionBody::from(request.payload()));
         assert_eq!(envelope.namespace, request.namespace().as_str());
+    }
+
+    #[test]
+    fn neighbour_results_cannot_exceed_the_requested_candidate_limit() {
+        let result = NeighbourResult {
+            candidates: (1..=3)
+                .map(|version| WireCandidate {
+                    edge_id: format!("edge-{version}"),
+                    version,
+                })
+                .collect(),
+        };
+
+        assert!(matches!(
+            decode_neighbour_candidates(result, 2),
+            Err(rembrane_provider_sdk::ProviderError::Rejected(message))
+                if message == "Graphiti sidecar returned too many candidates"
+        ));
     }
 }
