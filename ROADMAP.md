@@ -300,6 +300,8 @@ This roadmap describes sequencing, not release dates.
   - [x] Add a bounded session registry with URL-safe identifiers,
     duplicate/capacity controls, per-request revalidation, and authenticated
     deletion, reclaiming expired capacity before accepting new sessions.
+    - [x] Separate termination authorization from deletion commit so an HTTP
+      transport can retain the local binding until downstream confirmation.
   - [ ] Serve Streamable HTTP through the official Rust MCP SDK.
     - [x] Add a consuming Tower dispatcher that reconstructs only validated
       MCP protocol headers, strips the bearer credential at the OAuth boundary,

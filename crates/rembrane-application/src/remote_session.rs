@@ -303,11 +303,44 @@ impl RemoteSessionRegistry {
     where
         Verifier: RemoteTokenVerifier,
     {
+        let access = self.authorize_termination_for_http(
+            authorization,
+            session_id,
+            authorization_header,
+            origin_header,
+            now_epoch_seconds,
+        )?;
+        self.terminate(session_id, &access, now_epoch_seconds)
+            .map_err(|_| RemoteSessionHttpError::Forbidden)
+    }
+
+    /// Reauthenticates and revalidates an HTTP MCP session for termination
+    /// without removing its binding.
+    ///
+    /// This supports transports that must first obtain downstream confirmation
+    /// before committing local session deletion.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Unauthorized` for invalid credentials and `Forbidden` for an
+    /// authenticated origin, session, or tenant mismatch.
+    pub fn authorize_termination_for_http<Verifier>(
+        &mut self,
+        authorization: &RemoteHttpAuthorization<'_, '_, Verifier>,
+        session_id: &RemoteSessionId,
+        authorization_header: Option<&str>,
+        origin_header: Option<&str>,
+        now_epoch_seconds: u64,
+    ) -> Result<VerifiedRemoteAccess, RemoteSessionHttpError>
+    where
+        Verifier: RemoteTokenVerifier,
+    {
         let access = authorization
             .authorize_connection_for_http(authorization_header, origin_header, now_epoch_seconds)
             .map_err(RemoteSessionHttpError::from)?;
-        self.terminate(session_id, &access, now_epoch_seconds)
-            .map_err(|_| RemoteSessionHttpError::Forbidden)
+        self.revalidate(session_id, &access, now_epoch_seconds)
+            .map_err(|_| RemoteSessionHttpError::Forbidden)?;
+        Ok(access)
     }
 
     /// Removes bindings whose non-extending authorization lifetime elapsed.
@@ -780,5 +813,47 @@ mod tests {
                 1_200,
             )
             .expect("bound session should terminate");
+    }
+
+    #[test]
+    fn termination_authorization_does_not_commit_session_deletion() {
+        let verifier = FixtureVerifier;
+        let authenticator = RemoteAccessAuthenticator::new(
+            &verifier,
+            "https://identity.example.test",
+            "https://memory.example.test/mcp",
+        );
+        let authorization = RemoteHttpAuthorization::new(&authenticator, &[]);
+        let mut registry = RemoteSessionRegistry::new(1).expect("capacity should be valid");
+        let session =
+            RemoteSessionId::new("session_0123456789abcdef").expect("session id should be valid");
+        registry
+            .authorize_and_establish_for_http(
+                &authorization,
+                session.clone(),
+                Some("Bearer workspace-one"),
+                None,
+                1_000,
+            )
+            .expect("valid request should establish");
+
+        let access = registry
+            .authorize_termination_for_http(
+                &authorization,
+                &session,
+                Some("Bearer workspace-one"),
+                None,
+                1_100,
+            )
+            .expect("bound session should authorize termination");
+        assert_eq!(
+            registry.len(),
+            1,
+            "authorization alone must not commit deletion"
+        );
+        registry
+            .terminate(&session, &access, 1_100)
+            .expect("confirmed termination should commit deletion");
+        assert!(registry.is_empty());
     }
 }

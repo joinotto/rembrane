@@ -57,6 +57,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   forwarding OAuth credentials.
 - Authorized remote MCP POST bodies retain zeroizing ownership through the
   Tower handoff instead of being copied into an ordinary request buffer.
+- Remote MCP session termination can now be authorized without immediately
+  deleting the tenant-bound local session, enabling downstream-confirmed
+  termination ordering.
 - A strict portable key-provider conformance result schema and runner output
   containing provider identity and explicit pass evidence for eight
   authentication, encryption, limit, rotation, and replay cases.
