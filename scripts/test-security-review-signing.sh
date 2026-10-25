@@ -83,6 +83,17 @@ then
     exit 1
 fi
 
+jq '.files[0].path = "../SECURITY.md"' "$temporary_directory/manifest.json" \
+    >"$temporary_directory/unsafe-path.json"
+if REMBRANE_SECURITY_REVIEW_SIGNING_KEY="$temporary_directory/private.pem" \
+    sh "$repository_root/scripts/sign-security-review-manifest.sh" \
+    "$temporary_directory/unsafe-path.json" \
+    "$temporary_directory/unsafe-path-output" >/dev/null 2>&1
+then
+    echo "security review signer accepted an unsafe manifest path" >&2
+    exit 1
+fi
+
 mkdir "$temporary_directory/real-output"
 ln -s "$temporary_directory/real-output" "$temporary_directory/symbolic-output"
 if REMBRANE_SECURITY_REVIEW_SIGNING_KEY="$temporary_directory/private.pem" \

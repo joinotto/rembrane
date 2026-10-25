@@ -1314,5 +1314,7 @@ No stable release until:
       exact-byte tamper detection and independently trusted public keys.
       - [x] Enforce clean manifests, owner-only private keys, regular files,
         and non-symbolic output directories before signing.
+      - [x] Reject invalid UTF-8, control-bearing, traversal, and ambiguous
+        cross-platform paths before inventory generation or signing.
 - [x] Backup, restore, migration, revocation, and deletion have executable
   local-alpha coverage.

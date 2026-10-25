@@ -29,6 +29,12 @@ if [ ! -f "$manifest" ] || [ -L "$manifest" ]; then
     exit 1
 fi
 jq -e '
+    def safe_path:
+        type == "string"
+        and length > 0
+        and length <= 4096
+        and test("^[A-Za-z0-9._@+/-]+$")
+        and (test("(^|/)\\.\\.?(/|$)") | not);
     .schemaVersion == 1
     and (.sourceRevision | test("^[0-9a-f]{40}$"))
     and .workingTreeDirty == false
@@ -37,7 +43,7 @@ jq -e '
     and (([.files[].path] | unique | length) == (.files | length))
     and all(
         .files[];
-        (.path | type == "string" and length > 0)
+        (.path | safe_path)
         and (.bytes | type == "number" and . >= 0)
         and (.sha256 | test("^[0-9a-f]{64}$"))
     )

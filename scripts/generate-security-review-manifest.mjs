@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { lstatSync, readFileSync } from "node:fs";
 import { dirname, relative, resolve, sep } from "node:path";
+import { TextDecoder } from "node:util";
 import { fileURLToPath } from "node:url";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -16,10 +17,12 @@ if (dirty && !allowDirty) {
   );
 }
 
-const tracked = execFileSync("git", ["ls-files", "-z"], {
-  cwd: repositoryRoot,
-})
-  .toString("utf8")
+const tracked = new TextDecoder("utf-8", { fatal: true })
+  .decode(
+    execFileSync("git", ["ls-files", "-z"], {
+      cwd: repositoryRoot,
+    }),
+  )
   .split("\0")
   .filter(Boolean);
 
@@ -29,6 +32,17 @@ if (paths.length === 0) {
 }
 
 const files = paths.map((path) => {
+  const components = path.split("/");
+  if (
+    path.length > 4_096 ||
+    !/^[A-Za-z0-9._@+/-]+$/.test(path) ||
+    components.some(
+      (component) =>
+        component.length === 0 || component === "." || component === "..",
+    )
+  ) {
+    throw new Error(`security review path is ambiguous or unsafe: ${path}`);
+  }
   const absolutePath = resolve(repositoryRoot, path);
   const repositoryRelative = relative(repositoryRoot, absolutePath);
   if (

@@ -16,6 +16,12 @@ node "$repository_root/scripts/generate-security-review-manifest.mjs" \
 cmp "$test_root/first.json" "$test_root/second.json"
 
 jq -e '
+    def safe_path:
+        type == "string"
+        and length > 0
+        and length <= 4096
+        and test("^[A-Za-z0-9._@+/-]+$")
+        and (test("(^|/)\\.\\.?(/|$)") | not);
     .schemaVersion == 1
     and (.sourceRevision | test("^[0-9a-f]{40}$"))
     and (.workingTreeDirty | type == "boolean")
@@ -24,7 +30,7 @@ jq -e '
     and (([.files[].path] | unique | length) == (.files | length))
     and all(
         .files[];
-        (.path | type == "string")
+        (.path | safe_path)
         and (.bytes | type == "number" and . >= 0)
         and (.sha256 | test("^[0-9a-f]{64}$"))
     )

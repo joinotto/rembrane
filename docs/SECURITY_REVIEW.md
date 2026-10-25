@@ -35,7 +35,8 @@ sh scripts/verify-security-review-signature.sh \
 The generator refuses a dirty worktree by default. `--allow-dirty` exists only
 for deterministic local and CI validation and must not be used for review
 evidence. The signer also rejects dirty manifests, permissive or symbolic
-private keys, symbolic output directories, and existing artifact names.
+private keys, ambiguous or control-bearing paths, symbolic output directories,
+and existing artifact names.
 
 An independent report should include:
 
