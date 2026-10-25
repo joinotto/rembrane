@@ -114,6 +114,19 @@ jq -e \
         and .privacy.plaintextProcessingLocation == "user-device"' \
     "$discovery_response" >/dev/null
 
+invalid_travel_response="$test_directory/invalid-travel-response.json"
+invalid_travel_status=$(
+    curl -sS \
+        -o "$invalid_travel_response" \
+        -w '%{http_code}' \
+        -X POST "$base_url/v1/travel/context/resolve" \
+        -H "Authorization: Bearer $REMBRANE_API_TOKEN" \
+        -H "Content-Type: application/json" \
+        --data "{\"workspaceId\":\"$REMBRANE_WORKSPACE_ID\",\"subjectId\":\"$REMBRANE_PRINCIPAL_ID\",\"tripId\":\"../trip\",\"purpose\":\"continue-trip\",\"asOf\":\"2026-10-25T00:00:00Z\"}"
+)
+test "$invalid_travel_status" = "400"
+test "$(jq -r '.code' "$invalid_travel_response")" = "invalid_request"
+
 scoped_response="$test_directory/scoped-response.json"
 scoped_status=$(
     curl -sS \

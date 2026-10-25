@@ -1852,6 +1852,9 @@ async fn capture_booking_research(
     Json(request): Json<CaptureBookingResearchRequest>,
 ) -> Result<(StatusCode, Json<BookingResearchResponse>), ApiError> {
     authorize_bearer(&state, &headers)?;
+    if !valid_opaque_id(&request.trip_id) {
+        return Err(ApiError::invalid_request());
+    }
     let kind = parse_research_kind(&request.kind).ok_or_else(ApiError::invalid_request)?;
     let evidence_source =
         parse_evidence_source(&request.evidence_source).ok_or_else(ApiError::invalid_request)?;
@@ -1911,6 +1914,9 @@ async fn add_trip_participant(
     Json(request): Json<AddTripParticipantRequest>,
 ) -> Result<(StatusCode, Json<TripParticipantResponse>), ApiError> {
     authorize_bearer(&state, &headers)?;
+    if !valid_opaque_id(&request.trip_id) {
+        return Err(ApiError::invalid_request());
+    }
     let mut runtime = state
         .inner
         .runtime
@@ -1958,6 +1964,14 @@ async fn add_trip_constraint(
     Json(request): Json<AddTripConstraintRequest>,
 ) -> Result<(StatusCode, Json<TripRevisionResponse>), ApiError> {
     authorize_bearer(&state, &headers)?;
+    if !valid_opaque_id(&request.trip_id)
+        || request
+            .participant_id
+            .as_deref()
+            .is_some_and(|id| !valid_opaque_id(id))
+    {
+        return Err(ApiError::invalid_request());
+    }
     let kind = parse_constraint_kind(&request.kind).ok_or_else(ApiError::invalid_request)?;
     let evidence_source =
         parse_evidence_source(&request.evidence_source).ok_or_else(ApiError::invalid_request)?;
@@ -2011,6 +2025,9 @@ async fn record_trip_decision(
     Json(request): Json<RecordTripDecisionRequest>,
 ) -> Result<(StatusCode, Json<TripRevisionResponse>), ApiError> {
     authorize_bearer(&state, &headers)?;
+    if !valid_opaque_id(&request.trip_id) {
+        return Err(ApiError::invalid_request());
+    }
     let status = parse_decision_status(&request.status).ok_or_else(ApiError::invalid_request)?;
     let evidence_source =
         parse_evidence_source(&request.evidence_source).ok_or_else(ApiError::invalid_request)?;
@@ -2065,6 +2082,9 @@ async fn resolve_travel_context(
     Json(request): Json<ResolveTravelContextRequest>,
 ) -> Result<Json<TravelContextResponse>, ApiError> {
     authorize_bearer(&state, &headers)?;
+    if !valid_opaque_id(&request.trip_id) {
+        return Err(ApiError::invalid_request());
+    }
     let mut runtime = state
         .inner
         .runtime

@@ -674,6 +674,8 @@ This roadmap describes sequencing, not release dates.
 
 - [x] Expose the complete implemented REST travel lifecycle through the
   TypeScript and Python SDKs.
+- [x] Reject malformed or oversized opaque trip and participant references at
+  the REST boundary before authorization or storage access.
 - [x] Reuse layered domain/entity context for travel and trip constraints.
 - [x] Trip entities, participants, constraints, and decisions.
   - [x] Canonical versioned trip aggregate with opaque participants, validated
