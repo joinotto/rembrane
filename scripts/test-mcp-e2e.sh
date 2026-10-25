@@ -23,6 +23,33 @@ export REMBRANE_WORKSPACE_KEY_HEX="000102030405060708090a0b0c0d0e0f1011121314151
     --principal "$REMBRANE_PRINCIPAL_ID" \
     --workspace "$REMBRANE_WORKSPACE_ID" >/dev/null
 
+sqlite3 "$REMBRANE_DATABASE" <<SQL
+PRAGMA foreign_keys = ON;
+INSERT INTO knowledge_nodes (
+    workspace_id,
+    id,
+    node_ciphertext,
+    encryption_key_id,
+    encryption_algorithm,
+    encryption_nonce,
+    version,
+    valid_from,
+    valid_until,
+    recorded_at
+) VALUES (
+    '$REMBRANE_WORKSPACE_ID',
+    'project_e2e',
+    X'01',
+    '$REMBRANE_WORKSPACE_KEY_ID',
+    'xchacha20poly1305',
+    zeroblob(24),
+    1,
+    1700000000,
+    NULL,
+    1700000000
+);
+SQL
+
 if REMBRANE_READ_SCOPES="*" \
     "$REMBRANE_MCP_BIN" </dev/null >/dev/null 2>&1
 then
@@ -46,7 +73,7 @@ event_count=$(
     sqlite3 "$REMBRANE_DATABASE" \
         "SELECT count(*) FROM workspace_events WHERE workspace_id = '$REMBRANE_WORKSPACE_ID';"
 )
-test "$event_count" = "8"
+test "$event_count" = "11"
 trip_count=$(
     sqlite3 "$REMBRANE_DATABASE" \
         "SELECT count(*) FROM trips WHERE workspace_id = '$REMBRANE_WORKSPACE_ID';"
@@ -62,6 +89,16 @@ trace_count=$(
         "SELECT count(*) FROM memories WHERE workspace_id = '$REMBRANE_WORKSPACE_ID' AND kind = 'observation' AND status = 'proposed' AND scope_type = 'activity' AND scope_value = 'activity_e2e';"
 )
 test "$trace_count" = "1"
+graph_disclosure_count=$(
+    sqlite3 "$REMBRANE_DATABASE" \
+        "SELECT count(*) FROM graph_disclosure_receipts WHERE workspace_id = '$REMBRANE_WORKSPACE_ID' AND node_id = 'project_e2e' AND direction = 'outgoing' AND valid_at_epoch_seconds = 1700000000;"
+)
+test "$graph_disclosure_count" = "1"
+disclosed_graph_edge_count=$(
+    sqlite3 "$REMBRANE_DATABASE" \
+        "SELECT count(*) FROM disclosed_knowledge_edges WHERE workspace_id = '$REMBRANE_WORKSPACE_ID';"
+)
+test "$disclosed_graph_edge_count" = "0"
 
 sqlite3 "$REMBRANE_DATABASE" \
     "UPDATE activity_checkpoints SET checkpoint_ciphertext = X'00' WHERE workspace_id = '$REMBRANE_WORKSPACE_ID' AND activity_id = 'activity_e2e';"

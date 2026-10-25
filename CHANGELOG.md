@@ -37,6 +37,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - MCP `rembrane_resolve_graph_context` tool with explicit temporal direction,
   scope, purpose, and candidate bounds, using the configured native or
   Graphiti provider and returning canonical edge revisions.
+- Executable stdio MCP coverage for graph-scope denial and persisted
+  disclosure evidence from an authorized empty native-provider neighbourhood.
 - Authenticated REST graph-context resolution using the same transport-neutral
   contract, configured provider selection, canonical edge checks, and
   disclosure-before-response boundary as MCP.

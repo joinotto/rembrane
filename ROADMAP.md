@@ -430,6 +430,8 @@ This roadmap describes sequencing, not release dates.
       - [x] Add a local/remote MCP graph-context tool backed by the
         deployment-selected native or Graphiti provider and canonical SQLite
         reauthorization.
+        - [x] Prove executable stdio MCP scope denial and disclosure
+          persistence for an empty native-provider neighbourhood.
       - [x] Add an authenticated REST graph-context endpoint sharing the same
         configured provider, canonical reauthorization, and disclosure path.
         - [x] Add exact-route graph-context operations to the TypeScript and

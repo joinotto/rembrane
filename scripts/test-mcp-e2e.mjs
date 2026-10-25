@@ -32,7 +32,11 @@ lines.on("line", (line) => {
     clearTimeout(timer);
     pending.delete(message.id);
     if (message.error) {
-      reject(new Error(`MCP request failed: ${JSON.stringify(message.error)}`));
+      reject(
+        new Error(
+          `MCP request ${message.id} failed: ${JSON.stringify(message.error)}`,
+        ),
+      );
     } else {
       resolve(message.result);
     }
@@ -64,6 +68,21 @@ function request(id, method, params) {
   });
 }
 
+async function expectRequestRejection(id, method, params, expectedMessage) {
+  try {
+    const result = await request(id, method, params);
+    if (result?.isError) {
+      return;
+    }
+  } catch (error) {
+    if (error.message.includes(expectedMessage)) {
+      return;
+    }
+    throw error;
+  }
+  throw new Error(`MCP request ${id} was unexpectedly accepted`);
+}
+
 function fail(error) {
   child.kill("SIGTERM");
   throw error;
@@ -92,6 +111,7 @@ try {
   const toolNames = new Set(tools.tools?.map((tool) => tool.name));
   for (const expected of [
     "rembrane_resolve_context",
+    "rembrane_resolve_graph_context",
     "rembrane_remember_preference",
     "rembrane_request_correction",
     "rembrane_forget_memory",
@@ -322,32 +342,36 @@ try {
     throw new Error("MCP work trace was not recorded as proposed memory");
   }
 
-  const deniedResumeCall = await request(14, "tools/call", {
-    name: "rembrane_resume_activity",
-    arguments: {
-      activityId: "activity_outside_grant",
+  await expectRequestRejection(
+    14,
+    "tools/call",
+    {
+      name: "rembrane_resume_activity",
+      arguments: {
+        activityId: "activity_outside_grant",
+      },
     },
-  });
-  if (!deniedResumeCall.isError) {
-    throw new Error("MCP allowed activity access outside the connection grant");
-  }
+    "requested context is outside the connection read scopes",
+  );
 
-  const missingTripResearchCall = await request(15, "tools/call", {
-    name: "rembrane_capture_booking_research",
-    arguments: {
-      tripId: "trip_missing",
-      kind: "flight",
-      provider: "e2e-search",
-      summary: "Nonstop morning option",
-      sourceReference: "opaque-result-e2e",
-      evidenceSource: "tool-result",
-      observedAt: "2026-10-25T10:00:00Z",
-      expiresAt: "2026-10-25T10:30:00Z",
+  await expectRequestRejection(
+    15,
+    "tools/call",
+    {
+      name: "rembrane_capture_booking_research",
+      arguments: {
+        tripId: "trip_missing",
+        kind: "flight",
+        provider: "e2e-search",
+        summary: "Nonstop morning option",
+        sourceReference: "opaque-result-e2e",
+        evidenceSource: "tool-result",
+        observedAt: "2026-10-25T10:00:00Z",
+        expiresAt: "2026-10-25T10:30:00Z",
+      },
     },
-  });
-  if (!missingTripResearchCall.isError) {
-    throw new Error("MCP captured booking research for a missing canonical trip");
-  }
+    "operation is not authorized or available",
+  );
 
   const createdTripCall = await request(16, "tools/call", {
     name: "rembrane_create_trip",
@@ -493,33 +517,75 @@ try {
     throw new Error("MCP travel context exposed a sensitive trip profile");
   }
 
-  const deniedSensitiveContextCall = await request(22, "tools/call", {
-    name: "rembrane_resolve_travel_context",
+  await expectRequestRejection(
+    22,
+    "tools/call",
+    {
+      name: "rembrane_resolve_travel_context",
+      arguments: {
+        tripId: createdTrip.tripId,
+        purpose: "reopen the provider result",
+        asOf: "2026-10-25T10:15:00Z",
+        includeSourceReferences: true,
+      },
+    },
+    "operation is not authorized or available",
+  );
+
+  await expectRequestRejection(
+    23,
+    "tools/call",
+    {
+      name: "rembrane_resolve_travel_context",
+      arguments: {
+        tripId: createdTrip.tripId,
+        purpose: "coordinate traveller requirements",
+        asOf: "2026-10-25T10:15:00Z",
+        includeSensitiveProfile: true,
+      },
+    },
+    "operation is not authorized or available",
+  );
+
+  await expectRequestRejection(
+    24,
+    "tools/call",
+    {
+      name: "rembrane_resolve_graph_context",
+      arguments: {
+        nodeId: "project_outside_grant",
+        direction: "outgoing",
+        validAtEpochSeconds: 1700000000,
+        maximumCandidates: 20,
+        purpose: "continue an unauthorized project graph",
+        entityId: "project_outside_grant",
+      },
+    },
+    "requested context is outside the connection read scopes",
+  );
+
+  const graphContextCall = await request(25, "tools/call", {
+    name: "rembrane_resolve_graph_context",
     arguments: {
-      tripId: createdTrip.tripId,
-      purpose: "reopen the provider result",
-      asOf: "2026-10-25T10:15:00Z",
-      includeSourceReferences: true,
+      nodeId: "project_e2e",
+      direction: "outgoing",
+      validAtEpochSeconds: 1700000000,
+      maximumCandidates: 20,
+      purpose: "continue project graph",
+      entityId: "project_e2e",
     },
   });
-  if (!deniedSensitiveContextCall.isError) {
+  if (graphContextCall.isError) {
     throw new Error(
-      "MCP revealed a source reference without connection-level permission",
+      `MCP graph context returned an error: ${JSON.stringify(graphContextCall)}`,
     );
   }
-
-  const deniedSensitiveProfileCall = await request(23, "tools/call", {
-    name: "rembrane_resolve_travel_context",
-    arguments: {
-      tripId: createdTrip.tripId,
-      purpose: "coordinate traveller requirements",
-      asOf: "2026-10-25T10:15:00Z",
-      includeSensitiveProfile: true,
-    },
-  });
-  if (!deniedSensitiveProfileCall.isError) {
+  const graphContext = JSON.parse(
+    graphContextCall.content?.find((item) => item.type === "text")?.text,
+  );
+  if (!graphContext.disclosureId || graphContext.edges?.length !== 0) {
     throw new Error(
-      "MCP revealed a sensitive trip profile without connection permission",
+      "MCP graph context did not return an empty disclosed neighbourhood",
     );
   }
 } finally {
