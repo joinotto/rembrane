@@ -96,6 +96,7 @@
             "testedAt",
             "suiteId",
             "suiteVersion",
+            "profileSha256",
             "providerVersion",
             "protocolVersion",
             "namespace",
@@ -114,6 +115,10 @@
             },
             "suiteVersion": {
               "const": "0.1"
+            },
+            "profileSha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
             },
             "providerVersion": {
               "type": "string",

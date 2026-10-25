@@ -3,8 +3,9 @@ set -eu
 
 repository_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 registry=${1:-"$repository_root/spec/provider-registry.json"}
+profile="$repository_root/spec/conformance/semantic-provider-core.json"
 
-for command in jq git; do
+for command in jq git node; do
     if ! command -v "$command" >/dev/null 2>&1; then
         echo "required provider registry verifier is unavailable: $command" >&2
         exit 1
@@ -16,7 +17,15 @@ if [ ! -f "$registry" ]; then
     exit 1
 fi
 
-jq -e '
+profile_sha256=$(
+    node -e '
+        const { createHash } = require("node:crypto");
+        const { readFileSync } = require("node:fs");
+        process.stdout.write(createHash("sha256").update(readFileSync(process.argv[1])).digest("hex"));
+    ' "$profile"
+)
+
+jq -e --arg profileSha256 "$profile_sha256" '
     .generatedAt as $generatedAt
     | .schemaVersion == 1
     and (.generatedAt | fromdateiso8601) <= now
@@ -35,6 +44,7 @@ jq -e '
         and (.conformance.result | IN("pass", "fail"))
         and .conformance.suiteId == "rembrane.semantic-provider.core"
         and .conformance.suiteVersion == "0.1"
+        and .conformance.profileSha256 == $profileSha256
         and .conformance.providerVersion == .adapterVersion
         and .conformance.protocolVersion == "0.1"
         and (. as $provider

@@ -26,8 +26,9 @@ use rembrane_memory_provider_configured::ConfiguredMemoryProvider;
 use rembrane_provider_sdk::{
     CURRENT_MEMORY_PROVIDER_PROTOCOL, MemoryProviderCapability, MemoryProviderLimits,
     MemoryProviderPolicy, MemoryProviderPrivacyMode, MemoryProviderTransport,
-    SEMANTIC_PROVIDER_CONFORMANCE_SUITE_ID, SEMANTIC_PROVIDER_CONFORMANCE_SUITE_VERSION,
-    SemanticProviderConformanceReport, verify_semantic_provider,
+    SEMANTIC_PROVIDER_CONFORMANCE_PROFILE_SHA256, SEMANTIC_PROVIDER_CONFORMANCE_SUITE_ID,
+    SEMANTIC_PROVIDER_CONFORMANCE_SUITE_VERSION, SemanticProviderConformanceReport,
+    verify_semantic_provider,
 };
 use rembrane_secret_local::{LocalSecretResolver, SecretResolver};
 use rembrane_semantic_mem0::Mem0SemanticProvider;
@@ -723,6 +724,7 @@ fn test_provider(arguments: &[String]) -> Result<String, String> {
 struct ProviderConformanceOutput<'report> {
     suite_id: &'static str,
     suite_version: &'static str,
+    profile_sha256: &'static str,
     provider: &'report str,
     provider_version: &'report str,
     protocol_version: String,
@@ -744,6 +746,7 @@ fn serialize_provider_conformance(
     serde_json::to_string(&ProviderConformanceOutput {
         suite_id: SEMANTIC_PROVIDER_CONFORMANCE_SUITE_ID,
         suite_version: SEMANTIC_PROVIDER_CONFORMANCE_SUITE_VERSION,
+        profile_sha256: SEMANTIC_PROVIDER_CONFORMANCE_PROFILE_SHA256,
         provider: report.provider_id(),
         provider_version: report.provider_version(),
         protocol_version: format!("{}.{}", protocol.major, protocol.minor),
@@ -2261,14 +2264,14 @@ mod tests {
     use rembrane_store_sqlite::SqliteStore;
 
     use super::{
-        EXPORT_MAGIC, claude_mcp_config, codex_mcp_config, cursor_mcp_config, format_read_scopes,
-        gemini_mcp_config, generic_mcp_config, invitation_list_json, invitation_status,
-        mcp_client_catalog, mcp_environment_variables, memory_privacy_mode_name,
-        memory_provider_check_policy, opencode_mcp_config, option, positive_u64, providers,
-        read_export, recall_scope_context, redact_endpoint, render_mcp_config,
-        requested_memory_privacy, requested_memory_scope, run, selected_secret_reference,
-        test_provider, validate_external_conformance_namespace, validate_mcp_server_binary,
-        vscode_mcp_config, write_export, zed_mcp_config,
+        EXPORT_MAGIC, SEMANTIC_PROVIDER_CONFORMANCE_PROFILE_SHA256, claude_mcp_config,
+        codex_mcp_config, cursor_mcp_config, format_read_scopes, gemini_mcp_config,
+        generic_mcp_config, invitation_list_json, invitation_status, mcp_client_catalog,
+        mcp_environment_variables, memory_privacy_mode_name, memory_provider_check_policy,
+        opencode_mcp_config, option, positive_u64, providers, read_export, recall_scope_context,
+        redact_endpoint, render_mcp_config, requested_memory_privacy, requested_memory_scope, run,
+        selected_secret_reference, test_provider, validate_external_conformance_namespace,
+        validate_mcp_server_binary, vscode_mcp_config, write_export, zed_mcp_config,
     };
 
     fn temporary_path(name: &str) -> std::path::PathBuf {
@@ -2623,6 +2626,10 @@ mod tests {
             serde_json::from_str(&report).expect("conformance evidence should be JSON");
         assert_eq!(report["suiteId"], "rembrane.semantic-provider.core");
         assert_eq!(report["suiteVersion"], "0.1");
+        assert_eq!(
+            report["profileSha256"],
+            SEMANTIC_PROVIDER_CONFORMANCE_PROFILE_SHA256
+        );
         assert_eq!(report["provider"], "rembrane.native");
         assert_eq!(report["providerVersion"], env!("CARGO_PKG_VERSION"));
         assert_eq!(report["protocolVersion"], "0.1");

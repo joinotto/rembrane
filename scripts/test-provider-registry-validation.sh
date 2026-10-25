@@ -34,6 +34,8 @@ reject_mutation reordered-cases '
         + .providers[0].conformance.cases[2:])
 '
 reject_mutation mismatched-protocol '.providers[0].conformance.protocolVersion = "0.2"'
+reject_mutation mismatched-profile-digest \
+    '.providers[0].conformance.profileSha256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"'
 reject_mutation mismatched-provider-build '
     .providers[0].conformance.providerVersion = "attacker-substituted-build"
 '

@@ -204,6 +204,7 @@ provider_conformance=$(
 )
 printf '%s\n' "$provider_conformance" | jq -e \
     '.provider == "rembrane.native"
+        and (.profileSha256 | test("^[0-9a-f]{64}$"))
         and .protocolVersion == "0.1"
         and .result == "pass"' >/dev/null
 if "$rembrane_binary" providers test \

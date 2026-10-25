@@ -10,6 +10,8 @@ use crate::{
 
 pub const SEMANTIC_PROVIDER_CONFORMANCE_SUITE_ID: &str = "rembrane.semantic-provider.core";
 pub const SEMANTIC_PROVIDER_CONFORMANCE_SUITE_VERSION: &str = "0.1";
+pub const SEMANTIC_PROVIDER_CONFORMANCE_PROFILE_SHA256: &str =
+    "9073af5c5d07c6c5cbd586d8ca542645583da0e19a2fea70852fbfbe1bf5a0c5";
 pub const SEMANTIC_PROVIDER_CONFORMANCE_CASES: [&str; 6] = [
     "manifest.compatible",
     "index.visible",

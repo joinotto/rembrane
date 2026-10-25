@@ -36,6 +36,7 @@ jq empty \
     spec/memory-provider-fixtures.schema.json \
     spec/conformance/memory-provider-core.json \
     spec/conformance/key-provider-core.json \
+    spec/conformance/semantic-provider-core.json \
     spec/conformance/memory-provider-core-fixtures.json \
     spec/examples/discovery.json \
     spec/examples/channel-processor-message.json \
@@ -105,6 +106,7 @@ jq -e --slurpfile example spec/examples/semantic-provider-conformance-result.jso
     .additionalProperties == false
     and .properties.suiteId.const == "rembrane.semantic-provider.core"
     and .properties.suiteVersion.const == "0.1"
+    and .properties.profileSha256.pattern == "^[0-9a-f]{64}$"
     and .properties.protocolVersion.const == "0.1"
     and .properties.result.const == "pass"
     and .properties.cases.minItems == 6
@@ -118,13 +120,38 @@ jq -e --slurpfile example spec/examples/semantic-provider-conformance-result.jso
         "exact-delete.propagates"
     ]
     and all($example[0].cases[]; .result == "pass")
+    and ($example[0].profileSha256 | test("^[0-9a-f]{64}$"))
 ' spec/semantic-provider-conformance-result.schema.json >/dev/null
+
+semantic_profile_sha256=$(
+    node -e '
+        const { createHash } = require("node:crypto");
+        const { readFileSync } = require("node:fs");
+        process.stdout.write(createHash("sha256").update(readFileSync(process.argv[1])).digest("hex"));
+    ' spec/conformance/semantic-provider-core.json
+)
+jq -e --arg profileSha256 "$semantic_profile_sha256" '
+    .profileId == "rembrane.semantic-provider.core"
+    and .profileVersion == "0.1"
+    and .protocolVersion == "0.1"
+    and ([.cases[].id] == [
+        "manifest.compatible",
+        "index.visible",
+        "workspace.isolated",
+        "replacement.exact",
+        "stale-delete.preserves-current",
+        "exact-delete.propagates"
+    ])
+    and $profileSha256 == "9073af5c5d07c6c5cbd586d8ca542645583da0e19a2fea70852fbfbe1bf5a0c5"
+' spec/conformance/semantic-provider-core.json >/dev/null
 
 jq -e '
     ."$defs".provider.properties.conformance.additionalProperties == false
     and ."$defs".provider.properties.conformance.properties.suiteId.const
         == "rembrane.semantic-provider.core"
     and ."$defs".provider.properties.conformance.properties.suiteVersion.const == "0.1"
+    and ."$defs".provider.properties.conformance.properties.profileSha256.pattern
+        == "^[0-9a-f]{64}$"
     and ."$defs".provider.properties.conformance.properties.providerVersion.maxLength == 100
     and ."$defs".provider.properties.conformance.properties.protocolVersion.const == "0.1"
     and ."$defs".provider.properties.conformance.properties.cases.minItems == 6

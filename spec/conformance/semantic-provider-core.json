@@ -1,0 +1,31 @@
+{
+  "profileId": "rembrane.semantic-provider.core",
+  "profileVersion": "0.1",
+  "protocolVersion": "0.1",
+  "cases": [
+    {
+      "id": "manifest.compatible",
+      "requirement": "The provider manifest satisfies the mandatory protocol, capability, limit, and workspace-filter policy."
+    },
+    {
+      "id": "index.visible",
+      "requirement": "An indexed memory revision is searchable inside its authorized workspace."
+    },
+    {
+      "id": "workspace.isolated",
+      "requirement": "An indexed memory revision is not searchable from another workspace."
+    },
+    {
+      "id": "replacement.exact",
+      "requirement": "A replacement revision becomes the only searchable revision for that memory."
+    },
+    {
+      "id": "stale-delete.preserves-current",
+      "requirement": "Deleting a stale revision does not delete the current revision."
+    },
+    {
+      "id": "exact-delete.propagates",
+      "requirement": "Deleting the current exact revision removes it from search."
+    }
+  ]
+}

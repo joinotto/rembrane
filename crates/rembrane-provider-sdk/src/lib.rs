@@ -29,8 +29,9 @@ pub use capability::{
 };
 pub use conformance::{
     ConformanceFailure, SEMANTIC_PROVIDER_CONFORMANCE_CASES,
-    SEMANTIC_PROVIDER_CONFORMANCE_SUITE_ID, SEMANTIC_PROVIDER_CONFORMANCE_SUITE_VERSION,
-    SemanticProviderConformanceReport, verify_semantic_provider,
+    SEMANTIC_PROVIDER_CONFORMANCE_PROFILE_SHA256, SEMANTIC_PROVIDER_CONFORMANCE_SUITE_ID,
+    SEMANTIC_PROVIDER_CONFORMANCE_SUITE_VERSION, SemanticProviderConformanceReport,
+    verify_semantic_provider,
 };
 pub use customer_kms::{
     AwsKmsAdapter, AzureKeyVaultAdapter, CloudKmsBinding, CloudKmsDecryptClient,

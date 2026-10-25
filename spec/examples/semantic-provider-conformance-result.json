@@ -1,6 +1,7 @@
 {
   "suiteId": "rembrane.semantic-provider.core",
   "suiteVersion": "0.1",
+  "profileSha256": "9073af5c5d07c6c5cbd586d8ca542645583da0e19a2fea70852fbfbe1bf5a0c5",
   "provider": "rembrane.native",
   "providerVersion": "0.1.0-alpha.1",
   "protocolVersion": "0.1",

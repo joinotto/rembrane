@@ -956,6 +956,8 @@ This roadmap describes sequencing, not release dates.
     and emit strict six-case JSON evidence from every installed CLI adapter.
   - [x] Publish and statically verify the portable semantic-provider
     conformance result schema and example.
+  - [x] Bind portable results and registry evidence to the SHA-256 of the
+    exact reviewed semantic-provider core profile.
 - [x] Evidence-backed provider compatibility registry schema and initial
   native-provider record.
   - [x] Persist exact suite, protocol, disposable namespace, and six-case
