@@ -1170,8 +1170,8 @@ semantic_memory:
 
 knowledge_graph:
   provider: graphiti
-  base_url_env: GRAPHITI_BASE_URL
-  credentials_env: GRAPHITI_CREDENTIALS
+  base_url_env: REMBRANE_GRAPHITI_BASE_URL
+  credentials_reference_env: REMBRANE_GRAPHITI_BEARER_TOKEN_REFERENCE
   namespace_strategy: workspace_hmac
 
 vector_store:

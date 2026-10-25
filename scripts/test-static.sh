@@ -205,6 +205,13 @@ rg -q 'REMBRANE_GRAPHITI_BEARER_TOKEN_REFERENCE' compose.graphiti.yaml
 rg -q 'REMBRANE_GRAPHITI_BEARER_TOKEN_FILE' compose.graphiti.yaml
 rg -q 'REMBRANE_GRAPHITI_NEO4J_AUTH_FILE' compose.graphiti.yaml
 rg -q 'REMBRANE_GRAPHITI_OPENAI_API_KEY_FILE' compose.graphiti.yaml
+rg -q '^REMBRANE_GRAPHITI_BASE_URL=$' .env.example
+rg -q '^REMBRANE_GRAPHITI_BEARER_TOKEN=$' .env.example
+rg -q '^REMBRANE_GRAPHITI_BEARER_TOKEN_REFERENCE=$' .env.example
+if rg -q '^(GRAPHITI_BASE_URL|GRAPHITI_CREDENTIALS)=' .env.example; then
+    echo "Canonical environment template must use REMBRANE_GRAPHITI_* variables" >&2
+    exit 1
+fi
 rg -q 'file:/run/rembrane-secrets/rembrane_graphiti_bearer_token' compose.graphiti.yaml
 rg -q 'NEO4J_AUTH_FILE: /run/secrets/rembrane_graphiti_neo4j_auth' compose.graphiti.yaml
 rg -q 'OPENAI_API_KEY_REFERENCE: file:/run/rembrane-secrets/rembrane_graphiti_openai_api_key' \

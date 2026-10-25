@@ -659,6 +659,8 @@ This roadmap describes sequencing, not release dates.
           credentials.
           - [x] Resolve the environment-selected Graphiti bearer credential
             from validated environment or protected-file reference metadata.
+          - [x] Align Graphiti runtime, privacy diagnostics, documentation, and
+            canonical environment variables on one protected provider profile.
           - [x] Resolve the Graphiti sidecar bearer credential through the
             same protected local locator grammar and mount one mode-restricted
             Compose secret into both worker and sidecar.

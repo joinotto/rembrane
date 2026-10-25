@@ -9,6 +9,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- Graphiti provider diagnostics, endpoint reporting, documentation, and the
+  canonical environment profile now use the same `REMBRANE_GRAPHITI_*`
+  configuration consumed by the graph worker, including protected bearer-token
+  references.
 - CLI privacy diagnostics now validate complete two-secret Mem0 and
   Supermemory reference profiles and report both API and workspace-pseudonym
   reference targets instead of assuming raw environment custody.

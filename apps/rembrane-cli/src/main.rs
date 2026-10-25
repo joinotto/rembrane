@@ -1570,8 +1570,8 @@ fn validate_configured_provider_profiles() -> Result<(), String> {
             ProviderKind::Supermemory,
         ),
         (
-            "GRAPHITI_BASE_URL",
-            "GRAPHITI_CREDENTIALS",
+            "REMBRANE_GRAPHITI_BASE_URL",
+            "REMBRANE_GRAPHITI_BEARER_TOKEN",
             ProviderKind::Graphiti,
         ),
     ] {
@@ -1599,15 +1599,11 @@ fn validate_configured_provider_profiles() -> Result<(), String> {
                     "SUPERMEMORY_WORKSPACE_LOOKUP_SECRET",
                 )?,
             ],
-            _ => std::env::var(credential_variable)
-                .ok()
-                .filter(|value| !value.is_empty())
-                .map(|_| {
-                    SecretReference::environment(credential_variable)
-                        .expect("built-in secret variable must be valid")
-                })
-                .into_iter()
-                .collect(),
+            ProviderKind::Graphiti => vec![configured_secret_reference(
+                "REMBRANE_GRAPHITI_BEARER_TOKEN_REFERENCE",
+                credential_variable,
+            )?],
+            ProviderKind::Native | ProviderKind::KeyProvider => Vec::new(),
         };
         ProviderConnection::remote(kind, endpoint, credentials, ProviderPlacement::External)
             .map_err(|error| format!("invalid {endpoint_variable} configuration: {error}"))?;
@@ -1646,7 +1642,7 @@ fn configured_secret_sources() -> Vec<&'static str> {
             "SUPERMEMORY_WORKSPACE_LOOKUP_SECRET_REFERENCE target",
         ),
         (
-            "GRAPHITI_CREDENTIALS",
+            "REMBRANE_GRAPHITI_BEARER_TOKEN",
             "REMBRANE_GRAPHITI_BEARER_TOKEN_REFERENCE",
             "REMBRANE_GRAPHITI_BEARER_TOKEN_REFERENCE target",
         ),
@@ -1702,7 +1698,7 @@ fn configured_key_provider() -> Result<&'static str, String> {
 fn configured_outbound_endpoints() -> Vec<(&'static str, String)> {
     [
         "MEM0_BASE_URL",
-        "GRAPHITI_BASE_URL",
+        "REMBRANE_GRAPHITI_BASE_URL",
         "MEMORY_OBJECT_ENDPOINT",
         "REMBRANE_REMOTE_MCP_URL",
         "REMBRANE_KEY_PROVIDER_BASE_URL",
