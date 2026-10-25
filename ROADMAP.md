@@ -437,6 +437,8 @@ This roadmap describes sequencing, not release dates.
 ## Phase 4 — Shared workspaces
 
 - [x] Shared-workspace invitations and role-bound acceptance.
+  - [x] Bound invitation lifetime to 30 days and reject acceptance at or after
+    expiry without creating membership.
 - [x] Shared-workspace exact scope grants, including entity-level access.
 - [x] Private-to-shared memory proposals.
   - [x] Content-free, exact-source-version proposal aggregate with source-owner

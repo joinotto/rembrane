@@ -46,7 +46,9 @@ pub use identifier::{
     KnowledgeEdgeId, KnowledgeNodeId, LegalHoldId, MemoryId, PrincipalId, ProjectionJobId,
     ProviderId, ShareProposalId, TripConstraintId, TripDecisionId, TripParticipantId, WorkspaceId,
 };
-pub use invitation::{Invitation, InvitationError, InvitationStatus};
+pub use invitation::{
+    Invitation, InvitationError, InvitationStatus, MAX_INVITATION_LIFETIME_SECONDS,
+};
 pub use key_rotation::{
     KeyRotationError, KeyRotationReceipt, KeyRotationStatus, MAX_KEY_ROTATION_RECIPIENTS,
     WorkspaceKeyRotation,

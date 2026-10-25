@@ -81,7 +81,9 @@ const CHANNEL_INBOX_LEASE_OWNERSHIP_MIGRATION: &str =
     include_str!("../../../migrations/sqlite/0024_channel_inbox_lease_ownership.sql");
 const CHANNEL_MESSAGE_AUDIT_MIGRATION: &str =
     include_str!("../../../migrations/sqlite/0025_channel_message_audit.sql");
-const CURRENT_SCHEMA_VERSION: u32 = 25;
+const WORKSPACE_INVITATION_EXPIRY_MIGRATION: &str =
+    include_str!("../../../migrations/sqlite/0026_workspace_invitation_expiry.sql");
+const CURRENT_SCHEMA_VERSION: u32 = 26;
 const CANONICAL_TABLES: [&str; 10] = [
     "activity_checkpoints",
     "disclosed_memories",
@@ -837,6 +839,12 @@ fn migrate(connection: &mut Connection) -> Result<(), ApplicationError> {
         transaction
             .execute_batch(CHANNEL_MESSAGE_AUDIT_MIGRATION)
             .map_err(|_| ApplicationError::StorageUnavailable)?;
+        version = 25;
+    }
+    if version == 25 {
+        transaction
+            .execute_batch(WORKSPACE_INVITATION_EXPIRY_MIGRATION)
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
     }
     transaction
         .pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
@@ -1430,14 +1438,17 @@ impl<C> InvitationRepository for SqliteStore<C> {
         self.connection
             .execute(
                 "INSERT INTO workspace_invitations (
-                    workspace_id, id, invited_principal_id, invited_by, role, status
-                ) VALUES (?1, ?2, ?3, ?4, ?5, 'pending')",
+                    workspace_id, id, invited_principal_id, invited_by, role, status,
+                    created_at_epoch_seconds, expires_at_epoch_seconds
+                ) VALUES (?1, ?2, ?3, ?4, ?5, 'pending', ?6, ?7)",
                 params![
                     invitation.workspace_id().as_str(),
                     invitation.id().as_str(),
                     invitation.invited_principal_id().as_str(),
                     invitation.invited_by().as_str(),
-                    encode_role(invitation.role())
+                    encode_role(invitation.role()),
+                    invitation.created_at_epoch_seconds(),
+                    invitation.expires_at_epoch_seconds()
                 ],
             )
             .map(|_| ())
@@ -1451,7 +1462,8 @@ impl<C> InvitationRepository for SqliteStore<C> {
     ) -> Result<Option<Invitation>, ApplicationError> {
         self.connection
             .query_row(
-                "SELECT invited_principal_id, invited_by, role, status
+                "SELECT invited_principal_id, invited_by, role, status,
+                        created_at_epoch_seconds, expires_at_epoch_seconds
                  FROM workspace_invitations
                  WHERE workspace_id = ?1 AND id = ?2",
                 params![workspace_id.as_str(), invitation_id.as_str()],
@@ -1461,12 +1473,14 @@ impl<C> InvitationRepository for SqliteStore<C> {
                         row.get::<_, String>(1)?,
                         row.get::<_, String>(2)?,
                         row.get::<_, String>(3)?,
+                        row.get::<_, u64>(4)?,
+                        row.get::<_, u64>(5)?,
                     ))
                 },
             )
             .optional()
             .map_err(|_| ApplicationError::StorageUnavailable)?
-            .map(|(invited, inviter, role, status)| {
+            .map(|(invited, inviter, role, status, created_at, expires_at)| {
                 decode_invitation(
                     invitation_id.clone(),
                     workspace_id.clone(),
@@ -1474,6 +1488,8 @@ impl<C> InvitationRepository for SqliteStore<C> {
                     PrincipalId::new(inviter),
                     &role,
                     &status,
+                    created_at,
+                    expires_at,
                 )
             })
             .transpose()
@@ -1502,12 +1518,16 @@ impl<C> InvitationRepository for SqliteStore<C> {
                 "UPDATE workspace_invitations
                  SET status = 'accepted', updated_at = CURRENT_TIMESTAMP
                  WHERE workspace_id = ?1 AND id = ?2 AND status = 'pending'
-                   AND invited_principal_id = ?3 AND role = ?4",
+                   AND invited_principal_id = ?3 AND role = ?4
+                   AND created_at_epoch_seconds = ?5
+                   AND expires_at_epoch_seconds = ?6",
                 params![
                     invitation.workspace_id().as_str(),
                     invitation.id().as_str(),
                     invitation.invited_principal_id().as_str(),
-                    encode_role(invitation.role())
+                    encode_role(invitation.role()),
+                    invitation.created_at_epoch_seconds(),
+                    invitation.expires_at_epoch_seconds()
                 ],
             )
             .map_err(map_write_error)?;
@@ -1543,7 +1563,9 @@ impl<C> InvitationRepository for SqliteStore<C> {
                  SET status = ?6, updated_at = CURRENT_TIMESTAMP
                  WHERE workspace_id = ?1 AND id = ?2
                    AND invited_principal_id = ?3 AND invited_by = ?4
-                   AND role = ?5 AND status = ?7",
+                   AND role = ?5 AND status = ?7
+                   AND created_at_epoch_seconds = ?8
+                   AND expires_at_epoch_seconds = ?9",
                 params![
                     invitation.workspace_id().as_str(),
                     invitation.id().as_str(),
@@ -1551,7 +1573,9 @@ impl<C> InvitationRepository for SqliteStore<C> {
                     invitation.invited_by().as_str(),
                     encode_role(invitation.role()),
                     encode_invitation_status(invitation.status()),
-                    encode_invitation_status(expected_status)
+                    encode_invitation_status(expected_status),
+                    invitation.created_at_epoch_seconds(),
+                    invitation.expires_at_epoch_seconds()
                 ],
             )
             .map_err(map_write_error)?;
@@ -2250,6 +2274,8 @@ fn decode_invitation(
     invited_by: PrincipalId,
     role: &str,
     status: &str,
+    created_at_epoch_seconds: u64,
+    expires_at_epoch_seconds: u64,
 ) -> Result<Invitation, ApplicationError> {
     let role = decode_role(role)?;
     let invitation = Invitation::new(
@@ -2258,12 +2284,14 @@ fn decode_invitation(
         invited_principal_id,
         invited_by,
         role,
+        created_at_epoch_seconds,
+        expires_at_epoch_seconds,
     )
     .map_err(|_| ApplicationError::StorageUnavailable)?;
     match status {
         "pending" => Ok(invitation),
         "accepted" => invitation
-            .accept()
+            .accept_at(created_at_epoch_seconds)
             .map_err(|_| ApplicationError::StorageUnavailable),
         "revoked" => invitation
             .revoke()

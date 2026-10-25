@@ -11,6 +11,8 @@ pub struct CreateInvitationCommand {
     pub invited_principal_id: PrincipalId,
     pub invited_by: PrincipalId,
     pub role: WorkspaceRole,
+    pub created_at_epoch_seconds: u64,
+    pub expires_at_epoch_seconds: u64,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -71,6 +73,8 @@ where
             command.invited_principal_id,
             command.invited_by,
             command.role,
+            command.created_at_epoch_seconds,
+            command.expires_at_epoch_seconds,
         )
         .map_err(|error| ApplicationError::Validation(error.to_string()))?;
         self.repository.insert_invitation(invitation.clone())?;
@@ -82,6 +86,7 @@ where
         workspace_id: &WorkspaceId,
         invitation_id: &InvitationId,
         accepting_principal_id: &PrincipalId,
+        now_epoch_seconds: u64,
     ) -> Result<Membership, ApplicationError> {
         let invitation = self
             .repository
@@ -91,7 +96,7 @@ where
             return Err(ApplicationError::NotFound);
         }
         let accepted = invitation
-            .accept()
+            .accept_at(now_epoch_seconds)
             .map_err(|error| ApplicationError::Validation(error.to_string()))?;
         let membership = Membership::new(
             workspace_id.clone(),

@@ -43,6 +43,8 @@ fn invitation_command() -> CreateInvitationCommand {
         invited_principal_id: PrincipalId::new("guest"),
         invited_by: PrincipalId::new("owner"),
         role: WorkspaceRole::Member,
+        created_at_epoch_seconds: 1_000,
+        expires_at_epoch_seconds: 2_000,
     }
 }
 
@@ -58,6 +60,7 @@ fn persists_and_atomically_accepts_invitation() {
             &WorkspaceId::new("team"),
             invitation.id(),
             &PrincipalId::new("guest"),
+            1_500,
         )
         .expect("guest should accept invitation");
 
@@ -96,6 +99,7 @@ fn invitation_lookup_and_acceptance_do_not_cross_workspace_or_principal() {
             &WorkspaceId::new("team"),
             invitation.id(),
             &PrincipalId::new("attacker"),
+            1_500,
         )
         .expect_err("another principal must not accept");
     assert_eq!(error, ApplicationError::NotFound);
@@ -103,6 +107,34 @@ fn invitation_lookup_and_acceptance_do_not_cross_workspace_or_principal() {
         store
             .find_membership(&WorkspaceId::new("team"), &PrincipalId::new("guest"))
             .expect("membership lookup should succeed")
+            .is_none()
+    );
+}
+
+#[test]
+fn persisted_expired_invitation_cannot_create_membership() {
+    let mut store = initialized_store();
+    let invitation = InvitationService::new(&mut store)
+        .create(invitation_command())
+        .expect("owner should create invitation");
+
+    let error = InvitationService::new(&mut store)
+        .accept(
+            &WorkspaceId::new("team"),
+            invitation.id(),
+            &PrincipalId::new("guest"),
+            2_000,
+        )
+        .expect_err("expired invitation must fail");
+
+    assert_eq!(
+        error,
+        ApplicationError::Validation("invitation has expired".to_owned())
+    );
+    assert!(
+        store
+            .find_membership(&WorkspaceId::new("team"), &PrincipalId::new("guest"))
+            .expect("membership lookup")
             .is_none()
     );
 }
@@ -118,6 +150,7 @@ fn second_acceptance_does_not_mutate_membership() {
             &WorkspaceId::new("team"),
             invitation.id(),
             &PrincipalId::new("guest"),
+            1_500,
         )
         .expect("first acceptance should succeed");
 
@@ -126,6 +159,7 @@ fn second_acceptance_does_not_mutate_membership() {
             &WorkspaceId::new("team"),
             invitation.id(),
             &PrincipalId::new("guest"),
+            1_500,
         )
         .expect_err("accepted invitation must not be reusable");
     assert_eq!(
@@ -155,6 +189,7 @@ fn persisted_revocation_prevents_acceptance() {
             &WorkspaceId::new("team"),
             invitation.id(),
             &PrincipalId::new("guest"),
+            1_500,
         )
         .expect_err("revoked invitation cannot be accepted");
     assert_eq!(

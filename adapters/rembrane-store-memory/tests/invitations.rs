@@ -52,6 +52,8 @@ fn command(invited_principal_id: &str) -> CreateInvitationCommand {
         invited_principal_id: PrincipalId::new(invited_principal_id),
         invited_by: PrincipalId::new("owner"),
         role: WorkspaceRole::Member,
+        created_at_epoch_seconds: 1_000,
+        expires_at_epoch_seconds: 2_000,
     }
 }
 
@@ -66,6 +68,7 @@ fn invited_principal_accepts_membership_atomically() {
             &WorkspaceId::new("team"),
             invitation.id(),
             &PrincipalId::new("guest"),
+            1_500,
         )
         .expect("invited principal should accept");
 
@@ -90,10 +93,39 @@ fn another_principal_cannot_enumerate_or_accept_invitation() {
             &WorkspaceId::new("team"),
             invitation.id(),
             &PrincipalId::new("attacker"),
+            1_500,
         )
         .expect_err("other principal must be denied");
 
     assert_eq!(error, ApplicationError::NotFound);
+}
+
+#[test]
+fn expired_invitation_cannot_create_membership() {
+    let mut store = shared_store();
+    let invitation = InvitationService::new(&mut store)
+        .create(command("guest"))
+        .expect("owner should invite member");
+
+    let error = InvitationService::new(&mut store)
+        .accept(
+            &WorkspaceId::new("team"),
+            invitation.id(),
+            &PrincipalId::new("guest"),
+            2_000,
+        )
+        .expect_err("expired invitation must fail");
+
+    assert_eq!(
+        error,
+        ApplicationError::Validation("invitation has expired".to_owned())
+    );
+    assert!(
+        store
+            .find_membership(&WorkspaceId::new("team"), &PrincipalId::new("guest"))
+            .expect("membership lookup")
+            .is_none()
+    );
 }
 
 #[test]
@@ -152,6 +184,7 @@ fn owner_can_revoke_pending_invitation() {
             &WorkspaceId::new("team"),
             invitation.id(),
             &PrincipalId::new("guest"),
+            1_500,
         )
         .expect_err("revoked invitation must not be accepted");
     assert_eq!(

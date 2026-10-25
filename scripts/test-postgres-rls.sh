@@ -100,15 +100,16 @@ INSERT INTO memory_share_proposals (
         'workspace_shared', 'global', 'principal_02', 'pending'
     );
 INSERT INTO workspace_invitations (
-    workspace_id, id, invited_principal_id, invited_by, role, status
+    workspace_id, id, invited_principal_id, invited_by, role, status,
+    created_at_epoch_seconds, expires_at_epoch_seconds
 ) VALUES
     (
         'workspace_01', 'invitation_01', 'principal_02', 'principal_01',
-        'viewer', 'pending'
+        'viewer', 'pending', 1000, 2000
     ),
     (
         'workspace_02', 'invitation_02', 'principal_01', 'principal_02',
-        'viewer', 'pending'
+        'viewer', 'pending', 1000, 2000
     );
 INSERT INTO member_scope_grants (
     workspace_id, principal_id, scope_type, scope_value

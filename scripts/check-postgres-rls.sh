@@ -118,7 +118,17 @@ do
     }
 done
 
-rg -F 'administrative_audit_events_are_append_only' "$administration" >/dev/null
+for invariant in \
+    'administrative_audit_events_are_append_only' \
+    'created_at_epoch_seconds bigint NOT NULL' \
+    'expires_at_epoch_seconds bigint NOT NULL' \
+    'expires_at_epoch_seconds - created_at_epoch_seconds <= 2592000'
+do
+    rg -F "$invariant" "$administration" >/dev/null || {
+        echo "PostgreSQL administration invariant is missing: $invariant" >&2
+        exit 1
+    }
+done
 
 for table in \
     checkpoint_disclosures \

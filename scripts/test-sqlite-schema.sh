@@ -55,7 +55,9 @@ sqlite3 "$database" < \
     "$repository_root/migrations/sqlite/0024_channel_inbox_lease_ownership.sql"
 sqlite3 "$database" < \
     "$repository_root/migrations/sqlite/0025_channel_message_audit.sql"
-sqlite3 "$database" "PRAGMA user_version = 25;"
+sqlite3 "$database" < \
+    "$repository_root/migrations/sqlite/0026_workspace_invitation_expiry.sql"
+sqlite3 "$database" "PRAGMA user_version = 26;"
 
 sqlite3 "$database" <<'SQL'
 PRAGMA foreign_keys = ON;
@@ -363,14 +365,18 @@ INSERT INTO workspace_invitations (
     invited_principal_id,
     invited_by,
     role,
-    status
+    status,
+    created_at_epoch_seconds,
+    expires_at_epoch_seconds
 ) VALUES (
     'workspace_shared',
     'invitation_01',
     'principal_02',
     'principal_01',
     'member',
-    'pending'
+    'pending',
+    1000,
+    2000
 );
 BEGIN IMMEDIATE;
 UPDATE workspace_invitations
@@ -673,7 +679,7 @@ table_count=$(
 )
 
 test "$table_count" -ge 9
-test "$(sqlite3 "$database" "PRAGMA user_version;")" -eq 25
+test "$(sqlite3 "$database" "PRAGMA user_version;")" -eq 26
 test "$(
     sqlite3 "$database" \
         "SELECT count(*) FROM channel_event_receipts WHERE event_id = 'event_channel_01';"

@@ -9,6 +9,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- Bounded shared-workspace invitation validity with persisted creation and
+  expiry time, a 30-day maximum lifetime, and fail-closed acceptance at the
+  expiry boundary.
 - A parameter-bound PostgreSQL tenant-session contract with exact context
   read-back requirements and a live pooled-connection leakage regression.
 - A typed reference-only PostgreSQL connection profile with explicit

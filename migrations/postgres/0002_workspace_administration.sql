@@ -7,10 +7,16 @@ CREATE TABLE workspace_invitations (
     invited_by text NOT NULL REFERENCES principals (id),
     role text NOT NULL CHECK (role IN ('admin', 'member', 'viewer')),
     status text NOT NULL CHECK (status IN ('pending', 'accepted', 'revoked')),
+    created_at_epoch_seconds bigint NOT NULL CHECK (created_at_epoch_seconds > 0),
+    expires_at_epoch_seconds bigint NOT NULL,
     created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (workspace_id, id),
-    CHECK (invited_principal_id <> invited_by)
+    CHECK (invited_principal_id <> invited_by),
+    CHECK (
+        expires_at_epoch_seconds > created_at_epoch_seconds
+        AND expires_at_epoch_seconds - created_at_epoch_seconds <= 2592000
+    )
 );
 
 CREATE UNIQUE INDEX workspace_invitations_one_pending_per_principal
