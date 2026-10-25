@@ -534,6 +534,8 @@ This roadmap describes sequencing, not release dates.
   - [x] Add a machine-verifiable compatibility lock over the canonical wire
     schemas, HTTP binding, conformance profile, and lifecycle fixtures so
     protocol changes require explicit review.
+    - [x] Tamper-test the compatibility verifier against an independently
+      copied canonical schema in the unconditional static gate.
   - [x] Add an immutable, versioned discovery manifest with standard well-known
     path, transports, operation capabilities, privacy mode, supported domains,
     and bounded context/event/sync limits.

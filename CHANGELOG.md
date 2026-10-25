@@ -29,6 +29,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - A machine-verifiable Memory Provider Protocol compatibility lock covering
   canonical schemas, HTTP binding, conformance profiles, and lifecycle
   fixtures, with CI rejection of unreviewed wire-surface drift.
+- An unconditional negative compatibility-lock fixture proving a tampered
+  canonical Memory Provider schema fails verification.
 - A parameter-bound PostgreSQL tenant-session contract with exact context
   read-back requirements and a live pooled-connection leakage regression.
 - A typed reference-only PostgreSQL connection profile with explicit
