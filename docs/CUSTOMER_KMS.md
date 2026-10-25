@@ -58,6 +58,9 @@ implementation with per-workspace rows, one active generation, retained
 historical references, transactional compare-and-activate rotation, and
 thread-safe shared access for concurrent sidecar workers. Historical keyrings
 are capped at 1,024 generations and SQLite reads stop after one overflow row.
+The adapter test suite executes the complete rotation lifecycle: generate,
+persist-before-activate, seal with the new generation, reload the durable
+keyring, and decrypt records from both current and historical generations.
 
 ## Required request binding
 

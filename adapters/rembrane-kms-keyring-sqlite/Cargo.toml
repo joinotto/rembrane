@@ -12,5 +12,10 @@ rembrane-domain = { path = "../../crates/rembrane-domain" }
 rembrane-provider-sdk = { path = "../../crates/rembrane-provider-sdk" }
 rusqlite = { version = "0.37", features = ["bundled"] }
 
+[dev-dependencies]
+rembrane-crypto = { path = "../../crates/rembrane-crypto" }
+rembrane-crypto-rustcrypto = { path = "../rembrane-crypto-rustcrypto" }
+zeroize = "1"
+
 [lints]
 workspace = true

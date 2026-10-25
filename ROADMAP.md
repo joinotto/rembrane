@@ -133,6 +133,8 @@ This roadmap describes sequencing, not release dates.
         attempts can activate only one successor generation.
       - [x] Bound historical keyrings and durable loads to 1,024 generations
         with explicit overflow rejection.
+      - [x] Prove generate, persist-before-activate, reload, current decrypt,
+        and historical decrypt as one executable sidecar rotation flow.
   - [x] Add a provider-agnostic configured cipher that dispatches to local
     environment/macOS keyrings or a policy-negotiated HTTP key provider.
     - [x] Accept consumed customer key-provider configuration from

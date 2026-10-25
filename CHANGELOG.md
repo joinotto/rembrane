@@ -33,6 +33,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   bounded lock waiting, and concurrent single-successor rotation coverage.
 - A 1,024-generation customer-KMS keyring limit enforced in both provider
   contracts and bounded durable SQLite reads.
+- End-to-end customer-KMS sidecar coverage spanning key generation,
+  persistence-before-activation, durable reload, and current plus historical
+  record decryption.
 - A strict language-neutral authenticated channel-processor message schema and
   secret-free fixture carrying canonical tenant identity and event
   idempotency metadata to cooperative bots and agents.

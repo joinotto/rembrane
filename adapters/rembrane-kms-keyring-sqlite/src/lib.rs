@@ -208,8 +208,15 @@ impl CustomerKmsKeyReferenceStore for SqliteCustomerKmsKeyReferenceStore {
 mod tests {
     use std::sync::{Arc, Barrier};
 
+    use rembrane_crypto::{EncryptionContext, PayloadPurpose, RecordCipher};
+    use rembrane_crypto_rustcrypto::{RustCryptoKeyringCipher, RustCryptoRecordCipher};
     use rembrane_domain::WorkspaceId;
-    use rembrane_provider_sdk::{CustomerKmsKeyReference, CustomerKmsKeyReferenceStore};
+    use rembrane_provider_sdk::{
+        CloudKmsDecryptClient, CloudKmsDecryptRequest, CloudKmsGenerateRequest,
+        CloudKmsGeneratedKey, CloudKmsKeyClient, CustomerKmsKeyReference,
+        CustomerKmsKeyReferenceStore, GoogleCloudKmsAdapter, ProviderError,
+    };
+    use zeroize::Zeroizing;
 
     use super::SqliteCustomerKmsKeyReferenceStore;
 
@@ -332,5 +339,77 @@ mod tests {
     fn store_is_send_and_sync_for_shared_sidecar_workers() {
         fn assert_send_sync<T: Send + Sync>() {}
         assert_send_sync::<SqliteCustomerKmsKeyReferenceStore>();
+    }
+
+    struct FixtureCloudKms;
+
+    impl CloudKmsDecryptClient for FixtureCloudKms {
+        fn decrypt(
+            &self,
+            request: CloudKmsDecryptRequest<'_>,
+        ) -> Result<Zeroizing<Vec<u8>>, ProviderError> {
+            Ok(Zeroizing::new(request.wrapped_key().to_vec()))
+        }
+    }
+
+    impl CloudKmsKeyClient for FixtureCloudKms {
+        fn generate_data_key(
+            &self,
+            request: CloudKmsGenerateRequest<'_>,
+        ) -> Result<CloudKmsGeneratedKey, ProviderError> {
+            assert_eq!(request.plaintext_key_bytes(), 32);
+            CloudKmsGeneratedKey::new("key-v2", vec![2; 32], Zeroizing::new(vec![2; 32]))
+        }
+    }
+
+    fn context(workspace: &WorkspaceId) -> EncryptionContext {
+        EncryptionContext::new(
+            workspace.clone(),
+            "memory-1",
+            1,
+            PayloadPurpose::MemoryContent,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn rotation_persists_reloads_and_preserves_historical_decryption() {
+        let store = SqliteCustomerKmsKeyReferenceStore::in_memory().unwrap();
+        let workspace = WorkspaceId::new("workspace-a");
+        store
+            .initialize_workspace(
+                &workspace,
+                &CustomerKmsKeyReference::new(1, "key-v1", vec![1; 32]).unwrap(),
+            )
+            .unwrap();
+        let old_cipher = RustCryptoRecordCipher::new("key-v1", [1; 32]).unwrap();
+        let historical = old_cipher
+            .seal(&context(&workspace), b"before rotation")
+            .unwrap();
+        let adapter = GoogleCloudKmsAdapter::new(FixtureCloudKms);
+        let initial = store.load_keyring(&workspace).unwrap();
+
+        let generated = initial
+            .generate_and_persist_next(&workspace, &adapter, &store)
+            .unwrap();
+        let (active_cipher, persisted_reference) =
+            RustCryptoRecordCipher::from_generated_customer_kms(generated).unwrap();
+        let current = active_cipher
+            .seal(&context(&workspace), b"after rotation")
+            .unwrap();
+        assert_eq!(persisted_reference.generation(), 2);
+
+        let reloaded = store.load_keyring(&workspace).unwrap();
+        let cipher =
+            RustCryptoKeyringCipher::from_customer_kms(&workspace, &reloaded, &adapter).unwrap();
+
+        assert_eq!(
+            cipher.open(&context(&workspace), &historical).unwrap(),
+            b"before rotation"
+        );
+        assert_eq!(
+            cipher.open(&context(&workspace), &current).unwrap(),
+            b"after rotation"
+        );
     }
 }

@@ -1291,9 +1291,12 @@ dependencies = [
 name = "rembrane-kms-keyring-sqlite"
 version = "0.1.0-alpha.1"
 dependencies = [
+ "rembrane-crypto",
+ "rembrane-crypto-rustcrypto",
  "rembrane-domain",
  "rembrane-provider-sdk",
  "rusqlite",
+ "zeroize",
 ]
 
 [[package]]
