@@ -171,6 +171,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   memory, and version binding, preventing forged revision metadata beneath an
   otherwise valid deterministic document pseudonym. Existing unbound
   namespaces require reindex.
+- A graph-context application service that treats native or Graphiti
+  candidates as untrusted hints and returns only exact canonical edges matching
+  workspace, version, requested endpoint direction, and temporal validity.
 - PostgreSQL invitation lookup and bounded deterministic listing with optional
   status filtering, numeric lifetime decoding, terminal-state restoration,
   and exact tenant/invitation correlation.

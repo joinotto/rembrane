@@ -11,6 +11,7 @@ mod channel_inbox_administration;
 mod channel_inbox_worker;
 mod checkpoint;
 mod error;
+mod graph_context;
 mod graph_projection_worker;
 mod invitation;
 mod member_lifecycle;
@@ -43,6 +44,7 @@ pub use checkpoint::{
     CheckpointService, CreateCheckpointCommand, ResumeActivityCommand, UpdateCheckpointCommand,
 };
 pub use error::ApplicationError;
+pub use graph_context::GraphContextService;
 pub use graph_projection_worker::GraphProjectionWorker;
 pub use invitation::{
     AcceptInvitationCommand, CreateInvitationCommand, InvitationService, ListInvitationsQuery,

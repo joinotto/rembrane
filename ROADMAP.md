@@ -408,6 +408,9 @@ This roadmap describes sequencing, not release dates.
     aliases, and explicit supersession references.
   - [x] Add tenant-isolated mutation and neighbourhood repository contracts
     with bounded temporal traversal and optimistic version checks.
+  - [x] Re-authorize untrusted graph-provider candidates against exact
+    canonical workspace, edge version, endpoint direction, and validity time
+    before exposing graph context.
   - [x] Add local SQLite graph persistence and Graphiti projection adapter.
     - [x] Construct Graphiti from validated provider profiles through any
       deployment-selected secret resolver without fixed credential names.
