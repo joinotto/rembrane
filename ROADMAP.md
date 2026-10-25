@@ -228,6 +228,8 @@ This roadmap describes sequencing, not release dates.
   plaintext-processing locations before provider selection.
 - [x] Reject malformed optional discovery capabilities, import/export format
   lists, and resource limits before provider selection.
+- [x] Enforce closed discovery objects, HTTPS OAuth endpoints, absolute MCP
+  endpoints, bounded provider metadata, and namespaced extension keys in SDKs.
 - [ ] Add remote Streamable HTTP MCP with OAuth.
   - [x] Define HTTPS endpoints, RFC 9728 discovery metadata, bearer challenges,
     verified connection identity, scope ceilings, and session security rules.

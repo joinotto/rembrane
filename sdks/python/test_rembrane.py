@@ -64,6 +64,12 @@ class RembraneClientTests(unittest.TestCase):
         self.assertEqual(captured.exception.code, "invalid_discovery")
 
         del discovery["capabilities"]["sync"]
+        discovery["capabilities"]["context_resolution"] = True
+        with self.assertRaises(RembraneError) as captured:
+            client.discover()
+        self.assertEqual(captured.exception.code, "invalid_discovery")
+
+        del discovery["capabilities"]["context_resolution"]
         discovery["privacy"]["plaintextProcessingLocation"] = "browser-extension"
         with self.assertRaises(RembraneError) as captured:
             client.discover()

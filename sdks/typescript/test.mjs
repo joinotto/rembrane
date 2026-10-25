@@ -280,6 +280,27 @@ await assert.rejects(
     error instanceof RembraneError && error.code === "invalid_discovery",
 );
 
+const ambiguousDiscovery = new RembraneClient({
+  baseUrl: "https://memory.example.test/v1",
+  token: "must-not-leak",
+  fetch: async () => ({
+    ok: true,
+    status: 200,
+    headers: { get: () => "application/json" },
+    text: async () =>
+      JSON.stringify({
+        ...discovery,
+        endpoints: { api: "https://memory.example.test/v1" },
+        capabilities: { ...discovery.capabilities, context_resolution: true },
+      }),
+  }),
+});
+await assert.rejects(
+  ambiguousDiscovery.discover(),
+  (error) =>
+    error instanceof RembraneError && error.code === "invalid_discovery",
+);
+
 const travelRequests = [
   [
     "createTrip",

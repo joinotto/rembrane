@@ -71,6 +71,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - SDK discovery now validates optional boolean capabilities, unique string
   import/export format lists, and positive integer limits instead of trusting
   malformed optional provider advertisements.
+- SDK discovery now enforces the schema's closed object shapes, HTTPS OAuth
+  endpoints, absolute MCP endpoints, bounded provider implementation metadata,
+  and namespaced extension keys.
 - Protected `env:` and `file:` credential references for each workspace actor
   in the portable Memory Provider conformance runner, with opaque failures,
   strict local-file validation, raw-variable compatibility, and

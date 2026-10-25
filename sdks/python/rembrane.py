@@ -615,7 +615,18 @@ def _validate_travel_request_identity(
 
 
 def _validate_memory_discovery(value: Any, expected_api: str) -> MemoryDiscovery:
-    if type(value) is not dict:
+    if type(value) is not dict or not _has_only_keys(
+        value,
+        {
+            "provider",
+            "protocolVersions",
+            "endpoints",
+            "capabilities",
+            "limits",
+            "privacy",
+            "extensions",
+        },
+    ):
         raise _invalid_discovery()
     provider = value.get("provider")
     versions = value.get("protocolVersions")
@@ -632,8 +643,16 @@ def _validate_memory_discovery(value: Any, expected_api: str) -> MemoryDiscovery
     }
     if (
         type(provider) is not dict
+        or not _has_only_keys(provider, {"id", "name", "implementation"})
         or not _is_bounded_text(provider.get("id"), 255)
         or not _is_bounded_text(provider.get("name"), 255)
+        or (
+            "implementation" in provider
+            and (
+                type(provider["implementation"]) is not str
+                or len(provider["implementation"].encode("utf-8")) > 255
+            )
+        )
         or type(versions) is not list
         or not versions
         or not _is_unique_string_list(versions)
@@ -643,8 +662,30 @@ def _validate_memory_discovery(value: Any, expected_api: str) -> MemoryDiscovery
             for version in versions
         )
         or type(endpoints) is not dict
+        or not _has_only_keys(
+            endpoints, {"api", "oauthAuthorization", "oauthToken", "mcp"}
+        )
         or _normalize_api_root(endpoints.get("api")) != expected_api
+        or not all(
+            name not in endpoints or _is_absolute_url(endpoints[name], https_only=True)
+            for name in {"oauthAuthorization", "oauthToken"}
+        )
+        or ("mcp" in endpoints and not _is_absolute_url(endpoints["mcp"]))
         or type(capabilities) is not dict
+        or not _has_only_keys(
+            capabilities,
+            {
+                "contextResolution",
+                "questionResolution",
+                "memoryProposal",
+                "activityCheckpoint",
+                "disclosureReceipt",
+                "deletionPropagation",
+                "sync",
+                "imports",
+                "exports",
+            },
+        )
         or not all(
             type(capabilities.get(name)) is bool for name in required_capabilities
         )
@@ -661,6 +702,14 @@ def _validate_memory_discovery(value: Any, expected_api: str) -> MemoryDiscovery
             limits is not None
             and (
                 type(limits) is not dict
+                or not _has_only_keys(
+                    limits,
+                    {
+                        "maximumContextItems",
+                        "maximumContextBytes",
+                        "maximumEventBytes",
+                    },
+                )
                 or not all(
                     name not in limits
                     or (
@@ -676,6 +725,14 @@ def _validate_memory_discovery(value: Any, expected_api: str) -> MemoryDiscovery
             )
         )
         or type(privacy) is not dict
+        or not _has_only_keys(
+            privacy,
+            {
+                "processingModes",
+                "disclosureReceipts",
+                "plaintextProcessingLocation",
+            },
+        )
         or privacy.get("disclosureReceipts") is not True
         or type(privacy.get("processingModes")) is not list
         or not privacy["processingModes"]
@@ -688,6 +745,15 @@ def _validate_memory_discovery(value: Any, expected_api: str) -> MemoryDiscovery
             and privacy["plaintextProcessingLocation"]
             not in DISCOVERY_PLAINTEXT_LOCATIONS
         )
+        or (
+            "extensions" in value
+            and (
+                type(value["extensions"]) is not dict
+                or not all(
+                    _valid_extension_name(name) for name in value["extensions"]
+                )
+            )
+        )
     ):
         raise _invalid_discovery()
     return value
@@ -698,6 +764,41 @@ def _is_unique_string_list(value: Any) -> bool:
         type(value) is list
         and all(type(item) is str for item in value)
         and len(set(value)) == len(value)
+    )
+
+
+def _has_only_keys(value: dict[str, Any], allowed: set[str]) -> bool:
+    return set(value).issubset(allowed)
+
+
+def _is_absolute_url(value: Any, *, https_only: bool = False) -> bool:
+    if type(value) is not str:
+        return False
+    parsed = urlsplit(value)
+    return bool(parsed.scheme and parsed.netloc) and (
+        not https_only or parsed.scheme == "https"
+    )
+
+
+def _valid_extension_name(value: Any) -> bool:
+    if type(value) is not str or "/" not in value:
+        return False
+    namespace, name = value.split("/", 1)
+    return (
+        bool(namespace)
+        and namespace[0].isalnum()
+        and namespace[0].isascii()
+        and all(
+            character.isascii()
+            and (character.islower() or character.isdigit() or character in ".-")
+            for character in namespace
+        )
+        and bool(name)
+        and all(
+            character.isascii()
+            and (character.isalnum() or character in "._-")
+            for character in name
+        )
     )
 
 

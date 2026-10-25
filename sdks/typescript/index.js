@@ -361,9 +361,22 @@ function validateMemoryDiscovery(value, expectedApi) {
   const privacy = value?.privacy;
   if (
     !isObject(value) ||
+    !hasOnlyKeys(value, [
+      "provider",
+      "protocolVersions",
+      "endpoints",
+      "capabilities",
+      "limits",
+      "privacy",
+      "extensions",
+    ]) ||
     !isObject(value.provider) ||
+    !hasOnlyKeys(value.provider, ["id", "name", "implementation"]) ||
     !isBoundedText(value.provider.id, 255) ||
     !isBoundedText(value.provider.name, 255) ||
+    (value.provider.implementation !== undefined &&
+      (typeof value.provider.implementation !== "string" ||
+        utf8Length(value.provider.implementation) > 255)) ||
     !Array.isArray(value.protocolVersions) ||
     value.protocolVersions.length === 0 ||
     new Set(value.protocolVersions).size !== value.protocolVersions.length ||
@@ -371,8 +384,32 @@ function validateMemoryDiscovery(value, expectedApi) {
       (version) => typeof version === "string" && /^\d+\.\d+$/u.test(version),
     ) ||
     !isObject(value.endpoints) ||
+    !hasOnlyKeys(value.endpoints, [
+      "api",
+      "oauthAuthorization",
+      "oauthToken",
+      "mcp",
+    ]) ||
     normalizeApiRoot(value.endpoints.api) !== expectedApi ||
+    !["oauthAuthorization", "oauthToken"].every(
+      (key) =>
+        value.endpoints[key] === undefined ||
+        isAbsoluteUrl(value.endpoints[key], true),
+    ) ||
+    (value.endpoints.mcp !== undefined &&
+      !isAbsoluteUrl(value.endpoints.mcp, false)) ||
     !isObject(capabilities) ||
+    !hasOnlyKeys(capabilities, [
+      "contextResolution",
+      "questionResolution",
+      "memoryProposal",
+      "activityCheckpoint",
+      "disclosureReceipt",
+      "deletionPropagation",
+      "sync",
+      "imports",
+      "exports",
+    ]) ||
     ![
       "contextResolution",
       "memoryProposal",
@@ -392,12 +429,22 @@ function validateMemoryDiscovery(value, expectedApi) {
     ) ||
     (limits !== undefined &&
       (!isObject(limits) ||
+        !hasOnlyKeys(limits, [
+          "maximumContextItems",
+          "maximumContextBytes",
+          "maximumEventBytes",
+        ]) ||
         !["maximumContextItems", "maximumContextBytes", "maximumEventBytes"].every(
           (key) =>
             limits[key] === undefined ||
             (Number.isSafeInteger(limits[key]) && limits[key] > 0),
         ))) ||
     !isObject(privacy) ||
+    !hasOnlyKeys(privacy, [
+      "processingModes",
+      "disclosureReceipts",
+      "plaintextProcessingLocation",
+    ]) ||
     privacy.disclosureReceipts !== true ||
     !Array.isArray(privacy.processingModes) ||
     privacy.processingModes.length === 0 ||
@@ -407,6 +454,12 @@ function validateMemoryDiscovery(value, expectedApi) {
     ) ||
     (privacy.plaintextProcessingLocation !== undefined &&
       !DISCOVERY_PLAINTEXT_LOCATIONS.has(privacy.plaintextProcessingLocation))
+    ||
+    (value.extensions !== undefined &&
+      (!isObject(value.extensions) ||
+        !Object.keys(value.extensions).every((key) =>
+          /^[a-z0-9][a-z0-9.-]+\/[a-zA-Z0-9._-]+$/u.test(key),
+        )))
   ) {
     throw new RembraneError(
       200,
@@ -415,6 +468,23 @@ function validateMemoryDiscovery(value, expectedApi) {
     );
   }
   return value;
+}
+
+function hasOnlyKeys(value, allowedKeys) {
+  const allowed = new Set(allowedKeys);
+  return Object.keys(value).every((key) => allowed.has(key));
+}
+
+function isAbsoluteUrl(value, requireHttps) {
+  if (typeof value !== "string") {
+    return false;
+  }
+  try {
+    const url = new URL(value);
+    return Boolean(url.hostname) && (!requireHttps || url.protocol === "https:");
+  } catch {
+    return false;
+  }
 }
 
 function normalizeApiRoot(value) {
