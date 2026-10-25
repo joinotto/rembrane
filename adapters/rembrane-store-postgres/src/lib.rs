@@ -3152,17 +3152,18 @@ mod tests {
     use std::rc::Rc;
 
     use rembrane_application::{
-        AdministrativeAuditRepository, ApplicationError, CreateInvitationCommand,
-        InvitationRepository, InvitationService, KeyRotationRepository, MemberLifecycleRepository,
-        MemberScopeGrantRepository, MembershipRepository, RetentionRepository, WorkspaceRepository,
+        AdministrativeAuditRepository, ApplicationError, AuthorizeClientCommand,
+        AuthorizeClientService, CreateInvitationCommand, InvitationRepository, InvitationService,
+        KeyRotationRepository, MemberLifecycleRepository, MemberScopeGrantRepository,
+        MembershipRepository, RetentionRepository, WorkspaceRepository,
     };
     use rembrane_domain::{
         AdministrativeAction, AdministrativeAuditEvent, AdministrativeAuditEventId,
-        AdministrativeTargetKind, Invitation, InvitationId, InvitationStatus, KeyRotationId,
-        KeyRotationReceipt, KeyRotationStatus, LegalHoldId, LegalHoldStatus, MemberScopeGrant,
-        MembershipStatus, Principal, PrincipalId, ProviderId, ReadScope, RetentionPeriod,
-        RetentionResource, Workspace, WorkspaceId, WorkspaceKeyRotation, WorkspaceRetentionPolicy,
-        WorkspaceRole,
+        AdministrativeTargetKind, ClientId, EntityId, Invitation, InvitationId, InvitationStatus,
+        KeyRotationId, KeyRotationReceipt, KeyRotationStatus, LegalHoldId, LegalHoldStatus,
+        MemberScopeGrant, MembershipStatus, Principal, PrincipalId, ProviderId, ReadScope,
+        RetentionPeriod, RetentionResource, Workspace, WorkspaceId, WorkspaceKeyRotation,
+        WorkspaceRetentionPolicy, WorkspaceRole, WritePermission,
     };
 
     use super::{
@@ -4928,6 +4929,148 @@ mod tests {
             2
         );
         assert_eq!(calls.last(), Some(&Call::Commit));
+    }
+
+    #[test]
+    fn tenant_store_authorizes_client_from_composed_postgres_ports() {
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let store = PostgresStore::new(FakePool {
+            calls: Rc::clone(&calls),
+            tenant_batches: RefCell::new(
+                [
+                    VecDeque::from([
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                    ]),
+                    VecDeque::from([
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                    ]),
+                    VecDeque::from([
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                    ]),
+                ]
+                .into(),
+            ),
+            row_batches: RefCell::new(
+                [
+                    vec![FakeRow::membership(
+                        "workspace_01",
+                        "principal_member",
+                        "member",
+                        "active",
+                    )],
+                    Vec::new(),
+                    vec![FakeRow::member_scope(
+                        "workspace_01",
+                        "principal_member",
+                        "entity",
+                        "project_01",
+                    )],
+                ]
+                .into(),
+            ),
+        });
+        let tenant = store.for_workspace(WorkspaceId::new("workspace_01"));
+
+        let grants = AuthorizeClientService::new(&tenant)
+            .execute(AuthorizeClientCommand {
+                client_id: ClientId::new("client_coding_tool"),
+                workspace_id: WorkspaceId::new("workspace_01"),
+                principal_id: PrincipalId::new("principal_member"),
+                requested_read_scopes: vec![
+                    ReadScope::Global,
+                    ReadScope::Entity {
+                        id: EntityId::new("project_01"),
+                    },
+                ],
+                requested_read_permissions: Vec::new(),
+                requested_write_permissions: vec![
+                    WritePermission::CreateMemory,
+                    WritePermission::ProposeMemory,
+                    WritePermission::WriteCheckpoint,
+                ],
+            })
+            .expect("authorize tenant client");
+
+        assert_eq!(
+            grants.read.scopes,
+            vec![ReadScope::Entity {
+                id: EntityId::new("project_01"),
+            }]
+        );
+        assert_eq!(
+            grants.write.permissions,
+            vec![
+                WritePermission::ProposeMemory,
+                WritePermission::WriteCheckpoint,
+            ]
+        );
+        assert_eq!(
+            calls
+                .borrow()
+                .iter()
+                .filter(|call| **call == Call::Commit)
+                .count(),
+            3
+        );
+    }
+
+    #[test]
+    fn tenant_store_denies_client_while_key_rotation_is_required() {
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let store = PostgresStore::new(FakePool {
+            calls: Rc::clone(&calls),
+            tenant_batches: RefCell::new(
+                [
+                    VecDeque::from([
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                    ]),
+                    VecDeque::from([
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                    ]),
+                ]
+                .into(),
+            ),
+            row_batches: RefCell::new(
+                [
+                    vec![FakeRow::membership(
+                        "workspace_01",
+                        "principal_member",
+                        "member",
+                        "active",
+                    )],
+                    vec![FakeRow::key_rotation(
+                        "workspace_01",
+                        "rotation_required",
+                        5,
+                        "required",
+                        "",
+                        "",
+                    )],
+                ]
+                .into(),
+            ),
+        });
+        let tenant = store.for_workspace(WorkspaceId::new("workspace_01"));
+
+        assert_eq!(
+            AuthorizeClientService::new(&tenant).execute(AuthorizeClientCommand {
+                client_id: ClientId::new("client_coding_tool"),
+                workspace_id: WorkspaceId::new("workspace_01"),
+                principal_id: PrincipalId::new("principal_member"),
+                requested_read_scopes: vec![ReadScope::Global],
+                requested_read_permissions: Vec::new(),
+                requested_write_permissions: vec![WritePermission::ProposeMemory],
+            }),
+            Err(ApplicationError::AccessDenied)
+        );
+        assert!(!calls.borrow().iter().any(
+            |call| matches!(call, Call::Query(statement, _) if statement == LIST_MEMBER_SCOPE_GRANTS_SQL)
+        ));
     }
 
     #[test]

@@ -81,6 +81,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - PostgreSQL `MemberLifecycleRepository` support with workspace-row
   serialization, optimistic member removal, full scope revocation, required
   key-rotation creation, and paired lifecycle audit evidence in one transaction.
+- End-to-end PostgreSQL client-authorization composition proving role-filtered
+  write permissions, explicit member scopes, and fail-closed denial while a
+  workspace key rotation remains required.
 - PostgreSQL invitation lookup and bounded deterministic listing with optional
   status filtering, numeric lifetime decoding, terminal-state restoration,
   and exact tenant/invitation correlation.
