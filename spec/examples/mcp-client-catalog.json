@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "clients": [
+    {
+      "id": "codex",
+      "configFormat": "toml",
+      "environmentMode": "inherit-allowlist"
+    },
+    {
+      "id": "claude-code",
+      "configFormat": "json",
+      "environmentMode": "placeholder"
+    },
+    {
+      "id": "gemini-cli",
+      "configFormat": "json",
+      "environmentMode": "placeholder"
+    },
+    {
+      "id": "cursor",
+      "configFormat": "json",
+      "environmentMode": "placeholder"
+    },
+    {
+      "id": "vscode",
+      "configFormat": "json",
+      "environmentMode": "placeholder"
+    },
+    {
+      "id": "zed",
+      "configFormat": "json",
+      "environmentMode": "process-inherited"
+    },
+    {
+      "id": "opencode",
+      "configFormat": "json",
+      "environmentMode": "placeholder"
+    },
+    {
+      "id": "generic",
+      "configFormat": "rembrane-stdio-manifest-v1",
+      "environmentMode": "required-environment"
+    }
+  ]
+}

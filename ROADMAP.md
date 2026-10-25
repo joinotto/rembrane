@@ -919,6 +919,8 @@ This roadmap describes sequencing, not release dates.
     - [x] Expose a schema-versioned machine-readable catalog of supported
       agent clients, configuration formats, and secret-reference environment
       modes.
+      - [x] Publish a strict portable JSON Schema and canonical fixture, with
+        the CLI serializer pinned to the fixture.
 
 ## Release gates
 

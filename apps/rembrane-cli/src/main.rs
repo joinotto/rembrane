@@ -2719,6 +2719,13 @@ mod tests {
                 .map(|client| client.environment_mode),
             Some("process-inherited")
         );
+        let serialized =
+            serde_json::to_value(catalog).expect("catalog serialization should succeed");
+        let canonical: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../spec/examples/mcp-client-catalog.json"
+        ))
+        .expect("canonical client catalog fixture should be valid");
+        assert_eq!(serialized, canonical);
     }
 
     #[test]

@@ -35,6 +35,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   Claude Code, Gemini CLI, Cursor, VS Code, Zed, OpenCode, and the generic bot
   manifest, including each client's configuration and secret-reference
   environment mode.
+- A strict portable schema and canonical fixture for the MCP client catalog,
+  with the CLI serializer pinned to the published representation.
 - A parameter-bound PostgreSQL tenant-session contract with exact context
   read-back requirements and a live pooled-connection leakage regression.
 - A typed reference-only PostgreSQL connection profile with explicit

@@ -22,6 +22,7 @@ ruby -e 'require "yaml"; YAML.load_file(ARGV.fetch(0))' spec/memory-provider-ope
 ruby -e 'require "yaml"; YAML.load_file(ARGV.fetch(0))' spec/mobile-share-openapi.yaml
 jq empty \
     spec/discovery.schema.json \
+    spec/mcp-client-catalog.schema.json \
     spec/memory-provider-compatibility-lock.json \
     spec/memory-provider.schema.json \
     spec/memory-provider-conformance.schema.json \
@@ -42,12 +43,33 @@ jq empty \
     spec/examples/provider-search-request.json \
     spec/examples/provider-search-response.json \
     spec/examples/key-provider-manifest.json \
+    spec/examples/mcp-client-catalog.json \
     spec/provider-manifest.schema.json \
     spec/provider-registry.json \
     spec/provider-registry.schema.json \
     spec/oauth-protected-resource.schema.json \
     spec/stdio-connection-manifest.schema.json \
     tests/postman/rembrane-local.postman_collection.json
+
+jq -e '
+    .schemaVersion == 1
+    and (.clients | length == 8)
+    and ([.clients[].id] | length == (unique | length))
+    and all(
+        .clients[];
+        (.id | test("^[a-z0-9][a-z0-9-]*$"))
+        and (.configFormat | IN("toml", "json", "rembrane-stdio-manifest-v1"))
+        and (
+            .environmentMode
+            | IN(
+                "inherit-allowlist",
+                "placeholder",
+                "process-inherited",
+                "required-environment"
+            )
+        )
+    )
+' spec/examples/mcp-client-catalog.json >/dev/null
 
 node scripts/verify-memory-provider-compatibility.mjs
 
