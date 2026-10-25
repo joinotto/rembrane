@@ -1411,6 +1411,8 @@ This roadmap describes sequencing, not release dates.
     replacement, bounded search, and version-aware deletion semantics.
     - [x] Add an authenticated, redirect-free, proxy-free, bounded HTTP
       transport for Mem0 OSS exact add, list, search, and deletion operations.
+      - [x] Bound serialized requests and preserve zeroizing body ownership
+        through direct HTTP transmission.
       - [x] Keep bounded provider response bodies in zeroizing storage through
         canonical metadata decoding.
       - [x] Permit plaintext HTTP only for literal loopback IP addresses,
@@ -1468,6 +1470,8 @@ This roadmap describes sequencing, not release dates.
           independently and prefer the deterministic caller ID.
     - [x] Add an authenticated, redirect-free, proxy-free, bounded HTTP
       transport with scoped convergence polling and confirmed deletion.
+      - [x] Bound serialized requests and preserve zeroizing body ownership
+        through direct HTTP transmission.
       - [x] Zeroize bounded response bodies after decoding and stream past
         arbitrary deletion error objects without retaining their payloads.
       - [x] Classify credential failures and permanent provider rejection

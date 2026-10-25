@@ -23,6 +23,7 @@ use reqwest::blocking::{Client, Response};
 use reqwest::header::{ACCEPT, CONTENT_LENGTH, CONTENT_TYPE, HeaderName};
 
 const MAXIMUM_CONTENT_BYTES: usize = 262_144;
+const MAXIMUM_REQUEST_BYTES: usize = MAXIMUM_CONTENT_BYTES + 16_384;
 const MAXIMUM_CANDIDATES: usize = 1_000;
 const MAXIMUM_PROVIDER_ID_BYTES: usize = 512;
 const MAXIMUM_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
@@ -206,7 +207,7 @@ impl Mem0Transport for HttpMem0Transport {
         let response = self
             .authenticated(self.client.post(self.memories_endpoint.clone()))
             .header(CONTENT_TYPE, "application/json")
-            .json(&body)
+            .body(encode_json_body(&body)?)
             .send()
             .map_err(|_| ProviderError::Unavailable)?;
         require_success(&response)
@@ -221,11 +222,11 @@ impl Mem0Transport for HttpMem0Transport {
         let response = self
             .authenticated(self.client.post(self.search_endpoint.clone()))
             .header(CONTENT_TYPE, "application/json")
-            .json(&SearchBody {
+            .body(encode_json_body(&SearchBody {
                 query,
                 user_id,
                 top_k: maximum_candidates,
-            })
+            })?)
             .send()
             .map_err(|_| ProviderError::Unavailable)?;
         Self::decode_records(response)
@@ -269,6 +270,18 @@ struct SearchBody<'value> {
     query: &'value str,
     user_id: &'value str,
     top_k: usize,
+}
+
+fn encode_json_body<Body: Serialize>(body: &Body) -> Result<bytes::Bytes, ProviderError> {
+    let encoded = Zeroizing::new(serde_json::to_vec(body).map_err(|_| {
+        ProviderError::InvalidConfiguration("Mem0 request could not be encoded".to_owned())
+    })?);
+    if encoded.len() > MAXIMUM_REQUEST_BYTES {
+        return Err(ProviderError::InvalidConfiguration(
+            "Mem0 request exceeds the transport limit".to_owned(),
+        ));
+    }
+    Ok(bytes::Bytes::from_owner(encoded))
 }
 
 #[derive(Deserialize)]

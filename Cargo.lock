@@ -1437,6 +1437,7 @@ dependencies = [
 name = "rembrane-semantic-mem0"
 version = "0.1.0-alpha.1"
 dependencies = [
+ "bytes",
  "rembrane-config",
  "rembrane-domain",
  "rembrane-provider-sdk",
@@ -1463,6 +1464,7 @@ dependencies = [
 name = "rembrane-semantic-supermemory"
 version = "0.1.0-alpha.1"
 dependencies = [
+ "bytes",
  "rembrane-config",
  "rembrane-domain",
  "rembrane-provider-sdk",

@@ -23,6 +23,7 @@ use reqwest::blocking::{Client, Response};
 use reqwest::header::{ACCEPT, CONTENT_LENGTH, CONTENT_TYPE};
 
 const MAXIMUM_CONTENT_BYTES: usize = 262_144;
+const MAXIMUM_REQUEST_BYTES: usize = MAXIMUM_CONTENT_BYTES + 16_384;
 const MAXIMUM_CANDIDATES: usize = 1_000;
 const MAXIMUM_PROVIDER_ID_BYTES: usize = 512;
 const MAXIMUM_RESPONSE_RECORDS: usize = 1_000;
@@ -365,11 +366,11 @@ impl HttpSupermemoryTransport {
         let response = self
             .request(self.client.post(self.endpoint(namespace, &["search"])?))
             .header(CONTENT_TYPE, "application/json")
-            .json(&SearchBody {
+            .body(encode_json_body(&SearchBody {
                 query,
                 search_mode: "memories",
                 limit,
-            })
+            })?)
             .send()
             .map_err(|_| ProviderError::Unavailable)?;
         decode_records(Self::decode(response)?.as_slice())
@@ -440,21 +441,21 @@ impl SupermemoryTransport for HttpSupermemoryTransport {
                     .patch(self.endpoint(namespace, &["document", document_id])?),
             )
             .header(CONTENT_TYPE, "application/json")
-            .json(&UpdateDocumentBody {
+            .body(encode_json_body(&UpdateDocumentBody {
                 content: &projection.content,
                 metadata,
                 dreaming: "instant",
-            })
+            })?)
             .send()
         } else {
             self.request(self.client.post(self.endpoint(namespace, &["document"])?))
                 .header(CONTENT_TYPE, "application/json")
-                .json(&DocumentBody {
+                .body(encode_json_body(&DocumentBody {
                     content: &projection.content,
                     id: document_id,
                     metadata,
                     dreaming: "instant",
-                })
+                })?)
                 .send()
         }
         .map_err(|_| ProviderError::Unavailable)?;
@@ -513,7 +514,7 @@ impl SupermemoryTransport for HttpSupermemoryTransport {
         let response = self
             .request(self.client.delete(self.endpoint(namespace, &["document"])?))
             .header(CONTENT_TYPE, "application/json")
-            .json(&DeleteBody { ids: [provider_id] })
+            .body(encode_json_body(&DeleteBody { ids: [provider_id] })?)
             .send()
             .map_err(|_| ProviderError::Unavailable)?;
         deletion_confirmed(Self::decode(response)?.as_slice(), provider_id)
@@ -557,6 +558,18 @@ struct UpdateDocumentBody<'value> {
 #[derive(Serialize)]
 struct DeleteBody<'value> {
     ids: [&'value str; 1],
+}
+
+fn encode_json_body<Body: Serialize>(body: &Body) -> Result<bytes::Bytes, ProviderError> {
+    let encoded = Zeroizing::new(serde_json::to_vec(body).map_err(|_| {
+        ProviderError::InvalidConfiguration("Supermemory request could not be encoded".to_owned())
+    })?);
+    if encoded.len() > MAXIMUM_REQUEST_BYTES {
+        return Err(ProviderError::InvalidConfiguration(
+            "Supermemory request exceeds the transport limit".to_owned(),
+        ));
+    }
+    Ok(bytes::Bytes::from_owner(encoded))
 }
 
 fn validate_base_url(value: &str) -> Result<Url, ProviderError> {

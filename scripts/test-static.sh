@@ -228,7 +228,9 @@ do
 done
 for zeroizing_request_adapter in \
     adapters/rembrane-graph-graphiti-http/src/lib.rs \
-    adapters/rembrane-memory-provider-http/src/lib.rs
+    adapters/rembrane-memory-provider-http/src/lib.rs \
+    adapters/rembrane-semantic-mem0/src/lib.rs \
+    adapters/rembrane-semantic-supermemory/src/lib.rs
 do
     if ! rg -q 'bytes::Bytes::from_owner\(encoded\)' "$zeroizing_request_adapter"; then
         echo "HTTP adapter must preserve zeroizing serialized request ownership: $zeroizing_request_adapter" >&2

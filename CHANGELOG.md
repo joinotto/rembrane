@@ -9,6 +9,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- Direct Mem0 and Supermemory transports now bound serialized requests and
+  transfer memory content, search queries, metadata, and deletion payloads
+  through HTTP bodies backed by zeroizing owners.
 - Graphiti and portable memory-provider HTTP requests now transfer serialized
   memory and graph payloads through `Bytes` backed by zeroizing owners, keeping
   the plaintext request allocation wipe-on-drop through transport ownership.
