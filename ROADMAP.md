@@ -328,6 +328,8 @@ This roadmap describes sequencing, not release dates.
       - [x] Expose exact-body session initialization and established-session
         dispatch through the owned service, including failed-initialize
         rollback.
+      - [x] Expose downstream-confirmed session deletion through the owned
+        service, retaining the tenant binding when SDK termination fails.
       - [x] Authorize stateless server event-stream GET requests with
         GET-specific negotiation and no artificial JSON content requirement.
         - [x] Return an owned GET proof coupling tenant identity, negotiated

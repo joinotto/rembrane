@@ -1190,6 +1190,41 @@ where
         .await
         .map_err(RemoteMcpDispatchError::Dispatch)
     }
+
+    /// Reauthenticates, dispatches, and commits deletion of one established
+    /// session through the owned verifier and validated deployment profile.
+    ///
+    /// # Errors
+    ///
+    /// Distinguishes HTTP-ready header, authentication, tenant, or session
+    /// rejection from downstream protocol failure. Failed downstream deletion
+    /// retains the local binding for a safe retry.
+    pub async fn authorize_and_dispatch_session_deletion<Dispatcher>(
+        &mut self,
+        headers: &HeaderMap,
+        now_epoch_seconds: u64,
+        dispatcher: &Dispatcher,
+    ) -> Result<Dispatcher::Output, RemoteMcpDispatchError<Dispatcher::Error>>
+    where
+        Dispatcher: AuthorizedRemoteMcpSessionDeletionDispatcher,
+    {
+        let authenticator =
+            RemoteAccessAuthenticator::new(&self.verifier, &self.issuer, &self.resource);
+        let trusted_origins = self
+            .trusted_origins
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>();
+        let authorization = RemoteHttpAuthorization::new(&authenticator, &trusted_origins);
+        authorize_axum_session_deletion(
+            &mut self.gate,
+            &authorization,
+            headers,
+            now_epoch_seconds,
+            dispatcher,
+        )
+        .await
+    }
 }
 
 pub struct RemoteMcpHttpGate {
@@ -2980,6 +3015,44 @@ mod tests {
         assert!(matches!(
             authorization
                 .authorize_and_dispatch_session(&headers, body, 1_100, &RecordingDispatcher)
+                .await,
+            Err(RemoteMcpDispatchError::Authorization(
+                RemoteMcpHttpRejection { status: 403, .. }
+            ))
+        ));
+
+        headers.insert(
+            AUTHORIZATION,
+            HeaderValue::from_static("Bearer workspace-one"),
+        );
+        let deletion_service = tower::service_fn(
+            |mut request: axum::http::Request<axum::body::Body>| async move {
+                let access = request
+                    .extensions_mut()
+                    .remove::<rembrane_contracts::VerifiedRemoteAccess>()
+                    .expect("verified access extension");
+                Ok::<_, std::convert::Infallible>((
+                    request.method().clone(),
+                    access.workspace_id().to_string(),
+                    request.headers().contains_key(AUTHORIZATION),
+                ))
+            },
+        );
+        let deleted = authorization
+            .authorize_and_dispatch_session_deletion(
+                &headers,
+                1_200,
+                &AuthorizedTowerMcpDispatcher::new(deletion_service),
+            )
+            .await
+            .expect("owned service should confirm and commit deletion");
+        assert_eq!(deleted.0, Method::DELETE);
+        assert_eq!(deleted.1, "workspace_01");
+        assert!(!deleted.2, "bearer must stop at the authorization boundary");
+
+        assert!(matches!(
+            authorization
+                .authorize_and_dispatch_session(&headers, body, 1_200, &RecordingDispatcher)
                 .await,
             Err(RemoteMcpDispatchError::Authorization(
                 RemoteMcpHttpRejection { status: 403, .. }

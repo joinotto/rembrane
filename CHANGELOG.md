@@ -9,6 +9,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- The owned remote MCP service now exposes authenticated, downstream-confirmed
+  session deletion and preserves retryable tenant bindings when the protocol
+  service cannot terminate them.
 - The owned remote MCP Axum authorization service now composes exact-body
   initialization and established-session dispatch with its deployment-owned
   verifier, trusted origins, session registry, and rollback behavior.
