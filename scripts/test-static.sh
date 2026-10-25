@@ -216,6 +216,8 @@ rg -q 'Result<Zeroizing<Vec<u8>>, ProviderError>' adapters/rembrane-semantic-mem
 rg -q 'Mem0 returned too many records' adapters/rembrane-semantic-mem0/src/lib.rs
 rg -q 'Graphiti sidecar returned too many candidates' \
     adapters/rembrane-graph-graphiti-http/src/lib.rs
+rg -q 'MAXIMUM_MANIFEST_CAPABILITIES: usize = 6' \
+    adapters/rembrane-graph-graphiti-http/src/lib.rs
 rg -q 'memory provider returned too many context items' \
     adapters/rembrane-memory-provider-http/src/lib.rs
 rg -q 'memory provider returned too many supporting memories' \

@@ -22,6 +22,8 @@ use reqwest::header::{ACCEPT, CONTENT_LENGTH, CONTENT_TYPE};
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
+const MAXIMUM_MANIFEST_CAPABILITIES: usize = 6;
+
 pub struct HttpGraphitiTransport {
     client: Client,
     manifest_endpoint: Url,
@@ -443,6 +445,11 @@ impl TryFrom<ManifestBody> for ProviderManifest {
     type Error = ProviderError;
 
     fn try_from(wire: ManifestBody) -> Result<Self, Self::Error> {
+        if wire.capabilities.len() > MAXIMUM_MANIFEST_CAPABILITIES {
+            return Err(ProviderError::InvalidConfiguration(
+                "Graphiti manifest declares too many capabilities".to_owned(),
+            ));
+        }
         if wire.protocol_version != "0.1" {
             return Err(ProviderError::IncompatibleProtocol {
                 required_major: CURRENT_PROVIDER_PROTOCOL.major,
@@ -638,6 +645,31 @@ mod tests {
         )
         .expect("manifest JSON");
         assert!(ProviderManifest::try_from(wire).is_err());
+    }
+
+    #[test]
+    fn rejects_manifest_capabilities_above_the_finite_protocol_surface() {
+        let wire: ManifestBody = serde_json::from_str(
+            r#"{
+                "providerId":"rembrane.graph.graphiti",
+                "providerVersion":"1.0",
+                "protocolVersion":"0.1",
+                "capabilities":["graphUpsert","graphTraverse","delete","workspaceFilter","versionedRecords","healthCheck","graphUpsert"],
+                "plaintextProcessing":true,
+                "limits":{
+                    "maximumBatchItems":1,
+                    "maximumContentBytes":262144,
+                    "maximumCandidates":100
+                }
+            }"#,
+        )
+        .expect("manifest JSON");
+
+        assert!(matches!(
+            ProviderManifest::try_from(wire),
+            Err(rembrane_provider_sdk::ProviderError::InvalidConfiguration(message))
+                if message == "Graphiti manifest declares too many capabilities"
+        ));
     }
 
     #[test]

@@ -666,6 +666,8 @@ This roadmap describes sequencing, not release dates.
           decoding.
         - [x] Reject neighbour collections above the exact candidate count
           negotiated by each canonical request.
+        - [x] Bound manifest capability collections to Graphiti's finite
+          protocol surface before capability conversion.
       - [x] Add executable Graphiti sidecar contract and integration tests.
         - [x] Implement and test a dependency-free contract core for workspace
           isolation, physical identity, idempotency, optimistic versions,

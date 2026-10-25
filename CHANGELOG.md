@@ -9,6 +9,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- Graphiti HTTP discovery now rejects capability collections larger than its
+  finite protocol surface before manifest conversion.
 - Portable Memory Provider discovery now rejects transport, capability, and
   operation collections larger than the finite protocol surface.
 - Portable Memory Provider synchronization responses now reject oversized pull
