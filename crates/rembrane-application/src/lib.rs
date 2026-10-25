@@ -68,7 +68,7 @@ pub use ports::{
     MemberScopeGrantRepository, MembershipRepository, MemoryRepository, ProjectionOutboxRepository,
     RetentionPurgeRepository, RetentionRepository, ShareProposalMutationRepository,
     ShareProposalRepository, TravelContextRepository, TravelDisclosureRepository,
-    TripMutationRepository, TripRepository, WorkspaceRepository,
+    TripMutationRepository, TripRepository, WorkspaceReadRepository, WorkspaceRepository,
 };
 pub use projection_worker::{ProjectionOutcome, ProjectionWorker};
 pub use propose_memory::{ConfirmMemoryCommand, MemoryProposalService, ProposeMemoryCommand};

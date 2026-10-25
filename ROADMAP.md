@@ -310,6 +310,8 @@ This roadmap describes sequencing, not release dates.
           boundary so tenant services never require a global principal read.
       - [x] Add an application-facing tenant store that pins membership and
         invitation ports to one workspace before any pool access.
+        - [x] Split tenant-safe workspace lookup from privileged workspace
+          provisioning and run invitation services on the runtime-only facade.
       - [x] Separate privileged first-workspace provisioning into an explicit
         rollback-on-drop pool boundary that runtime request paths cannot use
         accidentally.

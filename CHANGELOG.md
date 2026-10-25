@@ -66,6 +66,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - A workspace-pinned PostgreSQL application facade for membership and
   invitation ports that rejects cross-workspace calls before opening a pooled
   transaction.
+- A narrow `WorkspaceReadRepository` application port, allowing PostgreSQL
+  invitation services to use tenant-scoped workspace lookup without access to
+  privileged identity/workspace provisioning credentials.
 - A separate PostgreSQL provisioning-pool contract and rollback-on-drop
   transaction guard for first-principal/workspace bootstrap, keeping
   privileged credentials out of ordinary tenant request paths.

@@ -10,6 +10,7 @@ use std::fmt::{self, Display, Formatter};
 
 use rembrane_application::{
     ApplicationError, InvitationRepository, MAXIMUM_INVITATION_LIST_ITEMS, MembershipRepository,
+    WorkspaceReadRepository,
 };
 use rembrane_domain::{
     AdministrativeAction, AdministrativeAuditEvent, AdministrativeTargetKind, Invitation,
@@ -895,6 +896,23 @@ impl<Pool> PostgresTenantStore<'_, Pool> {
     }
 }
 
+impl<Pool> WorkspaceReadRepository for PostgresTenantStore<'_, Pool>
+where
+    Pool: PostgresPool,
+    Pool::Error: ClassifiedPostgresError,
+    <Pool::Transaction as PostgresTransaction>::Row: PostgresRow<Error = Pool::Error>,
+{
+    fn find_workspace(
+        &self,
+        workspace_id: &WorkspaceId,
+    ) -> Result<Option<Workspace>, ApplicationError> {
+        self.require_workspace(workspace_id)?;
+        self.store
+            .find_workspace(workspace_id)
+            .map_err(map_application_error)
+    }
+}
+
 impl<Pool> MembershipRepository for PostgresTenantStore<'_, Pool>
 where
     Pool: PostgresPool,
@@ -1444,7 +1462,10 @@ mod tests {
     use std::collections::{BTreeMap, VecDeque};
     use std::rc::Rc;
 
-    use rembrane_application::{ApplicationError, InvitationRepository, MembershipRepository};
+    use rembrane_application::{
+        ApplicationError, CreateInvitationCommand, InvitationRepository, InvitationService,
+        MembershipRepository,
+    };
     use rembrane_domain::{
         AdministrativeAction, AdministrativeAuditEvent, AdministrativeAuditEventId,
         AdministrativeTargetKind, Invitation, InvitationId, InvitationStatus, Principal,
@@ -2659,6 +2680,71 @@ mod tests {
             ),
             Err(ApplicationError::AccessDenied)
         );
+    }
+
+    #[test]
+    fn tenant_store_runs_invitation_service_without_provisioning_credentials() {
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let store = PostgresStore::new(FakePool {
+            calls: Rc::clone(&calls),
+            tenant_batches: RefCell::new(
+                [
+                    VecDeque::from([
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                    ]),
+                    VecDeque::from([
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                    ]),
+                    VecDeque::from([
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                    ]),
+                    VecDeque::from([
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                    ]),
+                ]
+                .into(),
+            ),
+            row_batches: RefCell::new(
+                [
+                    vec![FakeRow::workspace("workspace_01", "shared")],
+                    vec![FakeRow::membership(
+                        "workspace_01",
+                        "principal_admin",
+                        "admin",
+                        "active",
+                    )],
+                    Vec::new(),
+                    Vec::new(),
+                ]
+                .into(),
+            ),
+        });
+        let mut tenant = store.for_workspace(WorkspaceId::new("workspace_01"));
+
+        let invitation = InvitationService::new(&mut tenant)
+            .create(CreateInvitationCommand {
+                invitation_id: InvitationId::new("invitation_01"),
+                workspace_id: WorkspaceId::new("workspace_01"),
+                invited_principal_id: PrincipalId::new("principal_guest"),
+                invited_by: PrincipalId::new("principal_admin"),
+                role: WorkspaceRole::Member,
+                request_id: "request_create_01".to_owned(),
+                created_at_epoch_seconds: 100,
+                expires_at_epoch_seconds: 200,
+            })
+            .expect("tenant-scoped invitation service");
+
+        assert_eq!(invitation.id().as_str(), "invitation_01");
+        assert!(calls.borrow().iter().any(
+            |call| matches!(call, Call::Execute(statement, _) if statement == INSERT_INVITATION_SQL)
+        ));
+        assert_eq!(calls.borrow().last(), Some(&Call::Commit));
     }
 
     #[test]

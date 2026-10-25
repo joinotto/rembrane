@@ -10,7 +10,7 @@ use rembrane_application::{
     MemberLifecycleRepository, MemberScopeGrantRepository, MembershipRepository, MemoryRepository,
     ProjectionOutboxRepository, RetentionRepository, ShareProposalMutationRepository,
     ShareProposalRepository, TravelDisclosureRepository, TripMutationRepository, TripRepository,
-    WorkspaceRepository, is_strict_successor,
+    WorkspaceReadRepository, WorkspaceRepository, is_strict_successor,
 };
 use rembrane_domain::{
     ActivityCheckpoint, ActivityId, AdministrativeAction, AdministrativeAuditEvent,
@@ -1117,6 +1117,15 @@ impl ProjectionOutboxRepository for InMemoryStore {
             .iter()
             .find(|job| job.workspace_id() == workspace_id && job.id() == job_id)
             .cloned())
+    }
+}
+
+impl WorkspaceReadRepository for InMemoryStore {
+    fn find_workspace(
+        &self,
+        workspace_id: &WorkspaceId,
+    ) -> Result<Option<Workspace>, ApplicationError> {
+        WorkspaceRepository::find_workspace(self, workspace_id)
     }
 }
 

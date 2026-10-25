@@ -17,8 +17,8 @@ use rembrane_application::{
     AdministrativeAuditRepository, ApplicationError, InvitationRepository, KeyRotationRepository,
     MAX_ADMINISTRATIVE_AUDIT_PAGE, MemberLifecycleRepository, MemberScopeGrantRepository,
     MembershipRepository, MemoryRepository, RetentionPurgePlan, RetentionPurgeRepository,
-    RetentionPurgeResult, RetentionRepository, ShareProposalRepository, WorkspaceRepository,
-    is_strict_successor,
+    RetentionPurgeResult, RetentionRepository, ShareProposalRepository, WorkspaceReadRepository,
+    WorkspaceRepository, is_strict_successor,
 };
 use rembrane_codec::decode_memory;
 use rembrane_crypto::{EncryptedPayload, EncryptionContext, PayloadPurpose, RecordCipher};
@@ -1358,6 +1358,15 @@ impl<C> WorkspaceRepository for SqliteStore<C> {
             .map_err(|_| ApplicationError::StorageUnavailable)?
             .map(|(id, kind)| decode_workspace(id, &kind))
             .transpose()
+    }
+}
+
+impl<C> WorkspaceReadRepository for SqliteStore<C> {
+    fn find_workspace(
+        &self,
+        workspace_id: &WorkspaceId,
+    ) -> Result<Option<Workspace>, ApplicationError> {
+        WorkspaceRepository::find_workspace(self, workspace_id)
     }
 }
 

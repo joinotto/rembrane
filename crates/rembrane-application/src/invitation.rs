@@ -4,7 +4,9 @@ use rembrane_domain::{
     WorkspaceId, WorkspaceKind, WorkspaceRole,
 };
 
-use crate::{ApplicationError, InvitationRepository, MembershipRepository, WorkspaceRepository};
+use crate::{
+    ApplicationError, InvitationRepository, MembershipRepository, WorkspaceReadRepository,
+};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CreateInvitationCommand {
@@ -52,7 +54,7 @@ pub struct InvitationService<'repository, Repository> {
 
 impl<'repository, Repository> InvitationService<'repository, Repository>
 where
-    Repository: InvitationRepository + MembershipRepository + WorkspaceRepository,
+    Repository: InvitationRepository + MembershipRepository + WorkspaceReadRepository,
 {
     pub fn new(repository: &'repository mut Repository) -> Self {
         Self { repository }

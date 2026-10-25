@@ -526,6 +526,15 @@ pub trait InvitationRepository {
     ) -> Result<(), ApplicationError>;
 }
 
+/// Tenant-safe workspace lookup capability for application services that do
+/// not provision identities or workspaces.
+pub trait WorkspaceReadRepository {
+    fn find_workspace(
+        &self,
+        workspace_id: &WorkspaceId,
+    ) -> Result<Option<Workspace>, ApplicationError>;
+}
+
 pub trait ShareProposalRepository {
     fn insert_share_proposal(
         &mut self,
