@@ -20,6 +20,17 @@ REMBRANE_REGISTRY_SIGNING_KEY="$temporary_directory/private.pem" \
     "$temporary_directory/artifacts/provider-registry.json.sig" \
     "$temporary_directory/public.pem" >/dev/null
 
+ln -s "$temporary_directory/artifacts/provider-registry.json" \
+    "$temporary_directory/registry-link.json"
+if "$repository_root/scripts/verify-provider-registry-signature.sh" \
+    "$temporary_directory/registry-link.json" \
+    "$temporary_directory/artifacts/provider-registry.json.sig" \
+    "$temporary_directory/public.pem" >/dev/null 2>&1
+then
+    echo "provider registry signature accepted a symbolic input" >&2
+    exit 1
+fi
+
 cp "$temporary_directory/artifacts/provider-registry.json" \
     "$temporary_directory/tampered.json"
 printf '\n' >>"$temporary_directory/tampered.json"

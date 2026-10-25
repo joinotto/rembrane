@@ -581,6 +581,7 @@ node --check scripts/verify-security-review-attestation.mjs
 node --check scripts/verify-security-review-signature.mjs
 node --check scripts/security-review-evidence.mjs
 node --check scripts/verify-security-review-bundle.mjs
+node --check scripts/verify-provider-registry-signature.mjs
 sh -n scripts/test-provider-http.sh
 node --check scripts/test-provider-http-runner.mjs
 sh -n scripts/test-key-provider-http.sh

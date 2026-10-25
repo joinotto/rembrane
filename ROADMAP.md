@@ -802,6 +802,8 @@ This roadmap describes sequencing, not release dates.
 
 - [x] Versioned pre-alpha provider manifest with capability, privacy, and
   request-limit negotiation.
+  - [x] Verify signed provider registries over exact no-follow registry,
+    signature, and Ed25519 public-key reads.
 - [x] Canonically parse and bound bring-your-own provider endpoints, allowing
   plaintext loopback only inside a declared trusted boundary.
 - [x] Enforce provider protocol and declared limits at projection and retrieval
