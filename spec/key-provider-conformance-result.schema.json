@@ -7,6 +7,7 @@
   "required": [
     "protocolVersion",
     "providerId",
+    "providerVersion",
     "result",
     "namespace",
     "cases"
@@ -19,6 +20,11 @@
       "type": "string",
       "pattern": "^[a-z0-9][a-z0-9._-]+$",
       "maxLength": 255
+    },
+    "providerVersion": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
     },
     "result": {
       "const": "pass"

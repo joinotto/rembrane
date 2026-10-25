@@ -83,11 +83,13 @@ jq -e --slurpfile example spec/examples/key-provider-conformance-result.json '
     .additionalProperties == false
     and .properties.protocolVersion.const == "0.1"
     and .properties.result.const == "pass"
+    and .properties.providerVersion.maxLength == 100
     and .properties.cases.minItems == 8
     and .properties.cases.maxItems == 8
     and ($example[0].cases | length) == 8
     and ($example[0].cases | map(.id) | unique | length) == 8
     and all($example[0].cases[]; .result == "pass")
+    and $example[0].providerVersion == "0.1.0-test"
 ' spec/key-provider-conformance-result.schema.json >/dev/null
 
 jq -e --slurpfile schema spec/channel-processor-acknowledgement.schema.json '

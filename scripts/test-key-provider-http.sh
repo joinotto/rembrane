@@ -54,6 +54,7 @@ request GET /v0.1/manifest >"$response"
 jq -e '
     .protocolVersion == "0.1"
     and (.providerId | test("^[a-z0-9][a-z0-9._-]+$"))
+    and (.providerVersion | type == "string" and length >= 1 and length <= 100)
     and (.algorithms | type == "array" and length > 0)
     and .maximumPlaintextBytes >= 262144
     and .maximumPlaintextBytes <= 1048576
@@ -62,6 +63,7 @@ jq -e '
 ' "$response" >/dev/null
 maximum_plaintext_bytes=$(jq -r '.maximumPlaintextBytes' "$response")
 provider_id=$(jq -r '.providerId' "$response")
+provider_version=$(jq -r '.providerVersion' "$response")
 
 unauthorized_status=$(
     curl --silent --output /dev/null --write-out '%{http_code}' \
@@ -224,10 +226,12 @@ esac
 
 jq -cn \
     --arg providerId "$provider_id" \
+    --arg providerVersion "$provider_version" \
     --arg namespace "$namespace" \
     '{
         protocolVersion: "0.1",
         providerId: $providerId,
+        providerVersion: $providerVersion,
         result: "pass",
         namespace: $namespace,
         cases: [

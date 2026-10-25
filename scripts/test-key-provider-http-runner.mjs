@@ -50,6 +50,7 @@ const server = http.createServer(async (request, response) => {
   if (request.method === "GET" && url.pathname === "/v0.1/manifest") {
     json(response, 200, {
       providerId: "rembrane.mock-key-provider",
+      providerVersion: "0.1.0-test",
       protocolVersion: "0.1",
       algorithms: ["mock-aead"],
       maximumPlaintextBytes: 262144,
@@ -153,6 +154,7 @@ assert.equal(status, 0, stderr);
 const result = JSON.parse(stdout);
 assert.equal(result.result, "pass");
 assert.equal(result.providerId, "rembrane.mock-key-provider");
+assert.equal(result.providerVersion, "0.1.0-test");
 assert.deepEqual(
   result.cases.map((testCase) => testCase.id),
   [

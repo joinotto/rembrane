@@ -1,5 +1,6 @@
 {
   "providerId": "rembrane.macos-keychain",
+  "providerVersion": "0.1.0-alpha.1",
   "protocolVersion": "0.1",
   "algorithms": ["xchacha20poly1305-ietf"],
   "maximumPlaintextBytes": 1048576,

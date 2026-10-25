@@ -107,6 +107,8 @@ This roadmap describes sequencing, not release dates.
       provider conformance runner without exposing key material.
       - [x] Emit a strict portable conformance result with provider identity
         and explicit evidence for all eight key-provider security cases.
+        - [x] Bind discovery and conformance evidence to an exact bounded
+          provider build version rather than identity alone.
   - [x] Resolve or unwrap keyring material through customer KMS adapters.
     - [x] Define the customer-sidecar trust boundary and AWS, Azure, and GCP
       mappings without giving Rembrane cloud credentials or master keys.

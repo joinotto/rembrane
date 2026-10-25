@@ -154,7 +154,7 @@ provider namespace. Promotion requires context-substitution denial,
 historical-key behavior, exact receipt correlation, response bounds, token
 redaction, and a review of the cloud IAM policy.
 The runner emits a strict JSON conformance result containing the negotiated
-provider identity and one pass record for each authentication, manifest,
+provider identity, exact provider version, and one pass record for each authentication, manifest,
 roundtrip, substitution, unknown-key, size-limit, rotation, and replay case.
 Retain this result with the reviewed deployment and IAM evidence.
 

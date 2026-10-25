@@ -30,6 +30,7 @@ impl KeyProviderProtocolVersion {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct KeyProviderManifest {
     pub provider_id: String,
+    pub provider_version: String,
     pub protocol_version: KeyProviderProtocolVersion,
     pub algorithms: Vec<String>,
     pub maximum_plaintext_bytes: usize,
@@ -46,6 +47,13 @@ impl KeyProviderManifest {
                     || byte.is_ascii_digit()
                     || (index > 0 && matches!(byte, b'.' | b'_' | b'-'))
             })
+        {
+            return Err(KeyProviderProtocolError::InvalidManifest);
+        }
+        if self.provider_version.trim().is_empty()
+            || self.provider_version.trim() != self.provider_version
+            || self.provider_version.len() > 100
+            || self.provider_version.chars().any(char::is_control)
         {
             return Err(KeyProviderProtocolError::InvalidManifest);
         }
@@ -464,6 +472,7 @@ mod tests {
     fn manifest() -> KeyProviderManifest {
         KeyProviderManifest {
             provider_id: "rembrane.test-key-provider".to_owned(),
+            provider_version: "0.1.0-test".to_owned(),
             protocol_version: CURRENT_KEY_PROVIDER_PROTOCOL,
             algorithms: vec!["xchacha20poly1305-ietf".to_owned()],
             maximum_plaintext_bytes: 262_144,

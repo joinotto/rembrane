@@ -98,11 +98,16 @@ components:
     Manifest:
       type: object
       additionalProperties: false
-      required: [providerId, protocolVersion, algorithms, maximumPlaintextBytes]
+      required:
+        [providerId, providerVersion, protocolVersion, algorithms, maximumPlaintextBytes]
       properties:
         providerId:
           type: string
           pattern: "^[a-z0-9][a-z0-9._-]+$"
+        providerVersion:
+          type: string
+          minLength: 1
+          maxLength: 100
         protocolVersion:
           const: "0.1"
         algorithms:

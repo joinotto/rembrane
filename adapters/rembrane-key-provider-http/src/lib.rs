@@ -223,6 +223,7 @@ fn validate_base_url(value: &str) -> Result<Url, CryptoError> {
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct ManifestResponse {
     provider_id: String,
+    provider_version: String,
     protocol_version: String,
     algorithms: Vec<String>,
     maximum_plaintext_bytes: usize,
@@ -243,6 +244,7 @@ impl TryFrom<ManifestResponse> for KeyProviderManifest {
         }
         let manifest = Self {
             provider_id: wire.provider_id,
+            provider_version: wire.provider_version,
             protocol_version: KeyProviderProtocolVersion::new(0, 1),
             algorithms: wire.algorithms,
             maximum_plaintext_bytes: wire.maximum_plaintext_bytes,
@@ -434,6 +436,7 @@ mod tests {
     fn validates_manifest_protocol_limits_and_shape() {
         let manifest = KeyProviderManifest::try_from(ManifestResponse {
             provider_id: "rembrane.test-key-provider".to_owned(),
+            provider_version: "0.1.0-test".to_owned(),
             protocol_version: "0.1".to_owned(),
             algorithms: vec!["xchacha20poly1305-ietf".to_owned()],
             maximum_plaintext_bytes: 262_144,
@@ -447,6 +450,7 @@ mod tests {
         assert_eq!(
             KeyProviderManifest::try_from(ManifestResponse {
                 provider_id: "rembrane.test-key-provider".to_owned(),
+                provider_version: "0.1.0-test".to_owned(),
                 protocol_version: "0.2".to_owned(),
                 algorithms: vec!["xchacha20poly1305-ietf".to_owned()],
                 maximum_plaintext_bytes: 262_144,

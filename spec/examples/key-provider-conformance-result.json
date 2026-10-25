@@ -1,6 +1,7 @@
 {
   "protocolVersion": "0.1",
   "providerId": "rembrane.mock-key-provider",
+  "providerVersion": "0.1.0-test",
   "result": "pass",
   "namespace": "example-run",
   "cases": [
