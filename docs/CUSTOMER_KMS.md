@@ -53,6 +53,9 @@ generates only the strict successor of the active generation, asks a
 `CustomerKmsKeyReferenceStore` to atomically compare, append, and activate the
 opaque reference, and returns plaintext key ownership only after that durable
 operation succeeds. A failed persistence attempt drops and zeroizes plaintext.
+The `rembrane-kms-keyring-sqlite` adapter provides a durable self-hosted
+implementation with per-workspace rows, one active generation, retained
+historical references, and transactional compare-and-activate rotation.
 
 ## Required request binding
 

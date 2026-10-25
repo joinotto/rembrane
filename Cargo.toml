@@ -10,6 +10,7 @@ members = [
     "adapters/rembrane-graph-graphiti-http",
     "adapters/rembrane-graph-native",
     "adapters/rembrane-key-provider-http",
+    "adapters/rembrane-kms-keyring-sqlite",
     "adapters/rembrane-memory-provider-configured",
     "adapters/rembrane-memory-provider-http",
     "adapters/rembrane-oauth-introspection",

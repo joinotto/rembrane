@@ -1,0 +1,16 @@
+[package]
+name = "rembrane-kms-keyring-sqlite"
+description = "Durable customer-sidecar KMS key-reference store for Rembrane"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+rembrane-domain = { path = "../../crates/rembrane-domain" }
+rembrane-provider-sdk = { path = "../../crates/rembrane-provider-sdk" }
+rusqlite = { version = "0.37", features = ["bundled"] }
+
+[lints]
+workspace = true

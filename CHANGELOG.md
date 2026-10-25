@@ -26,6 +26,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Fail-closed customer-KMS rotation ordering that atomically persists and
   activates the strict next opaque generation before releasing zeroizing
   plaintext key ownership to the sidecar.
+- A durable SQLite customer-sidecar key-reference store with workspace
+  isolation, retained historical generations, one active generation, and
+  transactional stale-rotation rejection.
 - A strict language-neutral authenticated channel-processor message schema and
   secret-free fixture carrying canonical tenant identity and event
   idempotency metadata to cooperative bots and agents.

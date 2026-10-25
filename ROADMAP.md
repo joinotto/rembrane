@@ -126,6 +126,9 @@ This roadmap describes sequencing, not release dates.
     - [x] Require atomic compare-and-activate persistence of the strict next
       wrapped-key generation before releasing its zeroizing plaintext for
       sidecar cipher activation.
+    - [x] Provide a durable SQLite sidecar key-reference store with
+      per-workspace isolation, one active generation, historical references,
+      and transactional stale-rotation denial.
   - [x] Add a provider-agnostic configured cipher that dispatches to local
     environment/macOS keyrings or a policy-negotiated HTTP key provider.
     - [x] Accept consumed customer key-provider configuration from
