@@ -9,6 +9,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- Portable Memory Provider HTTP responses now reject oversized context and
+  grounded-answer collections before canonical item conversion.
 - Graphiti HTTP neighbour responses now reject candidate collections above the
   exact limit negotiated by the originating canonical request.
 - Mem0 HTTP responses now reject record collections above the negotiated

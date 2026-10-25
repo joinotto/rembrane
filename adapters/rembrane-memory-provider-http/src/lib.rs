@@ -908,6 +908,11 @@ impl ResolveQuestionResultBody {
         self,
         request: &ResolveQuestionPayload,
     ) -> Result<ResolveQuestionResult, ProviderError> {
+        if self.supporting_memories.len() > request.maximum_supporting_items() {
+            return Err(ProviderError::Rejected(
+                "memory provider returned too many supporting memories".to_owned(),
+            ));
+        }
         ResolveQuestionResult::new(
             self.answer,
             self.supporting_memories
@@ -1145,6 +1150,11 @@ impl ResolveContextResultBody {
         self,
         request: &ResolveContextPayload,
     ) -> Result<ResolveContextResult, ProviderError> {
+        if self.items.len() > request.maximum_items() {
+            return Err(ProviderError::Rejected(
+                "memory provider returned too many context items".to_owned(),
+            ));
+        }
         let items = self
             .items
             .into_iter()
