@@ -31,6 +31,7 @@ const expectedArtifacts = [
   "spec/examples/memory-provider-external-provenance.json",
   "spec/examples/memory-provider-mixed-version-evidence.json",
   "spec/examples/memory-provider-release-evidence.json",
+  "scripts/memory-provider-context-result.jq",
   "scripts/memory-provider-discovery.mjs",
   "scripts/memory-provider-discovery.jq",
   "scripts/memory-provider-conformance-secrets.mjs",

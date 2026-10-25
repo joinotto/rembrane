@@ -38,6 +38,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Proposal and deletion conformance responses now require exact closed
   canonical result shapes; loopback CI proves a successful proposal carrying
   an unexpected memory-content field cannot pass.
+- Context conformance responses now validate exact result and item shapes,
+  selectors, evidence, confidence, validity, sensitivity, and disclosure
+  constraints before tenant-isolation assertions consume them.
 - Project metadata, security reporting, API contact information, offline
   workspace fixtures, and provider provenance now consistently identify the
   canonical `joinotto/rembrane` repository.

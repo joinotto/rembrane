@@ -75,6 +75,10 @@
       "sha256": "21d8fc3e1277f3f5d5d11c5a5446a427fa532b752660b54a1c9424f34b18e47d"
     },
     {
+      "path": "scripts/memory-provider-context-result.jq",
+      "sha256": "ba167ce17cba3b348e10fef0c979f267810d6284d943a3813e7f14b9def6c5e1"
+    },
+    {
       "path": "scripts/memory-provider-discovery.mjs",
       "sha256": "0ac0f8473a102afb89c1b668952e6d7a1ffe9ddbac714b616d8646ad28be1446"
     },
@@ -84,11 +88,11 @@
     },
     {
       "path": "scripts/run-memory-provider-conformance.mjs",
-      "sha256": "aed9854315bb3f80aac4468b7531488d9f76fb2c2859060a2b28de8a005f61fa"
+      "sha256": "ded6cdba9bc737b213b5ea5d752a9414940e1690bdf846c2639fe15f86e03c53"
     },
     {
       "path": "scripts/test-memory-provider-http.sh",
-      "sha256": "ebe4ad7ac44c8fa634d56f842ef9f94f11b73382f9320b5389d189550ab9745e"
+      "sha256": "840d67a0ffadc42627ae6878f28287ad585e0f6576f6e98a40b93890a7590fa3"
     }
   ]
 }

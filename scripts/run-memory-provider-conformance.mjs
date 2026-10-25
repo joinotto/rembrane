@@ -179,6 +179,7 @@ try {
     context(primaryProposal.content),
   );
   expectStatus(primaryContext, 200, "context.exact-workspace");
+  requireContextResult(primaryContext.value);
   if (
     !primaryContext.value.items?.some(
       (item) =>
@@ -196,6 +197,7 @@ try {
     context(primaryProposal.content),
   );
   expectStatus(otherContext, 200, "context.cross-workspace");
+  requireContextResult(otherContext.value);
   if (
     otherContext.value.items?.some(
       (item) =>
@@ -223,6 +225,7 @@ try {
     "/v1/context/resolve",
     context(primaryProposal.content),
   );
+  requireContextResult(preserved.value);
   if (!preserved.value.items?.some((item) => item.memoryId === first.value.memoryId)) {
     throw new Error("stale deletion changed the current memory");
   }
@@ -273,6 +276,7 @@ try {
     "/v1/context/resolve",
     context(primaryProposal.content),
   );
+  requireContextResult(afterDelete.value);
   if (afterDelete.value.items?.some((item) => item.content === primaryProposal.content)) {
     throw new Error("deleted conformance memory remained visible");
   }
@@ -415,6 +419,110 @@ function requireDeleteResult(value) {
   }
 }
 
+function requireContextResult(value) {
+  if (
+    !hasExactKeys(value, ["contextPackId", "disclosureId", "items"]) ||
+    !isSafeOpaqueId(value.contextPackId) ||
+    !isSafeOpaqueId(value.disclosureId) ||
+    !Array.isArray(value.items) ||
+    !value.items.every(validContextItem)
+  ) {
+    throw new Error("memory-provider returned an invalid closed context result");
+  }
+}
+
+function validContextItem(value) {
+  const required = [
+    "memoryId",
+    "version",
+    "scope",
+    "kind",
+    "content",
+    "evidence",
+    "confidenceMillionths",
+    "sensitivity",
+    "disclosureConstraints",
+  ];
+  const allowed = [...required, "validFromEpochSeconds", "validUntilEpochSeconds"];
+  return (
+    hasRequiredOnlyKeys(value, required, allowed) &&
+    isSafeOpaqueId(value.memoryId) &&
+    Number.isSafeInteger(value.version) &&
+    value.version > 0 &&
+    validSelector(value.scope) &&
+    new Set([
+      "preference",
+      "semantic",
+      "episodic",
+      "procedural",
+      "observation",
+      "working",
+    ]).has(value.kind) &&
+    typeof value.content === "string" &&
+    value.content.length > 0 &&
+    new TextEncoder().encode(value.content).length <= 262_144 &&
+    !value.content.includes("\0") &&
+    Array.isArray(value.evidence) &&
+    value.evidence.length > 0 &&
+    uniqueObjects(value.evidence) &&
+    value.evidence.every(
+      (evidence) =>
+        hasExactKeys(evidence, ["evidenceId", "source"]) &&
+        isSafeOpaqueId(evidence.evidenceId) &&
+        new Set([
+          "user_statement",
+          "agent_observation",
+          "tool_result",
+          "imported_record",
+          "workspace_decision",
+        ]).has(evidence.source),
+    ) &&
+    Number.isSafeInteger(value.confidenceMillionths) &&
+    value.confidenceMillionths >= 0 &&
+    value.confidenceMillionths <= 1_000_000 &&
+    validOptionalEpoch(value.validFromEpochSeconds) &&
+    validOptionalEpoch(value.validUntilEpochSeconds) &&
+    new Set(["personal", "sensitive", "restricted"]).has(value.sensitivity) &&
+    Array.isArray(value.disclosureConstraints) &&
+    uniqueObjects(value.disclosureConstraints) &&
+    value.disclosureConstraints.every(validDisclosureConstraint)
+  );
+}
+
+function validSelector(value) {
+  return (
+    (hasExactKeys(value, ["scope"]) && value.scope === "global") ||
+    (hasExactKeys(value, ["scope", "domain"]) &&
+      value.scope === "domain" &&
+      isPortableId(value.domain)) ||
+    (hasExactKeys(value, ["scope", "entityId"]) &&
+      value.scope === "entity" &&
+      isSafeOpaqueId(value.entityId)) ||
+    (hasExactKeys(value, ["scope", "activityId"]) &&
+      value.scope === "activity" &&
+      isSafeOpaqueId(value.activityId))
+  );
+}
+
+function validDisclosureConstraint(value) {
+  return (
+    (hasExactKeys(value, ["type"]) &&
+      new Set(["purpose_bound", "no_training", "no_retention"]).has(value.type)) ||
+    (hasExactKeys(value, ["type", "expiresAtEpochSeconds"]) &&
+      value.type === "expires_at" &&
+      Number.isSafeInteger(value.expiresAtEpochSeconds) &&
+      value.expiresAtEpochSeconds > 0)
+  );
+}
+
+function validOptionalEpoch(value) {
+  return value === undefined || value === null || (Number.isSafeInteger(value) && value > 0);
+}
+
+function uniqueObjects(value) {
+  return new Set(value.map((item) => JSON.stringify(item))).size === value.length;
+}
+
 function requireProtocolError(value, expectedCode) {
   if (
     !hasExactKeys(value, ["code"]) ||
@@ -422,6 +530,16 @@ function requireProtocolError(value, expectedCode) {
   ) {
     throw new Error("memory-provider returned an invalid closed error response");
   }
+}
+
+function hasRequiredOnlyKeys(value, required, allowed) {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const keys = Object.keys(value);
+  const allowedKeys = new Set(allowed);
+  return required.every((key) => keys.includes(key)) &&
+    keys.every((key) => allowedKeys.has(key));
 }
 
 function hasExactKeys(value, expected) {
@@ -442,6 +560,15 @@ function isSafeOpaqueId(value) {
     value.length > 0 &&
     value.length <= 255 &&
     /^[\x21-\x7e]+$/u.test(value)
+  );
+}
+
+function isPortableId(value) {
+  return (
+    typeof value === "string" &&
+    value.length >= 2 &&
+    value.length <= 255 &&
+    /^[a-z0-9][a-z0-9._-]+$/u.test(value)
   );
 }
 

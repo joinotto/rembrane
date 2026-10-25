@@ -414,6 +414,8 @@ context_payload() {
 context_payload "$proposal_content"
 status=$(call "$primary_auth" POST /v1/context/resolve context_primary "$payload")
 test "$status" = 200
+jq -e -f "$repository_root/scripts/memory-provider-context-result.jq" \
+    "$response" >/dev/null
 jq -e \
     --arg memoryId "$primary_memory_id" \
     --arg content "$proposal_content" \
@@ -422,6 +424,8 @@ jq -e \
 
 status=$(call "$other_auth" POST /v1/context/resolve context_other "$payload")
 test "$status" = 200
+jq -e -f "$repository_root/scripts/memory-provider-context-result.jq" \
+    "$response" >/dev/null
 jq -e \
     --arg memoryId "$primary_memory_id" \
     --arg content "$proposal_content" \
@@ -450,6 +454,8 @@ jq -e 'type == "object" and keys == ["code"] and .code == "conflict"' \
 context_payload "$proposal_content"
 status=$(call "$primary_auth" POST /v1/context/resolve context_after_conflict "$payload")
 test "$status" = 200
+jq -e -f "$repository_root/scripts/memory-provider-context-result.jq" \
+    "$response" >/dev/null
 jq -e --arg memoryId "$primary_memory_id" \
     'any(.items[]; .memoryId == $memoryId)' "$response" >/dev/null
 
@@ -504,6 +510,8 @@ primary_version=
 context_payload "$proposal_content"
 status=$(call "$primary_auth" POST /v1/context/resolve context_after_delete "$payload")
 test "$status" = 200
+jq -e -f "$repository_root/scripts/memory-provider-context-result.jq" \
+    "$response" >/dev/null
 jq -e \
     --arg content "$proposal_content" \
     'all(.items[]; .content != $content)' "$response" >/dev/null
