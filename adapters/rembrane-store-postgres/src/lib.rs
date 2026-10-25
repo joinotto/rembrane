@@ -141,6 +141,91 @@ pub trait PostgresPool {
     fn begin(&self) -> Result<Self::Transaction, Self::Error>;
 }
 
+/// Deliberately separate pool for the narrow control-plane operations that
+/// create a workspace's first rows before tenant RLS can authorize them.
+///
+/// Implementations must use credentials distinct from the ordinary runtime
+/// pool. Those credentials may provision principals, workspaces, and initial
+/// owner memberships, but must not be exposed to request-serving code.
+pub trait PostgresProvisioningPool {
+    type Error;
+    type Transaction: PostgresTransaction<Error = Self::Error>;
+
+    fn begin_provisioning(&self) -> Result<Self::Transaction, Self::Error>;
+}
+
+/// Rollback-on-drop guard for one privileged provisioning transaction.
+pub struct ProvisioningTransaction<Transaction: PostgresTransaction> {
+    transaction: Option<Transaction>,
+}
+
+impl<Transaction: PostgresTransaction> ProvisioningTransaction<Transaction> {
+    pub fn begin<Pool>(pool: &Pool) -> Result<Self, Transaction::Error>
+    where
+        Pool: PostgresProvisioningPool<Error = Transaction::Error, Transaction = Transaction>,
+    {
+        pool.begin_provisioning().map(|transaction| Self {
+            transaction: Some(transaction),
+        })
+    }
+
+    pub fn execute(
+        &mut self,
+        statement: &str,
+        parameters: &[PostgresParameter<'_>],
+    ) -> Result<u64, TenantTransactionError<Transaction::Error>> {
+        self.transaction_mut()?
+            .execute(statement, parameters)
+            .map_err(TenantTransactionError::Driver)
+    }
+
+    pub fn query_optional_text(
+        &mut self,
+        statement: &str,
+        parameters: &[PostgresParameter<'_>],
+    ) -> Result<Option<String>, TenantTransactionError<Transaction::Error>> {
+        self.transaction_mut()?
+            .query_optional_text(statement, parameters)
+            .map_err(TenantTransactionError::Driver)
+    }
+
+    pub fn commit(mut self) -> Result<(), TenantTransactionError<Transaction::Error>> {
+        self.take_transaction()?
+            .commit()
+            .map_err(TenantTransactionError::Driver)
+    }
+
+    pub fn rollback(mut self) -> Result<(), TenantTransactionError<Transaction::Error>> {
+        self.take_transaction()?
+            .rollback()
+            .map_err(TenantTransactionError::Driver)
+    }
+
+    fn transaction_mut(
+        &mut self,
+    ) -> Result<&mut Transaction, TenantTransactionError<Transaction::Error>> {
+        self.transaction
+            .as_mut()
+            .ok_or(TenantTransactionError::Closed)
+    }
+
+    fn take_transaction(
+        &mut self,
+    ) -> Result<Transaction, TenantTransactionError<Transaction::Error>> {
+        self.transaction
+            .take()
+            .ok_or(TenantTransactionError::Closed)
+    }
+}
+
+impl<Transaction: PostgresTransaction> Drop for ProvisioningTransaction<Transaction> {
+    fn drop(&mut self) {
+        if let Some(transaction) = self.transaction.take() {
+            let _ = transaction.rollback();
+        }
+    }
+}
+
 #[derive(Debug, Eq, PartialEq)]
 pub enum TenantTransactionError<DriverError> {
     Driver(DriverError),
@@ -1229,10 +1314,10 @@ mod tests {
         FIND_INVITATION_SQL, FIND_MEMBERSHIP_SQL, FIND_PRINCIPAL_SQL, FIND_WORKSPACE_SQL,
         INSERT_ADMINISTRATIVE_AUDIT_SQL, INSERT_INVITATION_SQL, INSERT_MEMBERSHIP_SQL,
         LIST_ACTIVE_MEMBERSHIPS_SQL, LIST_INVITATIONS_BY_STATUS_SQL, MAX_ACTIVE_MEMBERSHIPS,
-        PostgresFailureKind, PostgresParameter, PostgresPool, PostgresRow, PostgresStore,
-        PostgresStoreError, PostgresTransaction, READ_TENANT_SQL, REPLACE_INVITATION_SQL,
-        REPLACE_MEMBERSHIP_SQL, SET_TENANT_SQL, TenantTransaction, TenantTransactionError,
-        map_application_error,
+        PostgresFailureKind, PostgresParameter, PostgresPool, PostgresProvisioningPool,
+        PostgresRow, PostgresStore, PostgresStoreError, PostgresTransaction,
+        ProvisioningTransaction, READ_TENANT_SQL, REPLACE_INVITATION_SQL, REPLACE_MEMBERSHIP_SQL,
+        SET_TENANT_SQL, TenantTransaction, TenantTransactionError, map_application_error,
     };
 
     #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1440,6 +1525,54 @@ mod tests {
             },
             calls,
         )
+    }
+
+    #[test]
+    fn provisioning_transactions_use_a_separate_pool_and_rollback_on_drop() {
+        struct FakeProvisioningPool {
+            calls: Rc<RefCell<Vec<Call>>>,
+        }
+
+        impl PostgresProvisioningPool for FakeProvisioningPool {
+            type Error = &'static str;
+            type Transaction = FakeTransaction;
+
+            fn begin_provisioning(&self) -> Result<Self::Transaction, Self::Error> {
+                Ok(FakeTransaction {
+                    calls: Rc::clone(&self.calls),
+                    tenants: VecDeque::new(),
+                    rows: Vec::new(),
+                })
+            }
+        }
+
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let pool = FakeProvisioningPool {
+            calls: Rc::clone(&calls),
+        };
+        {
+            let mut transaction =
+                ProvisioningTransaction::begin(&pool).expect("provisioning transaction");
+            transaction
+                .execute(
+                    "INSERT INTO workspaces (id, kind) VALUES ($1, $2)",
+                    &[
+                        PostgresParameter::Text("workspace_01"),
+                        PostgresParameter::Text("personal"),
+                    ],
+                )
+                .expect("provisioning write");
+        }
+        assert_eq!(calls.borrow().last(), Some(&Call::Rollback));
+
+        ProvisioningTransaction::begin(&pool)
+            .expect("second provisioning transaction")
+            .commit()
+            .expect("commit");
+        assert_eq!(calls.borrow().last(), Some(&Call::Commit));
+        assert!(!calls.borrow().iter().any(
+            |call| matches!(call, Call::QueryText(statement) if statement == READ_TENANT_SQL)
+        ));
     }
 
     #[test]

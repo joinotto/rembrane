@@ -35,6 +35,13 @@ matches no row. The runtime database role must be non-superuser, must not own
 tenant tables, and must not have `BYPASSRLS`; migration ownership belongs to a
 separate role.
 
+Workspace bootstrap is a separate control-plane operation because the first
+workspace and owner membership do not exist yet and therefore cannot pass the
+ordinary forced-RLS policies. Configure a distinct, narrowly held provisioning
+pool for that operation. Never reuse its credentials in API, bot, MCP, worker,
+or other request-serving processes. The Rust provisioning boundary deliberately
+has a different pool trait and rolls back uncommitted transactions on drop.
+
 The Rust adapter configuration carries the database URL only as a
 `SecretReference`. Operators may point it at an environment variable,
 protected file, or deployment-provided external secret resolver. The resolved

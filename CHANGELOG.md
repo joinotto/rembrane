@@ -63,6 +63,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - A workspace-pinned PostgreSQL application facade for membership and
   invitation ports that rejects cross-workspace calls before opening a pooled
   transaction.
+- A separate PostgreSQL provisioning-pool contract and rollback-on-drop
+  transaction guard for first-principal/workspace bootstrap, keeping
+  privileged credentials out of ordinary tenant request paths.
 
 ### Changed
 

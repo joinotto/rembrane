@@ -308,6 +308,9 @@ This roadmap describes sequencing, not release dates.
         membership activation, and content-free administrative audit writes.
       - [x] Add an application-facing tenant store that pins membership and
         invitation ports to one workspace before any pool access.
+      - [x] Separate privileged first-workspace provisioning into an explicit
+        rollback-on-drop pool boundary that runtime request paths cannot use
+        accidentally.
     - [x] Define a reference-only PostgreSQL connection profile with explicit
       transport security and bounded pool capacity.
       - [x] Prevent derived debug logging of the database secret locator.
