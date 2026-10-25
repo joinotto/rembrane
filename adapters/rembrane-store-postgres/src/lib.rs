@@ -22,6 +22,10 @@ pub const MAX_ACTIVE_MEMBERSHIPS: usize = 10_000;
 pub const LIST_ACTIVE_MEMBERSHIPS_SQL: &str = "SELECT workspace_id, principal_id, role, status \
     FROM memberships WHERE workspace_id = $1 AND status = 'active' \
     ORDER BY principal_id LIMIT 10001";
+pub const INSERT_MEMBERSHIP_SQL: &str = "INSERT INTO memberships \
+    (workspace_id, principal_id, role, status) VALUES ($1, $2, $3, $4)";
+pub const REPLACE_MEMBERSHIP_SQL: &str = "UPDATE memberships SET role = $3, status = $4, \
+    updated_at = CURRENT_TIMESTAMP WHERE workspace_id = $1 AND principal_id = $2";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PostgresParameter<'value> {
@@ -265,6 +269,43 @@ impl<Pool: PostgresPool> PostgresStore<Pool> {
         transaction.commit().map_err(PostgresStoreError::Tenant)?;
         Ok(memberships)
     }
+
+    pub fn insert_membership(
+        &self,
+        membership: &Membership,
+    ) -> Result<(), PostgresStoreError<Pool::Error>> {
+        self.write_membership(INSERT_MEMBERSHIP_SQL, membership)
+    }
+
+    pub fn replace_membership(
+        &self,
+        membership: &Membership,
+    ) -> Result<(), PostgresStoreError<Pool::Error>> {
+        self.write_membership(REPLACE_MEMBERSHIP_SQL, membership)
+    }
+
+    fn write_membership(
+        &self,
+        statement: &str,
+        membership: &Membership,
+    ) -> Result<(), PostgresStoreError<Pool::Error>> {
+        let mut transaction = self.begin_tenant(membership.workspace_id().clone())?;
+        let changed = transaction
+            .execute(
+                statement,
+                &[
+                    PostgresParameter::Text(membership.workspace_id().as_str()),
+                    PostgresParameter::Text(membership.principal_id().as_str()),
+                    PostgresParameter::Text(membership_role_name(membership.role())),
+                    PostgresParameter::Text(membership_status_name(membership)),
+                ],
+            )
+            .map_err(PostgresStoreError::Tenant)?;
+        if changed != 1 {
+            return Err(PostgresStoreError::UnexpectedCardinality);
+        }
+        transaction.commit().map_err(PostgresStoreError::Tenant)
+    }
 }
 
 fn decode_workspace<Row, DriverError>(
@@ -335,6 +376,23 @@ where
         "suspended" => Ok(membership.suspend()),
         "removed" => Ok(membership.remove()),
         _ => Err(PostgresStoreError::InvalidRow),
+    }
+}
+
+const fn membership_role_name(role: WorkspaceRole) -> &'static str {
+    match role {
+        WorkspaceRole::Owner => "owner",
+        WorkspaceRole::Admin => "admin",
+        WorkspaceRole::Member => "member",
+        WorkspaceRole::Viewer => "viewer",
+    }
+}
+
+fn membership_status_name(membership: &Membership) -> &'static str {
+    match membership.status() {
+        rembrane_domain::MembershipStatus::Active => "active",
+        rembrane_domain::MembershipStatus::Suspended => "suspended",
+        rembrane_domain::MembershipStatus::Removed => "removed",
     }
 }
 
@@ -482,10 +540,10 @@ mod tests {
     use rembrane_domain::WorkspaceId;
 
     use super::{
-        FIND_MEMBERSHIP_SQL, FIND_PRINCIPAL_SQL, FIND_WORKSPACE_SQL, LIST_ACTIVE_MEMBERSHIPS_SQL,
-        MAX_ACTIVE_MEMBERSHIPS, PostgresParameter, PostgresPool, PostgresRow, PostgresStore,
-        PostgresStoreError, PostgresTransaction, READ_TENANT_SQL, SET_TENANT_SQL,
-        TenantTransaction, TenantTransactionError,
+        FIND_MEMBERSHIP_SQL, FIND_PRINCIPAL_SQL, FIND_WORKSPACE_SQL, INSERT_MEMBERSHIP_SQL,
+        LIST_ACTIVE_MEMBERSHIPS_SQL, MAX_ACTIVE_MEMBERSHIPS, PostgresParameter, PostgresPool,
+        PostgresRow, PostgresStore, PostgresStoreError, PostgresTransaction, READ_TENANT_SQL,
+        REPLACE_MEMBERSHIP_SQL, SET_TENANT_SQL, TenantTransaction, TenantTransactionError,
     };
 
     #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1103,5 +1161,83 @@ mod tests {
             );
             assert_eq!(calls.borrow().last(), Some(&Call::Rollback));
         }
+    }
+
+    #[test]
+    fn membership_mutations_bind_canonical_identity_role_and_status() {
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let store = PostgresStore::new(FakePool {
+            calls: Rc::clone(&calls),
+            tenant_batches: RefCell::new(
+                [
+                    VecDeque::from([
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                    ]),
+                    VecDeque::from([
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                    ]),
+                ]
+                .into(),
+            ),
+            row_batches: RefCell::new([Vec::new(), Vec::new()].into()),
+        });
+        let membership = rembrane_domain::Membership::new(
+            WorkspaceId::new("workspace_01"),
+            rembrane_domain::PrincipalId::new("principal_01"),
+            rembrane_domain::WorkspaceRole::Member,
+        );
+        store
+            .insert_membership(&membership)
+            .expect("membership insert");
+        store
+            .replace_membership(&membership.suspend())
+            .expect("membership replacement");
+
+        let writes = calls
+            .borrow()
+            .iter()
+            .filter_map(|call| match call {
+                Call::Execute(statement, parameters)
+                    if statement == INSERT_MEMBERSHIP_SQL
+                        || statement == REPLACE_MEMBERSHIP_SQL =>
+                {
+                    Some((statement.clone(), parameters.clone()))
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            writes,
+            [
+                (
+                    INSERT_MEMBERSHIP_SQL.to_owned(),
+                    vec![
+                        "text:workspace_01".to_owned(),
+                        "text:principal_01".to_owned(),
+                        "text:member".to_owned(),
+                        "text:active".to_owned(),
+                    ],
+                ),
+                (
+                    REPLACE_MEMBERSHIP_SQL.to_owned(),
+                    vec![
+                        "text:workspace_01".to_owned(),
+                        "text:principal_01".to_owned(),
+                        "text:member".to_owned(),
+                        "text:suspended".to_owned(),
+                    ],
+                ),
+            ]
+        );
+        assert_eq!(
+            calls
+                .borrow()
+                .iter()
+                .filter(|call| **call == Call::Commit)
+                .count(),
+            2
+        );
     }
 }

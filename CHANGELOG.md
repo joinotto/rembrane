@@ -48,6 +48,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   before deriving authorization or key-rotation recipient sets.
 - Tenant-visible PostgreSQL principal lookup with exact requested/returned
   identity correlation and bounded cardinality under membership-mediated RLS.
+- Tenant-verified PostgreSQL membership insertion and lifecycle replacement
+  with canonical role/status encoding, exact affected-row enforcement, and
+  rollback unless the mutation commits successfully.
 
 ### Changed
 
