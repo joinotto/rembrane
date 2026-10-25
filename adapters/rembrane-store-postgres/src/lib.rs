@@ -14,12 +14,12 @@ use rembrane_application::{
     DisclosureRepository, EventRepository, InvitationRepository, KeyRotationRepository,
     MAX_ADMINISTRATIVE_AUDIT_PAGE, MAXIMUM_INVITATION_LIST_ITEMS, MemberLifecycleRepository,
     MemberScopeGrantRepository, MembershipRepository, MemoryRepository, ProjectionOutboxRepository,
-    RetentionRepository, TripRepository, WorkspaceReadRepository, WorkspaceRepository,
-    is_strict_successor,
+    RetentionRepository, TripMutationRepository, TripRepository, WorkspaceReadRepository,
+    WorkspaceRepository, is_strict_successor,
 };
 use rembrane_codec::{
     decode_checkpoint, decode_event, decode_memory, decode_trip, encode_checkpoint, encode_event,
-    encode_memory,
+    encode_memory, encode_trip,
 };
 use rembrane_crypto::{EncryptedPayload, EncryptionContext, PayloadPurpose, RecordCipher};
 use rembrane_domain::{
@@ -259,6 +259,14 @@ pub const LIST_OWNER_TRIPS_SQL: &str = "SELECT workspace_id, id, owner_subject_i
     trip_ciphertext, encryption_key_id, encryption_algorithm, encryption_nonce FROM trips \
     WHERE workspace_id = $1 AND owner_subject_id = $2 \
     ORDER BY updated_at DESC, id LIMIT 10001";
+pub const INSERT_TRIP_SQL: &str = "INSERT INTO trips \
+    (workspace_id, id, owner_subject_id, trip_ciphertext, encryption_key_id, \
+    encryption_algorithm, encryption_nonce, version) \
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)";
+pub const REPLACE_TRIP_SQL: &str = "UPDATE trips SET trip_ciphertext = $3, \
+    encryption_key_id = $4, encryption_algorithm = $5, encryption_nonce = $6, version = $7, \
+    updated_at = CURRENT_TIMESTAMP WHERE workspace_id = $1 AND id = $2 \
+    AND owner_subject_id = $8 AND version = $9";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PostgresParameter<'value> {
@@ -2912,6 +2920,108 @@ where
     }
 }
 
+impl<Pool, Cipher> TripMutationRepository for PostgresTenantMemoryStore<'_, '_, Pool, Cipher>
+where
+    Pool: PostgresPool,
+    Pool::Error: ClassifiedPostgresError,
+    <Pool::Transaction as PostgresTransaction>::Row: PostgresRow<Error = Pool::Error>,
+    Cipher: RecordCipher,
+{
+    fn insert_trip_with_event(
+        &mut self,
+        trip: Trip,
+        event: CanonicalEvent,
+        expected_previous_sequence: u64,
+    ) -> Result<(), ApplicationError> {
+        persist_trip_mutation(self, &trip, None, &event, expected_previous_sequence)
+    }
+
+    fn replace_trip_with_event(
+        &mut self,
+        trip: Trip,
+        expected_trip_version: u64,
+        event: CanonicalEvent,
+        expected_previous_sequence: u64,
+    ) -> Result<(), ApplicationError> {
+        if !is_strict_successor(expected_trip_version, trip.version()) {
+            return Err(ApplicationError::VersionConflict);
+        }
+        persist_trip_mutation(
+            self,
+            &trip,
+            Some(expected_trip_version),
+            &event,
+            expected_previous_sequence,
+        )
+    }
+}
+
+fn persist_trip_mutation<Pool, Cipher>(
+    store: &PostgresTenantMemoryStore<'_, '_, Pool, Cipher>,
+    trip: &Trip,
+    expected_trip_version: Option<u64>,
+    event: &CanonicalEvent,
+    expected_previous_sequence: u64,
+) -> Result<(), ApplicationError>
+where
+    Pool: PostgresPool,
+    Pool::Error: ClassifiedPostgresError,
+    <Pool::Transaction as PostgresTransaction>::Row: PostgresRow<Error = Pool::Error>,
+    Cipher: RecordCipher,
+{
+    validate_trip_event(trip, event, expected_trip_version.is_some())?;
+    if trip.workspace_id() != &store.workspace_id {
+        return Err(ApplicationError::AccessDenied);
+    }
+    if !is_strict_successor(expected_previous_sequence, event.sequence()) {
+        return Err(ApplicationError::SequenceConflict);
+    }
+    let trip_plaintext = encode_trip(trip).map_err(|_| ApplicationError::StorageUnavailable)?;
+    let trip_context = EncryptionContext::new(
+        trip.workspace_id().clone(),
+        trip.id().as_str(),
+        trip.version(),
+        PayloadPurpose::TripEntity,
+    )
+    .map_err(|_| ApplicationError::Validation("invalid trip context".to_owned()))?;
+    let encrypted_trip = store
+        .cipher
+        .seal(&trip_context, &trip_plaintext)
+        .map_err(|_| ApplicationError::StorageUnavailable)?;
+    let event_plaintext = encode_event(event).map_err(|_| ApplicationError::StorageUnavailable)?;
+    let event_context = EncryptionContext::new(
+        event.workspace_id().clone(),
+        event.id().as_str(),
+        event.sequence(),
+        PayloadPurpose::CanonicalEvent,
+    )
+    .map_err(|_| ApplicationError::Validation("invalid event context".to_owned()))?;
+    let encrypted_event = store
+        .cipher
+        .seal(&event_context, &event_plaintext)
+        .map_err(|_| ApplicationError::StorageUnavailable)?;
+    let mut transaction = store
+        .store
+        .begin_tenant(trip.workspace_id().clone())
+        .map_err(map_event_application_error)?;
+    require_event_sequence(
+        &mut transaction,
+        trip.workspace_id(),
+        expected_previous_sequence,
+    )?;
+    write_trip(
+        &mut transaction,
+        trip,
+        expected_trip_version,
+        &encrypted_trip,
+    )?;
+    insert_canonical_event(&mut transaction, event, &encrypted_event)?;
+    transaction
+        .commit()
+        .map_err(PostgresStoreError::Tenant)
+        .map_err(map_event_application_error)
+}
+
 impl<Pool, Cipher> CheckpointMutationRepository for PostgresTenantMemoryStore<'_, '_, Pool, Cipher>
 where
     Pool: PostgresPool,
@@ -3784,6 +3894,52 @@ where
     Ok(())
 }
 
+fn write_trip<Transaction>(
+    transaction: &mut TenantTransaction<Transaction>,
+    trip: &Trip,
+    expected_version: Option<u64>,
+    encrypted: &EncryptedPayload,
+) -> Result<(), ApplicationError>
+where
+    Transaction: PostgresTransaction,
+    Transaction::Error: ClassifiedPostgresError,
+{
+    let mut parameters = vec![
+        PostgresParameter::Text(trip.workspace_id().as_str()),
+        PostgresParameter::Text(trip.id().as_str()),
+        PostgresParameter::Text(trip.owner_subject_id().as_str()),
+        PostgresParameter::Bytes(encrypted.ciphertext()),
+        PostgresParameter::Text(encrypted.key_id()),
+        PostgresParameter::Text(encrypted.algorithm()),
+        PostgresParameter::Bytes(encrypted.nonce()),
+        PostgresParameter::I64(
+            postgres_epoch::<Transaction::Error>(trip.version()).map_err(map_application_error)?,
+        ),
+    ];
+    let statement = if let Some(expected_version) = expected_version {
+        parameters.push(PostgresParameter::Text(trip.owner_subject_id().as_str()));
+        parameters.push(PostgresParameter::I64(
+            postgres_epoch::<Transaction::Error>(expected_version)
+                .map_err(map_application_error)?,
+        ));
+        REPLACE_TRIP_SQL
+    } else {
+        INSERT_TRIP_SQL
+    };
+    let changed = transaction
+        .execute(statement, &parameters)
+        .map_err(PostgresStoreError::Tenant)
+        .map_err(map_application_error)?;
+    if changed != 1 {
+        return Err(if expected_version.is_some() {
+            ApplicationError::VersionConflict
+        } else {
+            ApplicationError::StorageUnavailable
+        });
+    }
+    Ok(())
+}
+
 fn insert_memory_evidence<Transaction>(
     transaction: &mut TenantTransaction<Transaction>,
     memory: &MemoryRecord,
@@ -4511,6 +4667,31 @@ fn validate_checkpoint_event(
     Ok(())
 }
 
+fn validate_trip_event(
+    trip: &Trip,
+    event: &CanonicalEvent,
+    revision: bool,
+) -> Result<(), ApplicationError> {
+    let matches_payload = match event.payload() {
+        EventPayload::TripCreated { trip_id, version } if !revision => {
+            trip_id == trip.id() && *version == trip.version()
+        }
+        EventPayload::TripRevised { trip_id, version } if revision => {
+            trip_id == trip.id() && *version == trip.version()
+        }
+        _ => false,
+    };
+    if trip.workspace_id() != event.workspace_id()
+        || event.subject_id() != Some(trip.owner_subject_id())
+        || !matches_payload
+    {
+        return Err(ApplicationError::Validation(
+            "event does not describe trip mutation".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
 fn event_describes_memory(payload: &EventPayload, memory: &MemoryRecord) -> bool {
     let (memory_id, version, compatible_status) = match payload {
         EventPayload::MemoryProposed { memory_id, version } => (
@@ -4997,8 +5178,8 @@ mod tests {
         InvitationService, KeyRotationRepository, MemberLifecycleRepository,
         MemberScopeGrantRepository, MembershipRepository, MemoryRepository,
         ProjectionOutboxRepository, ProjectionOutcome, ProjectionWorker, ResolveContextCommand,
-        ResolveContextService, ResumeActivityCommand, RetentionRepository, TripRepository,
-        WorkspaceRepository,
+        ResolveContextService, ResumeActivityCommand, RetentionRepository, TripMutationRepository,
+        TripRepository, WorkspaceRepository,
     };
     use rembrane_codec::{encode_checkpoint, encode_memory, encode_trip};
     use rembrane_contracts::ResolveContextRequest;
@@ -5031,19 +5212,20 @@ mod tests {
         INSERT_KEY_ROTATION_RECEIPT_SQL, INSERT_KEY_ROTATION_RECIPIENT_SQL, INSERT_LEGAL_HOLD_SQL,
         INSERT_MEMBER_SCOPE_GRANT_SQL, INSERT_MEMBERSHIP_SQL, INSERT_MEMORY_EVIDENCE_SQL,
         INSERT_MEMORY_SQL, INSERT_PRINCIPAL_SQL, INSERT_PROJECTION_SQL,
-        INSERT_REQUIRED_KEY_ROTATION_SQL, INSERT_RETENTION_POLICY_SQL, INSERT_WORKSPACE_SQL,
-        LATEST_CHECKPOINT_SQL, LATEST_KEY_ROTATION_SQL, LIST_ACTIVE_LEGAL_HOLDS_SQL,
-        LIST_ACTIVE_MEMBERSHIPS_SQL, LIST_ADMINISTRATIVE_AUDIT_SQL, LIST_EVENTS_SINCE_SQL,
-        LIST_INVITATIONS_BY_STATUS_SQL, LIST_MEMBER_SCOPE_GRANTS_SQL, LIST_OWNER_TRIPS_SQL,
-        LIST_PENDING_PROJECTIONS_SQL, LIST_SUBJECT_CHECKPOINTS_SQL, LIST_SUBJECT_MEMORIES_SQL,
-        LOCK_WORKSPACE_FOR_ROTATION_SQL, MAX_ACTIVE_MEMBERSHIPS, NEXT_KEY_ROTATION_GENERATION_SQL,
-        PostgresFailureKind, PostgresParameter, PostgresPool, PostgresProvisioner,
-        PostgresProvisioningPool, PostgresRow, PostgresStore, PostgresStoreError,
-        PostgresTransaction, PostgresWorkspaceAdminStore, ProvisioningTransaction, READ_TENANT_SQL,
-        REMOVE_MEMBERSHIP_SQL, REPLACE_CHECKPOINT_SQL, REPLACE_INVITATION_SQL,
-        REPLACE_LEGAL_HOLD_SQL, REPLACE_MEMBERSHIP_SQL, REPLACE_PROJECTION_SQL,
-        REPLACE_RETENTION_POLICY_SQL, SET_TENANT_SQL, TenantTransaction, TenantTransactionError,
-        map_application_error, map_invitation_application_error,
+        INSERT_REQUIRED_KEY_ROTATION_SQL, INSERT_RETENTION_POLICY_SQL, INSERT_TRIP_SQL,
+        INSERT_WORKSPACE_SQL, LATEST_CHECKPOINT_SQL, LATEST_KEY_ROTATION_SQL,
+        LIST_ACTIVE_LEGAL_HOLDS_SQL, LIST_ACTIVE_MEMBERSHIPS_SQL, LIST_ADMINISTRATIVE_AUDIT_SQL,
+        LIST_EVENTS_SINCE_SQL, LIST_INVITATIONS_BY_STATUS_SQL, LIST_MEMBER_SCOPE_GRANTS_SQL,
+        LIST_OWNER_TRIPS_SQL, LIST_PENDING_PROJECTIONS_SQL, LIST_SUBJECT_CHECKPOINTS_SQL,
+        LIST_SUBJECT_MEMORIES_SQL, LOCK_WORKSPACE_FOR_ROTATION_SQL, MAX_ACTIVE_MEMBERSHIPS,
+        NEXT_KEY_ROTATION_GENERATION_SQL, PostgresFailureKind, PostgresParameter, PostgresPool,
+        PostgresProvisioner, PostgresProvisioningPool, PostgresRow, PostgresStore,
+        PostgresStoreError, PostgresTransaction, PostgresWorkspaceAdminStore,
+        ProvisioningTransaction, READ_TENANT_SQL, REMOVE_MEMBERSHIP_SQL, REPLACE_CHECKPOINT_SQL,
+        REPLACE_INVITATION_SQL, REPLACE_LEGAL_HOLD_SQL, REPLACE_MEMBERSHIP_SQL,
+        REPLACE_PROJECTION_SQL, REPLACE_RETENTION_POLICY_SQL, REPLACE_TRIP_SQL, SET_TENANT_SQL,
+        TenantTransaction, TenantTransactionError, map_application_error,
+        map_invitation_application_error,
     };
 
     #[derive(Clone, Debug, Eq, PartialEq)]
@@ -5534,6 +5716,24 @@ mod tests {
             },
         )
         .expect("checkpoint event")
+    }
+
+    fn trip_event(id: &str, sequence: u64, version: u64, revision: bool) -> CanonicalEvent {
+        let trip_id = EntityId::new("trip_02");
+        let payload = if revision {
+            EventPayload::TripRevised { trip_id, version }
+        } else {
+            EventPayload::TripCreated { trip_id, version }
+        };
+        CanonicalEvent::new(
+            EventId::new(id),
+            WorkspaceId::new("workspace_01"),
+            PrincipalId::new("principal_01"),
+            Some(PrincipalId::new("principal_01")),
+            sequence,
+            payload,
+        )
+        .expect("trip event")
     }
 
     #[test]
@@ -7322,6 +7522,96 @@ mod tests {
                 "text:principal_01".to_owned(),
             ]
         )));
+    }
+
+    #[test]
+    fn trip_mutations_commit_ciphertext_and_canonical_events_atomically() {
+        let date_window = TravelDateWindow::new("2027-04-01", "2027-04-12").expect("date window");
+        let trip = Trip::new(
+            EntityId::new("trip_02"),
+            WorkspaceId::new("workspace_01"),
+            PrincipalId::new("principal_01"),
+            "Bengaluru to Paris",
+            "Bengaluru",
+            vec!["Paris".to_owned()],
+            date_window.clone(),
+        )
+        .expect("trip");
+        let revised = Trip::restore(
+            EntityId::new("trip_02"),
+            WorkspaceId::new("workspace_01"),
+            PrincipalId::new("principal_01"),
+            "Bengaluru to Paris and Lyon",
+            "Bengaluru",
+            vec!["Paris".to_owned(), "Lyon".to_owned()],
+            date_window,
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            2,
+        )
+        .expect("revised trip");
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let store = PostgresStore::new(FakePool {
+            calls: Rc::clone(&calls),
+            tenant_batches: RefCell::new(
+                [
+                    VecDeque::from([
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                    ]),
+                    VecDeque::from([
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                    ]),
+                ]
+                .into(),
+            ),
+            row_batches: RefCell::new(
+                [
+                    vec![FakeRow::current_event_sequence(0)],
+                    vec![FakeRow::current_event_sequence(1)],
+                ]
+                .into(),
+            ),
+        });
+        let tenant = store.for_workspace(WorkspaceId::new("workspace_01"));
+        let cipher = IdentityCipher;
+        let mut memories = tenant.with_cipher(&cipher);
+
+        TripMutationRepository::insert_trip_with_event(
+            &mut memories,
+            trip,
+            trip_event("event_trip_01", 1, 1, false),
+            0,
+        )
+        .expect("insert trip");
+        TripMutationRepository::replace_trip_with_event(
+            &mut memories,
+            revised,
+            1,
+            trip_event("event_trip_02", 2, 2, true),
+            1,
+        )
+        .expect("replace trip");
+
+        let calls = calls.borrow();
+        for statement in [INSERT_TRIP_SQL, REPLACE_TRIP_SQL, INSERT_EVENT_SQL] {
+            assert!(
+                calls
+                    .iter()
+                    .any(|call| matches!(call, Call::Execute(actual, _) if actual == statement)),
+                "missing execution for {statement}"
+            );
+        }
+        assert_eq!(
+            calls.iter().filter(|call| **call == Call::Commit).count(),
+            2
+        );
     }
 
     #[test]

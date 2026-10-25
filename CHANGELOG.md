@@ -123,6 +123,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Tenant-and-cipher PostgreSQL trip reads for exact entity lookup and bounded
   owner history, with authenticated decryption and strict tenant, owner,
   identifier, and version correlation.
+- Atomic encrypted PostgreSQL trip creation and revision with strict successor
+  versions, owner-bound travel events, and optimistic workspace event
+  sequencing.
 - PostgreSQL invitation lookup and bounded deterministic listing with optional
   status filtering, numeric lifetime decoding, terminal-state restoration,
   and exact tenant/invitation correlation.

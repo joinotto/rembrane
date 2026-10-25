@@ -348,6 +348,8 @@ This roadmap describes sequencing, not release dates.
             PostgreSQL and require disclosure commit before returning state.
       - [x] Add authenticated PostgreSQL exact-trip and bounded owner-history
         reads for cross-assistant travel continuity.
+        - [x] Atomically insert and revise encrypted PostgreSQL trips with
+          strict versions, owner correlation, and canonical event sequencing.
       - [x] Add exact invitation lookup and bounded status-filtered listing
         with terminal-state restoration and full tenant/identifier correlation.
       - [x] Implement atomic invitation creation, acceptance, revocation,
