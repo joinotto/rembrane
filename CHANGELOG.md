@@ -12,6 +12,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Provider-side customer-KMS contracts for bounded opaque wrapped keys,
   tenant- and generation-bound associated data, duplicate-safe active and
   historical keyrings, and zeroizing unwrap results inside customer sidecars.
+- A reference customer-KMS-to-record-cipher bridge with exact data-key length
+  enforcement, active-generation writes, and historical-generation reads.
 - A strict language-neutral authenticated channel-processor message schema and
   secret-free fixture carrying canonical tenant identity and event
   idempotency metadata to cooperative bots and agents.

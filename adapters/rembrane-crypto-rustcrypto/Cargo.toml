@@ -12,6 +12,7 @@ chacha20poly1305 = "0.10"
 getrandom = "0.3"
 rembrane-crypto = { path = "../../crates/rembrane-crypto" }
 rembrane-domain = { path = "../../crates/rembrane-domain" }
+rembrane-provider-sdk = { path = "../../crates/rembrane-provider-sdk" }
 zeroize = "1"
 
 [lints]

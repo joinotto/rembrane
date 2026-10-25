@@ -27,6 +27,10 @@ historical wrapped data keys. The contract supplies stable workspace and
 generation associated data, rejects duplicate generations, bounds opaque KMS
 ciphertext and provider key identifiers, and returns zeroizing plaintext key
 buffers only inside the customer-side process.
+`RustCryptoKeyringCipher::from_customer_kms` is the reference bridge from that
+contract to the record cipher: it unwraps each generation in the sidecar,
+requires an exact 256-bit data key, writes with the active generation, and
+retains historical generations for decrypt-only reads.
 
 ## Required request binding
 

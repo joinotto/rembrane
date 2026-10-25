@@ -1207,6 +1207,7 @@ dependencies = [
  "getrandom 0.3.4",
  "rembrane-crypto",
  "rembrane-domain",
+ "rembrane-provider-sdk",
  "zeroize",
 ]
 

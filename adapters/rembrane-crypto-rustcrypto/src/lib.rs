@@ -7,6 +7,8 @@
 use chacha20poly1305::aead::{Aead, KeyInit, Payload};
 use chacha20poly1305::{Key, XChaCha20Poly1305, XNonce};
 use rembrane_crypto::{CryptoError, EncryptedPayload, EncryptionContext, RecordCipher};
+use rembrane_domain::WorkspaceId;
+use rembrane_provider_sdk::{CustomerKmsAdapter, CustomerKmsKeyring};
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 use std::process::Command;
 use zeroize::Zeroizing;
@@ -419,6 +421,34 @@ impl RustCryptoKeyringCipher {
         Self::new(active, historical)
     }
 
+    /// Resolves active and historical keys inside a customer-controlled
+    /// sidecar. Cloud credentials and wrapped-key persistence remain outside
+    /// the Rembrane service process.
+    pub fn from_customer_kms<Adapter: CustomerKmsAdapter>(
+        workspace_id: &WorkspaceId,
+        keyring: &CustomerKmsKeyring,
+        adapter: &Adapter,
+    ) -> Result<Self, CryptoError> {
+        let mut active = None;
+        let mut historical = Vec::with_capacity(keyring.references().len().saturating_sub(1));
+        for reference in keyring.references() {
+            let key = keyring
+                .unwrap_generation(workspace_id, reference.generation(), adapter)
+                .map_err(|_| CryptoError::KeyUnavailable)?;
+            let key: [u8; 32] = key
+                .as_slice()
+                .try_into()
+                .map_err(|_| CryptoError::KeyUnavailable)?;
+            let cipher = RustCryptoRecordCipher::new(reference.provider_key_id(), key)?;
+            if reference.generation() == keyring.active_generation() {
+                active = Some(cipher);
+            } else {
+                historical.push(cipher);
+            }
+        }
+        Self::new(active.ok_or(CryptoError::KeyUnavailable)?, historical)
+    }
+
     pub fn from_configured_provider() -> Result<Self, CryptoError> {
         match std::env::var("REMBRANE_KEY_PROVIDER")
             .unwrap_or_else(|_| "environment".to_owned())
@@ -703,8 +733,15 @@ impl RecordCipher for RustCryptoKeyringCipher {
 
 #[cfg(test)]
 mod tests {
+    use std::cell::RefCell;
+
     use rembrane_crypto::{CryptoError, EncryptionContext, PayloadPurpose, RecordCipher};
     use rembrane_domain::WorkspaceId;
+    use rembrane_provider_sdk::{
+        CustomerKmsAdapter, CustomerKmsContext, CustomerKmsKeyReference, CustomerKmsKeyring,
+        ProviderError,
+    };
+    use zeroize::Zeroizing;
 
     use super::{
         LinuxSecretServiceKeyReference, MacosKeychainKeyReference, RustCryptoKeyringCipher,
@@ -889,6 +926,75 @@ mod tests {
             .expect("active key should seal");
         assert_eq!(current.key_id(), "key_v2");
         assert_eq!(keyring.active_key_id(), "key_v2");
+    }
+
+    struct FixtureKms {
+        generations: RefCell<Vec<u64>>,
+    }
+
+    impl CustomerKmsAdapter for FixtureKms {
+        fn unwrap_key(
+            &self,
+            context: &CustomerKmsContext,
+            reference: &CustomerKmsKeyReference,
+        ) -> Result<Zeroizing<Vec<u8>>, ProviderError> {
+            self.generations.borrow_mut().push(context.generation());
+            Ok(Zeroizing::new(reference.wrapped_key().to_vec()))
+        }
+    }
+
+    #[test]
+    fn customer_kms_keyring_seals_active_and_opens_historical_records() {
+        let kms = FixtureKms {
+            generations: RefCell::new(Vec::new()),
+        };
+        let references = CustomerKmsKeyring::new(
+            2,
+            vec![
+                CustomerKmsKeyReference::new(1, "kms-key-v1", vec![1; 32]).unwrap(),
+                CustomerKmsKeyReference::new(2, "kms-key-v2", vec![2; 32]).unwrap(),
+            ],
+        )
+        .unwrap();
+        let old = RustCryptoRecordCipher::new("kms-key-v1", [1; 32]).unwrap();
+        let historical = old
+            .seal(&context("workspace_01"), b"historical KMS record")
+            .unwrap();
+
+        let cipher = RustCryptoKeyringCipher::from_customer_kms(
+            &WorkspaceId::new("workspace_01"),
+            &references,
+            &kms,
+        )
+        .unwrap();
+
+        assert_eq!(cipher.active_key_id(), "kms-key-v2");
+        assert_eq!(
+            cipher.open(&context("workspace_01"), &historical).unwrap(),
+            b"historical KMS record"
+        );
+        assert_eq!(kms.generations.into_inner(), vec![1, 2]);
+    }
+
+    #[test]
+    fn customer_kms_keyring_rejects_wrong_key_lengths() {
+        let kms = FixtureKms {
+            generations: RefCell::new(Vec::new()),
+        };
+        let references = CustomerKmsKeyring::new(
+            1,
+            vec![CustomerKmsKeyReference::new(1, "kms-key-v1", vec![1; 31]).unwrap()],
+        )
+        .unwrap();
+
+        assert!(matches!(
+            RustCryptoKeyringCipher::from_customer_kms(
+                &WorkspaceId::new("workspace_01"),
+                &references,
+                &kms,
+            ),
+            Err(CryptoError::KeyUnavailable)
+        ));
     }
 
     #[test]

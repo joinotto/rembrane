@@ -111,6 +111,9 @@ This roadmap describes sequencing, not release dates.
     - [x] Publish a provider-side wrapped-key adapter contract with bounded
       opaque references, tenant/generation associated data, duplicate-safe
       active and historical generations, and zeroizing unwrap results.
+    - [x] Bridge customer-KMS keyrings into the reference record cipher with
+      exact 256-bit key validation, active-generation writes, and historical
+      decrypt support.
   - [x] Add a provider-agnostic configured cipher that dispatches to local
     environment/macOS keyrings or a policy-negotiated HTTP key provider.
     - [x] Accept consumed customer key-provider configuration from

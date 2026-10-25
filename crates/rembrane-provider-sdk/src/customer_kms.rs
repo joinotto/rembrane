@@ -71,6 +71,7 @@ impl CustomerKmsKeyReference {
             || provider_key_id.trim().is_empty()
             || provider_key_id.trim() != provider_key_id
             || provider_key_id.len() > MAX_KMS_KEY_ID_BYTES
+            || provider_key_id.chars().any(char::is_control)
             || wrapped_key.is_empty()
             || wrapped_key.len() > MAX_WRAPPED_KEY_BYTES
         {
@@ -148,9 +149,14 @@ impl CustomerKmsKeyring {
         self.active_generation
     }
 
+    #[must_use]
+    pub fn references(&self) -> &[CustomerKmsKeyReference] {
+        &self.references
+    }
+
     pub fn unwrap_active<Adapter: CustomerKmsAdapter>(
         &self,
-        workspace_id: WorkspaceId,
+        workspace_id: &WorkspaceId,
         adapter: &Adapter,
     ) -> Result<Zeroizing<Vec<u8>>, ProviderError> {
         self.unwrap_generation(workspace_id, self.active_generation, adapter)
@@ -158,7 +164,7 @@ impl CustomerKmsKeyring {
 
     pub fn unwrap_generation<Adapter: CustomerKmsAdapter>(
         &self,
-        workspace_id: WorkspaceId,
+        workspace_id: &WorkspaceId,
         generation: u64,
         adapter: &Adapter,
     ) -> Result<Zeroizing<Vec<u8>>, ProviderError> {
@@ -167,7 +173,7 @@ impl CustomerKmsKeyring {
             .iter()
             .find(|reference| reference.generation() == generation)
             .ok_or(ProviderError::Unavailable)?;
-        let context = CustomerKmsContext::new(workspace_id, generation)?;
+        let context = CustomerKmsContext::new(workspace_id.clone(), generation)?;
         adapter.unwrap_key(&context, reference)
     }
 }
@@ -214,7 +220,7 @@ mod tests {
         };
 
         let key = keyring
-            .unwrap_generation(WorkspaceId::new("workspace-a"), 1, &adapter)
+            .unwrap_generation(&WorkspaceId::new("workspace-a"), 1, &adapter)
             .unwrap();
 
         assert_eq!(key.as_slice(), &[1; 32]);
@@ -252,7 +258,7 @@ mod tests {
             observed: RefCell::new(Vec::new()),
         };
         assert_eq!(
-            keyring.unwrap_generation(WorkspaceId::new("workspace-a"), 2, &adapter),
+            keyring.unwrap_generation(&WorkspaceId::new("workspace-a"), 2, &adapter),
             Err(ProviderError::Unavailable)
         );
     }
@@ -261,6 +267,7 @@ mod tests {
     fn references_reject_ambiguous_or_oversized_metadata() {
         assert!(CustomerKmsKeyReference::new(0, "key", vec![1]).is_err());
         assert!(CustomerKmsKeyReference::new(1, " key", vec![1]).is_err());
+        assert!(CustomerKmsKeyReference::new(1, "key\nother", vec![1]).is_err());
         assert!(CustomerKmsKeyReference::new(1, "key", Vec::new()).is_err());
     }
 }
