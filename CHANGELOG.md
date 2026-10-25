@@ -53,6 +53,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Python travel methods now expose dependency-free `TypedDict` request and
   response models with closed protocol literals instead of unstructured
   mappings and `Any` returns.
+- Python travel methods now reject malformed workspace, subject, trip, and
+  participant identifiers before issuing a network request.
 - REST travel operations now reject malformed or oversized opaque trip and
   participant references before authorization or storage access.
 - The REST service now serves `/.well-known/ai-memory` without authentication,

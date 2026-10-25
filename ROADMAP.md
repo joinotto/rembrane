@@ -680,6 +680,8 @@ This roadmap describes sequencing, not release dates.
   identifiers in the TypeScript SDK before network access.
 - [x] Publish dependency-free Python `TypedDict` travel request and response
   contracts with closed protocol literals.
+- [x] Reject malformed travel workspace, subject, trip, and participant
+  identifiers in the Python SDK before network access.
 - [x] Reject malformed or oversized opaque trip and participant references at
   the REST boundary before authorization or storage access.
 - [x] Reuse layered domain/entity context for travel and trip constraints.

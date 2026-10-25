@@ -304,30 +304,129 @@ class RembraneClientTests(unittest.TestCase):
             "http://127.0.0.1:8787/v1", "test-token", transport=transport
         )
         operations = (
-            ("create_trip", "/travel/trips"),
-            ("add_trip_participant", "/travel/trip-participants"),
-            ("add_trip_constraint", "/travel/trip-constraints"),
-            ("record_trip_decision", "/travel/trip-decisions"),
-            ("capture_booking_research", "/travel/booking-research"),
-            ("resolve_travel_context", "/travel/context/resolve"),
-        )
-        for index, (method, _) in enumerate(operations):
-            getattr(client, method)(
+            (
+                "create_trip",
+                "/travel/trips",
                 {
                     "workspaceId": "team",
                     "subjectId": "principal-1",
-                    "operation": index,
-                }
-            )
+                    "title": "Kyoto",
+                    "origin": "Bengaluru",
+                    "destinations": ["Kyoto"],
+                    "departNotBefore": "2026-11-01",
+                    "returnNotAfter": "2026-11-12",
+                    "expectedPreviousSequence": 9,
+                },
+            ),
+            (
+                "add_trip_participant",
+                "/travel/trip-participants",
+                {
+                    "workspaceId": "team",
+                    "subjectId": "principal-1",
+                    "tripId": "trip-1",
+                    "label": "Hippo",
+                    "expectedTripVersion": 1,
+                    "expectedPreviousSequence": 10,
+                },
+            ),
+            (
+                "add_trip_constraint",
+                "/travel/trip-constraints",
+                {
+                    "workspaceId": "team",
+                    "subjectId": "principal-1",
+                    "tripId": "trip-1",
+                    "kind": "dietary",
+                    "statement": "Vegetarian meals",
+                    "evidenceSource": "user-statement",
+                    "expectedTripVersion": 2,
+                    "expectedPreviousSequence": 11,
+                },
+            ),
+            (
+                "record_trip_decision",
+                "/travel/trip-decisions",
+                {
+                    "workspaceId": "team",
+                    "subjectId": "principal-1",
+                    "tripId": "trip-1",
+                    "status": "selected",
+                    "summary": "Prefer nonstop",
+                    "evidenceSource": "workspace-decision",
+                    "expectedTripVersion": 3,
+                    "expectedPreviousSequence": 12,
+                },
+            ),
+            (
+                "capture_booking_research",
+                "/travel/booking-research",
+                {
+                    "workspaceId": "team",
+                    "subjectId": "principal-1",
+                    "tripId": "trip-1",
+                    "kind": "flight",
+                    "provider": "search",
+                    "summary": "Morning nonstop",
+                    "sourceReference": "opaque-result",
+                    "evidenceSource": "tool-result",
+                    "observedAt": "2026-10-25T10:00:00Z",
+                    "expiresAt": "2026-10-25T10:30:00Z",
+                    "expectedPreviousSequence": 13,
+                },
+            ),
+            (
+                "resolve_travel_context",
+                "/travel/context/resolve",
+                {
+                    "workspaceId": "team",
+                    "subjectId": "principal-1",
+                    "tripId": "trip-1",
+                    "purpose": "continue flight planning",
+                    "asOf": "2026-10-25T10:15:00Z",
+                },
+            ),
+        )
+        for method, _, request in operations:
+            getattr(client, method)(request)
 
         self.assertEqual(
             [call[1] for call in calls],
-            [f"http://127.0.0.1:8787/v1{path}" for _, path in operations],
+            [
+                f"http://127.0.0.1:8787/v1{path}"
+                for _, path, _ in operations
+            ],
         )
         self.assertTrue(all(call[0] == "POST" for call in calls))
         self.assertTrue(
             all(call[2]["Authorization"] == "Bearer test-token" for call in calls)
         )
+        calls_before_invalid = len(calls)
+        with self.assertRaisesRegex(ValueError, "bounded opaque identifier"):
+            client.resolve_travel_context(
+                {
+                    "workspaceId": "team",
+                    "subjectId": "principal-1",
+                    "tripId": "../trip",
+                    "purpose": "continue flight planning",
+                    "asOf": "2026-10-25T10:15:00Z",
+                }
+            )
+        with self.assertRaisesRegex(ValueError, "bounded opaque identifier"):
+            client.add_trip_constraint(
+                {
+                    "workspaceId": "team",
+                    "subjectId": "principal-1",
+                    "tripId": "trip-1",
+                    "participantId": "participant/1",
+                    "kind": "dietary",
+                    "statement": "Vegetarian meals",
+                    "evidenceSource": "user-statement",
+                    "expectedTripVersion": 2,
+                    "expectedPreviousSequence": 11,
+                }
+            )
+        self.assertEqual(len(calls), calls_before_invalid)
 
     def test_problem_response_becomes_typed_error(self) -> None:
         client = RembraneClient(

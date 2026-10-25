@@ -318,31 +318,39 @@ class RembraneClient:
         )
 
     def create_trip(self, request: CreateTripRequest) -> Trip:
+        _validate_travel_request_identity(request)
         return self._request("POST", "/travel/trips", request)
 
     def add_trip_participant(
         self, request: AddTripParticipantRequest
     ) -> TripParticipant:
+        _validate_travel_request_identity(request, require_trip_id=True)
         return self._request("POST", "/travel/trip-participants", request)
 
     def add_trip_constraint(
         self, request: AddTripConstraintRequest
     ) -> TripRevision:
+        _validate_travel_request_identity(
+            request, require_trip_id=True, allow_participant_id=True
+        )
         return self._request("POST", "/travel/trip-constraints", request)
 
     def record_trip_decision(
         self, request: RecordTripDecisionRequest
     ) -> TripRevision:
+        _validate_travel_request_identity(request, require_trip_id=True)
         return self._request("POST", "/travel/trip-decisions", request)
 
     def capture_booking_research(
         self, request: CaptureBookingResearchRequest
     ) -> BookingResearch:
+        _validate_travel_request_identity(request, require_trip_id=True)
         return self._request("POST", "/travel/booking-research", request)
 
     def resolve_travel_context(
         self, request: ResolveTravelContextRequest
     ) -> TravelContext:
+        _validate_travel_request_identity(request, require_trip_id=True)
         return self._request("POST", "/travel/context/resolve", request)
 
     def rotate_workspace_key(self, request: Mapping[str, Any]) -> Any:
@@ -527,6 +535,23 @@ def _opaque_path_id(value: Any, label: str) -> str:
     ):
         raise ValueError(f"{label} must be a bounded opaque identifier")
     return quote(value, safe="")
+
+
+def _validate_travel_request_identity(
+    request: Mapping[str, Any],
+    *,
+    require_trip_id: bool = False,
+    allow_participant_id: bool = False,
+) -> None:
+    if not isinstance(request, Mapping):
+        raise ValueError("travel request must be a mapping")
+    _opaque_path_id(request.get("workspaceId"), "workspaceId")
+    _opaque_path_id(request.get("subjectId"), "subjectId")
+    if require_trip_id:
+        _opaque_path_id(request.get("tripId"), "tripId")
+    participant_id = request.get("participantId")
+    if allow_participant_id and participant_id is not None:
+        _opaque_path_id(participant_id, "participantId")
 
 
 def _validate_memory_discovery(value: Any, expected_api: str) -> dict[str, Any]:
