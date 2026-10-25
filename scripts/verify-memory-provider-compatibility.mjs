@@ -138,6 +138,11 @@ assert.equal(
   fixtures.fixtureId,
   "result fixture is bound to a different fixture corpus",
 );
+assert.deepEqual(
+  resultFixture.cases.map(({ id }) => id),
+  profile.cases.map(({ id }) => id),
+  "result fixture cases differ from the reviewed profile",
+);
 for (const artifact of [
   conformanceSchema,
   resultSchema,

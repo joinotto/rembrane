@@ -111,6 +111,8 @@ This roadmap describes sequencing, not release dates.
           runner evidence from the reviewed core profile.
           - [x] Bind every result schema, fixture, and runner output to the
             exact core profile identifier.
+          - [x] Require result case identity and order to match the reviewed
+            profile exactly.
         - [x] Bind discovery and conformance evidence to an exact bounded
           provider build version rather than identity alone.
   - [x] Resolve or unwrap keyring material through customer KMS adapters.
@@ -760,6 +762,8 @@ This roadmap describes sequencing, not release dates.
         attacker-modified hash is present in the lock.
     - [x] Bind profile, lifecycle fixture, result schema, and example evidence
       to exact reviewed profile and fixture identifiers.
+      - [x] Require result case identity and order to match the reviewed
+        profile exactly.
   - [x] Add an immutable, versioned discovery manifest with standard well-known
     path, transports, operation capabilities, privacy mode, supported domains,
     and bounded context/event/sync limits.

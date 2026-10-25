@@ -7,9 +7,7 @@
   "required": ["profileId", "protocolVersion", "cases"],
   "properties": {
     "profileId": {
-      "type": "string",
-      "pattern": "^[a-z0-9][a-z0-9._-]+$",
-      "maxLength": 255
+      "const": "rembrane.key-provider.core"
     },
     "protocolVersion": {
       "const": "0.1"

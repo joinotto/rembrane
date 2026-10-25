@@ -12,7 +12,7 @@
     },
     {
       "path": "spec/key-provider-conformance.schema.json",
-      "sha256": "89feabb14da77976685e66da3aab9bb273e6a185836aa055e3a52e994be2135f"
+      "sha256": "b8906a96e68e2dc2710e929c9ecefb3d5822dc0e463797c0bb5152fededa4f0d"
     },
     {
       "path": "spec/conformance/key-provider-core.json",

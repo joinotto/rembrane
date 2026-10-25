@@ -134,6 +134,14 @@ jq -e '
     and all(.cases[]; (.requirement | length) >= 1 and (.requirement | length) <= 500)
 ' spec/conformance/key-provider-core.json >/dev/null
 
+jq -e '
+    .additionalProperties == false
+    and .properties.profileId.const == "rembrane.key-provider.core"
+    and .properties.protocolVersion.const == "0.1"
+    and .properties.cases.minItems == 8
+    and .properties.cases.maxItems == 8
+' spec/key-provider-conformance.schema.json >/dev/null
+
 jq -e --slurpfile schema spec/channel-processor-acknowledgement.schema.json '
     .protocolVersion == $schema[0].properties.protocolVersion.const
     and (.eventId | test("^\\S+$") and length <= 256)

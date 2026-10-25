@@ -132,6 +132,16 @@ assert.equal(
   conformanceProfile.profileId,
   "conformance result schema is bound to a different profile",
 );
+assert.equal(
+  conformanceSchema.properties.profileId.const,
+  conformanceProfile.profileId,
+  "conformance profile schema is bound to a different profile",
+);
+assert.deepEqual(
+  resultFixture.cases.map(({ id }) => id),
+  conformanceProfile.cases.map(({ id }) => id),
+  "conformance result fixture cases differ from the reviewed profile",
+);
 
 process.stdout.write(
   `key provider compatibility lock verified (${lock.artifacts.length} artifacts)\n`,

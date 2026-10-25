@@ -21,6 +21,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Memory Provider compatibility tamper coverage for removed locked artifacts.
 - Provider compatibility attacks that rehash semantically rebound conformance
   evidence are rejected for both memory and key providers.
+- Exact ordered conformance-case binding between reviewed profiles and result
+  evidence for memory and key providers.
 - Required bounded key-provider build versions in discovery, Rust negotiation,
   HTTP decoding, fixtures, and portable conformance evidence.
 - A tamper-tested key-provider compatibility lock over reviewed OpenAPI,
