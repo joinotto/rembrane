@@ -9,8 +9,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
-- Complete Zed local MCP configuration with tenant settings and reference-only
-  credentials instead of an unusable empty environment.
+- A Zed local MCP configuration that safely inherits the application process
+  environment instead of embedding unsupported `${VAR}` interpolation or raw
+  credentials in settings.
 - End-to-end generated-configuration coverage for Cursor, VS Code, Zed, and
   OpenCode in addition to Codex, Claude Code, Gemini CLI, and generic launchers.
 - Reference-only workspace-key and HTTP key-provider credential locators in

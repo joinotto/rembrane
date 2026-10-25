@@ -132,10 +132,13 @@ zed_config=$(
 printf '%s\n' "$zed_config" | jq -e \
     '.context_servers.rembrane.command
         and .context_servers.rembrane.args == []
-        and .context_servers.rembrane.env.REMBRANE_WORKSPACE_KEY_REFERENCE
-            == "${REMBRANE_WORKSPACE_KEY_REFERENCE}"
-        and (.context_servers.rembrane.env | has("REMBRANE_WORKSPACE_KEY_HEX") | not)' \
+        and .context_servers.rembrane.env == {}' \
     >/dev/null
+if printf '%s\n' "$zed_config" | rg -F '${' >/dev/null
+then
+    echo "Zed config unexpectedly relies on unsupported environment interpolation" >&2
+    exit 1
+fi
 cursor_config=$(
     "$rembrane_binary" mcp-config \
         --client cursor \

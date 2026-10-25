@@ -295,6 +295,13 @@ Generated MCP configurations pass only credential locators such as
 another deployment-owned resolver; generated client configuration never asks
 the launcher to serialize raw key or bearer-token values.
 
+Zed does not interpolate environment-variable placeholders in its settings
+file. Its generated entry therefore leaves `env` empty and inherits Rembrane
+configuration from the Zed process environment. Start Zed from a configured
+shell or arrange those non-secret settings and credential references through
+the operating system's application environment; do not paste raw keys into
+Zed settings.
+
 Inspect the compatibility evidence embedded in this CLI build:
 
 ```sh
