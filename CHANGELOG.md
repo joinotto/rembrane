@@ -11,6 +11,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 - A canonical semantic-provider core conformance profile with portable
   evidence bound to its exact SHA-256 across CLI output and provider registry.
+- A tamper-tested semantic-provider compatibility lock over the exact wire,
+  manifest, conformance-profile, result, and black-box runner artifacts.
 - A strict portable key-provider conformance result schema and runner output
   containing provider identity and explicit pass evidence for eight
   authentication, encryption, limit, rotation, and replay cases.

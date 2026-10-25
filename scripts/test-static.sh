@@ -24,6 +24,7 @@ require_command "$python_command"
 ./scripts/check-sensitive-files.sh
 ./scripts/check-ci-security.sh
 ./scripts/check-protocols.sh
+./scripts/test-semantic-provider-compatibility-lock.sh
 ./scripts/test-memory-provider-compatibility-lock.sh
 ./scripts/test-key-provider-compatibility-lock.sh
 ./scripts/check-postgres-rls.sh
@@ -64,6 +65,8 @@ for deployment_file in \
     scripts/test-kotlin-sdk.sh \
     scripts/test-memory-provider-compatibility-lock.sh \
     scripts/test-key-provider-compatibility-lock.sh \
+    scripts/test-semantic-provider-compatibility-lock.sh \
+    scripts/verify-semantic-provider-compatibility.mjs \
     scripts/check-postgres-rls.sh \
     scripts/check-ci-security.sh \
     scripts/test-postgres-rls.sh \
@@ -92,6 +95,7 @@ sh -n scripts/test-ios-imessage-extension.sh
 sh -n scripts/test-kotlin-sdk.sh
 sh -n scripts/test-memory-provider-compatibility-lock.sh
 sh -n scripts/test-key-provider-compatibility-lock.sh
+sh -n scripts/test-semantic-provider-compatibility-lock.sh
 sh -n scripts/check-postgres-rls.sh
 sh -n scripts/check-ci-security.sh
 sh -n scripts/test-postgres-rls.sh

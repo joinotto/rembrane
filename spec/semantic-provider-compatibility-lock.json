@@ -1,0 +1,34 @@
+{
+  "lockFormat": 1,
+  "protocolVersion": "0.1",
+  "artifacts": [
+    {
+      "path": "spec/provider-openapi.yaml",
+      "sha256": "33362f945d27ea865c57ef85e00f088b4696b83e7f418309fdec9dba807fa2a4"
+    },
+    {
+      "path": "spec/provider-manifest.schema.json",
+      "sha256": "dc8fc72a8584a6f67696b494b8b7e474dc3f76ac8e21a22bd411b435246aee0d"
+    },
+    {
+      "path": "spec/examples/provider-manifest.json",
+      "sha256": "ee705cd55d3fc348d4a3f35e788bd50ac0e6ed8184c5bd51d57a5e135e390e09"
+    },
+    {
+      "path": "spec/conformance/semantic-provider-core.json",
+      "sha256": "9073af5c5d07c6c5cbd586d8ca542645583da0e19a2fea70852fbfbe1bf5a0c5"
+    },
+    {
+      "path": "spec/semantic-provider-conformance-result.schema.json",
+      "sha256": "faef241517b3b6ad109e41b84122cf3609ee6847ed9732aea2e1cde1c3bb6483"
+    },
+    {
+      "path": "spec/examples/semantic-provider-conformance-result.json",
+      "sha256": "cb0a7301c3285f974e39751e32e4b37af8756cc3e8dd787f4f99672e5e70f79e"
+    },
+    {
+      "path": "scripts/test-provider-http.sh",
+      "sha256": "7476bdd49226137fac30b117f4a37ecc680adb777894852296c15fa6374cc5a9"
+    }
+  ]
+}

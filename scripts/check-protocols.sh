@@ -27,6 +27,7 @@ jq empty \
     spec/mcp-client-catalog.schema.json \
     spec/memory-provider-compatibility-lock.json \
     spec/key-provider-compatibility-lock.json \
+    spec/semantic-provider-compatibility-lock.json \
     spec/memory-provider.schema.json \
     spec/memory-provider-conformance.schema.json \
     spec/memory-provider-conformance-result.schema.json \
