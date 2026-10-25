@@ -1409,6 +1409,7 @@ name = "rembrane-remote-mcp-http"
 version = "0.1.0-alpha.1"
 dependencies = [
  "axum",
+ "bytes",
  "rembrane-application",
  "rembrane-config",
  "rembrane-contracts",
