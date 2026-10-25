@@ -13,13 +13,15 @@ use rembrane_application::{
     AdministrativeAuditRepository, ApplicationError, AuthorizeClientCommand,
     AuthorizeClientService, CaptureBookingResearchCommand, CaptureBookingResearchService,
     CheckpointService, ClientGrantBundle, CreateCheckpointCommand, CreateInvitationCommand,
-    CreateTripCommand, ExecuteRetentionPurgeCommand, GraphContextService, InvitationRepository,
-    InvitationService, KeyRotationRepository, ListInvitationsQuery, MemberLifecycleService,
-    MembershipRepository, PlaceLegalHoldCommand, RecordTripDecisionCommand,
-    ReleaseLegalHoldCommand, ResolveContextCommand, ResolveContextService,
-    ResolveTravelContextCommand, ResumeActivityCommand, RetentionService, RevokeInvitationCommand,
-    SetRetentionPolicyCommand, TravelContextResearch, TravelContextService, TravelContextTrip,
-    TravelSensitiveProfile, TripService, UpdateCheckpointCommand, WorkspaceRepository,
+    CreateTripCommand, DeleteMemoryCommand, ExecuteRetentionPurgeCommand, GraphContextService,
+    InvitationRepository, InvitationService, KeyRotationRepository, ListInvitationsQuery,
+    MemberLifecycleService, MembershipRepository, MemoryLifecycleService, PlaceLegalHoldCommand,
+    RecordTripDecisionCommand, ReleaseLegalHoldCommand, RememberPreferenceCommand,
+    RememberPreferenceService, ResolveContextCommand, ResolveContextService,
+    ResolveTravelContextCommand, ResumeActivityCommand, RetentionService, ReviseMemoryCommand,
+    RevokeInvitationCommand, SetRetentionPolicyCommand, TravelContextResearch,
+    TravelContextService, TravelContextTrip, TravelSensitiveProfile, TripService,
+    UpdateCheckpointCommand, WorkspaceRepository,
 };
 use rembrane_config::{SecretReference, parse_read_permissions, parse_read_scopes};
 use rembrane_contracts::{ResolveContextRequest, ResolveGraphContextRequest};
@@ -28,11 +30,11 @@ use rembrane_domain::{
     ActivityCheckpoint, ActivityId, AdministrativeAuditEvent, BookingResearch, BookingResearchId,
     BookingResearchKind, CheckpointId, ClientId, ContextPackId, DecisionStatus, DisclosureId,
     EntityId, EventId, EvidenceId, EvidenceReference, EvidenceSource, GraphDisclosureDirection,
-    InvitationId, InvitationStatus, KeyRotationStatus, KnowledgeNodeId, LegalHoldId, MemoryKind,
-    MemoryScope, MemoryStatus, PrincipalId, ReadGrant, RetentionPeriod, TravelDateWindow, Trip,
-    TripConstraint, TripConstraintId, TripConstraintKind, TripDecision, TripDecisionId,
-    TripParticipant, TripParticipantId, WorkspaceId, WorkspaceKind, WorkspaceRetentionPolicy,
-    WorkspaceRole, WriteGrant, WritePermission,
+    InvitationId, InvitationStatus, KeyRotationStatus, KnowledgeNodeId, LegalHoldId, MemoryId,
+    MemoryKind, MemoryScope, MemoryStatus, PrincipalId, ReadGrant, RetentionPeriod,
+    TravelDateWindow, Trip, TripConstraint, TripConstraintId, TripConstraintKind, TripDecision,
+    TripDecisionId, TripParticipant, TripParticipantId, WorkspaceId, WorkspaceKind,
+    WorkspaceRetentionPolicy, WorkspaceRole, WriteGrant, WritePermission,
 };
 use rembrane_graph_configured::ConfiguredGraphProvider;
 use rembrane_secret_local::{LocalSecretResolver, SecretResolver};
@@ -91,6 +93,52 @@ struct ResolveGraphRequest {
     domain: Option<String>,
     entity_id: Option<String>,
     activity_id: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct RememberPreferenceRequest {
+    workspace_id: String,
+    subject_id: String,
+    content: String,
+    domain: Option<String>,
+    entity_id: Option<String>,
+    activity_id: Option<String>,
+    expected_previous_sequence: u64,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct CorrectMemoryRequest {
+    workspace_id: String,
+    subject_id: String,
+    replacement: String,
+    domain: Option<String>,
+    entity_id: Option<String>,
+    activity_id: Option<String>,
+    expected_version: u64,
+    expected_previous_sequence: u64,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct DeleteMemoryRequest {
+    workspace_id: String,
+    subject_id: String,
+    reason: String,
+    domain: Option<String>,
+    entity_id: Option<String>,
+    activity_id: Option<String>,
+    expected_version: u64,
+    expected_previous_sequence: u64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MemoryMutationResponse {
+    memory_id: String,
+    version: u64,
+    status: &'static str,
 }
 
 #[derive(Deserialize)]
@@ -674,6 +722,9 @@ impl AppState {
                 requested_read_scopes: read_scopes,
                 requested_read_permissions: read_permissions,
                 requested_write_permissions: vec![
+                    WritePermission::CreateMemory,
+                    WritePermission::ReviseMemory,
+                    WritePermission::DeleteMemory,
                     WritePermission::WriteCheckpoint,
                     WritePermission::CreateTrip,
                     WritePermission::ReviseTrip,
@@ -1272,6 +1323,216 @@ fn advance_identifier(current: &mut u128) -> Option<u128> {
     let next = current.checked_add(1)?;
     *current = next;
     Some(next)
+}
+
+async fn remember_preference(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<RememberPreferenceRequest>,
+) -> Result<(StatusCode, Json<MemoryMutationResponse>), ApiError> {
+    authorize_bearer(&state, &headers)?;
+    if request.content.trim().is_empty() {
+        return Err(ApiError::invalid_request());
+    }
+    let scope = requested_memory_scope(
+        request.domain.as_deref(),
+        request.entity_id.as_deref(),
+        request.activity_id.as_deref(),
+    )?;
+    let mut runtime = state
+        .inner
+        .runtime
+        .lock()
+        .map_err(|_| ApiError::internal())?;
+    authorize_memory_identity(&runtime, &request.workspace_id, &request.subject_id)?;
+    let write_grant = scoped_memory_write_grant(&runtime, &scope, WritePermission::CreateMemory)?;
+    let suffix = next_id(&mut runtime)?;
+    let memory = RememberPreferenceService::new(&mut runtime.store)
+        .execute(RememberPreferenceCommand {
+            grant: write_grant,
+            memory_id: MemoryId::new(format!("memory_{suffix}")),
+            scope,
+            content: request.content,
+            evidence: EvidenceReference::new(
+                EvidenceId::new(format!("evidence_{suffix}")),
+                EvidenceSource::UserStatement,
+            ),
+            event_id: EventId::new(format!("event_{suffix}")),
+            expected_previous_sequence: request.expected_previous_sequence,
+            projections: Vec::new(),
+        })
+        .map_err(ApiError::from_application)?;
+    Ok((
+        StatusCode::CREATED,
+        Json(MemoryMutationResponse {
+            memory_id: memory.id().to_string(),
+            version: memory.version(),
+            status: "confirmed",
+        }),
+    ))
+}
+
+async fn correct_memory(
+    State(state): State<AppState>,
+    Path(memory_id): Path<String>,
+    headers: HeaderMap,
+    Json(request): Json<CorrectMemoryRequest>,
+) -> Result<Json<MemoryMutationResponse>, ApiError> {
+    authorize_bearer(&state, &headers)?;
+    if memory_id.trim().is_empty()
+        || request.replacement.trim().is_empty()
+        || request.expected_version == 0
+    {
+        return Err(ApiError::invalid_request());
+    }
+    let scope = requested_memory_scope(
+        request.domain.as_deref(),
+        request.entity_id.as_deref(),
+        request.activity_id.as_deref(),
+    )?;
+    let mut runtime = state
+        .inner
+        .runtime
+        .lock()
+        .map_err(|_| ApiError::internal())?;
+    authorize_memory_identity(&runtime, &request.workspace_id, &request.subject_id)?;
+    let write_grant = scoped_memory_write_grant(&runtime, &scope, WritePermission::ReviseMemory)?;
+    let suffix = next_id(&mut runtime)?;
+    let memory = MemoryLifecycleService::new(&mut runtime.store)
+        .revise(ReviseMemoryCommand {
+            grant: write_grant,
+            memory_id: MemoryId::new(memory_id),
+            expected_version: request.expected_version,
+            content: request.replacement,
+            evidence: EvidenceReference::new(
+                EvidenceId::new(format!("evidence_{suffix}")),
+                EvidenceSource::UserStatement,
+            ),
+            event_id: EventId::new(format!("event_{suffix}")),
+            expected_previous_sequence: request.expected_previous_sequence,
+            projections: Vec::new(),
+        })
+        .map_err(ApiError::from_application)?;
+    Ok(Json(MemoryMutationResponse {
+        memory_id: memory.id().to_string(),
+        version: memory.version(),
+        status: "confirmed",
+    }))
+}
+
+async fn delete_memory(
+    State(state): State<AppState>,
+    Path(memory_id): Path<String>,
+    headers: HeaderMap,
+    Json(request): Json<DeleteMemoryRequest>,
+) -> Result<Json<MemoryMutationResponse>, ApiError> {
+    authorize_bearer(&state, &headers)?;
+    if memory_id.trim().is_empty()
+        || request.reason.trim().is_empty()
+        || request.expected_version == 0
+    {
+        return Err(ApiError::invalid_request());
+    }
+    let scope = requested_memory_scope(
+        request.domain.as_deref(),
+        request.entity_id.as_deref(),
+        request.activity_id.as_deref(),
+    )?;
+    let mut runtime = state
+        .inner
+        .runtime
+        .lock()
+        .map_err(|_| ApiError::internal())?;
+    authorize_memory_identity(&runtime, &request.workspace_id, &request.subject_id)?;
+    let write_grant = scoped_memory_write_grant(&runtime, &scope, WritePermission::DeleteMemory)?;
+    let suffix = next_id(&mut runtime)?;
+    let memory = MemoryLifecycleService::new(&mut runtime.store)
+        .delete(DeleteMemoryCommand {
+            grant: write_grant,
+            memory_id: MemoryId::new(memory_id),
+            expected_version: request.expected_version,
+            evidence: EvidenceReference::new(
+                EvidenceId::new(format!("evidence_{suffix}")),
+                EvidenceSource::UserStatement,
+            ),
+            event_id: EventId::new(format!("event_{suffix}")),
+            expected_previous_sequence: request.expected_previous_sequence,
+            projections: Vec::new(),
+        })
+        .map_err(ApiError::from_application)?;
+    Ok(Json(MemoryMutationResponse {
+        memory_id: memory.id().to_string(),
+        version: memory.version(),
+        status: "deleted",
+    }))
+}
+
+fn requested_memory_scope(
+    domain: Option<&str>,
+    entity_id: Option<&str>,
+    activity_id: Option<&str>,
+) -> Result<MemoryScope, ApiError> {
+    let selected = usize::from(domain.is_some())
+        + usize::from(entity_id.is_some())
+        + usize::from(activity_id.is_some());
+    if selected > 1
+        || domain.is_some_and(|value| value.trim().is_empty())
+        || entity_id.is_some_and(|value| value.trim().is_empty())
+        || activity_id.is_some_and(|value| value.trim().is_empty())
+    {
+        return Err(ApiError::invalid_request());
+    }
+    Ok(if let Some(name) = domain {
+        MemoryScope::Domain {
+            name: name.to_owned(),
+        }
+    } else if let Some(id) = entity_id {
+        MemoryScope::Entity {
+            id: EntityId::new(id),
+        }
+    } else if let Some(id) = activity_id {
+        MemoryScope::Activity {
+            id: ActivityId::new(id),
+        }
+    } else {
+        MemoryScope::Global
+    })
+}
+
+fn authorize_memory_identity(
+    runtime: &Runtime,
+    workspace_id: &str,
+    subject_id: &str,
+) -> Result<(), ApiError> {
+    if workspace_id != runtime.write_grant.workspace_id.as_str()
+        || subject_id != runtime.write_grant.subject_id.as_str()
+    {
+        return Err(ApiError::access_denied());
+    }
+    Ok(())
+}
+
+fn scoped_memory_write_grant(
+    runtime: &Runtime,
+    scope: &MemoryScope,
+    permission: WritePermission,
+) -> Result<WriteGrant, ApiError> {
+    if !runtime.write_grant.allows(permission) || !runtime.write_grant.allows_scope(scope) {
+        return Err(ApiError::access_denied());
+    }
+    let read_scope = match scope {
+        MemoryScope::Global => rembrane_domain::ReadScope::Global,
+        MemoryScope::Domain { name } => rembrane_domain::ReadScope::Domain { name: name.clone() },
+        MemoryScope::Entity { id } => rembrane_domain::ReadScope::Entity { id: id.clone() },
+        MemoryScope::Activity { id } => rembrane_domain::ReadScope::Activity { id: id.clone() },
+    };
+    Ok(WriteGrant {
+        client_id: runtime.write_grant.client_id.clone(),
+        workspace_id: runtime.write_grant.workspace_id.clone(),
+        subject_id: runtime.write_grant.subject_id.clone(),
+        scopes: vec![read_scope],
+        permissions: vec![permission],
+    })
 }
 
 async fn checkpoint_activity(
@@ -2389,6 +2650,9 @@ async fn main() -> Result<()> {
         )
         .route("/v1/context/resolve", post(resolve_context))
         .route("/v1/graph/context/resolve", post(resolve_graph_context))
+        .route("/v1/memories/preferences", post(remember_preference))
+        .route("/v1/memories/{memory_id}/correction", post(correct_memory))
+        .route("/v1/memories/{memory_id}/deletion", post(delete_memory))
         .route(
             "/v1/activities/{activity_id}/checkpoint",
             post(checkpoint_activity),
