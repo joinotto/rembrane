@@ -6,6 +6,7 @@ administration=migrations/postgres/0002_workspace_administration.sql
 travel=migrations/postgres/0003_travel_continuity.sql
 graph=migrations/postgres/0004_knowledge_graph.sql
 channel=migrations/postgres/0005_channel_continuity.sql
+graph_disclosures=migrations/postgres/0006_graph_disclosures.sql
 migration=migrations/postgres/9999_tenant_rls.sql
 readme=migrations/postgres/README.md
 
@@ -74,6 +75,28 @@ for invariant in \
 do
     rg -F "$invariant" "$channel" >/dev/null || {
         echo "PostgreSQL channel invariant is missing: $invariant" >&2
+        exit 1
+    }
+done
+
+for table in \
+    graph_disclosure_receipts \
+    disclosed_knowledge_edges
+do
+    rg -q "^CREATE TABLE $table " "$graph_disclosures" || {
+        echo "PostgreSQL graph disclosure table is missing: $table" >&2
+        exit 1
+    }
+done
+
+for invariant in \
+    "direction IN ('incoming', 'outgoing', 'both')" \
+    'graph_disclosures_by_node' \
+    'REFERENCES graph_disclosure_receipts (workspace_id, id)' \
+    'REFERENCES knowledge_edges (workspace_id, id)'
+do
+    rg -F "$invariant" "$graph_disclosures" >/dev/null || {
+        echo "PostgreSQL graph disclosure invariant is missing: $invariant" >&2
         exit 1
     }
 done

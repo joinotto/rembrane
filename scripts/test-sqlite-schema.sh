@@ -61,7 +61,9 @@ sqlite3 "$database" < \
     "$repository_root/migrations/sqlite/0027_expired_workspace_invitations.sql"
 sqlite3 "$database" < \
     "$repository_root/migrations/sqlite/0028_invitation_audit.sql"
-sqlite3 "$database" "PRAGMA user_version = 28;"
+sqlite3 "$database" < \
+    "$repository_root/migrations/sqlite/0029_graph_disclosures.sql"
+sqlite3 "$database" "PRAGMA user_version = 29;"
 
 sqlite3 "$database" <<'SQL'
 PRAGMA foreign_keys = ON;
@@ -101,6 +103,18 @@ INSERT INTO knowledge_edges (
     'workspace_01', 'edge_uses', 'node_project', 'node_rust', NULL,
     X'05', 'key_01', 'xchacha20poly1305', zeroblob(24),
     1, 100, 200, 100
+);
+INSERT INTO graph_disclosure_receipts (
+    workspace_id, id, subject_id, client_id, purpose_code,
+    node_id, direction, valid_at_epoch_seconds
+) VALUES (
+    'workspace_01', 'graph_disclosure_01', 'principal_01', 'client_01',
+    'assistant_graph_context', 'node_project', 'outgoing', 150
+);
+INSERT INTO disclosed_knowledge_edges (
+    workspace_id, disclosure_id, edge_id, edge_version, ordinal
+) VALUES (
+    'workspace_01', 'graph_disclosure_01', 'edge_uses', 1, 0
 );
 INSERT INTO graph_projection_outbox (
     id, workspace_id, resource_type, node_id, edge_id,
@@ -461,6 +475,28 @@ fi
 
 if sqlite3 "$database" <<'SQL'
 PRAGMA foreign_keys = ON;
+BEGIN;
+INSERT INTO graph_disclosure_receipts (
+    workspace_id, id, subject_id, client_id, purpose_code,
+    node_id, direction, valid_at_epoch_seconds
+) VALUES (
+    'workspace_02', 'graph_disclosure_cross_tenant', 'principal_02', 'client_02',
+    'assistant_graph_context', 'node_project', 'outgoing', 150
+);
+INSERT INTO disclosed_knowledge_edges (
+    workspace_id, disclosure_id, edge_id, edge_version, ordinal
+) VALUES (
+    'workspace_02', 'graph_disclosure_cross_tenant', 'edge_uses', 1, 0
+);
+COMMIT;
+SQL
+then
+    echo "cross-workspace graph disclosure unexpectedly succeeded" >&2
+    exit 1
+fi
+
+if sqlite3 "$database" <<'SQL'
+PRAGMA foreign_keys = ON;
 INSERT INTO memory_evidence (
     workspace_id,
     memory_id,
@@ -683,7 +719,7 @@ table_count=$(
 )
 
 test "$table_count" -ge 9
-test "$(sqlite3 "$database" "PRAGMA user_version;")" -eq 28
+test "$(sqlite3 "$database" "PRAGMA user_version;")" -eq 29
 test "$(
     sqlite3 "$database" \
         "SELECT count(*) FROM channel_event_receipts WHERE event_id = 'event_channel_01';"
@@ -732,6 +768,14 @@ test "$(
 test "$(
     sqlite3 "$database" \
         "SELECT count(*) FROM knowledge_edges WHERE workspace_id = 'workspace_01' AND source_id = 'node_project' AND valid_from <= 150 AND (valid_until IS NULL OR valid_until > 150);"
+)" -eq 1
+test "$(
+    sqlite3 "$database" \
+        "SELECT count(*) FROM graph_disclosure_receipts WHERE workspace_id = 'workspace_01' AND id = 'graph_disclosure_01' AND direction = 'outgoing' AND valid_at_epoch_seconds = 150;"
+)" -eq 1
+test "$(
+    sqlite3 "$database" \
+        "SELECT count(*) FROM disclosed_knowledge_edges WHERE workspace_id = 'workspace_01' AND disclosure_id = 'graph_disclosure_01' AND edge_id = 'edge_uses' AND edge_version = 1;"
 )" -eq 1
 test "$(
     sqlite3 "$database" \

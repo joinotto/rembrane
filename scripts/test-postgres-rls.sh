@@ -50,6 +50,8 @@ psql "$REMBRANE_POSTGRES_URL" -v ON_ERROR_STOP=1 \
     -f migrations/postgres/0004_knowledge_graph.sql
 psql "$REMBRANE_POSTGRES_URL" -v ON_ERROR_STOP=1 \
     -f migrations/postgres/0005_channel_continuity.sql
+psql "$REMBRANE_POSTGRES_URL" -v ON_ERROR_STOP=1 \
+    -f migrations/postgres/0006_graph_disclosures.sql
 
 psql "$REMBRANE_POSTGRES_URL" -v ON_ERROR_STOP=1 <<'SQL'
 CREATE ROLE rembrane_runtime_test NOLOGIN NOSUPERUSER NOBYPASSRLS;

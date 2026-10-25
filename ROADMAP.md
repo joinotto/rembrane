@@ -420,6 +420,8 @@ This roadmap describes sequencing, not release dates.
       PostgreSQL repository adapters with tenant-isolation coverage.
       - [x] Enforce exact tenant and edge-revision correlation in the
         in-memory reference adapter.
+      - [x] Persist tenant-scoped graph disclosure receipts and exact disclosed
+        edge revisions atomically in SQLite.
   - [x] Add local SQLite graph persistence and Graphiti projection adapter.
     - [x] Construct Graphiti from validated provider profiles through any
       deployment-selected secret resolver without fixed credential names.

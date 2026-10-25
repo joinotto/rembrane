@@ -13,6 +13,9 @@ node and edge idempotency.
 `0005_channel_continuity.sql` adds authenticated replay receipts, active-member
 sender bindings, and an encrypted leased inbox with monotonic retry,
 quarantine, requeue, and delivery transitions.
+`0006_graph_disclosures.sql` adds append-only graph-context disclosure
+receipts and exact disclosed edge revisions, constrained to canonical
+workspace-scoped graph identities.
 
 Apply numbered schema migrations in ascending order, then apply
 `9999_tenant_rls.sql` after every schema migration and before granting access

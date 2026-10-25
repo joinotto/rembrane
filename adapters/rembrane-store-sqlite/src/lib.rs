@@ -87,7 +87,9 @@ const EXPIRED_WORKSPACE_INVITATION_MIGRATION: &str =
     include_str!("../../../migrations/sqlite/0027_expired_workspace_invitations.sql");
 const INVITATION_AUDIT_MIGRATION: &str =
     include_str!("../../../migrations/sqlite/0028_invitation_audit.sql");
-const CURRENT_SCHEMA_VERSION: u32 = 28;
+const GRAPH_DISCLOSURE_MIGRATION: &str =
+    include_str!("../../../migrations/sqlite/0029_graph_disclosures.sql");
+const CURRENT_SCHEMA_VERSION: u32 = 29;
 const CANONICAL_TABLES: [&str; 10] = [
     "activity_checkpoints",
     "disclosed_memories",
@@ -864,6 +866,12 @@ fn migrate(connection: &mut Connection) -> Result<(), ApplicationError> {
     if version == 27 {
         transaction
             .execute_batch(INVITATION_AUDIT_MIGRATION)
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        version = 28;
+    }
+    if version == 28 {
+        transaction
+            .execute_batch(GRAPH_DISCLOSURE_MIGRATION)
             .map_err(|_| ApplicationError::StorageUnavailable)?;
     }
     transaction
