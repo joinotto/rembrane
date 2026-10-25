@@ -818,6 +818,8 @@ This roadmap describes sequencing, not release dates.
         external providers and CI environments without curl or jq.
         - [x] Resolve its three workspace credentials through protected
           `env:` or `file:` references with opaque fail-closed errors.
+          - [x] Exercise protected-file references in the socket-enabled
+            independent mock-provider CI proof.
       - [x] Require the completed two-provider evidence set in strict
         production readiness.
     - [ ] Complete independent security review and resolve or explicitly

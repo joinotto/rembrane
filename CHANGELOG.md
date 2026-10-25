@@ -11,7 +11,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 - Protected `env:` and `file:` credential references for each workspace actor
   in the portable Memory Provider conformance runner, with opaque failures,
-  strict local-file validation, and raw-variable compatibility.
+  strict local-file validation, raw-variable compatibility, and
+  protected-file coverage in the independent mock-provider CI proof.
 - A dependency-light Node Memory Provider conformance runner executes the
   canonical authentication, scope, idempotency, tenant-isolation, optimistic
   deletion, sync-ordering, and cleanup cases with bounded redirect-free HTTP.

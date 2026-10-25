@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import http from "node:http";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
@@ -373,13 +375,25 @@ assert.equal(typeof address, "object");
 const script = fileURLToPath(
   new URL("./run-memory-provider-conformance.mjs", import.meta.url),
 );
+const secretDirectory = await mkdtemp(
+  join(tmpdir(), "rembrane-memory-provider-runner-"),
+);
+const tokenFiles = Object.fromEntries(
+  await Promise.all(
+    Object.entries(tokens).map(async ([role, token]) => {
+      const path = join(secretDirectory, role);
+      await writeFile(path, `${token}\n`, { mode: 0o600 });
+      return [role, path];
+    }),
+  ),
+);
 const child = spawn(process.execPath, [script, "mock-runner"], {
   env: {
     ...process.env,
     REMBRANE_MEMORY_PROVIDER_BASE_URL: `http://127.0.0.1:${address.port}`,
-    REMBRANE_MEMORY_PROVIDER_PRIMARY_TOKEN: tokens.primary,
-    REMBRANE_MEMORY_PROVIDER_OTHER_TOKEN: tokens.other,
-    REMBRANE_MEMORY_PROVIDER_READONLY_TOKEN: tokens.readonly,
+    REMBRANE_MEMORY_PROVIDER_PRIMARY_TOKEN_REFERENCE: `file:${tokenFiles.primary}`,
+    REMBRANE_MEMORY_PROVIDER_OTHER_TOKEN_REFERENCE: `file:${tokenFiles.other}`,
+    REMBRANE_MEMORY_PROVIDER_READONLY_TOKEN_REFERENCE: `file:${tokenFiles.readonly}`,
   },
   stdio: ["ignore", "pipe", "pipe"],
 });
@@ -395,6 +409,7 @@ const status = await new Promise((resolve) => child.on("close", resolve));
 await new Promise((resolve, reject) =>
   server.close((error) => (error ? reject(error) : resolve())),
 );
+await rm(secretDirectory, { recursive: true });
 
 assert.equal(status, 0, stderr);
 const result = JSON.parse(stdout);
