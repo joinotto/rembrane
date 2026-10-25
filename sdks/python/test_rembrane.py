@@ -58,6 +58,12 @@ class RembraneClientTests(unittest.TestCase):
         self.assertEqual(captured.exception.code, "invalid_discovery")
 
         discovery["endpoints"]["api"] = "http://127.0.0.1:8787/v1"
+        discovery["capabilities"]["sync"] = "sometimes"
+        with self.assertRaises(RembraneError) as captured:
+            client.discover()
+        self.assertEqual(captured.exception.code, "invalid_discovery")
+
+        del discovery["capabilities"]["sync"]
         discovery["privacy"]["plaintextProcessingLocation"] = "browser-extension"
         with self.assertRaises(RembraneError) as captured:
             client.discover()

@@ -226,6 +226,8 @@ This roadmap describes sequencing, not release dates.
   configured endpoint.
 - [x] Publish closed discovery privacy types in both SDKs and reject unknown
   plaintext-processing locations before provider selection.
+- [x] Reject malformed optional discovery capabilities, import/export format
+  lists, and resource limits before provider selection.
 - [ ] Add remote Streamable HTTP MCP with OAuth.
   - [x] Define HTTPS endpoints, RFC 9728 discovery metadata, bearer challenges,
     verified connection identity, scope ceilings, and session security rules.

@@ -68,6 +68,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - TypeScript and Python discovery contracts now expose closed privacy modes
   and plaintext-processing locations; runtime discovery rejects unknown
   plaintext locations before a provider can be selected.
+- SDK discovery now validates optional boolean capabilities, unique string
+  import/export format lists, and positive integer limits instead of trusting
+  malformed optional provider advertisements.
 - Protected `env:` and `file:` credential references for each workspace actor
   in the portable Memory Provider conformance runner, with opaque failures,
   strict local-file validation, raw-variable compatibility, and

@@ -621,6 +621,7 @@ def _validate_memory_discovery(value: Any, expected_api: str) -> MemoryDiscovery
     versions = value.get("protocolVersions")
     endpoints = value.get("endpoints")
     capabilities = value.get("capabilities")
+    limits = value.get("limits")
     privacy = value.get("privacy")
     required_capabilities = {
         "contextResolution",
@@ -635,10 +636,9 @@ def _validate_memory_discovery(value: Any, expected_api: str) -> MemoryDiscovery
         or not _is_bounded_text(provider.get("name"), 255)
         or type(versions) is not list
         or not versions
-        or len(set(versions)) != len(versions)
+        or not _is_unique_string_list(versions)
         or not all(
-            type(version) is str
-            and len(version.split(".")) == 2
+            len(version.split(".")) == 2
             and all(part.isdigit() and part for part in version.split("."))
             for version in versions
         )
@@ -648,11 +648,38 @@ def _validate_memory_discovery(value: Any, expected_api: str) -> MemoryDiscovery
         or not all(
             type(capabilities.get(name)) is bool for name in required_capabilities
         )
+        or not all(
+            name not in capabilities or type(capabilities[name]) is bool
+            for name in {"questionResolution", "sync"}
+        )
+        or not all(
+            name not in capabilities
+            or _is_unique_string_list(capabilities[name])
+            for name in {"imports", "exports"}
+        )
+        or (
+            limits is not None
+            and (
+                type(limits) is not dict
+                or not all(
+                    name not in limits
+                    or (
+                        type(limits[name]) is int
+                        and limits[name] > 0
+                    )
+                    for name in {
+                        "maximumContextItems",
+                        "maximumContextBytes",
+                        "maximumEventBytes",
+                    }
+                )
+            )
+        )
         or type(privacy) is not dict
         or privacy.get("disclosureReceipts") is not True
         or type(privacy.get("processingModes")) is not list
         or not privacy["processingModes"]
-        or len(set(privacy["processingModes"])) != len(privacy["processingModes"])
+        or not _is_unique_string_list(privacy["processingModes"])
         or not all(
             mode in DISCOVERY_PROCESSING_MODES for mode in privacy["processingModes"]
         )
@@ -664,6 +691,14 @@ def _validate_memory_discovery(value: Any, expected_api: str) -> MemoryDiscovery
     ):
         raise _invalid_discovery()
     return value
+
+
+def _is_unique_string_list(value: Any) -> bool:
+    return (
+        type(value) is list
+        and all(type(item) is str for item in value)
+        and len(set(value)) == len(value)
+    )
 
 
 def _normalize_api_root(value: Any) -> str | None:

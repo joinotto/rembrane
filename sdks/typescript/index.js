@@ -357,6 +357,7 @@ function validateTravelRequestIdentity(request, requireTripId, allowParticipantI
 
 function validateMemoryDiscovery(value, expectedApi) {
   const capabilities = value?.capabilities;
+  const limits = value?.limits;
   const privacy = value?.privacy;
   if (
     !isObject(value) ||
@@ -379,6 +380,23 @@ function validateMemoryDiscovery(value, expectedApi) {
       "disclosureReceipt",
       "deletionPropagation",
     ].every((key) => typeof capabilities[key] === "boolean") ||
+    !["questionResolution", "sync"].every(
+      (key) => capabilities[key] === undefined || typeof capabilities[key] === "boolean",
+    ) ||
+    !["imports", "exports"].every(
+      (key) =>
+        capabilities[key] === undefined ||
+        (Array.isArray(capabilities[key]) &&
+          new Set(capabilities[key]).size === capabilities[key].length &&
+          capabilities[key].every((item) => typeof item === "string")),
+    ) ||
+    (limits !== undefined &&
+      (!isObject(limits) ||
+        !["maximumContextItems", "maximumContextBytes", "maximumEventBytes"].every(
+          (key) =>
+            limits[key] === undefined ||
+            (Number.isSafeInteger(limits[key]) && limits[key] > 0),
+        ))) ||
     !isObject(privacy) ||
     privacy.disclosureReceipts !== true ||
     !Array.isArray(privacy.processingModes) ||
