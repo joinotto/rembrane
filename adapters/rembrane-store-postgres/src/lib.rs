@@ -51,6 +51,18 @@ pub trait PostgresTransaction {
     fn rollback(self) -> Result<(), Self::Error>;
 }
 
+/// Connection-pool boundary used by repository operations.
+///
+/// Each call must return a newly begun database transaction. It must not apply
+/// tenant identity through connection startup parameters or session-global
+/// settings.
+pub trait PostgresPool {
+    type Error;
+    type Transaction: PostgresTransaction<Error = Self::Error>;
+
+    fn begin(&self) -> Result<Self::Transaction, Self::Error>;
+}
+
 #[derive(Debug, Eq, PartialEq)]
 pub enum TenantTransactionError<DriverError> {
     Driver(DriverError),
@@ -74,6 +86,46 @@ impl<DriverError: Display> Display for TenantTransactionError<DriverError> {
 }
 
 impl<DriverError> Error for TenantTransactionError<DriverError> where DriverError: Error + 'static {}
+
+#[derive(Debug, Eq, PartialEq)]
+pub enum PostgresStoreError<DriverError> {
+    Begin(DriverError),
+    Tenant(TenantTransactionError<DriverError>),
+}
+
+impl<DriverError: Display> Display for PostgresStoreError<DriverError> {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Begin(error) => {
+                write!(formatter, "could not begin PostgreSQL transaction: {error}")
+            }
+            Self::Tenant(error) => Display::fmt(error, formatter),
+        }
+    }
+}
+
+impl<DriverError> Error for PostgresStoreError<DriverError> where DriverError: Error + 'static {}
+
+/// Driver-neutral store root that creates one verified tenant transaction per
+/// repository operation.
+pub struct PostgresStore<Pool> {
+    pool: Pool,
+}
+
+impl<Pool: PostgresPool> PostgresStore<Pool> {
+    #[must_use]
+    pub const fn new(pool: Pool) -> Self {
+        Self { pool }
+    }
+
+    pub fn begin_tenant(
+        &self,
+        workspace_id: WorkspaceId,
+    ) -> Result<TenantTransaction<Pool::Transaction>, PostgresStoreError<Pool::Error>> {
+        let transaction = self.pool.begin().map_err(PostgresStoreError::Begin)?;
+        TenantTransaction::verify(transaction, workspace_id).map_err(PostgresStoreError::Tenant)
+    }
+}
 
 /// An owned `PostgreSQL` transaction whose RLS workspace has been read back and
 /// proven to match the requested tenant.
@@ -219,8 +271,8 @@ mod tests {
     use rembrane_domain::WorkspaceId;
 
     use super::{
-        PostgresParameter, PostgresTransaction, READ_TENANT_SQL, SET_TENANT_SQL, TenantTransaction,
-        TenantTransactionError,
+        PostgresParameter, PostgresPool, PostgresStore, PostgresStoreError, PostgresTransaction,
+        READ_TENANT_SQL, SET_TENANT_SQL, TenantTransaction, TenantTransactionError,
     };
 
     #[derive(Clone, Debug, Eq, PartialEq)]
@@ -232,9 +284,34 @@ mod tests {
         Rollback,
     }
 
+    type TenantRead = Result<Option<String>, &'static str>;
+    type TenantReadBatch = VecDeque<TenantRead>;
+
     struct FakeTransaction {
         calls: Rc<RefCell<Vec<Call>>>,
-        tenants: VecDeque<Result<Option<String>, &'static str>>,
+        tenants: TenantReadBatch,
+    }
+
+    struct FakePool {
+        calls: Rc<RefCell<Vec<Call>>>,
+        tenant_batches: RefCell<VecDeque<TenantReadBatch>>,
+    }
+
+    impl PostgresPool for FakePool {
+        type Error = &'static str;
+        type Transaction = FakeTransaction;
+
+        fn begin(&self) -> Result<Self::Transaction, Self::Error> {
+            let tenants = self
+                .tenant_batches
+                .borrow_mut()
+                .pop_front()
+                .ok_or("unexpected transaction begin")?;
+            Ok(FakeTransaction {
+                calls: Rc::clone(&self.calls),
+                tenants,
+            })
+        }
     }
 
     impl PostgresTransaction for FakeTransaction {
@@ -389,5 +466,65 @@ mod tests {
             verified.execute("DELETE FROM memories", &[]),
             Err(TenantTransactionError::Closed)
         );
+    }
+
+    #[test]
+    fn store_reverifies_each_tenant_when_pool_connections_are_reused() {
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let pool = FakePool {
+            calls: Rc::clone(&calls),
+            tenant_batches: RefCell::new(
+                [
+                    VecDeque::from([Ok(Some("workspace_a".to_owned()))]),
+                    VecDeque::from([Ok(Some("workspace_b".to_owned()))]),
+                ]
+                .into(),
+            ),
+        };
+        let store = PostgresStore::new(pool);
+
+        store
+            .begin_tenant(WorkspaceId::new("workspace_a"))
+            .expect("first tenant")
+            .commit()
+            .expect("first commit");
+        store
+            .begin_tenant(WorkspaceId::new("workspace_b"))
+            .expect("second tenant")
+            .commit()
+            .expect("second commit");
+
+        assert_eq!(
+            calls
+                .borrow()
+                .iter()
+                .filter_map(|call| match call {
+                    Call::Execute(statement, parameters) if statement == SET_TENANT_SQL => {
+                        parameters.first().cloned()
+                    }
+                    _ => None,
+                })
+                .collect::<Vec<_>>(),
+            ["text:workspace_a", "text:workspace_b"]
+        );
+    }
+
+    #[test]
+    fn store_distinguishes_begin_failure_from_tenant_failure() {
+        struct FailingPool;
+
+        impl PostgresPool for FailingPool {
+            type Error = &'static str;
+            type Transaction = FakeTransaction;
+
+            fn begin(&self) -> Result<Self::Transaction, Self::Error> {
+                Err("pool unavailable")
+            }
+        }
+
+        assert!(matches!(
+            PostgresStore::new(FailingPool).begin_tenant(WorkspaceId::new("workspace_01")),
+            Err(PostgresStoreError::Begin("pool unavailable"))
+        ));
     }
 }

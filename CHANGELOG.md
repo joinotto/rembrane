@@ -34,6 +34,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Per-operation PostgreSQL tenant-context revalidation that immediately rolls
   back and permanently closes a transaction after missing or mismatched RLS
   identity.
+- A PostgreSQL pool boundary that begins and verifies a new transaction for
+  every workspace operation, including sequential cross-tenant connection
+  reuse.
 
 ### Changed
 
