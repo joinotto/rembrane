@@ -1,6 +1,5 @@
-import { createPublicKey, verify } from "node:crypto";
-
 import { readBoundedRegularFile } from "./read-bounded-regular-file.mjs";
+import { verifySecurityReviewSignature } from "./security-review-evidence.mjs";
 
 const [documentInput, signatureInput, publicKeyInput] = process.argv.slice(2);
 if (!documentInput || !signatureInput || !publicKeyInput) {
@@ -25,16 +24,6 @@ const publicKeyBytes = readBoundedRegularFile(
   "security review public key",
 );
 
-let valid = false;
-try {
-  const publicKey = createPublicKey(publicKeyBytes);
-  valid =
-    publicKey.asymmetricKeyType === "ed25519" &&
-    signatureBytes.length === 64 &&
-    verify(null, documentBytes, publicKey, signatureBytes);
-} catch {
-  valid = false;
-}
-if (!valid) throw new Error("security review signature is invalid");
+verifySecurityReviewSignature(documentBytes, signatureBytes, publicKeyBytes);
 
 process.stdout.write("security review signature verified\n");

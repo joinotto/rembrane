@@ -1011,6 +1011,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Security-review signature verification now checks Ed25519 signatures with
   Node over exact no-follow document, signature, and public-key reads instead
   of asking OpenSSL to reopen validated paths.
+- Signed security-review bundles now validate checksums, manifest structure,
+  attestation correlation, approval state, repository identity, and both
+  signatures from one immutable set of opened artifact bytes.
 - Restored the complete dependency-enabled workspace build by declaring
   previously implicit crate dependencies and enabling rmcp's stdio transport.
 - Corrected Memory Provider selector field casing and URL path construction so

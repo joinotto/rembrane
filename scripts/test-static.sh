@@ -72,6 +72,8 @@ for deployment_file in \
     scripts/verify-customer-kms-evidence.mjs \
     scripts/verify-customer-kms-provider-set.mjs \
     scripts/verify-security-review-signature.mjs \
+    scripts/security-review-evidence.mjs \
+    scripts/verify-security-review-bundle.mjs \
     scripts/test-graphiti-http-e2e.sh \
     scripts/test-graphiti-sidecar.sh \
     scripts/test-swift-sdk.sh \

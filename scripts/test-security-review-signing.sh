@@ -14,8 +14,10 @@ mkdir -p "$review_repository/scripts"
 for script in \
     generate-security-review-manifest.mjs \
     read-bounded-regular-file.mjs \
+    security-review-evidence.mjs \
     verify-security-review-manifest.mjs \
     verify-security-review-attestation.mjs \
+    verify-security-review-bundle.mjs \
     verify-security-review-signature.mjs \
     sign-security-review-manifest.sh \
     verify-security-review-signature.sh \
