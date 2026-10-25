@@ -62,10 +62,17 @@ native retrieval package.
 
 ## Explicitly outside this alpha
 
-- Production OS-keychain, HSM, or customer-KMS integration.
-- Remote Streamable HTTP MCP and OAuth.
-- Hosted PostgreSQL and row-level security.
-- Shared-workspace invitations, group-key rotation, and forward secrecy.
+- Cloud-specific customer-KMS or HSM sidecar implementations. The
+  operation-only key-provider protocol, authenticated HTTP client, macOS
+  Keychain, Linux Secret Service, and Windows DPAPI providers are included.
+- Production remote Streamable HTTP MCP through the official Rust MCP SDK.
+  The OAuth authorization boundary and transport-neutral security contracts
+  are included.
+- The Rust hosted-PostgreSQL repository adapter. The canonical schema, forced
+  row-level-security policies, and live SQL two-tenant CI proof are included.
+- Cryptographic group messaging and post-compromise forward secrecy.
+  Shared-workspace invitations, role-bound membership, workspace-key
+  rotation, and removal-triggered future-generation rotation are included.
 - Native WhatsApp, iMessage, or unrelated closed-bot interception.
 - Stable SDK and provider-protocol compatibility guarantees.
 - Independent security audit.

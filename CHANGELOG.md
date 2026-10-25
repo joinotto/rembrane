@@ -28,6 +28,13 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   percent-encoded tenant identifiers and exact authenticated GET-route tests.
 - Postman and shell REST acceptance coverage for bounded status-filtered
   invitation listing, lifecycle metadata, and cross-workspace denial.
+
+### Changed
+
+- Corrected the local-alpha exclusion boundary to distinguish shipped OS key
+  providers, invitation and rotation flows, OAuth contracts, and PostgreSQL
+  RLS proofs from the remaining cloud-KMS sidecars, official remote MCP
+  transport, Rust PostgreSQL adapter, and independent-audit work.
 - Local CLI commands for creating shared workspaces and creating, accepting,
   or revoking bounded role-specific invitations.
 - Authenticated REST invitation creation, acceptance, and revocation,
