@@ -971,6 +971,9 @@ This roadmap describes sequencing, not release dates.
   - [x] Add a fail-closed provider eligibility command that pins the exact
     adapter build, requires experimental opt-in, and rejects deprecated,
     revoked, missing, or ambiguous records.
+    - [x] Require exact passing profile-bound conformance evidence and a
+      separate explicit opt-in before selecting any plaintext-processing
+      provider.
 - [x] Run installed native-provider conformance through the CLI.
 - [x] Automated external-provider registry verification and release signing.
   - [x] Verify registry identity, timestamps, conformance status, and pinned

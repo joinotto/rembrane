@@ -47,7 +47,8 @@ target/debug/rembrane providers list | jq .
 target/debug/rembrane providers check \
   --provider rembrane.native \
   --adapter-version 0.1.0-alpha.1 \
-  --allow-experimental | jq .
+  --allow-experimental \
+  --allow-provider-plaintext | jq .
 ```
 
 The CLI can run the same destructive-fixture suite for adapters compiled into

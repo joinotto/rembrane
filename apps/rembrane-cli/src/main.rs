@@ -26,9 +26,9 @@ use rembrane_memory_provider_configured::ConfiguredMemoryProvider;
 use rembrane_provider_sdk::{
     CURRENT_MEMORY_PROVIDER_PROTOCOL, MemoryProviderCapability, MemoryProviderLimits,
     MemoryProviderPolicy, MemoryProviderPrivacyMode, MemoryProviderTransport,
-    SEMANTIC_PROVIDER_CONFORMANCE_PROFILE_SHA256, SEMANTIC_PROVIDER_CONFORMANCE_SUITE_ID,
-    SEMANTIC_PROVIDER_CONFORMANCE_SUITE_VERSION, SemanticProviderConformanceReport,
-    verify_semantic_provider,
+    SEMANTIC_PROVIDER_CONFORMANCE_CASES, SEMANTIC_PROVIDER_CONFORMANCE_PROFILE_SHA256,
+    SEMANTIC_PROVIDER_CONFORMANCE_SUITE_ID, SEMANTIC_PROVIDER_CONFORMANCE_SUITE_VERSION,
+    SemanticProviderConformanceReport, verify_semantic_provider,
 };
 use rembrane_secret_local::{LocalSecretResolver, SecretResolver};
 use rembrane_semantic_mem0::Mem0SemanticProvider;
@@ -648,17 +648,26 @@ fn check_provider(arguments: &[String]) -> Result<String, String> {
     let allow_experimental = arguments
         .iter()
         .any(|argument| argument == "--allow-experimental");
-    let expected_arguments = if allow_experimental { 6 } else { 5 };
+    let allow_provider_plaintext = arguments
+        .iter()
+        .any(|argument| argument == "--allow-provider-plaintext");
+    let expected_arguments =
+        5 + usize::from(allow_experimental) + usize::from(allow_provider_plaintext);
     if arguments.len() != expected_arguments
         || arguments
             .iter()
             .filter(|argument| *argument == "--allow-experimental")
             .count()
             > 1
+        || arguments
+            .iter()
+            .filter(|argument| *argument == "--allow-provider-plaintext")
+            .count()
+            > 1
     {
         return Err(
             "usage: rembrane providers check --provider <id> --adapter-version <version> \
-             [--allow-experimental]"
+             [--allow-experimental] [--allow-provider-plaintext]"
                 .to_owned(),
         );
     }
@@ -667,6 +676,7 @@ fn check_provider(arguments: &[String]) -> Result<String, String> {
         option(arguments, "--provider")?,
         option(arguments, "--adapter-version")?,
         allow_experimental,
+        allow_provider_plaintext,
     )
 }
 
@@ -675,6 +685,7 @@ fn check_provider_registry(
     provider_id: &str,
     adapter_version: &str,
     allow_experimental: bool,
+    allow_provider_plaintext: bool,
 ) -> Result<String, String> {
     let registry: serde_json::Value = serde_json::from_str(registry)
         .map_err(|_| "provider registry is not valid JSON".to_owned())?;
@@ -698,6 +709,7 @@ fn check_provider_registry(
     {
         return Err("provider adapter version does not match registry evidence".to_owned());
     }
+    validate_provider_selection_evidence(provider, adapter_version)?;
     let status = provider
         .get("status")
         .and_then(serde_json::Value::as_str)
@@ -714,6 +726,13 @@ fn check_provider_registry(
         "revoked" => return Err("revoked provider is not eligible for selection".to_owned()),
         _ => return Err("provider registry status is invalid".to_owned()),
     };
+    let plaintext_processing = provider
+        .get("plaintextProcessing")
+        .and_then(serde_json::Value::as_bool)
+        .ok_or_else(|| "provider plaintext policy is invalid".to_owned())?;
+    if plaintext_processing && !allow_provider_plaintext {
+        return Err("plaintext provider requires --allow-provider-plaintext".to_owned());
+    }
     serde_json::to_string(&serde_json::json!({
         "provider": provider_id,
         "adapterVersion": adapter_version,
@@ -721,9 +740,75 @@ fn check_provider_registry(
         "eligibility": eligibility,
         "protocolVersions": provider.get("protocolVersions"),
         "deploymentModes": provider.get("deploymentModes"),
-        "plaintextProcessing": provider.get("plaintextProcessing"),
+        "plaintextProcessing": plaintext_processing,
     }))
     .map_err(|_| "could not serialize provider eligibility".to_owned())
+}
+
+fn validate_provider_selection_evidence(
+    provider: &serde_json::Value,
+    adapter_version: &str,
+) -> Result<(), String> {
+    let protocols = provider
+        .get("protocolVersions")
+        .and_then(serde_json::Value::as_array)
+        .filter(|protocols| !protocols.is_empty())
+        .ok_or_else(|| "provider protocol evidence is invalid".to_owned())?;
+    let _deployment_modes = provider
+        .get("deploymentModes")
+        .and_then(serde_json::Value::as_array)
+        .filter(|modes| !modes.is_empty() && modes.iter().all(serde_json::Value::is_string))
+        .ok_or_else(|| "provider deployment evidence is invalid".to_owned())?;
+    let conformance = provider
+        .get("conformance")
+        .and_then(serde_json::Value::as_object)
+        .ok_or_else(|| "provider conformance evidence is missing".to_owned())?;
+    let protocol = conformance
+        .get("protocolVersion")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| "provider conformance protocol is invalid".to_owned())?;
+    if conformance
+        .get("result")
+        .and_then(serde_json::Value::as_str)
+        != Some("pass")
+        || conformance
+            .get("suiteId")
+            .and_then(serde_json::Value::as_str)
+            != Some(SEMANTIC_PROVIDER_CONFORMANCE_SUITE_ID)
+        || conformance
+            .get("suiteVersion")
+            .and_then(serde_json::Value::as_str)
+            != Some(SEMANTIC_PROVIDER_CONFORMANCE_SUITE_VERSION)
+        || conformance
+            .get("profileSha256")
+            .and_then(serde_json::Value::as_str)
+            != Some(SEMANTIC_PROVIDER_CONFORMANCE_PROFILE_SHA256)
+        || conformance
+            .get("providerVersion")
+            .and_then(serde_json::Value::as_str)
+            != Some(adapter_version)
+        || !protocols
+            .iter()
+            .any(|candidate| candidate.as_str() == Some(protocol))
+    {
+        return Err("provider conformance evidence is not eligible".to_owned());
+    }
+    let cases = conformance
+        .get("cases")
+        .and_then(serde_json::Value::as_array)
+        .ok_or_else(|| "provider conformance cases are invalid".to_owned())?;
+    if cases.len() != SEMANTIC_PROVIDER_CONFORMANCE_CASES.len()
+        || cases
+            .iter()
+            .zip(SEMANTIC_PROVIDER_CONFORMANCE_CASES)
+            .any(|(case, expected)| {
+                case.get("id").and_then(serde_json::Value::as_str) != Some(expected)
+                    || case.get("result").and_then(serde_json::Value::as_str) != Some("pass")
+            })
+    {
+        return Err("provider conformance cases are not eligible".to_owned());
+    }
+    Ok(())
 }
 
 fn test_provider(arguments: &[String]) -> Result<String, String> {
@@ -2297,7 +2382,7 @@ fn print_help() {
            rembrane fingerprint-git --repository <path>\n\
            rembrane providers list\n\
            rembrane providers check --provider <id> --adapter-version <version> \
-             [--allow-experimental]\n\
+             [--allow-experimental] [--allow-provider-plaintext]\n\
            rembrane providers test --provider <id> --namespace <unique-name>\n\
            rembrane memory-provider check \
              [--privacy <end-to-end-encrypted|trusted-boundary|provider-plaintext>]\n\
@@ -2736,6 +2821,7 @@ mod tests {
             "rembrane.native",
             env!("CARGO_PKG_VERSION"),
             false,
+            true,
         )
         .expect_err("experimental selection must require operator intent");
         assert!(denied.contains("--allow-experimental"));
@@ -2745,6 +2831,7 @@ mod tests {
             "rembrane.native",
             env!("CARGO_PKG_VERSION"),
             true,
+            true,
         )
         .expect("explicit experimental selection");
         let selected: serde_json::Value =
@@ -2753,14 +2840,72 @@ mod tests {
         assert_eq!(selected["adapterVersion"], env!("CARGO_PKG_VERSION"));
         assert_eq!(selected["eligibility"], "experimental-opt-in");
 
+        let plaintext_denied = check_provider_registry(
+            super::PROVIDER_REGISTRY,
+            "rembrane.native",
+            env!("CARGO_PKG_VERSION"),
+            true,
+            false,
+        )
+        .expect_err("plaintext processing must require separate operator intent");
+        assert!(plaintext_denied.contains("--allow-provider-plaintext"));
+
         let mismatch = check_provider_registry(
             super::PROVIDER_REGISTRY,
             "rembrane.native",
             "attacker-substituted-build",
             true,
+            true,
         )
         .expect_err("unregistered provider build must fail");
         assert!(mismatch.contains("version"));
+    }
+
+    #[test]
+    fn provider_selection_requires_exact_passing_conformance_evidence() {
+        let base: serde_json::Value =
+            serde_json::from_str(super::PROVIDER_REGISTRY).expect("embedded registry");
+        for (field, value) in [
+            ("result", serde_json::Value::String("fail".to_owned())),
+            ("profileSha256", serde_json::Value::String("a".repeat(64))),
+            (
+                "providerVersion",
+                serde_json::Value::String("substituted".to_owned()),
+            ),
+        ] {
+            let mut candidate = base.clone();
+            candidate["providers"][0]["conformance"][field] = value;
+            let candidate = serde_json::to_string(&candidate).expect("candidate registry");
+            assert!(
+                check_provider_registry(
+                    &candidate,
+                    "rembrane.native",
+                    env!("CARGO_PKG_VERSION"),
+                    true,
+                    true,
+                )
+                .expect_err("rebound conformance evidence must fail")
+                .contains("conformance")
+            );
+        }
+
+        let mut reordered = base;
+        reordered["providers"][0]["conformance"]["cases"]
+            .as_array_mut()
+            .expect("cases")
+            .swap(0, 1);
+        let reordered = serde_json::to_string(&reordered).expect("reordered registry");
+        assert!(
+            check_provider_registry(
+                &reordered,
+                "rembrane.native",
+                env!("CARGO_PKG_VERSION"),
+                true,
+                true,
+            )
+            .expect_err("reordered cases must fail")
+            .contains("cases")
+        );
     }
 
     #[test]
@@ -2775,6 +2920,7 @@ mod tests {
                 &candidate,
                 "rembrane.native",
                 env!("CARGO_PKG_VERSION"),
+                true,
                 true,
             )
             .expect_err("withdrawn provider must fail");
@@ -2793,6 +2939,7 @@ mod tests {
                 &duplicate,
                 "rembrane.native",
                 env!("CARGO_PKG_VERSION"),
+                true,
                 true,
             )
             .expect_err("duplicate provider identity must fail")

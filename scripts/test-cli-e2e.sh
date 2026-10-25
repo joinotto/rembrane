@@ -205,7 +205,8 @@ provider_selection=$(
     "$rembrane_binary" providers check \
         --provider rembrane.native \
         --adapter-version "$native_provider_version" \
-        --allow-experimental
+        --allow-experimental \
+        --allow-provider-plaintext
 )
 printf '%s\n' "$provider_selection" | jq -e \
     '.provider == "rembrane.native"
@@ -215,6 +216,14 @@ if "$rembrane_binary" providers check \
     --adapter-version "$native_provider_version" >/dev/null 2>&1
 then
     echo "provider selection accepted experimental status without opt-in" >&2
+    exit 1
+fi
+if "$rembrane_binary" providers check \
+    --provider rembrane.native \
+    --adapter-version "$native_provider_version" \
+    --allow-experimental >/dev/null 2>&1
+then
+    echo "provider selection accepted plaintext processing without opt-in" >&2
     exit 1
 fi
 

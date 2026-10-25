@@ -19,6 +19,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - A build-pinned `providers check` command for integrations, with explicit
   experimental opt-in and fail-closed deprecated, revoked, or ambiguous
   provider selection.
+- Provider selection now requires exact ordered passing conformance evidence
+  and a separate explicit opt-in for providers that process plaintext.
 - A strict portable key-provider conformance result schema and runner output
   containing provider identity and explicit pass evidence for eight
   authentication, encryption, limit, rotation, and replay cases.
