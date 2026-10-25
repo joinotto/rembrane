@@ -105,7 +105,7 @@ This roadmap describes sequencing, not release dates.
       generation, and recipient correlation.
     - [x] Bind rotation to the authenticated HTTP protocol and black-box
       provider conformance runner without exposing key material.
-  - [ ] Resolve or unwrap keyring material through customer KMS adapters.
+  - [x] Resolve or unwrap keyring material through customer KMS adapters.
     - [x] Define the customer-sidecar trust boundary and AWS, Azure, and GCP
       mappings without giving Rembrane cloud credentials or master keys.
     - [x] Publish a provider-side wrapped-key adapter contract with bounded

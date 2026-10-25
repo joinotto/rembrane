@@ -62,6 +62,11 @@ The adapter test suite executes the complete rotation lifecycle: generate,
 persist-before-activate, seal with the new generation, reload the durable
 keyring, and decrypt records from both current and historical generations.
 
+These framework adapters are complete, but cloud SDK implementations and
+their IAM policies remain deployment-owned. The top-level production-provider
+milestone stays open until disposable AWS, Azure, and Google Cloud sidecars
+pass the black-box key-provider conformance suite with reviewable evidence.
+
 ## Required request binding
 
 Every seal and open operation must cryptographically bind the complete

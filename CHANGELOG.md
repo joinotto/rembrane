@@ -36,6 +36,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - End-to-end customer-KMS sidecar coverage spanning key generation,
   persistence-before-activation, durable reload, and current plus historical
   record decryption.
+- Completion of the framework-level customer-KMS resolution milestone while
+  retaining an explicit acceptance gate for deployment-owned cloud SDK
+  sidecars and IAM review.
 - A strict language-neutral authenticated channel-processor message schema and
   secret-free fixture carrying canonical tenant identity and event
   idempotency metadata to cooperative bots and agents.
