@@ -89,6 +89,7 @@ pub(crate) fn select(
         .map_err(|_| error("provider registry is not UTF-8"))?;
     let registry: serde_json::Value = serde_json::from_str(registry_text)
         .map_err(|_| error("provider registry is not valid JSON"))?;
+    validate_selection_context(&registry, policy)?;
     let generated_at = string(&registry, "generatedAt")?;
     let generated_epoch = timestamp(generated_at)
         .ok_or_else(|| error("provider registry generation timestamp is invalid"))?;
@@ -142,24 +143,7 @@ pub(crate) fn select(
             "plaintext provider requires --allow-provider-plaintext",
         ));
     }
-    let deployment_modes = provider
-        .get("deploymentModes")
-        .and_then(serde_json::Value::as_array)
-        .filter(|modes| !modes.is_empty())
-        .ok_or_else(|| error("provider deployment evidence is invalid"))?
-        .iter()
-        .map(|mode| {
-            mode.as_str()
-                .filter(|value| {
-                    matches!(
-                        *value,
-                        "embedded" | "local-service" | "self-hosted" | "managed"
-                    )
-                })
-                .map(str::to_owned)
-                .ok_or_else(|| error("provider deployment evidence is invalid"))
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+    let deployment_modes = deployment_modes(provider)?;
     let trust = match verified.trust() {
         RegistryTrust::Embedded => ProviderSelectionTrust::Embedded,
         RegistryTrust::Ed25519 { public_key_sha256 } => ProviderSelectionTrust::Ed25519 {
@@ -186,6 +170,51 @@ pub(crate) fn select(
     })
 }
 
+fn validate_selection_context(
+    registry: &serde_json::Value,
+    policy: &ProviderSelectionPolicy<'_>,
+) -> Result<(), ProviderRegistrySelectionError> {
+    if registry
+        .get("schemaVersion")
+        .and_then(serde_json::Value::as_u64)
+        != Some(1)
+    {
+        return Err(error("provider registry schema version is unsupported"));
+    }
+    if !valid_provider_id(policy.provider_id) {
+        return Err(error("provider identifier is invalid"));
+    }
+    if policy.adapter_version.is_empty() || policy.adapter_version.len() > 100 {
+        return Err(error("provider adapter version is invalid"));
+    }
+    Ok(())
+}
+
+fn deployment_modes(
+    provider: &serde_json::Value,
+) -> Result<Vec<String>, ProviderRegistrySelectionError> {
+    let values = provider
+        .get("deploymentModes")
+        .and_then(serde_json::Value::as_array)
+        .filter(|modes| !modes.is_empty())
+        .ok_or_else(|| error("provider deployment evidence is invalid"))?;
+    values
+        .iter()
+        .enumerate()
+        .map(|(index, mode)| {
+            mode.as_str()
+                .filter(|value| {
+                    matches!(
+                        *value,
+                        "embedded" | "local-service" | "self-hosted" | "managed"
+                    ) && !values[..index].contains(mode)
+                })
+                .map(str::to_owned)
+                .ok_or_else(|| error("provider deployment evidence is invalid"))
+        })
+        .collect()
+}
+
 fn validate_evidence(
     provider: &serde_json::Value,
     adapter_version: &str,
@@ -206,6 +235,13 @@ fn validate_evidence(
         .and_then(serde_json::Value::as_array)
         .filter(|protocols| !protocols.is_empty())
         .ok_or_else(|| error("provider protocol evidence is invalid"))?;
+    if protocols.iter().enumerate().any(|(index, protocol)| {
+        protocol.as_str().is_none_or(|value| {
+            !valid_protocol_version(value) || protocols[..index].contains(protocol)
+        })
+    }) {
+        return Err(error("provider protocol evidence is invalid"));
+    }
     let conformance = provider
         .get("conformance")
         .and_then(serde_json::Value::as_object)
@@ -285,6 +321,27 @@ fn conformance_string<'value>(
 fn timestamp(value: &str) -> Option<i64> {
     let parsed = chrono::DateTime::parse_from_rfc3339(value).ok()?;
     (parsed.to_rfc3339_opts(chrono::SecondsFormat::Secs, true) == value).then(|| parsed.timestamp())
+}
+
+fn valid_provider_id(value: &str) -> bool {
+    (2..=255).contains(&value.len())
+        && value
+            .bytes()
+            .next()
+            .is_some_and(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit())
+        && value.bytes().all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'.' | b'_' | b'-')
+        })
+}
+
+fn valid_protocol_version(value: &str) -> bool {
+    (3..=20).contains(&value.len())
+        && value.split_once('.').is_some_and(|(major, minor)| {
+            !major.is_empty()
+                && !minor.is_empty()
+                && major.bytes().all(|byte| byte.is_ascii_digit())
+                && minor.bytes().all(|byte| byte.is_ascii_digit())
+        })
 }
 
 const fn error(message: &'static str) -> ProviderRegistrySelectionError {
@@ -372,6 +429,51 @@ mod tests {
                 .expect_err("profile substitution")
                 .to_string()
                 .contains("conformance")
+        );
+    }
+
+    #[test]
+    fn rejects_malformed_registry_structure_before_issuing_receipt() {
+        let mut value: serde_json::Value =
+            serde_json::from_slice(REGISTRY).expect("registry fixture");
+        value["schemaVersion"] = serde_json::json!(2);
+        let registry = VerifiedProviderRegistry::embedded(
+            serde_json::to_vec(&value).expect("modified registry"),
+        );
+        assert!(
+            registry
+                .select(&policy("0.1.0-alpha.1", true, true))
+                .expect_err("unsupported schema")
+                .to_string()
+                .contains("schema version")
+        );
+
+        let mut value: serde_json::Value =
+            serde_json::from_slice(REGISTRY).expect("registry fixture");
+        value["providers"][0]["protocolVersions"] = serde_json::json!(["0.1", "not-a-version"]);
+        let registry = VerifiedProviderRegistry::embedded(
+            serde_json::to_vec(&value).expect("modified registry"),
+        );
+        assert!(
+            registry
+                .select(&policy("0.1.0-alpha.1", true, true))
+                .expect_err("invalid protocol")
+                .to_string()
+                .contains("protocol")
+        );
+
+        let mut value: serde_json::Value =
+            serde_json::from_slice(REGISTRY).expect("registry fixture");
+        value["providers"][0]["deploymentModes"] = serde_json::json!(["embedded", "embedded"]);
+        let registry = VerifiedProviderRegistry::embedded(
+            serde_json::to_vec(&value).expect("modified registry"),
+        );
+        assert!(
+            registry
+                .select(&policy("0.1.0-alpha.1", true, true))
+                .expect_err("duplicate deployment mode")
+                .to_string()
+                .contains("deployment")
         );
     }
 }

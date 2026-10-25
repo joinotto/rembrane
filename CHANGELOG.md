@@ -40,6 +40,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   approvals outside the CLI.
 - CLI provider eligibility now consumes the shared typed registry selection
   API, keeping integrations and command-line policy enforcement identical.
+- Shared provider selection now fails closed on unsupported registry schemas,
+  malformed provider identifiers, and invalid or duplicate protocol and
+  deployment-mode evidence.
 - A strict portable key-provider conformance result schema and runner output
   containing provider identity and explicit pass evidence for eight
   authentication, encryption, limit, rotation, and replay cases.

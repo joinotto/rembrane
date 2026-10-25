@@ -991,6 +991,9 @@ This roadmap describes sequencing, not release dates.
           contracts with build, conformance, time, status, and privacy checks.
           - [x] Route CLI eligibility through the shared typed selection API
             and remove its duplicate policy engine.
+          - [x] Reject unsupported registry schemas, malformed provider IDs,
+            invalid or duplicate protocols, and invalid or duplicate
+            deployment modes before issuing portable selection receipts.
 - [x] Run installed native-provider conformance through the CLI.
 - [x] Automated external-provider registry verification and release signing.
   - [x] Verify registry identity, timestamps, conformance status, and pinned
