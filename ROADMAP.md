@@ -318,6 +318,8 @@ This roadmap describes sequencing, not release dates.
         with strict row correlation and bounded recipient reconstruction.
         - [x] Complete the tenant-pinned `KeyRotationRepository` with atomic
           optimistic completion, receipt/recipient writes, and audit evidence.
+      - [x] Atomically remove members, revoke all stored scopes, serialize the
+        next required key generation, and persist both lifecycle audit events.
       - [x] Add exact invitation lookup and bounded status-filtered listing
         with terminal-state restoration and full tenant/identifier correlation.
       - [x] Implement atomic invitation creation, acceptance, revocation,

@@ -78,6 +78,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Complete PostgreSQL `KeyRotationRepository` support with tenant-pinned,
   generation-checked atomic completion plus provider receipt, canonical
   recipient, and administrative audit persistence.
+- PostgreSQL `MemberLifecycleRepository` support with workspace-row
+  serialization, optimistic member removal, full scope revocation, required
+  key-rotation creation, and paired lifecycle audit evidence in one transaction.
 - PostgreSQL invitation lookup and bounded deterministic listing with optional
   status filtering, numeric lifetime decoding, terminal-state restoration,
   and exact tenant/invitation correlation.

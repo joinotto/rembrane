@@ -10,17 +10,18 @@ use std::fmt::{self, Display, Formatter};
 
 use rembrane_application::{
     AdministrativeAuditRepository, ApplicationError, InvitationRepository, KeyRotationRepository,
-    MAX_ADMINISTRATIVE_AUDIT_PAGE, MAXIMUM_INVITATION_LIST_ITEMS, MemberScopeGrantRepository,
-    MembershipRepository, RetentionRepository, WorkspaceReadRepository, WorkspaceRepository,
-    is_strict_successor,
+    MAX_ADMINISTRATIVE_AUDIT_PAGE, MAXIMUM_INVITATION_LIST_ITEMS, MemberLifecycleRepository,
+    MemberScopeGrantRepository, MembershipRepository, RetentionRepository, WorkspaceReadRepository,
+    WorkspaceRepository, is_strict_successor,
 };
 use rembrane_domain::{
     ActivityId, AdministrativeAction, AdministrativeAuditEvent, AdministrativeAuditEventId,
     AdministrativeTargetKind, EntityId, Invitation, InvitationId, InvitationStatus, KeyRotationId,
     KeyRotationReceipt, KeyRotationStatus, LegalHoldId, LegalHoldStatus,
-    MAX_KEY_ROTATION_RECIPIENTS, MemberScopeGrant, Membership, Principal, PrincipalId, ProviderId,
-    ReadScope, RetentionPeriod, RetentionResource, Workspace, WorkspaceId, WorkspaceKeyRotation,
-    WorkspaceKind, WorkspaceLegalHold, WorkspaceRetentionPolicy, WorkspaceRole,
+    MAX_KEY_ROTATION_RECIPIENTS, MemberScopeGrant, Membership, MembershipStatus, Principal,
+    PrincipalId, ProviderId, ReadScope, RetentionPeriod, RetentionResource, Workspace, WorkspaceId,
+    WorkspaceKeyRotation, WorkspaceKind, WorkspaceLegalHold, WorkspaceRetentionPolicy,
+    WorkspaceRole,
 };
 
 pub const SET_TENANT_SQL: &str = "SELECT set_config('rembrane.workspace_id', $1, true);";
@@ -147,6 +148,18 @@ pub const INSERT_KEY_ROTATION_RECEIPT_SQL: &str = "INSERT INTO workspace_key_rot
     VALUES ($1, $2, $3, $4, $5, $6)";
 pub const INSERT_KEY_ROTATION_RECIPIENT_SQL: &str = "INSERT INTO workspace_key_rotation_recipients \
     (workspace_id, rotation_id, principal_id) VALUES ($1, $2, $3)";
+pub const LOCK_WORKSPACE_FOR_ROTATION_SQL: &str =
+    "SELECT id FROM workspaces WHERE id = $1 FOR UPDATE";
+pub const NEXT_KEY_ROTATION_GENERATION_SQL: &str = "SELECT COALESCE(MAX(generation), 0) + 1 AS next_generation \
+    FROM workspace_key_rotations WHERE workspace_id = $1";
+pub const REMOVE_MEMBERSHIP_SQL: &str = "UPDATE memberships \
+    SET status = 'removed', updated_at = CURRENT_TIMESTAMP \
+    WHERE workspace_id = $1 AND principal_id = $2 AND role = $3 AND status = $4";
+pub const DELETE_MEMBER_SCOPE_GRANTS_SQL: &str = "DELETE FROM member_scope_grants \
+    WHERE workspace_id = $1 AND principal_id = $2";
+pub const INSERT_REQUIRED_KEY_ROTATION_SQL: &str = "INSERT INTO workspace_key_rotations \
+    (workspace_id, id, generation, removed_principal_id, requested_by, status) \
+    VALUES ($1, $2, $3, $4, $5, 'required')";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PostgresParameter<'value> {
@@ -1408,6 +1421,95 @@ impl<Pool: PostgresPool> PostgresStore<Pool> {
         insert_administrative_audit(&mut transaction, audit_event)?;
         transaction.commit().map_err(PostgresStoreError::Tenant)
     }
+
+    pub fn remove_member_and_scope_grants(
+        &self,
+        membership: &Membership,
+        expected_status: MembershipStatus,
+        rotation_id: &KeyRotationId,
+        requested_by: &PrincipalId,
+        audit_events: &[AdministrativeAuditEvent],
+    ) -> Result<(), PostgresStoreError<Pool::Error>>
+    where
+        <Pool::Transaction as PostgresTransaction>::Row: PostgresRow<Error = Pool::Error>,
+    {
+        if membership.status() != MembershipStatus::Removed
+            || !valid_member_removal_audits(membership, rotation_id, requested_by, audit_events)
+        {
+            return Err(PostgresStoreError::InvalidInput);
+        }
+        let mut transaction = self.begin_tenant(membership.workspace_id().clone())?;
+        let lock_rows = transaction
+            .query(
+                LOCK_WORKSPACE_FOR_ROTATION_SQL,
+                &[PostgresParameter::Text(membership.workspace_id().as_str())],
+            )
+            .map_err(PostgresStoreError::Tenant)?;
+        if lock_rows.len() != 1
+            || lock_rows[0].text("id").map_err(PostgresStoreError::Row)?
+                != membership.workspace_id().as_str()
+        {
+            return Err(PostgresStoreError::MissingRow);
+        }
+        let generation_rows = transaction
+            .query(
+                NEXT_KEY_ROTATION_GENERATION_SQL,
+                &[PostgresParameter::Text(membership.workspace_id().as_str())],
+            )
+            .map_err(PostgresStoreError::Tenant)?;
+        if generation_rows.len() != 1 {
+            return Err(PostgresStoreError::UnexpectedCardinality);
+        }
+        let generation = generation_rows[0]
+            .u64("next_generation")
+            .map_err(PostgresStoreError::Row)?;
+        WorkspaceKeyRotation::required(
+            rotation_id.clone(),
+            membership.workspace_id().clone(),
+            generation,
+            membership.principal_id().clone(),
+            requested_by.clone(),
+        )
+        .map_err(|_| PostgresStoreError::InvalidInput)?;
+        let changed = transaction
+            .execute(
+                REMOVE_MEMBERSHIP_SQL,
+                &[
+                    PostgresParameter::Text(membership.workspace_id().as_str()),
+                    PostgresParameter::Text(membership.principal_id().as_str()),
+                    PostgresParameter::Text(membership_role_name(membership.role())),
+                    PostgresParameter::Text(membership_status_label(expected_status)),
+                ],
+            )
+            .map_err(PostgresStoreError::Tenant)?;
+        if changed != 1 {
+            return Err(PostgresStoreError::VersionConflict);
+        }
+        transaction
+            .execute(
+                DELETE_MEMBER_SCOPE_GRANTS_SQL,
+                &[
+                    PostgresParameter::Text(membership.workspace_id().as_str()),
+                    PostgresParameter::Text(membership.principal_id().as_str()),
+                ],
+            )
+            .map_err(PostgresStoreError::Tenant)?;
+        for event in audit_events {
+            insert_administrative_audit(&mut transaction, event)?;
+        }
+        execute_exactly_one(
+            &mut transaction,
+            INSERT_REQUIRED_KEY_ROTATION_SQL,
+            &[
+                PostgresParameter::Text(membership.workspace_id().as_str()),
+                PostgresParameter::Text(rotation_id.as_str()),
+                PostgresParameter::I64(postgres_epoch(generation)?),
+                PostgresParameter::Text(membership.principal_id().as_str()),
+                PostgresParameter::Text(requested_by.as_str()),
+            ],
+        )?;
+        transaction.commit().map_err(PostgresStoreError::Tenant)
+    }
 }
 
 impl<Pool> MembershipRepository for PostgresStore<Pool>
@@ -1657,6 +1759,32 @@ where
             &receipt,
             expected_generation,
             &audit_event,
+        )
+        .map_err(map_key_rotation_application_error)
+    }
+}
+
+impl<Pool> MemberLifecycleRepository for PostgresStore<Pool>
+where
+    Pool: PostgresPool,
+    Pool::Error: ClassifiedPostgresError,
+    <Pool::Transaction as PostgresTransaction>::Row: PostgresRow<Error = Pool::Error>,
+{
+    fn remove_member_and_scope_grants(
+        &mut self,
+        membership: Membership,
+        expected_status: MembershipStatus,
+        rotation_id: KeyRotationId,
+        requested_by: PrincipalId,
+        audit_events: Vec<AdministrativeAuditEvent>,
+    ) -> Result<(), ApplicationError> {
+        PostgresStore::remove_member_and_scope_grants(
+            self,
+            &membership,
+            expected_status,
+            &rotation_id,
+            &requested_by,
+            &audit_events,
         )
         .map_err(map_key_rotation_application_error)
     }
@@ -1921,6 +2049,36 @@ where
         self.require_workspace(audit_event.workspace_id())?;
         self.store
             .complete_key_rotation(&rotation, &receipt, expected_generation, &audit_event)
+            .map_err(map_key_rotation_application_error)
+    }
+}
+
+impl<Pool> MemberLifecycleRepository for PostgresTenantStore<'_, Pool>
+where
+    Pool: PostgresPool,
+    Pool::Error: ClassifiedPostgresError,
+    <Pool::Transaction as PostgresTransaction>::Row: PostgresRow<Error = Pool::Error>,
+{
+    fn remove_member_and_scope_grants(
+        &mut self,
+        membership: Membership,
+        expected_status: MembershipStatus,
+        rotation_id: KeyRotationId,
+        requested_by: PrincipalId,
+        audit_events: Vec<AdministrativeAuditEvent>,
+    ) -> Result<(), ApplicationError> {
+        self.require_workspace(membership.workspace_id())?;
+        for event in &audit_events {
+            self.require_workspace(event.workspace_id())?;
+        }
+        self.store
+            .remove_member_and_scope_grants(
+                &membership,
+                expected_status,
+                &rotation_id,
+                &requested_by,
+                &audit_events,
+            )
             .map_err(map_key_rotation_application_error)
     }
 }
@@ -2392,6 +2550,35 @@ fn valid_completed_rotation(
         && audit_event.target_id() == rotation.id().as_str()
 }
 
+fn valid_member_removal_audits(
+    membership: &Membership,
+    rotation_id: &KeyRotationId,
+    requested_by: &PrincipalId,
+    audit_events: &[AdministrativeAuditEvent],
+) -> bool {
+    if audit_events.len() != 2
+        || audit_events[0].id() == audit_events[1].id()
+        || audit_events.iter().any(|event| {
+            event.workspace_id() != membership.workspace_id()
+                || event.actor_id() != requested_by
+                || event.request_id() != rotation_id.as_str()
+        })
+    {
+        return false;
+    }
+    let member = audit_events.iter().any(|event| {
+        event.action() == AdministrativeAction::MemberRemoved
+            && event.target_kind() == AdministrativeTargetKind::Principal
+            && event.target_id() == membership.principal_id().as_str()
+    });
+    let rotation = audit_events.iter().any(|event| {
+        event.action() == AdministrativeAction::KeyRotationRequired
+            && event.target_kind() == AdministrativeTargetKind::KeyRotation
+            && event.target_id() == rotation_id.as_str()
+    });
+    member && rotation
+}
+
 fn legal_hold_parameters<DriverError>(
     hold: &WorkspaceLegalHold,
 ) -> Result<[PostgresParameter<'_>; 8], PostgresStoreError<DriverError>> {
@@ -2812,10 +2999,14 @@ const fn invitation_status_name(status: InvitationStatus) -> &'static str {
 }
 
 fn membership_status_name(membership: &Membership) -> &'static str {
-    match membership.status() {
-        rembrane_domain::MembershipStatus::Active => "active",
-        rembrane_domain::MembershipStatus::Suspended => "suspended",
-        rembrane_domain::MembershipStatus::Removed => "removed",
+    membership_status_label(membership.status())
+}
+
+const fn membership_status_label(status: MembershipStatus) -> &'static str {
+    match status {
+        MembershipStatus::Active => "active",
+        MembershipStatus::Suspended => "suspended",
+        MembershipStatus::Removed => "removed",
     }
 }
 
@@ -2962,34 +3153,37 @@ mod tests {
 
     use rembrane_application::{
         AdministrativeAuditRepository, ApplicationError, CreateInvitationCommand,
-        InvitationRepository, InvitationService, KeyRotationRepository, MemberScopeGrantRepository,
-        MembershipRepository, RetentionRepository, WorkspaceRepository,
+        InvitationRepository, InvitationService, KeyRotationRepository, MemberLifecycleRepository,
+        MemberScopeGrantRepository, MembershipRepository, RetentionRepository, WorkspaceRepository,
     };
     use rembrane_domain::{
         AdministrativeAction, AdministrativeAuditEvent, AdministrativeAuditEventId,
         AdministrativeTargetKind, Invitation, InvitationId, InvitationStatus, KeyRotationId,
         KeyRotationReceipt, KeyRotationStatus, LegalHoldId, LegalHoldStatus, MemberScopeGrant,
-        Principal, PrincipalId, ProviderId, ReadScope, RetentionPeriod, RetentionResource,
-        Workspace, WorkspaceId, WorkspaceKeyRotation, WorkspaceRetentionPolicy, WorkspaceRole,
+        MembershipStatus, Principal, PrincipalId, ProviderId, ReadScope, RetentionPeriod,
+        RetentionResource, Workspace, WorkspaceId, WorkspaceKeyRotation, WorkspaceRetentionPolicy,
+        WorkspaceRole,
     };
 
     use super::{
         ACCEPT_INVITATION_SQL, COMPLETE_KEY_ROTATION_SQL, ClassifiedPostgresError,
-        DELETE_MEMBER_SCOPE_GRANT_SQL, EXPIRE_PENDING_INVITATION_SQL, FIND_INVITATION_SQL,
-        FIND_KEY_ROTATION_RECEIPT_SQL, FIND_LEGAL_HOLD_SQL, FIND_MEMBERSHIP_SQL,
-        FIND_PRINCIPAL_SQL, FIND_PROVISIONING_PRINCIPAL_SQL, FIND_RETENTION_POLICY_SQL,
-        FIND_WORKSPACE_SQL, INSERT_ADMINISTRATIVE_AUDIT_SQL, INSERT_INVITATION_SQL,
-        INSERT_KEY_ROTATION_RECEIPT_SQL, INSERT_KEY_ROTATION_RECIPIENT_SQL, INSERT_LEGAL_HOLD_SQL,
-        INSERT_MEMBER_SCOPE_GRANT_SQL, INSERT_MEMBERSHIP_SQL, INSERT_PRINCIPAL_SQL,
+        DELETE_MEMBER_SCOPE_GRANT_SQL, DELETE_MEMBER_SCOPE_GRANTS_SQL,
+        EXPIRE_PENDING_INVITATION_SQL, FIND_INVITATION_SQL, FIND_KEY_ROTATION_RECEIPT_SQL,
+        FIND_LEGAL_HOLD_SQL, FIND_MEMBERSHIP_SQL, FIND_PRINCIPAL_SQL,
+        FIND_PROVISIONING_PRINCIPAL_SQL, FIND_RETENTION_POLICY_SQL, FIND_WORKSPACE_SQL,
+        INSERT_ADMINISTRATIVE_AUDIT_SQL, INSERT_INVITATION_SQL, INSERT_KEY_ROTATION_RECEIPT_SQL,
+        INSERT_KEY_ROTATION_RECIPIENT_SQL, INSERT_LEGAL_HOLD_SQL, INSERT_MEMBER_SCOPE_GRANT_SQL,
+        INSERT_MEMBERSHIP_SQL, INSERT_PRINCIPAL_SQL, INSERT_REQUIRED_KEY_ROTATION_SQL,
         INSERT_RETENTION_POLICY_SQL, INSERT_WORKSPACE_SQL, LATEST_KEY_ROTATION_SQL,
         LIST_ACTIVE_LEGAL_HOLDS_SQL, LIST_ACTIVE_MEMBERSHIPS_SQL, LIST_ADMINISTRATIVE_AUDIT_SQL,
-        LIST_INVITATIONS_BY_STATUS_SQL, LIST_MEMBER_SCOPE_GRANTS_SQL, MAX_ACTIVE_MEMBERSHIPS,
+        LIST_INVITATIONS_BY_STATUS_SQL, LIST_MEMBER_SCOPE_GRANTS_SQL,
+        LOCK_WORKSPACE_FOR_ROTATION_SQL, MAX_ACTIVE_MEMBERSHIPS, NEXT_KEY_ROTATION_GENERATION_SQL,
         PostgresFailureKind, PostgresParameter, PostgresPool, PostgresProvisioner,
         PostgresProvisioningPool, PostgresRow, PostgresStore, PostgresStoreError,
         PostgresTransaction, PostgresWorkspaceAdminStore, ProvisioningTransaction, READ_TENANT_SQL,
-        REPLACE_INVITATION_SQL, REPLACE_LEGAL_HOLD_SQL, REPLACE_MEMBERSHIP_SQL,
-        REPLACE_RETENTION_POLICY_SQL, SET_TENANT_SQL, TenantTransaction, TenantTransactionError,
-        map_application_error, map_invitation_application_error,
+        REMOVE_MEMBERSHIP_SQL, REPLACE_INVITATION_SQL, REPLACE_LEGAL_HOLD_SQL,
+        REPLACE_MEMBERSHIP_SQL, REPLACE_RETENTION_POLICY_SQL, SET_TENANT_SQL, TenantTransaction,
+        TenantTransactionError, map_application_error, map_invitation_application_error,
     };
 
     #[derive(Clone, Debug, Eq, PartialEq)]
@@ -3079,6 +3273,13 @@ mod tests {
                     ("completed_by", completed_by.to_owned()),
                 ]),
                 numbers: BTreeMap::from([("generation", generation)]),
+            }
+        }
+
+        fn next_rotation(workspace_id: &str, generation: u64) -> Self {
+            Self {
+                columns: BTreeMap::from([("id", workspace_id.to_owned())]),
+                numbers: BTreeMap::from([("next_generation", generation)]),
             }
         }
 
@@ -4633,6 +4834,99 @@ mod tests {
         assert!(calls.iter().any(
             |call| matches!(call, Call::Execute(statement, _) if statement == INSERT_ADMINISTRATIVE_AUDIT_SQL)
         ));
+        assert_eq!(calls.last(), Some(&Call::Commit));
+    }
+
+    #[test]
+    fn member_lifecycle_port_removes_scopes_and_requires_rotation_atomically() {
+        let removed = rembrane_domain::Membership::new(
+            WorkspaceId::new("workspace_01"),
+            PrincipalId::new("principal_member"),
+            WorkspaceRole::Member,
+        )
+        .remove();
+        let rotation_id = KeyRotationId::new("rotation_04");
+        let audit_events = vec![
+            AdministrativeAuditEvent::new(
+                AdministrativeAuditEventId::new("audit_member_removed"),
+                WorkspaceId::new("workspace_01"),
+                PrincipalId::new("principal_admin"),
+                AdministrativeAction::MemberRemoved,
+                AdministrativeTargetKind::Principal,
+                "principal_member",
+                "rotation_04",
+                300,
+            )
+            .expect("member audit"),
+            AdministrativeAuditEvent::new(
+                AdministrativeAuditEventId::new("audit_rotation_required"),
+                WorkspaceId::new("workspace_01"),
+                PrincipalId::new("principal_admin"),
+                AdministrativeAction::KeyRotationRequired,
+                AdministrativeTargetKind::KeyRotation,
+                "rotation_04",
+                "rotation_04",
+                300,
+            )
+            .expect("rotation audit"),
+        ];
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let store = PostgresStore::new(FakePool {
+            calls: Rc::clone(&calls),
+            tenant_batches: RefCell::new(
+                [VecDeque::from([
+                    Ok(Some("workspace_01".to_owned())),
+                    Ok(Some("workspace_01".to_owned())),
+                    Ok(Some("workspace_01".to_owned())),
+                    Ok(Some("workspace_01".to_owned())),
+                    Ok(Some("workspace_01".to_owned())),
+                    Ok(Some("workspace_01".to_owned())),
+                    Ok(Some("workspace_01".to_owned())),
+                    Ok(Some("workspace_01".to_owned())),
+                ])]
+                .into(),
+            ),
+            row_batches: RefCell::new([vec![FakeRow::next_rotation("workspace_01", 4)]].into()),
+        });
+        let mut tenant = store.for_workspace(WorkspaceId::new("workspace_01"));
+
+        MemberLifecycleRepository::remove_member_and_scope_grants(
+            &mut tenant,
+            removed,
+            MembershipStatus::Active,
+            rotation_id,
+            PrincipalId::new("principal_admin"),
+            audit_events,
+        )
+        .expect("remove member");
+
+        let calls = calls.borrow();
+        assert!(calls.iter().any(
+            |call| matches!(call, Call::Query(statement, _) if statement == LOCK_WORKSPACE_FOR_ROTATION_SQL)
+        ));
+        assert!(calls.iter().any(
+            |call| matches!(call, Call::Query(statement, _) if statement == NEXT_KEY_ROTATION_GENERATION_SQL)
+        ));
+        assert!(calls.iter().any(
+            |call| matches!(call, Call::Execute(statement, _) if statement == REMOVE_MEMBERSHIP_SQL)
+        ));
+        assert!(calls.iter().any(
+            |call| matches!(call, Call::Execute(statement, _) if statement == DELETE_MEMBER_SCOPE_GRANTS_SQL)
+        ));
+        assert!(
+            calls
+                .iter()
+                .any(|call| matches!(call, Call::Execute(statement, parameters)
+                if statement == INSERT_REQUIRED_KEY_ROTATION_SQL
+                    && parameters.contains(&"i64:4".to_owned())))
+        );
+        assert_eq!(
+            calls
+                .iter()
+                .filter(|call| matches!(call, Call::Execute(statement, _) if statement == INSERT_ADMINISTRATIVE_AUDIT_SQL))
+                .count(),
+            2
+        );
         assert_eq!(calls.last(), Some(&Call::Commit));
     }
 
