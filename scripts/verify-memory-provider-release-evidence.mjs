@@ -15,7 +15,9 @@ const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const root = resolve(process.cwd(), input);
 requireDirectory(root);
 requireExactEntries(root, [
+  "compatibility-lock.json",
   "manifest.json",
+  "migration.md",
   "mixed-version.json",
   "provider-a.json",
   "provider-b.json",
@@ -31,6 +33,22 @@ const mixedBytes = readBoundedFile(
   128 * 1024,
   "mixed-version evidence",
 );
+const packagedLockBytes = readBoundedFile(
+  join(root, "compatibility-lock.json"),
+  128 * 1024,
+  "compatibility lock",
+);
+const packagedMigrationBytes = readBoundedFile(
+  join(root, "migration.md"),
+  256 * 1024,
+  "migration notes",
+);
+const canonicalLockBytes = readFileSync(
+  join(repositoryRoot, "spec/memory-provider-compatibility-lock.json"),
+);
+const canonicalMigrationBytes = readFileSync(
+  join(repositoryRoot, "spec/MEMORY_PROVIDER_0.1_TO_1.0_MIGRATION.md"),
+);
 const profileBytes = readFileSync(
   join(repositoryRoot, "spec/conformance/memory-provider-core.json"),
 );
@@ -42,9 +60,11 @@ const manifest = parseObject(manifestBytes, "manifest");
 
 requireExactKeys(manifest, [
   "candidateProtocolVersion",
+  "compatibilityLockSha256",
   "fixtureSha256",
   "generatedAt",
   "mixedVersionEvidenceSha256",
+  "migrationNotesSha256",
   "profileSha256",
   "providers",
   "schemaVersion",
@@ -54,8 +74,14 @@ if (
   canonicalTimestamp(manifest.generatedAt) === undefined ||
   canonicalTimestamp(manifest.generatedAt) > Date.now() + 5 * 60 * 1000 ||
   manifest.candidateProtocolVersion !== profile.protocolVersion ||
+  manifest.candidateProtocolVersion !==
+    parseObject(packagedLockBytes, "compatibility lock").protocolVersion ||
   manifest.profileSha256 !== sha256(profileBytes) ||
   manifest.fixtureSha256 !== sha256(fixtureBytes) ||
+  manifest.compatibilityLockSha256 !== sha256(packagedLockBytes) ||
+  manifest.migrationNotesSha256 !== sha256(packagedMigrationBytes) ||
+  !packagedLockBytes.equals(canonicalLockBytes) ||
+  !packagedMigrationBytes.equals(canonicalMigrationBytes) ||
   manifest.mixedVersionEvidenceSha256 !== sha256(mixedBytes) ||
   !Array.isArray(manifest.providers) ||
   manifest.providers.length !== 2

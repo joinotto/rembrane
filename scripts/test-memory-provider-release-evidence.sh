@@ -10,6 +10,10 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 mkdir -p "$evidence_root"
+cp "$repository_root/spec/memory-provider-compatibility-lock.json" \
+    "$evidence_root/compatibility-lock.json"
+cp "$repository_root/spec/MEMORY_PROVIDER_0.1_TO_1.0_MIGRATION.md" \
+    "$evidence_root/migration.md"
 
 profile_sha256=$(openssl dgst -sha256 \
     "$repository_root/spec/conformance/memory-provider-core.json" |
@@ -41,6 +45,10 @@ jq --arg profile "$profile_sha256" --arg fixture "$fixture_sha256" \
 
 mixed_sha256=$(openssl dgst -sha256 "$evidence_root/mixed-version.json" |
     awk '{print $NF}')
+lock_sha256=$(openssl dgst -sha256 "$evidence_root/compatibility-lock.json" |
+    awk '{print $NF}')
+migration_sha256=$(openssl dgst -sha256 "$evidence_root/migration.md" |
+    awk '{print $NF}')
 provider_a_sha256=$(openssl dgst -sha256 "$evidence_root/provider-a.json" |
     awk '{print $NF}')
 provider_b_sha256=$(openssl dgst -sha256 "$evidence_root/provider-b.json" |
@@ -48,11 +56,15 @@ provider_b_sha256=$(openssl dgst -sha256 "$evidence_root/provider-b.json" |
 jq \
     --arg profile "$profile_sha256" \
     --arg fixture "$fixture_sha256" \
+    --arg lock "$lock_sha256" \
+    --arg migration "$migration_sha256" \
     --arg mixed "$mixed_sha256" \
     --arg provider_a "$provider_a_sha256" \
     --arg provider_b "$provider_b_sha256" \
     '.profileSha256 = $profile
      | .fixtureSha256 = $fixture
+     | .compatibilityLockSha256 = $lock
+     | .migrationNotesSha256 = $migration
      | .mixedVersionEvidenceSha256 = $mixed
      | .providers[0].resultSha256 = $provider_a
      | .providers[1].resultSha256 = $provider_b' \
@@ -96,6 +108,30 @@ jq --arg digest "$new_digest" '.providers[0].resultSha256 = $digest' \
 mv "$test_root/manifest.next" "$test_root/reordered/manifest.json"
 if node "$verifier" "$test_root/reordered" >/dev/null 2>&1; then
     echo "release evidence accepted reordered conformance cases" >&2
+    exit 1
+fi
+
+cp -R "$evidence_root" "$test_root/substituted-lock"
+printf ' ' >>"$test_root/substituted-lock/compatibility-lock.json"
+new_digest=$(openssl dgst -sha256 \
+    "$test_root/substituted-lock/compatibility-lock.json" | awk '{print $NF}')
+jq --arg digest "$new_digest" '.compatibilityLockSha256 = $digest' \
+    "$test_root/substituted-lock/manifest.json" >"$test_root/manifest.next"
+mv "$test_root/manifest.next" "$test_root/substituted-lock/manifest.json"
+if node "$verifier" "$test_root/substituted-lock" >/dev/null 2>&1; then
+    echo "release evidence accepted a substituted compatibility lock" >&2
+    exit 1
+fi
+
+cp -R "$evidence_root" "$test_root/substituted-migration"
+printf ' ' >>"$test_root/substituted-migration/migration.md"
+new_digest=$(openssl dgst -sha256 \
+    "$test_root/substituted-migration/migration.md" | awk '{print $NF}')
+jq --arg digest "$new_digest" '.migrationNotesSha256 = $digest' \
+    "$test_root/substituted-migration/manifest.json" >"$test_root/manifest.next"
+mv "$test_root/manifest.next" "$test_root/substituted-migration/manifest.json"
+if node "$verifier" "$test_root/substituted-migration" >/dev/null 2>&1; then
+    echo "release evidence accepted substituted migration notes" >&2
     exit 1
 fi
 

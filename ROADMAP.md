@@ -830,6 +830,8 @@ This roadmap describes sequencing, not release dates.
       migration notes from `0.1`.
       - [x] Review-lock the evidence formats and a fail-closed draft migration
         contract before the release candidate.
+      - [x] Bind the exact candidate compatibility lock and migration notes
+        into the two-provider release evidence set.
   - [x] Add a machine-verifiable compatibility lock over the canonical wire
     schemas, HTTP binding, conformance profile, and lifecycle fixtures so
     protocol changes require explicit review.

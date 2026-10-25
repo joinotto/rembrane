@@ -10,6 +10,8 @@
     "generatedAt",
     "profileSha256",
     "fixtureSha256",
+    "compatibilityLockSha256",
+    "migrationNotesSha256",
     "mixedVersionEvidenceSha256",
     "providers"
   ],
@@ -32,6 +34,14 @@
       "pattern": "^[0-9a-f]{64}$"
     },
     "fixtureSha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "compatibilityLockSha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "migrationNotesSha256": {
       "type": "string",
       "pattern": "^[0-9a-f]{64}$"
     },

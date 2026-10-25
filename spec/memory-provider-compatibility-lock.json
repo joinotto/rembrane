@@ -12,7 +12,7 @@
     },
     {
       "path": "spec/MEMORY_PROVIDER_STABILITY.md",
-      "sha256": "719ff214ef4ef8780444506d999a0283ded7883985baa775d49990da3c13f67d"
+      "sha256": "e1e348371e3ea1ea2f548fa237500219c929c785a57a9243d4831095ee5f89e9"
     },
     {
       "path": "spec/memory-provider.schema.json",
@@ -40,7 +40,7 @@
     },
     {
       "path": "spec/memory-provider-release-evidence.schema.json",
-      "sha256": "0ce4c6d42a6f5983e35cc81f0c030dd4dbba3d611009f4e66f5f430580b93f49"
+      "sha256": "58c20009e794b96077577ee442170bc825f15e9e83693a8d9b8026dec3e9c221"
     },
     {
       "path": "spec/conformance/memory-provider-core.json",
@@ -60,7 +60,7 @@
     },
     {
       "path": "spec/examples/memory-provider-release-evidence.json",
-      "sha256": "c33e324e7df9a84e8ef58aa568310ff4af1971ce3fcfffe3b4f9a5a96c5126a7"
+      "sha256": "e75ea12803fa6f58a099f63ee5f753f404c960dae187e1fa5c852f0279a83227"
     },
     {
       "path": "scripts/test-memory-provider-http.sh",

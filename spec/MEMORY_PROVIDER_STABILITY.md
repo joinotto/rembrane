@@ -54,12 +54,14 @@ data, not release evidence.
 
 A complete candidate evidence directory is accepted only by
 `verify-memory-provider-release-evidence.mjs`. It contains exactly a manifest,
-the mixed-version artifact, and two passing provider results. The manifest
-hash-binds every artifact and requires distinct maintainers, provider IDs, and
-disposable namespaces, pinned implementation revisions, ordered core cases,
-and at least one externally maintained provider. Passing the verifier proves
-artifact completeness; it does not substitute for actually obtaining the
-external run or independent security review.
+the candidate compatibility lock, migration notes, mixed-version artifact,
+and two passing provider results. The manifest hash-binds every artifact and
+requires the packaged lock and migration notes to byte-match the reviewed
+repository versions, distinct maintainers, provider IDs, and disposable
+namespaces, pinned implementation revisions, ordered core cases, and at least
+one externally maintained provider. Passing the verifier proves artifact
+completeness; it does not substitute for actually obtaining the external run
+or independent security review.
 
 Strict production readiness reads the completed directory from
 `REMBRANE_MEMORY_PROVIDER_EVIDENCE_DIRECTORY`. Leaving it unset makes the gate
