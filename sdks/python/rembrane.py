@@ -95,6 +95,11 @@ class RembraneClient:
     def resolve_context(self, request: Mapping[str, Any]) -> Any:
         return self._request("POST", "/context/resolve", request)
 
+    def discover(self) -> Any:
+        parsed = urlsplit(self._base_url)
+        url = f"{parsed.scheme}://{parsed.netloc}/.well-known/ai-memory"
+        return self._request_url("GET", url, None, authenticated=False)
+
     def resolve_graph_context(self, request: Mapping[str, Any]) -> Any:
         return self._request("POST", "/graph/context/resolve", request)
 
@@ -189,6 +194,21 @@ class RembraneClient:
         return self._request("POST", "/retention/purge", request)
 
     def _request(self, method: str, path: str, body: Mapping[str, Any] | None) -> Any:
+        return self._request_url(
+            method,
+            f"{self._base_url}{path}",
+            body,
+            authenticated=True,
+        )
+
+    def _request_url(
+        self,
+        method: str,
+        url: str,
+        body: Mapping[str, Any] | None,
+        *,
+        authenticated: bool,
+    ) -> Any:
         encoded = (
             None
             if body is None
@@ -196,13 +216,14 @@ class RembraneClient:
         )
         headers = {
             "Accept": "application/json",
-            "Authorization": f"Bearer {self._token}",
         }
+        if authenticated:
+            headers["Authorization"] = f"Bearer {self._token}"
         if encoded is not None:
             headers["Content-Type"] = "application/json"
         status, response_headers, payload = self._transport(
             method,
-            f"{self._base_url}{path}",
+            url,
             headers,
             encoded,
             self._maximum_response_bytes,

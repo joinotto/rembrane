@@ -67,6 +67,11 @@ export class RembraneClient {
     return this.#request("POST", "/context/resolve", request);
   }
 
+  discover() {
+    const url = new URL("/.well-known/ai-memory", this.#baseUrl);
+    return this.#requestUrl("GET", url.toString(), undefined, false);
+  }
+
   resolveGraphContext(request) {
     return this.#request("POST", "/graph/context/resolve", request);
   }
@@ -184,12 +189,21 @@ export class RembraneClient {
   }
 
   async #request(method, path, body) {
-    const response = await this.#fetch(`${this.#baseUrl}${path}`, {
+    return this.#requestUrl(
+      method,
+      `${this.#baseUrl}${path}`,
+      body,
+      true,
+    );
+  }
+
+  async #requestUrl(method, url, body, authenticated) {
+    const response = await this.#fetch(url, {
       method,
       redirect: "error",
       headers: {
         Accept: "application/json",
-        Authorization: `Bearer ${this.#token}`,
+        ...(authenticated ? { Authorization: `Bearer ${this.#token}` } : {}),
         ...(body === undefined ? {} : { "Content-Type": "application/json" }),
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),

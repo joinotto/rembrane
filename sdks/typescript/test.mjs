@@ -173,6 +173,15 @@ assert.throws(
   /bounded opaque identifier/,
 );
 
+await client.discover();
+assert.equal(
+  calls[11].url,
+  "http://127.0.0.1:8787/.well-known/ai-memory",
+);
+assert.equal(calls[11].init.method, "GET");
+assert.equal(calls[11].init.headers.Authorization, undefined);
+assert.equal(calls[11].init.body, undefined);
+
 assert.throws(
   () =>
     new RembraneClient({

@@ -5,6 +5,39 @@ export interface RembraneClientOptions {
   maximumResponseBytes?: number;
 }
 
+export interface MemoryDiscovery {
+  provider: {
+    id: string;
+    name: string;
+    implementation?: string;
+  };
+  protocolVersions: string[];
+  endpoints: {
+    api: string;
+  };
+  capabilities: {
+    contextResolution: boolean;
+    questionResolution?: boolean;
+    memoryProposal: boolean;
+    activityCheckpoint: boolean;
+    disclosureReceipt: boolean;
+    deletionPropagation: boolean;
+    sync?: boolean;
+    imports?: string[];
+    exports?: string[];
+  };
+  limits?: {
+    maximumContextItems?: number;
+    maximumContextBytes?: number;
+    maximumEventBytes?: number;
+  };
+  privacy: {
+    processingModes: string[];
+    disclosureReceipts: true;
+    plaintextProcessingLocation?: string;
+  };
+}
+
 export type ChannelProcessorChannel =
   | "whatsapp-business"
   | "imessage-extension"
@@ -207,6 +240,7 @@ export class RembraneError extends Error {
 
 export class RembraneClient {
   constructor(options: RembraneClientOptions);
+  discover(): Promise<MemoryDiscovery>;
   resolveContext<T = unknown>(request: unknown): Promise<T>;
   resolveGraphContext(
     request: ResolveGraphContextRequest,

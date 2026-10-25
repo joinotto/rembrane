@@ -217,6 +217,8 @@ This roadmap describes sequencing, not release dates.
   OpenAPI, and path-safe TypeScript and Python SDK methods.
 - [x] Serve unauthenticated, credential-free REST capability discovery with
   deployment-accurate API location, privacy mode, limits, and handoff support.
+- [x] Fetch public capability discovery through the TypeScript and Python SDKs
+  without transmitting the configured bearer credential.
 - [ ] Add remote Streamable HTTP MCP with OAuth.
   - [x] Define HTTPS endpoints, RFC 9728 discovery metadata, bearer challenges,
     verified connection identity, scope ceilings, and session security rules.

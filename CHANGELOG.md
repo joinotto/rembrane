@@ -34,6 +34,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - The REST service now serves `/.well-known/ai-memory` without authentication,
   reporting its configured API root, implemented capabilities, limits, and
   local-only versus customer-gateway plaintext-processing boundary.
+- TypeScript and Python clients can fetch provider discovery from the origin
+  well-known endpoint while explicitly omitting their bearer credentials.
 - Protected `env:` and `file:` credential references for each workspace actor
   in the portable Memory Provider conformance runner, with opaque failures,
   strict local-file validation, raw-variable compatibility, and

@@ -13,6 +13,25 @@ SPEC_EXAMPLES = Path(__file__).parents[2] / "spec" / "examples"
 
 
 class RembraneClientTests(unittest.TestCase):
+    def test_discovery_uses_origin_without_bearer_credentials(self) -> None:
+        calls = []
+
+        def transport(method, url, headers, body, maximum):
+            calls.append((method, url, headers, body, maximum))
+            return 200, {"Content-Type": "application/json"}, b'{"provider":{}}'
+
+        client = RembraneClient(
+            "http://127.0.0.1:8787/v1", "must-not-leak", transport=transport
+        )
+        client.discover()
+
+        self.assertEqual(calls[0][0], "GET")
+        self.assertEqual(
+            calls[0][1], "http://127.0.0.1:8787/.well-known/ai-memory"
+        )
+        self.assertNotIn("Authorization", calls[0][2])
+        self.assertIsNone(calls[0][3])
+
     def test_audit_request_is_authenticated_and_tenant_explicit(self) -> None:
         calls = []
 
