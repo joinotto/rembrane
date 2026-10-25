@@ -80,7 +80,7 @@
     },
     {
       "path": "scripts/run-memory-provider-conformance.mjs",
-      "sha256": "f8562b652443771e32e257f429b267396102993a8e73314dd25f99ff0eae8ecd"
+      "sha256": "913052a3d149dc0b5a2e8b4efd4b0089eb7f46340bdf0cda9f42039d459ed7ee"
     },
     {
       "path": "scripts/test-memory-provider-http.sh",

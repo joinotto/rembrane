@@ -9,11 +9,7 @@ import { validateMemoryProviderDiscovery } from "./memory-provider-discovery.mjs
 const namespace = process.argv[2];
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const base = new URL(required("REMBRANE_MEMORY_PROVIDER_BASE_URL"));
-const tokens = {
-  primary: await resolveConformanceToken("PRIMARY"),
-  other: await resolveConformanceToken("OTHER"),
-  readonly: await resolveConformanceToken("READONLY"),
-};
+let tokens;
 const profilePath =
   process.env.REMBRANE_MEMORY_PROVIDER_PROFILE_FILE ??
   resolve(root, "spec/conformance/memory-provider-core.json");
@@ -23,11 +19,7 @@ const fixturePath =
 
 if (
   !/^[A-Za-z0-9._-]{1,64}$/.test(namespace ?? "") ||
-  !safeBase(base) ||
-  Object.values(tokens).some(
-    (token) => !/^[A-Za-z0-9._~+/=-]+$/.test(token) || token.length > 8192,
-  ) ||
-  new Set(Object.values(tokens)).size !== 3
+  !safeBase(base)
 ) {
   throw new Error("memory-provider conformance configuration is invalid");
 }
@@ -68,6 +60,19 @@ try {
     !requiredCapabilities.every((value) => provider.capabilities?.includes(value))
   ) {
     throw new Error("provider discovery is not conformance-compatible");
+  }
+  tokens = {
+    primary: await resolveConformanceToken("PRIMARY"),
+    other: await resolveConformanceToken("OTHER"),
+    readonly: await resolveConformanceToken("READONLY"),
+  };
+  if (
+    Object.values(tokens).some(
+      (token) => !/^[A-Za-z0-9._~+/=-]+$/.test(token) || token.length > 8192,
+    ) ||
+    new Set(Object.values(tokens)).size !== 3
+  ) {
+    throw new Error("memory-provider conformance configuration is invalid");
   }
   const maximumItems = Math.min(
     positive(provider.limits?.maximumContextItems),

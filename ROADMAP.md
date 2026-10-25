@@ -969,6 +969,8 @@ This roadmap describes sequencing, not release dates.
   - [x] Validate the complete closed provider discovery manifest, canonical
     operation bindings, limits, privacy mode, and capability parity before
     running third-party conformance operations.
+  - [x] Validate public third-party discovery before resolving any conformance
+    bearer credential reference.
     - [x] Add bounded context-resolution requests with global, domain, entity,
       and activity selectors constrained by provider-advertised limits.
       - [x] Seal selector representation so callers cannot bypass domain and

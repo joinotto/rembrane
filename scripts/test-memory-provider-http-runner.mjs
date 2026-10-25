@@ -49,6 +49,7 @@ const connections = new Map([
 const workspaces = new Map();
 const idempotency = new Map();
 let nextMemory = 1;
+let discoveryRequests = 0;
 
 function workspaceState(workspace) {
   let state = workspaces.get(workspace);
@@ -189,6 +190,7 @@ const server = http.createServer(async (request, response) => {
       request.method === "GET" &&
       url.pathname === "/.well-known/ai-memory"
     ) {
+      discoveryRequests += 1;
       json(
         response,
         200,
@@ -207,6 +209,7 @@ const server = http.createServer(async (request, response) => {
             maximumSyncBatchItems: 100,
           },
           operations,
+          ...(discoveryRequests === 1 ? { unexpected: true } : {}),
         },
         request,
       );
@@ -387,6 +390,34 @@ const tokenFiles = Object.fromEntries(
     }),
   ),
 );
+const invalidDiscoveryChild = spawn(
+  process.execPath,
+  [script, "invalid-discovery"],
+  {
+    env: {
+      ...process.env,
+      REMBRANE_MEMORY_PROVIDER_BASE_URL: `http://127.0.0.1:${address.port}`,
+      REMBRANE_MEMORY_PROVIDER_PRIMARY_TOKEN_REFERENCE:
+        "file:/does-not-exist/primary",
+      REMBRANE_MEMORY_PROVIDER_OTHER_TOKEN_REFERENCE:
+        "file:/does-not-exist/other",
+      REMBRANE_MEMORY_PROVIDER_READONLY_TOKEN_REFERENCE:
+        "file:/does-not-exist/readonly",
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  },
+);
+let invalidDiscoveryStderr = "";
+invalidDiscoveryChild.stderr.setEncoding("utf8").on("data", (chunk) => {
+  invalidDiscoveryStderr += chunk;
+});
+const invalidDiscoveryStatus = await new Promise((resolve) =>
+  invalidDiscoveryChild.on("close", resolve),
+);
+assert.notEqual(invalidDiscoveryStatus, 0);
+assert.match(invalidDiscoveryStderr, /provider discovery is not conformance-compatible/);
+assert.doesNotMatch(invalidDiscoveryStderr, /does-not-exist|secret reference/);
+
 const child = spawn(process.execPath, [script, "mock-runner"], {
   env: {
     ...process.env,
