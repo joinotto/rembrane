@@ -8,8 +8,11 @@ use std::collections::BTreeSet;
 use std::error::Error;
 use std::fmt::{self, Display, Formatter};
 
-use rembrane_application::{ApplicationError, MembershipRepository};
-use rembrane_domain::{Membership, Principal, PrincipalId, Workspace, WorkspaceId, WorkspaceRole};
+use rembrane_application::{ApplicationError, MAXIMUM_INVITATION_LIST_ITEMS, MembershipRepository};
+use rembrane_domain::{
+    Invitation, InvitationId, InvitationStatus, Membership, Principal, PrincipalId, Workspace,
+    WorkspaceId, WorkspaceRole,
+};
 
 pub const SET_TENANT_SQL: &str = "SELECT set_config('rembrane.workspace_id', $1, true);";
 pub const READ_TENANT_SQL: &str = "SELECT rembrane.current_workspace_id();";
@@ -27,6 +30,18 @@ pub const INSERT_MEMBERSHIP_SQL: &str = "INSERT INTO memberships \
     (workspace_id, principal_id, role, status) VALUES ($1, $2, $3, $4)";
 pub const REPLACE_MEMBERSHIP_SQL: &str = "UPDATE memberships SET role = $3, status = $4, \
     updated_at = CURRENT_TIMESTAMP WHERE workspace_id = $1 AND principal_id = $2";
+pub const FIND_INVITATION_SQL: &str = "SELECT workspace_id, id, invited_principal_id, invited_by, \
+    role, status, created_at_epoch_seconds, expires_at_epoch_seconds \
+    FROM workspace_invitations WHERE workspace_id = $1 AND id = $2 \
+    ORDER BY workspace_id, id LIMIT 2";
+pub const LIST_INVITATIONS_SQL: &str = "SELECT workspace_id, id, invited_principal_id, invited_by, \
+    role, status, created_at_epoch_seconds, expires_at_epoch_seconds \
+    FROM workspace_invitations WHERE workspace_id = $1 \
+    ORDER BY created_at_epoch_seconds DESC, id ASC LIMIT $2";
+pub const LIST_INVITATIONS_BY_STATUS_SQL: &str = "SELECT workspace_id, id, invited_principal_id, \
+    invited_by, role, status, created_at_epoch_seconds, expires_at_epoch_seconds \
+    FROM workspace_invitations WHERE workspace_id = $1 AND status = $2 \
+    ORDER BY created_at_epoch_seconds DESC, id ASC LIMIT $3";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PostgresParameter<'value> {
@@ -39,6 +54,8 @@ pub trait PostgresRow {
     type Error;
 
     fn text(&self, column: &str) -> Result<String, Self::Error>;
+
+    fn u64(&self, column: &str) -> Result<u64, Self::Error>;
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -130,6 +147,7 @@ pub enum PostgresStoreError<DriverError> {
     Tenant(TenantTransactionError<DriverError>),
     Row(DriverError),
     InvalidRow,
+    InvalidLimit,
     MissingRow,
     UnexpectedCardinality,
 }
@@ -143,6 +161,7 @@ impl<DriverError: Display> Display for PostgresStoreError<DriverError> {
             Self::Tenant(error) => Display::fmt(error, formatter),
             Self::Row(error) => write!(formatter, "could not decode PostgreSQL row: {error}"),
             Self::InvalidRow => formatter.write_str("PostgreSQL returned an invalid canonical row"),
+            Self::InvalidLimit => formatter.write_str("PostgreSQL query limit is invalid"),
             Self::MissingRow => formatter.write_str("PostgreSQL row was not found"),
             Self::UnexpectedCardinality => {
                 formatter.write_str("PostgreSQL returned unexpected row cardinality")
@@ -328,6 +347,85 @@ impl<Pool: PostgresPool> PostgresStore<Pool> {
         }
         transaction.commit().map_err(PostgresStoreError::Tenant)
     }
+
+    pub fn find_invitation(
+        &self,
+        workspace_id: &WorkspaceId,
+        invitation_id: &InvitationId,
+    ) -> Result<Option<Invitation>, PostgresStoreError<Pool::Error>>
+    where
+        <Pool::Transaction as PostgresTransaction>::Row: PostgresRow<Error = Pool::Error>,
+    {
+        let mut transaction = self.begin_tenant(workspace_id.clone())?;
+        let rows = transaction
+            .query(
+                FIND_INVITATION_SQL,
+                &[
+                    PostgresParameter::Text(workspace_id.as_str()),
+                    PostgresParameter::Text(invitation_id.as_str()),
+                ],
+            )
+            .map_err(PostgresStoreError::Tenant)?;
+        if rows.len() > 1 {
+            return Err(PostgresStoreError::UnexpectedCardinality);
+        }
+        let invitation = rows
+            .first()
+            .map(|row| decode_invitation(row, workspace_id, Some(invitation_id)))
+            .transpose()?;
+        transaction.commit().map_err(PostgresStoreError::Tenant)?;
+        Ok(invitation)
+    }
+
+    pub fn list_invitations(
+        &self,
+        workspace_id: &WorkspaceId,
+        status: Option<InvitationStatus>,
+        limit: usize,
+    ) -> Result<Vec<Invitation>, PostgresStoreError<Pool::Error>>
+    where
+        <Pool::Transaction as PostgresTransaction>::Row: PostgresRow<Error = Pool::Error>,
+    {
+        if !(1..=MAXIMUM_INVITATION_LIST_ITEMS).contains(&limit) {
+            return Err(PostgresStoreError::InvalidLimit);
+        }
+        let maximum_rows = limit;
+        let mut transaction = self.begin_tenant(workspace_id.clone())?;
+        let limit = i64::try_from(limit).map_err(|_| PostgresStoreError::InvalidLimit)?;
+        let (statement, parameters) = status.map_or_else(
+            || {
+                (
+                    LIST_INVITATIONS_SQL,
+                    vec![
+                        PostgresParameter::Text(workspace_id.as_str()),
+                        PostgresParameter::I64(limit),
+                    ],
+                )
+            },
+            |status| {
+                (
+                    LIST_INVITATIONS_BY_STATUS_SQL,
+                    vec![
+                        PostgresParameter::Text(workspace_id.as_str()),
+                        PostgresParameter::Text(invitation_status_name(status)),
+                        PostgresParameter::I64(limit),
+                    ],
+                )
+            },
+        );
+        let rows = transaction
+            .query(statement, &parameters)
+            .map_err(PostgresStoreError::Tenant)?;
+        if rows.len() > maximum_rows {
+            return Err(PostgresStoreError::UnexpectedCardinality);
+        }
+        let invitations = rows
+            .iter()
+            .map(|row| decode_invitation(row, workspace_id, None))
+            .collect::<Result<Vec<_>, _>>()?;
+        transaction.commit().map_err(PostgresStoreError::Tenant)?;
+        Ok(invitations)
+    }
 }
 
 impl<Pool> MembershipRepository for PostgresStore<Pool>
@@ -386,6 +484,7 @@ where
             | TenantTransactionError::Closed,
         )
         | PostgresStoreError::InvalidRow
+        | PostgresStoreError::InvalidLimit
         | PostgresStoreError::UnexpectedCardinality => ApplicationError::StorageUnavailable,
     }
 }
@@ -461,12 +560,78 @@ where
     }
 }
 
+fn decode_invitation<Row, DriverError>(
+    row: &Row,
+    expected_workspace_id: &WorkspaceId,
+    expected_invitation_id: Option<&InvitationId>,
+) -> Result<Invitation, PostgresStoreError<DriverError>>
+where
+    Row: PostgresRow<Error = DriverError>,
+{
+    let workspace_id = row.text("workspace_id").map_err(PostgresStoreError::Row)?;
+    let invitation_id = row.text("id").map_err(PostgresStoreError::Row)?;
+    if workspace_id != expected_workspace_id.as_str()
+        || expected_invitation_id.is_some_and(|expected| invitation_id != expected.as_str())
+    {
+        return Err(PostgresStoreError::InvalidRow);
+    }
+    let invited_principal_id = row
+        .text("invited_principal_id")
+        .map_err(PostgresStoreError::Row)?;
+    let invited_by = row.text("invited_by").map_err(PostgresStoreError::Row)?;
+    let role = match row.text("role").map_err(PostgresStoreError::Row)?.as_str() {
+        "admin" => WorkspaceRole::Admin,
+        "member" => WorkspaceRole::Member,
+        "viewer" => WorkspaceRole::Viewer,
+        _ => return Err(PostgresStoreError::InvalidRow),
+    };
+    let status = row.text("status").map_err(PostgresStoreError::Row)?;
+    let created_at = row
+        .u64("created_at_epoch_seconds")
+        .map_err(PostgresStoreError::Row)?;
+    let expires_at = row
+        .u64("expires_at_epoch_seconds")
+        .map_err(PostgresStoreError::Row)?;
+    let invitation = Invitation::new(
+        InvitationId::new(invitation_id),
+        WorkspaceId::new(workspace_id),
+        PrincipalId::new(invited_principal_id),
+        PrincipalId::new(invited_by),
+        role,
+        created_at,
+        expires_at,
+    )
+    .map_err(|_| PostgresStoreError::InvalidRow)?;
+    match status.as_str() {
+        "pending" => Ok(invitation),
+        "accepted" => invitation
+            .accept_at(created_at)
+            .map_err(|_| PostgresStoreError::InvalidRow),
+        "revoked" => invitation
+            .revoke()
+            .map_err(|_| PostgresStoreError::InvalidRow),
+        "expired" => invitation
+            .expire_at(expires_at)
+            .map_err(|_| PostgresStoreError::InvalidRow),
+        _ => Err(PostgresStoreError::InvalidRow),
+    }
+}
+
 const fn membership_role_name(role: WorkspaceRole) -> &'static str {
     match role {
         WorkspaceRole::Owner => "owner",
         WorkspaceRole::Admin => "admin",
         WorkspaceRole::Member => "member",
         WorkspaceRole::Viewer => "viewer",
+    }
+}
+
+const fn invitation_status_name(status: InvitationStatus) -> &'static str {
+    match status {
+        InvitationStatus::Pending => "pending",
+        InvitationStatus::Accepted => "accepted",
+        InvitationStatus::Revoked => "revoked",
+        InvitationStatus::Expired => "expired",
     }
 }
 
@@ -620,14 +785,15 @@ mod tests {
     use std::rc::Rc;
 
     use rembrane_application::{ApplicationError, MembershipRepository};
-    use rembrane_domain::WorkspaceId;
+    use rembrane_domain::{InvitationId, InvitationStatus, WorkspaceId};
 
     use super::{
-        ClassifiedPostgresError, FIND_MEMBERSHIP_SQL, FIND_PRINCIPAL_SQL, FIND_WORKSPACE_SQL,
-        INSERT_MEMBERSHIP_SQL, LIST_ACTIVE_MEMBERSHIPS_SQL, MAX_ACTIVE_MEMBERSHIPS,
-        PostgresFailureKind, PostgresParameter, PostgresPool, PostgresRow, PostgresStore,
-        PostgresStoreError, PostgresTransaction, READ_TENANT_SQL, REPLACE_MEMBERSHIP_SQL,
-        SET_TENANT_SQL, TenantTransaction, TenantTransactionError, map_application_error,
+        ClassifiedPostgresError, FIND_INVITATION_SQL, FIND_MEMBERSHIP_SQL, FIND_PRINCIPAL_SQL,
+        FIND_WORKSPACE_SQL, INSERT_MEMBERSHIP_SQL, LIST_ACTIVE_MEMBERSHIPS_SQL,
+        LIST_INVITATIONS_BY_STATUS_SQL, MAX_ACTIVE_MEMBERSHIPS, PostgresFailureKind,
+        PostgresParameter, PostgresPool, PostgresRow, PostgresStore, PostgresStoreError,
+        PostgresTransaction, READ_TENANT_SQL, REPLACE_MEMBERSHIP_SQL, SET_TENANT_SQL,
+        TenantTransaction, TenantTransactionError, map_application_error,
     };
 
     #[derive(Clone, Debug, Eq, PartialEq)]
@@ -651,18 +817,21 @@ mod tests {
     #[derive(Clone, Debug, Eq, PartialEq)]
     struct FakeRow {
         columns: BTreeMap<&'static str, String>,
+        numbers: BTreeMap<&'static str, u64>,
     }
 
     impl FakeRow {
         fn principal(id: &str) -> Self {
             Self {
                 columns: BTreeMap::from([("id", id.to_owned())]),
+                numbers: BTreeMap::new(),
             }
         }
 
         fn workspace(id: &str, kind: &str) -> Self {
             Self {
                 columns: BTreeMap::from([("id", id.to_owned()), ("kind", kind.to_owned())]),
+                numbers: BTreeMap::new(),
             }
         }
 
@@ -674,6 +843,34 @@ mod tests {
                     ("role", role.to_owned()),
                     ("status", status.to_owned()),
                 ]),
+                numbers: BTreeMap::new(),
+            }
+        }
+
+        #[allow(clippy::too_many_arguments)]
+        fn invitation(
+            workspace_id: &str,
+            id: &str,
+            invited_principal_id: &str,
+            invited_by: &str,
+            role: &str,
+            status: &str,
+            created_at: u64,
+            expires_at: u64,
+        ) -> Self {
+            Self {
+                columns: BTreeMap::from([
+                    ("workspace_id", workspace_id.to_owned()),
+                    ("id", id.to_owned()),
+                    ("invited_principal_id", invited_principal_id.to_owned()),
+                    ("invited_by", invited_by.to_owned()),
+                    ("role", role.to_owned()),
+                    ("status", status.to_owned()),
+                ]),
+                numbers: BTreeMap::from([
+                    ("created_at_epoch_seconds", created_at),
+                    ("expires_at_epoch_seconds", expires_at),
+                ]),
             }
         }
     }
@@ -683,6 +880,13 @@ mod tests {
 
         fn text(&self, column: &str) -> Result<String, Self::Error> {
             self.columns.get(column).cloned().ok_or("unknown column")
+        }
+
+        fn u64(&self, column: &str) -> Result<u64, Self::Error> {
+            self.numbers
+                .get(column)
+                .copied()
+                .ok_or("unknown numeric column")
         }
     }
 
@@ -1247,6 +1451,193 @@ mod tests {
             assert!(
                 store
                     .list_active_memberships(&WorkspaceId::new("workspace_01"))
+                    .is_err()
+            );
+            assert_eq!(calls.borrow().last(), Some(&Call::Rollback));
+        }
+    }
+
+    #[test]
+    fn invitation_lookup_restores_terminal_state_with_exact_identity() {
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let store = PostgresStore::new(FakePool {
+            calls: Rc::clone(&calls),
+            tenant_batches: RefCell::new(
+                [VecDeque::from([
+                    Ok(Some("workspace_01".to_owned())),
+                    Ok(Some("workspace_01".to_owned())),
+                ])]
+                .into(),
+            ),
+            row_batches: RefCell::new(
+                [vec![FakeRow::invitation(
+                    "workspace_01",
+                    "invitation_01",
+                    "principal_guest",
+                    "principal_admin",
+                    "member",
+                    "accepted",
+                    100,
+                    200,
+                )]]
+                .into(),
+            ),
+        });
+
+        let invitation = store
+            .find_invitation(
+                &WorkspaceId::new("workspace_01"),
+                &InvitationId::new("invitation_01"),
+            )
+            .expect("invitation lookup")
+            .expect("invitation");
+        assert_eq!(invitation.status(), InvitationStatus::Accepted);
+        assert_eq!(invitation.created_at_epoch_seconds(), 100);
+        assert_eq!(invitation.expires_at_epoch_seconds(), 200);
+        assert!(calls.borrow().contains(&Call::Query(
+            FIND_INVITATION_SQL.to_owned(),
+            vec![
+                "text:workspace_01".to_owned(),
+                "text:invitation_01".to_owned(),
+            ]
+        )));
+        assert_eq!(calls.borrow().last(), Some(&Call::Commit));
+    }
+
+    #[test]
+    fn invitation_listing_is_bounded_status_filtered_and_tenant_exact() {
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let store = PostgresStore::new(FakePool {
+            calls: Rc::clone(&calls),
+            tenant_batches: RefCell::new(
+                [VecDeque::from([
+                    Ok(Some("workspace_01".to_owned())),
+                    Ok(Some("workspace_01".to_owned())),
+                ])]
+                .into(),
+            ),
+            row_batches: RefCell::new(
+                [vec![
+                    FakeRow::invitation(
+                        "workspace_01",
+                        "invitation_02",
+                        "principal_guest_02",
+                        "principal_admin",
+                        "viewer",
+                        "revoked",
+                        300,
+                        400,
+                    ),
+                    FakeRow::invitation(
+                        "workspace_01",
+                        "invitation_01",
+                        "principal_guest_01",
+                        "principal_admin",
+                        "member",
+                        "revoked",
+                        100,
+                        200,
+                    ),
+                ]]
+                .into(),
+            ),
+        });
+
+        let invitations = store
+            .list_invitations(
+                &WorkspaceId::new("workspace_01"),
+                Some(InvitationStatus::Revoked),
+                2,
+            )
+            .expect("invitation listing");
+        assert_eq!(invitations.len(), 2);
+        assert!(
+            invitations
+                .iter()
+                .all(|invitation| invitation.status() == InvitationStatus::Revoked)
+        );
+        assert!(calls.borrow().contains(&Call::Query(
+            LIST_INVITATIONS_BY_STATUS_SQL.to_owned(),
+            vec![
+                "text:workspace_01".to_owned(),
+                "text:revoked".to_owned(),
+                "i64:2".to_owned(),
+            ]
+        )));
+        assert_eq!(calls.borrow().last(), Some(&Call::Commit));
+    }
+
+    #[test]
+    fn invitation_reads_reject_invalid_limits_and_uncorrelated_rows() {
+        struct NeverBeginPool;
+
+        impl PostgresPool for NeverBeginPool {
+            type Error = &'static str;
+            type Transaction = FakeTransaction;
+
+            fn begin(&self) -> Result<Self::Transaction, Self::Error> {
+                Err("must not begin")
+            }
+        }
+
+        let store = PostgresStore::new(NeverBeginPool);
+        for limit in [0, 101] {
+            assert_eq!(
+                store.list_invitations(&WorkspaceId::new("workspace_01"), None, limit),
+                Err(PostgresStoreError::InvalidLimit)
+            );
+        }
+
+        for row in [
+            FakeRow::invitation(
+                "workspace_other",
+                "invitation_01",
+                "principal_guest",
+                "principal_admin",
+                "member",
+                "pending",
+                100,
+                200,
+            ),
+            FakeRow::invitation(
+                "workspace_01",
+                "invitation_other",
+                "principal_guest",
+                "principal_admin",
+                "member",
+                "pending",
+                100,
+                200,
+            ),
+            FakeRow::invitation(
+                "workspace_01",
+                "invitation_01",
+                "principal_guest",
+                "principal_admin",
+                "owner",
+                "pending",
+                100,
+                200,
+            ),
+        ] {
+            let calls = Rc::new(RefCell::new(Vec::new()));
+            let store = PostgresStore::new(FakePool {
+                calls: Rc::clone(&calls),
+                tenant_batches: RefCell::new(
+                    [VecDeque::from([
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                    ])]
+                    .into(),
+                ),
+                row_batches: RefCell::new([vec![row]].into()),
+            });
+            assert!(
+                store
+                    .find_invitation(
+                        &WorkspaceId::new("workspace_01"),
+                        &InvitationId::new("invitation_01"),
+                    )
                     .is_err()
             );
             assert_eq!(calls.borrow().last(), Some(&Call::Rollback));

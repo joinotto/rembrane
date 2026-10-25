@@ -302,6 +302,8 @@ This roadmap describes sequencing, not release dates.
         with exact affected-row and commit enforcement.
       - [x] Implement the complete application `MembershipRepository` port
         with driver-neutral SQLSTATE classification and opaque error mapping.
+      - [x] Add exact invitation lookup and bounded status-filtered listing
+        with terminal-state restoration and full tenant/identifier correlation.
     - [x] Define a reference-only PostgreSQL connection profile with explicit
       transport security and bounded pool capacity.
       - [x] Prevent derived debug logging of the database secret locator.
