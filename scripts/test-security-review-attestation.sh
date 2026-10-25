@@ -13,6 +13,12 @@ fixture="$repository_root/spec/examples/security-review-attestation.json"
 verifier="$repository_root/scripts/verify-security-review-attestation.mjs"
 node "$verifier" "$fixture" >/dev/null
 
+ln -s "$fixture" "$test_root/attestation-link.json"
+if node "$verifier" "$test_root/attestation-link.json" >/dev/null 2>&1; then
+    echo "review attestation accepted a symbolic input" >&2
+    exit 1
+fi
+
 jq '.reviewer.independent = false' "$fixture" >"$test_root/dependent.json"
 if node "$verifier" "$test_root/dependent.json" >/dev/null 2>&1; then
     echo "review attestation accepted a non-independent reviewer" >&2

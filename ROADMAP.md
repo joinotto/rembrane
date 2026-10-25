@@ -831,6 +831,8 @@ This roadmap describes sequencing, not release dates.
         review bundles.
       - [x] Require accepted-risk approvals to identify their retained review
         record and contain an actual finding or explicit exclusion.
+      - [x] Read review manifests, attestations, and tracked inventory through
+        no-follow descriptors before hashing or parsing them.
     - [x] Publish compatibility, deprecation, and mixed-version negotiation
       policy.
       - [x] Include the normative compatibility policy in the tamper-tested

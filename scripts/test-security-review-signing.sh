@@ -13,6 +13,7 @@ trap cleanup EXIT HUP INT TERM
 mkdir -p "$review_repository/scripts"
 for script in \
     generate-security-review-manifest.mjs \
+    read-bounded-regular-file.mjs \
     verify-security-review-manifest.mjs \
     verify-security-review-attestation.mjs \
     sign-security-review-manifest.sh \

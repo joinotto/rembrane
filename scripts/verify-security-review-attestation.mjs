@@ -1,5 +1,4 @@
-import { lstatSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { readBoundedRegularFile } from "./read-bounded-regular-file.mjs";
 
 const MAX_ATTESTATION_BYTES = 64 * 1024;
 const SAFE_TEXT = /^[ -~]+$/;
@@ -25,16 +24,15 @@ if (!input) {
     "usage: verify-security-review-attestation.mjs ATTESTATION",
   );
 }
-const path = resolve(process.cwd(), input);
-const metadata = lstatSync(path);
-if (!metadata.isFile() || metadata.isSymbolicLink()) {
-  throw new Error("security review attestation must be a regular file");
-}
-if (metadata.size === 0 || metadata.size > MAX_ATTESTATION_BYTES) {
-  throw new Error("security review attestation exceeds the bounded size");
-}
-
-const value = JSON.parse(readFileSync(path, "utf8"));
+const value = JSON.parse(
+  new TextDecoder("utf-8", { fatal: true }).decode(
+    readBoundedRegularFile(
+      input,
+      MAX_ATTESTATION_BYTES,
+      "security review attestation",
+    ),
+  ),
+);
 const reviewedAtEpoch = canonicalTimestamp(value.reviewedAt);
 const attestationKeys = [
   "disposition",

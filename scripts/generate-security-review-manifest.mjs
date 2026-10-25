@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { lstatSync, readFileSync } from "node:fs";
 import { dirname, relative, resolve, sep } from "node:path";
 import { TextDecoder } from "node:util";
 import { fileURLToPath } from "node:url";
+
+import { readBoundedRegularFile } from "./read-bounded-regular-file.mjs";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const allowDirty = process.argv.slice(2).includes("--allow-dirty");
@@ -52,11 +53,12 @@ const files = paths.map((path) => {
   ) {
     throw new Error(`security review path escapes repository: ${path}`);
   }
-  const metadata = lstatSync(absolutePath);
-  if (!metadata.isFile() || metadata.isSymbolicLink()) {
-    throw new Error(`security review path is not a regular file: ${path}`);
-  }
-  const contents = readFileSync(absolutePath);
+  const contents = readBoundedRegularFile(
+    absolutePath,
+    Number.MAX_SAFE_INTEGER,
+    `security review path ${path}`,
+    { allowEmpty: true },
+  );
   return {
     path,
     bytes: contents.length,

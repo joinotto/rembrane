@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { lstatSync, readFileSync } from "node:fs";
 import { dirname, relative, resolve, sep } from "node:path";
 import { TextDecoder } from "node:util";
 import { fileURLToPath } from "node:url";
+
+import { readBoundedRegularFile } from "./read-bounded-regular-file.mjs";
 
 const MAX_MANIFEST_BYTES = 16 * 1024 * 1024;
 const MAX_REVIEW_FILES = 10_000;
@@ -20,16 +21,15 @@ if (!manifestArgument) {
 }
 const verifyRepository = process.argv.slice(3).includes("--verify-repository");
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const manifestPath = resolve(process.cwd(), manifestArgument);
-const manifestMetadata = lstatSync(manifestPath);
-if (!manifestMetadata.isFile() || manifestMetadata.isSymbolicLink()) {
-  throw new Error("security review manifest must be a regular non-symbolic file");
-}
-if (manifestMetadata.size === 0 || manifestMetadata.size > MAX_MANIFEST_BYTES) {
-  throw new Error("security review manifest exceeds the bounded size");
-}
-
-const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+const manifest = JSON.parse(
+  new TextDecoder("utf-8", { fatal: true }).decode(
+    readBoundedRegularFile(
+      manifestArgument,
+      MAX_MANIFEST_BYTES,
+      "security review manifest",
+    ),
+  ),
+);
 if (
   manifest === null ||
   typeof manifest !== "object" ||
@@ -91,11 +91,12 @@ if (verifyRepository) {
   }
   for (const entry of manifest.files) {
     const absolutePath = resolveReviewPath(repositoryRoot, entry.path);
-    const metadata = lstatSync(absolutePath);
-    if (!metadata.isFile() || metadata.isSymbolicLink()) {
-      throw new Error(`security review path is not a regular file: ${entry.path}`);
-    }
-    const contents = readFileSync(absolutePath);
+    const contents = readBoundedRegularFile(
+      absolutePath,
+      Number.MAX_SAFE_INTEGER,
+      `security review path ${entry.path}`,
+      { allowEmpty: true },
+    );
     const digest = createHash("sha256").update(contents).digest("hex");
     if (entry.bytes !== contents.length || entry.sha256 !== digest) {
       throw new Error(`security review file evidence differs: ${entry.path}`);

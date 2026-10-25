@@ -1005,6 +1005,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Customer-KMS promotion evidence now uses the same no-follow bounded reads,
   and the three-provider release gate verifies the exact opened buffers in one
   process instead of validating paths before a child process reopens them.
+- Security-review manifest generation and verification plus attestation
+  parsing now use no-follow descriptor reads, while explicitly preserving
+  support for valid empty tracked files in the complete review inventory.
 - Restored the complete dependency-enabled workspace build by declaring
   previously implicit crate dependencies and enabling rmcp's stdio transport.
 - Corrected Memory Provider selector field casing and URL path construction so

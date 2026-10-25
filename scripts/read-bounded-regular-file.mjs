@@ -7,7 +7,12 @@ import {
 } from "node:fs";
 import { resolve } from "node:path";
 
-export function readBoundedRegularFile(input, maximum, label) {
+export function readBoundedRegularFile(
+  input,
+  maximum,
+  label,
+  { allowEmpty = false } = {},
+) {
   if (
     typeof input !== "string" ||
     input.length === 0 ||
@@ -27,13 +32,15 @@ export function readBoundedRegularFile(input, maximum, label) {
     const metadata = fstatSync(descriptor);
     if (
       !metadata.isFile() ||
-      metadata.size === 0 ||
+      (!allowEmpty && metadata.size === 0) ||
       metadata.size > maximum
     ) {
       throw new Error();
     }
     const bytes = readFileSync(descriptor);
-    if (bytes.length === 0 || bytes.length > maximum) throw new Error();
+    if ((!allowEmpty && bytes.length === 0) || bytes.length > maximum) {
+      throw new Error();
+    }
     return bytes;
   } catch {
     throw new Error(`${label} must be a bounded regular file`);
