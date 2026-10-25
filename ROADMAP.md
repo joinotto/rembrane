@@ -853,6 +853,8 @@ This roadmap describes sequencing, not release dates.
           external maintainer, source revision, result digest, and signing time.
         - [x] Generate canonical provenance deterministically from bounded
           result bytes before external signing.
+        - [x] Read untrusted release artifacts through no-follow file
+          descriptors and verify signatures over the already-opened bytes.
   - [x] Add a machine-verifiable compatibility lock over the canonical wire
     schemas, HTTP binding, conformance profile, and lifecycle fixtures so
     protocol changes require explicit review.

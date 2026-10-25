@@ -81,6 +81,9 @@ for deployment_file in \
     scripts/test-memory-provider-release-evidence.sh \
     scripts/test-memory-provider-external-provenance.sh \
     scripts/generate-memory-provider-external-provenance.mjs \
+    scripts/memory-provider-external-provenance.mjs \
+    scripts/memory-provider-mixed-version-evidence.mjs \
+    scripts/read-bounded-regular-file.mjs \
     scripts/test-package-memory-provider-release-evidence.sh \
     scripts/package-memory-provider-release-evidence.mjs \
     scripts/test-key-provider-compatibility-lock.sh \

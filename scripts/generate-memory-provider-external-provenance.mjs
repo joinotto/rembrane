@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { lstatSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
+
+import { readBoundedRegularFile } from "./read-bounded-regular-file.mjs";
 
 const [resultInput, maintainerId, sourceRevision, signedAt] =
   process.argv.slice(2);
@@ -10,19 +10,11 @@ if (!resultInput || !maintainerId || !sourceRevision || !signedAt) {
   );
 }
 
-const resultPath = resolve(process.cwd(), resultInput);
-const metadata = lstatSync(resultPath);
-if (
-  !metadata.isFile() ||
-  metadata.isSymbolicLink() ||
-  metadata.size === 0 ||
-  metadata.size > 128 * 1024
-) {
-  throw new Error(
-    "external provider result must be a bounded regular file",
-  );
-}
-const resultBytes = readFileSync(resultPath);
+const resultBytes = readBoundedRegularFile(
+  resultInput,
+  128 * 1024,
+  "external provider result",
+);
 try {
   const result = JSON.parse(
     new TextDecoder("utf-8", { fatal: true }).decode(resultBytes),

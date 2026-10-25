@@ -578,6 +578,14 @@ node --check scripts/test-key-provider-http-runner.mjs
 sh -n scripts/test-memory-provider-http.sh
 node --check scripts/test-memory-provider-http-runner.mjs
 node --check scripts/run-memory-provider-conformance.mjs
+node --check scripts/read-bounded-regular-file.mjs
+node --check scripts/memory-provider-external-provenance.mjs
+node --check scripts/memory-provider-mixed-version-evidence.mjs
+node --check scripts/generate-memory-provider-external-provenance.mjs
+node --check scripts/verify-memory-provider-external-provenance.mjs
+node --check scripts/verify-memory-provider-mixed-version-evidence.mjs
+node --check scripts/package-memory-provider-release-evidence.mjs
+node --check scripts/verify-memory-provider-release-evidence.mjs
 if [ "${REMBRANE_RUN_LOOPBACK_TESTS:-0}" = "1" ]; then
     node scripts/test-provider-http-runner.mjs
     node scripts/test-key-provider-http-runner.mjs

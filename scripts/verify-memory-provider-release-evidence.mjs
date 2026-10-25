@@ -1,8 +1,12 @@
 import { createHash } from "node:crypto";
-import { execFileSync, spawnSync } from "node:child_process";
-import { lstatSync, readdirSync, readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { lstatSync, readdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { verifyExternalProviderProvenance } from "./memory-provider-external-provenance.mjs";
+import { verifyMemoryProviderMixedVersionEvidence } from "./memory-provider-mixed-version-evidence.mjs";
+import { readBoundedRegularFile } from "./read-bounded-regular-file.mjs";
 
 const [input, externalPublicKeyInput, ...options] = process.argv.slice(2);
 const verifyRepository = options.includes("--verify-repository");
@@ -50,17 +54,25 @@ const packagedMigrationBytes = readBoundedFile(
   256 * 1024,
   "migration notes",
 );
-const canonicalLockBytes = readFileSync(
+const canonicalLockBytes = readBoundedRegularFile(
   join(repositoryRoot, "spec/memory-provider-compatibility-lock.json"),
+  128 * 1024,
+  "canonical memory-provider compatibility lock",
 );
-const canonicalMigrationBytes = readFileSync(
+const canonicalMigrationBytes = readBoundedRegularFile(
   join(repositoryRoot, "spec/MEMORY_PROVIDER_0.1_TO_1.0_MIGRATION.md"),
+  256 * 1024,
+  "canonical memory-provider migration notes",
 );
-const profileBytes = readFileSync(
+const profileBytes = readBoundedRegularFile(
   join(repositoryRoot, "spec/conformance/memory-provider-core.json"),
+  128 * 1024,
+  "canonical memory-provider profile",
 );
-const fixtureBytes = readFileSync(
+const fixtureBytes = readBoundedRegularFile(
   join(repositoryRoot, "spec/conformance/memory-provider-core-fixtures.json"),
+  256 * 1024,
+  "canonical memory-provider fixtures",
 );
 const externalPublicKeyPath = resolve(process.cwd(), externalPublicKeyInput);
 const externalPublicKeyBytes = readBoundedFile(
@@ -135,27 +147,17 @@ if (verifyRepository) {
   }
 }
 
-const mixedVerifier = join(
-  repositoryRoot,
-  "scripts/verify-memory-provider-mixed-version-evidence.mjs",
-);
-const mixedVerification = spawnSync(
-  process.execPath,
-  [mixedVerifier, join(root, "mixed-version.json")],
-  { encoding: "utf8" },
-);
-if (mixedVerification.status !== 0) {
-  throw new Error(
-    `memory-provider mixed-version evidence failed verification: ${boundedError(
-      mixedVerification.stderr,
-    )}`,
-  );
-}
+verifyMemoryProviderMixedVersionEvidence({
+  evidenceBytes: mixedBytes,
+  profileBytes,
+  fixtureBytes,
+});
 
 const providerIds = new Set();
 const namespaces = new Set();
 const maintainers = new Set();
 let externalProviders = 0;
+let externalProviderResultBytes;
 for (const [index, provider] of manifest.providers.entries()) {
   requireExactKeys(provider, [
     "maintainerId",
@@ -187,6 +189,7 @@ for (const [index, provider] of manifest.providers.entries()) {
   if (provider.resultSha256 !== sha256(resultBytes)) {
     throw new Error("memory-provider release result digest is invalid");
   }
+  if (index === 1) externalProviderResultBytes = resultBytes;
   const result = parseObject(resultBytes, "provider result");
   verifyConformanceResult(
     result,
@@ -202,33 +205,16 @@ if (externalProviders < 1) {
     "memory-provider release evidence requires an external provider",
   );
 }
-
-const provenanceVerifier = join(
-  repositoryRoot,
-  "scripts/verify-memory-provider-external-provenance.mjs",
-);
-const provenanceVerification = spawnSync(
-  process.execPath,
-  [
-    provenanceVerifier,
-    join(root, "provider-b.provenance.json"),
-    join(root, "provider-b.json"),
-    join(root, "provider-b.provenance.json.sig"),
-    externalPublicKeyPath,
-  ],
-  { encoding: "utf8" },
-);
-if (provenanceVerification.status !== 0) {
-  throw new Error(
-    `external provider provenance failed verification: ${boundedError(
-      provenanceVerification.stderr,
-    )}`,
-  );
+if (externalProviderResultBytes === undefined) {
+  throw new Error("memory-provider release external result is missing");
 }
-const provenance = parseObject(
-  externalProvenanceBytes,
-  "external provider provenance",
-);
+
+const provenance = verifyExternalProviderProvenance({
+  provenanceBytes: externalProvenanceBytes,
+  resultBytes: externalProviderResultBytes,
+  signatureBytes: externalSignatureBytes,
+  publicKeyBytes: externalPublicKeyBytes,
+});
 const externalProvider = manifest.providers[1];
 if (
   provenance.maintainerId !== externalProvider.maintainerId ||
@@ -315,16 +301,7 @@ function requireExactEntries(directory, expected) {
 }
 
 function readBoundedFile(path, maximum, label) {
-  const metadata = lstatSync(path);
-  if (
-    !metadata.isFile() ||
-    metadata.isSymbolicLink() ||
-    metadata.size === 0 ||
-    metadata.size > maximum
-  ) {
-    throw new Error(`memory-provider ${label} must be a bounded regular file`);
-  }
-  return readFileSync(path);
+  return readBoundedRegularFile(path, maximum, `memory-provider ${label}`);
 }
 
 function parseObject(bytes, label) {
@@ -377,9 +354,4 @@ function canonicalTimestamp(value) {
 
 function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
-}
-
-function boundedError(value) {
-  const text = typeof value === "string" ? value.trim() : "";
-  return text.slice(0, 500) || "verification rejected";
 }

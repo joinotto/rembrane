@@ -4,14 +4,14 @@ import {
   constants,
   chmodSync,
   copyFileSync,
-  lstatSync,
   mkdirSync,
-  readFileSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { readBoundedRegularFile } from "./read-bounded-regular-file.mjs";
 
 const [
   outputInput,
@@ -200,17 +200,7 @@ try {
 process.stdout.write(`${output}\n`);
 
 function readBoundedFile(input, maximum, label) {
-  const path = resolve(process.cwd(), input);
-  const metadata = lstatSync(path);
-  if (
-    !metadata.isFile() ||
-    metadata.isSymbolicLink() ||
-    metadata.size === 0 ||
-    metadata.size > maximum
-  ) {
-    throw new Error(`memory-provider ${label} must be a bounded regular file`);
-  }
-  return readFileSync(path);
+  return readBoundedRegularFile(input, maximum, `memory-provider ${label}`);
 }
 
 function copyExclusive(source, destination) {

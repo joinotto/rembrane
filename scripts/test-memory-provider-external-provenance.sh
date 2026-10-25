@@ -29,6 +29,14 @@ verify() {
 verify "$test_root/provenance.json" "$test_root/result.json" \
     "$test_root/provenance.sig" "$test_root/public.pem" >/dev/null
 
+ln -s "$test_root/provenance.json" "$test_root/provenance-link.json"
+if verify "$test_root/provenance-link.json" "$test_root/result.json" \
+    "$test_root/provenance.sig" "$test_root/public.pem" >/dev/null 2>&1
+then
+    echo "external provenance verifier accepted a symbolic input" >&2
+    exit 1
+fi
+
 if node "$repository_root/scripts/generate-memory-provider-external-provenance.mjs" \
     "$test_root/result.json" \
     independent-provider-maintainer \
