@@ -351,6 +351,12 @@ status=$(call "$primary_auth" POST /v1/memory/proposals propose_primary "$payloa
 test "$status" = 200
 primary_memory_id=$(jq -er '.memoryId | select(length > 0)' "$response")
 primary_version=$(jq -er '.version | select(. > 0)' "$response")
+jq -e '
+    type == "object"
+    and keys == ["memoryId", "version"]
+    and (.memoryId | type == "string" and length >= 1 and length <= 255)
+    and (.version | type == "number" and . >= 1 and floor == .)
+' "$response" >/dev/null
 
 status=$(call "$primary_auth" POST /v1/memory/proposals propose_repeat "$payload")
 test "$status" = 200
@@ -358,6 +364,8 @@ jq -e \
     --arg memoryId "$primary_memory_id" \
     --argjson version "$primary_version" \
     '.memoryId == $memoryId and .version == $version' \
+    "$response" >/dev/null
+jq -e 'type == "object" and keys == ["memoryId", "version"]' \
     "$response" >/dev/null
 
 other_content="$content_prefix-$namespace-other"
@@ -380,6 +388,12 @@ status=$(call "$other_auth" POST /v1/memory/proposals propose_other "$payload")
 test "$status" = 200
 other_memory_id=$(jq -er '.memoryId | select(length > 0)' "$response")
 other_version=$(jq -er '.version | select(. > 0)' "$response")
+jq -e '
+    type == "object"
+    and keys == ["memoryId", "version"]
+    and (.memoryId | type == "string" and length >= 1 and length <= 255)
+    and (.version | type == "number" and . >= 1 and floor == .)
+' "$response" >/dev/null
 
 context_payload() {
     query=$1
@@ -475,6 +489,15 @@ jq -e \
         and .deletedVersion == $deletedVersion
         and .tombstoneVersion == ($deletedVersion + 1)
     ' "$response" >/dev/null
+jq -e '
+    type == "object"
+    and keys == ["deletedVersion", "memoryId", "tombstoneVersion"]
+    and (.memoryId | type == "string" and length >= 1 and length <= 255)
+    and all(
+        [.deletedVersion, .tombstoneVersion][];
+        type == "number" and . >= 1 and floor == .
+    )
+' "$response" >/dev/null
 primary_memory_id=
 primary_version=
 

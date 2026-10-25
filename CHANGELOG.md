@@ -35,6 +35,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   provider did not leak tenant data.
   - Loopback CI simulates a 401 response containing memory content and proves
     it cannot produce passing conformance evidence.
+- Proposal and deletion conformance responses now require exact closed
+  canonical result shapes; loopback CI proves a successful proposal carrying
+  an unexpected memory-content field cannot pass.
 - Project metadata, security reporting, API contact information, offline
   workspace fixtures, and provider provenance now consistently identify the
   canonical `joinotto/rembrane` repository.

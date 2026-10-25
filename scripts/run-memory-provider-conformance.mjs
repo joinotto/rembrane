@@ -151,6 +151,7 @@ try {
     primaryProposal,
   );
   expectStatus(replay, 200, "proposal.idempotent");
+  requireMemoryResult(replay.value);
   if (
     replay.value.memoryId !== first.value.memoryId ||
     replay.value.version !== first.value.version
@@ -256,6 +257,7 @@ try {
     deletion(first.value, "exact", first.value.version),
   );
   expectStatus(exact, 200, "delete.exact-version");
+  requireDeleteResult(exact.value);
   if (
     exact.value.memoryId !== first.value.memoryId ||
     exact.value.deletedVersion !== first.value.version ||
@@ -391,8 +393,8 @@ function expectStatus(response, expected, name) {
 
 function requireMemoryResult(value) {
   if (
-    typeof value?.memoryId !== "string" ||
-    value.memoryId.length === 0 ||
+    !hasExactKeys(value, ["memoryId", "version"]) ||
+    !isSafeOpaqueId(value.memoryId) ||
     !Number.isSafeInteger(value.version) ||
     value.version < 1
   ) {
@@ -400,16 +402,47 @@ function requireMemoryResult(value) {
   }
 }
 
+function requireDeleteResult(value) {
+  if (
+    !hasExactKeys(value, ["memoryId", "deletedVersion", "tombstoneVersion"]) ||
+    !isSafeOpaqueId(value.memoryId) ||
+    !Number.isSafeInteger(value.deletedVersion) ||
+    value.deletedVersion < 1 ||
+    !Number.isSafeInteger(value.tombstoneVersion) ||
+    value.tombstoneVersion < 1
+  ) {
+    throw new Error("deletion returned an invalid closed result");
+  }
+}
+
 function requireProtocolError(value, expectedCode) {
   if (
-    value === null ||
-    typeof value !== "object" ||
-    Array.isArray(value) ||
-    Object.keys(value).length !== 1 ||
+    !hasExactKeys(value, ["code"]) ||
     value.code !== expectedCode
   ) {
     throw new Error("memory-provider returned an invalid closed error response");
   }
+}
+
+function hasExactKeys(value, expected) {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const actual = Object.keys(value).sort();
+  const sortedExpected = [...expected].sort();
+  return (
+    actual.length === sortedExpected.length &&
+    actual.every((key, index) => key === sortedExpected[index])
+  );
+}
+
+function isSafeOpaqueId(value) {
+  return (
+    typeof value === "string" &&
+    value.length > 0 &&
+    value.length <= 255 &&
+    /^[\x21-\x7e]+$/u.test(value)
+  );
 }
 
 function positive(value) {

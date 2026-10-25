@@ -84,11 +84,11 @@
     },
     {
       "path": "scripts/run-memory-provider-conformance.mjs",
-      "sha256": "12cbb25b27179de9ffee37db0e9de232d09cf276842de8377669fb1b65646391"
+      "sha256": "aed9854315bb3f80aac4468b7531488d9f76fb2c2859060a2b28de8a005f61fa"
     },
     {
       "path": "scripts/test-memory-provider-http.sh",
-      "sha256": "fa009d0c585474b2f7ad3d9c4116f78af2933320f1714cec337be162025b8fa2"
+      "sha256": "ebe4ad7ac44c8fa634d56f842ef9f94f11b73382f9320b5389d189550ab9745e"
     }
   ]
 }

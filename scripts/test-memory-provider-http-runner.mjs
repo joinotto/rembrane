@@ -237,6 +237,21 @@ const server = http.createServer(async (request, response) => {
       );
       if (!connection) return;
       const input = await readJson(request);
+      if (
+        request.headers["x-rembrane-request-id"]?.includes("success-leak")
+      ) {
+        json(
+          response,
+          200,
+          {
+            memoryId: "memory_leak",
+            version: 1,
+            memoryContent: "must-not-leak",
+          },
+          request,
+        );
+        return;
+      }
       const replayKey = `${connection.workspace}\0${input.idempotencyKey}`;
       const replay = idempotency.get(replayKey);
       if (replay) {
@@ -498,6 +513,26 @@ const leakingErrorStatus = await new Promise((resolve) =>
 );
 assert.notEqual(leakingErrorStatus, 0);
 assert.match(leakingErrorStderr, /invalid closed error response/);
+
+const leakingSuccessChild = spawn(process.execPath, [script, "success-leak"], {
+  env: {
+    ...process.env,
+    REMBRANE_MEMORY_PROVIDER_BASE_URL: `http://127.0.0.1:${address.port}`,
+    REMBRANE_MEMORY_PROVIDER_PRIMARY_TOKEN_REFERENCE: `file:${tokenFiles.primary}`,
+    REMBRANE_MEMORY_PROVIDER_OTHER_TOKEN_REFERENCE: `file:${tokenFiles.other}`,
+    REMBRANE_MEMORY_PROVIDER_READONLY_TOKEN_REFERENCE: `file:${tokenFiles.readonly}`,
+  },
+  stdio: ["ignore", "pipe", "pipe"],
+});
+let leakingSuccessStderr = "";
+leakingSuccessChild.stderr.setEncoding("utf8").on("data", (chunk) => {
+  leakingSuccessStderr += chunk;
+});
+const leakingSuccessStatus = await new Promise((resolve) =>
+  leakingSuccessChild.on("close", resolve),
+);
+assert.notEqual(leakingSuccessStatus, 0);
+assert.match(leakingSuccessStderr, /invalid memory identity/);
 
 await new Promise((resolve, reject) =>
   server.close((error) => (error ? reject(error) : resolve())),

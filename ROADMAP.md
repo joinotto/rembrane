@@ -984,6 +984,8 @@ This roadmap describes sequencing, not release dates.
     bytes so unexecuted custom cases cannot be reported as passing.
   - [x] Require exact closed error bodies for unauthenticated, insufficient
     scope, and optimistic-conflict conformance cases.
+  - [x] Require closed canonical proposal and deletion success results before
+    accepting provider-assigned identities or tombstone versions.
     - [x] Add bounded context-resolution requests with global, domain, entity,
       and activity selectors constrained by provider-advertised limits.
       - [x] Seal selector representation so callers cannot bypass domain and
