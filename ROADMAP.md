@@ -129,6 +129,8 @@ This roadmap describes sequencing, not release dates.
     - [x] Provide a durable SQLite sidecar key-reference store with
       per-workspace isolation, one active generation, historical references,
       and transactional stale-rotation denial.
+      - [x] Support thread-safe shared worker access and prove concurrent
+        attempts can activate only one successor generation.
   - [x] Add a provider-agnostic configured cipher that dispatches to local
     environment/macOS keyrings or a policy-negotiated HTTP key provider.
     - [x] Accept consumed customer key-provider configuration from

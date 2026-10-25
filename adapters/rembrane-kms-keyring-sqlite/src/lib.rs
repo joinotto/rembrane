@@ -1,7 +1,7 @@
 //! Durable wrapped-key metadata for a customer-controlled KMS sidecar.
 
-use std::cell::RefCell;
 use std::path::Path;
+use std::sync::Mutex;
 
 use rembrane_domain::WorkspaceId;
 use rembrane_provider_sdk::{
@@ -23,7 +23,7 @@ ON customer_kms_key_references(workspace_id) WHERE is_active = 1;
 ";
 
 pub struct SqliteCustomerKmsKeyReferenceStore {
-    connection: RefCell<Connection>,
+    connection: Mutex<Connection>,
 }
 
 impl SqliteCustomerKmsKeyReferenceStore {
@@ -39,13 +39,18 @@ impl SqliteCustomerKmsKeyReferenceStore {
 
     fn initialize(connection: Connection) -> Result<Self, ProviderError> {
         connection
-            .execute_batch("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;")
+            .execute_batch(
+                "PRAGMA foreign_keys = ON;
+                 PRAGMA journal_mode = WAL;
+                 PRAGMA synchronous = FULL;
+                 PRAGMA busy_timeout = 5000;",
+            )
             .map_err(|_| ProviderError::Unavailable)?;
         connection
             .execute_batch(SCHEMA)
             .map_err(|_| ProviderError::Unavailable)?;
         Ok(Self {
-            connection: RefCell::new(connection),
+            connection: Mutex::new(connection),
         })
     }
 
@@ -61,7 +66,8 @@ impl SqliteCustomerKmsKeyReferenceStore {
             ));
         }
         self.connection
-            .borrow()
+            .lock()
+            .map_err(|_| ProviderError::Unavailable)?
             .execute(
                 "INSERT INTO customer_kms_key_references
                  (workspace_id, generation, provider_key_id, wrapped_key, is_active)
@@ -81,7 +87,10 @@ impl SqliteCustomerKmsKeyReferenceStore {
         &self,
         workspace_id: &WorkspaceId,
     ) -> Result<CustomerKmsKeyring, ProviderError> {
-        let connection = self.connection.borrow();
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| ProviderError::Unavailable)?;
         let mut statement = connection
             .prepare(
                 "SELECT generation, provider_key_id, wrapped_key, is_active
@@ -140,7 +149,10 @@ impl CustomerKmsKeyReferenceStore for SqliteCustomerKmsKeyReferenceStore {
                 "customer KMS rotation is not the strict next generation".to_owned(),
             ));
         }
-        let mut connection = self.connection.borrow_mut();
+        let mut connection = self
+            .connection
+            .lock()
+            .map_err(|_| ProviderError::Unavailable)?;
         let transaction = connection
             .transaction()
             .map_err(|_| ProviderError::Unavailable)?;
@@ -187,6 +199,8 @@ impl CustomerKmsKeyReferenceStore for SqliteCustomerKmsKeyReferenceStore {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::{Arc, Barrier};
+
     use rembrane_domain::WorkspaceId;
     use rembrane_provider_sdk::{CustomerKmsKeyReference, CustomerKmsKeyReferenceStore};
 
@@ -268,5 +282,48 @@ mod tests {
             store.load_keyring(&second).unwrap().references()[0].provider_key_id(),
             "second-key"
         );
+    }
+
+    #[test]
+    fn concurrent_rotation_allows_only_one_successor() {
+        let store = Arc::new(SqliteCustomerKmsKeyReferenceStore::in_memory().unwrap());
+        let workspace = WorkspaceId::new("workspace-a");
+        store
+            .initialize_workspace(
+                &workspace,
+                &CustomerKmsKeyReference::new(1, "key-v1", vec![1]).unwrap(),
+            )
+            .unwrap();
+        let barrier = Arc::new(Barrier::new(3));
+        let mut workers = Vec::new();
+        for key_id in ["key-v2-a", "key-v2-b"] {
+            let store = Arc::clone(&store);
+            let workspace = workspace.clone();
+            let barrier = Arc::clone(&barrier);
+            workers.push(std::thread::spawn(move || {
+                let reference = CustomerKmsKeyReference::new(2, key_id, vec![2]).unwrap();
+                barrier.wait();
+                store.persist_and_activate(&workspace, 1, &reference)
+            }));
+        }
+        barrier.wait();
+        let mut successes = 0;
+        for worker in workers {
+            if worker.join().unwrap().is_ok() {
+                successes += 1;
+            }
+        }
+
+        assert_eq!(successes, 1);
+        assert_eq!(
+            store.load_keyring(&workspace).unwrap().active_generation(),
+            2
+        );
+    }
+
+    #[test]
+    fn store_is_send_and_sync_for_shared_sidecar_workers() {
+        fn assert_send_sync<T: Send + Sync>() {}
+        assert_send_sync::<SqliteCustomerKmsKeyReferenceStore>();
     }
 }

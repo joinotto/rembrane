@@ -29,6 +29,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - A durable SQLite customer-sidecar key-reference store with workspace
   isolation, retained historical generations, one active generation, and
   transactional stale-rotation rejection.
+- Thread-safe shared SQLite keyring access with full synchronous durability,
+  bounded lock waiting, and concurrent single-successor rotation coverage.
 - A strict language-neutral authenticated channel-processor message schema and
   secret-free fixture carrying canonical tenant identity and event
   idempotency metadata to cooperative bots and agents.
