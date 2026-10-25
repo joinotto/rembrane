@@ -114,6 +114,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Atomic encrypted PostgreSQL checkpoint creation and revision with strict
   successor versions, optimistic canonical event sequencing, and matched
   activity/subject audit payloads.
+- Exact-version PostgreSQL checkpoint disclosure receipts with tenant,
+  subject, activity, and checkpoint correlation before an external client can
+  receive resumable working memory.
 - PostgreSQL invitation lookup and bounded deterministic listing with optional
   status filtering, numeric lifetime decoding, terminal-state restoration,
   and exact tenant/invitation correlation.

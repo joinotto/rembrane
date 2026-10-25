@@ -10,11 +10,11 @@ use std::fmt::{self, Display, Formatter};
 
 use rembrane_application::{
     AdministrativeAuditRepository, ApplicationError, CanonicalMutationRepository,
-    CheckpointMutationRepository, CheckpointRepository, DisclosureRepository, EventRepository,
-    InvitationRepository, KeyRotationRepository, MAX_ADMINISTRATIVE_AUDIT_PAGE,
-    MAXIMUM_INVITATION_LIST_ITEMS, MemberLifecycleRepository, MemberScopeGrantRepository,
-    MembershipRepository, MemoryRepository, ProjectionOutboxRepository, RetentionRepository,
-    WorkspaceReadRepository, WorkspaceRepository, is_strict_successor,
+    CheckpointDisclosureRepository, CheckpointMutationRepository, CheckpointRepository,
+    DisclosureRepository, EventRepository, InvitationRepository, KeyRotationRepository,
+    MAX_ADMINISTRATIVE_AUDIT_PAGE, MAXIMUM_INVITATION_LIST_ITEMS, MemberLifecycleRepository,
+    MemberScopeGrantRepository, MembershipRepository, MemoryRepository, ProjectionOutboxRepository,
+    RetentionRepository, WorkspaceReadRepository, WorkspaceRepository, is_strict_successor,
 };
 use rembrane_codec::{
     decode_checkpoint, decode_event, decode_memory, encode_checkpoint, encode_event, encode_memory,
@@ -22,14 +22,15 @@ use rembrane_codec::{
 use rembrane_crypto::{EncryptedPayload, EncryptionContext, PayloadPurpose, RecordCipher};
 use rembrane_domain::{
     ActivityCheckpoint, ActivityId, AdministrativeAction, AdministrativeAuditEvent,
-    AdministrativeAuditEventId, AdministrativeTargetKind, CanonicalEvent, DisclosureReceipt,
-    EntityId, EventPayload, EvidenceSource, Invitation, InvitationId, InvitationStatus,
-    KeyRotationId, KeyRotationReceipt, KeyRotationStatus, LegalHoldId, LegalHoldStatus,
-    MAX_KEY_ROTATION_RECIPIENTS, MemberScopeGrant, Membership, MembershipStatus, MemoryId,
-    MemoryKind, MemoryRecord, MemoryScope, MemoryStatus, Principal, PrincipalId, ProjectionJob,
-    ProjectionJobId, ProjectionOperation, ProjectionStatus, ProviderId, ReadScope, RetentionPeriod,
-    RetentionResource, Workspace, WorkspaceId, WorkspaceKeyRotation, WorkspaceKind,
-    WorkspaceLegalHold, WorkspaceRetentionPolicy, WorkspaceRole,
+    AdministrativeAuditEventId, AdministrativeTargetKind, CanonicalEvent,
+    CheckpointDisclosureReceipt, DisclosureReceipt, EntityId, EventPayload, EvidenceSource,
+    Invitation, InvitationId, InvitationStatus, KeyRotationId, KeyRotationReceipt,
+    KeyRotationStatus, LegalHoldId, LegalHoldStatus, MAX_KEY_ROTATION_RECIPIENTS, MemberScopeGrant,
+    Membership, MembershipStatus, MemoryId, MemoryKind, MemoryRecord, MemoryScope, MemoryStatus,
+    Principal, PrincipalId, ProjectionJob, ProjectionJobId, ProjectionOperation, ProjectionStatus,
+    ProviderId, ReadScope, RetentionPeriod, RetentionResource, Workspace, WorkspaceId,
+    WorkspaceKeyRotation, WorkspaceKind, WorkspaceLegalHold, WorkspaceRetentionPolicy,
+    WorkspaceRole,
 };
 
 pub const SET_TENANT_SQL: &str = "SELECT set_config('rembrane.workspace_id', $1, true);";
@@ -242,6 +243,12 @@ pub const REPLACE_CHECKPOINT_SQL: &str = "UPDATE activity_checkpoints SET subjec
     activity_id = $4, entity_id = $5, checkpoint_ciphertext = $6, encryption_key_id = $7, \
     encryption_algorithm = $8, encryption_nonce = $9, version = $10, \
     updated_at = CURRENT_TIMESTAMP WHERE workspace_id = $1 AND id = $2 AND version = $11";
+pub const FIND_DISCLOSED_CHECKPOINT_VERSION_SQL: &str = "SELECT workspace_id, id, subject_id, \
+    activity_id, version FROM activity_checkpoints WHERE workspace_id = $1 AND id = $2 \
+    AND subject_id = $3 AND activity_id = $4 ORDER BY workspace_id, id LIMIT 2";
+pub const INSERT_CHECKPOINT_DISCLOSURE_SQL: &str = "INSERT INTO checkpoint_disclosures \
+    (workspace_id, id, checkpoint_id, checkpoint_version, activity_id, subject_id, client_id, \
+    purpose_code) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PostgresParameter<'value> {
@@ -2841,6 +2848,114 @@ where
     }
 }
 
+impl<Pool, Cipher> CheckpointDisclosureRepository
+    for PostgresTenantMemoryStore<'_, '_, Pool, Cipher>
+where
+    Pool: PostgresPool,
+    Pool::Error: ClassifiedPostgresError,
+    <Pool::Transaction as PostgresTransaction>::Row: PostgresRow<Error = Pool::Error>,
+    Cipher: RecordCipher,
+{
+    fn append_checkpoint_disclosure(
+        &mut self,
+        receipt: CheckpointDisclosureReceipt,
+    ) -> Result<(), ApplicationError> {
+        if receipt.workspace_id != self.workspace_id {
+            return Err(ApplicationError::AccessDenied);
+        }
+        if receipt.purpose.trim().is_empty() || receipt.checkpoint_version == 0 {
+            return Err(ApplicationError::Validation(
+                "invalid checkpoint disclosure".to_owned(),
+            ));
+        }
+        let mut transaction = self
+            .store
+            .begin_tenant(receipt.workspace_id.clone())
+            .map_err(map_application_error)?;
+        let rows = transaction
+            .query(
+                FIND_DISCLOSED_CHECKPOINT_VERSION_SQL,
+                &[
+                    PostgresParameter::Text(receipt.workspace_id.as_str()),
+                    PostgresParameter::Text(receipt.checkpoint_id.as_str()),
+                    PostgresParameter::Text(receipt.subject_id.as_str()),
+                    PostgresParameter::Text(receipt.activity_id.as_str()),
+                ],
+            )
+            .map_err(PostgresStoreError::Tenant)
+            .map_err(map_application_error)?;
+        if rows.len() > 1 {
+            return Err(ApplicationError::StorageUnavailable);
+        }
+        let Some(row) = rows.first() else {
+            return Err(ApplicationError::VersionConflict);
+        };
+        if !checkpoint_disclosure_row_matches(row, &receipt)? {
+            return Err(ApplicationError::StorageUnavailable);
+        }
+        if row
+            .u64("version")
+            .map_err(PostgresStoreError::Row)
+            .map_err(map_application_error)?
+            != receipt.checkpoint_version
+        {
+            return Err(ApplicationError::VersionConflict);
+        }
+        execute_exactly_one(
+            &mut transaction,
+            INSERT_CHECKPOINT_DISCLOSURE_SQL,
+            &[
+                PostgresParameter::Text(receipt.workspace_id.as_str()),
+                PostgresParameter::Text(receipt.id.as_str()),
+                PostgresParameter::Text(receipt.checkpoint_id.as_str()),
+                PostgresParameter::I64(
+                    postgres_epoch::<Pool::Error>(receipt.checkpoint_version)
+                        .map_err(map_application_error)?,
+                ),
+                PostgresParameter::Text(receipt.activity_id.as_str()),
+                PostgresParameter::Text(receipt.subject_id.as_str()),
+                PostgresParameter::Text(receipt.client_id.as_str()),
+                PostgresParameter::Text(&receipt.purpose),
+            ],
+        )
+        .map_err(map_application_error)?;
+        transaction
+            .commit()
+            .map_err(PostgresStoreError::Tenant)
+            .map_err(map_application_error)
+    }
+}
+
+fn checkpoint_disclosure_row_matches<Row, DriverError>(
+    row: &Row,
+    receipt: &CheckpointDisclosureReceipt,
+) -> Result<bool, ApplicationError>
+where
+    Row: PostgresRow<Error = DriverError>,
+    DriverError: ClassifiedPostgresError,
+{
+    Ok(row
+        .text("workspace_id")
+        .map_err(PostgresStoreError::Row)
+        .map_err(map_application_error)?
+        == receipt.workspace_id.as_str()
+        && row
+            .text("id")
+            .map_err(PostgresStoreError::Row)
+            .map_err(map_application_error)?
+            == receipt.checkpoint_id.as_str()
+        && row
+            .text("subject_id")
+            .map_err(PostgresStoreError::Row)
+            .map_err(map_application_error)?
+            == receipt.subject_id.as_str()
+        && row
+            .text("activity_id")
+            .map_err(PostgresStoreError::Row)
+            .map_err(map_application_error)?
+            == receipt.activity_id.as_str())
+}
+
 fn persist_checkpoint_mutation<Pool, Cipher>(
     store: &PostgresTenantMemoryStore<'_, '_, Pool, Cipher>,
     checkpoint: &ActivityCheckpoint,
@@ -4721,26 +4836,28 @@ mod tests {
 
     use rembrane_application::{
         AdministrativeAuditRepository, ApplicationError, AuthorizeClientCommand,
-        AuthorizeClientService, CanonicalMutationRepository, CheckpointMutationRepository,
-        CheckpointRepository, CreateInvitationCommand, DisclosureRepository, EventRepository,
-        InvitationRepository, InvitationService, KeyRotationRepository, MemberLifecycleRepository,
-        MemberScopeGrantRepository, MembershipRepository, MemoryRepository,
-        ProjectionOutboxRepository, ProjectionOutcome, ProjectionWorker, ResolveContextCommand,
-        ResolveContextService, RetentionRepository, WorkspaceRepository,
+        AuthorizeClientService, CanonicalMutationRepository, CheckpointDisclosureRepository,
+        CheckpointMutationRepository, CheckpointRepository, CreateInvitationCommand,
+        DisclosureRepository, EventRepository, InvitationRepository, InvitationService,
+        KeyRotationRepository, MemberLifecycleRepository, MemberScopeGrantRepository,
+        MembershipRepository, MemoryRepository, ProjectionOutboxRepository, ProjectionOutcome,
+        ProjectionWorker, ResolveContextCommand, ResolveContextService, RetentionRepository,
+        WorkspaceRepository,
     };
     use rembrane_codec::{encode_checkpoint, encode_memory};
     use rembrane_contracts::ResolveContextRequest;
     use rembrane_crypto::{CryptoError, EncryptedPayload, EncryptionContext, RecordCipher};
     use rembrane_domain::{
         ActivityCheckpoint, ActivityId, AdministrativeAction, AdministrativeAuditEvent,
-        AdministrativeAuditEventId, AdministrativeTargetKind, CanonicalEvent, CheckpointId,
-        ClientId, ContextPackId, DisclosedMemory, DisclosureId, DisclosureReceipt, EntityId,
-        EventId, EventPayload, EvidenceId, EvidenceReference, EvidenceSource, Invitation,
-        InvitationId, InvitationStatus, KeyRotationId, KeyRotationReceipt, KeyRotationStatus,
-        LegalHoldId, LegalHoldStatus, MemberScopeGrant, MembershipStatus, MemoryId, MemoryRecord,
-        MemoryScope, Principal, PrincipalId, ProjectionJob, ProjectionJobId, ProjectionOperation,
-        ProjectionStatus, ProviderId, ReadGrant, ReadScope, RetentionPeriod, RetentionResource,
-        Workspace, WorkspaceId, WorkspaceKeyRotation, WorkspaceRetentionPolicy, WorkspaceRole,
+        AdministrativeAuditEventId, AdministrativeTargetKind, CanonicalEvent,
+        CheckpointDisclosureReceipt, CheckpointId, ClientId, ContextPackId, DisclosedMemory,
+        DisclosureId, DisclosureReceipt, EntityId, EventId, EventPayload, EvidenceId,
+        EvidenceReference, EvidenceSource, Invitation, InvitationId, InvitationStatus,
+        KeyRotationId, KeyRotationReceipt, KeyRotationStatus, LegalHoldId, LegalHoldStatus,
+        MemberScopeGrant, MembershipStatus, MemoryId, MemoryRecord, MemoryScope, Principal,
+        PrincipalId, ProjectionJob, ProjectionJobId, ProjectionOperation, ProjectionStatus,
+        ProviderId, ReadGrant, ReadScope, RetentionPeriod, RetentionResource, Workspace,
+        WorkspaceId, WorkspaceKeyRotation, WorkspaceRetentionPolicy, WorkspaceRole,
         WritePermission,
     };
     use rembrane_semantic_native::NativeSemanticProvider;
@@ -4748,10 +4865,11 @@ mod tests {
     use super::{
         ACCEPT_INVITATION_SQL, COMPLETE_KEY_ROTATION_SQL, CURRENT_EVENT_SEQUENCE_SQL,
         ClassifiedPostgresError, DELETE_MEMBER_SCOPE_GRANT_SQL, DELETE_MEMBER_SCOPE_GRANTS_SQL,
-        EXPIRE_PENDING_INVITATION_SQL, FIND_DISCLOSED_MEMORY_VERSION_SQL, FIND_INVITATION_SQL,
-        FIND_KEY_ROTATION_RECEIPT_SQL, FIND_LEGAL_HOLD_SQL, FIND_MEMBERSHIP_SQL, FIND_MEMORY_SQL,
-        FIND_PRINCIPAL_SQL, FIND_PROJECTION_SQL, FIND_PROVISIONING_PRINCIPAL_SQL,
-        FIND_RETENTION_POLICY_SQL, FIND_WORKSPACE_SQL, INSERT_ADMINISTRATIVE_AUDIT_SQL,
+        EXPIRE_PENDING_INVITATION_SQL, FIND_DISCLOSED_CHECKPOINT_VERSION_SQL,
+        FIND_DISCLOSED_MEMORY_VERSION_SQL, FIND_INVITATION_SQL, FIND_KEY_ROTATION_RECEIPT_SQL,
+        FIND_LEGAL_HOLD_SQL, FIND_MEMBERSHIP_SQL, FIND_MEMORY_SQL, FIND_PRINCIPAL_SQL,
+        FIND_PROJECTION_SQL, FIND_PROVISIONING_PRINCIPAL_SQL, FIND_RETENTION_POLICY_SQL,
+        FIND_WORKSPACE_SQL, INSERT_ADMINISTRATIVE_AUDIT_SQL, INSERT_CHECKPOINT_DISCLOSURE_SQL,
         INSERT_CHECKPOINT_SQL, INSERT_DISCLOSED_MEMORY_SQL, INSERT_DISCLOSURE_SQL,
         INSERT_EVENT_SQL, INSERT_INVITATION_SQL, INSERT_KEY_ROTATION_RECEIPT_SQL,
         INSERT_KEY_ROTATION_RECIPIENT_SQL, INSERT_LEGAL_HOLD_SQL, INSERT_MEMBER_SCOPE_GRANT_SQL,
@@ -7059,6 +7177,71 @@ mod tests {
                     && parameters.iter().filter(|value| *value == "i64:1").count() == 1
                     && parameters.contains(&"i64:2".to_owned())
         )));
+    }
+
+    #[test]
+    fn checkpoint_disclosure_persists_only_the_exact_stored_revision() {
+        let checkpoint = ActivityCheckpoint::new(
+            CheckpointId::new("checkpoint_03"),
+            WorkspaceId::new("workspace_01"),
+            PrincipalId::new("principal_01"),
+            ActivityId::new("activity_03"),
+            Some(EntityId::new("project_03")),
+            "Resume securely in another coding agent",
+            "Current implementation state is ready to hand off.",
+            vec!["Continue protocol conformance work".to_owned()],
+            Vec::new(),
+        )
+        .expect("checkpoint");
+        let receipt = CheckpointDisclosureReceipt {
+            id: DisclosureId::new("disclosure_checkpoint_03"),
+            workspace_id: WorkspaceId::new("workspace_01"),
+            subject_id: PrincipalId::new("principal_01"),
+            client_id: ClientId::new("client_coding_agent"),
+            purpose: "resume_development_activity".to_owned(),
+            checkpoint_id: CheckpointId::new("checkpoint_03"),
+            checkpoint_version: 1,
+            activity_id: ActivityId::new("activity_03"),
+        };
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let store = PostgresStore::new(FakePool {
+            calls: Rc::clone(&calls),
+            tenant_batches: RefCell::new(
+                [VecDeque::from([
+                    Ok(Some("workspace_01".to_owned())),
+                    Ok(Some("workspace_01".to_owned())),
+                    Ok(Some("workspace_01".to_owned())),
+                ])]
+                .into(),
+            ),
+            row_batches: RefCell::new([vec![FakeRow::checkpoint(&checkpoint)]].into()),
+        });
+        let tenant = store.for_workspace(WorkspaceId::new("workspace_01"));
+        let cipher = IdentityCipher;
+        let mut memories = tenant.with_cipher(&cipher);
+
+        CheckpointDisclosureRepository::append_checkpoint_disclosure(&mut memories, receipt)
+            .expect("append disclosure");
+
+        let calls = calls.borrow();
+        assert!(calls.contains(&Call::Query(
+            FIND_DISCLOSED_CHECKPOINT_VERSION_SQL.to_owned(),
+            vec![
+                "text:workspace_01".to_owned(),
+                "text:checkpoint_03".to_owned(),
+                "text:principal_01".to_owned(),
+                "text:activity_03".to_owned(),
+            ]
+        )));
+        assert!(calls.iter().any(|call| matches!(
+            call,
+            Call::Execute(statement, parameters)
+                if statement == INSERT_CHECKPOINT_DISCLOSURE_SQL
+                    && parameters.contains(&"text:disclosure_checkpoint_03".to_owned())
+                    && parameters.contains(&"i64:1".to_owned())
+                    && parameters.contains(&"text:resume_development_activity".to_owned())
+        )));
+        assert!(calls.contains(&Call::Commit));
     }
 
     #[test]

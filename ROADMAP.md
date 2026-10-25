@@ -342,6 +342,8 @@ This roadmap describes sequencing, not release dates.
         subject-history reads for development working memory.
         - [x] Atomically insert and revise encrypted PostgreSQL checkpoints
           with optimistic versions and canonical event-stream sequencing.
+        - [x] Persist an exact-version PostgreSQL disclosure receipt whenever
+          a checkpoint revision is handed to an external client.
       - [x] Add exact invitation lookup and bounded status-filtered listing
         with terminal-state restoration and full tenant/identifier correlation.
       - [x] Implement atomic invitation creation, acceptance, revocation,
