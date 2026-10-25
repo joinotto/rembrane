@@ -11,7 +11,7 @@ use std::fmt::{self, Display, Formatter};
 use rembrane_application::{
     AdministrativeAuditRepository, ApplicationError, InvitationRepository,
     MAX_ADMINISTRATIVE_AUDIT_PAGE, MAXIMUM_INVITATION_LIST_ITEMS, MembershipRepository,
-    WorkspaceReadRepository, WorkspaceRepository, is_strict_successor,
+    RetentionRepository, WorkspaceReadRepository, WorkspaceRepository, is_strict_successor,
 };
 use rembrane_domain::{
     AdministrativeAction, AdministrativeAuditEvent, AdministrativeAuditEventId,
@@ -107,10 +107,17 @@ pub const LIST_ACTIVE_LEGAL_HOLDS_SQL: &str = "SELECT workspace_id, id, placed_b
     COALESCE(released_at_epoch_seconds, 0) AS released_at_epoch_seconds \
     FROM workspace_legal_holds WHERE workspace_id = $1 AND status = 'active' \
     ORDER BY id LIMIT 10001";
+pub const INSERT_LEGAL_HOLD_SQL: &str = "INSERT INTO workspace_legal_holds \
+    (workspace_id, id, placed_by, placed_at_epoch_seconds, status, version, released_by, \
+    released_at_epoch_seconds) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)";
+pub const REPLACE_LEGAL_HOLD_SQL: &str = "UPDATE workspace_legal_holds SET status = $3, \
+    version = $4, released_by = $5, released_at_epoch_seconds = $6 \
+    WHERE workspace_id = $1 AND id = $2 AND version = $7";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PostgresParameter<'value> {
     Text(&'value str),
+    OptionalText(Option<&'value str>),
     I64(i64),
     OptionalI64(Option<i64>),
     Bytes(&'value [u8]),
@@ -1066,6 +1073,63 @@ impl<Pool: PostgresPool> PostgresStore<Pool> {
         transaction.commit().map_err(PostgresStoreError::Tenant)?;
         Ok(holds)
     }
+
+    pub fn insert_legal_hold(
+        &self,
+        hold: &WorkspaceLegalHold,
+        audit_event: &AdministrativeAuditEvent,
+    ) -> Result<(), PostgresStoreError<Pool::Error>> {
+        if hold.status() != LegalHoldStatus::Active
+            || hold.version() != 1
+            || !valid_legal_hold_audit(hold, audit_event, AdministrativeAction::LegalHoldPlaced)
+        {
+            return Err(PostgresStoreError::InvalidInput);
+        }
+        let mut transaction = self.begin_tenant(hold.workspace_id().clone())?;
+        execute_exactly_one(
+            &mut transaction,
+            INSERT_LEGAL_HOLD_SQL,
+            &legal_hold_parameters(hold)?,
+        )?;
+        insert_administrative_audit(&mut transaction, audit_event)?;
+        transaction.commit().map_err(PostgresStoreError::Tenant)
+    }
+
+    pub fn replace_legal_hold(
+        &self,
+        hold: &WorkspaceLegalHold,
+        expected_version: u64,
+        audit_event: &AdministrativeAuditEvent,
+    ) -> Result<(), PostgresStoreError<Pool::Error>> {
+        if !valid_legal_hold_audit(hold, audit_event, AdministrativeAction::LegalHoldReleased) {
+            return Err(PostgresStoreError::InvalidInput);
+        }
+        if !is_strict_successor(expected_version, hold.version()) {
+            return Err(PostgresStoreError::VersionConflict);
+        }
+        let expected_version = postgres_epoch(expected_version)?;
+        let parameters = legal_hold_parameters(hold)?;
+        let mut transaction = self.begin_tenant(hold.workspace_id().clone())?;
+        let changed = transaction
+            .execute(
+                REPLACE_LEGAL_HOLD_SQL,
+                &[
+                    parameters[0],
+                    parameters[1],
+                    parameters[4],
+                    parameters[5],
+                    parameters[6],
+                    parameters[7],
+                    PostgresParameter::I64(expected_version),
+                ],
+            )
+            .map_err(PostgresStoreError::Tenant)?;
+        if changed != 1 {
+            return Err(PostgresStoreError::VersionConflict);
+        }
+        insert_administrative_audit(&mut transaction, audit_event)?;
+        transaction.commit().map_err(PostgresStoreError::Tenant)
+    }
 }
 
 impl<Pool> MembershipRepository for PostgresStore<Pool>
@@ -1184,6 +1248,67 @@ where
     }
 }
 
+impl<Pool> RetentionRepository for PostgresStore<Pool>
+where
+    Pool: PostgresPool,
+    Pool::Error: ClassifiedPostgresError,
+    <Pool::Transaction as PostgresTransaction>::Row: PostgresRow<Error = Pool::Error>,
+{
+    fn find_retention_policy(
+        &self,
+        workspace_id: &WorkspaceId,
+    ) -> Result<Option<WorkspaceRetentionPolicy>, ApplicationError> {
+        PostgresStore::find_retention_policy(self, workspace_id)
+            .map_err(map_retention_application_error)
+    }
+
+    fn replace_retention_policy(
+        &mut self,
+        policy: WorkspaceRetentionPolicy,
+        expected_version: Option<u64>,
+        audit_event: AdministrativeAuditEvent,
+    ) -> Result<(), ApplicationError> {
+        PostgresStore::replace_retention_policy(self, &policy, expected_version, &audit_event)
+            .map_err(map_retention_application_error)
+    }
+
+    fn find_legal_hold(
+        &self,
+        workspace_id: &WorkspaceId,
+        hold_id: &LegalHoldId,
+    ) -> Result<Option<WorkspaceLegalHold>, ApplicationError> {
+        PostgresStore::find_legal_hold(self, workspace_id, hold_id)
+            .map_err(map_retention_application_error)
+    }
+
+    fn list_active_legal_holds(
+        &self,
+        workspace_id: &WorkspaceId,
+    ) -> Result<Vec<WorkspaceLegalHold>, ApplicationError> {
+        PostgresStore::list_active_legal_holds(self, workspace_id)
+            .map_err(map_retention_application_error)
+    }
+
+    fn insert_legal_hold(
+        &mut self,
+        hold: WorkspaceLegalHold,
+        audit_event: AdministrativeAuditEvent,
+    ) -> Result<(), ApplicationError> {
+        PostgresStore::insert_legal_hold(self, &hold, &audit_event)
+            .map_err(map_retention_application_error)
+    }
+
+    fn replace_legal_hold(
+        &mut self,
+        hold: WorkspaceLegalHold,
+        expected_version: u64,
+        audit_event: AdministrativeAuditEvent,
+    ) -> Result<(), ApplicationError> {
+        PostgresStore::replace_legal_hold(self, &hold, expected_version, &audit_event)
+            .map_err(map_retention_application_error)
+    }
+}
+
 impl<Pool> PostgresTenantStore<'_, Pool> {
     fn require_workspace(&self, workspace_id: &WorkspaceId) -> Result<(), ApplicationError> {
         if workspace_id == &self.workspace_id {
@@ -1283,6 +1408,82 @@ where
         self.store
             .list_administrative_audit(workspace_id, after_epoch_seconds, limit)
             .map_err(map_audit_application_error)
+    }
+}
+
+impl<Pool> RetentionRepository for PostgresTenantStore<'_, Pool>
+where
+    Pool: PostgresPool,
+    Pool::Error: ClassifiedPostgresError,
+    <Pool::Transaction as PostgresTransaction>::Row: PostgresRow<Error = Pool::Error>,
+{
+    fn find_retention_policy(
+        &self,
+        workspace_id: &WorkspaceId,
+    ) -> Result<Option<WorkspaceRetentionPolicy>, ApplicationError> {
+        self.require_workspace(workspace_id)?;
+        self.store
+            .find_retention_policy(workspace_id)
+            .map_err(map_retention_application_error)
+    }
+
+    fn replace_retention_policy(
+        &mut self,
+        policy: WorkspaceRetentionPolicy,
+        expected_version: Option<u64>,
+        audit_event: AdministrativeAuditEvent,
+    ) -> Result<(), ApplicationError> {
+        self.require_workspace(policy.workspace_id())?;
+        self.require_workspace(audit_event.workspace_id())?;
+        self.store
+            .replace_retention_policy(&policy, expected_version, &audit_event)
+            .map_err(map_retention_application_error)
+    }
+
+    fn find_legal_hold(
+        &self,
+        workspace_id: &WorkspaceId,
+        hold_id: &LegalHoldId,
+    ) -> Result<Option<WorkspaceLegalHold>, ApplicationError> {
+        self.require_workspace(workspace_id)?;
+        self.store
+            .find_legal_hold(workspace_id, hold_id)
+            .map_err(map_retention_application_error)
+    }
+
+    fn list_active_legal_holds(
+        &self,
+        workspace_id: &WorkspaceId,
+    ) -> Result<Vec<WorkspaceLegalHold>, ApplicationError> {
+        self.require_workspace(workspace_id)?;
+        self.store
+            .list_active_legal_holds(workspace_id)
+            .map_err(map_retention_application_error)
+    }
+
+    fn insert_legal_hold(
+        &mut self,
+        hold: WorkspaceLegalHold,
+        audit_event: AdministrativeAuditEvent,
+    ) -> Result<(), ApplicationError> {
+        self.require_workspace(hold.workspace_id())?;
+        self.require_workspace(audit_event.workspace_id())?;
+        self.store
+            .insert_legal_hold(&hold, &audit_event)
+            .map_err(map_retention_application_error)
+    }
+
+    fn replace_legal_hold(
+        &mut self,
+        hold: WorkspaceLegalHold,
+        expected_version: u64,
+        audit_event: AdministrativeAuditEvent,
+    ) -> Result<(), ApplicationError> {
+        self.require_workspace(hold.workspace_id())?;
+        self.require_workspace(audit_event.workspace_id())?;
+        self.store
+            .replace_legal_hold(&hold, expected_version, &audit_event)
+            .map_err(map_retention_application_error)
     }
 }
 
@@ -1666,6 +1867,39 @@ fn valid_retention_audit(
         && event.action() == AdministrativeAction::RetentionPolicyChanged
         && event.target_kind() == AdministrativeTargetKind::RetentionPolicy
         && event.target_id() == policy.workspace_id().as_str()
+}
+
+fn valid_legal_hold_audit(
+    hold: &WorkspaceLegalHold,
+    event: &AdministrativeAuditEvent,
+    action: AdministrativeAction,
+) -> bool {
+    event.workspace_id() == hold.workspace_id()
+        && event.action() == action
+        && event.target_kind() == AdministrativeTargetKind::LegalHold
+        && event.target_id() == hold.id().as_str()
+}
+
+fn legal_hold_parameters<DriverError>(
+    hold: &WorkspaceLegalHold,
+) -> Result<[PostgresParameter<'_>; 8], PostgresStoreError<DriverError>> {
+    Ok([
+        PostgresParameter::Text(hold.workspace_id().as_str()),
+        PostgresParameter::Text(hold.id().as_str()),
+        PostgresParameter::Text(hold.placed_by().as_str()),
+        PostgresParameter::I64(postgres_epoch(hold.placed_at_epoch_seconds())?),
+        PostgresParameter::Text(match hold.status() {
+            LegalHoldStatus::Active => "active",
+            LegalHoldStatus::Released => "released",
+        }),
+        PostgresParameter::I64(postgres_epoch(hold.version())?),
+        PostgresParameter::OptionalText(hold.released_by().map(PrincipalId::as_str)),
+        PostgresParameter::OptionalI64(
+            hold.released_at_epoch_seconds()
+                .map(postgres_epoch)
+                .transpose()?,
+        ),
+    ])
 }
 
 fn retention_policy_parameters(
@@ -2120,7 +2354,8 @@ mod tests {
 
     use rembrane_application::{
         AdministrativeAuditRepository, ApplicationError, CreateInvitationCommand,
-        InvitationRepository, InvitationService, MembershipRepository, WorkspaceRepository,
+        InvitationRepository, InvitationService, MembershipRepository, RetentionRepository,
+        WorkspaceRepository,
     };
     use rembrane_domain::{
         AdministrativeAction, AdministrativeAuditEvent, AdministrativeAuditEventId,
@@ -2133,16 +2368,16 @@ mod tests {
         ACCEPT_INVITATION_SQL, ClassifiedPostgresError, EXPIRE_PENDING_INVITATION_SQL,
         FIND_INVITATION_SQL, FIND_LEGAL_HOLD_SQL, FIND_MEMBERSHIP_SQL, FIND_PRINCIPAL_SQL,
         FIND_PROVISIONING_PRINCIPAL_SQL, FIND_RETENTION_POLICY_SQL, FIND_WORKSPACE_SQL,
-        INSERT_ADMINISTRATIVE_AUDIT_SQL, INSERT_INVITATION_SQL, INSERT_MEMBERSHIP_SQL,
-        INSERT_PRINCIPAL_SQL, INSERT_RETENTION_POLICY_SQL, INSERT_WORKSPACE_SQL,
-        LIST_ACTIVE_LEGAL_HOLDS_SQL, LIST_ACTIVE_MEMBERSHIPS_SQL, LIST_ADMINISTRATIVE_AUDIT_SQL,
-        LIST_INVITATIONS_BY_STATUS_SQL, MAX_ACTIVE_MEMBERSHIPS, PostgresFailureKind,
-        PostgresParameter, PostgresPool, PostgresProvisioner, PostgresProvisioningPool,
-        PostgresRow, PostgresStore, PostgresStoreError, PostgresTransaction,
-        PostgresWorkspaceAdminStore, ProvisioningTransaction, READ_TENANT_SQL,
-        REPLACE_INVITATION_SQL, REPLACE_MEMBERSHIP_SQL, REPLACE_RETENTION_POLICY_SQL,
-        SET_TENANT_SQL, TenantTransaction, TenantTransactionError, map_application_error,
-        map_invitation_application_error,
+        INSERT_ADMINISTRATIVE_AUDIT_SQL, INSERT_INVITATION_SQL, INSERT_LEGAL_HOLD_SQL,
+        INSERT_MEMBERSHIP_SQL, INSERT_PRINCIPAL_SQL, INSERT_RETENTION_POLICY_SQL,
+        INSERT_WORKSPACE_SQL, LIST_ACTIVE_LEGAL_HOLDS_SQL, LIST_ACTIVE_MEMBERSHIPS_SQL,
+        LIST_ADMINISTRATIVE_AUDIT_SQL, LIST_INVITATIONS_BY_STATUS_SQL, MAX_ACTIVE_MEMBERSHIPS,
+        PostgresFailureKind, PostgresParameter, PostgresPool, PostgresProvisioner,
+        PostgresProvisioningPool, PostgresRow, PostgresStore, PostgresStoreError,
+        PostgresTransaction, PostgresWorkspaceAdminStore, ProvisioningTransaction, READ_TENANT_SQL,
+        REPLACE_INVITATION_SQL, REPLACE_LEGAL_HOLD_SQL, REPLACE_MEMBERSHIP_SQL,
+        REPLACE_RETENTION_POLICY_SQL, SET_TENANT_SQL, TenantTransaction, TenantTransactionError,
+        map_application_error, map_invitation_application_error,
     };
 
     #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2396,6 +2631,10 @@ mod tests {
             .iter()
             .map(|parameter| match parameter {
                 PostgresParameter::Text(value) => format!("text:{value}"),
+                PostgresParameter::OptionalText(value) => match value {
+                    Some(value) => format!("optional-text:{value}"),
+                    None => "optional-text:null".to_owned(),
+                },
                 PostgresParameter::I64(value) => format!("i64:{value}"),
                 PostgresParameter::OptionalI64(value) => match value {
                     Some(value) => format!("optional-i64:{value}"),
@@ -3757,6 +3996,91 @@ mod tests {
             LIST_ACTIVE_LEGAL_HOLDS_SQL.to_owned(),
             vec!["text:workspace_01".to_owned()]
         )));
+    }
+
+    #[test]
+    fn retention_port_atomically_places_and_releases_legal_hold_with_audit() {
+        fn audit(action: AdministrativeAction, suffix: &str) -> AdministrativeAuditEvent {
+            AdministrativeAuditEvent::new(
+                AdministrativeAuditEventId::new(format!("audit_{suffix}")),
+                WorkspaceId::new("workspace_01"),
+                PrincipalId::new("principal_admin"),
+                action,
+                AdministrativeTargetKind::LegalHold,
+                "hold_01",
+                format!("request_{suffix}"),
+                150,
+            )
+            .expect("audit")
+        }
+
+        let active = rembrane_domain::WorkspaceLegalHold::active(
+            LegalHoldId::new("hold_01"),
+            WorkspaceId::new("workspace_01"),
+            PrincipalId::new("principal_admin"),
+            100,
+        )
+        .expect("active hold");
+        let released = active
+            .clone()
+            .release(PrincipalId::new("principal_admin"), 200)
+            .expect("released hold");
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let store = PostgresStore::new(FakePool {
+            calls: Rc::clone(&calls),
+            tenant_batches: RefCell::new(
+                [
+                    VecDeque::from([
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                    ]),
+                    VecDeque::from([
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                    ]),
+                ]
+                .into(),
+            ),
+            row_batches: RefCell::new([Vec::new(), Vec::new()].into()),
+        });
+        let mut tenant = store.for_workspace(WorkspaceId::new("workspace_01"));
+
+        RetentionRepository::insert_legal_hold(
+            &mut tenant,
+            active,
+            audit(AdministrativeAction::LegalHoldPlaced, "placed"),
+        )
+        .expect("place hold");
+        RetentionRepository::replace_legal_hold(
+            &mut tenant,
+            released,
+            1,
+            audit(AdministrativeAction::LegalHoldReleased, "released"),
+        )
+        .expect("release hold");
+
+        let calls = calls.borrow();
+        assert!(calls.iter().any(
+            |call| matches!(call, Call::Execute(statement, _) if statement == INSERT_LEGAL_HOLD_SQL)
+        ));
+        assert!(calls.iter().any(
+            |call| matches!(call, Call::Execute(statement, _) if statement == REPLACE_LEGAL_HOLD_SQL)
+        ));
+        assert!(calls.iter().any(|call| {
+            matches!(
+                call,
+                Call::Execute(statement, parameters)
+                    if statement == INSERT_LEGAL_HOLD_SQL
+                        && parameters.contains(&"optional-text:null".to_owned())
+                        && parameters.contains(&"optional-i64:null".to_owned())
+            )
+        }));
+        assert_eq!(
+            calls.iter().filter(|call| **call == Call::Commit).count(),
+            2
+        );
     }
 
     #[test]

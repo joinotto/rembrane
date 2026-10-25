@@ -66,6 +66,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - PostgreSQL exact legal-hold lookup and active-hold enumeration capped at
   10,000, with tenant/identifier correlation, duplicate rejection, and closed
   active/released lifecycle restoration.
+- Complete PostgreSQL `RetentionRepository` support with atomic audited
+  legal-hold placement, strict-successor release, nullable terminal fields,
+  exact affected-row checks, and tenant-pinned application access.
 - PostgreSQL invitation lookup and bounded deterministic listing with optional
   status filtering, numeric lifetime decoding, terminal-state restoration,
   and exact tenant/invitation correlation.

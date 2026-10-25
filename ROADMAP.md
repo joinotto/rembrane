@@ -310,6 +310,8 @@ This roadmap describes sequencing, not release dates.
           with strict successor validation and nullable forever periods.
       - [x] Add exact and bounded active legal-hold reads with lifecycle
         restoration, tenant correlation, and duplicate rejection.
+        - [x] Add atomic audited legal-hold placement and optimistic release,
+          completing the PostgreSQL `RetentionRepository` port.
       - [x] Add exact invitation lookup and bounded status-filtered listing
         with terminal-state restoration and full tenant/identifier correlation.
       - [x] Implement atomic invitation creation, acceptance, revocation,
