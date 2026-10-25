@@ -4,6 +4,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { resolveConformanceToken } from "./memory-provider-conformance-secrets.mjs";
+import { validateMemoryProviderDiscovery } from "./memory-provider-discovery.mjs";
 
 const namespace = process.argv[2];
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -56,7 +57,7 @@ let provider;
 try {
   const discovery = await call("discovery", undefined, "GET", "/.well-known/ai-memory");
   expectStatus(discovery, 200, "discovery.public");
-  provider = discovery.value;
+  provider = validateMemoryProviderDiscovery(discovery.value);
   const requiredCapabilities = [
     "resolve_context",
     "propose_memory",
@@ -64,7 +65,6 @@ try {
     "sync_pull",
   ];
   if (
-    provider.protocolVersion !== "0.1" ||
     !requiredCapabilities.every((value) => provider.capabilities?.includes(value))
   ) {
     throw new Error("provider discovery is not conformance-compatible");

@@ -9,6 +9,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- The independent Memory Provider conformance runner now validates the complete
+  closed discovery manifest and exact operation/capability bindings before
+  issuing authenticated lifecycle operations.
 - Project metadata, security reporting, API contact information, offline
   workspace fixtures, and provider provenance now consistently identify the
   canonical `joinotto/rembrane` repository.

@@ -966,6 +966,9 @@ This roadmap describes sequencing, not release dates.
     - [x] Associate every Rust request payload with its canonical result type
       so unrelated success bodies cannot be attached to an operation.
   - [x] Define canonical operation payloads and validation.
+  - [x] Validate the complete closed provider discovery manifest, canonical
+    operation bindings, limits, privacy mode, and capability parity before
+    running third-party conformance operations.
     - [x] Add bounded context-resolution requests with global, domain, entity,
       and activity selectors constrained by provider-advertised limits.
       - [x] Seal selector representation so callers cannot bypass domain and
