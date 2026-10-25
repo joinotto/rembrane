@@ -102,6 +102,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - End-to-end PostgreSQL projection-worker coverage from a pending durable job
   through authenticated memory decryption, native provider indexing, and
   optimistic completion.
+- PostgreSQL disclosure persistence on the context-capable tenant facade,
+  atomically recording purpose, client, context pack, and exact verified
+  memory revisions for privacy-accountable AI context delivery.
 - PostgreSQL invitation lookup and bounded deterministic listing with optional
   status filtering, numeric lifetime decoding, terminal-state restoration,
   and exact tenant/invitation correlation.

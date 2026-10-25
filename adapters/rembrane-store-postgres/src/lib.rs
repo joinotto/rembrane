@@ -9,23 +9,24 @@ use std::error::Error;
 use std::fmt::{self, Display, Formatter};
 
 use rembrane_application::{
-    AdministrativeAuditRepository, ApplicationError, CanonicalMutationRepository, EventRepository,
-    InvitationRepository, KeyRotationRepository, MAX_ADMINISTRATIVE_AUDIT_PAGE,
-    MAXIMUM_INVITATION_LIST_ITEMS, MemberLifecycleRepository, MemberScopeGrantRepository,
-    MembershipRepository, MemoryRepository, ProjectionOutboxRepository, RetentionRepository,
-    WorkspaceReadRepository, WorkspaceRepository, is_strict_successor,
+    AdministrativeAuditRepository, ApplicationError, CanonicalMutationRepository,
+    DisclosureRepository, EventRepository, InvitationRepository, KeyRotationRepository,
+    MAX_ADMINISTRATIVE_AUDIT_PAGE, MAXIMUM_INVITATION_LIST_ITEMS, MemberLifecycleRepository,
+    MemberScopeGrantRepository, MembershipRepository, MemoryRepository, ProjectionOutboxRepository,
+    RetentionRepository, WorkspaceReadRepository, WorkspaceRepository, is_strict_successor,
 };
 use rembrane_codec::{decode_event, decode_memory, encode_event, encode_memory};
 use rembrane_crypto::{EncryptedPayload, EncryptionContext, PayloadPurpose, RecordCipher};
 use rembrane_domain::{
     ActivityId, AdministrativeAction, AdministrativeAuditEvent, AdministrativeAuditEventId,
-    AdministrativeTargetKind, CanonicalEvent, EntityId, EventPayload, EvidenceSource, Invitation,
-    InvitationId, InvitationStatus, KeyRotationId, KeyRotationReceipt, KeyRotationStatus,
-    LegalHoldId, LegalHoldStatus, MAX_KEY_ROTATION_RECIPIENTS, MemberScopeGrant, Membership,
-    MembershipStatus, MemoryId, MemoryKind, MemoryRecord, MemoryScope, MemoryStatus, Principal,
-    PrincipalId, ProjectionJob, ProjectionJobId, ProjectionOperation, ProjectionStatus, ProviderId,
-    ReadScope, RetentionPeriod, RetentionResource, Workspace, WorkspaceId, WorkspaceKeyRotation,
-    WorkspaceKind, WorkspaceLegalHold, WorkspaceRetentionPolicy, WorkspaceRole,
+    AdministrativeTargetKind, CanonicalEvent, DisclosureReceipt, EntityId, EventPayload,
+    EvidenceSource, Invitation, InvitationId, InvitationStatus, KeyRotationId, KeyRotationReceipt,
+    KeyRotationStatus, LegalHoldId, LegalHoldStatus, MAX_KEY_ROTATION_RECIPIENTS, MemberScopeGrant,
+    Membership, MembershipStatus, MemoryId, MemoryKind, MemoryRecord, MemoryScope, MemoryStatus,
+    Principal, PrincipalId, ProjectionJob, ProjectionJobId, ProjectionOperation, ProjectionStatus,
+    ProviderId, ReadScope, RetentionPeriod, RetentionResource, Workspace, WorkspaceId,
+    WorkspaceKeyRotation, WorkspaceKind, WorkspaceLegalHold, WorkspaceRetentionPolicy,
+    WorkspaceRole,
 };
 
 pub const SET_TENANT_SQL: &str = "SELECT set_config('rembrane.workspace_id', $1, true);";
@@ -212,6 +213,15 @@ pub const REPLACE_PROJECTION_SQL: &str = "UPDATE projection_outbox \
 pub const FIND_PROJECTION_SQL: &str = "SELECT id, workspace_id, memory_id, memory_version, \
     provider_id, operation, status, attempts FROM projection_outbox \
     WHERE workspace_id = $1 AND id = $2 ORDER BY workspace_id, id LIMIT 2";
+pub const INSERT_DISCLOSURE_SQL: &str = "INSERT INTO disclosure_receipts \
+    (workspace_id, id, context_pack_id, subject_id, client_id, purpose_code) \
+    VALUES ($1, $2, $3, $4, $5, $6)";
+pub const FIND_DISCLOSED_MEMORY_VERSION_SQL: &str = "SELECT workspace_id, id, subject_id, version \
+    FROM memories WHERE workspace_id = $1 AND id = $2 AND subject_id = $3 \
+    ORDER BY workspace_id, id LIMIT 2";
+pub const INSERT_DISCLOSED_MEMORY_SQL: &str = "INSERT INTO disclosed_memories \
+    (workspace_id, disclosure_id, memory_id, memory_version, ordinal) \
+    VALUES ($1, $2, $3, $4, $5)";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PostgresParameter<'value> {
@@ -2585,6 +2595,96 @@ where
     }
 }
 
+impl<Pool, Cipher> DisclosureRepository for PostgresTenantMemoryStore<'_, '_, Pool, Cipher>
+where
+    Pool: PostgresPool,
+    Pool::Error: ClassifiedPostgresError,
+    <Pool::Transaction as PostgresTransaction>::Row: PostgresRow<Error = Pool::Error>,
+{
+    fn append(&mut self, receipt: DisclosureReceipt) -> Result<(), ApplicationError> {
+        if receipt.workspace_id != self.workspace_id || receipt.purpose.trim().is_empty() {
+            return Err(ApplicationError::Validation(
+                "disclosure receipt is invalid".to_owned(),
+            ));
+        }
+        let mut transaction = self
+            .store
+            .begin_tenant(self.workspace_id.clone())
+            .map_err(map_application_error)?;
+        execute_exactly_one(
+            &mut transaction,
+            INSERT_DISCLOSURE_SQL,
+            &[
+                PostgresParameter::Text(receipt.workspace_id.as_str()),
+                PostgresParameter::Text(receipt.id.as_str()),
+                PostgresParameter::Text(receipt.context_pack_id.as_str()),
+                PostgresParameter::Text(receipt.subject_id.as_str()),
+                PostgresParameter::Text(receipt.client_id.as_str()),
+                PostgresParameter::Text(&receipt.purpose),
+            ],
+        )
+        .map_err(map_application_error)?;
+        for (ordinal, memory) in receipt.memories.iter().enumerate() {
+            let rows = transaction
+                .query(
+                    FIND_DISCLOSED_MEMORY_VERSION_SQL,
+                    &[
+                        PostgresParameter::Text(receipt.workspace_id.as_str()),
+                        PostgresParameter::Text(memory.id.as_str()),
+                        PostgresParameter::Text(receipt.subject_id.as_str()),
+                    ],
+                )
+                .map_err(PostgresStoreError::Tenant)
+                .map_err(map_application_error)?;
+            if rows.len() != 1
+                || rows[0]
+                    .text("workspace_id")
+                    .map_err(PostgresStoreError::Row)
+                    .map_err(map_application_error)?
+                    != receipt.workspace_id.as_str()
+                || rows[0]
+                    .text("id")
+                    .map_err(PostgresStoreError::Row)
+                    .map_err(map_application_error)?
+                    != memory.id.as_str()
+                || rows[0]
+                    .text("subject_id")
+                    .map_err(PostgresStoreError::Row)
+                    .map_err(map_application_error)?
+                    != receipt.subject_id.as_str()
+                || rows[0]
+                    .u64("version")
+                    .map_err(PostgresStoreError::Row)
+                    .map_err(map_application_error)?
+                    != memory.version
+            {
+                return Err(ApplicationError::VersionConflict);
+            }
+            execute_exactly_one(
+                &mut transaction,
+                INSERT_DISCLOSED_MEMORY_SQL,
+                &[
+                    PostgresParameter::Text(receipt.workspace_id.as_str()),
+                    PostgresParameter::Text(receipt.id.as_str()),
+                    PostgresParameter::Text(memory.id.as_str()),
+                    PostgresParameter::I64(
+                        postgres_epoch::<Pool::Error>(memory.version)
+                            .map_err(map_application_error)?,
+                    ),
+                    PostgresParameter::I64(i64::try_from(ordinal).map_err(|_| {
+                        ApplicationError::Validation("too many disclosed memories".to_owned())
+                    })?),
+                ],
+            )
+            .map_err(map_application_error)?;
+        }
+        transaction
+            .commit()
+            .map_err(PostgresStoreError::Tenant)
+            .map_err(map_application_error)
+    }
+}
+
 impl<Pool, Cipher> EventRepository for PostgresTenantMemoryStore<'_, '_, Pool, Cipher>
 where
     Pool: PostgresPool,
@@ -4275,17 +4375,18 @@ mod tests {
     use rembrane_application::{
         AdministrativeAuditRepository, ApplicationError, AuthorizeClientCommand,
         AuthorizeClientService, CanonicalMutationRepository, CreateInvitationCommand,
-        EventRepository, InvitationRepository, InvitationService, KeyRotationRepository,
-        MemberLifecycleRepository, MemberScopeGrantRepository, MembershipRepository,
-        MemoryRepository, ProjectionOutboxRepository, ProjectionOutcome, ProjectionWorker,
-        RetentionRepository, WorkspaceRepository,
+        DisclosureRepository, EventRepository, InvitationRepository, InvitationService,
+        KeyRotationRepository, MemberLifecycleRepository, MemberScopeGrantRepository,
+        MembershipRepository, MemoryRepository, ProjectionOutboxRepository, ProjectionOutcome,
+        ProjectionWorker, RetentionRepository, WorkspaceRepository,
     };
     use rembrane_codec::encode_memory;
     use rembrane_crypto::{CryptoError, EncryptedPayload, EncryptionContext, RecordCipher};
     use rembrane_domain::{
         AdministrativeAction, AdministrativeAuditEvent, AdministrativeAuditEventId,
-        AdministrativeTargetKind, CanonicalEvent, ClientId, EntityId, EventId, EventPayload,
-        EvidenceId, EvidenceReference, EvidenceSource, Invitation, InvitationId, InvitationStatus,
+        AdministrativeTargetKind, CanonicalEvent, ClientId, ContextPackId, DisclosedMemory,
+        DisclosureId, DisclosureReceipt, EntityId, EventId, EventPayload, EvidenceId,
+        EvidenceReference, EvidenceSource, Invitation, InvitationId, InvitationStatus,
         KeyRotationId, KeyRotationReceipt, KeyRotationStatus, LegalHoldId, LegalHoldStatus,
         MemberScopeGrant, MembershipStatus, MemoryId, MemoryRecord, MemoryScope, Principal,
         PrincipalId, ProjectionJob, ProjectionJobId, ProjectionOperation, ProjectionStatus,
@@ -4297,10 +4398,11 @@ mod tests {
     use super::{
         ACCEPT_INVITATION_SQL, COMPLETE_KEY_ROTATION_SQL, CURRENT_EVENT_SEQUENCE_SQL,
         ClassifiedPostgresError, DELETE_MEMBER_SCOPE_GRANT_SQL, DELETE_MEMBER_SCOPE_GRANTS_SQL,
-        EXPIRE_PENDING_INVITATION_SQL, FIND_INVITATION_SQL, FIND_KEY_ROTATION_RECEIPT_SQL,
-        FIND_LEGAL_HOLD_SQL, FIND_MEMBERSHIP_SQL, FIND_MEMORY_SQL, FIND_PRINCIPAL_SQL,
-        FIND_PROJECTION_SQL, FIND_PROVISIONING_PRINCIPAL_SQL, FIND_RETENTION_POLICY_SQL,
-        FIND_WORKSPACE_SQL, INSERT_ADMINISTRATIVE_AUDIT_SQL, INSERT_EVENT_SQL,
+        EXPIRE_PENDING_INVITATION_SQL, FIND_DISCLOSED_MEMORY_VERSION_SQL, FIND_INVITATION_SQL,
+        FIND_KEY_ROTATION_RECEIPT_SQL, FIND_LEGAL_HOLD_SQL, FIND_MEMBERSHIP_SQL, FIND_MEMORY_SQL,
+        FIND_PRINCIPAL_SQL, FIND_PROJECTION_SQL, FIND_PROVISIONING_PRINCIPAL_SQL,
+        FIND_RETENTION_POLICY_SQL, FIND_WORKSPACE_SQL, INSERT_ADMINISTRATIVE_AUDIT_SQL,
+        INSERT_DISCLOSED_MEMORY_SQL, INSERT_DISCLOSURE_SQL, INSERT_EVENT_SQL,
         INSERT_INVITATION_SQL, INSERT_KEY_ROTATION_RECEIPT_SQL, INSERT_KEY_ROTATION_RECIPIENT_SQL,
         INSERT_LEGAL_HOLD_SQL, INSERT_MEMBER_SCOPE_GRANT_SQL, INSERT_MEMBERSHIP_SQL,
         INSERT_MEMORY_EVIDENCE_SQL, INSERT_MEMORY_SQL, INSERT_PRINCIPAL_SQL, INSERT_PROJECTION_SQL,
@@ -6705,6 +6807,65 @@ mod tests {
             .filter(|call| matches!(call, Call::Execute(statement, _) if statement == REPLACE_PROJECTION_SQL))
             .count();
         assert_eq!(replacement_calls, 2);
+    }
+
+    #[test]
+    fn context_capable_store_persists_exact_disclosure_versions() {
+        let memory = MemoryRecord::confirmed_preference(
+            MemoryId::new("memory_05"),
+            WorkspaceId::new("workspace_01"),
+            PrincipalId::new("principal_01"),
+            MemoryScope::Global,
+            "Call me Hippo",
+            EvidenceReference::new(
+                EvidenceId::new("evidence_05"),
+                EvidenceSource::UserStatement,
+            ),
+        )
+        .expect("memory");
+        let receipt = DisclosureReceipt {
+            id: DisclosureId::new("disclosure_05"),
+            context_pack_id: ContextPackId::new("context_05"),
+            workspace_id: WorkspaceId::new("workspace_01"),
+            subject_id: PrincipalId::new("principal_01"),
+            client_id: ClientId::new("client_05"),
+            purpose: "assistant-personalization".to_owned(),
+            memories: vec![DisclosedMemory {
+                id: MemoryId::new("memory_05"),
+                version: 1,
+            }],
+        };
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let store = PostgresStore::new(FakePool {
+            calls: Rc::clone(&calls),
+            tenant_batches: RefCell::new(
+                [VecDeque::from([
+                    Ok(Some("workspace_01".to_owned())),
+                    Ok(Some("workspace_01".to_owned())),
+                    Ok(Some("workspace_01".to_owned())),
+                    Ok(Some("workspace_01".to_owned())),
+                ])]
+                .into(),
+            ),
+            row_batches: RefCell::new([vec![FakeRow::memory(&memory)]].into()),
+        });
+        let tenant = store.for_workspace(WorkspaceId::new("workspace_01"));
+        let cipher = IdentityCipher;
+        let mut repository = tenant.with_cipher(&cipher);
+
+        DisclosureRepository::append(&mut repository, receipt).expect("append disclosure");
+
+        let calls = calls.borrow();
+        assert!(calls.iter().any(
+            |call| matches!(call, Call::Execute(statement, _) if statement == INSERT_DISCLOSURE_SQL)
+        ));
+        assert!(calls.iter().any(
+            |call| matches!(call, Call::Query(statement, _) if statement == FIND_DISCLOSED_MEMORY_VERSION_SQL)
+        ));
+        assert!(calls.iter().any(
+            |call| matches!(call, Call::Execute(statement, _) if statement == INSERT_DISCLOSED_MEMORY_SQL)
+        ));
+        assert_eq!(calls.last(), Some(&Call::Commit));
     }
 
     #[test]

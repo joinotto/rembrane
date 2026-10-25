@@ -334,6 +334,8 @@ This roadmap describes sequencing, not release dates.
           on one tenant facade suitable for the provider projection worker.
         - [x] Run the real projection worker through PostgreSQL into the native
           semantic provider and complete the durable outbox lifecycle.
+      - [x] Persist tenant-scoped disclosure receipts with exact subject and
+        memory-version verification before context crosses a trust boundary.
       - [x] Add exact invitation lookup and bounded status-filtered listing
         with terminal-state restoration and full tenant/identifier correlation.
       - [x] Implement atomic invitation creation, acceptance, revocation,
