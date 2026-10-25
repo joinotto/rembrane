@@ -2384,6 +2384,7 @@ where
         audit_event: AdministrativeAuditEvent,
     ) -> Result<(), ApplicationError> {
         self.require_workspace(invitation.workspace_id())?;
+        self.require_workspace(audit_event.workspace_id())?;
         self.store
             .insert_invitation_replacing_expired(&invitation, &audit_event)
             .map_err(map_invitation_application_error)
@@ -2420,6 +2421,7 @@ where
     ) -> Result<(), ApplicationError> {
         self.require_workspace(invitation.workspace_id())?;
         self.require_workspace(membership.workspace_id())?;
+        self.require_workspace(audit_event.workspace_id())?;
         self.store
             .accept_invitation_with_membership(&invitation, &membership, &audit_event)
             .map_err(map_invitation_application_error)
@@ -2432,6 +2434,7 @@ where
         audit_event: AdministrativeAuditEvent,
     ) -> Result<(), ApplicationError> {
         self.require_workspace(invitation.workspace_id())?;
+        self.require_workspace(audit_event.workspace_id())?;
         self.store
             .replace_invitation(&invitation, expected_status, &audit_event)
             .map_err(map_invitation_application_error)
@@ -8895,6 +8898,69 @@ mod tests {
                 &tenant,
                 &other,
                 &ProjectionJobId::new("projection_01"),
+            ),
+            Err(ApplicationError::AccessDenied)
+        );
+    }
+
+    #[test]
+    fn tenant_store_denies_foreign_invitation_audit_evidence_before_pool_access() {
+        fn foreign_audit(action: AdministrativeAction) -> AdministrativeAuditEvent {
+            AdministrativeAuditEvent::new(
+                AdministrativeAuditEventId::new("audit_foreign"),
+                WorkspaceId::new("workspace_other"),
+                PrincipalId::new("principal_admin"),
+                action,
+                AdministrativeTargetKind::Invitation,
+                "invitation_01",
+                "request_foreign",
+                150,
+            )
+            .expect("foreign audit")
+        }
+
+        let pending = Invitation::new(
+            InvitationId::new("invitation_01"),
+            WorkspaceId::new("workspace_01"),
+            PrincipalId::new("principal_guest"),
+            PrincipalId::new("principal_admin"),
+            WorkspaceRole::Member,
+            100,
+            200,
+        )
+        .expect("pending invitation");
+        let accepted = pending.clone().accept_at(150).expect("accepted invitation");
+        let membership = rembrane_domain::Membership::new(
+            WorkspaceId::new("workspace_01"),
+            PrincipalId::new("principal_guest"),
+            WorkspaceRole::Member,
+        );
+        let store = PostgresStore::new(NeverBeginPool);
+        let mut tenant = store.for_workspace(WorkspaceId::new("workspace_01"));
+
+        assert_eq!(
+            InvitationRepository::insert_invitation_replacing_expired(
+                &mut tenant,
+                pending.clone(),
+                foreign_audit(AdministrativeAction::InvitationCreated),
+            ),
+            Err(ApplicationError::AccessDenied)
+        );
+        assert_eq!(
+            InvitationRepository::accept_invitation_with_membership(
+                &mut tenant,
+                accepted,
+                membership,
+                foreign_audit(AdministrativeAction::InvitationAccepted),
+            ),
+            Err(ApplicationError::AccessDenied)
+        );
+        assert_eq!(
+            InvitationRepository::replace_invitation(
+                &mut tenant,
+                pending,
+                InvitationStatus::Pending,
+                foreign_audit(AdministrativeAction::InvitationRevoked),
             ),
             Err(ApplicationError::AccessDenied)
         );

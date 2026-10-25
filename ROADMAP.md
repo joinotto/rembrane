@@ -383,6 +383,9 @@ This roadmap describes sequencing, not release dates.
       - [x] Authorize foreign-workspace canonical, checkpoint, travel, event,
         and graph mutations before structural validation, optimistic
         concurrency checks, encryption, or pooled transaction acquisition.
+      - [x] Reject foreign-workspace administrative audit evidence across
+        tenant-bound invitation creation, acceptance, and revocation before
+        transaction acquisition.
       - [x] Add tenant-visible principal lookup with exact identity
         correlation under the membership-mediated RLS policy.
       - [x] Add tenant-verified membership insert and lifecycle replacement
