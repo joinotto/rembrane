@@ -107,4 +107,25 @@ then
 fi
 test ! -e "$test_root/symbolic"
 
+printf '%s\n' '{"not":"a conformance result"}' \
+    >"$test_root/invalid-provider.json"
+if node "$packager" \
+    "$test_root/verification-failure" \
+    1111111111111111111111111111111111111111 \
+    2026-01-15T12:00:00Z \
+    "$test_root/mixed.json" \
+    "$test_root/provider-a.json" \
+    in-repository \
+    rembrane-maintainers \
+    2222222222222222222222222222222222222222 \
+    "$test_root/invalid-provider.json" \
+    external \
+    independent-provider-maintainer \
+    3333333333333333333333333333333333333333 >/dev/null 2>&1
+then
+    echo "release packager accepted an invalid provider result" >&2
+    exit 1
+fi
+test ! -e "$test_root/verification-failure"
+
 echo "memory-provider release evidence packaging checks passed"

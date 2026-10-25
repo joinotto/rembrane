@@ -35,3 +35,24 @@ human or external-system release gates and cannot be self-certified by this
 script. The script can verify retained security-review and customer-KMS
 evidence and validate Memory Provider release evidence, but it cannot create
 that independent evidence itself.
+
+After independently running both providers and the mixed-version matrix,
+assemble the retained Memory Provider evidence without supplying credentials:
+
+```sh
+node scripts/package-memory-provider-release-evidence.mjs \
+  /secure/memory-provider-evidence \
+  "$(git rev-parse HEAD)" \
+  2026-10-25T12:00:00Z \
+  /secure/runs/mixed-version.json \
+  /secure/runs/provider-a.json \
+  in-repository rembrane-maintainers <provider-a-source-revision> \
+  /secure/runs/provider-b.json \
+  external <external-maintainer-id> <provider-b-source-revision>
+```
+
+Use the actual UTC packaging time. The destination must not exist. The tool
+accepts only bounded regular input files, creates an owner-only directory,
+copies the reviewed compatibility lock and migration contract, verifies the
+complete result, and removes the new directory if verification fails. It
+never reads provider tokens or cloud credentials.
