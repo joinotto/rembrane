@@ -120,6 +120,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - End-to-end PostgreSQL checkpoint-service coverage proving authorized
   activity-scoped decryption and mandatory disclosure commit during agent
   handoff.
+- Tenant-and-cipher PostgreSQL trip reads for exact entity lookup and bounded
+  owner history, with authenticated decryption and strict tenant, owner,
+  identifier, and version correlation.
 - PostgreSQL invitation lookup and bounded deterministic listing with optional
   status filtering, numeric lifetime decoding, terminal-state restoration,
   and exact tenant/invitation correlation.
