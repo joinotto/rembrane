@@ -1147,6 +1147,7 @@ dependencies = [
  "rembrane-semantic-supermemory",
  "rembrane-store-memory",
  "rembrane-store-sqlite",
+ "serde",
  "serde_json",
  "zeroize",
 ]

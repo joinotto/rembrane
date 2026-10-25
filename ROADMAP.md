@@ -839,7 +839,7 @@ This roadmap describes sequencing, not release dates.
   - [x] Publish a public-API-only Messages app extension reference that
     requires explicit text entry and confirmation without transcript,
     participant, composer, attachment, or background access.
-- [ ] Community provider and agent adapters.
+- [x] Community provider and agent adapters.
   - [x] Add a transport-injectable Mem0 OSS semantic mapping layer with
     pseudonymous workspace partitions, exact canonical ID/version metadata,
     replacement, bounded search, and version-aware deletion semantics.
@@ -916,6 +916,8 @@ This roadmap describes sequencing, not release dates.
   - [x] Generate reference-only credential environment contracts for clients
     with documented interpolation, an inherited-environment Zed configuration,
     and the implementation-independent bot manifest.
+    - [x] Expose a machine-readable catalog of supported agent clients,
+      configuration formats, and secret-reference environment modes.
 
 ## Release gates
 

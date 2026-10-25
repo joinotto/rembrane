@@ -33,6 +33,7 @@ use rembrane_semantic_native::NativeSemanticProvider;
 use rembrane_semantic_supermemory::SupermemorySemanticProvider;
 use rembrane_store_memory::InMemoryStore;
 use rembrane_store_sqlite::SqliteStore;
+use serde::Serialize;
 use zeroize::Zeroizing;
 
 const EXPORT_MAGIC: &[u8; 16] = b"REMBRANE-EXPORT\n";
@@ -752,6 +753,14 @@ const MCP_BASE_ENVIRONMENT_VARIABLES: [&str; 6] = [
 ];
 
 fn print_mcp_config(arguments: &[String]) -> Result<(), String> {
+    if arguments == ["clients"] {
+        println!(
+            "{}",
+            serde_json::to_string(&mcp_client_catalog())
+                .map_err(|_| "cannot serialize MCP client catalog".to_owned())?
+        );
+        return Ok(());
+    }
     let client = option(arguments, "--client")?;
     let server_binary = option(arguments, "--server-binary")?;
     validate_mcp_server_binary(server_binary)?;
@@ -774,6 +783,59 @@ fn print_mcp_config(arguments: &[String]) -> Result<(), String> {
     };
     println!("{config}");
     Ok(())
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct McpClientDescriptor {
+    id: &'static str,
+    config_format: &'static str,
+    environment_mode: &'static str,
+}
+
+fn mcp_client_catalog() -> [McpClientDescriptor; 8] {
+    [
+        McpClientDescriptor {
+            id: "codex",
+            config_format: "toml",
+            environment_mode: "inherit-allowlist",
+        },
+        McpClientDescriptor {
+            id: "claude-code",
+            config_format: "json",
+            environment_mode: "placeholder",
+        },
+        McpClientDescriptor {
+            id: "gemini-cli",
+            config_format: "json",
+            environment_mode: "placeholder",
+        },
+        McpClientDescriptor {
+            id: "cursor",
+            config_format: "json",
+            environment_mode: "placeholder",
+        },
+        McpClientDescriptor {
+            id: "vscode",
+            config_format: "json",
+            environment_mode: "placeholder",
+        },
+        McpClientDescriptor {
+            id: "zed",
+            config_format: "json",
+            environment_mode: "process-inherited",
+        },
+        McpClientDescriptor {
+            id: "opencode",
+            config_format: "json",
+            environment_mode: "placeholder",
+        },
+        McpClientDescriptor {
+            id: "generic",
+            config_format: "rembrane-stdio-manifest-v1",
+            environment_mode: "required-environment",
+        },
+    ]
 }
 
 fn validate_mcp_server_binary(server_binary: &str) -> Result<(), String> {
@@ -2062,6 +2124,7 @@ fn print_help() {
              --client <codex|claude-code|gemini-cli|cursor|vscode|zed|opencode|generic> \
              --server-binary <path> \
              [--key-provider <environment|macos-keychain|linux-secret-service|windows-dpapi|http>]\n\
+           rembrane mcp-config clients\n\
            rembrane remember --database <path> --principal <id> \
              --workspace <id> --content <preference> \
              [--domain <name> | --entity <id> | --activity <id>]\n\
@@ -2089,12 +2152,12 @@ mod tests {
 
     use super::{
         EXPORT_MAGIC, claude_mcp_config, codex_mcp_config, cursor_mcp_config, format_read_scopes,
-        gemini_mcp_config, generic_mcp_config, mcp_environment_variables, memory_privacy_mode_name,
-        memory_provider_check_policy, opencode_mcp_config, option, positive_u64, providers,
-        read_export, recall_scope_context, redact_endpoint, requested_memory_privacy,
-        requested_memory_scope, run, selected_secret_reference, test_provider,
-        validate_external_conformance_namespace, validate_mcp_server_binary, vscode_mcp_config,
-        write_export, zed_mcp_config,
+        gemini_mcp_config, generic_mcp_config, mcp_client_catalog, mcp_environment_variables,
+        memory_privacy_mode_name, memory_provider_check_policy, opencode_mcp_config, option,
+        positive_u64, providers, read_export, recall_scope_context, redact_endpoint,
+        requested_memory_privacy, requested_memory_scope, run, selected_secret_reference,
+        test_provider, validate_external_conformance_namespace, validate_mcp_server_binary,
+        vscode_mcp_config, write_export, zed_mcp_config,
     };
 
     fn temporary_path(name: &str) -> std::path::PathBuf {
@@ -2607,6 +2670,39 @@ mod tests {
         assert!(generic.contains("REMBRANE_WORKSPACE_KEY_REFERENCE"));
         assert!(!generic.contains("REMBRANE_WORKSPACE_KEY_HEX"));
         assert!(!generic.contains("00010203"));
+    }
+
+    #[test]
+    fn mcp_client_catalog_is_complete_unique_and_secret_custody_explicit() {
+        let catalog = mcp_client_catalog();
+        let ids = catalog.iter().map(|client| client.id).collect::<Vec<_>>();
+        assert_eq!(
+            ids,
+            [
+                "codex",
+                "claude-code",
+                "gemini-cli",
+                "cursor",
+                "vscode",
+                "zed",
+                "opencode",
+                "generic",
+            ]
+        );
+        let mut unique = ids.clone();
+        unique.sort_unstable();
+        unique.dedup();
+        assert_eq!(unique.len(), ids.len());
+        assert!(catalog.iter().all(|client| {
+            !client.config_format.is_empty() && !client.environment_mode.is_empty()
+        }));
+        assert_eq!(
+            catalog
+                .iter()
+                .find(|client| client.id == "zed")
+                .map(|client| client.environment_mode),
+            Some("process-inherited")
+        );
     }
 
     #[test]

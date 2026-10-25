@@ -290,6 +290,8 @@ are resolved through the historical account. Key bytes remain in Keychain.
 Generate a secret-safe stdio MCP configuration for a supported coding client:
 
 ```text
+target/debug/rembrane mcp-config clients
+
 target/debug/rembrane mcp-config \
   --client codex \
   --server-binary "$PWD/target/debug/rembrane-mcp" \
@@ -317,6 +319,11 @@ Generated MCP configurations pass only credential locators such as
 `REMBRANE_KEY_PROVIDER_TOKEN_REFERENCE`. Point these at protected files or
 another deployment-owned resolver; generated client configuration never asks
 the launcher to serialize raw key or bearer-token values.
+
+`mcp-config clients` returns a machine-readable catalog of every supported
+client, its configuration format, and whether environment references are
+rendered as placeholders, inherited through an allowlist, or inherited from
+the launcher process.
 
 Zed does not interpolate environment-variable placeholders in its settings
 file. Its generated entry therefore leaves `env` empty and inherits Rembrane
