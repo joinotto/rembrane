@@ -123,4 +123,20 @@ then
     exit 1
 fi
 
+printf '%s\n' '{"events":[{"accessToken":"redaction-failed"}]}' \
+    >"$test_root/sensitive-audit.json"
+sensitive_audit_sha256=$(
+    openssl dgst -sha256 "$test_root/sensitive-audit.json" | awk '{print $NF}'
+)
+jq --arg digest "$sensitive_audit_sha256" \
+    '.cloudAuditEvidenceSha256 = $digest' "$test_root/evidence.json" \
+    >"$test_root/sensitive-evidence.json"
+if verify "$test_root/sensitive-evidence.json" "$test_root/result.json" \
+    "$test_root/iam-policy.json" \
+    "$test_root/sensitive-audit.json" >/dev/null 2>&1
+then
+    echo "customer KMS evidence accepted a credential-bearing audit export" >&2
+    exit 1
+fi
+
 echo "customer KMS evidence checks passed"

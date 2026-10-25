@@ -82,7 +82,8 @@ if (
 
 const profileSha256 = sha256(profileBytes);
 requireJsonDocument(policyBytes, "IAM policy");
-requireJsonDocument(auditBytes, "cloud audit evidence");
+const auditDocument = requireJsonDocument(auditBytes, "cloud audit evidence");
+rejectSensitiveAuditData(auditDocument);
 if (
   evidence.conformanceProfileSha256 !== profileSha256 ||
   evidence.conformanceResultSha256 !== sha256(resultBytes) ||
@@ -194,5 +195,44 @@ function requireJsonDocument(bytes, label) {
   }
   if (value === null || typeof value !== "object") {
     throw new Error(`customer KMS ${label} must contain a JSON object or array`);
+  }
+  return value;
+}
+
+function rejectSensitiveAuditData(value) {
+  const sensitiveKey =
+    /^(?:access[-_]?key|authorization|client[-_]?secret|credential|password|plaintext|private[-_]?key|secret|session[-_]?key|token|(?:access|refresh|id|session)[-_]?token)$/i;
+  const sensitiveValue =
+    /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|(?:^|[^A-Z0-9])AKIA[0-9A-Z]{16}(?:[^A-Z0-9]|$)|\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/;
+  const pending = [value];
+  let visited = 0;
+  while (pending.length > 0) {
+    const current = pending.pop();
+    visited += 1;
+    if (visited > 100_000) {
+      throw new Error("customer KMS cloud audit evidence is too complex");
+    }
+    if (Array.isArray(current)) {
+      for (const child of current) {
+        pending.push(child);
+      }
+      continue;
+    }
+    if (current !== null && typeof current === "object") {
+      for (const [key, child] of Object.entries(current)) {
+        if (sensitiveKey.test(key)) {
+          throw new Error(
+            "customer KMS cloud audit evidence contains a sensitive field",
+          );
+        }
+        pending.push(child);
+      }
+      continue;
+    }
+    if (typeof current === "string" && sensitiveValue.test(current)) {
+      throw new Error(
+        "customer KMS cloud audit evidence contains credential-like material",
+      );
+    }
   }
 }

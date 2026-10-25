@@ -16,6 +16,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Customer-KMS promotion evidence now also hash-binds a bounded redacted cloud
   audit export, preventing a protocol-compatible mock from being presented as
   proof that AWS, Azure, or Google Cloud KMS processed the disposable run.
+- Cloud audit evidence validation rejects common credential fields and
+  recognizable private-key, JWT, and AWS access-key material before retention.
 - A deterministic security-review manifest generator and validation gate that
   hash-pin the exact sensitive source, protocol, migration, workflow, threat
   model, and dependency files supplied to an independent reviewer.

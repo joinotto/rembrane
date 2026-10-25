@@ -181,5 +181,8 @@ the disposable operations. It is eligible only after the disposable resources
 are recorded as deleted.
 Keep one verified artifact set for AWS KMS, Azure Key Vault, and Google Cloud
 KMS; these records contain hashes and identifiers, never credentials or keys.
-Audit exports must be reviewed and redacted before retention.
+Audit exports must be reviewed and redacted before retention. The verifier
+fails closed on common credential-bearing fields and recognizable private-key,
+JWT, or AWS access-key material; this automated screen supplements rather than
+replaces human review of provider-specific audit fields.
 

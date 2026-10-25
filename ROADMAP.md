@@ -158,6 +158,8 @@ This roadmap describes sequencing, not release dates.
         cleanup.
         - [x] Bind a redacted cloud audit export so provider promotion proves
           the named KMS handled the disposable conformance operations.
+          - [x] Reject common secret fields and recognizable credential
+            material before accepting retained cloud audit evidence.
       - [x] Create file-backed Unix keyring databases owner-only and reject
         permissive, non-regular, or symbolic-link targets.
       - [x] Enforce workspace, provider-key, and wrapped-ciphertext bounds in
