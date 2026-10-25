@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Literal, Mapping, NotRequired, TypedDict
 from urllib.error import HTTPError
 from urllib.parse import quote, urlencode, urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
@@ -32,6 +32,177 @@ Transport = Callable[
     [str, str, Mapping[str, str], bytes | None, int],
     tuple[int, Mapping[str, str], bytes],
 ]
+
+EvidenceSource = Literal[
+    "user-statement",
+    "agent-observation",
+    "tool-result",
+    "imported-record",
+    "workspace-decision",
+]
+TripConstraintKind = Literal[
+    "accessibility",
+    "accommodation",
+    "budget",
+    "dietary",
+    "documentation",
+    "schedule",
+    "transport",
+    "other",
+]
+TripDecisionStatus = Literal["proposed", "selected", "rejected"]
+BookingResearchKind = Literal[
+    "flight",
+    "lodging",
+    "ground-transport",
+    "activity",
+    "other",
+]
+
+
+class TravelRequest(TypedDict):
+    workspaceId: str
+    subjectId: str
+
+
+class CreateTripRequest(TravelRequest):
+    title: str
+    origin: str
+    destinations: list[str]
+    departNotBefore: str
+    returnNotAfter: str
+    expectedPreviousSequence: int
+
+
+class TripRevisionRequest(TravelRequest):
+    tripId: str
+    expectedTripVersion: int
+    expectedPreviousSequence: int
+
+
+class AddTripParticipantRequest(TripRevisionRequest):
+    label: str
+
+
+class AddTripConstraintRequest(TripRevisionRequest):
+    participantId: NotRequired[str | None]
+    kind: TripConstraintKind
+    statement: str
+    evidenceSource: EvidenceSource
+
+
+class RecordTripDecisionRequest(TripRevisionRequest):
+    status: TripDecisionStatus
+    summary: str
+    rationale: NotRequired[str | None]
+    evidenceSource: EvidenceSource
+
+
+class CaptureBookingResearchRequest(TravelRequest):
+    tripId: str
+    kind: BookingResearchKind
+    provider: str
+    summary: str
+    sourceReference: str
+    evidenceSource: EvidenceSource
+    observedAt: str
+    expiresAt: str
+    expectedPreviousSequence: int
+
+
+class ResolveTravelContextRequest(TravelRequest):
+    tripId: str
+    purpose: str
+    asOf: str
+    includeSourceReferences: NotRequired[bool]
+    includeSensitiveProfile: NotRequired[bool]
+
+
+class Trip(TypedDict):
+    tripId: str
+    workspaceId: str
+    ownerSubjectId: str
+    version: int
+
+
+class TripParticipant(TypedDict):
+    tripId: str
+    participantId: str
+    label: str
+    tripVersion: int
+
+
+class TripRevision(TypedDict):
+    tripId: str
+    recordId: str
+    tripVersion: int
+
+
+class BookingResearch(TypedDict):
+    id: str
+    workspaceId: str
+    tripId: str
+    observedBy: str
+    version: int
+    expiresAt: str
+
+
+class TravelParticipant(TypedDict):
+    participantId: str
+    label: str
+
+
+class TravelConstraint(TypedDict):
+    constraintId: str
+    participantId: NotRequired[str | None]
+    kind: TripConstraintKind
+    statement: str
+    evidenceId: str
+
+
+class TravelDecision(TypedDict):
+    decisionId: str
+    status: TripDecisionStatus
+    summary: str
+    rationale: NotRequired[str | None]
+    decidedBy: str
+    evidenceId: str
+
+
+class TravelSensitiveProfile(TypedDict):
+    participants: list[TravelParticipant]
+    constraints: list[TravelConstraint]
+    decisions: list[TravelDecision]
+
+
+class TravelTrip(TypedDict):
+    tripId: str
+    title: str
+    origin: str
+    destinations: list[str]
+    departNotBefore: str
+    returnNotAfter: str
+    version: int
+    sensitiveProfile: NotRequired[TravelSensitiveProfile]
+
+
+class TravelResearch(TypedDict):
+    researchId: str
+    kind: BookingResearchKind
+    provider: str
+    summary: str
+    evidenceId: str
+    observedAt: str
+    expiresAt: str
+    version: int
+    sourceReference: NotRequired[str]
+
+
+class TravelContext(TypedDict):
+    disclosureId: str
+    trip: TravelTrip
+    freshResearch: list[TravelResearch]
+    expiredResearch: list[TravelResearch]
 
 
 @dataclass(frozen=True)
@@ -146,22 +317,32 @@ class RembraneClient:
             "GET", f"/activities/{path_id}/resume?{urlencode(query)}", None
         )
 
-    def create_trip(self, request: Mapping[str, Any]) -> Any:
+    def create_trip(self, request: CreateTripRequest) -> Trip:
         return self._request("POST", "/travel/trips", request)
 
-    def add_trip_participant(self, request: Mapping[str, Any]) -> Any:
+    def add_trip_participant(
+        self, request: AddTripParticipantRequest
+    ) -> TripParticipant:
         return self._request("POST", "/travel/trip-participants", request)
 
-    def add_trip_constraint(self, request: Mapping[str, Any]) -> Any:
+    def add_trip_constraint(
+        self, request: AddTripConstraintRequest
+    ) -> TripRevision:
         return self._request("POST", "/travel/trip-constraints", request)
 
-    def record_trip_decision(self, request: Mapping[str, Any]) -> Any:
+    def record_trip_decision(
+        self, request: RecordTripDecisionRequest
+    ) -> TripRevision:
         return self._request("POST", "/travel/trip-decisions", request)
 
-    def capture_booking_research(self, request: Mapping[str, Any]) -> Any:
+    def capture_booking_research(
+        self, request: CaptureBookingResearchRequest
+    ) -> BookingResearch:
         return self._request("POST", "/travel/booking-research", request)
 
-    def resolve_travel_context(self, request: Mapping[str, Any]) -> Any:
+    def resolve_travel_context(
+        self, request: ResolveTravelContextRequest
+    ) -> TravelContext:
         return self._request("POST", "/travel/context/resolve", request)
 
     def rotate_workspace_key(self, request: Mapping[str, Any]) -> Any:

@@ -48,6 +48,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   travel-context continuation across the full implemented REST lifecycle.
 - TypeScript travel methods now return protocol-accurate response models and
   use closed unions for evidence, constraint, decision, and research kinds.
+- Python travel methods now expose dependency-free `TypedDict` request and
+  response models with closed protocol literals instead of unstructured
+  mappings and `Any` returns.
 - REST travel operations now reject malformed or oversized opaque trip and
   participant references before authorization or storage access.
 - The REST service now serves `/.well-known/ai-memory` without authentication,

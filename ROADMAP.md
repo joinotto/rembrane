@@ -676,6 +676,8 @@ This roadmap describes sequencing, not release dates.
   TypeScript and Python SDKs.
 - [x] Publish protocol-accurate TypeScript travel enums and response models
   instead of generic caller-selected return types.
+- [x] Publish dependency-free Python `TypedDict` travel request and response
+  contracts with closed protocol literals.
 - [x] Reject malformed or oversized opaque trip and participant references at
   the REST boundary before authorization or storage access.
 - [x] Reuse layered domain/entity context for travel and trip constraints.
