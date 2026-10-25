@@ -24,6 +24,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   traversal components, and ambiguous cross-platform inventory paths.
 - Security-review signing now requires a new private output directory and
   revalidates the copied manifest before hashing and signing its exact bytes.
+- A bounded shared review-manifest verifier now proves the revision, complete
+  tracked inventory, byte lengths, and SHA-256 hashes against a clean checkout
+  before reviewer attestation.
 - Explicit Memory Provider Protocol `1.0` stability gates separating the
   existing review-locked `0.1` wire surface from a future long-term
   compatibility promise.

@@ -4,6 +4,7 @@ set -eu
 manifest=${1:?usage: sign-security-review-manifest.sh MANIFEST OUTPUT_DIRECTORY}
 output_directory=${2:?usage: sign-security-review-manifest.sh MANIFEST OUTPUT_DIRECTORY}
 private_key=${REMBRANE_SECURITY_REVIEW_SIGNING_KEY:-}
+repository_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 
 if [ -z "$private_key" ]; then
     echo "REMBRANE_SECURITY_REVIEW_SIGNING_KEY must name an Ed25519 PEM private key" >&2
@@ -24,35 +25,8 @@ case "$private_key_mode" in
         exit 1
         ;;
 esac
-if [ ! -f "$manifest" ] || [ -L "$manifest" ]; then
-    echo "security review manifest must be a regular non-symbolic file" >&2
-    exit 1
-fi
-
-validate_manifest() {
-    jq -e '
-        def safe_path:
-            type == "string"
-            and length > 0
-            and length <= 4096
-            and test("^[A-Za-z0-9._@+/-]+$")
-            and (test("(^|/)\\.\\.?(/|$)") | not);
-        .schemaVersion == 1
-        and (.sourceRevision | test("^[0-9a-f]{40}$"))
-        and .workingTreeDirty == false
-        and (.files | length > 0)
-        and ([.files[].path] == ([.files[].path] | sort))
-        and (([.files[].path] | unique | length) == (.files | length))
-        and all(
-            .files[];
-            (.path | safe_path)
-            and (.bytes | type == "number" and . >= 0)
-            and (.sha256 | test("^[0-9a-f]{64}$"))
-        )
-    ' "$1" >/dev/null
-}
-
-validate_manifest "$manifest"
+node "$repository_root/scripts/verify-security-review-manifest.mjs" \
+    "$manifest" --verify-repository >/dev/null
 
 umask 077
 if [ -e "$output_directory" ] || [ -L "$output_directory" ]; then
@@ -63,7 +37,9 @@ mkdir "$output_directory"
 chmod 700 "$output_directory"
 
 cp "$manifest" "$output_directory/security-review-manifest.json"
-validate_manifest "$output_directory/security-review-manifest.json"
+node "$repository_root/scripts/verify-security-review-manifest.mjs" \
+    "$output_directory/security-review-manifest.json" \
+    --verify-repository >/dev/null
 manifest_sha256=$(
     openssl dgst -sha256 "$output_directory/security-review-manifest.json" |
         awk '{print $NF}'

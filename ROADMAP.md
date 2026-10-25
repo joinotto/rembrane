@@ -1318,5 +1318,7 @@ No stable release until:
         cross-platform paths before inventory generation or signing.
       - [x] Create a new private attestation directory atomically and
         revalidate the copied manifest bytes before hashing and signing.
+      - [x] Require the manifest revision, complete Git inventory, byte
+        lengths, and hashes to match a clean checkout before attestation.
 - [x] Backup, restore, migration, revocation, and deletion have executable
   local-alpha coverage.

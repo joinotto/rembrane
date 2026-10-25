@@ -37,7 +37,9 @@ for deterministic local and CI validation and must not be used for review
 evidence. The signer also rejects dirty manifests, permissive or symbolic
 private keys, ambiguous or control-bearing paths, and any pre-existing output
 directory. It signs only a private copied manifest that passes validation
-again after transfer.
+again after transfer. Before signing, the verifier also requires the manifest
+revision, complete tracked-file inventory, byte lengths, and SHA-256 digests
+to match the current clean checkout exactly.
 
 An independent report should include:
 
