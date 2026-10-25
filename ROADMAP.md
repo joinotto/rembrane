@@ -344,6 +344,8 @@ This roadmap describes sequencing, not release dates.
           with optimistic versions and canonical event-stream sequencing.
         - [x] Persist an exact-version PostgreSQL disclosure receipt whenever
           a checkpoint revision is handed to an external client.
+          - [x] Run the application checkpoint-resume service end to end over
+            PostgreSQL and require disclosure commit before returning state.
       - [x] Add exact invitation lookup and bounded status-filtered listing
         with terminal-state restoration and full tenant/identifier correlation.
       - [x] Implement atomic invitation creation, acceptance, revocation,

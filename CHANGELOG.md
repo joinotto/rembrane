@@ -117,6 +117,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Exact-version PostgreSQL checkpoint disclosure receipts with tenant,
   subject, activity, and checkpoint correlation before an external client can
   receive resumable working memory.
+- End-to-end PostgreSQL checkpoint-service coverage proving authorized
+  activity-scoped decryption and mandatory disclosure commit during agent
+  handoff.
 - PostgreSQL invitation lookup and bounded deterministic listing with optional
   status filtering, numeric lifetime decoding, terminal-state restoration,
   and exact tenant/invitation correlation.

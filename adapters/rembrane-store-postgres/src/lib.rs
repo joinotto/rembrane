@@ -4837,12 +4837,12 @@ mod tests {
     use rembrane_application::{
         AdministrativeAuditRepository, ApplicationError, AuthorizeClientCommand,
         AuthorizeClientService, CanonicalMutationRepository, CheckpointDisclosureRepository,
-        CheckpointMutationRepository, CheckpointRepository, CreateInvitationCommand,
-        DisclosureRepository, EventRepository, InvitationRepository, InvitationService,
-        KeyRotationRepository, MemberLifecycleRepository, MemberScopeGrantRepository,
-        MembershipRepository, MemoryRepository, ProjectionOutboxRepository, ProjectionOutcome,
-        ProjectionWorker, ResolveContextCommand, ResolveContextService, RetentionRepository,
-        WorkspaceRepository,
+        CheckpointMutationRepository, CheckpointRepository, CheckpointService,
+        CreateInvitationCommand, DisclosureRepository, EventRepository, InvitationRepository,
+        InvitationService, KeyRotationRepository, MemberLifecycleRepository,
+        MemberScopeGrantRepository, MembershipRepository, MemoryRepository,
+        ProjectionOutboxRepository, ProjectionOutcome, ProjectionWorker, ResolveContextCommand,
+        ResolveContextService, ResumeActivityCommand, RetentionRepository, WorkspaceRepository,
     };
     use rembrane_codec::{encode_checkpoint, encode_memory};
     use rembrane_contracts::ResolveContextRequest;
@@ -7242,6 +7242,85 @@ mod tests {
                     && parameters.contains(&"text:resume_development_activity".to_owned())
         )));
         assert!(calls.contains(&Call::Commit));
+    }
+
+    #[test]
+    fn checkpoint_service_resumes_postgres_state_only_after_disclosure_audit() {
+        let checkpoint = ActivityCheckpoint::new(
+            CheckpointId::new("checkpoint_04"),
+            WorkspaceId::new("workspace_01"),
+            PrincipalId::new("principal_01"),
+            ActivityId::new("activity_04"),
+            Some(EntityId::new("project_04")),
+            "Continue Rembrane with another coding agent",
+            "The PostgreSQL working-memory boundary is implemented.",
+            vec!["Add live driver integration".to_owned()],
+            Vec::new(),
+        )
+        .expect("checkpoint");
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let store = PostgresStore::new(FakePool {
+            calls: Rc::clone(&calls),
+            tenant_batches: RefCell::new(
+                [
+                    VecDeque::from([
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                    ]),
+                    VecDeque::from([
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                    ]),
+                ]
+                .into(),
+            ),
+            row_batches: RefCell::new(
+                [
+                    vec![FakeRow::checkpoint(&checkpoint)],
+                    vec![FakeRow::checkpoint(&checkpoint)],
+                ]
+                .into(),
+            ),
+        });
+        let tenant = store.for_workspace(WorkspaceId::new("workspace_01"));
+        let cipher = IdentityCipher;
+        let mut memories = tenant.with_cipher(&cipher);
+        let command = ResumeActivityCommand {
+            grant: ReadGrant {
+                client_id: ClientId::new("client_next_coding_agent"),
+                workspace_id: WorkspaceId::new("workspace_01"),
+                subject_id: PrincipalId::new("principal_01"),
+                scopes: vec![ReadScope::Activity {
+                    id: ActivityId::new("activity_04"),
+                }],
+                permissions: Vec::new(),
+            },
+            activity_id: ActivityId::new("activity_04"),
+            disclosure_id: DisclosureId::new("disclosure_checkpoint_04"),
+            purpose: "resume_development_activity".to_owned(),
+        };
+
+        let resumed = CheckpointService::new(&mut memories)
+            .resume(&command)
+            .expect("resume checkpoint")
+            .expect("stored checkpoint");
+
+        assert_eq!(resumed, checkpoint);
+        let calls = calls.borrow();
+        let disclosure_position = calls
+            .iter()
+            .position(|call| {
+                matches!(
+                    call,
+                    Call::Execute(statement, _) if statement == INSERT_CHECKPOINT_DISCLOSURE_SQL
+                )
+            })
+            .expect("disclosure insert");
+        assert!(matches!(
+            calls.get(disclosure_position + 1),
+            Some(Call::Commit)
+        ));
     }
 
     #[test]
