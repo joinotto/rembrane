@@ -46,4 +46,23 @@ then
     exit 1
 fi
 
+cp "$repository_root/spec/key-provider-openapi.yaml" \
+    "$test_root/spec/key-provider-openapi.yaml"
+jq 'del(.artifacts[-1])' \
+    "$repository_root/spec/key-provider-compatibility-lock.json" \
+    >"$test_root/spec/key-provider-compatibility-lock.json"
+if node "$test_root/scripts/verify-key-provider-compatibility.mjs" \
+    >"$test_root/omission.stdout" 2>"$test_root/omission.stderr"
+then
+    echo "key-provider compatibility verifier accepted an omitted artifact" >&2
+    exit 1
+fi
+if ! rg -F \
+    "exact reviewed key-provider artifact set" \
+    "$test_root/omission.stderr" >/dev/null
+then
+    echo "key-provider compatibility verifier missed artifact omission" >&2
+    exit 1
+fi
+
 echo "key provider compatibility tamper test passed"

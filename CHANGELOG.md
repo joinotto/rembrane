@@ -16,6 +16,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   HTTP decoding, fixtures, and portable conformance evidence.
 - A tamper-tested key-provider compatibility lock over reviewed OpenAPI,
   discovery, conformance, fixture, and black-box runner artifacts.
+- Compatibility verification now rejects omitted key-provider artifacts and
+  version disagreement across every locked discovery and conformance surface.
 - Provider-side customer-KMS contracts for bounded opaque wrapped keys,
   tenant- and generation-bound associated data, duplicate-safe active and
   historical keyrings, and zeroizing unwrap results inside customer sidecars.

@@ -17,6 +17,13 @@ assert.match(lock.protocolVersion, /^\d+\.\d+$/, "invalid protocol version");
 assert.ok(Array.isArray(lock.artifacts) && lock.artifacts.length > 0);
 
 const seenPaths = new Set();
+const requiredArtifacts = new Set([
+  "spec/key-provider-openapi.yaml",
+  "spec/examples/key-provider-manifest.json",
+  "spec/key-provider-conformance-result.schema.json",
+  "spec/examples/key-provider-conformance-result.json",
+  "scripts/test-key-provider-http.sh",
+]);
 for (const artifact of lock.artifacts) {
   assert.equal(typeof artifact.path, "string");
   assert.match(artifact.sha256, /^[0-9a-f]{64}$/);
@@ -44,6 +51,11 @@ for (const artifact of lock.artifacts) {
     `${artifact.path} changed without a reviewed compatibility-lock update`,
   );
 }
+assert.deepEqual(
+  seenPaths,
+  requiredArtifacts,
+  "compatibility lock must contain the exact reviewed key-provider artifact set",
+);
 
 const openapi = await readFile(
   resolve(repositoryRoot, "spec/key-provider-openapi.yaml"),
@@ -52,6 +64,39 @@ const openapi = await readFile(
 assert.ok(
   openapi.includes(`version: ${lock.protocolVersion}.0`),
   "compatibility lock and key-provider OpenAPI versions differ",
+);
+const manifest = JSON.parse(
+  await readFile(
+    resolve(repositoryRoot, "spec/examples/key-provider-manifest.json"),
+    "utf8",
+  ),
+);
+const resultSchema = JSON.parse(
+  await readFile(
+    resolve(repositoryRoot, "spec/key-provider-conformance-result.schema.json"),
+    "utf8",
+  ),
+);
+const resultFixture = JSON.parse(
+  await readFile(
+    resolve(repositoryRoot, "spec/examples/key-provider-conformance-result.json"),
+    "utf8",
+  ),
+);
+assert.equal(
+  manifest.protocolVersion,
+  lock.protocolVersion,
+  "compatibility lock and discovery fixture protocol versions differ",
+);
+assert.equal(
+  resultSchema.properties.protocolVersion.const,
+  lock.protocolVersion,
+  "compatibility lock and conformance schema protocol versions differ",
+);
+assert.equal(
+  resultFixture.protocolVersion,
+  lock.protocolVersion,
+  "compatibility lock and conformance fixture protocol versions differ",
 );
 
 process.stdout.write(
