@@ -97,6 +97,44 @@ class RembraneClientTests(unittest.TestCase):
                 transport=lambda *_: (200, {}, b"{}"),
             )
 
+    def test_graph_context_uses_exact_authenticated_route(self) -> None:
+        calls = []
+
+        def transport(method, url, headers, body, maximum):
+            calls.append((method, url, headers, body, maximum))
+            return (
+                200,
+                {"Content-Type": "application/json"},
+                b'{"disclosureId":"d1","edges":[]}',
+            )
+
+        client = RembraneClient(
+            "http://127.0.0.1:8787/v1", "test-token", transport=transport
+        )
+        request = {
+            "workspaceId": "team",
+            "subjectId": "principal-1",
+            "nodeId": "project-1",
+            "direction": "outgoing",
+            "validAtEpochSeconds": 1_700_000_000,
+            "maximumCandidates": 20,
+            "purpose": "continue-project",
+            "entityId": "project-1",
+        }
+        response = client.resolve_graph_context(request)
+
+        self.assertEqual(response, {"disclosureId": "d1", "edges": []})
+        self.assertEqual(calls[0][0], "POST")
+        self.assertEqual(
+            calls[0][1],
+            "http://127.0.0.1:8787/v1/graph/context/resolve",
+        )
+        self.assertEqual(calls[0][2]["Authorization"], "Bearer test-token")
+        self.assertEqual(
+            calls[0][3],
+            json.dumps(request, separators=(",", ":")).encode("utf-8"),
+        )
+
     def test_problem_response_becomes_typed_error(self) -> None:
         client = RembraneClient(
             "https://memory.example.test/v1",

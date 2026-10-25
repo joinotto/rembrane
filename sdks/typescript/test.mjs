@@ -77,6 +77,22 @@ assert.equal(calls[4].init.method, "GET");
 assert.equal(calls[4].init.headers.Authorization, "Bearer test-token");
 assert.equal(calls[4].init.body, undefined);
 
+const graphRequest = {
+  workspaceId: "team",
+  subjectId: "principal-1",
+  nodeId: "project-1",
+  direction: "outgoing",
+  validAtEpochSeconds: 1_700_000_000,
+  maximumCandidates: 20,
+  purpose: "continue-project",
+  entityId: "project-1",
+};
+await client.resolveGraphContext(graphRequest);
+assert.equal(calls[5].url, "http://127.0.0.1:8787/v1/graph/context/resolve");
+assert.equal(calls[5].init.method, "POST");
+assert.equal(calls[5].init.headers.Authorization, "Bearer test-token");
+assert.deepEqual(JSON.parse(calls[5].init.body), graphRequest);
+
 assert.throws(
   () =>
     new RembraneClient({

@@ -42,6 +42,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   disclosure-before-response boundary as MCP.
 - Generic REST context resolution now denies omitted-scope requests unless the
   authenticated connection explicitly holds global read authority.
+- Typed TypeScript and standard-library Python graph-context client operations
+  targeting the exact authenticated REST route.
 - Bounded shared-workspace invitation validity with persisted creation and
   expiry time, a 30-day maximum lifetime, and fail-closed acceptance at the
   expiry boundary.

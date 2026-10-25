@@ -50,6 +50,10 @@ export class RembraneClient {
     return this.#request("POST", "/context/resolve", request);
   }
 
+  resolveGraphContext(request) {
+    return this.#request("POST", "/graph/context/resolve", request);
+  }
+
   rotateWorkspaceKey(request) {
     return this.#request("POST", "/workspaces/key-rotation", request);
   }

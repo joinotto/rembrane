@@ -78,6 +78,9 @@ class RembraneClient:
     def resolve_context(self, request: Mapping[str, Any]) -> Any:
         return self._request("POST", "/context/resolve", request)
 
+    def resolve_graph_context(self, request: Mapping[str, Any]) -> Any:
+        return self._request("POST", "/graph/context/resolve", request)
+
     def rotate_workspace_key(self, request: Mapping[str, Any]) -> Any:
         return self._request("POST", "/workspaces/key-rotation", request)
 

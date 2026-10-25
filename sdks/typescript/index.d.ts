@@ -9,6 +9,36 @@ export interface WorkspaceRequest {
   workspaceId: string;
 }
 
+export type GraphDirection = "incoming" | "outgoing" | "both";
+
+export interface ResolveGraphContextRequest extends WorkspaceRequest {
+  subjectId: string;
+  nodeId: string;
+  direction: GraphDirection;
+  validAtEpochSeconds: number;
+  maximumCandidates?: number;
+  purpose: string;
+  domain?: string | null;
+  entityId?: string | null;
+  activityId?: string | null;
+}
+
+export interface GraphEdge {
+  edgeId: string;
+  sourceNodeId: string;
+  targetNodeId: string;
+  relation: string;
+  version: number;
+  validFromEpochSeconds: number;
+  validUntilEpochSeconds: number | null;
+  recordedAtEpochSeconds: number;
+}
+
+export interface ResolveGraphContextResponse {
+  disclosureId: string;
+  edges: GraphEdge[];
+}
+
 export type WorkspaceInvitationRole = "admin" | "member" | "viewer";
 export type WorkspaceInvitationStatus = "pending" | "accepted" | "revoked" | "expired";
 
@@ -83,6 +113,9 @@ export class RembraneError extends Error {
 export class RembraneClient {
   constructor(options: RembraneClientOptions);
   resolveContext<T = unknown>(request: unknown): Promise<T>;
+  resolveGraphContext(
+    request: ResolveGraphContextRequest,
+  ): Promise<ResolveGraphContextResponse>;
   rotateWorkspaceKey<T = unknown>(request: WorkspaceRequest): Promise<T>;
   createWorkspaceInvitation(
     request: CreateWorkspaceInvitationRequest,
