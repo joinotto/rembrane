@@ -672,6 +672,8 @@ This roadmap describes sequencing, not release dates.
 
 ## Phase 3 — Travel continuity
 
+- [x] Expose the complete implemented REST travel lifecycle through the
+  TypeScript and Python SDKs.
 - [x] Reuse layered domain/entity context for travel and trip constraints.
 - [x] Trip entities, participants, constraints, and decisions.
   - [x] Canonical versioned trip aggregate with opaque participants, validated

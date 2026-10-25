@@ -144,6 +144,30 @@ export class RembraneClient {
     );
   }
 
+  createTrip(request) {
+    return this.#request("POST", "/travel/trips", request);
+  }
+
+  addTripParticipant(request) {
+    return this.#request("POST", "/travel/trip-participants", request);
+  }
+
+  addTripConstraint(request) {
+    return this.#request("POST", "/travel/trip-constraints", request);
+  }
+
+  recordTripDecision(request) {
+    return this.#request("POST", "/travel/trip-decisions", request);
+  }
+
+  captureBookingResearch(request) {
+    return this.#request("POST", "/travel/booking-research", request);
+  }
+
+  resolveTravelContext(request) {
+    return this.#request("POST", "/travel/context/resolve", request);
+  }
+
   rotateWorkspaceKey(request) {
     return this.#request("POST", "/workspaces/key-rotation", request);
   }

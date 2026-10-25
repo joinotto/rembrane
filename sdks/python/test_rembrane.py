@@ -293,6 +293,42 @@ class RembraneClientTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "bounded opaque identifier"):
             client.correct_memory("../memory", correction)
 
+    def test_travel_continuity_uses_exact_authenticated_routes(self) -> None:
+        calls = []
+
+        def transport(method, url, headers, body, maximum):
+            calls.append((method, url, headers, body, maximum))
+            return 200, {"Content-Type": "application/json"}, b"{}"
+
+        client = RembraneClient(
+            "http://127.0.0.1:8787/v1", "test-token", transport=transport
+        )
+        operations = (
+            ("create_trip", "/travel/trips"),
+            ("add_trip_participant", "/travel/trip-participants"),
+            ("add_trip_constraint", "/travel/trip-constraints"),
+            ("record_trip_decision", "/travel/trip-decisions"),
+            ("capture_booking_research", "/travel/booking-research"),
+            ("resolve_travel_context", "/travel/context/resolve"),
+        )
+        for index, (method, _) in enumerate(operations):
+            getattr(client, method)(
+                {
+                    "workspaceId": "team",
+                    "subjectId": "principal-1",
+                    "operation": index,
+                }
+            )
+
+        self.assertEqual(
+            [call[1] for call in calls],
+            [f"http://127.0.0.1:8787/v1{path}" for _, path in operations],
+        )
+        self.assertTrue(all(call[0] == "POST" for call in calls))
+        self.assertTrue(
+            all(call[2]["Authorization"] == "Bearer test-token" for call in calls)
+        )
+
     def test_problem_response_becomes_typed_error(self) -> None:
         client = RembraneClient(
             "https://memory.example.test/v1",

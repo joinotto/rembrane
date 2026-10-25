@@ -235,6 +235,98 @@ await assert.rejects(
     error instanceof RembraneError && error.code === "invalid_discovery",
 );
 
+const travelRequests = [
+  [
+    "createTrip",
+    "/travel/trips",
+    {
+      workspaceId: "team",
+      subjectId: "principal-1",
+      title: "Kyoto",
+      origin: "Bengaluru",
+      destinations: ["Kyoto"],
+      departNotBefore: "2026-11-01",
+      returnNotAfter: "2026-11-12",
+      expectedPreviousSequence: 9,
+    },
+  ],
+  [
+    "addTripParticipant",
+    "/travel/trip-participants",
+    {
+      workspaceId: "team",
+      subjectId: "principal-1",
+      tripId: "trip-1",
+      label: "Hippo",
+      expectedTripVersion: 1,
+      expectedPreviousSequence: 10,
+    },
+  ],
+  [
+    "addTripConstraint",
+    "/travel/trip-constraints",
+    {
+      workspaceId: "team",
+      subjectId: "principal-1",
+      tripId: "trip-1",
+      kind: "dietary",
+      statement: "Vegetarian meals",
+      evidenceSource: "user-statement",
+      expectedTripVersion: 2,
+      expectedPreviousSequence: 11,
+    },
+  ],
+  [
+    "recordTripDecision",
+    "/travel/trip-decisions",
+    {
+      workspaceId: "team",
+      subjectId: "principal-1",
+      tripId: "trip-1",
+      status: "selected",
+      summary: "Prefer nonstop",
+      evidenceSource: "workspace-decision",
+      expectedTripVersion: 3,
+      expectedPreviousSequence: 12,
+    },
+  ],
+  [
+    "captureBookingResearch",
+    "/travel/booking-research",
+    {
+      workspaceId: "team",
+      subjectId: "principal-1",
+      tripId: "trip-1",
+      kind: "flight",
+      provider: "search",
+      summary: "Morning nonstop",
+      sourceReference: "opaque-result",
+      evidenceSource: "tool-result",
+      observedAt: "2026-10-25T10:00:00Z",
+      expiresAt: "2026-10-25T10:30:00Z",
+      expectedPreviousSequence: 13,
+    },
+  ],
+  [
+    "resolveTravelContext",
+    "/travel/context/resolve",
+    {
+      workspaceId: "team",
+      subjectId: "principal-1",
+      tripId: "trip-1",
+      purpose: "continue flight planning",
+      asOf: "2026-10-25T10:15:00Z",
+    },
+  ],
+];
+for (const [method, path, request] of travelRequests) {
+  await client[method](request);
+  const call = calls.at(-1);
+  assert.equal(call.url, `http://127.0.0.1:8787/v1${path}`);
+  assert.equal(call.init.method, "POST");
+  assert.deepEqual(JSON.parse(call.init.body), request);
+}
+
 assert.throws(
   () =>
     new RembraneClient({

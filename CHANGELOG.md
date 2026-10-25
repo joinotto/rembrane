@@ -43,6 +43,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - OpenAPI plus the TypeScript and Python SDKs expose REST work-trace capture,
   with executable coverage proving encrypted proposed-observation persistence;
   capability discovery now advertises memory proposals.
+- TypeScript and Python clients now expose trip creation, participant and
+  constraint updates, attributed decisions, booking-research capture, and
+  travel-context continuation across the full implemented REST lifecycle.
 - The REST service now serves `/.well-known/ai-memory` without authentication,
   reporting its configured API root, implemented capabilities, limits, and
   local-only versus customer-gateway plaintext-processing boundary.

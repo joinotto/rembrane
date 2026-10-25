@@ -146,6 +146,24 @@ class RembraneClient:
             "GET", f"/activities/{path_id}/resume?{urlencode(query)}", None
         )
 
+    def create_trip(self, request: Mapping[str, Any]) -> Any:
+        return self._request("POST", "/travel/trips", request)
+
+    def add_trip_participant(self, request: Mapping[str, Any]) -> Any:
+        return self._request("POST", "/travel/trip-participants", request)
+
+    def add_trip_constraint(self, request: Mapping[str, Any]) -> Any:
+        return self._request("POST", "/travel/trip-constraints", request)
+
+    def record_trip_decision(self, request: Mapping[str, Any]) -> Any:
+        return self._request("POST", "/travel/trip-decisions", request)
+
+    def capture_booking_research(self, request: Mapping[str, Any]) -> Any:
+        return self._request("POST", "/travel/booking-research", request)
+
+    def resolve_travel_context(self, request: Mapping[str, Any]) -> Any:
+        return self._request("POST", "/travel/context/resolve", request)
+
     def rotate_workspace_key(self, request: Mapping[str, Any]) -> Any:
         return self._request("POST", "/workspaces/key-rotation", request)
 
