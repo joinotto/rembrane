@@ -125,6 +125,15 @@ record emitted after a complete passing run. It pins the provider ID and
 version, profile, fixture corpus, disposable namespace, and one result for
 every profile case.
 
+## Semantic provider conformance
+
+`semantic-provider-conformance-result.schema.json` defines the portable
+evidence emitted by `rembrane providers test` for the native, Mem0, and
+Supermemory semantic adapters. Evidence pins the provider build, protocol,
+suite, disposable namespace, and the exact six required lifecycle behaviors.
+It is review input for the compatibility registry, not a security
+certification.
+
 ## Design rules
 
 - Canonical identifiers are opaque strings.

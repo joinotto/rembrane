@@ -5,8 +5,54 @@ use rembrane_domain::{MemoryId, MemoryKind, MemoryScope, WorkspaceId};
 
 use crate::{
     AuthorizedMemoryProjection, CURRENT_PROVIDER_PROTOCOL, Capability, ProviderError,
-    ProviderPolicy, SemanticMemoryProvider, SemanticQuery,
+    ProviderPolicy, ProviderProtocolVersion, SemanticMemoryProvider, SemanticQuery,
 };
+
+pub const SEMANTIC_PROVIDER_CONFORMANCE_SUITE_ID: &str = "rembrane.semantic-provider.core";
+pub const SEMANTIC_PROVIDER_CONFORMANCE_SUITE_VERSION: &str = "0.1";
+pub const SEMANTIC_PROVIDER_CONFORMANCE_CASES: [&str; 6] = [
+    "manifest.compatible",
+    "index.visible",
+    "workspace.isolated",
+    "replacement.exact",
+    "stale-delete.preserves-current",
+    "exact-delete.propagates",
+];
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SemanticProviderConformanceReport {
+    provider_id: String,
+    provider_version: String,
+    protocol_version: ProviderProtocolVersion,
+    namespace: String,
+}
+
+impl SemanticProviderConformanceReport {
+    #[must_use]
+    pub fn provider_id(&self) -> &str {
+        &self.provider_id
+    }
+
+    #[must_use]
+    pub fn provider_version(&self) -> &str {
+        &self.provider_version
+    }
+
+    #[must_use]
+    pub const fn protocol_version(&self) -> ProviderProtocolVersion {
+        self.protocol_version
+    }
+
+    #[must_use]
+    pub fn namespace(&self) -> &str {
+        &self.namespace
+    }
+
+    #[must_use]
+    pub const fn case_ids(&self) -> &'static [&'static str] {
+        &SEMANTIC_PROVIDER_CONFORMANCE_CASES
+    }
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ConformanceFailure {
@@ -189,9 +235,14 @@ fn verify_version_lifecycle(
 pub fn verify_semantic_provider(
     provider: &mut impl SemanticMemoryProvider,
     fixture_namespace: &str,
-) -> Result<(), ConformanceFailure> {
+) -> Result<SemanticProviderConformanceReport, ConformanceFailure> {
     let namespace = fixture_namespace.trim();
-    if namespace.is_empty() || namespace.len() > 100 {
+    if namespace.is_empty()
+        || namespace.len() > 100
+        || namespace
+            .bytes()
+            .any(|byte| !byte.is_ascii_alphanumeric() && !matches!(byte, b'.' | b'_' | b'-'))
+    {
         return Err(ConformanceFailure::InvalidFixture);
     }
 
@@ -247,7 +298,13 @@ pub fn verify_semantic_provider(
         first_token,
         second_token,
         candidate_limit,
-    )
+    )?;
+    Ok(SemanticProviderConformanceReport {
+        provider_id: manifest.id,
+        provider_version: manifest.version,
+        protocol_version: manifest.protocol_version,
+        namespace: namespace.to_owned(),
+    })
 }
 
 #[cfg(test)]
@@ -380,5 +437,15 @@ mod tests {
                 "deletion through an older version removed the current version".to_owned()
             ))
         );
+    }
+
+    #[test]
+    fn rejects_unsafe_fixture_namespaces_before_provider_access() {
+        for namespace in ["contains whitespace", "contains/slash", "contains\ncontrol"] {
+            assert_eq!(
+                verify_semantic_provider(&mut LeakyProvider::default(), namespace),
+                Err(ConformanceFailure::InvalidFixture)
+            );
+        }
     }
 }

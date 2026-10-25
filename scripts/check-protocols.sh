@@ -32,6 +32,7 @@ jq empty \
     spec/memory-provider-conformance-result.schema.json \
     spec/key-provider-conformance-result.schema.json \
     spec/key-provider-conformance.schema.json \
+    spec/semantic-provider-conformance-result.schema.json \
     spec/memory-provider-fixtures.schema.json \
     spec/conformance/memory-provider-core.json \
     spec/conformance/key-provider-core.json \
@@ -52,6 +53,7 @@ jq empty \
     spec/examples/provider-search-response.json \
     spec/examples/key-provider-manifest.json \
     spec/examples/key-provider-conformance-result.json \
+    spec/examples/semantic-provider-conformance-result.json \
     spec/examples/mcp-client-catalog.json \
     spec/provider-manifest.schema.json \
     spec/provider-registry.json \
@@ -98,6 +100,25 @@ jq -e --slurpfile example spec/examples/key-provider-conformance-result.json '
     and $example[0].profileId == "rembrane.key-provider.core"
     and ($example[0].profileSha256 | test("^[0-9a-f]{64}$"))
 ' spec/key-provider-conformance-result.schema.json >/dev/null
+
+jq -e --slurpfile example spec/examples/semantic-provider-conformance-result.json '
+    .additionalProperties == false
+    and .properties.suiteId.const == "rembrane.semantic-provider.core"
+    and .properties.suiteVersion.const == "0.1"
+    and .properties.protocolVersion.const == "0.1"
+    and .properties.result.const == "pass"
+    and .properties.cases.minItems == 6
+    and .properties.cases.maxItems == 6
+    and ($example[0].cases | map(.id)) == [
+        "manifest.compatible",
+        "index.visible",
+        "workspace.isolated",
+        "replacement.exact",
+        "stale-delete.preserves-current",
+        "exact-delete.propagates"
+    ]
+    and all($example[0].cases[]; .result == "pass")
+' spec/semantic-provider-conformance-result.schema.json >/dev/null
 
 jq -e '
     .additionalProperties == false

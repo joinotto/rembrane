@@ -26,7 +26,8 @@ use rembrane_memory_provider_configured::ConfiguredMemoryProvider;
 use rembrane_provider_sdk::{
     CURRENT_MEMORY_PROVIDER_PROTOCOL, MemoryProviderCapability, MemoryProviderLimits,
     MemoryProviderPolicy, MemoryProviderPrivacyMode, MemoryProviderTransport,
-    verify_semantic_provider,
+    SEMANTIC_PROVIDER_CONFORMANCE_SUITE_ID, SEMANTIC_PROVIDER_CONFORMANCE_SUITE_VERSION,
+    SemanticProviderConformanceReport, verify_semantic_provider,
 };
 use rembrane_secret_local::{LocalSecretResolver, SecretResolver};
 use rembrane_semantic_mem0::Mem0SemanticProvider;
@@ -651,13 +652,9 @@ fn test_provider(arguments: &[String]) -> Result<String, String> {
             if arguments.len() != 5 {
                 return Err("rembrane.native accepts only --provider and --namespace".to_owned());
             }
-            verify_semantic_provider(&mut NativeSemanticProvider::new(), namespace)
+            let report = verify_semantic_provider(&mut NativeSemanticProvider::new(), namespace)
                 .map_err(|error| format!("provider conformance failed: {error}"))?;
-            Ok(format!(
-                "{{\"provider\":\"rembrane.native\",\"protocolVersion\":\"0.1\",\
-                 \"result\":\"pass\",\"suiteVersion\":\"{}\"}}",
-                env!("CARGO_PKG_VERSION")
-            ))
+            serialize_provider_conformance(&report)
         }
         "mem0.oss" => {
             if arguments.len() != 6
@@ -682,13 +679,9 @@ fn test_provider(arguments: &[String]) -> Result<String, String> {
                 lookup_secret.as_bytes().to_vec(),
             )
             .map_err(|error| format!("cannot configure Mem0 provider: {error}"))?;
-            verify_semantic_provider(&mut provider, namespace)
+            let report = verify_semantic_provider(&mut provider, namespace)
                 .map_err(|error| format!("provider conformance failed: {error}"))?;
-            Ok(format!(
-                "{{\"provider\":\"mem0.oss\",\"protocolVersion\":\"0.1\",\
-                 \"result\":\"pass\",\"suiteVersion\":\"{}\"}}",
-                env!("CARGO_PKG_VERSION")
-            ))
+            serialize_provider_conformance(&report)
         }
         "supermemory.v5" => {
             if arguments.len() != 6
@@ -715,18 +708,54 @@ fn test_provider(arguments: &[String]) -> Result<String, String> {
                 lookup_secret.as_bytes().to_vec(),
             )
             .map_err(|error| format!("cannot configure Supermemory provider: {error}"))?;
-            verify_semantic_provider(&mut provider, namespace)
+            let report = verify_semantic_provider(&mut provider, namespace)
                 .map_err(|error| format!("provider conformance failed: {error}"))?;
-            Ok(format!(
-                "{{\"provider\":\"supermemory.v5\",\"protocolVersion\":\"0.1\",\
-                 \"result\":\"pass\",\"suiteVersion\":\"{}\"}}",
-                env!("CARGO_PKG_VERSION")
-            ))
+            serialize_provider_conformance(&report)
         }
         _ => Err(format!(
             "provider {provider_id} is not installed in this CLI build"
         )),
     }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ProviderConformanceOutput<'report> {
+    suite_id: &'static str,
+    suite_version: &'static str,
+    provider: &'report str,
+    provider_version: &'report str,
+    protocol_version: String,
+    namespace: &'report str,
+    result: &'static str,
+    cases: Vec<ProviderConformanceCaseOutput>,
+}
+
+#[derive(Serialize)]
+struct ProviderConformanceCaseOutput {
+    id: &'static str,
+    result: &'static str,
+}
+
+fn serialize_provider_conformance(
+    report: &SemanticProviderConformanceReport,
+) -> Result<String, String> {
+    let protocol = report.protocol_version();
+    serde_json::to_string(&ProviderConformanceOutput {
+        suite_id: SEMANTIC_PROVIDER_CONFORMANCE_SUITE_ID,
+        suite_version: SEMANTIC_PROVIDER_CONFORMANCE_SUITE_VERSION,
+        provider: report.provider_id(),
+        provider_version: report.provider_version(),
+        protocol_version: format!("{}.{}", protocol.major, protocol.minor),
+        namespace: report.namespace(),
+        result: "pass",
+        cases: report
+            .case_ids()
+            .iter()
+            .map(|id| ProviderConformanceCaseOutput { id, result: "pass" })
+            .collect(),
+    })
+    .map_err(|_| "could not serialize provider conformance evidence".to_owned())
 }
 
 fn validate_external_conformance_namespace(namespace: &str) -> Result<(), String> {
@@ -2590,8 +2619,16 @@ mod tests {
         ])
         .expect("native provider should pass conformance");
 
-        assert!(report.contains("\"result\":\"pass\""));
-        assert!(report.contains("\"provider\":\"rembrane.native\""));
+        let report: serde_json::Value =
+            serde_json::from_str(&report).expect("conformance evidence should be JSON");
+        assert_eq!(report["suiteId"], "rembrane.semantic-provider.core");
+        assert_eq!(report["suiteVersion"], "0.1");
+        assert_eq!(report["provider"], "rembrane.native");
+        assert_eq!(report["providerVersion"], env!("CARGO_PKG_VERSION"));
+        assert_eq!(report["protocolVersion"], "0.1");
+        assert_eq!(report["namespace"], "cli-unit");
+        assert_eq!(report["result"], "pass");
+        assert_eq!(report["cases"].as_array().expect("cases").len(), 6);
     }
 
     #[test]

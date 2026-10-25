@@ -34,6 +34,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   lifecycle fixture bytes, with its evidence runner added to the lock.
 - Tamper tests proving rehashed profile changes invalidate older memory and
   key-provider conformance evidence.
+- Typed semantic-provider conformance reports and strict CLI JSON evidence
+  covering provider build, suite, namespace, protocol, and six lifecycle cases.
 - Required bounded key-provider build versions in discovery, Rust negotiation,
   HTTP decoding, fixtures, and portable conformance evidence.
 - A tamper-tested key-provider compatibility lock over reviewed OpenAPI,

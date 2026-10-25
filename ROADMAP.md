@@ -952,6 +952,10 @@ This roadmap describes sequencing, not release dates.
     - [x] Execute the Kotlin compiler smoke fixture in a pinned Ubuntu 24.04
       CI environment that fails if `kotlinc` or Java is unavailable.
 - [x] Reusable semantic-provider conformance suite.
+  - [x] Return typed provider/build/namespace evidence from the Rust harness
+    and emit strict six-case JSON evidence from every installed CLI adapter.
+  - [x] Publish and statically verify the portable semantic-provider
+    conformance result schema and example.
 - [x] Evidence-backed provider compatibility registry schema and initial
   native-provider record.
 - [x] Expose the build-pinned compatibility registry through the CLI.

@@ -1,0 +1,35 @@
+{
+  "suiteId": "rembrane.semantic-provider.core",
+  "suiteVersion": "0.1",
+  "provider": "rembrane.native",
+  "providerVersion": "0.1.0-alpha.1",
+  "protocolVersion": "0.1",
+  "namespace": "example-disposable-run",
+  "result": "pass",
+  "cases": [
+    {
+      "id": "manifest.compatible",
+      "result": "pass"
+    },
+    {
+      "id": "index.visible",
+      "result": "pass"
+    },
+    {
+      "id": "workspace.isolated",
+      "result": "pass"
+    },
+    {
+      "id": "replacement.exact",
+      "result": "pass"
+    },
+    {
+      "id": "stale-delete.preserves-current",
+      "result": "pass"
+    },
+    {
+      "id": "exact-delete.propagates",
+      "result": "pass"
+    }
+  ]
+}

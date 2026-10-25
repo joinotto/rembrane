@@ -57,6 +57,11 @@ target/debug/rembrane providers test \
 The harness writes two versions of one fixture and deletes it while checking
 protocol compatibility, exact replacement semantics, workspace isolation,
 result limits, version-bounded deletion, and deletion propagation.
+Successful CLI runs emit strict JSON containing the exact provider build,
+protocol, disposable namespace, suite identity, suite version, and one pass
+record for each of the six required behaviors. Validate retained evidence
+against `spec/semantic-provider-conformance-result.schema.json` before registry
+review.
 
 Run the same suite against a disposable Mem0 OSS instance only after verifying
 that the target contains no production records:
