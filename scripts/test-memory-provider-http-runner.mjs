@@ -128,8 +128,9 @@ function appendChange(state, memory, operation) {
     ...(operation === "upsert"
       ? {
           payload: memory.content,
-          payloadSha256:
-            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              payloadSha256: createHash("sha256")
+                .update(memory.content)
+                .digest("hex"),
         }
       : {}),
   });

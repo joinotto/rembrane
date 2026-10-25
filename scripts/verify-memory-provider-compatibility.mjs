@@ -34,6 +34,7 @@ const expectedArtifacts = [
   "scripts/memory-provider-context-result.jq",
   "scripts/memory-provider-discovery.mjs",
   "scripts/memory-provider-discovery.jq",
+  "scripts/memory-provider-sync-result.jq",
   "scripts/memory-provider-conformance-secrets.mjs",
   "scripts/run-memory-provider-conformance.mjs",
   "scripts/test-memory-provider-http.sh",

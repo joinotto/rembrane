@@ -87,12 +87,16 @@
       "sha256": "149909115500a04958ff4b46c80c66f8b70dd9eb79446864ef8b8907fbf2dfde"
     },
     {
+      "path": "scripts/memory-provider-sync-result.jq",
+      "sha256": "5b0bebc96763c07fb817a48bd08656ff03e11162e4d4c3c832240626a8fc282b"
+    },
+    {
       "path": "scripts/run-memory-provider-conformance.mjs",
-      "sha256": "ded6cdba9bc737b213b5ea5d752a9414940e1690bdf846c2639fe15f86e03c53"
+      "sha256": "b0481d9abc7b8c4fbd56abb7d9943a44d8385344b51cb618e157a2dac0fca917"
     },
     {
       "path": "scripts/test-memory-provider-http.sh",
-      "sha256": "840d67a0ffadc42627ae6878f28287ad585e0f6576f6e98a40b93890a7590fa3"
+      "sha256": "7b7b523b3b060501c4cfd2a51697defc111dc175dc42eb9216fdab21290493af"
     }
   ]
 }

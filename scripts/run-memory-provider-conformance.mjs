@@ -237,6 +237,7 @@ try {
     `/v1/sync/pull?maximumItems=${maximumSyncItems}`,
   );
   expectStatus(sync, 200, "sync.workspace-isolation");
+  requireSyncResult(sync.value);
   const changes = sync.value.changes;
   if (
     !Array.isArray(changes) ||
@@ -429,6 +430,74 @@ function requireContextResult(value) {
   ) {
     throw new Error("memory-provider returned an invalid closed context result");
   }
+}
+
+function requireSyncResult(value) {
+  if (
+    !hasExactKeys(value, ["changes", "nextCursor", "hasMore"]) ||
+    !Array.isArray(value.changes) ||
+    !uniqueObjects(value.changes) ||
+    !value.changes.every(validSyncChange) ||
+    typeof value.nextCursor !== "string" ||
+    value.nextCursor.length < 16 ||
+    value.nextCursor.length > 512 ||
+    !/^[A-Za-z0-9_-]+$/u.test(value.nextCursor) ||
+    typeof value.hasMore !== "boolean" ||
+    (value.changes.length === 0 && value.hasMore)
+  ) {
+    throw new Error("memory-provider returned an invalid closed sync result");
+  }
+}
+
+function validSyncChange(value) {
+  const commonValid =
+    isSafeOpaqueId(value?.changeId) &&
+    Number.isSafeInteger(value.sequence) &&
+    value.sequence > 0 &&
+    new Set([
+      "memory",
+      "evidence",
+      "activity_checkpoint",
+      "disclosure_receipt",
+      "entity",
+      "event",
+    ]).has(value.resource) &&
+    isSafeOpaqueId(value.resourceId) &&
+    Number.isSafeInteger(value.version) &&
+    value.version > 0;
+  if (!commonValid) return false;
+  if (value.operation === "delete") {
+    return hasExactKeys(value, [
+      "changeId",
+      "sequence",
+      "resource",
+      "resourceId",
+      "version",
+      "operation",
+    ]);
+  }
+  if (
+    value.operation !== "upsert" ||
+    !hasExactKeys(value, [
+      "changeId",
+      "sequence",
+      "resource",
+      "resourceId",
+      "version",
+      "operation",
+      "payload",
+      "payloadSha256",
+    ]) ||
+    typeof value.payload !== "string" ||
+    value.payload.length === 0 ||
+    new TextEncoder().encode(value.payload).length > 262_144 ||
+    value.payload.includes("\0") ||
+    typeof value.payloadSha256 !== "string" ||
+    !/^[0-9a-f]{64}$/u.test(value.payloadSha256)
+  ) {
+    return false;
+  }
+  return sha256(new TextEncoder().encode(value.payload)) === value.payloadSha256;
 }
 
 function validContextItem(value) {

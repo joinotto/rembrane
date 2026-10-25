@@ -41,6 +41,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Context conformance responses now validate exact result and item shapes,
   selectors, evidence, confidence, validity, sensitivity, and disclosure
   constraints before tenant-isolation assertions consume them.
+- Sync conformance responses now validate exact page and change shapes,
+  cursors, pagination invariants, resources, versions, payload limits, and
+  payload SHA-256 binding before cross-workspace ordering checks.
 - Project metadata, security reporting, API contact information, offline
   workspace fixtures, and provider provenance now consistently identify the
   canonical `joinotto/rembrane` repository.
