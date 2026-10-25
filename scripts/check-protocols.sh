@@ -125,6 +125,7 @@ jq -e '
     and ."$defs".provider.properties.conformance.properties.suiteId.const
         == "rembrane.semantic-provider.core"
     and ."$defs".provider.properties.conformance.properties.suiteVersion.const == "0.1"
+    and ."$defs".provider.properties.conformance.properties.providerVersion.maxLength == 100
     and ."$defs".provider.properties.conformance.properties.protocolVersion.const == "0.1"
     and ."$defs".provider.properties.conformance.properties.cases.minItems == 6
     and ."$defs".provider.properties.conformance.properties.cases.maxItems == 6

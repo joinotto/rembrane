@@ -18,6 +18,7 @@
         "testedAt": "2026-10-25T05:03:44Z",
         "suiteId": "rembrane.semantic-provider.core",
         "suiteVersion": "0.1",
+        "providerVersion": "0.1.0-alpha.1",
         "protocolVersion": "0.1",
         "namespace": "registry-native-20261025-f3221f9",
         "cases": [

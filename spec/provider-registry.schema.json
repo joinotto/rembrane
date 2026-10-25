@@ -96,13 +96,14 @@
             "testedAt",
             "suiteId",
             "suiteVersion",
+            "providerVersion",
             "protocolVersion",
             "namespace",
             "cases"
           ],
           "properties": {
             "result": {
-              "enum": ["pass", "fail", "not-tested"]
+              "enum": ["pass", "fail"]
             },
             "testedAt": {
               "type": ["string", "null"],
@@ -113,6 +114,11 @@
             },
             "suiteVersion": {
               "const": "0.1"
+            },
+            "providerVersion": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
             },
             "protocolVersion": {
               "const": "0.1"

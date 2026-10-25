@@ -35,6 +35,7 @@ jq -e '
         and (.conformance.result | IN("pass", "fail"))
         and .conformance.suiteId == "rembrane.semantic-provider.core"
         and .conformance.suiteVersion == "0.1"
+        and .conformance.providerVersion == .adapterVersion
         and .conformance.protocolVersion == "0.1"
         and (. as $provider
             | $provider.protocolVersions

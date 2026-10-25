@@ -960,6 +960,8 @@ This roadmap describes sequencing, not release dates.
   native-provider record.
   - [x] Persist exact suite, protocol, disposable namespace, and six-case
     evidence from a fresh native CLI conformance run.
+    - [x] Require the provider build reported by conformance to match the
+      registry adapter version exactly.
 - [x] Expose the build-pinned compatibility registry through the CLI.
 - [x] Run installed native-provider conformance through the CLI.
 - [x] Automated external-provider registry verification and release signing.

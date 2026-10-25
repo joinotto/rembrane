@@ -40,6 +40,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   ordered cases, and a fresh build-pinned native conformance run.
 - Provider registry tamper tests for missing or reordered cases, protocol
   mismatch, false pass records, and unsafe namespaces.
+- Exact correlation between the provider build reported by conformance and
+  the adapter version promoted in the compatibility registry.
 - Required bounded key-provider build versions in discovery, Rust negotiation,
   HTTP decoding, fixtures, and portable conformance evidence.
 - A tamper-tested key-provider compatibility lock over reviewed OpenAPI,

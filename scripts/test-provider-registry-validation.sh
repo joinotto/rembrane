@@ -34,6 +34,9 @@ reject_mutation reordered-cases '
         + .providers[0].conformance.cases[2:])
 '
 reject_mutation mismatched-protocol '.providers[0].conformance.protocolVersion = "0.2"'
+reject_mutation mismatched-provider-build '
+    .providers[0].conformance.providerVersion = "attacker-substituted-build"
+'
 reject_mutation false-pass '.providers[0].conformance.cases[0].result = "fail"'
 reject_mutation unsafe-namespace '.providers[0].conformance.namespace = "cross tenant"'
 
