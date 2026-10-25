@@ -155,6 +155,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Pre-pool cross-workspace denial coverage across PostgreSQL memory, event,
   checkpoint, trip, booking-research, knowledge-graph, retention, and graph
   projection read ports.
+- Remote MCP consuming dispatch now carries the exact host and optional browser
+  origin that passed OAuth transport authorization, alongside negotiated
+  content headers, identity, invocation, and the zeroizing request body.
 - PostgreSQL invitation lookup and bounded deterministic listing with optional
   status filtering, numeric lifetime decoding, terminal-state restoration,
   and exact tenant/invitation correlation.

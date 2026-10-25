@@ -55,6 +55,8 @@ pub struct RemoteMcpProtocolHeaders {
     content_type: String,
     accept: String,
     protocol_version: Option<String>,
+    validated_host: Option<String>,
+    validated_origin: Option<String>,
 }
 
 impl RemoteMcpProtocolHeaders {
@@ -73,11 +75,26 @@ impl RemoteMcpProtocolHeaders {
         self.protocol_version.as_deref()
     }
 
+    /// Returns the exact public host that passed the outer authorization gate.
+    #[must_use]
+    pub fn validated_host(&self) -> Option<&str> {
+        self.validated_host.as_deref()
+    }
+
+    /// Returns the exact browser origin that passed the outer authorization
+    /// gate, when the request supplied one.
+    #[must_use]
+    pub fn validated_origin(&self) -> Option<&str> {
+        self.validated_origin.as_deref()
+    }
+
     fn transport_neutral() -> Self {
         Self {
             content_type: "application/json".to_owned(),
             accept: "application/json, text/event-stream".to_owned(),
             protocol_version: None,
+            validated_host: None,
+            validated_origin: None,
         }
     }
 }
@@ -438,6 +455,8 @@ fn protocol_headers_from_axum(
         content_type: content_type.unwrap_or_default().to_owned(),
         accept: accept.unwrap_or_default().to_owned(),
         protocol_version: protocol_version.map(str::to_owned),
+        validated_host: None,
+        validated_origin: None,
     })
 }
 
@@ -532,13 +551,12 @@ pub fn authorize_axum_stateless_body<Verifier>(
 where
     Verifier: RemoteTokenVerifier,
 {
-    let protocol_headers = protocol_headers_from_axum(headers)?;
-    let mut authorized = gate.authorize_stateless_body(
-        authorization,
-        request_from_axum_headers(headers)?,
-        body,
-        now_epoch_seconds,
-    )?;
+    let mut protocol_headers = protocol_headers_from_axum(headers)?;
+    let request = request_from_axum_headers(headers)?;
+    protocol_headers.validated_host = request.host.map(str::to_owned);
+    protocol_headers.validated_origin = request.origin.map(str::to_owned);
+    let mut authorized =
+        gate.authorize_stateless_body(authorization, request, body, now_epoch_seconds)?;
     authorized.protocol_headers = protocol_headers;
     Ok(authorized)
 }
@@ -1079,6 +1097,8 @@ mod tests {
         content_type: String,
         accept: String,
         protocol_version: Option<String>,
+        validated_host: Option<String>,
+        validated_origin: Option<String>,
         body: Vec<u8>,
     }
 
@@ -1101,6 +1121,8 @@ mod tests {
                 content_type: protocol_headers.content_type().to_owned(),
                 accept: protocol_headers.accept().to_owned(),
                 protocol_version: protocol_headers.protocol_version().map(str::to_owned),
+                validated_host: protocol_headers.validated_host().map(str::to_owned),
+                validated_origin: protocol_headers.validated_origin().map(str::to_owned),
                 body: body.as_slice().to_vec(),
             }))
         }
@@ -1598,6 +1620,14 @@ mod tests {
             "application/json, text/event-stream"
         );
         assert_eq!(protocol_headers.protocol_version(), Some("2025-03-26"));
+        assert_eq!(
+            protocol_headers.validated_host(),
+            Some("memory.example.test")
+        );
+        assert_eq!(
+            protocol_headers.validated_origin(),
+            Some("https://agent.example.test")
+        );
         assert_eq!(dispatched_body.as_slice(), body);
 
         headers.insert(

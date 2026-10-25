@@ -233,6 +233,8 @@ This roadmap describes sequencing, not release dates.
           operation with typed authorization-versus-transport failures.
         - [x] Couple validated content negotiation and MCP protocol version
           with identity, invocation, and body through owned dispatch.
+        - [x] Preserve the exact validated public host and browser origin in
+          the consuming dispatch metadata for the official SDK boundary.
   - [x] Allow the shared MCP handler service to initialize canonical
     subject/client/workspace identity exclusively from verified remote claims.
   - [x] Bind remote sessions to issuer, resource, canonical identity,
