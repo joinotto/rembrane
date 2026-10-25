@@ -14,15 +14,21 @@ const lock = JSON.parse(await readFile(lockPath, "utf8"));
 assert.equal(lock.lockFormat, 1, "unsupported compatibility lock format");
 assert.match(lock.protocolVersion, /^\d+\.\d+$/, "invalid protocol version");
 const expectedArtifacts = [
+  "spec/MEMORY_PROVIDER_0.1_TO_1.0_MIGRATION.md",
   "spec/MEMORY_PROVIDER_COMPATIBILITY_POLICY.md",
+  "spec/MEMORY_PROVIDER_STABILITY.md",
   "spec/memory-provider.schema.json",
   "spec/memory-provider-openapi.yaml",
   "spec/memory-provider-conformance.schema.json",
   "spec/memory-provider-conformance-result.schema.json",
   "spec/memory-provider-fixtures.schema.json",
+  "spec/memory-provider-mixed-version-evidence.schema.json",
+  "spec/memory-provider-release-evidence.schema.json",
   "spec/conformance/memory-provider-core.json",
   "spec/conformance/memory-provider-core-fixtures.json",
   "spec/examples/memory-provider-conformance-result.json",
+  "spec/examples/memory-provider-mixed-version-evidence.json",
+  "spec/examples/memory-provider-release-evidence.json",
   "scripts/test-memory-provider-http.sh",
 ];
 assert.deepEqual(

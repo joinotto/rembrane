@@ -826,6 +826,10 @@ This roadmap describes sequencing, not release dates.
       newest supported minor versions.
       - [x] Define and tamper-test a hash-bound evidence format covering both
         supported-minor directions and unsupported-major rejection.
+    - [ ] Freeze the complete `1.0` artifact inventory and publish final
+      migration notes from `0.1`.
+      - [x] Review-lock the evidence formats and a fail-closed draft migration
+        contract before the release candidate.
   - [x] Add a machine-verifiable compatibility lock over the canonical wire
     schemas, HTTP binding, conformance profile, and lifecycle fixtures so
     protocol changes require explicit review.

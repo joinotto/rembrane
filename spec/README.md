@@ -129,6 +129,9 @@ every profile case.
 review-locked `0.1` protocol can make a `1.0` compatibility promise.
 `MEMORY_PROVIDER_COMPATIBILITY_POLICY.md` defines version negotiation,
 compatible additions, breaking changes, deprecation, and support windows.
+`MEMORY_PROVIDER_0.1_TO_1.0_MIGRATION.md` defines the fail-closed transition
+contract and must be completed with concrete candidate differences before a
+`1.0` release.
 
 ## Security review attestation
 

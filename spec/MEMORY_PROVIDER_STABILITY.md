@@ -11,6 +11,8 @@ provide the interoperability history required for a `1.0` stability promise.
 - A machine-readable core conformance profile and lifecycle fixtures.
 - A black-box conformance runner with independent loopback coverage.
 - A tamper-tested compatibility lock over the reviewed protocol artifacts.
+- Review-locked migration guidance and release-evidence formats for the future
+  `1.0` candidate.
 - Configured provider composition with explicit privacy policy and
   secret-reference handling.
 
@@ -62,3 +64,8 @@ external run or independent security review.
 Strict production readiness reads the completed directory from
 `REMBRANE_MEMORY_PROVIDER_EVIDENCE_DIRECTORY`. Leaving it unset makes the gate
 unavailable in development mode and fails closed under `--strict`.
+
+`MEMORY_PROVIDER_0.1_TO_1.0_MIGRATION.md` is a required reviewed artifact. Its
+current text defines the transition contract and explicitly remains a draft;
+the final candidate must add concrete wire differences before the lock can be
+regenerated and the inventory freeze gate completed.

@@ -3,8 +3,16 @@
   "protocolVersion": "0.1",
   "artifacts": [
     {
+      "path": "spec/MEMORY_PROVIDER_0.1_TO_1.0_MIGRATION.md",
+      "sha256": "149f174f2453be8f019ed9dda7ee4feea088e2848afb281e2014328afc94df67"
+    },
+    {
       "path": "spec/MEMORY_PROVIDER_COMPATIBILITY_POLICY.md",
       "sha256": "8a3f3b2cf213049e531dfc775e73b0a54c5c41fbbf8cfda0bf03c69afd7a088f"
+    },
+    {
+      "path": "spec/MEMORY_PROVIDER_STABILITY.md",
+      "sha256": "719ff214ef4ef8780444506d999a0283ded7883985baa775d49990da3c13f67d"
     },
     {
       "path": "spec/memory-provider.schema.json",
@@ -27,6 +35,14 @@
       "sha256": "c440aa173f28208c9da0df2a88cb539681cda5dbe7f4062c1e5e91451c19581a"
     },
     {
+      "path": "spec/memory-provider-mixed-version-evidence.schema.json",
+      "sha256": "7c03f89042be6f4b377d7f90ebb9f367d0dc18f08e236bb10913190315d53416"
+    },
+    {
+      "path": "spec/memory-provider-release-evidence.schema.json",
+      "sha256": "0ce4c6d42a6f5983e35cc81f0c030dd4dbba3d611009f4e66f5f430580b93f49"
+    },
+    {
       "path": "spec/conformance/memory-provider-core.json",
       "sha256": "1d3bd84ca349414599d8df30981fec661288975f1d6e847993e3d7667162dd4b"
     },
@@ -37,6 +53,14 @@
     {
       "path": "spec/examples/memory-provider-conformance-result.json",
       "sha256": "f29bc99f9b1957926d63087c51023017a92429140ba2a18243af9512f2b4c8e5"
+    },
+    {
+      "path": "spec/examples/memory-provider-mixed-version-evidence.json",
+      "sha256": "c94e1cdbe7a6f5ee38fbe42a7381ced6cdd9044742033f2d5d25ef77d22a6cba"
+    },
+    {
+      "path": "spec/examples/memory-provider-release-evidence.json",
+      "sha256": "c33e324e7df9a84e8ef58aa568310ff4af1971ce3fcfffe3b4f9a5a96c5126a7"
     },
     {
       "path": "scripts/test-memory-provider-http.sh",

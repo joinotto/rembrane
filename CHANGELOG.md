@@ -9,6 +9,13 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- Review-locked Memory Provider Protocol `0.1` to `1.0` migration guidance
+  defines separate major-generation endpoints, fail-closed negotiation,
+  provider/client/operator duties, rollback constraints, and the evidence
+  required before the draft can become final.
+- The Memory Provider compatibility inventory now also protects the stability
+  contract, migration guidance, and release-evidence schemas and examples from
+  unreviewed changes.
 - A strict Memory Provider Protocol mixed-version evidence schema and verifier
   bind release tests to the reviewed profile and fixtures, pinned client and
   provider builds, distinct disposable namespaces, both supported-minor
