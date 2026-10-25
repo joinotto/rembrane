@@ -1455,6 +1455,7 @@ version = "0.1.0-alpha.1"
 dependencies = [
  "rembrane-application",
  "rembrane-codec",
+ "rembrane-contracts",
  "rembrane-crypto",
  "rembrane-domain",
  "rembrane-semantic-native",

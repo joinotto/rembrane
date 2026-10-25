@@ -105,6 +105,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - PostgreSQL disclosure persistence on the context-capable tenant facade,
   atomically recording purpose, client, context pack, and exact verified
   memory revisions for privacy-accountable AI context delivery.
+- End-to-end PostgreSQL context-resolution coverage proving authenticated
+  memory selection and mandatory exact-version disclosure persistence before
+  returning personalization context to an AI client.
 - PostgreSQL invitation lookup and bounded deterministic listing with optional
   status filtering, numeric lifetime decoding, terminal-state restoration,
   and exact tenant/invitation correlation.

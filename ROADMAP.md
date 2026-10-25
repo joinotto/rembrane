@@ -336,6 +336,8 @@ This roadmap describes sequencing, not release dates.
           semantic provider and complete the durable outbox lifecycle.
       - [x] Persist tenant-scoped disclosure receipts with exact subject and
         memory-version verification before context crosses a trust boundary.
+        - [x] Run application context resolution end to end over PostgreSQL and
+          prove every returned memory revision is disclosure-audited.
       - [x] Add exact invitation lookup and bounded status-filtered listing
         with terminal-state restoration and full tenant/identifier correlation.
       - [x] Implement atomic invitation creation, acceptance, revocation,

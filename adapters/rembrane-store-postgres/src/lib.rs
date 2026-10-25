@@ -4378,9 +4378,11 @@ mod tests {
         DisclosureRepository, EventRepository, InvitationRepository, InvitationService,
         KeyRotationRepository, MemberLifecycleRepository, MemberScopeGrantRepository,
         MembershipRepository, MemoryRepository, ProjectionOutboxRepository, ProjectionOutcome,
-        ProjectionWorker, RetentionRepository, WorkspaceRepository,
+        ProjectionWorker, ResolveContextCommand, ResolveContextService, RetentionRepository,
+        WorkspaceRepository,
     };
     use rembrane_codec::encode_memory;
+    use rembrane_contracts::ResolveContextRequest;
     use rembrane_crypto::{CryptoError, EncryptedPayload, EncryptionContext, RecordCipher};
     use rembrane_domain::{
         AdministrativeAction, AdministrativeAuditEvent, AdministrativeAuditEventId,
@@ -4390,8 +4392,9 @@ mod tests {
         KeyRotationId, KeyRotationReceipt, KeyRotationStatus, LegalHoldId, LegalHoldStatus,
         MemberScopeGrant, MembershipStatus, MemoryId, MemoryRecord, MemoryScope, Principal,
         PrincipalId, ProjectionJob, ProjectionJobId, ProjectionOperation, ProjectionStatus,
-        ProviderId, ReadScope, RetentionPeriod, RetentionResource, Workspace, WorkspaceId,
-        WorkspaceKeyRotation, WorkspaceRetentionPolicy, WorkspaceRole, WritePermission,
+        ProviderId, ReadGrant, ReadScope, RetentionPeriod, RetentionResource, Workspace,
+        WorkspaceId, WorkspaceKeyRotation, WorkspaceRetentionPolicy, WorkspaceRole,
+        WritePermission,
     };
     use rembrane_semantic_native::NativeSemanticProvider;
 
@@ -6866,6 +6869,88 @@ mod tests {
             |call| matches!(call, Call::Execute(statement, _) if statement == INSERT_DISCLOSED_MEMORY_SQL)
         ));
         assert_eq!(calls.last(), Some(&Call::Commit));
+    }
+
+    #[test]
+    fn resolve_context_reads_and_audits_postgres_memory_end_to_end() {
+        let memory = MemoryRecord::confirmed_preference(
+            MemoryId::new("memory_06"),
+            WorkspaceId::new("workspace_01"),
+            PrincipalId::new("principal_01"),
+            MemoryScope::Global,
+            "Please call me Hippo",
+            EvidenceReference::new(
+                EvidenceId::new("evidence_06"),
+                EvidenceSource::UserStatement,
+            ),
+        )
+        .expect("memory");
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let store = PostgresStore::new(FakePool {
+            calls: Rc::clone(&calls),
+            tenant_batches: RefCell::new(
+                [
+                    VecDeque::from([
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                    ]),
+                    VecDeque::from([
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                    ]),
+                ]
+                .into(),
+            ),
+            row_batches: RefCell::new(
+                [
+                    vec![FakeRow::memory(&memory)],
+                    vec![FakeRow::memory(&memory)],
+                ]
+                .into(),
+            ),
+        });
+        let tenant = store.for_workspace(WorkspaceId::new("workspace_01"));
+        let cipher = IdentityCipher;
+        let mut repository = tenant.with_cipher(&cipher);
+
+        let response = ResolveContextService::new(&mut repository)
+            .execute(ResolveContextCommand {
+                request: ResolveContextRequest {
+                    workspace_id: WorkspaceId::new("workspace_01"),
+                    principal_id: PrincipalId::new("principal_01"),
+                    domain: None,
+                    entity_id: None,
+                    activity_id: None,
+                    purpose: "assistant-personalization".to_owned(),
+                    query: "What should I call the user?".to_owned(),
+                    maximum_items: 10,
+                    maximum_bytes: 65_536,
+                },
+                grant: ReadGrant {
+                    client_id: ClientId::new("client_06"),
+                    workspace_id: WorkspaceId::new("workspace_01"),
+                    subject_id: PrincipalId::new("principal_01"),
+                    scopes: vec![ReadScope::Global],
+                    permissions: Vec::new(),
+                },
+                context_pack_id: ContextPackId::new("context_06"),
+                disclosure_id: DisclosureId::new("disclosure_06"),
+            })
+            .expect("resolve context");
+
+        assert_eq!(response.items, vec![memory]);
+        let calls = calls.borrow();
+        assert!(calls.iter().any(
+            |call| matches!(call, Call::Query(statement, _) if statement == LIST_SUBJECT_MEMORIES_SQL)
+        ));
+        assert!(calls.iter().any(
+            |call| matches!(call, Call::Execute(statement, _) if statement == INSERT_DISCLOSURE_SQL)
+        ));
+        assert!(calls.iter().any(
+            |call| matches!(call, Call::Execute(statement, _) if statement == INSERT_DISCLOSED_MEMORY_SQL)
+        ));
     }
 
     #[test]
