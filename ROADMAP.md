@@ -791,6 +791,15 @@ This roadmap describes sequencing, not release dates.
 - [x] Versioned HTTP sidecar contract for external semantic providers.
 - [x] Secret-safe black-box HTTP sidecar conformance runner.
 - [ ] Stable Memory Provider Protocol.
+  - [ ] Satisfy the explicit `1.0` release gates in
+    `spec/MEMORY_PROVIDER_STABILITY.md`.
+    - [ ] Record pinned passing core-conformance evidence for at least two
+      independent implementations, including one maintained outside this
+      repository.
+    - [ ] Complete independent security review and resolve or explicitly
+      accept every finding.
+    - [ ] Publish compatibility, deprecation, and mixed-version negotiation
+      policy with release-candidate evidence.
   - [x] Add a machine-verifiable compatibility lock over the canonical wire
     schemas, HTTP binding, conformance profile, and lifecycle fixtures so
     protocol changes require explicit review.

@@ -125,6 +125,9 @@ record emitted after a complete passing run. It pins the provider ID and
 version, profile, fixture corpus, disposable namespace, and one result for
 every profile case.
 
+`MEMORY_PROVIDER_STABILITY.md` records the evidence still required before the
+review-locked `0.1` protocol can make a `1.0` compatibility promise.
+
 ## Semantic provider conformance
 
 `semantic-provider-conformance-result.schema.json` defines the portable
