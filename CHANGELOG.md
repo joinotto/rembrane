@@ -1042,6 +1042,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   public keys through direct OpenSSL path access.
 - Ed25519 verification is now shared across signed evidence and explicitly
   rejects private-key PEM material when a public trust anchor is required.
+- Registry and security-review signing now generate checksums through bounded
+  no-follow reads, while review correlation uses the shared manifest and
+  attestation parsers instead of separate OpenSSL and jq path reads.
 - Restored the complete dependency-enabled workspace build by declaring
   previously implicit crate dependencies and enabling rmcp's stdio transport.
 - Corrected Memory Provider selector field casing and URL path construction so

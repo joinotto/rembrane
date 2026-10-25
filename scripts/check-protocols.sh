@@ -575,6 +575,8 @@ node --check scripts/derive-ed25519-public-key.mjs
 node --check scripts/ed25519-signing.mjs
 node --check scripts/ed25519-verification.mjs
 node --check scripts/sign-ed25519-document.mjs
+node --check scripts/sha256-bounded-file.mjs
+node --check scripts/verify-security-review-correlation.mjs
 node --check scripts/customer-kms-evidence.mjs
 node --check scripts/generate-customer-kms-evidence.mjs
 node --check scripts/verify-customer-kms-evidence.mjs

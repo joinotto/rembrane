@@ -855,6 +855,8 @@ This roadmap describes sequencing, not release dates.
           output when final correlation or signature checks fail.
         - [x] Load owner-only Ed25519 signing keys through no-follow
           descriptors and zero their input buffers after key construction.
+        - [x] Generate checksums and verify manifest-attestation correlation
+          through the same bounded byte-oriented modules.
     - [x] Publish compatibility, deprecation, and mixed-version negotiation
       policy.
       - [x] Include the normative compatibility policy in the tamper-tested

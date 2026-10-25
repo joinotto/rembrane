@@ -18,10 +18,12 @@ for script in \
     generate-security-review-manifest.mjs \
     read-bounded-regular-file.mjs \
     security-review-evidence.mjs \
+    sha256-bounded-file.mjs \
     verify-security-review-manifest.mjs \
     verify-security-review-attestation.mjs \
     verify-security-review-bundle.mjs \
     verify-security-review-signature.mjs \
+    verify-security-review-correlation.mjs \
     sign-security-review-manifest.sh \
     sign-ed25519-document.mjs \
     verify-security-review-signature.sh \

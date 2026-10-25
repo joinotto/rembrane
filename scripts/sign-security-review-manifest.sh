@@ -31,17 +31,8 @@ node "$repository_root/scripts/verify-security-review-manifest.mjs" \
 if [ -n "$attestation" ]; then
     node "$repository_root/scripts/verify-security-review-attestation.mjs" \
         "$attestation" >/dev/null
-    manifest_sha256=$(openssl dgst -sha256 "$manifest" | awk '{print $NF}')
-    manifest_revision=$(jq -r '.sourceRevision' "$manifest")
-    manifest_file_count=$(jq -r '.files | length' "$manifest")
-    jq -e \
-        --arg digest "$manifest_sha256" \
-        --arg revision "$manifest_revision" \
-        --argjson file_count "$manifest_file_count" \
-        '.manifestSha256 == $digest
-         and .sourceRevision == $revision
-         and .scope.manifestFileCount == $file_count' \
-        "$attestation" >/dev/null
+    node "$repository_root/scripts/verify-security-review-correlation.mjs" \
+        "$manifest" "$attestation" >/dev/null
 fi
 
 umask 077
@@ -68,8 +59,8 @@ node "$repository_root/scripts/verify-security-review-manifest.mjs" \
     "$output_directory/security-review-manifest.json" \
     --verify-repository >/dev/null
 manifest_sha256=$(
-    openssl dgst -sha256 "$output_directory/security-review-manifest.json" |
-        awk '{print $NF}'
+    node "$repository_root/scripts/sha256-bounded-file.mjs" \
+        "$output_directory/security-review-manifest.json" 16777216
 )
 printf '%s  %s\n' "$manifest_sha256" security-review-manifest.json \
     >"$output_directory/security-review-manifest.json.sha256"
@@ -82,17 +73,12 @@ if [ -n "$attestation" ]; then
     cp "$attestation" "$output_directory/security-review-attestation.json"
     node "$repository_root/scripts/verify-security-review-attestation.mjs" \
         "$output_directory/security-review-attestation.json" >/dev/null
-    jq -e \
-        --arg digest "$manifest_sha256" \
-        --arg revision "$(jq -r '.sourceRevision' "$output_directory/security-review-manifest.json")" \
-        --argjson file_count "$(jq -r '.files | length' "$output_directory/security-review-manifest.json")" \
-        '.manifestSha256 == $digest
-         and .sourceRevision == $revision
-         and .scope.manifestFileCount == $file_count' \
+    node "$repository_root/scripts/verify-security-review-correlation.mjs" \
+        "$output_directory/security-review-manifest.json" \
         "$output_directory/security-review-attestation.json" >/dev/null
     attestation_sha256=$(
-        openssl dgst -sha256 "$output_directory/security-review-attestation.json" |
-            awk '{print $NF}'
+        node "$repository_root/scripts/sha256-bounded-file.mjs" \
+            "$output_directory/security-review-attestation.json" 65536
     )
     printf '%s  %s\n' "$attestation_sha256" security-review-attestation.json \
         >"$output_directory/security-review-attestation.json.sha256"

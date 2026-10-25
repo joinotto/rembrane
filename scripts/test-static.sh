@@ -71,6 +71,8 @@ for deployment_file in \
     scripts/ed25519-signing.mjs \
     scripts/ed25519-verification.mjs \
     scripts/sign-ed25519-document.mjs \
+    scripts/sha256-bounded-file.mjs \
+    scripts/verify-security-review-correlation.mjs \
     scripts/customer-kms-evidence.mjs \
     scripts/generate-customer-kms-evidence.mjs \
     scripts/verify-customer-kms-evidence.mjs \

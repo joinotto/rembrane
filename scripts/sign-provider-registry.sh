@@ -57,8 +57,8 @@ cp "$registry" "$output_directory/provider-registry.json"
 "$repository_root/scripts/verify-provider-registry.sh" \
     "$output_directory/provider-registry.json" >/dev/null
 registry_sha256=$(
-    openssl dgst -sha256 "$output_directory/provider-registry.json" |
-        awk '{print $NF}'
+    node "$repository_root/scripts/sha256-bounded-file.mjs" \
+        "$output_directory/provider-registry.json" 4194304
 )
 printf '%s  %s\n' "$registry_sha256" provider-registry.json \
     >"$output_directory/provider-registry.json.sha256"
