@@ -9,6 +9,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- OAuth introspection now rejects query-bearing endpoints and successful
+  responses without an explicit JSON media type before parsing claims.
 - Trusted channel-processor HTTP delivery now bounds and zeroizes serialized
   canonical identity/message requests and acknowledgement response buffers.
 - OAuth introspection now percent-encodes bearer tokens into bounded

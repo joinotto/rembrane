@@ -136,6 +136,14 @@ impl IntrospectionTransport for HttpIntrospectionTransport {
             .execute(request)
             .and_then(reqwest::blocking::Response::error_for_status)
             .map_err(|_| IntrospectionTransportError)?;
+        if !response
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .is_some_and(is_json_content_type)
+        {
+            return Err(IntrospectionTransportError);
+        }
         if response
             .content_length()
             .is_some_and(|length| length > MAXIMUM_RESPONSE_BYTES)
@@ -160,11 +168,20 @@ fn validate_endpoint(endpoint: &str) -> Result<Url, IntrospectionTransportError>
         || endpoint.host_str().is_none()
         || !endpoint.username().is_empty()
         || endpoint.password().is_some()
+        || endpoint.query().is_some()
         || endpoint.fragment().is_some()
     {
         return Err(IntrospectionTransportError);
     }
     Ok(endpoint)
+}
+
+fn is_json_content_type(value: &str) -> bool {
+    value
+        .split_once(';')
+        .map_or(value, |(media_type, _)| media_type)
+        .trim()
+        .eq_ignore_ascii_case("application/json")
 }
 
 fn validate_client_id(client_id: &str) -> Result<(), IntrospectionTransportError> {
@@ -265,7 +282,7 @@ mod tests {
 
     use super::{
         HttpIntrospectionTransport, MAXIMUM_CLIENT_ID_BYTES, MAXIMUM_CLIENT_SECRET_BYTES,
-        MAXIMUM_TOKEN_BYTES, decode_response, introspection_form_body,
+        MAXIMUM_TOKEN_BYTES, decode_response, introspection_form_body, is_json_content_type,
     };
 
     #[test]
@@ -273,6 +290,7 @@ mod tests {
         for endpoint in [
             "http://identity.example.test/introspect",
             "https://user:secret@identity.example.test/introspect",
+            "https://identity.example.test/introspect?client=ambiguous",
             "https://identity.example.test/introspect#fragment",
             "httpsx://identity.example.test/introspect",
         ] {
@@ -324,6 +342,15 @@ mod tests {
                 .build_request(&"x".repeat(MAXIMUM_TOKEN_BYTES + 1))
                 .is_err()
         );
+    }
+
+    #[test]
+    fn accepts_only_json_introspection_media_types() {
+        assert!(is_json_content_type("application/json"));
+        assert!(is_json_content_type("Application/JSON; charset=utf-8"));
+        for invalid in ["", "text/plain", "application/problem+json", "text/html"] {
+            assert!(!is_json_content_type(invalid));
+        }
     }
 
     #[test]

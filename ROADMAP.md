@@ -259,6 +259,8 @@ This roadmap describes sequencing, not release dates.
     replaceable bounded HTTP transport.
     - [x] Provide a concrete HTTPS transport with authenticated client
       credentials, strict timeouts, no redirects, and bounded responses.
+      - [x] Reject query-bearing introspection endpoints and non-JSON
+        successful claim responses.
       - [x] Percent-encode the introspected bearer into a bounded
         zeroizing-owned form body without parameter-injection ambiguity.
       - [x] Zeroize the bounded raw claims response after typed decoding.
