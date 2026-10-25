@@ -9,6 +9,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- Mem0 HTTP responses now reject record collections above the negotiated
+  1,000-record ceiling before canonical metadata mapping.
 - OAuth introspection now rejects query-bearing endpoints and successful
   responses without an explicit JSON media type before parsing claims.
 - Trusted channel-processor HTTP delivery now bounds and zeroizes serialized

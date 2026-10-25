@@ -147,7 +147,7 @@ impl HttpMem0Transport {
                 ProviderError::Rejected("Mem0 returned malformed record JSON".to_owned())
             })?;
         collection
-            .into_records()
+            .into_bounded_records()?
             .into_iter()
             .map(WireMemory::try_into_record)
             .collect()
@@ -297,17 +297,33 @@ enum WireCollection {
 }
 
 impl WireCollection {
-    fn into_records(self) -> Vec<WireMemory> {
-        match self {
-            Self::Array(records) => records,
+    fn into_bounded_records(self) -> Result<Vec<WireMemory>, ProviderError> {
+        let records = match self {
+            Self::Array(records) => {
+                if records.len() > MAXIMUM_CANDIDATES {
+                    return Err(ProviderError::Rejected(
+                        "Mem0 returned too many records".to_owned(),
+                    ));
+                }
+                records
+            }
             Self::Object {
                 mut results,
                 memories,
             } => {
+                let total = results.len().checked_add(memories.len()).ok_or_else(|| {
+                    ProviderError::Rejected("Mem0 returned too many records".to_owned())
+                })?;
+                if total > MAXIMUM_CANDIDATES {
+                    return Err(ProviderError::Rejected(
+                        "Mem0 returned too many records".to_owned(),
+                    ));
+                }
                 results.extend(memories);
                 results
             }
-        }
+        };
+        Ok(records)
     }
 }
 
@@ -739,8 +755,8 @@ mod tests {
     use zeroize::Zeroizing;
 
     use super::{
-        Mem0Record, Mem0SemanticProvider, Mem0Transport, WireCollection, validate_api_key,
-        validate_base_url,
+        MAXIMUM_CANDIDATES, Mem0Record, Mem0SemanticProvider, Mem0Transport, WireCollection,
+        validate_api_key, validate_base_url,
     };
 
     struct PanicResolver;
@@ -953,7 +969,8 @@ mod tests {
         )
         .expect("wire result should decode");
         let record = collection
-            .into_records()
+            .into_bounded_records()
+            .expect("record collection should be bounded")
             .pop()
             .expect("record should exist")
             .try_into_record()
@@ -968,13 +985,37 @@ mod tests {
         .expect("wire shape should decode");
         assert!(
             collection
-                .into_records()
+                .into_bounded_records()
+                .expect("record collection should be bounded")
                 .into_iter()
                 .next()
                 .expect("record should exist")
                 .try_into_record()
                 .is_err()
         );
+    }
+
+    #[test]
+    fn rejects_mem0_record_collections_above_the_candidate_ceiling() {
+        let records = (0..=MAXIMUM_CANDIDATES)
+            .map(|index| {
+                serde_json::json!({
+                    "id": format!("provider-{index}"),
+                    "metadata": {
+                        "rembrane_memory_id": format!("memory-{index}"),
+                        "rembrane_version": 1,
+                        "rembrane_binding": "0".repeat(64),
+                    }
+                })
+            })
+            .collect::<Vec<_>>();
+        let collection: WireCollection = serde_json::from_value(serde_json::Value::Array(records))
+            .expect("wire collection should decode");
+
+        assert!(matches!(
+            collection.into_bounded_records(),
+            Err(ProviderError::Rejected(message)) if message == "Mem0 returned too many records"
+        ));
     }
 
     #[test]

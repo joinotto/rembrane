@@ -213,6 +213,7 @@ rg -q '^REMBRANE_OAUTH_INTROSPECTION_CLIENT_ID=$' .env.example
 rg -q '^REMBRANE_OAUTH_INTROSPECTION_CLIENT_SECRET_REFERENCE=$' .env.example
 rg -q '^REMBRANE_MCP_TRUSTED_ORIGINS=$' .env.example
 rg -q 'Result<Zeroizing<Vec<u8>>, ProviderError>' adapters/rembrane-semantic-mem0/src/lib.rs
+rg -q 'Mem0 returned too many records' adapters/rembrane-semantic-mem0/src/lib.rs
 rg -q 'Result<Zeroizing<Vec<u8>>, ProviderError>' \
     adapters/rembrane-semantic-supermemory/src/lib.rs
 for zeroizing_response_adapter in \

@@ -1423,6 +1423,8 @@ This roadmap describes sequencing, not release dates.
         through direct HTTP transmission.
       - [x] Keep bounded provider response bodies in zeroizing storage through
         canonical metadata decoding.
+      - [x] Reject provider record collections above the negotiated
+        1,000-record ceiling before canonical mapping.
       - [x] Permit plaintext HTTP only for literal loopback IP addresses,
         rejecting remappable local hostnames consistently across sidecars.
     - [x] Expose disposable Mem0 conformance through the CLI with
