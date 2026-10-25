@@ -38,6 +38,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   covering provider build, suite, namespace, protocol, and six lifecycle cases.
 - Provider registry evidence upgraded with exact suite, protocol, namespace,
   ordered cases, and a fresh build-pinned native conformance run.
+- Provider registry tamper tests for missing or reordered cases, protocol
+  mismatch, false pass records, and unsafe namespaces.
 - Required bounded key-provider build versions in discovery, Rust negotiation,
   HTTP decoding, fixtures, and portable conformance evidence.
 - A tamper-tested key-provider compatibility lock over reviewed OpenAPI,

@@ -28,6 +28,7 @@ require_command "$python_command"
 ./scripts/test-key-provider-compatibility-lock.sh
 ./scripts/check-postgres-rls.sh
 ./scripts/verify-provider-registry.sh
+./scripts/test-provider-registry-validation.sh
 ./scripts/test-provider-registry-signing.sh
 ./scripts/test-sqlite-schema.sh
 ./scripts/test-sqlite-atomicity.sh
@@ -68,6 +69,7 @@ for deployment_file in \
     scripts/test-postgres-rls.sh \
     scripts/check-production-readiness.sh \
     scripts/verify-provider-registry.sh \
+    scripts/test-provider-registry-validation.sh \
     scripts/sign-provider-registry.sh \
     scripts/verify-provider-registry-signature.sh \
     scripts/test-provider-registry-signing.sh \
@@ -95,6 +97,7 @@ sh -n scripts/check-ci-security.sh
 sh -n scripts/test-postgres-rls.sh
 sh -n scripts/check-production-readiness.sh
 sh -n scripts/verify-provider-registry.sh
+sh -n scripts/test-provider-registry-validation.sh
 sh -n scripts/sign-provider-registry.sh
 sh -n scripts/verify-provider-registry-signature.sh
 sh -n scripts/test-provider-registry-signing.sh

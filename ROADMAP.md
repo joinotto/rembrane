@@ -965,6 +965,8 @@ This roadmap describes sequencing, not release dates.
 - [x] Automated external-provider registry verification and release signing.
   - [x] Verify registry identity, timestamps, conformance status, and pinned
     native Git evidence in the repository static gate.
+    - [x] Tamper-test missing, reordered, protocol-mismatched, false-pass, and
+      unsafe-namespace conformance evidence.
   - [x] Produce and tamper-test detached Ed25519 signatures using an
     externally supplied private key.
   - [x] Publish signed registry artifacts from published GitHub releases using
