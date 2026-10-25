@@ -283,6 +283,8 @@ This roadmap describes sequencing, not release dates.
     denied cross-tenant writes, and fail-closed missing tenant context.
   - [ ] Implement the Rust PostgreSQL repository adapter and live two-tenant
     integration suite.
+    - [x] Define a reference-only PostgreSQL connection profile with explicit
+      transport security and bounded pool capacity.
 
 ## Phase 2 — Development continuity
 

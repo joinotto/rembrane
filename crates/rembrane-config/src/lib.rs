@@ -21,6 +21,7 @@ pub const MAX_SECRET_ENVIRONMENT_NAME_BYTES: usize = 255;
 pub const MAX_SECRET_FILE_REFERENCE_BYTES: usize = 4_096;
 pub const MAX_SECRET_PROVIDER_ID_BYTES: usize = 100;
 pub const MAX_SECRET_EXTERNAL_KEY_BYTES: usize = 2_048;
+pub const MAX_POSTGRES_POOL_CONNECTIONS: u16 = 256;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ProcessingMode {
@@ -42,6 +43,67 @@ pub enum ProviderKind {
     Supermemory,
     Graphiti,
     KeyProvider,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PostgresTransportSecurity {
+    VerifyFull,
+    TrustedBoundaryPlaintext,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PostgresConnection {
+    url_reference: SecretReference,
+    transport_security: PostgresTransportSecurity,
+    max_connections: u16,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PostgresConnectionError {
+    InvalidPoolSize,
+}
+
+impl Display for PostgresConnectionError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidPoolSize => formatter
+                .write_str("PostgreSQL pool size must be positive and within the supported bound"),
+        }
+    }
+}
+
+impl Error for PostgresConnectionError {}
+
+impl PostgresConnection {
+    pub fn new(
+        url_reference: SecretReference,
+        transport_security: PostgresTransportSecurity,
+        max_connections: u16,
+    ) -> Result<Self, PostgresConnectionError> {
+        if max_connections == 0 || max_connections > MAX_POSTGRES_POOL_CONNECTIONS {
+            return Err(PostgresConnectionError::InvalidPoolSize);
+        }
+        Ok(Self {
+            url_reference,
+            transport_security,
+            max_connections,
+        })
+    }
+
+    #[must_use]
+    pub const fn url_reference(&self) -> &SecretReference {
+        &self.url_reference
+    }
+
+    #[must_use]
+    pub const fn transport_security(&self) -> PostgresTransportSecurity {
+        self.transport_security
+    }
+
+    #[must_use]
+    pub const fn max_connections(&self) -> u16 {
+        self.max_connections
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -671,11 +733,12 @@ mod tests {
     use rembrane_provider_sdk::Capability;
 
     use super::{
-        DeploymentPolicy, MAX_PROVIDER_CREDENTIAL_REFERENCES, MAX_PROVIDER_ENDPOINT_BYTES,
-        MAX_REMOTE_CLIENT_ID_BYTES, MAX_REMOTE_ENDPOINT_BYTES, MAX_REMOTE_ORIGIN_BYTES,
-        MAX_REMOTE_TRUSTED_ORIGINS, MAX_SECRET_ENVIRONMENT_NAME_BYTES,
+        DeploymentPolicy, MAX_POSTGRES_POOL_CONNECTIONS, MAX_PROVIDER_CREDENTIAL_REFERENCES,
+        MAX_PROVIDER_ENDPOINT_BYTES, MAX_REMOTE_CLIENT_ID_BYTES, MAX_REMOTE_ENDPOINT_BYTES,
+        MAX_REMOTE_ORIGIN_BYTES, MAX_REMOTE_TRUSTED_ORIGINS, MAX_SECRET_ENVIRONMENT_NAME_BYTES,
         MAX_SECRET_EXTERNAL_KEY_BYTES, MAX_SECRET_FILE_REFERENCE_BYTES,
-        MAX_SECRET_PROVIDER_ID_BYTES, ProcessingMode, ProviderConnection, ProviderConnectionError,
+        MAX_SECRET_PROVIDER_ID_BYTES, PostgresConnection, PostgresConnectionError,
+        PostgresTransportSecurity, ProcessingMode, ProviderConnection, ProviderConnectionError,
         ProviderKind, ProviderPlacement, RemoteMcpConfig, RemoteMcpConfigError, SecretReference,
         SecretReferenceError, SecretReferenceSource, parse_read_permissions, parse_read_scopes,
     };
@@ -724,6 +787,38 @@ mod tests {
             Some("REMBRANE_DATABASE_URL")
         );
         assert_eq!(reference.file_path(), None);
+    }
+
+    #[test]
+    fn postgres_configuration_contains_only_a_secret_reference() {
+        let reference =
+            SecretReference::file("/run/secrets/rembrane-postgres-url").expect("reference");
+        let connection =
+            PostgresConnection::new(reference.clone(), PostgresTransportSecurity::VerifyFull, 16)
+                .expect("PostgreSQL connection");
+
+        assert_eq!(connection.url_reference(), &reference);
+        assert_eq!(
+            connection.transport_security(),
+            PostgresTransportSecurity::VerifyFull
+        );
+        assert_eq!(connection.max_connections(), 16);
+        assert!(!format!("{connection:?}").contains("postgresql://"));
+    }
+
+    #[test]
+    fn postgres_configuration_bounds_connection_pool_capacity() {
+        let reference = SecretReference::environment("REMBRANE_POSTGRES_URL").expect("reference");
+        for invalid in [0, MAX_POSTGRES_POOL_CONNECTIONS + 1] {
+            assert_eq!(
+                PostgresConnection::new(
+                    reference.clone(),
+                    PostgresTransportSecurity::TrustedBoundaryPlaintext,
+                    invalid,
+                ),
+                Err(PostgresConnectionError::InvalidPoolSize)
+            );
+        }
     }
 
     #[test]

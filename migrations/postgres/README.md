@@ -35,6 +35,15 @@ matches no row. The runtime database role must be non-superuser, must not own
 tenant tables, and must not have `BYPASSRLS`; migration ownership belongs to a
 separate role.
 
+The Rust adapter configuration carries the database URL only as a
+`SecretReference`. Operators may point it at an environment variable,
+protected file, or deployment-provided external secret resolver. The resolved
+URL, including any password, must remain short-lived and must never be
+serialized, logged, returned by diagnostics, or stored in a provider profile.
+Remote deployments require full TLS verification; plaintext transport is an
+explicit trusted-boundary-only mode. Connection pools are bounded to prevent a
+tenant or configuration error from exhausting the database.
+
 Every ordinary table containing `workspace_id` receives forced read/write RLS.
 `workspaces` is isolated by `id`. Private-to-shared proposals are isolated by
 their source workspace; cross-workspace approval must use a separately audited
