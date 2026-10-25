@@ -311,6 +311,9 @@ This roadmap describes sequencing, not release dates.
         dispatcher with an empty body and verified tenant-only extensions.
       - [x] Transfer POST request bytes into the Tower body without copying
         them out of zeroizing ownership.
+      - [x] Dispatch authenticated session DELETE through Tower before
+        committing the local tenant-bound session removal, retaining the
+        binding when downstream termination fails.
   - [x] Add OAuth and cross-tenant transport integration tests.
     - [x] Prove verified remote identity is still constrained by canonical
       workspace membership, audience, expiry, and token validity.

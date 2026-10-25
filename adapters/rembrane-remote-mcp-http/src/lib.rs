@@ -126,6 +126,21 @@ pub trait AuthorizedRemoteMcpEventStreamDispatcher {
     ) -> Self::DispatchFuture;
 }
 
+pub trait AuthorizedRemoteMcpSessionDeletionDispatcher {
+    type Output;
+    type Error;
+    type DispatchFuture: Future<Output = Result<Self::Output, Self::Error>> + Send;
+
+    fn terminate(
+        &self,
+        access: VerifiedRemoteAccess,
+        session_id: RemoteSessionId,
+        protocol_version: Option<String>,
+        validated_host: String,
+        validated_origin: Option<String>,
+    ) -> Self::DispatchFuture;
+}
+
 impl AuthorizedRemoteMcpEventStream {
     #[must_use]
     pub const fn access(&self) -> &VerifiedRemoteAccess {
@@ -342,6 +357,57 @@ where
                 HOST,
                 validated_host.as_deref(),
             )?;
+            insert_optional_validated_header(
+                request.headers_mut(),
+                ORIGIN,
+                validated_origin.as_deref(),
+            )?;
+            request.extensions_mut().insert(access);
+            service
+                .oneshot(request)
+                .await
+                .map_err(TowerMcpDispatchError::Service)
+        })
+    }
+}
+
+impl<Service> AuthorizedRemoteMcpSessionDeletionDispatcher for AuthorizedTowerMcpDispatcher<Service>
+where
+    Service: tower::Service<Request<Body>> + Clone + Send + 'static,
+    Service::Future: Send + 'static,
+    Service::Response: Send + 'static,
+    Service::Error: Send + 'static,
+{
+    type Output = Service::Response;
+    type Error = TowerMcpDispatchError<Service::Error>;
+    type DispatchFuture =
+        Pin<Box<dyn Future<Output = Result<Self::Output, Self::Error>> + Send + 'static>>;
+
+    fn terminate(
+        &self,
+        access: VerifiedRemoteAccess,
+        session_id: RemoteSessionId,
+        protocol_version: Option<String>,
+        validated_host: String,
+        validated_origin: Option<String>,
+    ) -> Self::DispatchFuture {
+        let service = self.service.clone();
+        Box::pin(async move {
+            let mut request = Request::builder()
+                .method(Method::DELETE)
+                .body(Body::empty())
+                .map_err(|_| TowerMcpDispatchError::InvalidAuthorizedMetadata)?;
+            insert_validated_header(
+                request.headers_mut(),
+                MCP_SESSION_HEADER_NAME,
+                session_id.as_str(),
+            )?;
+            insert_optional_validated_header(
+                request.headers_mut(),
+                MCP_PROTOCOL_VERSION_HEADER_NAME,
+                protocol_version.as_deref(),
+            )?;
+            insert_validated_header(request.headers_mut(), HOST, &validated_host)?;
             insert_optional_validated_header(
                 request.headers_mut(),
                 ORIGIN,
@@ -1151,6 +1217,69 @@ impl RemoteMcpHttpGate {
             .map_err(|error| self.rejection(error))
     }
 
+    /// Reauthenticates a bound session, dispatches its DELETE to the protocol
+    /// service, and commits local deletion only after downstream success.
+    ///
+    /// # Errors
+    ///
+    /// Distinguishes HTTP-ready authentication or session rejection from a
+    /// downstream dispatch failure. A failed dispatch leaves the local
+    /// session binding intact for a safe retry.
+    pub async fn authorize_and_dispatch_termination<Verifier, Dispatcher>(
+        &mut self,
+        authorization: &RemoteHttpAuthorization<'_, '_, Verifier>,
+        request: RemoteMcpHttpRequest<'_>,
+        protocol_version: Option<&str>,
+        now_epoch_seconds: u64,
+        dispatcher: &Dispatcher,
+    ) -> Result<Dispatcher::Output, RemoteMcpDispatchError<Dispatcher::Error>>
+    where
+        Verifier: RemoteTokenVerifier,
+        Dispatcher: AuthorizedRemoteMcpSessionDeletionDispatcher,
+    {
+        if protocol_version.is_some_and(|value| !valid_protocol_version(value)) {
+            return Err(RemoteMcpDispatchError::Authorization(
+                RemoteMcpHttpRejection {
+                    status: 400,
+                    www_authenticate: None,
+                    retry_after_seconds: None,
+                },
+            ));
+        }
+        self.require_allowed_host(request.host)
+            .map_err(RemoteMcpDispatchError::Authorization)?;
+        let session_id =
+            Self::session_id(request.session_id).map_err(RemoteMcpDispatchError::Authorization)?;
+        let access = self
+            .sessions
+            .authorize_termination_for_http(
+                authorization,
+                &session_id,
+                request.authorization,
+                request.origin,
+                now_epoch_seconds,
+            )
+            .map_err(|error| RemoteMcpDispatchError::Authorization(self.rejection(error)))?;
+        let output = dispatcher
+            .terminate(
+                access.clone(),
+                session_id.clone(),
+                protocol_version.map(str::to_owned),
+                request.host.unwrap_or_default().to_owned(),
+                request.origin.map(str::to_owned),
+            )
+            .await
+            .map_err(RemoteMcpDispatchError::Dispatch)?;
+        self.sessions
+            .terminate(&session_id, &access, now_epoch_seconds)
+            .map_err(|_| {
+                RemoteMcpDispatchError::Authorization(
+                    self.rejection(RemoteSessionHttpError::Forbidden),
+                )
+            })?;
+        Ok(output)
+    }
+
     fn session_id(value: Option<&str>) -> Result<RemoteSessionId, RemoteMcpHttpRejection> {
         value
             .ok_or_else(Self::forbidden)
@@ -1234,7 +1363,7 @@ mod tests {
         body::{Body, Bytes, to_bytes},
         extract::State,
         http::{
-            HeaderMap, HeaderValue, Request,
+            HeaderMap, HeaderValue, Method, Request,
             header::{
                 ACCEPT, AUTHORIZATION, CONTENT_TYPE, HOST, ORIGIN, RETRY_AFTER, WWW_AUTHENTICATE,
             },
@@ -1486,6 +1615,129 @@ mod tests {
             1_200,
         )
         .expect("valid delete should terminate");
+    }
+
+    #[tokio::test]
+    async fn session_delete_commits_only_after_tower_confirmation() {
+        let verifier = Verifier;
+        let authenticator = RemoteAccessAuthenticator::new(
+            &verifier,
+            "https://identity.example.test",
+            "https://memory.example.test/mcp",
+        );
+        let origins = ["https://agent.example.test"];
+        let authorization = RemoteHttpAuthorization::new(&authenticator, &origins);
+        let mut gate = RemoteMcpHttpGate::new(
+            1,
+            "https://memory.example.test/.well-known/oauth-protected-resource/mcp",
+            &["memory.example.test"],
+        )
+        .expect("gate should be valid");
+        let session = "session_0123456789abcdef";
+        gate.establish(
+            &authorization,
+            request("Bearer workspace-one", session),
+            1_000,
+        )
+        .expect("session should establish");
+        let service = tower::service_fn(
+            |mut request: axum::http::Request<axum::body::Body>| async move {
+                let access = request
+                    .extensions_mut()
+                    .remove::<rembrane_contracts::VerifiedRemoteAccess>()
+                    .expect("verified access extension");
+                Ok::<_, std::convert::Infallible>((
+                    request.method().clone(),
+                    request
+                        .headers()
+                        .get(MCP_SESSION_HEADER_NAME)
+                        .and_then(|value| value.to_str().ok())
+                        .map(str::to_owned),
+                    request.headers().contains_key(AUTHORIZATION),
+                    access.workspace_id().to_string(),
+                ))
+            },
+        );
+        let dispatched = gate
+            .authorize_and_dispatch_termination(
+                &authorization,
+                request("Bearer workspace-one", session),
+                Some("2025-03-26"),
+                1_100,
+                &AuthorizedTowerMcpDispatcher::new(service),
+            )
+            .await
+            .expect("confirmed deletion");
+        assert_eq!(dispatched.0, Method::DELETE);
+        assert_eq!(dispatched.1.as_deref(), Some(session));
+        assert!(!dispatched.2, "bearer must stop at authorization boundary");
+        assert_eq!(dispatched.3, "workspace_01");
+        assert_eq!(
+            gate.authorize(
+                &authorization,
+                request("Bearer workspace-one", session),
+                "tools/list",
+                None,
+                1_100,
+            )
+            .expect_err("confirmed deletion must remove local binding")
+            .status,
+            403
+        );
+    }
+
+    #[tokio::test]
+    async fn failed_session_delete_dispatch_retains_local_binding() {
+        let verifier = Verifier;
+        let authenticator = RemoteAccessAuthenticator::new(
+            &verifier,
+            "https://identity.example.test",
+            "https://memory.example.test/mcp",
+        );
+        let authorization = RemoteHttpAuthorization::new(&authenticator, &[]);
+        let mut gate = RemoteMcpHttpGate::new(
+            1,
+            "https://memory.example.test/.well-known/oauth-protected-resource/mcp",
+            &["memory.example.test"],
+        )
+        .expect("gate should be valid");
+        let session = "session_0123456789abcdef";
+        let session_request = |token| RemoteMcpHttpRequest {
+            authorization: Some(token),
+            host: Some("memory.example.test"),
+            origin: None,
+            session_id: Some(session),
+        };
+        gate.establish(
+            &authorization,
+            session_request("Bearer workspace-one"),
+            1_000,
+        )
+        .expect("session should establish");
+        let failing = tower::service_fn(
+            |_request: axum::http::Request<axum::body::Body>| async move {
+                Err::<(), _>("downstream unavailable")
+            },
+        );
+        assert!(matches!(
+            gate.authorize_and_dispatch_termination(
+                &authorization,
+                session_request("Bearer workspace-one"),
+                None,
+                1_100,
+                &AuthorizedTowerMcpDispatcher::new(failing),
+            )
+            .await,
+            Err(RemoteMcpDispatchError::Dispatch(_))
+        ));
+        gate.authorize(
+            &authorization,
+            session_request("Bearer workspace-one"),
+            "tools/list",
+            None,
+            1_100,
+        )
+        .expect("failed dispatch must retain retryable binding");
     }
 
     #[test]

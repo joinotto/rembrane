@@ -60,6 +60,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Remote MCP session termination can now be authorized without immediately
   deleting the tenant-bound local session, enabling downstream-confirmed
   termination ordering.
+- Authenticated MCP session DELETE now reaches the Tower protocol service
+  before local deletion commits; downstream failure preserves the session
+  binding for a safely reauthorized retry.
 - A strict portable key-provider conformance result schema and runner output
   containing provider identity and explicit pass evidence for eight
   authentication, encryption, limit, rotation, and replay cases.

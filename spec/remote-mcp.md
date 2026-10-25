@@ -16,6 +16,9 @@ the bridge does not create an ordinary duplicate request buffer.
 The same dispatcher opens an authorized stateless GET with an empty body,
 validated event-stream negotiation headers, and verified tenant access while
 still withholding the bearer credential.
+For stateful DELETE, Rembrane reauthenticates the exact tenant-bound session,
+dispatches an empty-body termination request without the bearer credential,
+and removes its local binding only after downstream success.
 
 The completed endpoint will use the same tools and application services as
 local stdio MCP. Transport selection must never change workspace
