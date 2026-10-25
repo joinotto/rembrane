@@ -1570,17 +1570,19 @@ fn validate_configured_provider_profiles() -> Result<(), String> {
 }
 
 fn configured_secret_sources() -> Vec<&'static str> {
-    let mut sources = match std::env::var("REMBRANE_KEY_PROVIDER")
-        .unwrap_or_else(|_| "environment".to_owned())
-        .as_str()
-    {
-        "macos-keychain" => vec!["macOS Keychain"],
-        "linux-secret-service" => vec!["Linux Secret Service"],
-        "windows-dpapi" => vec!["Windows DPAPI"],
-        "http" => vec!["REMBRANE_KEY_PROVIDER_TOKEN"],
-        _ => vec!["REMBRANE_WORKSPACE_KEY_ID", "REMBRANE_WORKSPACE_KEY_HEX"],
+    let provider =
+        std::env::var("REMBRANE_KEY_PROVIDER").unwrap_or_else(|_| "environment".to_owned());
+    let has_reference = match provider.as_str() {
+        "environment" => nonempty_environment("REMBRANE_WORKSPACE_KEY_REFERENCE"),
+        "http" => nonempty_environment("REMBRANE_KEY_PROVIDER_TOKEN_REFERENCE"),
+        _ => false,
     };
-    for source in ["MEM0_API_KEY", "GRAPHITI_CREDENTIALS"] {
+    let mut sources = key_provider_secret_sources(&provider, has_reference);
+    for source in [
+        "MEM0_API_KEY",
+        "SUPERMEMORY_API_KEY",
+        "GRAPHITI_CREDENTIALS",
+    ] {
         if std::env::var(source)
             .ok()
             .is_some_and(|value| !value.is_empty())
@@ -1589,6 +1591,29 @@ fn configured_secret_sources() -> Vec<&'static str> {
         }
     }
     sources
+}
+
+fn nonempty_environment(name: &str) -> bool {
+    std::env::var(name)
+        .ok()
+        .is_some_and(|value| !value.is_empty())
+}
+
+fn key_provider_secret_sources(provider: &str, has_reference: bool) -> Vec<&'static str> {
+    match provider {
+        "macos-keychain" => vec!["macOS Keychain"],
+        "linux-secret-service" => vec!["Linux Secret Service"],
+        "windows-dpapi" => vec!["Windows DPAPI"],
+        "http" if has_reference => vec!["REMBRANE_KEY_PROVIDER_TOKEN_REFERENCE target"],
+        "http" => vec!["REMBRANE_KEY_PROVIDER_TOKEN"],
+        "environment" if has_reference => {
+            vec![
+                "REMBRANE_WORKSPACE_KEY_ID",
+                "REMBRANE_WORKSPACE_KEY_REFERENCE target",
+            ]
+        }
+        _ => vec!["REMBRANE_WORKSPACE_KEY_ID", "REMBRANE_WORKSPACE_KEY_HEX"],
+    }
 }
 
 fn configured_key_provider() -> Result<&'static str, String> {
@@ -2663,12 +2688,12 @@ mod tests {
         EXPORT_MAGIC, SEMANTIC_PROVIDER_CONFORMANCE_PROFILE_SHA256, check_provider_registry,
         claude_mcp_config, codex_mcp_config, cursor_mcp_config, format_read_scopes,
         gemini_mcp_config, generic_mcp_config, invitation_list_json, invitation_status,
-        mcp_client_catalog, mcp_environment_variables, memory_privacy_mode_name,
-        memory_provider_check_policy, opencode_mcp_config, option, positive_u64, providers,
-        read_export, recall_scope_context, redact_endpoint, render_mcp_config,
-        requested_memory_privacy, requested_memory_scope, run, selected_secret_reference,
-        test_provider, validate_external_conformance_namespace, validate_mcp_server_binary,
-        vscode_mcp_config, write_export, zed_mcp_config,
+        key_provider_secret_sources, mcp_client_catalog, mcp_environment_variables,
+        memory_privacy_mode_name, memory_provider_check_policy, opencode_mcp_config, option,
+        positive_u64, providers, read_export, recall_scope_context, redact_endpoint,
+        render_mcp_config, requested_memory_privacy, requested_memory_scope, run,
+        selected_secret_reference, test_provider, validate_external_conformance_namespace,
+        validate_mcp_server_binary, vscode_mcp_config, write_export, zed_mcp_config,
     };
 
     fn temporary_path(name: &str) -> std::path::PathBuf {
@@ -2891,6 +2916,25 @@ mod tests {
         assert!(
             selected_secret_reference("raw-secret", "REMBRANE_WHATSAPP_BINDING_LOOKUP_SECRET")
                 .is_err()
+        );
+    }
+
+    #[test]
+    fn privacy_diagnostics_report_reference_targets_instead_of_raw_key_variables() {
+        assert_eq!(
+            key_provider_secret_sources("environment", true),
+            vec![
+                "REMBRANE_WORKSPACE_KEY_ID",
+                "REMBRANE_WORKSPACE_KEY_REFERENCE target"
+            ]
+        );
+        assert_eq!(
+            key_provider_secret_sources("http", true),
+            vec!["REMBRANE_KEY_PROVIDER_TOKEN_REFERENCE target"]
+        );
+        assert_eq!(
+            key_provider_secret_sources("environment", false),
+            vec!["REMBRANE_WORKSPACE_KEY_ID", "REMBRANE_WORKSPACE_KEY_HEX"]
         );
     }
 

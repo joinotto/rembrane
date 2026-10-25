@@ -81,6 +81,9 @@ This roadmap describes sequencing, not release dates.
   - [x] Stage file-backed Compose secrets into an owner-only runtime tmpfs
     before dropping privileges so strict file validation does not depend on
     Compose implementations honoring secret ownership metadata.
+  - [x] Report the effective workspace-key or key-provider credential source
+    in privacy diagnostics, distinguishing protected reference targets from
+    raw process-environment secrets.
 - [ ] Add production OS-keychain and customer-KMS key providers.
   - [x] Honor environment or macOS Keychain selection uniformly in the CLI,
     REST API, and MCP server, including historical-key reads.

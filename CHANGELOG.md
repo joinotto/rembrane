@@ -9,6 +9,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- Privacy diagnostics now report protected workspace-key and key-provider
+  reference targets instead of incorrectly naming raw secret variables, and
+  include configured Supermemory credentials in the secret-source inventory.
 - The independent Memory Provider conformance runner now validates the complete
   closed discovery manifest and exact operation/capability bindings before
   issuing authenticated lifecycle operations.
