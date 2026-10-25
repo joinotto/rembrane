@@ -87,6 +87,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - A dedicated tenant-and-cipher PostgreSQL `MemoryRepository` facade for exact
   lookup and subject enumeration, with bounded reads, authenticated decryption,
   and strict outer-row/domain-payload identity and version correlation.
+- PostgreSQL `EventRepository` support on the tenant-and-cipher facade with
+  optimistic contiguous sequence checks, encrypted immutable append, bounded
+  ordered reads, and authenticated event metadata correlation.
 - PostgreSQL invitation lookup and bounded deterministic listing with optional
   status filtering, numeric lifetime decoding, terminal-state restoration,
   and exact tenant/invitation correlation.
