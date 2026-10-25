@@ -13,7 +13,7 @@ rembrane-codec = { path = "../../crates/rembrane-codec" }
 rembrane-contracts = { path = "../../crates/rembrane-contracts" }
 rembrane-crypto = { path = "../../crates/rembrane-crypto" }
 rembrane-domain = { path = "../../crates/rembrane-domain" }
-rusqlite = { version = "0.37", features = ["bundled"] }
+rusqlite = { version = "0.40", features = ["bundled"] }
 
 [dev-dependencies]
 rembrane-crypto-rustcrypto = { path = "../rembrane-crypto-rustcrypto" }
