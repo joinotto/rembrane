@@ -96,7 +96,17 @@ function readJson(request) {
 function authenticate(request, response, requiredScope) {
   const connection = connections.get(request.headers.authorization);
   if (!connection) {
-    json(response, 401, { code: "access_denied" }, request);
+    json(
+      response,
+      401,
+      {
+        code: "access_denied",
+        ...(request.headers["x-rembrane-request-id"]?.includes("error-leak")
+          ? { memoryContent: "must-not-leak" }
+          : {}),
+      },
+      request,
+    );
     return null;
   }
   if (!connection.scopes.has(requiredScope)) {
@@ -467,12 +477,33 @@ child.stderr.setEncoding("utf8").on("data", (chunk) => {
   stderr += chunk;
 });
 const status = await new Promise((resolve) => child.on("close", resolve));
+assert.equal(status, 0, stderr);
+
+const leakingErrorChild = spawn(process.execPath, [script, "error-leak"], {
+  env: {
+    ...process.env,
+    REMBRANE_MEMORY_PROVIDER_BASE_URL: `http://127.0.0.1:${address.port}`,
+    REMBRANE_MEMORY_PROVIDER_PRIMARY_TOKEN_REFERENCE: `file:${tokenFiles.primary}`,
+    REMBRANE_MEMORY_PROVIDER_OTHER_TOKEN_REFERENCE: `file:${tokenFiles.other}`,
+    REMBRANE_MEMORY_PROVIDER_READONLY_TOKEN_REFERENCE: `file:${tokenFiles.readonly}`,
+  },
+  stdio: ["ignore", "pipe", "pipe"],
+});
+let leakingErrorStderr = "";
+leakingErrorChild.stderr.setEncoding("utf8").on("data", (chunk) => {
+  leakingErrorStderr += chunk;
+});
+const leakingErrorStatus = await new Promise((resolve) =>
+  leakingErrorChild.on("close", resolve),
+);
+assert.notEqual(leakingErrorStatus, 0);
+assert.match(leakingErrorStderr, /invalid closed error response/);
+
 await new Promise((resolve, reject) =>
   server.close((error) => (error ? reject(error) : resolve())),
 );
 await rm(secretDirectory, { recursive: true });
 
-assert.equal(status, 0, stderr);
 const result = JSON.parse(stdout);
 assert.equal(result.profileId, "rembrane.memory-provider.core");
 assert.equal(result.fixtureId, "rembrane.memory-provider.core.lifecycle");

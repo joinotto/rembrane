@@ -982,6 +982,8 @@ This roadmap describes sequencing, not release dates.
     bearer credentials into owner-only curl header files.
   - [x] Bind both conformance runners to the exact reviewed profile and fixture
     bytes so unexecuted custom cases cannot be reported as passing.
+  - [x] Require exact closed error bodies for unauthenticated, insufficient
+    scope, and optimistic-conflict conformance cases.
     - [x] Add bounded context-resolution requests with global, domain, entity,
       and activity selectors constrained by provider-advertised limits.
       - [x] Seal selector representation so callers cannot bypass domain and

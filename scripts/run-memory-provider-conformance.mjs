@@ -112,24 +112,26 @@ try {
     maximumBytes,
   });
 
-  expectStatus(
-    await call("missing_token", undefined, "POST", "/v1/context/resolve", context(query)),
-    401,
-    "protected.missing-token",
+  const missingToken = await call(
+    "missing_token",
+    undefined,
+    "POST",
+    "/v1/context/resolve",
+    context(query),
   );
+  expectStatus(missingToken, 401, "protected.missing-token");
+  requireProtocolError(missingToken.value, "access_denied");
 
   const primaryProposal = proposal("primary");
-  expectStatus(
-    await call(
-      "insufficient_scope",
-      tokens.readonly,
-      "POST",
-      "/v1/memory/proposals",
-      primaryProposal,
-    ),
-    403,
-    "scope.insufficient",
+  const insufficientScope = await call(
+    "insufficient_scope",
+    tokens.readonly,
+    "POST",
+    "/v1/memory/proposals",
+    primaryProposal,
   );
+  expectStatus(insufficientScope, 403, "scope.insufficient");
+  requireProtocolError(insufficientScope.value, "access_denied");
   const first = await call(
     "propose_primary",
     tokens.primary,
@@ -204,17 +206,15 @@ try {
   }
 
   const stale = deletion(first.value, "stale", first.value.version + 1);
-  expectStatus(
-    await call(
-      "delete_stale",
-      tokens.primary,
-      "DELETE",
-      `/v1/memories/${encodeURIComponent(first.value.memoryId)}`,
-      stale,
-    ),
-    409,
-    "delete.stale-version",
+  const staleDeletion = await call(
+    "delete_stale",
+    tokens.primary,
+    "DELETE",
+    `/v1/memories/${encodeURIComponent(first.value.memoryId)}`,
+    stale,
   );
+  expectStatus(staleDeletion, 409, "delete.stale-version");
+  requireProtocolError(staleDeletion.value, "conflict");
   const preserved = await call(
     "context_after_conflict",
     tokens.primary,
@@ -397,6 +397,18 @@ function requireMemoryResult(value) {
     value.version < 1
   ) {
     throw new Error("proposal returned an invalid memory identity");
+  }
+}
+
+function requireProtocolError(value, expectedCode) {
+  if (
+    value === null ||
+    typeof value !== "object" ||
+    Array.isArray(value) ||
+    Object.keys(value).length !== 1 ||
+    value.code !== expectedCode
+  ) {
+    throw new Error("memory-provider returned an invalid closed error response");
   }
 }
 

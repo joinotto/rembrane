@@ -323,6 +323,8 @@ jq -cn \
     }' >"$payload"
 status=$(call "" POST /v1/context/resolve missing_token "$payload")
 test "$status" = 401
+jq -e 'type == "object" and keys == ["code"] and .code == "access_denied"' \
+    "$response" >/dev/null
 
 proposal_content="$content_prefix-$namespace-primary"
 jq -cn \
@@ -342,6 +344,8 @@ jq -cn \
     }' >"$payload"
 status=$(call "$readonly_auth" POST /v1/memory/proposals insufficient_scope "$payload")
 test "$status" = 403
+jq -e 'type == "object" and keys == ["code"] and .code == "access_denied"' \
+    "$response" >/dev/null
 
 status=$(call "$primary_auth" POST /v1/memory/proposals propose_primary "$payload")
 test "$status" = 200
@@ -426,6 +430,8 @@ status=$(call "$primary_auth" DELETE \
     "/v1/memories/$(encode_path "$primary_memory_id")" \
     delete_stale "$payload")
 test "$status" = 409
+jq -e 'type == "object" and keys == ["code"] and .code == "conflict"' \
+    "$response" >/dev/null
 
 context_payload "$proposal_content"
 status=$(call "$primary_auth" POST /v1/context/resolve context_after_conflict "$payload")

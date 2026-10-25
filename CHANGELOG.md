@@ -30,6 +30,11 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Both Memory Provider conformance runners now require the exact reviewed
   profile and fixture bytes, preventing modified or newly added cases from
   being reported as passed by fixed runner logic that did not execute them.
+- Memory Provider conformance now rejects extra or missing fields in 401, 403,
+  and 409 error bodies instead of treating HTTP status alone as proof that a
+  provider did not leak tenant data.
+  - Loopback CI simulates a 401 response containing memory content and proves
+    it cannot produce passing conformance evidence.
 - Project metadata, security reporting, API contact information, offline
   workspace fixtures, and provider provenance now consistently identify the
   canonical `joinotto/rembrane` repository.
