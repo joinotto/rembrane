@@ -197,6 +197,27 @@ printf '%s\n' "$provider_registry" | jq -e \
         and all(.providers[]; has("plaintextProcessing"))
         and all(.providers[]; has("conformance"))' >/dev/null
 
+native_provider_version=$(
+    printf '%s\n' "$provider_registry" |
+        jq -er '.providers[] | select(.id == "rembrane.native") | .adapterVersion'
+)
+provider_selection=$(
+    "$rembrane_binary" providers check \
+        --provider rembrane.native \
+        --adapter-version "$native_provider_version" \
+        --allow-experimental
+)
+printf '%s\n' "$provider_selection" | jq -e \
+    '.provider == "rembrane.native"
+        and .eligibility == "experimental-opt-in"' >/dev/null
+if "$rembrane_binary" providers check \
+    --provider rembrane.native \
+    --adapter-version "$native_provider_version" >/dev/null 2>&1
+then
+    echo "provider selection accepted experimental status without opt-in" >&2
+    exit 1
+fi
+
 provider_conformance=$(
     "$rembrane_binary" providers test \
         --provider rembrane.native \

@@ -968,6 +968,9 @@ This roadmap describes sequencing, not release dates.
     - [x] Require the provider build reported by conformance to match the
       registry adapter version exactly.
 - [x] Expose the build-pinned compatibility registry through the CLI.
+  - [x] Add a fail-closed provider eligibility command that pins the exact
+    adapter build, requires experimental opt-in, and rejects deprecated,
+    revoked, missing, or ambiguous records.
 - [x] Run installed native-provider conformance through the CLI.
 - [x] Automated external-provider registry verification and release signing.
   - [x] Verify registry identity, timestamps, conformance status, and pinned

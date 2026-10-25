@@ -629,13 +629,101 @@ fn providers(arguments: &[String]) -> Result<(), String> {
             Ok(())
         }
         Some("list") => Err("providers list does not accept additional arguments".to_owned()),
+        Some("check") => {
+            println!("{}", check_provider(arguments)?);
+            Ok(())
+        }
         Some("test") => {
             println!("{}", test_provider(arguments)?);
             Ok(())
         }
         Some(command) => Err(format!("unknown providers command: {command}")),
-        None => Err("providers requires a command; supported commands: list, test".to_owned()),
+        None => {
+            Err("providers requires a command; supported commands: list, check, test".to_owned())
+        }
     }
+}
+
+fn check_provider(arguments: &[String]) -> Result<String, String> {
+    let allow_experimental = arguments
+        .iter()
+        .any(|argument| argument == "--allow-experimental");
+    let expected_arguments = if allow_experimental { 6 } else { 5 };
+    if arguments.len() != expected_arguments
+        || arguments
+            .iter()
+            .filter(|argument| *argument == "--allow-experimental")
+            .count()
+            > 1
+    {
+        return Err(
+            "usage: rembrane providers check --provider <id> --adapter-version <version> \
+             [--allow-experimental]"
+                .to_owned(),
+        );
+    }
+    check_provider_registry(
+        PROVIDER_REGISTRY,
+        option(arguments, "--provider")?,
+        option(arguments, "--adapter-version")?,
+        allow_experimental,
+    )
+}
+
+fn check_provider_registry(
+    registry: &str,
+    provider_id: &str,
+    adapter_version: &str,
+    allow_experimental: bool,
+) -> Result<String, String> {
+    let registry: serde_json::Value = serde_json::from_str(registry)
+        .map_err(|_| "provider registry is not valid JSON".to_owned())?;
+    let providers = registry
+        .get("providers")
+        .and_then(serde_json::Value::as_array)
+        .ok_or_else(|| "provider registry has no provider array".to_owned())?;
+    let matches = providers
+        .iter()
+        .filter(|provider| {
+            provider.get("id").and_then(serde_json::Value::as_str) == Some(provider_id)
+        })
+        .collect::<Vec<_>>();
+    let [provider] = matches.as_slice() else {
+        return Err("provider registry does not contain exactly one matching provider".to_owned());
+    };
+    if provider
+        .get("adapterVersion")
+        .and_then(serde_json::Value::as_str)
+        != Some(adapter_version)
+    {
+        return Err("provider adapter version does not match registry evidence".to_owned());
+    }
+    let status = provider
+        .get("status")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| "provider registry status is invalid".to_owned())?;
+    let eligibility = match status {
+        "compatible" => "compatible",
+        "experimental" if allow_experimental => "experimental-opt-in",
+        "experimental" => {
+            return Err("experimental provider requires --allow-experimental".to_owned());
+        }
+        "deprecated" => {
+            return Err("deprecated provider is not eligible for new selection".to_owned());
+        }
+        "revoked" => return Err("revoked provider is not eligible for selection".to_owned()),
+        _ => return Err("provider registry status is invalid".to_owned()),
+    };
+    serde_json::to_string(&serde_json::json!({
+        "provider": provider_id,
+        "adapterVersion": adapter_version,
+        "status": status,
+        "eligibility": eligibility,
+        "protocolVersions": provider.get("protocolVersions"),
+        "deploymentModes": provider.get("deploymentModes"),
+        "plaintextProcessing": provider.get("plaintextProcessing"),
+    }))
+    .map_err(|_| "could not serialize provider eligibility".to_owned())
 }
 
 fn test_provider(arguments: &[String]) -> Result<String, String> {
@@ -2208,6 +2296,8 @@ fn print_help() {
              --principal <id> --workspace <id>\n\
            rembrane fingerprint-git --repository <path>\n\
            rembrane providers list\n\
+           rembrane providers check --provider <id> --adapter-version <version> \
+             [--allow-experimental]\n\
            rembrane providers test --provider <id> --namespace <unique-name>\n\
            rembrane memory-provider check \
              [--privacy <end-to-end-encrypted|trusted-boundary|provider-plaintext>]\n\
@@ -2264,14 +2354,15 @@ mod tests {
     use rembrane_store_sqlite::SqliteStore;
 
     use super::{
-        EXPORT_MAGIC, SEMANTIC_PROVIDER_CONFORMANCE_PROFILE_SHA256, claude_mcp_config,
-        codex_mcp_config, cursor_mcp_config, format_read_scopes, gemini_mcp_config,
-        generic_mcp_config, invitation_list_json, invitation_status, mcp_client_catalog,
-        mcp_environment_variables, memory_privacy_mode_name, memory_provider_check_policy,
-        opencode_mcp_config, option, positive_u64, providers, read_export, recall_scope_context,
-        redact_endpoint, render_mcp_config, requested_memory_privacy, requested_memory_scope, run,
-        selected_secret_reference, test_provider, validate_external_conformance_namespace,
-        validate_mcp_server_binary, vscode_mcp_config, write_export, zed_mcp_config,
+        EXPORT_MAGIC, SEMANTIC_PROVIDER_CONFORMANCE_PROFILE_SHA256, check_provider_registry,
+        claude_mcp_config, codex_mcp_config, cursor_mcp_config, format_read_scopes,
+        gemini_mcp_config, generic_mcp_config, invitation_list_json, invitation_status,
+        mcp_client_catalog, mcp_environment_variables, memory_privacy_mode_name,
+        memory_provider_check_policy, opencode_mcp_config, option, positive_u64, providers,
+        read_export, recall_scope_context, redact_endpoint, render_mcp_config,
+        requested_memory_privacy, requested_memory_scope, run, selected_secret_reference,
+        test_provider, validate_external_conformance_namespace, validate_mcp_server_binary,
+        vscode_mcp_config, write_export, zed_mcp_config,
     };
 
     fn temporary_path(name: &str) -> std::path::PathBuf {
@@ -2636,6 +2727,77 @@ mod tests {
         assert_eq!(report["namespace"], "cli-unit");
         assert_eq!(report["result"], "pass");
         assert_eq!(report["cases"].as_array().expect("cases").len(), 6);
+    }
+
+    #[test]
+    fn provider_selection_pins_build_and_requires_explicit_experimental_opt_in() {
+        let denied = check_provider_registry(
+            super::PROVIDER_REGISTRY,
+            "rembrane.native",
+            env!("CARGO_PKG_VERSION"),
+            false,
+        )
+        .expect_err("experimental selection must require operator intent");
+        assert!(denied.contains("--allow-experimental"));
+
+        let selected = check_provider_registry(
+            super::PROVIDER_REGISTRY,
+            "rembrane.native",
+            env!("CARGO_PKG_VERSION"),
+            true,
+        )
+        .expect("explicit experimental selection");
+        let selected: serde_json::Value =
+            serde_json::from_str(&selected).expect("selection evidence should be JSON");
+        assert_eq!(selected["provider"], "rembrane.native");
+        assert_eq!(selected["adapterVersion"], env!("CARGO_PKG_VERSION"));
+        assert_eq!(selected["eligibility"], "experimental-opt-in");
+
+        let mismatch = check_provider_registry(
+            super::PROVIDER_REGISTRY,
+            "rembrane.native",
+            "attacker-substituted-build",
+            true,
+        )
+        .expect_err("unregistered provider build must fail");
+        assert!(mismatch.contains("version"));
+    }
+
+    #[test]
+    fn provider_selection_rejects_deprecated_revoked_and_ambiguous_records() {
+        let base: serde_json::Value =
+            serde_json::from_str(super::PROVIDER_REGISTRY).expect("embedded registry");
+        for status in ["deprecated", "revoked"] {
+            let mut candidate = base.clone();
+            candidate["providers"][0]["status"] = serde_json::Value::String(status.to_owned());
+            let candidate = serde_json::to_string(&candidate).expect("candidate registry");
+            let error = check_provider_registry(
+                &candidate,
+                "rembrane.native",
+                env!("CARGO_PKG_VERSION"),
+                true,
+            )
+            .expect_err("withdrawn provider must fail");
+            assert!(error.contains(status));
+        }
+
+        let mut duplicate = base;
+        let provider = duplicate["providers"][0].clone();
+        duplicate["providers"]
+            .as_array_mut()
+            .expect("providers")
+            .push(provider);
+        let duplicate = serde_json::to_string(&duplicate).expect("duplicate registry");
+        assert!(
+            check_provider_registry(
+                &duplicate,
+                "rembrane.native",
+                env!("CARGO_PKG_VERSION"),
+                true,
+            )
+            .expect_err("duplicate provider identity must fail")
+            .contains("exactly one")
+        );
     }
 
     #[test]
