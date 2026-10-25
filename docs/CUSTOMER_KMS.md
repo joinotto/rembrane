@@ -159,5 +159,6 @@ roundtrip, substitution, unknown-key, size-limit, rotation, and replay case.
 Retain this result with the reviewed deployment and IAM evidence.
 The case definitions and requirements live in the versioned
 `rembrane.key-provider.core` profile; runner output is generated from that
-profile so evidence case IDs cannot drift independently.
+profile and carries its exact profile ID so evidence cannot be attributed to a
+different test definition.
 

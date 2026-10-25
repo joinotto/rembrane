@@ -14,6 +14,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   authentication, encryption, limit, rotation, and replay cases.
 - A strict versioned key-provider core conformance profile with
   machine-readable case requirements that drive portable runner evidence.
+- Exact core-profile identity binding across key-provider conformance result
+  schemas, fixtures, runner output, and compatibility verification.
 - Required bounded key-provider build versions in discovery, Rust negotiation,
   HTTP decoding, fixtures, and portable conformance evidence.
 - A tamper-tested key-provider compatibility lock over reviewed OpenAPI,

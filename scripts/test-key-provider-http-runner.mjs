@@ -153,6 +153,7 @@ await new Promise((resolve, reject) =>
 assert.equal(status, 0, stderr);
 const result = JSON.parse(stdout);
 assert.equal(result.result, "pass");
+assert.equal(result.profileId, "rembrane.key-provider.core");
 assert.equal(result.providerId, "rembrane.mock-key-provider");
 assert.equal(result.providerVersion, "0.1.0-test");
 assert.deepEqual(

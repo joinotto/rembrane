@@ -84,6 +84,7 @@ jq -e '
 
 jq -e --slurpfile example spec/examples/key-provider-conformance-result.json '
     .additionalProperties == false
+    and .properties.profileId.const == "rembrane.key-provider.core"
     and .properties.protocolVersion.const == "0.1"
     and .properties.result.const == "pass"
     and .properties.providerVersion.maxLength == 100
@@ -93,6 +94,7 @@ jq -e --slurpfile example spec/examples/key-provider-conformance-result.json '
     and ($example[0].cases | map(.id) | unique | length) == 8
     and all($example[0].cases[]; .result == "pass")
     and $example[0].providerVersion == "0.1.0-test"
+    and $example[0].profileId == "rembrane.key-provider.core"
 ' spec/key-provider-conformance-result.schema.json >/dev/null
 
 jq -e '

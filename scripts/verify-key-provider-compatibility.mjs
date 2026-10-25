@@ -122,6 +122,16 @@ assert.equal(
   lock.protocolVersion,
   "compatibility lock and conformance fixture protocol versions differ",
 );
+assert.equal(
+  resultFixture.profileId,
+  conformanceProfile.profileId,
+  "conformance result fixture is bound to a different profile",
+);
+assert.equal(
+  resultSchema.properties.profileId.const,
+  conformanceProfile.profileId,
+  "conformance result schema is bound to a different profile",
+);
 
 process.stdout.write(
   `key provider compatibility lock verified (${lock.artifacts.length} artifacts)\n`,

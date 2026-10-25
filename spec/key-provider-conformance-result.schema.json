@@ -5,6 +5,7 @@
   "type": "object",
   "additionalProperties": false,
   "required": [
+    "profileId",
     "protocolVersion",
     "providerId",
     "providerVersion",
@@ -13,6 +14,9 @@
     "cases"
   ],
   "properties": {
+    "profileId": {
+      "const": "rembrane.key-provider.core"
+    },
     "protocolVersion": {
       "const": "0.1"
     },

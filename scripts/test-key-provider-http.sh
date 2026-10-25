@@ -44,6 +44,7 @@ cases=$(
     ' "$conformance_profile" >/dev/null
     jq -c '[.cases[] | {id, result: "pass"}]' "$conformance_profile"
 )
+profile_id=$(jq -r '.profileId' "$conformance_profile")
 
 test_directory=$(mktemp -d "${TMPDIR:-/tmp}/rembrane-key-provider-http.XXXXXX")
 auth_header="$test_directory/auth.header"
@@ -242,9 +243,11 @@ esac
 jq -cn \
     --arg providerId "$provider_id" \
     --arg providerVersion "$provider_version" \
+    --arg profileId "$profile_id" \
     --arg namespace "$namespace" \
     --argjson cases "$cases" \
     '{
+        profileId: $profileId,
         protocolVersion: "0.1",
         providerId: $providerId,
         providerVersion: $providerVersion,
