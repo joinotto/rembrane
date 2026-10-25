@@ -70,6 +70,19 @@ fun main() {
     check(listing.headers["Authorization"] == "Bearer test-token")
     check(listing.body == null)
 
+    val graphBody =
+        """{"workspaceId":"team","subjectId":"principal-1","nodeId":"project-1","direction":"outgoing","validAtEpochSeconds":1700000000,"maximumCandidates":20,"purpose":"continue-project","entityId":"project-1"}"""
+    client.resolveGraphContext(graphBody)
+    val graph = captured[5]
+    check(graph.method == "POST")
+    check(
+        graph.uri.toString() ==
+            "http://127.0.0.1:8787/v1/graph/context/resolve"
+    )
+    check(graph.headers["Authorization"] == "Bearer test-token")
+    check(graph.headers["Content-Type"] == "application/json")
+    check(graph.body?.toString(StandardCharsets.UTF_8) == graphBody)
+
     check(
         runCatching {
             RembraneClient(

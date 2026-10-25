@@ -44,6 +44,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   authenticated connection explicitly holds global read authority.
 - Typed TypeScript and standard-library Python graph-context client operations
   targeting the exact authenticated REST route.
+- Swift and Kotlin graph-context client operations with executable checks for
+  the exact route, bearer authorization, and serialized request body.
 - Bounded shared-workspace invitation validity with persisted creation and
   expiry time, a 30-day maximum lifetime, and fail-closed acceptance at the
   expiry boundary.

@@ -91,6 +91,9 @@ class RembraneClient(
     fun resolveContext(jsonBody: String): String =
         request("POST", "/context/resolve", jsonBody)
 
+    fun resolveGraphContext(jsonBody: String): String =
+        request("POST", "/graph/context/resolve", jsonBody)
+
     fun rotateWorkspaceKey(jsonBody: String): String =
         request("POST", "/workspaces/key-rotation", jsonBody)
 

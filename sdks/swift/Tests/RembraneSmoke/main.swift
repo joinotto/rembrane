@@ -10,7 +10,9 @@ private actor MockTransport: RembraneTransport {
     ) async throws -> RembraneHTTPResponse {
         self.request = request
         let body: Data
-        if request.url?.path.hasSuffix("/administrative-audit") == true {
+        if request.url?.path.hasSuffix("/graph/context/resolve") == true {
+            body = Data(#"{"disclosureId":"d1","edges":[]}"#.utf8)
+        } else if request.url?.path.hasSuffix("/administrative-audit") == true {
             body = Data(#"{"events":[]}"#.utf8)
         } else if request.httpMethod == "GET" {
             body = Data(#"{"workspaceId":"team/name","invitations":[]}"#.utf8)
@@ -45,6 +47,22 @@ private struct InvitationResponse: Decodable {
 private struct InvitationListResponse: Decodable {
     let workspaceId: String
     let invitations: [String]
+}
+
+private struct GraphContextRequest: Encodable {
+    let workspaceId: String
+    let subjectId: String
+    let nodeId: String
+    let direction: String
+    let validAtEpochSeconds: UInt64
+    let maximumCandidates: Int
+    let purpose: String
+    let entityId: String
+}
+
+private struct GraphContextResponse: Decodable {
+    let disclosureId: String
+    let edges: [String]
 }
 
 private struct MockShareSigner: RembraneMobileShareSigner {
@@ -146,6 +164,31 @@ private struct RembraneSmoke {
         precondition(
             invitationRequest?.url?.absoluteString
                 == "http://127.0.0.1:8787/v1/workspaces/invitations?workspaceId=team/name&status=accepted&limit=20"
+        )
+
+        let graph: GraphContextResponse = try await client.resolveGraphContext(
+            GraphContextRequest(
+                workspaceId: "team",
+                subjectId: "principal-1",
+                nodeId: "project-1",
+                direction: "outgoing",
+                validAtEpochSeconds: 1_700_000_000,
+                maximumCandidates: 20,
+                purpose: "continue-project",
+                entityId: "project-1"
+            )
+        )
+        precondition(graph.disclosureId == "d1")
+        precondition(graph.edges.isEmpty)
+        let graphRequest = await transport.request
+        precondition(graphRequest?.httpMethod == "POST")
+        precondition(
+            graphRequest?.url?.absoluteString
+                == "http://127.0.0.1:8787/v1/graph/context/resolve"
+        )
+        precondition(
+            graphRequest?.value(forHTTPHeaderField: "Authorization")
+                == "Bearer test-token"
         )
 
         do {

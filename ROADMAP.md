@@ -434,6 +434,8 @@ This roadmap describes sequencing, not release dates.
         configured provider, canonical reauthorization, and disclosure path.
         - [x] Add exact-route graph-context operations to the TypeScript and
           Python SDKs.
+        - [x] Add exact-route graph-context operations to the Swift and Kotlin
+          SDKs with executable transport smoke coverage.
       - [x] Deny implicit global REST context requests when the connection has
         only narrower domain, entity, or activity grants.
     - [x] Persist graph disclosure evidence in the in-memory, SQLite, and
