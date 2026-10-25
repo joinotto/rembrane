@@ -118,4 +118,5 @@ Use isolated test workspaces and short-lived tokens. The client creates and
 deletes fixtures, verifies cross-workspace denial, and emits a credential-free
 JSON result. The result carries the exact reviewed profile and lifecycle
 fixture identifiers; compatibility verification rejects evidence attributed to
-another test definition.
+another test definition. It also records SHA-256 digests of both exact input
+files so evidence remains unambiguous across reviewed pre-stable revisions.

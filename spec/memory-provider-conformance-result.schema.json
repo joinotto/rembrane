@@ -6,7 +6,9 @@
   "additionalProperties": false,
   "required": [
     "profileId",
+    "profileSha256",
     "fixtureId",
+    "fixtureSha256",
     "protocolVersion",
     "provider",
     "result",
@@ -17,8 +19,16 @@
     "profileId": {
       "const": "rembrane.memory-provider.core"
     },
+    "profileSha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
     "fixtureId": {
       "const": "rembrane.memory-provider.core.lifecycle"
+    },
+    "fixtureSha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
     },
     "protocolVersion": {
       "const": "0.1"

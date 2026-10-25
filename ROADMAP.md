@@ -772,6 +772,8 @@ This roadmap describes sequencing, not release dates.
       to exact reviewed profile and fixture identifiers.
       - [x] Require result case identity and order to match the reviewed
         profile exactly.
+      - [x] Bind portable evidence to SHA-256 digests of the exact reviewed
+        profile and lifecycle fixture bytes.
   - [x] Add an immutable, versioned discovery manifest with standard well-known
     path, transports, operation capabilities, privacy mode, supported domains,
     and bounded context/event/sync limits.

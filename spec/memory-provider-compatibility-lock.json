@@ -16,7 +16,7 @@
     },
     {
       "path": "spec/memory-provider-conformance-result.schema.json",
-      "sha256": "df9f318fd491e171cd99aba331cc575313b4051312cf59e65876e34adc8e78d3"
+      "sha256": "64151592807bc14ef64d0334dc57e44a23aa9f8aa4a6571b190a19d7885026b3"
     },
     {
       "path": "spec/memory-provider-fixtures.schema.json",
@@ -32,7 +32,11 @@
     },
     {
       "path": "spec/examples/memory-provider-conformance-result.json",
-      "sha256": "2ebb90f14910b18b573efe81b8699c457b8e3ff8af08baaa4e264da584e517bf"
+      "sha256": "f29bc99f9b1957926d63087c51023017a92429140ba2a18243af9512f2b4c8e5"
+    },
+    {
+      "path": "scripts/test-memory-provider-http.sh",
+      "sha256": "975ea77d14278aa6c6fd53652b0c3823568d48b75c66c2e7d12b5b607504487d"
     }
   ]
 }

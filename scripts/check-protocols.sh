@@ -115,7 +115,9 @@ jq -e '
 jq -e '
     .additionalProperties == false
     and .properties.profileId.const == "rembrane.memory-provider.core"
+    and .properties.profileSha256.pattern == "^[0-9a-f]{64}$"
     and .properties.fixtureId.const == "rembrane.memory-provider.core.lifecycle"
+    and .properties.fixtureSha256.pattern == "^[0-9a-f]{64}$"
     and .properties.protocolVersion.const == "0.1"
     and .properties.result.const == "pass"
 ' spec/memory-provider-conformance-result.schema.json >/dev/null

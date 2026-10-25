@@ -22,6 +22,7 @@ const expectedArtifacts = [
   "spec/conformance/memory-provider-core.json",
   "spec/conformance/memory-provider-core-fixtures.json",
   "spec/examples/memory-provider-conformance-result.json",
+  "scripts/test-memory-provider-http.sh",
 ];
 assert.deepEqual(
   lock.artifacts.map((artifact) => artifact.path).sort(),
@@ -75,18 +76,14 @@ const fixtureSchema = JSON.parse(
     "utf8",
   ),
 );
-const profile = JSON.parse(
-  await readFile(
-    resolve(repositoryRoot, "spec/conformance/memory-provider-core.json"),
-    "utf8",
-  ),
+const profileBytes = await readFile(
+  resolve(repositoryRoot, "spec/conformance/memory-provider-core.json"),
 );
-const fixtures = JSON.parse(
-  await readFile(
-    resolve(repositoryRoot, "spec/conformance/memory-provider-core-fixtures.json"),
-    "utf8",
-  ),
+const profile = JSON.parse(profileBytes.toString("utf8"));
+const fixtureBytes = await readFile(
+  resolve(repositoryRoot, "spec/conformance/memory-provider-core-fixtures.json"),
 );
+const fixtures = JSON.parse(fixtureBytes.toString("utf8"));
 const resultFixture = JSON.parse(
   await readFile(
     resolve(repositoryRoot, "spec/examples/memory-provider-conformance-result.json"),
@@ -124,6 +121,11 @@ assert.equal(
   "result fixture is bound to a different profile",
 );
 assert.equal(
+  resultFixture.profileSha256,
+  createHash("sha256").update(profileBytes).digest("hex"),
+  "result fixture is bound to different profile bytes",
+);
+assert.equal(
   fixtureSchema.properties.fixtureId.const,
   fixtures.fixtureId,
   "fixture schema is bound to a different fixture corpus",
@@ -137,6 +139,11 @@ assert.equal(
   resultFixture.fixtureId,
   fixtures.fixtureId,
   "result fixture is bound to a different fixture corpus",
+);
+assert.equal(
+  resultFixture.fixtureSha256,
+  createHash("sha256").update(fixtureBytes).digest("hex"),
+  "result fixture is bound to different fixture bytes",
 );
 assert.deepEqual(
   resultFixture.cases.map(({ id }) => id),

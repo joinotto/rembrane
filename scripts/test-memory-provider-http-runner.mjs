@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import http from "node:http";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -398,6 +400,29 @@ assert.equal(status, 0, stderr);
 const result = JSON.parse(stdout);
 assert.equal(result.profileId, "rembrane.memory-provider.core");
 assert.equal(result.fixtureId, "rembrane.memory-provider.core.lifecycle");
+assert.equal(
+  result.profileSha256,
+  createHash("sha256")
+    .update(
+      await readFile(
+        new URL("../spec/conformance/memory-provider-core.json", import.meta.url),
+      ),
+    )
+    .digest("hex"),
+);
+assert.equal(
+  result.fixtureSha256,
+  createHash("sha256")
+    .update(
+      await readFile(
+        new URL(
+          "../spec/conformance/memory-provider-core-fixtures.json",
+          import.meta.url,
+        ),
+      ),
+    )
+    .digest("hex"),
+);
 assert.equal(result.result, "pass");
 assert.equal(result.provider.id, "rembrane.mock-memory-provider");
 assert.equal(result.cases.length, 11);

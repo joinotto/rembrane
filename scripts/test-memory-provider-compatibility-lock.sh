@@ -19,7 +19,7 @@ jq -r '.artifacts[].path' \
     "$repository_root/spec/memory-provider-compatibility-lock.json" |
 while IFS= read -r artifact; do
     case "$artifact" in
-        spec/*) ;;
+        spec/* | scripts/*) ;;
         *)
             echo "compatibility fixture contains an unsafe path: $artifact" >&2
             exit 1

@@ -30,6 +30,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   audience claims before canonical remote tenant authorization.
 - Key-provider conformance evidence bound to the SHA-256 of the exact reviewed
   profile bytes.
+- Memory Provider evidence bound to SHA-256 digests of the exact profile and
+  lifecycle fixture bytes, with its evidence runner added to the lock.
 - Required bounded key-provider build versions in discovery, Rust negotiation,
   HTTP decoding, fixtures, and portable conformance evidence.
 - A tamper-tested key-provider compatibility lock over reviewed OpenAPI,

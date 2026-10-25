@@ -10,7 +10,7 @@ require_command() {
     fi
 }
 
-for command in curl jq mktemp rg; do
+for command in curl jq mktemp rg openssl sed; do
     require_command "$command"
 done
 
@@ -62,6 +62,20 @@ if [ "$fixture_profile_id" != "$profile_id" ]; then
     echo "memory provider fixture targets a different conformance profile" >&2
     exit 1
 fi
+profile_sha256=$(
+    openssl dgst -sha256 "$profile_file" |
+        sed 's/^.*= //'
+)
+fixture_sha256=$(
+    openssl dgst -sha256 "$fixture_file" |
+        sed 's/^.*= //'
+)
+for digest in "$profile_sha256" "$fixture_sha256"; do
+    if ! printf '%s' "$digest" | rg '^[0-9a-f]{64}$' >/dev/null; then
+        echo "could not calculate memory provider conformance digest" >&2
+        exit 1
+    fi
+done
 required_actor_scopes=$(jq -c '
     [
         .actors.primary.requiredScopes[],
@@ -397,7 +411,9 @@ jq -e \
 
 jq -cn \
     --arg profileId "$profile_id" \
+    --arg profileSha256 "$profile_sha256" \
     --arg fixtureId "$fixture_id" \
+    --arg fixtureSha256 "$fixture_sha256" \
     --arg protocolVersion "0.1" \
     --arg providerId "$provider_id" \
     --arg providerVersion "$provider_version" \
@@ -405,7 +421,9 @@ jq -cn \
     --argjson cases "$case_results" \
     '{
         profileId: $profileId,
+        profileSha256: $profileSha256,
         fixtureId: $fixtureId,
+        fixtureSha256: $fixtureSha256,
         protocolVersion: $protocolVersion,
         provider: {id: $providerId, version: $providerVersion},
         result: "pass",
