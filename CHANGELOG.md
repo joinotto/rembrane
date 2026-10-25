@@ -9,6 +9,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- Portable Memory Provider discovery now rejects transport, capability, and
+  operation collections larger than the finite protocol surface.
 - Portable Memory Provider synchronization responses now reject oversized pull
   pages and non-exact push acknowledgements before per-item conversion.
 - Portable Memory Provider HTTP responses now reject oversized context and

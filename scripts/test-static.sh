@@ -224,6 +224,8 @@ rg -q 'memory provider sync pull returned too many changes' \
     adapters/rembrane-memory-provider-http/src/lib.rs
 rg -q 'memory provider sync push result count does not match' \
     adapters/rembrane-memory-provider-http/src/lib.rs
+rg -q 'MAXIMUM_DISCOVERY_CAPABILITIES: usize = 10' \
+    adapters/rembrane-memory-provider-http/src/lib.rs
 rg -q 'Result<Zeroizing<Vec<u8>>, ProviderError>' \
     adapters/rembrane-semantic-supermemory/src/lib.rs
 for zeroizing_response_adapter in \

@@ -30,6 +30,8 @@ use zeroize::Zeroizing;
 
 const MAXIMUM_DISCOVERY_BYTES: u64 = 262_144;
 const MAXIMUM_OPERATION_BYTES: u64 = 1_500_000;
+const MAXIMUM_DISCOVERY_TRANSPORTS: usize = 2;
+const MAXIMUM_DISCOVERY_CAPABILITIES: usize = 10;
 const REQUEST_ID_HEADER: &str = "x-rembrane-request-id";
 const PROTOCOL_VERSION_HEADER: &str = "x-rembrane-protocol-version";
 
@@ -1437,6 +1439,12 @@ impl TryFrom<DiscoveryBody> for MemoryProviderManifest {
     type Error = ProviderError;
 
     fn try_from(wire: DiscoveryBody) -> Result<Self, Self::Error> {
+        if wire.transports.len() > MAXIMUM_DISCOVERY_TRANSPORTS
+            || wire.capabilities.len() > MAXIMUM_DISCOVERY_CAPABILITIES
+            || wire.operations.len() > MAXIMUM_DISCOVERY_CAPABILITIES
+        {
+            return Err(invalid_discovery());
+        }
         let protocol_version = parse_protocol(&wire.protocol_version)?;
         let transports = wire
             .transports
@@ -1797,6 +1805,17 @@ mod tests {
 
         let malformed = DISCOVERY.replace("\"memory:memory:delete\"", "\"memory:context:read\"");
         let wire: DiscoveryBody = serde_json::from_str(&malformed).expect("discovery JSON");
+        assert!(MemoryProviderManifest::try_from(wire).is_err());
+    }
+
+    #[test]
+    fn rejects_discovery_collections_above_the_protocol_surface() {
+        let mut discovery: serde_json::Value =
+            serde_json::from_str(DISCOVERY).expect("discovery fixture");
+        discovery["transports"] = serde_json::json!(["https", "mcp", "https"]);
+        let wire: DiscoveryBody =
+            serde_json::from_value(discovery).expect("discovery shape should decode");
+
         assert!(MemoryProviderManifest::try_from(wire).is_err());
     }
 

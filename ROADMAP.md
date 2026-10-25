@@ -921,6 +921,8 @@ This roadmap describes sequencing, not release dates.
     request's negotiated item ceiling before canonical item conversion.
   - [x] Reject oversized pull pages and non-exact push acknowledgement
     collections before converting provider-controlled synchronization items.
+  - [x] Bound discovery transport, capability, and operation collections to
+    the finite protocol surface before manifest conversion.
 - [ ] Stable Memory Provider Protocol.
   - [ ] Satisfy the explicit `1.0` release gates in
     `spec/MEMORY_PROVIDER_STABILITY.md`.
