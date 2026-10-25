@@ -22,6 +22,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Authenticated REST and OpenAPI checkpoint/resume operations, with exact
   activity-scope enforcement, optimistic event sequencing, audited reads, and
   matching path-safe TypeScript and Python SDK methods.
+- The REST service now serves `/.well-known/ai-memory` without authentication,
+  reporting its configured API root, implemented capabilities, limits, and
+  local-only versus customer-gateway plaintext-processing boundary.
 - Protected `env:` and `file:` credential references for each workspace actor
   in the portable Memory Provider conformance runner, with opaque failures,
   strict local-file validation, raw-variable compatibility, and

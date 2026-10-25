@@ -213,6 +213,8 @@ This roadmap describes sequencing, not release dates.
 - [x] Retrieve minimal context through authenticated local REST.
 - [x] Create, optimistically update, and audit encrypted activity handoffs
   through REST, OpenAPI, and the TypeScript and Python SDKs.
+- [x] Serve unauthenticated, credential-free REST capability discovery with
+  deployment-accurate API location, privacy mode, limits, and handoff support.
 - [ ] Add remote Streamable HTTP MCP with OAuth.
   - [x] Define HTTPS endpoints, RFC 9728 discovery metadata, bearer challenges,
     verified connection identity, scope ceilings, and session security rules.

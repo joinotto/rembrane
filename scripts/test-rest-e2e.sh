@@ -94,6 +94,26 @@ until curl -fsS "$base_url/health" >/dev/null 2>&1; do
     sleep 0.1
 done
 
+discovery_response="$test_directory/discovery-response.json"
+discovery_status=$(
+    curl -sS \
+        -o "$discovery_response" \
+        -w '%{http_code}' \
+        "$base_url/.well-known/ai-memory"
+)
+test "$discovery_status" = "200"
+jq -e \
+    '.provider.id == "local.rembrane"
+        and .protocolVersions == ["0.1"]
+        and .endpoints.api == "'"$base_url"'/v1"
+        and .capabilities.contextResolution == true
+        and .capabilities.activityCheckpoint == true
+        and .capabilities.disclosureReceipt == true
+        and .capabilities.memoryProposal == false
+        and .privacy.processingModes == ["local-only"]
+        and .privacy.plaintextProcessingLocation == "user-device"' \
+    "$discovery_response" >/dev/null
+
 scoped_response="$test_directory/scoped-response.json"
 scoped_status=$(
     curl -sS \

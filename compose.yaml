@@ -15,6 +15,7 @@ services:
       REMBRANE_WORKSPACE_KEY_REFERENCE: file:/run/rembrane-secrets/rembrane_workspace_key
       REMBRANE_API_TOKEN_REFERENCE: file:/run/rembrane-secrets/rembrane_api_token
       REMBRANE_LISTEN: 0.0.0.0:8787
+      REMBRANE_PUBLIC_API_URL: ${REMBRANE_PUBLIC_API_URL:-http://127.0.0.1:8787/v1}
       REMBRANE_ALLOW_NON_LOOPBACK: "1"
     secrets:
       - source: rembrane_workspace_key

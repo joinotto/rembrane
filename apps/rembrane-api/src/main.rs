@@ -51,6 +51,7 @@ struct AppState {
 struct Inner {
     runtime: Mutex<Runtime>,
     bearer_token: Zeroizing<String>,
+    discovery: MemoryDiscovery,
     oauth_resource_metadata: Option<OAuthProtectedResourceMetadata>,
 }
 
@@ -495,6 +496,61 @@ struct Health {
     status: &'static str,
 }
 
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MemoryDiscovery {
+    provider: DiscoveryProvider,
+    protocol_versions: Vec<&'static str>,
+    endpoints: DiscoveryEndpoints,
+    capabilities: DiscoveryCapabilities,
+    limits: DiscoveryLimits,
+    privacy: DiscoveryPrivacy,
+}
+
+#[derive(Clone, Serialize)]
+struct DiscoveryProvider {
+    id: &'static str,
+    name: &'static str,
+    implementation: &'static str,
+}
+
+#[derive(Clone, Serialize)]
+struct DiscoveryEndpoints {
+    api: String,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(clippy::struct_excessive_bools)]
+struct DiscoveryCapabilities {
+    context_resolution: bool,
+    question_resolution: bool,
+    memory_proposal: bool,
+    activity_checkpoint: bool,
+    disclosure_receipt: bool,
+    deletion_propagation: bool,
+    sync: bool,
+    imports: Vec<&'static str>,
+    exports: Vec<&'static str>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(clippy::struct_field_names)]
+struct DiscoveryLimits {
+    maximum_context_items: usize,
+    maximum_context_bytes: usize,
+    maximum_event_bytes: usize,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DiscoveryPrivacy {
+    processing_modes: Vec<&'static str>,
+    disclosure_receipts: bool,
+    plaintext_processing_location: &'static str,
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct RotateWorkspaceKeyResponse {
@@ -592,6 +648,7 @@ impl AppState {
         let workspace_id = WorkspaceId::new(required_environment("REMBRANE_WORKSPACE_ID")?);
         let client_id = ClientId::new(required_environment("REMBRANE_CLIENT_ID")?);
         let bearer_token = resolve_api_token()?;
+        let discovery = memory_discovery_from_environment()?;
         let oauth_resource_metadata = oauth_resource_metadata_from_environment()?;
         let cipher = ConfiguredRecordCipher::from_environment()
             .context("failed to load workspace cipher")?;
@@ -659,6 +716,7 @@ impl AppState {
                     next_id,
                 }),
                 bearer_token,
+                discovery,
                 oauth_resource_metadata,
             }),
         })
@@ -1704,6 +1762,10 @@ async fn health() -> Json<Health> {
     Json(Health { status: "ok" })
 }
 
+async fn memory_discovery(State(state): State<AppState>) -> Json<MemoryDiscovery> {
+    Json(state.inner.discovery.clone())
+}
+
 async fn resolve_context(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -2234,6 +2296,70 @@ fn oauth_resource_metadata_from_environment() -> Result<Option<OAuthProtectedRes
     }
 }
 
+fn memory_discovery_from_environment() -> Result<MemoryDiscovery> {
+    let listen = std::env::var("REMBRANE_LISTEN").unwrap_or_else(|_| "127.0.0.1:8787".to_owned());
+    let api =
+        std::env::var("REMBRANE_PUBLIC_API_URL").unwrap_or_else(|_| format!("http://{listen}/v1"));
+    let uri = api
+        .parse::<axum::http::Uri>()
+        .context("REMBRANE_PUBLIC_API_URL must be an absolute URI")?;
+    let scheme = uri
+        .scheme_str()
+        .context("REMBRANE_PUBLIC_API_URL must include a scheme")?;
+    let authority = uri
+        .authority()
+        .context("REMBRANE_PUBLIC_API_URL must include an authority")?;
+    let host = authority.host();
+    let loopback = matches!(host, "localhost" | "127.0.0.1" | "::1");
+    anyhow::ensure!(
+        scheme == "https" || (scheme == "http" && loopback),
+        "REMBRANE_PUBLIC_API_URL must use HTTPS or explicit loopback HTTP"
+    );
+    anyhow::ensure!(
+        !authority.as_str().contains('@') && uri.query().is_none(),
+        "REMBRANE_PUBLIC_API_URL must not contain credentials or a query"
+    );
+    anyhow::ensure!(
+        uri.path().ends_with("/v1"),
+        "REMBRANE_PUBLIC_API_URL must identify the versioned /v1 API root"
+    );
+    let (processing_mode, plaintext_location) = if loopback {
+        ("local-only", "user-device")
+    } else {
+        ("customer-gateway", "customer-gateway")
+    };
+    Ok(MemoryDiscovery {
+        provider: DiscoveryProvider {
+            id: "local.rembrane",
+            name: "Rembrane",
+            implementation: "rembrane",
+        },
+        protocol_versions: vec!["0.1"],
+        endpoints: DiscoveryEndpoints { api },
+        capabilities: DiscoveryCapabilities {
+            context_resolution: true,
+            question_resolution: false,
+            memory_proposal: false,
+            activity_checkpoint: true,
+            disclosure_receipt: true,
+            deletion_propagation: false,
+            sync: false,
+            imports: Vec::new(),
+            exports: vec!["encrypted-archive"],
+        },
+        limits: DiscoveryLimits {
+            maximum_context_items: 100,
+            maximum_context_bytes: 1_048_576,
+            maximum_event_bytes: 262_144,
+        },
+        privacy: DiscoveryPrivacy {
+            processing_modes: vec![processing_mode],
+            disclosure_receipts: true,
+            plaintext_processing_location: plaintext_location,
+        },
+    })
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let state = AppState::from_environment()?;
@@ -2252,6 +2378,7 @@ async fn main() -> Result<()> {
         .with_context(|| format!("failed to bind {address}"))?;
     let app = Router::new()
         .route("/health", get(health))
+        .route("/.well-known/ai-memory", get(memory_discovery))
         .route(
             "/.well-known/oauth-protected-resource/mcp",
             get(oauth_protected_resource),

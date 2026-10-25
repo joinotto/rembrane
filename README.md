@@ -361,7 +361,10 @@ launchers, and agent platforms.
 
 The local REST server additionally requires `REMBRANE_DATABASE`,
 `REMBRANE_PRINCIPAL_ID`, `REMBRANE_WORKSPACE_ID`, `REMBRANE_CLIENT_ID`, and
-`REMBRANE_API_TOKEN`. It listens on `127.0.0.1:8787` by default. Non-loopback
+`REMBRANE_API_TOKEN`. It listens on `127.0.0.1:8787` by default. Set
+`REMBRANE_PUBLIC_API_URL` to the client-visible versioned API root used in
+capability discovery; it defaults to `http://127.0.0.1:8787/v1`. Public
+deployments must use an HTTPS URL ending in `/v1`. Non-loopback
 HTTP is rejected unless explicitly enabled for operation behind a trusted TLS
 terminator. For outbound-only self-hosted public connectivity, see
 `docs/CLOUDFLARE_DEPLOYMENT.md`.

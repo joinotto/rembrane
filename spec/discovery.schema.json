@@ -51,7 +51,14 @@
         "api": {
           "type": "string",
           "format": "uri",
-          "pattern": "^https://"
+          "anyOf": [
+            {
+              "pattern": "^https://"
+            },
+            {
+              "pattern": "^http://(localhost|127\\.0\\.0\\.1|\\[::1\\])(?::[0-9]+)?/"
+            }
+          ]
         },
         "oauthAuthorization": {
           "type": "string",
