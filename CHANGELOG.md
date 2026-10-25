@@ -134,6 +134,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Exact-version PostgreSQL travel disclosure persistence with verified trip
   ownership, correlated booking-research revisions, freshness classifications,
   and explicit source-reference and sensitive-profile inclusion flags.
+- End-to-end PostgreSQL travel-context resolution for shared-workspace readers,
+  preserving canonical trip ownership while recording the authorized
+  disclosure subject and client.
 - PostgreSQL invitation lookup and bounded deterministic listing with optional
   status filtering, numeric lifetime decoding, terminal-state restoration,
   and exact tenant/invitation correlation.

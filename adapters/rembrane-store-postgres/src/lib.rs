@@ -3419,21 +3419,21 @@ where
         });
     }
     let row = &rows[0];
-    let correlated = row
-        .text("workspace_id")
+    let owner_subject_id = row
+        .text("owner_subject_id")
         .map_err(PostgresStoreError::Row)
-        .map_err(map_application_error)?
-        == receipt.workspace_id.as_str()
+        .map_err(map_application_error)?;
+    let correlated = !owner_subject_id.trim().is_empty()
+        && row
+            .text("workspace_id")
+            .map_err(PostgresStoreError::Row)
+            .map_err(map_application_error)?
+            == receipt.workspace_id.as_str()
         && row
             .text("id")
             .map_err(PostgresStoreError::Row)
             .map_err(map_application_error)?
-            == receipt.trip_id.as_str()
-        && row
-            .text("owner_subject_id")
-            .map_err(PostgresStoreError::Row)
-            .map_err(map_application_error)?
-            == receipt.subject_id.as_str();
+            == receipt.trip_id.as_str();
     if !correlated {
         return Err(ApplicationError::StorageUnavailable);
     }
@@ -5726,7 +5726,8 @@ mod tests {
         EventRepository, InvitationRepository, InvitationService, KeyRotationRepository,
         MemberLifecycleRepository, MemberScopeGrantRepository, MembershipRepository,
         MemoryRepository, ProjectionOutboxRepository, ProjectionOutcome, ProjectionWorker,
-        ResolveContextCommand, ResolveContextService, ResumeActivityCommand, RetentionRepository,
+        ResolveContextCommand, ResolveContextService, ResolveTravelContextCommand,
+        ResumeActivityCommand, RetentionRepository, TravelContextService,
         TravelDisclosureRepository, TripMutationRepository, TripRepository, WorkspaceRepository,
     };
     use rembrane_codec::{encode_booking_research, encode_checkpoint, encode_memory, encode_trip};
@@ -8348,6 +8349,82 @@ mod tests {
                 if statement == INSERT_DISCLOSED_BOOKING_RESEARCH_SQL
                     && parameters.contains(&"text:fresh".to_owned())
                     && parameters.contains(&"i64:0".to_owned())
+        )));
+    }
+
+    #[test]
+    fn travel_context_service_discloses_trip_to_authorized_shared_reader() {
+        let trip = Trip::new(
+            EntityId::new("trip_shared"),
+            WorkspaceId::new("workspace_01"),
+            PrincipalId::new("principal_owner"),
+            "Shared Tokyo trip",
+            "Bengaluru",
+            vec!["Tokyo".to_owned()],
+            TravelDateWindow::new("2027-03-10", "2027-03-20").expect("date window"),
+        )
+        .expect("trip");
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let store = PostgresStore::new(FakePool {
+            calls: Rc::clone(&calls),
+            tenant_batches: RefCell::new(
+                [
+                    VecDeque::from([
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                    ]),
+                    VecDeque::from([
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                    ]),
+                    VecDeque::from([
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                    ]),
+                ]
+                .into(),
+            ),
+            row_batches: RefCell::new(
+                [
+                    vec![FakeRow::trip(&trip)],
+                    Vec::new(),
+                    vec![FakeRow::trip(&trip)],
+                ]
+                .into(),
+            ),
+        });
+        let tenant = store.for_workspace(WorkspaceId::new("workspace_01"));
+        let cipher = IdentityCipher;
+        let mut memories = tenant.with_cipher(&cipher);
+        let context = TravelContextService::new(&mut memories)
+            .resolve(&ResolveTravelContextCommand {
+                grant: ReadGrant {
+                    client_id: ClientId::new("client_shared_reader"),
+                    workspace_id: WorkspaceId::new("workspace_01"),
+                    subject_id: PrincipalId::new("principal_reader"),
+                    scopes: vec![ReadScope::Entity {
+                        id: EntityId::new("trip_shared"),
+                    }],
+                    permissions: Vec::new(),
+                },
+                disclosure_id: DisclosureId::new("travel_disclosure_shared"),
+                trip_id: EntityId::new("trip_shared"),
+                purpose: "continue shared trip planning".to_owned(),
+                as_of: "2026-10-25T10:00:00Z".to_owned(),
+                include_source_references: false,
+                include_sensitive_profile: false,
+            })
+            .expect("resolve shared trip");
+
+        assert_eq!(context.trip.owner_subject_id.as_str(), "principal_owner");
+        assert!(context.fresh_research.is_empty());
+        assert!(calls.borrow().iter().any(|call| matches!(
+            call,
+            Call::Execute(statement, parameters)
+                if statement == INSERT_TRAVEL_DISCLOSURE_SQL
+                    && parameters.contains(&"text:principal_reader".to_owned())
+                    && parameters.contains(&"text:client_shared_reader".to_owned())
         )));
     }
 

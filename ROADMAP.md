@@ -356,6 +356,8 @@ This roadmap describes sequencing, not release dates.
             a researcher-bound canonical event and optimistic stream sequence.
           - [x] Persist exact-version PostgreSQL travel disclosures with
             verified trip/research revisions and sensitivity flags.
+            - [x] Run travel-context resolution end to end over PostgreSQL,
+              preserving trip ownership while auditing an authorized reader.
       - [x] Add exact invitation lookup and bounded status-filtered listing
         with terminal-state restoration and full tenant/identifier correlation.
       - [x] Implement atomic invitation creation, acceptance, revocation,
