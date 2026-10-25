@@ -69,12 +69,16 @@ where
         if command.trip.owner_subject_id() != &command.grant.subject_id {
             return Err(ApplicationError::AccessDenied);
         }
+        let event_sequence = command
+            .expected_previous_sequence
+            .checked_add(1)
+            .ok_or(ApplicationError::SequenceConflict)?;
         let event = CanonicalEvent::new(
             command.event_id,
             command.trip.workspace_id().clone(),
             command.grant.subject_id,
             Some(command.trip.owner_subject_id().clone()),
-            command.expected_previous_sequence.saturating_add(1),
+            event_sequence,
             EventPayload::TripCreated {
                 trip_id: command.trip.id().clone(),
                 version: command.trip.version(),
@@ -97,16 +101,20 @@ where
             .ok_or(ApplicationError::NotFound)?;
         if stored.owner_subject_id() != command.trip.owner_subject_id()
             || stored.version() != command.expected_trip_version
-            || command.trip.version() != command.expected_trip_version.saturating_add(1)
+            || !crate::is_strict_successor(command.expected_trip_version, command.trip.version())
         {
             return Err(ApplicationError::VersionConflict);
         }
+        let event_sequence = command
+            .expected_previous_sequence
+            .checked_add(1)
+            .ok_or(ApplicationError::SequenceConflict)?;
         let event = CanonicalEvent::new(
             command.event_id,
             command.trip.workspace_id().clone(),
             command.grant.subject_id,
             Some(command.trip.owner_subject_id().clone()),
-            command.expected_previous_sequence.saturating_add(1),
+            event_sequence,
             EventPayload::TripRevised {
                 trip_id: command.trip.id().clone(),
                 version: command.trip.version(),

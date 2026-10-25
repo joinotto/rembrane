@@ -13,7 +13,7 @@ use rembrane_domain::{
 use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::graph_projection::insert_graph_projection;
-use crate::{SqliteStore, map_write_error};
+use crate::{SqliteStore, is_strict_successor, map_write_error};
 
 type EncryptedNodeRow = (String, i64, Vec<u8>, String, String, Vec<u8>);
 type EncryptedEdgeRow = (
@@ -164,7 +164,7 @@ impl<C: RecordCipher> KnowledgeGraphMutationRepository for SqliteStore<C> {
         node: KnowledgeNode,
         expected_version: u64,
     ) -> Result<(), ApplicationError> {
-        if node.version() != expected_version.saturating_add(1) {
+        if !is_strict_successor(expected_version, node.version()) {
             return Err(ApplicationError::VersionConflict);
         }
         let encrypted = seal_node(&self.cipher, &node)?;
@@ -235,7 +235,7 @@ impl<C: RecordCipher> KnowledgeGraphMutationRepository for SqliteStore<C> {
         edge: KnowledgeEdge,
         expected_version: u64,
     ) -> Result<(), ApplicationError> {
-        if edge.version() != expected_version.saturating_add(1) {
+        if !is_strict_successor(expected_version, edge.version()) {
             return Err(ApplicationError::VersionConflict);
         }
         self.validate_edge_lineage(&edge, Some(expected_version))?;
@@ -307,7 +307,7 @@ impl<C: RecordCipher> CanonicalGraphMutationRepository for SqliteStore<C> {
         expected_version: u64,
         projections: Vec<GraphProjectionJob>,
     ) -> Result<(), ApplicationError> {
-        if node.version() != expected_version.saturating_add(1) {
+        if !is_strict_successor(expected_version, node.version()) {
             return Err(ApplicationError::VersionConflict);
         }
         validate_projection_batch(
@@ -354,7 +354,7 @@ impl<C: RecordCipher> CanonicalGraphMutationRepository for SqliteStore<C> {
         expected_version: u64,
         projections: Vec<GraphProjectionJob>,
     ) -> Result<(), ApplicationError> {
-        if edge.version() != expected_version.saturating_add(1) {
+        if !is_strict_successor(expected_version, edge.version()) {
             return Err(ApplicationError::VersionConflict);
         }
         self.validate_edge_lineage(&edge, Some(expected_version))?;

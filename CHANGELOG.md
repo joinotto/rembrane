@@ -9,6 +9,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- Checked optimistic version and event-sequence progression across application,
+  in-memory, SQLite, REST, and CLI paths, rejecting exhaustion instead of
+  accepting repeated saturated revisions.
 - Fail-closed REST and local MCP generated-identifier exhaustion handling,
   preventing saturated counters from reusing memory, event, checkpoint,
   travel, or disclosure identities.

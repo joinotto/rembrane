@@ -48,12 +48,16 @@ where
         {
             return Err(ApplicationError::NotFound);
         }
+        let event_sequence = command
+            .expected_previous_sequence
+            .checked_add(1)
+            .ok_or(ApplicationError::SequenceConflict)?;
         let event = CanonicalEvent::new(
             command.event_id,
             command.research.workspace_id().clone(),
             command.grant.subject_id,
             Some(command.research.observed_by().clone()),
-            command.expected_previous_sequence.saturating_add(1),
+            event_sequence,
             EventPayload::BookingResearchCaptured {
                 research_id: command.research.id().clone(),
                 trip_id: command.research.trip_id().clone(),

@@ -18,6 +18,7 @@ use rembrane_application::{
     MAX_ADMINISTRATIVE_AUDIT_PAGE, MemberLifecycleRepository, MemberScopeGrantRepository,
     MembershipRepository, MemoryRepository, RetentionPurgePlan, RetentionPurgeRepository,
     RetentionPurgeResult, RetentionRepository, ShareProposalRepository, WorkspaceRepository,
+    is_strict_successor,
 };
 use rembrane_codec::decode_memory;
 use rembrane_crypto::{EncryptedPayload, EncryptionContext, PayloadPurpose, RecordCipher};
@@ -271,7 +272,7 @@ impl<C> RetentionRepository for SqliteStore<C> {
                     values[5]
                 ],
             ),
-            Some(expected) if policy.version() == expected.saturating_add(1) => transaction
+            Some(expected) if is_strict_successor(expected, policy.version()) => transaction
                 .execute(
                     "UPDATE workspace_retention_policies SET version=?2, user_memory_days=?3,
                  activity_checkpoint_days=?4, travel_research_days=?5,
@@ -405,7 +406,7 @@ impl<C> RetentionRepository for SqliteStore<C> {
         audit_event: AdministrativeAuditEvent,
     ) -> Result<(), ApplicationError> {
         validate_legal_hold_audit(&hold, &audit_event, AdministrativeAction::LegalHoldReleased)?;
-        if hold.version() != expected_version.saturating_add(1) {
+        if !is_strict_successor(expected_version, hold.version()) {
             return Err(ApplicationError::VersionConflict);
         }
         let transaction = self

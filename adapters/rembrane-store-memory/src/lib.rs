@@ -10,7 +10,7 @@ use rembrane_application::{
     MemberLifecycleRepository, MemberScopeGrantRepository, MembershipRepository, MemoryRepository,
     ProjectionOutboxRepository, RetentionRepository, ShareProposalMutationRepository,
     ShareProposalRepository, TravelDisclosureRepository, TripMutationRepository, TripRepository,
-    WorkspaceRepository,
+    WorkspaceRepository, is_strict_successor,
 };
 use rembrane_domain::{
     ActivityCheckpoint, ActivityId, AdministrativeAction, AdministrativeAuditEvent,
@@ -80,7 +80,7 @@ impl RetentionRepository for InMemoryStore {
             (None, None) if policy.version() == 1 => self.retention_policies.push(policy),
             (Some(index), Some(expected))
                 if self.retention_policies[index].version() == expected
-                    && policy.version() == expected.saturating_add(1) =>
+                    && is_strict_successor(expected, policy.version()) =>
             {
                 self.retention_policies[index] = policy;
             }
@@ -156,7 +156,7 @@ impl RetentionRepository for InMemoryStore {
             .find(|stored| stored.workspace_id() == hold.workspace_id() && stored.id() == hold.id())
             .ok_or(ApplicationError::NotFound)?;
         if stored.version() != expected_version
-            || hold.version() != expected_version.saturating_add(1)
+            || !is_strict_successor(expected_version, hold.version())
         {
             return Err(ApplicationError::VersionConflict);
         }
@@ -374,7 +374,7 @@ impl KnowledgeGraphMutationRepository for InMemoryStore {
             })
             .ok_or(ApplicationError::NotFound)?;
         if self.knowledge_nodes[position].version() != expected_version
-            || node.version() != expected_version.saturating_add(1)
+            || !is_strict_successor(expected_version, node.version())
         {
             return Err(ApplicationError::VersionConflict);
         }
@@ -408,7 +408,7 @@ impl KnowledgeGraphMutationRepository for InMemoryStore {
             })
             .ok_or(ApplicationError::NotFound)?;
         if self.knowledge_edges[position].version() != expected_version
-            || edge.version() != expected_version.saturating_add(1)
+            || !is_strict_successor(expected_version, edge.version())
         {
             return Err(ApplicationError::VersionConflict);
         }
@@ -695,7 +695,7 @@ impl TripMutationRepository for InMemoryStore {
         let stored = &self.trips[position];
         if stored.owner_subject_id() != trip.owner_subject_id()
             || stored.version() != expected_trip_version
-            || trip.version() != expected_trip_version.saturating_add(1)
+            || !is_strict_successor(expected_trip_version, trip.version())
         {
             return Err(ApplicationError::VersionConflict);
         }
@@ -938,7 +938,7 @@ impl CanonicalMutationRepository for InMemoryStore {
             .ok_or(ApplicationError::NotFound)?;
         let stored = &self.memories[position];
         if stored.version() != expected_memory_version
-            || memory.version() != expected_memory_version.saturating_add(1)
+            || !is_strict_successor(expected_memory_version, memory.version())
         {
             return Err(ApplicationError::VersionConflict);
         }
@@ -1707,7 +1707,7 @@ impl CheckpointMutationRepository for InMemoryStore {
             .ok_or(ApplicationError::NotFound)?;
         let stored = &self.checkpoints[position];
         if stored.version() != expected_checkpoint_version
-            || checkpoint.version() != expected_checkpoint_version.saturating_add(1)
+            || !is_strict_successor(expected_checkpoint_version, checkpoint.version())
         {
             return Err(ApplicationError::VersionConflict);
         }
@@ -1734,7 +1734,7 @@ impl EventRepository for InMemoryStore {
             .unwrap_or(0);
 
         if current_sequence != expected_previous_sequence
-            || event.sequence() != expected_previous_sequence.saturating_add(1)
+            || !is_strict_successor(expected_previous_sequence, event.sequence())
         {
             return Err(ApplicationError::SequenceConflict);
         }
@@ -1823,7 +1823,7 @@ impl InMemoryStore {
             .max()
             .unwrap_or(0);
         if current_sequence != expected_previous_sequence
-            || event.sequence() != expected_previous_sequence.saturating_add(1)
+            || !is_strict_successor(expected_previous_sequence, event.sequence())
         {
             return Err(ApplicationError::SequenceConflict);
         }

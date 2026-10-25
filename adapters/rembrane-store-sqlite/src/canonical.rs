@@ -7,7 +7,7 @@ use rembrane_domain::{
 };
 use rusqlite::{Transaction, params};
 
-use crate::{SqliteStore, map_write_error};
+use crate::{SqliteStore, is_strict_successor, map_write_error};
 
 impl<C: RecordCipher> CanonicalMutationRepository for SqliteStore<C> {
     fn insert_memory_with_event(
@@ -47,7 +47,7 @@ impl<C: RecordCipher> CanonicalMutationRepository for SqliteStore<C> {
         expected_previous_sequence: u64,
     ) -> Result<(), ApplicationError> {
         validate_mutation(&memory, &event, &projections)?;
-        if memory.version() != expected_memory_version.saturating_add(1) {
+        if !is_strict_successor(expected_memory_version, memory.version()) {
             return Err(ApplicationError::VersionConflict);
         }
         let encrypted_memory = seal_memory(&self.cipher, &memory)?;
@@ -424,7 +424,7 @@ pub(super) fn require_event_sequence(
         )
         .map_err(|_| ApplicationError::StorageUnavailable)?;
     let expected = to_i64(expected_previous_sequence)?;
-    if current != expected || event_sequence != expected_previous_sequence.saturating_add(1) {
+    if current != expected || !is_strict_successor(expected_previous_sequence, event_sequence) {
         return Err(ApplicationError::SequenceConflict);
     }
     Ok(())

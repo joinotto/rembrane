@@ -93,3 +93,24 @@ pub use trip::{
     AddTripConstraintCommand, AddTripParticipantCommand, CreateTripCommand,
     RecordTripDecisionCommand, ReplaceTripCommand, TripService,
 };
+
+/// Returns whether `candidate` is the unique representable successor.
+///
+/// This fails closed at `u64::MAX` instead of accepting a repeated saturated
+/// version or sequence.
+#[must_use]
+pub const fn is_strict_successor(previous: u64, candidate: u64) -> bool {
+    matches!(previous.checked_add(1), Some(next) if next == candidate)
+}
+
+#[cfg(test)]
+mod progression_tests {
+    use super::is_strict_successor;
+
+    #[test]
+    fn strict_successor_never_accepts_a_saturated_version() {
+        assert!(is_strict_successor(41, 42));
+        assert!(!is_strict_successor(41, 41));
+        assert!(!is_strict_successor(u64::MAX, u64::MAX));
+    }
+}

@@ -657,9 +657,12 @@ async fn set_retention_policy(
         .lock()
         .map_err(|_| ApiError::internal())?;
     authorize_management_workspace(&runtime, &request.workspace_id)?;
-    let version = request
-        .expected_version
-        .map_or(1, |version| version.saturating_add(1));
+    let version = match request.expected_version {
+        Some(version) => version
+            .checked_add(1)
+            .ok_or_else(ApiError::invalid_request)?,
+        None => 1,
+    };
     let policy = WorkspaceRetentionPolicy::new(
         runtime.write_grant.workspace_id.clone(),
         version,

@@ -5,7 +5,7 @@ use rembrane_domain::{CanonicalEvent, EntityId, EventPayload, PrincipalId, Trip,
 use rusqlite::{OptionalExtension, Transaction, params};
 
 use crate::canonical::{SealedRecord, insert_event, require_event_sequence, seal_event, to_i64};
-use crate::{SqliteStore, map_write_error};
+use crate::{SqliteStore, is_strict_successor, map_write_error};
 
 type EncryptedTripRow = (String, String, i64, Vec<u8>, String, String, Vec<u8>);
 
@@ -148,7 +148,7 @@ impl<C: RecordCipher> TripMutationRepository for SqliteStore<C> {
         expected_previous_sequence: u64,
     ) -> Result<(), ApplicationError> {
         validate_trip_event(&trip, &event, true)?;
-        if trip.version() != expected_trip_version.saturating_add(1) {
+        if !is_strict_successor(expected_trip_version, trip.version()) {
             return Err(ApplicationError::VersionConflict);
         }
         let encrypted_trip = seal_trip(&self.cipher, &trip)?;

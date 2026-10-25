@@ -400,7 +400,12 @@ fn retention(arguments: &[String]) -> Result<(), String> {
     let expected_version = optional_option(arguments, "--expected-version")
         .map(|value| parse_u64(value, "--expected-version"))
         .transpose()?;
-    let version = expected_version.map_or(1, |value| value.saturating_add(1));
+    let version = match expected_version {
+        Some(value) => value
+            .checked_add(1)
+            .ok_or_else(|| "retention policy version is exhausted".to_owned())?,
+        None => 1,
+    };
     let policy = WorkspaceRetentionPolicy::new(
         workspace_id,
         version,
