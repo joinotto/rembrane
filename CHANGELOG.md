@@ -31,6 +31,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   `rembrane_resolve_graph_context` MCP operation classification.
 - Transport-neutral graph-context request and response contracts for reuse by
   MCP, REST, SDK, bot, and local integrations.
+- Application bridge from the transport-neutral graph request to provider
+  traversal, with principal substitution denial and disclosure identity
+  returned only after evidence commits.
 - Bounded shared-workspace invitation validity with persisted creation and
   expiry time, a 30-day maximum lifetime, and fail-closed acceptance at the
   expiry boundary.

@@ -1,3 +1,4 @@
+use rembrane_contracts::{ResolveGraphContextRequest, ResolveGraphContextResponse};
 use rembrane_domain::{
     DisclosedKnowledgeEdge, DisclosureId, GraphDisclosureDirection, GraphDisclosureReceipt,
     KnowledgeEdge, KnowledgeNodeId, MemoryScope, ReadGrant,
@@ -127,6 +128,43 @@ where
             })?;
         Ok(edges)
     }
+
+    pub fn execute_request(
+        &mut self,
+        request: ResolveGraphContextRequest,
+        grant: ReadGrant,
+        disclosure_id: DisclosureId,
+    ) -> Result<ResolveGraphContextResponse, ApplicationError> {
+        if request.principal_id != grant.subject_id {
+            return Err(ApplicationError::AccessDenied);
+        }
+        let response_disclosure_id = disclosure_id.clone();
+        let edges = self.execute(ResolveGraphContextCommand {
+            query: GraphNeighbourQuery {
+                workspace_id: request.workspace_id,
+                node_id: request.node_id,
+                direction: provider_direction(request.direction),
+                valid_at_epoch_seconds: request.valid_at_epoch_seconds,
+                maximum_candidates: request.maximum_candidates,
+            },
+            grant,
+            scope: request.scope,
+            disclosure_id,
+            purpose: request.purpose,
+        })?;
+        Ok(ResolveGraphContextResponse {
+            edges,
+            disclosure_id: response_disclosure_id,
+        })
+    }
+}
+
+const fn provider_direction(direction: GraphDisclosureDirection) -> GraphDirection {
+    match direction {
+        GraphDisclosureDirection::Incoming => GraphDirection::Incoming,
+        GraphDisclosureDirection::Outgoing => GraphDirection::Outgoing,
+        GraphDisclosureDirection::Both => GraphDirection::Both,
+    }
 }
 
 const fn disclosure_direction(direction: GraphDirection) -> GraphDisclosureDirection {
@@ -151,6 +189,7 @@ fn matches_direction(
 
 #[cfg(test)]
 mod tests {
+    use rembrane_contracts::ResolveGraphContextRequest;
     use rembrane_domain::{
         ClientId, DisclosureId, EvidenceId, EvidenceReference, EvidenceSource,
         GraphDisclosureDirection, GraphDisclosureReceipt, KnowledgeEdge, KnowledgeEdgeId,
@@ -473,5 +512,50 @@ mod tests {
             Err(ApplicationError::StorageUnavailable)
         );
         assert!(repository.disclosures.is_empty());
+    }
+
+    #[test]
+    fn transport_request_binds_principal_and_returns_disclosure_identity() {
+        let mut repository = Repository {
+            edges: vec![edge("valid", "workspace_01", "project", "rust", 2)],
+            disclosures: Vec::new(),
+            fail_disclosure: false,
+        };
+        let provider = Provider {
+            candidates: vec![CandidateKnowledgeEdge {
+                edge_id: KnowledgeEdgeId::new("valid"),
+                version: 2,
+            }],
+        };
+        let request = ResolveGraphContextRequest {
+            workspace_id: WorkspaceId::new("workspace_01"),
+            principal_id: PrincipalId::new("principal_01"),
+            node_id: KnowledgeNodeId::new("project"),
+            scope: MemoryScope::Global,
+            direction: GraphDisclosureDirection::Outgoing,
+            valid_at_epoch_seconds: 150,
+            maximum_candidates: 10,
+            purpose: "assistant_graph_context".to_owned(),
+        };
+        let grant = command("workspace_01", 150).grant;
+        let disclosure_id = DisclosureId::new("disclosure_transport_01");
+
+        let response = GraphContextService::new(&mut repository, &provider)
+            .execute_request(request.clone(), grant.clone(), disclosure_id.clone())
+            .expect("transport request should resolve");
+        assert_eq!(response.disclosure_id, disclosure_id);
+        assert_eq!(response.edges.len(), 1);
+
+        let mut substituted = request;
+        substituted.principal_id = PrincipalId::new("principal_other");
+        assert_eq!(
+            GraphContextService::new(&mut repository, &provider).execute_request(
+                substituted,
+                grant,
+                DisclosureId::new("disclosure_transport_02"),
+            ),
+            Err(ApplicationError::AccessDenied)
+        );
+        assert_eq!(repository.disclosures.len(), 1);
     }
 }

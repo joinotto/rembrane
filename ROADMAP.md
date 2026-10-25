@@ -425,6 +425,8 @@ This roadmap describes sequencing, not release dates.
       - [x] Define one transport-neutral graph-context request and response
         carrying explicit scope, temporal direction, bounds, purpose, exact
         canonical edges, and disclosure identity.
+      - [x] Bind transport principal identity to the verified grant before
+        converting the neutral request into a provider traversal.
     - [x] Persist graph disclosure evidence in the in-memory, SQLite, and
       PostgreSQL repository adapters with tenant-isolation coverage.
       - [x] Enforce exact tenant and edge-revision correlation in the
