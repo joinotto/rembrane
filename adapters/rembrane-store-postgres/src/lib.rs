@@ -15,9 +15,10 @@ use rembrane_application::{
 };
 use rembrane_domain::{
     AdministrativeAction, AdministrativeAuditEvent, AdministrativeAuditEventId,
-    AdministrativeTargetKind, Invitation, InvitationId, InvitationStatus, Membership, Principal,
-    PrincipalId, RetentionPeriod, RetentionResource, Workspace, WorkspaceId, WorkspaceKind,
-    WorkspaceRetentionPolicy, WorkspaceRole,
+    AdministrativeTargetKind, Invitation, InvitationId, InvitationStatus, LegalHoldId,
+    LegalHoldStatus, Membership, Principal, PrincipalId, RetentionPeriod, RetentionResource,
+    Workspace, WorkspaceId, WorkspaceKind, WorkspaceLegalHold, WorkspaceRetentionPolicy,
+    WorkspaceRole,
 };
 
 pub const SET_TENANT_SQL: &str = "SELECT set_config('rembrane.workspace_id', $1, true);";
@@ -95,6 +96,17 @@ pub const REPLACE_RETENTION_POLICY_SQL: &str = "UPDATE workspace_retention_polic
     version = $2, user_memory_days = $3, activity_checkpoint_days = $4, \
     travel_research_days = $5, disclosure_receipt_days = $6, canonical_event_days = $7, \
     administrative_audit_days = $8 WHERE workspace_id = $1 AND version = $9";
+pub const FIND_LEGAL_HOLD_SQL: &str = "SELECT workspace_id, id, placed_by, \
+    placed_at_epoch_seconds, status, version, COALESCE(released_by, '') AS released_by, \
+    COALESCE(released_at_epoch_seconds, 0) AS released_at_epoch_seconds \
+    FROM workspace_legal_holds WHERE workspace_id = $1 AND id = $2 \
+    ORDER BY workspace_id, id LIMIT 2";
+pub const MAX_ACTIVE_LEGAL_HOLDS: usize = 10_000;
+pub const LIST_ACTIVE_LEGAL_HOLDS_SQL: &str = "SELECT workspace_id, id, placed_by, \
+    placed_at_epoch_seconds, status, version, COALESCE(released_by, '') AS released_by, \
+    COALESCE(released_at_epoch_seconds, 0) AS released_at_epoch_seconds \
+    FROM workspace_legal_holds WHERE workspace_id = $1 AND status = 'active' \
+    ORDER BY id LIMIT 10001";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PostgresParameter<'value> {
@@ -991,6 +1003,69 @@ impl<Pool: PostgresPool> PostgresStore<Pool> {
         insert_administrative_audit(&mut transaction, audit_event)?;
         transaction.commit().map_err(PostgresStoreError::Tenant)
     }
+
+    pub fn find_legal_hold(
+        &self,
+        workspace_id: &WorkspaceId,
+        hold_id: &LegalHoldId,
+    ) -> Result<Option<WorkspaceLegalHold>, PostgresStoreError<Pool::Error>>
+    where
+        <Pool::Transaction as PostgresTransaction>::Row: PostgresRow<Error = Pool::Error>,
+    {
+        let mut transaction = self.begin_tenant(workspace_id.clone())?;
+        let rows = transaction
+            .query(
+                FIND_LEGAL_HOLD_SQL,
+                &[
+                    PostgresParameter::Text(workspace_id.as_str()),
+                    PostgresParameter::Text(hold_id.as_str()),
+                ],
+            )
+            .map_err(PostgresStoreError::Tenant)?;
+        if rows.len() > 1 {
+            return Err(PostgresStoreError::UnexpectedCardinality);
+        }
+        let hold = rows
+            .first()
+            .map(|row| decode_legal_hold(row, workspace_id, Some(hold_id)))
+            .transpose()?;
+        transaction.commit().map_err(PostgresStoreError::Tenant)?;
+        Ok(hold)
+    }
+
+    pub fn list_active_legal_holds(
+        &self,
+        workspace_id: &WorkspaceId,
+    ) -> Result<Vec<WorkspaceLegalHold>, PostgresStoreError<Pool::Error>>
+    where
+        <Pool::Transaction as PostgresTransaction>::Row: PostgresRow<Error = Pool::Error>,
+    {
+        let mut transaction = self.begin_tenant(workspace_id.clone())?;
+        let rows = transaction
+            .query(
+                LIST_ACTIVE_LEGAL_HOLDS_SQL,
+                &[PostgresParameter::Text(workspace_id.as_str())],
+            )
+            .map_err(PostgresStoreError::Tenant)?;
+        if rows.len() > MAX_ACTIVE_LEGAL_HOLDS {
+            return Err(PostgresStoreError::UnexpectedCardinality);
+        }
+        let mut ids = BTreeSet::new();
+        let holds = rows
+            .iter()
+            .map(|row| {
+                let hold = decode_legal_hold(row, workspace_id, None)?;
+                if hold.status() != LegalHoldStatus::Active
+                    || !ids.insert(hold.id().as_str().to_owned())
+                {
+                    return Err(PostgresStoreError::InvalidRow);
+                }
+                Ok(hold)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        transaction.commit().map_err(PostgresStoreError::Tenant)?;
+        Ok(holds)
+    }
 }
 
 impl<Pool> MembershipRepository for PostgresStore<Pool>
@@ -1148,6 +1223,37 @@ impl<Pool> PostgresTenantStore<'_, Pool> {
         self.store
             .replace_retention_policy(policy, expected_version, audit_event)
             .map_err(map_retention_application_error)
+    }
+
+    pub fn find_legal_hold(
+        &self,
+        workspace_id: &WorkspaceId,
+        hold_id: &LegalHoldId,
+    ) -> Result<Option<WorkspaceLegalHold>, ApplicationError>
+    where
+        Pool: PostgresPool,
+        Pool::Error: ClassifiedPostgresError,
+        <Pool::Transaction as PostgresTransaction>::Row: PostgresRow<Error = Pool::Error>,
+    {
+        self.require_workspace(workspace_id)?;
+        self.store
+            .find_legal_hold(workspace_id, hold_id)
+            .map_err(map_application_error)
+    }
+
+    pub fn list_active_legal_holds(
+        &self,
+        workspace_id: &WorkspaceId,
+    ) -> Result<Vec<WorkspaceLegalHold>, ApplicationError>
+    where
+        Pool: PostgresPool,
+        Pool::Error: ClassifiedPostgresError,
+        <Pool::Transaction as PostgresTransaction>::Row: PostgresRow<Error = Pool::Error>,
+    {
+        self.require_workspace(workspace_id)?;
+        self.store
+            .list_active_legal_holds(workspace_id)
+            .map_err(map_application_error)
     }
 }
 
@@ -1675,6 +1781,48 @@ where
     RetentionPeriod::days(days).map_err(|_| PostgresStoreError::InvalidRow)
 }
 
+fn decode_legal_hold<Row, DriverError>(
+    row: &Row,
+    expected_workspace_id: &WorkspaceId,
+    expected_hold_id: Option<&LegalHoldId>,
+) -> Result<WorkspaceLegalHold, PostgresStoreError<DriverError>>
+where
+    Row: PostgresRow<Error = DriverError>,
+{
+    let workspace_id = row.text("workspace_id").map_err(PostgresStoreError::Row)?;
+    let hold_id = row.text("id").map_err(PostgresStoreError::Row)?;
+    if workspace_id != expected_workspace_id.as_str()
+        || expected_hold_id.is_some_and(|expected| hold_id != expected.as_str())
+    {
+        return Err(PostgresStoreError::InvalidRow);
+    }
+    let status = match row
+        .text("status")
+        .map_err(PostgresStoreError::Row)?
+        .as_str()
+    {
+        "active" => LegalHoldStatus::Active,
+        "released" => LegalHoldStatus::Released,
+        _ => return Err(PostgresStoreError::InvalidRow),
+    };
+    let released_by = row.text("released_by").map_err(PostgresStoreError::Row)?;
+    let released_at = row
+        .u64("released_at_epoch_seconds")
+        .map_err(PostgresStoreError::Row)?;
+    WorkspaceLegalHold::restore(
+        LegalHoldId::new(hold_id),
+        WorkspaceId::new(workspace_id),
+        PrincipalId::new(row.text("placed_by").map_err(PostgresStoreError::Row)?),
+        row.u64("placed_at_epoch_seconds")
+            .map_err(PostgresStoreError::Row)?,
+        status,
+        row.u64("version").map_err(PostgresStoreError::Row)?,
+        (!released_by.is_empty()).then(|| PrincipalId::new(released_by)),
+        (released_at != 0).then_some(released_at),
+    )
+    .map_err(|_| PostgresStoreError::InvalidRow)
+}
+
 fn decode_workspace<Row, DriverError>(
     row: &Row,
     expected_id: &WorkspaceId,
@@ -1976,24 +2124,25 @@ mod tests {
     };
     use rembrane_domain::{
         AdministrativeAction, AdministrativeAuditEvent, AdministrativeAuditEventId,
-        AdministrativeTargetKind, Invitation, InvitationId, InvitationStatus, Principal,
-        PrincipalId, RetentionPeriod, RetentionResource, Workspace, WorkspaceId,
-        WorkspaceRetentionPolicy, WorkspaceRole,
+        AdministrativeTargetKind, Invitation, InvitationId, InvitationStatus, LegalHoldId,
+        LegalHoldStatus, Principal, PrincipalId, RetentionPeriod, RetentionResource, Workspace,
+        WorkspaceId, WorkspaceRetentionPolicy, WorkspaceRole,
     };
 
     use super::{
         ACCEPT_INVITATION_SQL, ClassifiedPostgresError, EXPIRE_PENDING_INVITATION_SQL,
-        FIND_INVITATION_SQL, FIND_MEMBERSHIP_SQL, FIND_PRINCIPAL_SQL,
+        FIND_INVITATION_SQL, FIND_LEGAL_HOLD_SQL, FIND_MEMBERSHIP_SQL, FIND_PRINCIPAL_SQL,
         FIND_PROVISIONING_PRINCIPAL_SQL, FIND_RETENTION_POLICY_SQL, FIND_WORKSPACE_SQL,
         INSERT_ADMINISTRATIVE_AUDIT_SQL, INSERT_INVITATION_SQL, INSERT_MEMBERSHIP_SQL,
         INSERT_PRINCIPAL_SQL, INSERT_RETENTION_POLICY_SQL, INSERT_WORKSPACE_SQL,
-        LIST_ACTIVE_MEMBERSHIPS_SQL, LIST_ADMINISTRATIVE_AUDIT_SQL, LIST_INVITATIONS_BY_STATUS_SQL,
-        MAX_ACTIVE_MEMBERSHIPS, PostgresFailureKind, PostgresParameter, PostgresPool,
-        PostgresProvisioner, PostgresProvisioningPool, PostgresRow, PostgresStore,
-        PostgresStoreError, PostgresTransaction, PostgresWorkspaceAdminStore,
-        ProvisioningTransaction, READ_TENANT_SQL, REPLACE_INVITATION_SQL, REPLACE_MEMBERSHIP_SQL,
-        REPLACE_RETENTION_POLICY_SQL, SET_TENANT_SQL, TenantTransaction, TenantTransactionError,
-        map_application_error, map_invitation_application_error,
+        LIST_ACTIVE_LEGAL_HOLDS_SQL, LIST_ACTIVE_MEMBERSHIPS_SQL, LIST_ADMINISTRATIVE_AUDIT_SQL,
+        LIST_INVITATIONS_BY_STATUS_SQL, MAX_ACTIVE_MEMBERSHIPS, PostgresFailureKind,
+        PostgresParameter, PostgresPool, PostgresProvisioner, PostgresProvisioningPool,
+        PostgresRow, PostgresStore, PostgresStoreError, PostgresTransaction,
+        PostgresWorkspaceAdminStore, ProvisioningTransaction, READ_TENANT_SQL,
+        REPLACE_INVITATION_SQL, REPLACE_MEMBERSHIP_SQL, REPLACE_RETENTION_POLICY_SQL,
+        SET_TENANT_SQL, TenantTransaction, TenantTransactionError, map_application_error,
+        map_invitation_application_error,
     };
 
     #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2110,6 +2259,33 @@ mod tests {
                     ("disclosure_receipt_days", 90),
                     ("canonical_event_days", 365),
                     ("administrative_audit_days", audit_days),
+                ]),
+            }
+        }
+
+        #[allow(clippy::too_many_arguments)]
+        fn legal_hold(
+            workspace_id: &str,
+            id: &str,
+            placed_by: &str,
+            status: &str,
+            version: u64,
+            released_by: &str,
+            placed_at: u64,
+            released_at: u64,
+        ) -> Self {
+            Self {
+                columns: BTreeMap::from([
+                    ("workspace_id", workspace_id.to_owned()),
+                    ("id", id.to_owned()),
+                    ("placed_by", placed_by.to_owned()),
+                    ("status", status.to_owned()),
+                    ("released_by", released_by.to_owned()),
+                ]),
+                numbers: BTreeMap::from([
+                    ("placed_at_epoch_seconds", placed_at),
+                    ("version", version),
+                    ("released_at_epoch_seconds", released_at),
                 ]),
             }
         }
@@ -3505,6 +3681,82 @@ mod tests {
             calls.iter().filter(|call| **call == Call::Commit).count(),
             2
         );
+    }
+
+    #[test]
+    fn tenant_store_restores_exact_and_active_legal_holds() {
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let store = PostgresStore::new(FakePool {
+            calls: Rc::clone(&calls),
+            tenant_batches: RefCell::new(
+                [
+                    VecDeque::from([
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                    ]),
+                    VecDeque::from([
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                    ]),
+                ]
+                .into(),
+            ),
+            row_batches: RefCell::new(
+                [
+                    vec![FakeRow::legal_hold(
+                        "workspace_01",
+                        "hold_released",
+                        "principal_admin",
+                        "released",
+                        2,
+                        "principal_admin",
+                        100,
+                        200,
+                    )],
+                    vec![FakeRow::legal_hold(
+                        "workspace_01",
+                        "hold_active",
+                        "principal_admin",
+                        "active",
+                        1,
+                        "",
+                        300,
+                        0,
+                    )],
+                ]
+                .into(),
+            ),
+        });
+        let tenant = store.for_workspace(WorkspaceId::new("workspace_01"));
+
+        let released = tenant
+            .find_legal_hold(
+                &WorkspaceId::new("workspace_01"),
+                &LegalHoldId::new("hold_released"),
+            )
+            .expect("hold lookup")
+            .expect("hold");
+        assert_eq!(released.status(), LegalHoldStatus::Released);
+        assert_eq!(
+            released.released_by().map(PrincipalId::as_str),
+            Some("principal_admin")
+        );
+        let active = tenant
+            .list_active_legal_holds(&WorkspaceId::new("workspace_01"))
+            .expect("active holds");
+        assert_eq!(active.len(), 1);
+        assert_eq!(active[0].status(), LegalHoldStatus::Active);
+        assert!(calls.borrow().contains(&Call::Query(
+            FIND_LEGAL_HOLD_SQL.to_owned(),
+            vec![
+                "text:workspace_01".to_owned(),
+                "text:hold_released".to_owned(),
+            ]
+        )));
+        assert!(calls.borrow().contains(&Call::Query(
+            LIST_ACTIVE_LEGAL_HOLDS_SQL.to_owned(),
+            vec!["text:workspace_01".to_owned()]
+        )));
     }
 
     #[test]

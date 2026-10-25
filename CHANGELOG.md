@@ -63,6 +63,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Atomic PostgreSQL retention-policy insertion and optimistic replacement with
   strict successor checks, nullable forever-period parameters, exact affected
   rows, and mandatory administrative audit evidence.
+- PostgreSQL exact legal-hold lookup and active-hold enumeration capped at
+  10,000, with tenant/identifier correlation, duplicate rejection, and closed
+  active/released lifecycle restoration.
 - PostgreSQL invitation lookup and bounded deterministic listing with optional
   status filtering, numeric lifetime decoding, terminal-state restoration,
   and exact tenant/invitation correlation.

@@ -308,6 +308,8 @@ This roadmap describes sequencing, not release dates.
         cardinality and closed finite/forever period decoding.
         - [x] Add atomic audited policy insertion and optimistic replacement
           with strict successor validation and nullable forever periods.
+      - [x] Add exact and bounded active legal-hold reads with lifecycle
+        restoration, tenant correlation, and duplicate rejection.
       - [x] Add exact invitation lookup and bounded status-filtered listing
         with terminal-state restoration and full tenant/identifier correlation.
       - [x] Implement atomic invitation creation, acceptance, revocation,
