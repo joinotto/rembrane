@@ -328,6 +328,8 @@ This roadmap describes sequencing, not release dates.
           authenticated event-stream reads through the same tenant facade.
         - [x] Atomically insert or revise encrypted memories with evidence,
           canonical events, optimistic versions, and provider projection jobs.
+      - [x] Add a tenant-pinned PostgreSQL provider projection outbox with
+        bounded pending reads and optimistic lifecycle transitions.
       - [x] Add exact invitation lookup and bounded status-filtered listing
         with terminal-state restoration and full tenant/identifier correlation.
       - [x] Implement atomic invitation creation, acceptance, revocation,

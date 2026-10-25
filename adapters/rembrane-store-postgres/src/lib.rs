@@ -12,8 +12,8 @@ use rembrane_application::{
     AdministrativeAuditRepository, ApplicationError, CanonicalMutationRepository, EventRepository,
     InvitationRepository, KeyRotationRepository, MAX_ADMINISTRATIVE_AUDIT_PAGE,
     MAXIMUM_INVITATION_LIST_ITEMS, MemberLifecycleRepository, MemberScopeGrantRepository,
-    MembershipRepository, MemoryRepository, RetentionRepository, WorkspaceReadRepository,
-    WorkspaceRepository, is_strict_successor,
+    MembershipRepository, MemoryRepository, ProjectionOutboxRepository, RetentionRepository,
+    WorkspaceReadRepository, WorkspaceRepository, is_strict_successor,
 };
 use rembrane_codec::{decode_event, decode_memory, encode_event, encode_memory};
 use rembrane_crypto::{EncryptedPayload, EncryptionContext, PayloadPurpose, RecordCipher};
@@ -23,8 +23,8 @@ use rembrane_domain::{
     InvitationId, InvitationStatus, KeyRotationId, KeyRotationReceipt, KeyRotationStatus,
     LegalHoldId, LegalHoldStatus, MAX_KEY_ROTATION_RECIPIENTS, MemberScopeGrant, Membership,
     MembershipStatus, MemoryId, MemoryKind, MemoryRecord, MemoryScope, MemoryStatus, Principal,
-    PrincipalId, ProjectionJob, ProjectionOperation, ProjectionStatus, ProviderId, ReadScope,
-    RetentionPeriod, RetentionResource, Workspace, WorkspaceId, WorkspaceKeyRotation,
+    PrincipalId, ProjectionJob, ProjectionJobId, ProjectionOperation, ProjectionStatus, ProviderId,
+    ReadScope, RetentionPeriod, RetentionResource, Workspace, WorkspaceId, WorkspaceKeyRotation,
     WorkspaceKind, WorkspaceLegalHold, WorkspaceRetentionPolicy, WorkspaceRole,
 };
 
@@ -200,6 +200,18 @@ pub const INSERT_MEMORY_EVIDENCE_SQL: &str = "INSERT INTO memory_evidence \
 pub const INSERT_PROJECTION_SQL: &str = "INSERT INTO projection_outbox \
     (id, workspace_id, memory_id, memory_version, provider_id, operation, status, attempts) \
     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)";
+pub const MAX_PENDING_PROJECTIONS: usize = 1_000;
+pub const LIST_PENDING_PROJECTIONS_SQL: &str = "SELECT id, workspace_id, memory_id, \
+    memory_version, provider_id, operation, status, attempts FROM projection_outbox \
+    WHERE workspace_id = $1 AND provider_id = $2 AND status = 'pending' \
+    AND available_at <= CURRENT_TIMESTAMP ORDER BY available_at, id LIMIT $3";
+pub const REPLACE_PROJECTION_SQL: &str = "UPDATE projection_outbox \
+    SET status = $2, attempts = $3, updated_at = CURRENT_TIMESTAMP \
+    WHERE id = $1 AND workspace_id = $4 AND memory_id = $5 AND memory_version = $6 \
+    AND provider_id = $7 AND operation = $8 AND status = $9 AND attempts = $10";
+pub const FIND_PROJECTION_SQL: &str = "SELECT id, workspace_id, memory_id, memory_version, \
+    provider_id, operation, status, attempts FROM projection_outbox \
+    WHERE workspace_id = $1 AND id = $2 ORDER BY workspace_id, id LIMIT 2";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PostgresParameter<'value> {
@@ -2271,6 +2283,156 @@ where
     }
 }
 
+impl<Pool> ProjectionOutboxRepository for PostgresTenantStore<'_, Pool>
+where
+    Pool: PostgresPool,
+    Pool::Error: ClassifiedPostgresError,
+    <Pool::Transaction as PostgresTransaction>::Row: PostgresRow<Error = Pool::Error>,
+{
+    fn enqueue_projection(&mut self, job: ProjectionJob) -> Result<(), ApplicationError> {
+        self.require_workspace(job.workspace_id())?;
+        let mut transaction = self
+            .store
+            .begin_tenant(self.workspace_id.clone())
+            .map_err(map_application_error)?;
+        insert_projection_jobs(&mut transaction, &[job])?;
+        transaction
+            .commit()
+            .map_err(PostgresStoreError::Tenant)
+            .map_err(map_application_error)
+    }
+
+    fn pending_projections(
+        &self,
+        provider_id: &ProviderId,
+        limit: usize,
+    ) -> Result<Vec<ProjectionJob>, ApplicationError> {
+        if limit == 0 || limit > MAX_PENDING_PROJECTIONS {
+            return Err(ApplicationError::Validation(
+                "projection limit must be between 1 and 1000".to_owned(),
+            ));
+        }
+        let mut transaction = self
+            .store
+            .begin_tenant(self.workspace_id.clone())
+            .map_err(map_application_error)?;
+        let rows = transaction
+            .query(
+                LIST_PENDING_PROJECTIONS_SQL,
+                &[
+                    PostgresParameter::Text(self.workspace_id.as_str()),
+                    PostgresParameter::Text(provider_id.as_str()),
+                    PostgresParameter::I64(i64::try_from(limit).map_err(|_| {
+                        ApplicationError::Validation(
+                            "projection limit exceeds PostgreSQL range".to_owned(),
+                        )
+                    })?),
+                ],
+            )
+            .map_err(PostgresStoreError::Tenant)
+            .map_err(map_application_error)?;
+        if rows.len() > limit {
+            return Err(ApplicationError::StorageUnavailable);
+        }
+        let mut ids = BTreeSet::new();
+        let projections = rows
+            .iter()
+            .map(|row| {
+                let projection =
+                    decode_projection(row, &self.workspace_id, None, Some(provider_id))?;
+                if projection.status() != ProjectionStatus::Pending
+                    || !ids.insert(projection.id().as_str().to_owned())
+                {
+                    return Err(PostgresStoreError::InvalidRow);
+                }
+                Ok(projection)
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(map_application_error)?;
+        transaction
+            .commit()
+            .map_err(PostgresStoreError::Tenant)
+            .map_err(map_application_error)?;
+        Ok(projections)
+    }
+
+    fn replace_projection(
+        &mut self,
+        job: ProjectionJob,
+        expected_status: ProjectionStatus,
+        expected_attempts: u32,
+    ) -> Result<(), ApplicationError> {
+        self.require_workspace(job.workspace_id())?;
+        let mut transaction = self
+            .store
+            .begin_tenant(self.workspace_id.clone())
+            .map_err(map_application_error)?;
+        let changed = transaction
+            .execute(
+                REPLACE_PROJECTION_SQL,
+                &[
+                    PostgresParameter::Text(job.id().as_str()),
+                    PostgresParameter::Text(projection_status_name(job.status())),
+                    PostgresParameter::I64(i64::from(job.attempts())),
+                    PostgresParameter::Text(job.workspace_id().as_str()),
+                    PostgresParameter::Text(job.memory_id().as_str()),
+                    PostgresParameter::I64(
+                        postgres_epoch::<Pool::Error>(job.memory_version())
+                            .map_err(map_application_error)?,
+                    ),
+                    PostgresParameter::Text(job.provider_id().as_str()),
+                    PostgresParameter::Text(projection_operation_name(job.operation())),
+                    PostgresParameter::Text(projection_status_name(expected_status)),
+                    PostgresParameter::I64(i64::from(expected_attempts)),
+                ],
+            )
+            .map_err(PostgresStoreError::Tenant)
+            .map_err(map_application_error)?;
+        if changed != 1 {
+            return Err(ApplicationError::VersionConflict);
+        }
+        transaction
+            .commit()
+            .map_err(PostgresStoreError::Tenant)
+            .map_err(map_application_error)
+    }
+
+    fn find_projection(
+        &self,
+        workspace_id: &WorkspaceId,
+        job_id: &ProjectionJobId,
+    ) -> Result<Option<ProjectionJob>, ApplicationError> {
+        self.require_workspace(workspace_id)?;
+        let mut transaction = self
+            .store
+            .begin_tenant(self.workspace_id.clone())
+            .map_err(map_application_error)?;
+        let rows = transaction
+            .query(
+                FIND_PROJECTION_SQL,
+                &[
+                    PostgresParameter::Text(workspace_id.as_str()),
+                    PostgresParameter::Text(job_id.as_str()),
+                ],
+            )
+            .map_err(PostgresStoreError::Tenant)
+            .map_err(map_application_error)?;
+        if rows.len() > 1 {
+            return Err(ApplicationError::StorageUnavailable);
+        }
+        let projection = rows
+            .first()
+            .map(|row| decode_projection(row, workspace_id, Some(job_id), None))
+            .transpose()
+            .map_err(map_application_error)?;
+        transaction
+            .commit()
+            .map_err(PostgresStoreError::Tenant)
+            .map_err(map_application_error)?;
+        Ok(projection)
+    }
+}
+
 impl<Pool, Cipher> MemoryRepository for PostgresTenantMemoryStore<'_, '_, Pool, Cipher>
 where
     Pool: PostgresPool,
@@ -3661,6 +3823,59 @@ const fn projection_status_name(status: ProjectionStatus) -> &'static str {
     }
 }
 
+fn decode_projection<Row, DriverError>(
+    row: &Row,
+    expected_workspace_id: &WorkspaceId,
+    expected_job_id: Option<&ProjectionJobId>,
+    expected_provider_id: Option<&ProviderId>,
+) -> Result<ProjectionJob, PostgresStoreError<DriverError>>
+where
+    Row: PostgresRow<Error = DriverError>,
+{
+    let workspace_id = row.text("workspace_id").map_err(PostgresStoreError::Row)?;
+    let job_id = row.text("id").map_err(PostgresStoreError::Row)?;
+    let provider_id = row.text("provider_id").map_err(PostgresStoreError::Row)?;
+    if workspace_id != expected_workspace_id.as_str()
+        || expected_job_id.is_some_and(|expected| job_id != expected.as_str())
+        || expected_provider_id.is_some_and(|expected| provider_id != expected.as_str())
+    {
+        return Err(PostgresStoreError::InvalidRow);
+    }
+    let operation = match row
+        .text("operation")
+        .map_err(PostgresStoreError::Row)?
+        .as_str()
+    {
+        "upsert" => ProjectionOperation::Upsert,
+        "delete" => ProjectionOperation::Delete,
+        _ => return Err(PostgresStoreError::InvalidRow),
+    };
+    let status = match row
+        .text("status")
+        .map_err(PostgresStoreError::Row)?
+        .as_str()
+    {
+        "pending" => ProjectionStatus::Pending,
+        "processing" => ProjectionStatus::Processing,
+        "completed" => ProjectionStatus::Completed,
+        "quarantined" => ProjectionStatus::Quarantined,
+        _ => return Err(PostgresStoreError::InvalidRow),
+    };
+    let attempts = u32::try_from(row.u64("attempts").map_err(PostgresStoreError::Row)?)
+        .map_err(|_| PostgresStoreError::InvalidRow)?;
+    ProjectionJob::restore(
+        ProjectionJobId::new(job_id),
+        WorkspaceId::new(workspace_id),
+        MemoryId::new(row.text("memory_id").map_err(PostgresStoreError::Row)?),
+        row.u64("memory_version").map_err(PostgresStoreError::Row)?,
+        ProviderId::new(provider_id),
+        operation,
+        status,
+        attempts,
+    )
+    .map_err(|_| PostgresStoreError::InvalidRow)
+}
+
 fn decode_key_rotation<Row, DriverError>(
     row: &Row,
     expected_workspace_id: &WorkspaceId,
@@ -4005,7 +4220,7 @@ mod tests {
         AuthorizeClientService, CanonicalMutationRepository, CreateInvitationCommand,
         EventRepository, InvitationRepository, InvitationService, KeyRotationRepository,
         MemberLifecycleRepository, MemberScopeGrantRepository, MembershipRepository,
-        MemoryRepository, RetentionRepository, WorkspaceRepository,
+        MemoryRepository, ProjectionOutboxRepository, RetentionRepository, WorkspaceRepository,
     };
     use rembrane_codec::encode_memory;
     use rembrane_crypto::{CryptoError, EncryptedPayload, EncryptionContext, RecordCipher};
@@ -4015,9 +4230,9 @@ mod tests {
         EvidenceId, EvidenceReference, EvidenceSource, Invitation, InvitationId, InvitationStatus,
         KeyRotationId, KeyRotationReceipt, KeyRotationStatus, LegalHoldId, LegalHoldStatus,
         MemberScopeGrant, MembershipStatus, MemoryId, MemoryRecord, MemoryScope, Principal,
-        PrincipalId, ProjectionJob, ProjectionJobId, ProjectionOperation, ProviderId, ReadScope,
-        RetentionPeriod, RetentionResource, Workspace, WorkspaceId, WorkspaceKeyRotation,
-        WorkspaceRetentionPolicy, WorkspaceRole, WritePermission,
+        PrincipalId, ProjectionJob, ProjectionJobId, ProjectionOperation, ProjectionStatus,
+        ProviderId, ReadScope, RetentionPeriod, RetentionResource, Workspace, WorkspaceId,
+        WorkspaceKeyRotation, WorkspaceRetentionPolicy, WorkspaceRole, WritePermission,
     };
 
     use super::{
@@ -4025,22 +4240,23 @@ mod tests {
         ClassifiedPostgresError, DELETE_MEMBER_SCOPE_GRANT_SQL, DELETE_MEMBER_SCOPE_GRANTS_SQL,
         EXPIRE_PENDING_INVITATION_SQL, FIND_INVITATION_SQL, FIND_KEY_ROTATION_RECEIPT_SQL,
         FIND_LEGAL_HOLD_SQL, FIND_MEMBERSHIP_SQL, FIND_MEMORY_SQL, FIND_PRINCIPAL_SQL,
-        FIND_PROVISIONING_PRINCIPAL_SQL, FIND_RETENTION_POLICY_SQL, FIND_WORKSPACE_SQL,
-        INSERT_ADMINISTRATIVE_AUDIT_SQL, INSERT_EVENT_SQL, INSERT_INVITATION_SQL,
-        INSERT_KEY_ROTATION_RECEIPT_SQL, INSERT_KEY_ROTATION_RECIPIENT_SQL, INSERT_LEGAL_HOLD_SQL,
-        INSERT_MEMBER_SCOPE_GRANT_SQL, INSERT_MEMBERSHIP_SQL, INSERT_MEMORY_EVIDENCE_SQL,
-        INSERT_MEMORY_SQL, INSERT_PRINCIPAL_SQL, INSERT_PROJECTION_SQL,
+        FIND_PROJECTION_SQL, FIND_PROVISIONING_PRINCIPAL_SQL, FIND_RETENTION_POLICY_SQL,
+        FIND_WORKSPACE_SQL, INSERT_ADMINISTRATIVE_AUDIT_SQL, INSERT_EVENT_SQL,
+        INSERT_INVITATION_SQL, INSERT_KEY_ROTATION_RECEIPT_SQL, INSERT_KEY_ROTATION_RECIPIENT_SQL,
+        INSERT_LEGAL_HOLD_SQL, INSERT_MEMBER_SCOPE_GRANT_SQL, INSERT_MEMBERSHIP_SQL,
+        INSERT_MEMORY_EVIDENCE_SQL, INSERT_MEMORY_SQL, INSERT_PRINCIPAL_SQL, INSERT_PROJECTION_SQL,
         INSERT_REQUIRED_KEY_ROTATION_SQL, INSERT_RETENTION_POLICY_SQL, INSERT_WORKSPACE_SQL,
         LATEST_KEY_ROTATION_SQL, LIST_ACTIVE_LEGAL_HOLDS_SQL, LIST_ACTIVE_MEMBERSHIPS_SQL,
         LIST_ADMINISTRATIVE_AUDIT_SQL, LIST_EVENTS_SINCE_SQL, LIST_INVITATIONS_BY_STATUS_SQL,
-        LIST_MEMBER_SCOPE_GRANTS_SQL, LIST_SUBJECT_MEMORIES_SQL, LOCK_WORKSPACE_FOR_ROTATION_SQL,
-        MAX_ACTIVE_MEMBERSHIPS, NEXT_KEY_ROTATION_GENERATION_SQL, PostgresFailureKind,
-        PostgresParameter, PostgresPool, PostgresProvisioner, PostgresProvisioningPool,
-        PostgresRow, PostgresStore, PostgresStoreError, PostgresTransaction,
-        PostgresWorkspaceAdminStore, ProvisioningTransaction, READ_TENANT_SQL,
+        LIST_MEMBER_SCOPE_GRANTS_SQL, LIST_PENDING_PROJECTIONS_SQL, LIST_SUBJECT_MEMORIES_SQL,
+        LOCK_WORKSPACE_FOR_ROTATION_SQL, MAX_ACTIVE_MEMBERSHIPS, NEXT_KEY_ROTATION_GENERATION_SQL,
+        PostgresFailureKind, PostgresParameter, PostgresPool, PostgresProvisioner,
+        PostgresProvisioningPool, PostgresRow, PostgresStore, PostgresStoreError,
+        PostgresTransaction, PostgresWorkspaceAdminStore, ProvisioningTransaction, READ_TENANT_SQL,
         REMOVE_MEMBERSHIP_SQL, REPLACE_INVITATION_SQL, REPLACE_LEGAL_HOLD_SQL,
-        REPLACE_MEMBERSHIP_SQL, REPLACE_RETENTION_POLICY_SQL, SET_TENANT_SQL, TenantTransaction,
-        TenantTransactionError, map_application_error, map_invitation_application_error,
+        REPLACE_MEMBERSHIP_SQL, REPLACE_PROJECTION_SQL, REPLACE_RETENTION_POLICY_SQL,
+        SET_TENANT_SQL, TenantTransaction, TenantTransactionError, map_application_error,
+        map_invitation_application_error,
     };
 
     #[derive(Clone, Debug, Eq, PartialEq)]
@@ -4209,6 +4425,29 @@ mod tests {
                     ("encryption_nonce", "777777777777777777777777".to_owned()),
                 ]),
                 numbers: BTreeMap::from([("sequence", event.sequence())]),
+            }
+        }
+
+        fn projection(job: &ProjectionJob) -> Self {
+            Self {
+                columns: BTreeMap::from([
+                    ("id", job.id().as_str().to_owned()),
+                    ("workspace_id", job.workspace_id().as_str().to_owned()),
+                    ("memory_id", job.memory_id().as_str().to_owned()),
+                    ("provider_id", job.provider_id().as_str().to_owned()),
+                    (
+                        "operation",
+                        super::projection_operation_name(job.operation()).to_owned(),
+                    ),
+                    (
+                        "status",
+                        super::projection_status_name(job.status()).to_owned(),
+                    ),
+                ]),
+                numbers: BTreeMap::from([
+                    ("memory_version", job.memory_version()),
+                    ("attempts", u64::from(job.attempts())),
+                ]),
             }
         }
 
@@ -6226,6 +6465,98 @@ mod tests {
             );
         }
         assert_eq!(calls.last(), Some(&Call::Commit));
+    }
+
+    #[test]
+    fn tenant_projection_outbox_is_workspace_pinned_and_optimistic() {
+        let pending = ProjectionJob::new(
+            ProjectionJobId::new("projection_03"),
+            WorkspaceId::new("workspace_01"),
+            MemoryId::new("memory_03"),
+            1,
+            ProviderId::new("provider_native"),
+            ProjectionOperation::Upsert,
+        )
+        .expect("pending projection");
+        let processing = pending.clone().begin().expect("processing projection");
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let store = PostgresStore::new(FakePool {
+            calls: Rc::clone(&calls),
+            tenant_batches: RefCell::new(
+                [
+                    VecDeque::from([
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                    ]),
+                    VecDeque::from([
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                    ]),
+                    VecDeque::from([
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                    ]),
+                    VecDeque::from([
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                    ]),
+                ]
+                .into(),
+            ),
+            row_batches: RefCell::new(
+                [
+                    Vec::new(),
+                    vec![FakeRow::projection(&pending)],
+                    Vec::new(),
+                    vec![FakeRow::projection(&processing)],
+                ]
+                .into(),
+            ),
+        });
+        let mut tenant = store.for_workspace(WorkspaceId::new("workspace_01"));
+
+        ProjectionOutboxRepository::enqueue_projection(&mut tenant, pending.clone())
+            .expect("enqueue projection");
+        assert_eq!(
+            ProjectionOutboxRepository::pending_projections(
+                &tenant,
+                &ProviderId::new("provider_native"),
+                10,
+            )
+            .expect("pending projections"),
+            vec![pending]
+        );
+        ProjectionOutboxRepository::replace_projection(
+            &mut tenant,
+            processing.clone(),
+            ProjectionStatus::Pending,
+            0,
+        )
+        .expect("begin projection");
+        assert_eq!(
+            ProjectionOutboxRepository::find_projection(
+                &tenant,
+                &WorkspaceId::new("workspace_01"),
+                &ProjectionJobId::new("projection_03"),
+            )
+            .expect("find projection"),
+            Some(processing)
+        );
+
+        let calls = calls.borrow();
+        assert!(
+            calls
+                .iter()
+                .any(|call| matches!(call, Call::Query(statement, parameters)
+                if statement == LIST_PENDING_PROJECTIONS_SQL
+                    && parameters.first() == Some(&"text:workspace_01".to_owned())))
+        );
+        assert!(calls.iter().any(
+            |call| matches!(call, Call::Execute(statement, _) if statement == REPLACE_PROJECTION_SQL)
+        ));
+        assert!(calls.iter().any(
+            |call| matches!(call, Call::Query(statement, _) if statement == FIND_PROJECTION_SQL)
+        ));
     }
 
     #[test]
