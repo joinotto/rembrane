@@ -756,6 +756,8 @@ This roadmap describes sequencing, not release dates.
     - [x] Tamper-test the compatibility verifier against an independently
       copied canonical schema in the unconditional static gate.
       - [x] Reject compatibility locks that omit any reviewed artifact.
+      - [x] Reject semantically rebound conformance evidence even when its
+        attacker-modified hash is present in the lock.
     - [x] Bind profile, lifecycle fixture, result schema, and example evidence
       to exact reviewed profile and fixture identifiers.
   - [x] Add an immutable, versioned discovery manifest with standard well-known
@@ -899,6 +901,8 @@ This roadmap describes sequencing, not release dates.
     result fixture, and black-box runner with tamper-tested SHA-256 evidence.
     - [x] Require the exact artifact set and one matching protocol version
       across OpenAPI, discovery, conformance schema, and result fixture.
+    - [x] Reject semantically rebound result evidence even when an updated
+      digest matches the attacker-modified artifact.
   - [x] Add transport-independent Rust manifest, negotiation, request, context,
     and response-limit contracts to the offline verification gate.
   - [x] Add a secret-safe black-box HTTP conformance runner.

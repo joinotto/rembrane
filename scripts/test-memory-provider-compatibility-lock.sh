@@ -65,4 +65,41 @@ then
     exit 1
 fi
 
+cp "$repository_root/spec/memory-provider-compatibility-lock.json" \
+    "$test_root/spec/memory-provider-compatibility-lock.json"
+jq '.profileId = "attacker.rebound-profile"' \
+    "$repository_root/spec/examples/memory-provider-conformance-result.json" \
+    >"$test_root/spec/examples/memory-provider-conformance-result.json"
+rebound_hash=$(
+    node -e '
+        const {createHash} = require("node:crypto");
+        const {readFileSync} = require("node:fs");
+        process.stdout.write(
+            createHash("sha256").update(readFileSync(process.argv[1])).digest("hex")
+        );
+    ' "$test_root/spec/examples/memory-provider-conformance-result.json"
+)
+jq --arg hash "$rebound_hash" '
+    .artifacts |= map(
+        if .path == "spec/examples/memory-provider-conformance-result.json"
+        then .sha256 = $hash
+        else .
+        end
+    )
+' "$repository_root/spec/memory-provider-compatibility-lock.json" \
+    >"$test_root/spec/memory-provider-compatibility-lock.json"
+if node "$test_root/scripts/verify-memory-provider-compatibility.mjs" \
+    >"$test_root/rebound.stdout" 2>"$test_root/rebound.stderr"
+then
+    echo "memory-provider compatibility verifier accepted rebound evidence" >&2
+    exit 1
+fi
+if ! rg -F \
+    "result fixture is bound to a different profile" \
+    "$test_root/rebound.stderr" >/dev/null
+then
+    echo "memory-provider compatibility verifier missed rebound evidence" >&2
+    exit 1
+fi
+
 echo "memory provider compatibility tamper test passed"
