@@ -412,7 +412,7 @@ impl SupermemoryTransport for HttpSupermemoryTransport {
     fn await_ready(
         &mut self,
         namespace: &str,
-        _document_id: &str,
+        document_id: &str,
         projection: &AuthorizedMemoryProjection,
     ) -> Result<(), ProviderError> {
         let query = projection.content.chars().take(512).collect::<String>();
@@ -421,7 +421,8 @@ impl SupermemoryTransport for HttpSupermemoryTransport {
                 .search_records(namespace, &query, 10)?
                 .into_iter()
                 .any(|record| {
-                    record.canonical_memory_id == projection.memory_id
+                    record.provider_id == document_id
+                        && record.canonical_memory_id == projection.memory_id
                         && record.canonical_version == projection.version
                 });
             if ready {
@@ -719,6 +720,11 @@ impl<Transport: SupermemoryTransport> SemanticMemoryProvider
             .transport
             .search(&namespace, &query.text, query.maximum_candidates)?
         {
+            if record.provider_id != self.document_id(&record.canonical_memory_id) {
+                return Err(ProviderError::Rejected(
+                    "Supermemory returned mismatched canonical identity metadata".to_owned(),
+                ));
+            }
             let candidate = CandidateMemory {
                 memory_id: record.canonical_memory_id,
                 version: record.canonical_version,
@@ -754,8 +760,12 @@ impl<Transport: SupermemoryTransport> SemanticMemoryProvider
         let Some(record) = self.transport.get(&namespace, &document_id)? else {
             return Ok(());
         };
-        if &record.canonical_memory_id == memory_id
-            && record.canonical_version <= through_version
+        if record.provider_id != document_id || &record.canonical_memory_id != memory_id {
+            return Err(ProviderError::Rejected(
+                "Supermemory returned mismatched canonical identity metadata".to_owned(),
+            ));
+        }
+        if record.canonical_version <= through_version
             && !self.transport.delete(&namespace, &document_id)?
         {
             return Err(ProviderError::Unavailable);
@@ -1120,6 +1130,64 @@ mod tests {
             content: "Call me Hippo".to_owned(),
         });
         assert_eq!(result, Err(ProviderError::Unavailable));
+    }
+
+    #[test]
+    fn provider_identity_substitution_fails_closed() {
+        use rembrane_domain::{MemoryId, MemoryKind, MemoryScope, WorkspaceId};
+        use rembrane_provider_sdk::{
+            AuthorizedMemoryProjection, SemanticMemoryProvider, SemanticQuery,
+        };
+
+        let workspace_id = WorkspaceId::new("workspace");
+        let memory_id = MemoryId::new("memory");
+        let mut provider =
+            SupermemorySemanticProvider::new(FakeSupermemory::default(), vec![12; 32])
+                .expect("valid lookup secret");
+        provider
+            .index(AuthorizedMemoryProjection {
+                workspace_id: workspace_id.clone(),
+                memory_id: memory_id.clone(),
+                version: 1,
+                scope: MemoryScope::Global,
+                kind: MemoryKind::Semantic,
+                content: "Call me Hippo".to_owned(),
+            })
+            .expect("initial projection");
+        let namespace = provider.namespace(&workspace_id);
+        provider
+            .transport
+            .records
+            .get_mut(&namespace)
+            .expect("namespace")
+            .first_mut()
+            .expect("record")
+            .0
+            .provider_id = "substituted-document".to_owned();
+
+        assert!(matches!(
+            provider.search(&SemanticQuery {
+                workspace_id: workspace_id.clone(),
+                text: "Hippo".to_owned(),
+                maximum_candidates: 10,
+            }),
+            Err(ProviderError::Rejected(_))
+        ));
+
+        let document_id = provider.document_id(&memory_id);
+        let record = provider
+            .transport
+            .records
+            .get_mut(&namespace)
+            .expect("namespace")
+            .first_mut()
+            .expect("record");
+        record.0.provider_id = document_id;
+        record.0.canonical_memory_id = MemoryId::new("substituted-memory");
+        assert!(matches!(
+            provider.delete(&workspace_id, &memory_id, 1),
+            Err(ProviderError::Rejected(_))
+        ));
     }
 
     #[test]

@@ -161,6 +161,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Authorized remote MCP event-stream dispatch now preserves the same validated
   public host and browser-origin context through its consuming asynchronous
   SDK handoff.
+- Supermemory retrieval, readiness, and exact deletion now reject provider
+  document-identity substitution instead of trusting uncorrelated canonical
+  memory metadata returned by the external index.
 - PostgreSQL invitation lookup and bounded deterministic listing with optional
   status filtering, numeric lifetime decoding, terminal-state restoration,
   and exact tenant/invitation correlation.

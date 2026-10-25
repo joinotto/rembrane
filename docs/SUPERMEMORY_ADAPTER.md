@@ -73,7 +73,9 @@ The provider adapter must:
 8. collapse search results to the newest canonical version;
 9. perform exact-ID deletion rather than semantic deletion;
 10. require a one-item deletion count with no per-item errors;
-11. never delegate authorization, tenant identity, or canonical truth to
+11. reject search, readiness, or deletion records whose provider document
+    pseudonym does not match their claimed canonical memory identity;
+12. never delegate authorization, tenant identity, or canonical truth to
     Supermemory.
 
 ## Replacement semantics
