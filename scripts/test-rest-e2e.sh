@@ -257,7 +257,7 @@ test "$disclosure_count" = "2"
 test "$(
     sqlite3 "$database" \
         "SELECT count(*) FROM graph_disclosure_receipts WHERE workspace_id = '$REMBRANE_WORKSPACE_ID';"
-)" = "1"
+)" = "2"
 test "$(
     sqlite3 "$database" \
         "SELECT count(*) FROM trips WHERE workspace_id = '$REMBRANE_WORKSPACE_ID';"

@@ -52,6 +52,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   the exact route, bearer authorization, and serialized request body.
 - REST black-box coverage for denied graph scopes and successful empty
   neighbourhood disclosures against a canonical tenant node.
+- Portable Postman graph-context coverage for denied entity scope, canonical
+  empty output, and an independently persisted disclosure receipt.
 - Bounded shared-workspace invitation validity with persisted creation and
   expiry time, a 30-day maximum lifetime, and fail-closed acceptance at the
   expiry boundary.

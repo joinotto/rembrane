@@ -444,6 +444,8 @@ This roadmap describes sequencing, not release dates.
           an empty native-provider neighbourhood.
           - [x] Add the executable acceptance scenario; run it in unrestricted
             CI where loopback listener creation is permitted.
+          - [x] Add portable Postman assertions for denied scope, canonical
+            empty output, and a distinct persisted disclosure receipt.
       - [x] Deny implicit global REST context requests when the connection has
         only narrower domain, entity, or activity grants.
     - [x] Persist graph disclosure evidence in the in-memory, SQLite, and

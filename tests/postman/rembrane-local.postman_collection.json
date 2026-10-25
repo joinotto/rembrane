@@ -129,6 +129,77 @@
       ]
     },
     {
+      "name": "Reject graph context outside connection scope",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{apiToken}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"workspaceId\":\"{{workspaceId}}\",\"subjectId\":\"{{principalId}}\",\"nodeId\":\"project_rest_e2e\",\"direction\":\"outgoing\",\"validAtEpochSeconds\":1700000000,\"maximumCandidates\":20,\"purpose\":\"continue project graph\",\"entityId\":\"project_outside_grant\"}"
+        },
+        "url": "{{baseUrl}}/v1/graph/context/resolve"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('graph context outside the connection scope is denied', function () {",
+              "  pm.response.to.have.status(403);",
+              "  pm.expect(pm.response.json().code).to.eql('access_denied');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Resolve audited graph context",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{apiToken}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"workspaceId\":\"{{workspaceId}}\",\"subjectId\":\"{{principalId}}\",\"nodeId\":\"project_rest_e2e\",\"direction\":\"outgoing\",\"validAtEpochSeconds\":1700000000,\"maximumCandidates\":20,\"purpose\":\"continue project graph\",\"entityId\":\"project_rest_e2e\"}"
+        },
+        "url": "{{baseUrl}}/v1/graph/context/resolve"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('graph context is audited and canonical', function () {",
+              "  pm.response.to.have.status(200);",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.disclosureId).to.be.a('string');",
+              "  pm.expect(body.disclosureId).not.to.be.empty;",
+              "  pm.expect(body.edges).to.be.an('array').that.is.empty;",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
       "name": "Create bounded workspace invitation",
       "request": {
         "method": "POST",
