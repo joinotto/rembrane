@@ -16,6 +16,8 @@ pub struct ProviderSelectionPolicy<'value> {
     pub allow_experimental: bool,
     pub allow_provider_plaintext: bool,
     pub now_epoch_seconds: i64,
+    pub minimum_registry_generated_at_epoch_seconds: Option<i64>,
+    pub expected_registry_sha256: Option<&'value str>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -97,6 +99,18 @@ pub(crate) fn select(
         return Err(error(
             "provider registry generation timestamp is in the future",
         ));
+    }
+    if policy
+        .minimum_registry_generated_at_epoch_seconds
+        .is_some_and(|minimum| generated_epoch < minimum)
+    {
+        return Err(error("provider registry snapshot is older than policy"));
+    }
+    if policy
+        .expected_registry_sha256
+        .is_some_and(|expected| expected != verified.sha256())
+    {
+        return Err(error("provider registry snapshot does not match policy"));
     }
     let providers = registry
         .get("providers")
@@ -367,6 +381,8 @@ mod tests {
             allow_experimental,
             allow_provider_plaintext: allow_plaintext,
             now_epoch_seconds: NOW,
+            minimum_registry_generated_at_epoch_seconds: None,
+            expected_registry_sha256: None,
         }
     }
 
@@ -474,6 +490,31 @@ mod tests {
                 .expect_err("duplicate deployment mode")
                 .to_string()
                 .contains("deployment")
+        );
+    }
+
+    #[test]
+    fn rejects_registry_rollback_and_unexpected_snapshot() {
+        let registry = VerifiedProviderRegistry::embedded(REGISTRY);
+        let mut constrained = policy("0.1.0-alpha.1", true, true);
+        constrained.minimum_registry_generated_at_epoch_seconds = Some(NOW);
+        assert!(
+            registry
+                .select(&constrained)
+                .expect_err("registry rollback")
+                .to_string()
+                .contains("older")
+        );
+
+        constrained.minimum_registry_generated_at_epoch_seconds = None;
+        constrained.expected_registry_sha256 =
+            Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        assert!(
+            registry
+                .select(&constrained)
+                .expect_err("unexpected snapshot")
+                .to_string()
+                .contains("does not match")
         );
     }
 }

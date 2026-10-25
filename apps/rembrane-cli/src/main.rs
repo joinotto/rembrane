@@ -758,6 +758,8 @@ fn check_verified_provider_registry(
             allow_experimental,
             allow_provider_plaintext,
             now_epoch_seconds: chrono::Utc::now().timestamp(),
+            minimum_registry_generated_at_epoch_seconds: None,
+            expected_registry_sha256: None,
         })
         .map_err(|error| error.to_string())?;
     serde_json::to_string(&receipt)

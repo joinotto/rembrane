@@ -994,6 +994,9 @@ This roadmap describes sequencing, not release dates.
           - [x] Reject unsupported registry schemas, malformed provider IDs,
             invalid or duplicate protocols, and invalid or duplicate
             deployment modes before issuing portable selection receipts.
+          - [x] Allow integrations to pin the exact registry digest or a
+            minimum trusted generation time to reject signed snapshot replay
+            and rollback.
 - [x] Run installed native-provider conformance through the CLI.
 - [x] Automated external-provider registry verification and release signing.
   - [x] Verify registry identity, timestamps, conformance status, and pinned
