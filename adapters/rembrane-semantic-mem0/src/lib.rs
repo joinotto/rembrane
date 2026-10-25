@@ -574,7 +574,7 @@ fn decode_signature(encoded: &str) -> Option<[u8; 32]> {
         return None;
     }
     let mut decoded = [0_u8; 32];
-    for (index, pair) in encoded.as_bytes().chunks_exact(2).enumerate() {
+    for (index, pair) in encoded.as_bytes().as_chunks::<2>().0.iter().enumerate() {
         let high = char::from(pair[0]).to_digit(16)?;
         let low = char::from(pair[1]).to_digit(16)?;
         decoded[index] = u8::try_from((high << 4) | low).ok()?;

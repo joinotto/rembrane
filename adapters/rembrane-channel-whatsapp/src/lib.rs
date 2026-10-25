@@ -762,7 +762,7 @@ mod tests {
                 1_000,
             )
             .expect("duplicate delivery should be idempotent");
-        assert!(duplicate.is_empty());
+        assert_eq!(duplicate.len(), 0);
         assert_eq!(repository.calls, 2);
     }
 

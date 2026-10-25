@@ -10626,7 +10626,7 @@ mod tests {
             .expect("resolve shared trip");
 
         assert_eq!(context.trip.owner_subject_id.as_str(), "principal_owner");
-        assert!(context.fresh_research.is_empty());
+        assert_eq!(context.fresh_research.len(), 0);
         assert!(calls.borrow().iter().any(|call| matches!(
             call,
             Call::Execute(statement, parameters)

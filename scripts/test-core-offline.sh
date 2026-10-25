@@ -8,6 +8,7 @@ trap 'rm -rf "$test_directory"' EXIT
 mkdir -p "$test_directory/crates" "$test_directory/adapters"
 for crate in \
     rembrane-application \
+    rembrane-codec \
     rembrane-config \
     rembrane-contracts \
     rembrane-crypto \
@@ -34,6 +35,7 @@ members = [
     "adapters/rembrane-store-memory",
     "adapters/rembrane-store-postgres",
     "crates/rembrane-application",
+    "crates/rembrane-codec",
     "crates/rembrane-config",
     "crates/rembrane-contracts",
     "crates/rembrane-crypto",

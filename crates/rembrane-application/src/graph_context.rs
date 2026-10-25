@@ -439,9 +439,9 @@ mod tests {
             .execute(command)
             .expect("graph context");
 
-        assert!(edges.is_empty());
+        assert_eq!(edges.len(), 0);
         assert_eq!(repository.disclosures.len(), 1);
-        assert!(repository.disclosures[0].edges.is_empty());
+        assert_eq!(repository.disclosures[0].edges.len(), 0);
     }
 
     #[test]
@@ -461,7 +461,7 @@ mod tests {
             GraphContextService::new(&mut repository, &provider).execute(command),
             Err(ApplicationError::AccessDenied)
         );
-        assert!(repository.disclosures.is_empty());
+        assert_eq!(repository.disclosures.len(), 0);
     }
 
     #[test]
@@ -489,7 +489,7 @@ mod tests {
             GraphContextService::new(&mut repository, &provider).execute(empty_purpose),
             Err(ApplicationError::Validation(_))
         ));
-        assert!(repository.disclosures.is_empty());
+        assert_eq!(repository.disclosures.len(), 0);
     }
 
     #[test]
@@ -511,7 +511,7 @@ mod tests {
                 .execute(command("workspace_01", 150)),
             Err(ApplicationError::StorageUnavailable)
         );
-        assert!(repository.disclosures.is_empty());
+        assert_eq!(repository.disclosures.len(), 0);
     }
 
     #[test]
