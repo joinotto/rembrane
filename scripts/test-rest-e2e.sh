@@ -59,6 +59,19 @@ export REMBRANE_LISTEN="${REMBRANE_TEST_LISTEN:-127.0.0.1:18787}"
     --entity project_rest_e2e \
     --content "Use Rust for the REST project" >/dev/null
 
+sqlite3 "$database" <<SQL
+PRAGMA foreign_keys = ON;
+INSERT INTO knowledge_nodes (
+    workspace_id, id, node_ciphertext, encryption_key_id,
+    encryption_algorithm, encryption_nonce, version,
+    valid_from, valid_until, recorded_at
+) VALUES (
+    '$REMBRANE_WORKSPACE_ID', 'project_rest_e2e', X'01',
+    '$REMBRANE_WORKSPACE_KEY_ID', 'xchacha20poly1305', zeroblob(24),
+    1, 1700000000, NULL, 1700000000
+);
+SQL
+
 if REMBRANE_READ_SCOPES="*" \
     "$api_binary" >/dev/null 2>&1
 then
@@ -108,6 +121,37 @@ test "$authorized_scoped_status" = "200"
 test "$(
     jq -r '.items[0].content' "$authorized_scoped_response"
 )" = "Use Rust for the REST project"
+
+denied_graph_response="$test_directory/denied-graph-response.json"
+denied_graph_status=$(
+    curl -sS \
+        -o "$denied_graph_response" \
+        -w '%{http_code}' \
+        -X POST "$base_url/v1/graph/context/resolve" \
+        -H "Authorization: Bearer $REMBRANE_API_TOKEN" \
+        -H "Content-Type: application/json" \
+        --data "{\"workspaceId\":\"$REMBRANE_WORKSPACE_ID\",\"subjectId\":\"$REMBRANE_PRINCIPAL_ID\",\"nodeId\":\"project_rest_e2e\",\"direction\":\"outgoing\",\"validAtEpochSeconds\":1700000000,\"purpose\":\"continue-project\",\"entityId\":\"project_outside_grant\"}"
+)
+test "$denied_graph_status" = "403"
+test "$(jq -r '.code' "$denied_graph_response")" = "access_denied"
+
+graph_response="$test_directory/graph-response.json"
+graph_status=$(
+    curl -sS \
+        -o "$graph_response" \
+        -w '%{http_code}' \
+        -X POST "$base_url/v1/graph/context/resolve" \
+        -H "Authorization: Bearer $REMBRANE_API_TOKEN" \
+        -H "Content-Type: application/json" \
+        --data "{\"workspaceId\":\"$REMBRANE_WORKSPACE_ID\",\"subjectId\":\"$REMBRANE_PRINCIPAL_ID\",\"nodeId\":\"project_rest_e2e\",\"direction\":\"outgoing\",\"validAtEpochSeconds\":1700000000,\"maximumCandidates\":20,\"purpose\":\"continue-project\",\"entityId\":\"project_rest_e2e\"}"
+)
+test "$graph_status" = "200"
+test "$(jq -r '.edges | length' "$graph_response")" = "0"
+test -n "$(jq -r '.disclosureId' "$graph_response")"
+test "$(
+    sqlite3 "$database" \
+        "SELECT count(*) FROM graph_disclosure_receipts WHERE workspace_id = '$REMBRANE_WORKSPACE_ID' AND node_id = 'project_rest_e2e' AND direction = 'outgoing' AND valid_at_epoch_seconds = 1700000000;"
+)" = "1"
 
 postman collection run \
     "$repository_root/tests/postman/rembrane-local.postman_collection.json" \
@@ -210,6 +254,10 @@ disclosure_count=$(
         "SELECT count(*) FROM disclosure_receipts WHERE workspace_id = '$REMBRANE_WORKSPACE_ID';"
 )
 test "$disclosure_count" = "2"
+test "$(
+    sqlite3 "$database" \
+        "SELECT count(*) FROM graph_disclosure_receipts WHERE workspace_id = '$REMBRANE_WORKSPACE_ID';"
+)" = "1"
 test "$(
     sqlite3 "$database" \
         "SELECT count(*) FROM trips WHERE workspace_id = '$REMBRANE_WORKSPACE_ID';"

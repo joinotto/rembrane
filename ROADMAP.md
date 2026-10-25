@@ -436,6 +436,10 @@ This roadmap describes sequencing, not release dates.
           Python SDKs.
         - [x] Add exact-route graph-context operations to the Swift and Kotlin
           SDKs with executable transport smoke coverage.
+        - [ ] Prove black-box REST scope denial and disclosure persistence for
+          an empty native-provider neighbourhood.
+          - [x] Add the executable acceptance scenario; run it in unrestricted
+            CI where loopback listener creation is permitted.
       - [x] Deny implicit global REST context requests when the connection has
         only narrower domain, entity, or activity grants.
     - [x] Persist graph disclosure evidence in the in-memory, SQLite, and
