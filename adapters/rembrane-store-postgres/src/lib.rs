@@ -4,6 +4,7 @@
 //! of it to [`TenantTransaction::verify`] before executing repository SQL.
 //! This crate intentionally contains no connection driver yet.
 
+use std::collections::BTreeSet;
 use std::error::Error;
 use std::fmt::{self, Display, Formatter};
 
@@ -16,6 +17,10 @@ pub const FIND_WORKSPACE_SQL: &str =
 pub const FIND_MEMBERSHIP_SQL: &str = "SELECT workspace_id, principal_id, role, status \
     FROM memberships WHERE workspace_id = $1 AND principal_id = $2 \
     ORDER BY workspace_id, principal_id LIMIT 2";
+pub const MAX_ACTIVE_MEMBERSHIPS: usize = 10_000;
+pub const LIST_ACTIVE_MEMBERSHIPS_SQL: &str = "SELECT workspace_id, principal_id, role, status \
+    FROM memberships WHERE workspace_id = $1 AND status = 'active' \
+    ORDER BY principal_id LIMIT 10001";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PostgresParameter<'value> {
@@ -197,6 +202,41 @@ impl<Pool: PostgresPool> PostgresStore<Pool> {
             .transpose()?;
         transaction.commit().map_err(PostgresStoreError::Tenant)?;
         Ok(membership)
+    }
+
+    pub fn list_active_memberships(
+        &self,
+        workspace_id: &WorkspaceId,
+    ) -> Result<Vec<Membership>, PostgresStoreError<Pool::Error>>
+    where
+        <Pool::Transaction as PostgresTransaction>::Row: PostgresRow<Error = Pool::Error>,
+    {
+        let mut transaction = self.begin_tenant(workspace_id.clone())?;
+        let rows = transaction
+            .query(
+                LIST_ACTIVE_MEMBERSHIPS_SQL,
+                &[PostgresParameter::Text(workspace_id.as_str())],
+            )
+            .map_err(PostgresStoreError::Tenant)?;
+        if rows.len() > MAX_ACTIVE_MEMBERSHIPS {
+            return Err(PostgresStoreError::UnexpectedCardinality);
+        }
+        let mut principal_ids = BTreeSet::new();
+        let memberships = rows
+            .iter()
+            .map(|row| {
+                let principal_id = row.text("principal_id").map_err(PostgresStoreError::Row)?;
+                if !principal_ids.insert(principal_id.clone()) {
+                    return Err(PostgresStoreError::InvalidRow);
+                }
+                decode_membership(row, workspace_id, &PrincipalId::new(principal_id))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        if memberships.iter().any(|membership| !membership.is_active()) {
+            return Err(PostgresStoreError::InvalidRow);
+        }
+        transaction.commit().map_err(PostgresStoreError::Tenant)?;
+        Ok(memberships)
     }
 }
 
@@ -401,8 +441,9 @@ mod tests {
     use rembrane_domain::WorkspaceId;
 
     use super::{
-        FIND_MEMBERSHIP_SQL, FIND_WORKSPACE_SQL, PostgresParameter, PostgresPool, PostgresRow,
-        PostgresStore, PostgresStoreError, PostgresTransaction, READ_TENANT_SQL, SET_TENANT_SQL,
+        FIND_MEMBERSHIP_SQL, FIND_WORKSPACE_SQL, LIST_ACTIVE_MEMBERSHIPS_SQL,
+        MAX_ACTIVE_MEMBERSHIPS, PostgresParameter, PostgresPool, PostgresRow, PostgresStore,
+        PostgresStoreError, PostgresTransaction, READ_TENANT_SQL, SET_TENANT_SQL,
         TenantTransaction, TenantTransactionError,
     };
 
@@ -858,6 +899,95 @@ mod tests {
                         &WorkspaceId::new("workspace_01"),
                         &rembrane_domain::PrincipalId::new("principal_01"),
                     )
+                    .is_err()
+            );
+            assert_eq!(calls.borrow().last(), Some(&Call::Rollback));
+        }
+    }
+
+    #[test]
+    fn active_membership_listing_is_bounded_ordered_and_tenant_exact() {
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let store = PostgresStore::new(FakePool {
+            calls: Rc::clone(&calls),
+            tenant_batches: RefCell::new(
+                [VecDeque::from([
+                    Ok(Some("workspace_01".to_owned())),
+                    Ok(Some("workspace_01".to_owned())),
+                ])]
+                .into(),
+            ),
+            row_batches: RefCell::new(
+                [vec![
+                    FakeRow::membership("workspace_01", "admin_01", "admin", "active"),
+                    FakeRow::membership("workspace_01", "member_01", "member", "active"),
+                ]]
+                .into(),
+            ),
+        });
+
+        let memberships = store
+            .list_active_memberships(&WorkspaceId::new("workspace_01"))
+            .expect("active memberships");
+        assert_eq!(
+            memberships
+                .iter()
+                .map(|membership| membership.principal_id().as_str())
+                .collect::<Vec<_>>(),
+            ["admin_01", "member_01"]
+        );
+        assert!(calls.borrow().contains(&Call::Query(
+            LIST_ACTIVE_MEMBERSHIPS_SQL.to_owned(),
+            vec!["text:workspace_01".to_owned()]
+        )));
+        assert_eq!(calls.borrow().last(), Some(&Call::Commit));
+    }
+
+    #[test]
+    fn active_membership_listing_rejects_duplicates_inactive_rows_and_overflow() {
+        let duplicate = FakeRow::membership("workspace_01", "member_01", "member", "active");
+        let overflow = (0..=MAX_ACTIVE_MEMBERSHIPS)
+            .map(|index| {
+                FakeRow::membership(
+                    "workspace_01",
+                    &format!("principal_{index:05}"),
+                    "member",
+                    "active",
+                )
+            })
+            .collect::<Vec<_>>();
+        for rows in [
+            vec![duplicate.clone(), duplicate],
+            vec![FakeRow::membership(
+                "workspace_01",
+                "member_01",
+                "member",
+                "suspended",
+            )],
+            vec![FakeRow::membership(
+                "workspace_other",
+                "member_01",
+                "member",
+                "active",
+            )],
+            overflow,
+        ] {
+            let calls = Rc::new(RefCell::new(Vec::new()));
+            let store = PostgresStore::new(FakePool {
+                calls: Rc::clone(&calls),
+                tenant_batches: RefCell::new(
+                    [VecDeque::from([
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                    ])]
+                    .into(),
+                ),
+                row_batches: RefCell::new([rows].into()),
+            });
+
+            assert!(
+                store
+                    .list_active_memberships(&WorkspaceId::new("workspace_01"))
                     .is_err()
             );
             assert_eq!(calls.borrow().last(), Some(&Call::Rollback));

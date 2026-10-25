@@ -294,6 +294,8 @@ This roadmap describes sequencing, not release dates.
         lookup with closed row decoding and cardinality enforcement.
       - [x] Add exact tenant-and-principal membership lookup with closed role
         and lifecycle-status decoding for authorization decisions.
+      - [x] Add deterministic bounded active-member enumeration with duplicate
+        principal rejection for authorization and key-rotation recipients.
     - [x] Define a reference-only PostgreSQL connection profile with explicit
       transport security and bounded pool capacity.
       - [x] Prevent derived debug logging of the database secret locator.

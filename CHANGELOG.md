@@ -43,6 +43,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Typed PostgreSQL membership lookup with exact tenant/principal correlation,
   closed role and lifecycle-status decoding, bounded cardinality, and
   rollback-on-invalid-row behavior.
+- Deterministic PostgreSQL active-membership enumeration capped at 10,000
+  canonical principals, rejecting duplicate, cross-tenant, or non-active rows
+  before deriving authorization or key-rotation recipient sets.
 
 ### Changed
 
