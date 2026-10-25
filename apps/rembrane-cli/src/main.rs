@@ -1,3 +1,5 @@
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD as BASE64;
 use rembrane_application::{
     AcceptInvitationCommand, AdministrativeAuditRepository, ApplicationError,
     AuthorizeClientCommand, AuthorizeClientService, CanonicalMutationRepository,
@@ -41,6 +43,11 @@ use zeroize::Zeroizing;
 
 const EXPORT_MAGIC: &[u8; 16] = b"REMBRANE-EXPORT\n";
 const EXPORT_VERSION: u32 = 1;
+const MAX_PROVIDER_REGISTRY_BYTES: u64 = 1_048_576;
+const MAX_PROVIDER_REGISTRY_PUBLIC_KEY_BYTES: u64 = 4_096;
+const ED25519_SPKI_PREFIX: &[u8] = &[
+    0x30, 0x2a, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x03, 0x21, 0x00,
+];
 
 fn main() {
     let arguments = std::env::args().skip(1).collect::<Vec<_>>();
@@ -651,8 +658,13 @@ fn check_provider(arguments: &[String]) -> Result<String, String> {
     let allow_provider_plaintext = arguments
         .iter()
         .any(|argument| argument == "--allow-provider-plaintext");
-    let expected_arguments =
-        5 + usize::from(allow_experimental) + usize::from(allow_provider_plaintext);
+    let external_registry = ["--registry", "--signature", "--public-key"]
+        .iter()
+        .any(|name| arguments.iter().any(|argument| argument == name));
+    let expected_arguments = 5
+        + usize::from(allow_experimental)
+        + usize::from(allow_provider_plaintext)
+        + if external_registry { 6 } else { 0 };
     if arguments.len() != expected_arguments
         || arguments
             .iter()
@@ -667,17 +679,85 @@ fn check_provider(arguments: &[String]) -> Result<String, String> {
     {
         return Err(
             "usage: rembrane providers check --provider <id> --adapter-version <version> \
-             [--allow-experimental] [--allow-provider-plaintext]"
+             [--allow-experimental] [--allow-provider-plaintext] \
+             [--registry <path> --signature <path> --public-key <path>]"
                 .to_owned(),
         );
     }
+    let registry = if external_registry {
+        let registry = read_bounded_registry_file(
+            option(arguments, "--registry")?,
+            MAX_PROVIDER_REGISTRY_BYTES,
+            "registry",
+        )?;
+        let signature =
+            read_bounded_registry_file(option(arguments, "--signature")?, 64, "signature")?;
+        let public_key = read_bounded_registry_file(
+            option(arguments, "--public-key")?,
+            MAX_PROVIDER_REGISTRY_PUBLIC_KEY_BYTES,
+            "public key",
+        )?;
+        verify_provider_registry_signature(&registry, &signature, &public_key)?;
+        String::from_utf8(registry).map_err(|_| "provider registry is not UTF-8".to_owned())?
+    } else {
+        PROVIDER_REGISTRY.to_owned()
+    };
     check_provider_registry(
-        PROVIDER_REGISTRY,
+        &registry,
         option(arguments, "--provider")?,
         option(arguments, "--adapter-version")?,
         allow_experimental,
         allow_provider_plaintext,
     )
+}
+
+fn read_bounded_registry_file(
+    path: &str,
+    maximum_bytes: u64,
+    label: &str,
+) -> Result<Vec<u8>, String> {
+    let metadata = std::fs::metadata(path)
+        .map_err(|_| format!("provider registry {label} file is unavailable"))?;
+    if !metadata.is_file() || metadata.len() == 0 || metadata.len() > maximum_bytes {
+        return Err(format!("provider registry {label} file size is invalid"));
+    }
+    let bytes = std::fs::read(path)
+        .map_err(|_| format!("provider registry {label} file could not be read"))?;
+    if u64::try_from(bytes.len()).ok() != Some(metadata.len()) {
+        return Err(format!(
+            "provider registry {label} file changed while reading"
+        ));
+    }
+    Ok(bytes)
+}
+
+fn verify_provider_registry_signature(
+    registry: &[u8],
+    signature: &[u8],
+    public_key_pem: &[u8],
+) -> Result<(), String> {
+    if signature.len() != 64 {
+        return Err("provider registry signature length is invalid".to_owned());
+    }
+    let pem = std::str::from_utf8(public_key_pem)
+        .map_err(|_| "provider registry public key is not UTF-8".to_owned())?;
+    let body = pem
+        .strip_prefix("-----BEGIN PUBLIC KEY-----\n")
+        .and_then(|value| value.strip_suffix("-----END PUBLIC KEY-----\n"))
+        .ok_or_else(|| "provider registry public key PEM is invalid".to_owned())?;
+    let encoded = body.lines().collect::<String>();
+    let der = BASE64
+        .decode(encoded)
+        .map_err(|_| "provider registry public key encoding is invalid".to_owned())?;
+    if der.len() != ED25519_SPKI_PREFIX.len() + 32 || !der.starts_with(ED25519_SPKI_PREFIX) {
+        return Err("provider registry public key is not Ed25519".to_owned());
+    }
+    ring::signature::UnparsedPublicKey::new(
+        &ring::signature::ED25519,
+        &der[ED25519_SPKI_PREFIX.len()..],
+    )
+    .verify(registry, signature)
+    .map_err(|_| "provider registry signature verification failed".to_owned())
 }
 
 fn check_provider_registry(
@@ -2474,7 +2554,8 @@ fn print_help() {
            rembrane fingerprint-git --repository <path>\n\
            rembrane providers list\n\
            rembrane providers check --provider <id> --adapter-version <version> \
-             [--allow-experimental] [--allow-provider-plaintext]\n\
+             [--allow-experimental] [--allow-provider-plaintext] \
+             [--registry <path> --signature <path> --public-key <path>]\n\
            rembrane providers test --provider <id> --namespace <unique-name>\n\
            rembrane memory-provider check \
              [--privacy <end-to-end-encrypted|trusted-boundary|provider-plaintext>]\n\

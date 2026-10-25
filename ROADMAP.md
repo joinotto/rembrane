@@ -981,6 +981,8 @@ This roadmap describes sequencing, not release dates.
         and generation timestamp.
         - [x] Reject impossible, non-canonical, and future registry timestamps
           before issuing a selection receipt.
+      - [x] Accept bounded external registry snapshots only with a valid
+        detached Ed25519 signature under an explicitly supplied trust anchor.
 - [x] Run installed native-provider conformance through the CLI.
 - [x] Automated external-provider registry verification and release signing.
   - [x] Verify registry identity, timestamps, conformance status, and pinned

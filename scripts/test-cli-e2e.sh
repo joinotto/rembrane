@@ -235,6 +235,41 @@ then
     exit 1
 fi
 
+openssl genpkey -algorithm Ed25519 \
+    -out "$test_directory/registry-private.pem" >/dev/null 2>&1
+openssl pkey -in "$test_directory/registry-private.pem" -pubout \
+    -out "$test_directory/registry-public.pem" >/dev/null 2>&1
+cp "$repository_root/spec/provider-registry.json" "$test_directory/provider-registry.json"
+openssl pkeyutl -sign -rawin \
+    -inkey "$test_directory/registry-private.pem" \
+    -in "$test_directory/provider-registry.json" \
+    -out "$test_directory/provider-registry.sig"
+external_selection=$(
+    "$rembrane_binary" providers check \
+        --provider rembrane.native \
+        --adapter-version "$native_provider_version" \
+        --allow-experimental \
+        --allow-provider-plaintext \
+        --registry "$test_directory/provider-registry.json" \
+        --signature "$test_directory/provider-registry.sig" \
+        --public-key "$test_directory/registry-public.pem"
+)
+printf '%s\n' "$external_selection" | jq -e \
+    '.registrySha256 != null and .provider == "rembrane.native"' >/dev/null
+printf '\n' >>"$test_directory/provider-registry.json"
+if "$rembrane_binary" providers check \
+    --provider rembrane.native \
+    --adapter-version "$native_provider_version" \
+    --allow-experimental \
+    --allow-provider-plaintext \
+    --registry "$test_directory/provider-registry.json" \
+    --signature "$test_directory/provider-registry.sig" \
+    --public-key "$test_directory/registry-public.pem" >/dev/null 2>&1
+then
+    echo "provider selection accepted a tampered signed registry" >&2
+    exit 1
+fi
+
 provider_conformance=$(
     "$rembrane_binary" providers test \
         --provider rembrane.native \

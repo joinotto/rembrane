@@ -49,6 +49,22 @@ target/debug/rembrane providers check \
   --adapter-version 0.1.0-alpha.1 \
   --allow-experimental \
   --allow-provider-plaintext | jq .
+
+To consume a newer release registry without rebuilding, provide the registry,
+its detached signature, and a separately trusted release public key together:
+
+```sh
+target/debug/rembrane providers check \
+  --provider rembrane.native \
+  --adapter-version 0.1.0-alpha.1 \
+  --allow-experimental \
+  --allow-provider-plaintext \
+  --registry provider-registry.json \
+  --signature provider-registry.json.sig \
+  --public-key provider-registry-signing-public.pem
+```
+
+Do not obtain the public key from the same untrusted location as the registry.
 ```
 
 The CLI can run the same destructive-fixture suite for adapters compiled into

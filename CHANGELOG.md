@@ -27,6 +27,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   generation time, rejecting evidence that postdates its registry snapshot.
 - Provider selection now parses canonical RFC 3339 registry times and rejects
   impossible calendar values or future-dated snapshots.
+- Provider selection can consume bounded external registry snapshots after
+  in-process detached Ed25519 verification with an operator-supplied public
+  key, enabling revocation updates without rebuilding the CLI.
 - A strict portable key-provider conformance result schema and runner output
   containing provider identity and explicit pass evidence for eight
   authentication, encryption, limit, rotation, and replay cases.
