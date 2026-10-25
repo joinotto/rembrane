@@ -9,6 +9,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- Established remote MCP sessions now authorize the exact bounded JSON-RPC
+  bytes transferred to the SDK dispatcher, coupling session tenant,
+  reauthentication, method/tool classification, scope, and body ownership in
+  one consuming proof.
 - Stateless remote MCP now denies cancellation notifications rather than
   allowing one tenant to target an SDK request identifier without a proven
   tenant-bound session; ordinary stateless calls and session-bound lifecycle

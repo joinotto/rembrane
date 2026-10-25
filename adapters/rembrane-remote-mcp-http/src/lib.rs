@@ -852,6 +852,34 @@ where
     Ok(authorized)
 }
 
+/// Performs exact-body OAuth authorization for an established Axum session
+/// before transferring the same bytes to the MCP SDK service.
+///
+/// # Errors
+///
+/// Returns an HTTP-ready rejection for malformed or ambiguous headers,
+/// missing or foreign sessions, malformed JSON-RPC, invalid credentials,
+/// untrusted host/origin, or missing operation scope.
+pub fn authorize_axum_session_body<Verifier>(
+    gate: &mut RemoteMcpHttpGate,
+    authorization: &RemoteHttpAuthorization<'_, '_, Verifier>,
+    headers: &HeaderMap,
+    body: &[u8],
+    now_epoch_seconds: u64,
+) -> Result<AuthorizedRemoteMcpRequest, RemoteMcpHttpRejection>
+where
+    Verifier: RemoteTokenVerifier,
+{
+    let mut protocol_headers = protocol_headers_from_axum(headers)?;
+    let request = request_from_axum_headers(headers)?;
+    protocol_headers.validated_host = request.host.map(str::to_owned);
+    protocol_headers.validated_origin = request.origin.map(str::to_owned);
+    let mut authorized =
+        gate.authorize_session_body(authorization, request, body, now_epoch_seconds)?;
+    authorized.protocol_headers = protocol_headers;
+    Ok(authorized)
+}
+
 /// Reauthenticates an Axum session DELETE, dispatches it to the protocol
 /// service, and commits local deletion only after downstream success.
 ///
@@ -1150,6 +1178,39 @@ impl RemoteMcpHttpGate {
                 now_epoch_seconds,
             )
             .map_err(|error| self.rejection(error))
+    }
+
+    /// Classifies and authorizes one established-session JSON-RPC body as a
+    /// single consuming proof.
+    ///
+    /// # Errors
+    ///
+    /// Returns an HTTP-ready rejection for invalid JSON-RPC, session,
+    /// credentials, tenant binding, host, origin, method, tool, or scope.
+    pub fn authorize_session_body<Verifier>(
+        &mut self,
+        authorization: &RemoteHttpAuthorization<'_, '_, Verifier>,
+        request: RemoteMcpHttpRequest<'_>,
+        body: &[u8],
+        now_epoch_seconds: u64,
+    ) -> Result<AuthorizedRemoteMcpRequest, RemoteMcpHttpRejection>
+    where
+        Verifier: RemoteTokenVerifier,
+    {
+        let invocation = classify_remote_mcp_request(body)?;
+        let access = self.authorize(
+            authorization,
+            request,
+            invocation.method(),
+            invocation.tool_name(),
+            now_epoch_seconds,
+        )?;
+        Ok(AuthorizedRemoteMcpRequest {
+            access,
+            invocation,
+            protocol_headers: RemoteMcpProtocolHeaders::transport_neutral(),
+            body: Zeroizing::new(body.to_vec()),
+        })
     }
 
     /// Authorizes one stateless MCP request without accepting or creating a
@@ -1452,8 +1513,8 @@ mod tests {
         AuthorizedTowerMcpDispatcher, MAX_REMOTE_MCP_HEADER_BYTES,
         MCP_PROTOCOL_VERSION_HEADER_NAME, MCP_SESSION_HEADER_NAME, RemoteMcpAxumAuthorization,
         RemoteMcpDispatchError, RemoteMcpHttpGate, RemoteMcpHttpRejection, RemoteMcpHttpRequest,
-        RemoteMcpInvocation, authorize_axum_session_deletion, authorize_axum_stateless_body,
-        classify_remote_mcp_request, request_from_axum_headers,
+        RemoteMcpInvocation, authorize_axum_session_body, authorize_axum_session_deletion,
+        authorize_axum_stateless_body, classify_remote_mcp_request, request_from_axum_headers,
     };
 
     struct Verifier;
@@ -1762,6 +1823,72 @@ mod tests {
             )
             .expect_err("confirmed deletion must remove local binding")
             .status,
+            403
+        );
+    }
+
+    #[test]
+    fn established_session_authorization_couples_tenant_to_exact_body() {
+        let verifier = Verifier;
+        let authenticator = RemoteAccessAuthenticator::new(
+            &verifier,
+            "https://identity.example.test",
+            "https://memory.example.test/mcp",
+        );
+        let authorization = RemoteHttpAuthorization::new(&authenticator, &[]);
+        let mut gate = RemoteMcpHttpGate::new(
+            1,
+            "https://memory.example.test/.well-known/oauth-protected-resource/mcp",
+            &["memory.example.test"],
+        )
+        .expect("gate should be valid");
+        let session = "session_0123456789abcdef";
+        gate.establish(
+            &authorization,
+            RemoteMcpHttpRequest {
+                authorization: Some("Bearer workspace-one"),
+                host: Some("memory.example.test"),
+                origin: None,
+                session_id: Some(session),
+            },
+            1_000,
+        )
+        .expect("session should establish");
+        let mut headers = HeaderMap::new();
+        headers.insert(HOST, HeaderValue::from_static("memory.example.test"));
+        headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+        headers.insert(
+            ACCEPT,
+            HeaderValue::from_static("application/json, text/event-stream"),
+        );
+        headers.insert(
+            MCP_SESSION_HEADER_NAME,
+            HeaderValue::from_static("session_0123456789abcdef"),
+        );
+        headers.insert(
+            AUTHORIZATION,
+            HeaderValue::from_static("Bearer workspace-one"),
+        );
+        let body = br#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"rembrane_resolve_context","arguments":{}}}"#;
+        let authorized =
+            authorize_axum_session_body(&mut gate, &authorization, &headers, body, 1_100)
+                .expect("session body should authorize");
+        assert_eq!(authorized.access().workspace_id().as_str(), "workspace_01");
+        assert_eq!(
+            authorized.invocation().tool_name(),
+            Some("rembrane_resolve_context")
+        );
+        assert_eq!(authorized.body(), body);
+
+        headers.insert(
+            AUTHORIZATION,
+            HeaderValue::from_static("Bearer workspace-two"),
+        );
+        assert_eq!(
+            authorize_axum_session_body(&mut gate, &authorization, &headers, body, 1_100)
+                .err()
+                .expect("foreign tenant must not reuse a session")
+                .status,
             403
         );
     }

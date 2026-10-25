@@ -309,6 +309,9 @@ This roadmap describes sequencing, not release dates.
       method, tool, or scope.
       - [x] Return one opaque authorized-request object carrying verified
         access, operation classification, and the exact zeroizing body buffer.
+    - [x] Couple established-session body classification, tenant
+      reauthentication, and OAuth scope authorization into the same consuming
+      exact-body proof used by the SDK dispatcher.
     - [x] Adapt Axum header maps and HTTP rejection responses at the outer
       boundary, rejecting duplicate security headers before SDK dispatch.
       - [x] Bound every security and MCP negotiation header before parsing or
