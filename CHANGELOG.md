@@ -69,6 +69,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Complete PostgreSQL `RetentionRepository` support with atomic audited
   legal-hold placement, strict-successor release, nullable terminal fields,
   exact affected-row checks, and tenant-pinned application access.
+- PostgreSQL `MemberScopeGrantRepository` support with tenant-pinned atomic
+  audited mutations, bounded deterministic reads, duplicate rejection, and
+  closed global/domain/entity/activity scope decoding.
 - PostgreSQL invitation lookup and bounded deterministic listing with optional
   status filtering, numeric lifetime decoding, terminal-state restoration,
   and exact tenant/invitation correlation.

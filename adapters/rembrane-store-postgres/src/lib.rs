@@ -10,15 +10,16 @@ use std::fmt::{self, Display, Formatter};
 
 use rembrane_application::{
     AdministrativeAuditRepository, ApplicationError, InvitationRepository,
-    MAX_ADMINISTRATIVE_AUDIT_PAGE, MAXIMUM_INVITATION_LIST_ITEMS, MembershipRepository,
-    RetentionRepository, WorkspaceReadRepository, WorkspaceRepository, is_strict_successor,
+    MAX_ADMINISTRATIVE_AUDIT_PAGE, MAXIMUM_INVITATION_LIST_ITEMS, MemberScopeGrantRepository,
+    MembershipRepository, RetentionRepository, WorkspaceReadRepository, WorkspaceRepository,
+    is_strict_successor,
 };
 use rembrane_domain::{
-    AdministrativeAction, AdministrativeAuditEvent, AdministrativeAuditEventId,
-    AdministrativeTargetKind, Invitation, InvitationId, InvitationStatus, LegalHoldId,
-    LegalHoldStatus, Membership, Principal, PrincipalId, RetentionPeriod, RetentionResource,
-    Workspace, WorkspaceId, WorkspaceKind, WorkspaceLegalHold, WorkspaceRetentionPolicy,
-    WorkspaceRole,
+    ActivityId, AdministrativeAction, AdministrativeAuditEvent, AdministrativeAuditEventId,
+    AdministrativeTargetKind, EntityId, Invitation, InvitationId, InvitationStatus, LegalHoldId,
+    LegalHoldStatus, MemberScopeGrant, Membership, Principal, PrincipalId, ReadScope,
+    RetentionPeriod, RetentionResource, Workspace, WorkspaceId, WorkspaceKind, WorkspaceLegalHold,
+    WorkspaceRetentionPolicy, WorkspaceRole,
 };
 
 pub const SET_TENANT_SQL: &str = "SELECT set_config('rembrane.workspace_id', $1, true);";
@@ -113,6 +114,15 @@ pub const INSERT_LEGAL_HOLD_SQL: &str = "INSERT INTO workspace_legal_holds \
 pub const REPLACE_LEGAL_HOLD_SQL: &str = "UPDATE workspace_legal_holds SET status = $3, \
     version = $4, released_by = $5, released_at_epoch_seconds = $6 \
     WHERE workspace_id = $1 AND id = $2 AND version = $7";
+pub const INSERT_MEMBER_SCOPE_GRANT_SQL: &str = "INSERT INTO member_scope_grants \
+    (workspace_id, principal_id, scope_type, scope_value) VALUES ($1, $2, $3, $4)";
+pub const MAX_MEMBER_SCOPE_GRANTS: usize = 10_000;
+pub const LIST_MEMBER_SCOPE_GRANTS_SQL: &str = "SELECT workspace_id, principal_id, \
+    scope_type, scope_value FROM member_scope_grants \
+    WHERE workspace_id = $1 AND principal_id = $2 \
+    ORDER BY scope_type, scope_value LIMIT 10001";
+pub const DELETE_MEMBER_SCOPE_GRANT_SQL: &str = "DELETE FROM member_scope_grants \
+    WHERE workspace_id = $1 AND principal_id = $2 AND scope_type = $3 AND scope_value = $4";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PostgresParameter<'value> {
@@ -1130,6 +1140,98 @@ impl<Pool: PostgresPool> PostgresStore<Pool> {
         insert_administrative_audit(&mut transaction, audit_event)?;
         transaction.commit().map_err(PostgresStoreError::Tenant)
     }
+
+    pub fn insert_member_scope_grant(
+        &self,
+        grant: &MemberScopeGrant,
+        audit_event: &AdministrativeAuditEvent,
+    ) -> Result<(), PostgresStoreError<Pool::Error>> {
+        if !valid_scope_audit(grant, audit_event) {
+            return Err(PostgresStoreError::InvalidInput);
+        }
+        let (scope_type, scope_value) = encode_read_scope(grant.scope());
+        let mut transaction = self.begin_tenant(grant.workspace_id().clone())?;
+        execute_exactly_one(
+            &mut transaction,
+            INSERT_MEMBER_SCOPE_GRANT_SQL,
+            &[
+                PostgresParameter::Text(grant.workspace_id().as_str()),
+                PostgresParameter::Text(grant.principal_id().as_str()),
+                PostgresParameter::Text(scope_type),
+                PostgresParameter::Text(scope_value),
+            ],
+        )?;
+        insert_administrative_audit(&mut transaction, audit_event)?;
+        transaction.commit().map_err(PostgresStoreError::Tenant)
+    }
+
+    pub fn list_member_scope_grants(
+        &self,
+        workspace_id: &WorkspaceId,
+        principal_id: &PrincipalId,
+    ) -> Result<Vec<MemberScopeGrant>, PostgresStoreError<Pool::Error>>
+    where
+        <Pool::Transaction as PostgresTransaction>::Row: PostgresRow<Error = Pool::Error>,
+    {
+        let mut transaction = self.begin_tenant(workspace_id.clone())?;
+        let rows = transaction
+            .query(
+                LIST_MEMBER_SCOPE_GRANTS_SQL,
+                &[
+                    PostgresParameter::Text(workspace_id.as_str()),
+                    PostgresParameter::Text(principal_id.as_str()),
+                ],
+            )
+            .map_err(PostgresStoreError::Tenant)?;
+        if rows.len() > MAX_MEMBER_SCOPE_GRANTS {
+            return Err(PostgresStoreError::UnexpectedCardinality);
+        }
+        let mut scopes = BTreeSet::new();
+        let grants = rows
+            .iter()
+            .map(|row| {
+                let grant = decode_member_scope_grant(row, workspace_id, principal_id)?;
+                let encoded = encode_read_scope(grant.scope());
+                if !scopes.insert((encoded.0, encoded.1.to_owned())) {
+                    return Err(PostgresStoreError::InvalidRow);
+                }
+                Ok(grant)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        transaction.commit().map_err(PostgresStoreError::Tenant)?;
+        Ok(grants)
+    }
+
+    pub fn delete_member_scope_grant(
+        &self,
+        grant: &MemberScopeGrant,
+        audit_event: &AdministrativeAuditEvent,
+    ) -> Result<(), PostgresStoreError<Pool::Error>> {
+        if !valid_scope_audit(grant, audit_event) {
+            return Err(PostgresStoreError::InvalidInput);
+        }
+        let (scope_type, scope_value) = encode_read_scope(grant.scope());
+        let mut transaction = self.begin_tenant(grant.workspace_id().clone())?;
+        let changed = transaction
+            .execute(
+                DELETE_MEMBER_SCOPE_GRANT_SQL,
+                &[
+                    PostgresParameter::Text(grant.workspace_id().as_str()),
+                    PostgresParameter::Text(grant.principal_id().as_str()),
+                    PostgresParameter::Text(scope_type),
+                    PostgresParameter::Text(scope_value),
+                ],
+            )
+            .map_err(PostgresStoreError::Tenant)?;
+        if changed == 0 {
+            return Err(PostgresStoreError::MissingRow);
+        }
+        if changed != 1 {
+            return Err(PostgresStoreError::UnexpectedCardinality);
+        }
+        insert_administrative_audit(&mut transaction, audit_event)?;
+        transaction.commit().map_err(PostgresStoreError::Tenant)
+    }
 }
 
 impl<Pool> MembershipRepository for PostgresStore<Pool>
@@ -1309,6 +1411,40 @@ where
     }
 }
 
+impl<Pool> MemberScopeGrantRepository for PostgresStore<Pool>
+where
+    Pool: PostgresPool,
+    Pool::Error: ClassifiedPostgresError,
+    <Pool::Transaction as PostgresTransaction>::Row: PostgresRow<Error = Pool::Error>,
+{
+    fn insert_member_scope_grant(
+        &mut self,
+        grant: MemberScopeGrant,
+        audit_event: AdministrativeAuditEvent,
+    ) -> Result<(), ApplicationError> {
+        PostgresStore::insert_member_scope_grant(self, &grant, &audit_event)
+            .map_err(map_scope_application_error)
+    }
+
+    fn list_member_scope_grants(
+        &self,
+        workspace_id: &WorkspaceId,
+        principal_id: &PrincipalId,
+    ) -> Result<Vec<MemberScopeGrant>, ApplicationError> {
+        PostgresStore::list_member_scope_grants(self, workspace_id, principal_id)
+            .map_err(map_scope_application_error)
+    }
+
+    fn delete_member_scope_grant(
+        &mut self,
+        grant: &MemberScopeGrant,
+        audit_event: AdministrativeAuditEvent,
+    ) -> Result<(), ApplicationError> {
+        PostgresStore::delete_member_scope_grant(self, grant, &audit_event)
+            .map_err(map_scope_application_error)
+    }
+}
+
 impl<Pool> PostgresTenantStore<'_, Pool> {
     fn require_workspace(&self, workspace_id: &WorkspaceId) -> Result<(), ApplicationError> {
         if workspace_id == &self.workspace_id {
@@ -1484,6 +1620,48 @@ where
         self.store
             .replace_legal_hold(&hold, expected_version, &audit_event)
             .map_err(map_retention_application_error)
+    }
+}
+
+impl<Pool> MemberScopeGrantRepository for PostgresTenantStore<'_, Pool>
+where
+    Pool: PostgresPool,
+    Pool::Error: ClassifiedPostgresError,
+    <Pool::Transaction as PostgresTransaction>::Row: PostgresRow<Error = Pool::Error>,
+{
+    fn insert_member_scope_grant(
+        &mut self,
+        grant: MemberScopeGrant,
+        audit_event: AdministrativeAuditEvent,
+    ) -> Result<(), ApplicationError> {
+        self.require_workspace(grant.workspace_id())?;
+        self.require_workspace(audit_event.workspace_id())?;
+        self.store
+            .insert_member_scope_grant(&grant, &audit_event)
+            .map_err(map_scope_application_error)
+    }
+
+    fn list_member_scope_grants(
+        &self,
+        workspace_id: &WorkspaceId,
+        principal_id: &PrincipalId,
+    ) -> Result<Vec<MemberScopeGrant>, ApplicationError> {
+        self.require_workspace(workspace_id)?;
+        self.store
+            .list_member_scope_grants(workspace_id, principal_id)
+            .map_err(map_scope_application_error)
+    }
+
+    fn delete_member_scope_grant(
+        &mut self,
+        grant: &MemberScopeGrant,
+        audit_event: AdministrativeAuditEvent,
+    ) -> Result<(), ApplicationError> {
+        self.require_workspace(grant.workspace_id())?;
+        self.require_workspace(audit_event.workspace_id())?;
+        self.store
+            .delete_member_scope_grant(grant, &audit_event)
+            .map_err(map_scope_application_error)
     }
 }
 
@@ -1745,6 +1923,20 @@ where
     }
 }
 
+fn map_scope_application_error<DriverError>(
+    error: PostgresStoreError<DriverError>,
+) -> ApplicationError
+where
+    DriverError: ClassifiedPostgresError,
+{
+    match error {
+        PostgresStoreError::InvalidInput => {
+            ApplicationError::Validation("invalid member scope persistence request".to_owned())
+        }
+        other => map_application_error(other),
+    }
+}
+
 fn map_invitation_application_error<DriverError>(
     error: PostgresStoreError<DriverError>,
 ) -> ApplicationError
@@ -1878,6 +2070,31 @@ fn valid_legal_hold_audit(
         && event.action() == action
         && event.target_kind() == AdministrativeTargetKind::LegalHold
         && event.target_id() == hold.id().as_str()
+}
+
+fn encode_read_scope(scope: &ReadScope) -> (&'static str, &str) {
+    match scope {
+        ReadScope::Global => ("global", ""),
+        ReadScope::Domain { name } => ("domain", name),
+        ReadScope::Entity { id } => ("entity", id.as_str()),
+        ReadScope::Activity { id } => ("activity", id.as_str()),
+    }
+}
+
+fn valid_scope_audit(grant: &MemberScopeGrant, event: &AdministrativeAuditEvent) -> bool {
+    let (scope_type, scope_value) = encode_read_scope(grant.scope());
+    let expected_target = if scope_value.is_empty() {
+        format!("{}:{scope_type}", grant.principal_id().as_str())
+    } else {
+        format!(
+            "{}:{scope_type}:{scope_value}",
+            grant.principal_id().as_str()
+        )
+    };
+    event.workspace_id() == grant.workspace_id()
+        && event.action() == AdministrativeAction::ScopeGrantChanged
+        && event.target_kind() == AdministrativeTargetKind::ScopeGrant
+        && event.target_id() == expected_target
 }
 
 fn legal_hold_parameters<DriverError>(
@@ -2073,6 +2290,44 @@ where
         "shared" => Ok(Workspace::shared(WorkspaceId::new(id))),
         _ => Err(PostgresStoreError::InvalidRow),
     }
+}
+
+fn decode_member_scope_grant<Row, DriverError>(
+    row: &Row,
+    expected_workspace_id: &WorkspaceId,
+    expected_principal_id: &PrincipalId,
+) -> Result<MemberScopeGrant, PostgresStoreError<DriverError>>
+where
+    Row: PostgresRow<Error = DriverError>,
+{
+    let workspace_id = row.text("workspace_id").map_err(PostgresStoreError::Row)?;
+    let principal_id = row.text("principal_id").map_err(PostgresStoreError::Row)?;
+    if workspace_id != expected_workspace_id.as_str()
+        || principal_id != expected_principal_id.as_str()
+    {
+        return Err(PostgresStoreError::InvalidRow);
+    }
+    let scope_value = row.text("scope_value").map_err(PostgresStoreError::Row)?;
+    let scope = match row
+        .text("scope_type")
+        .map_err(PostgresStoreError::Row)?
+        .as_str()
+    {
+        "global" if scope_value.is_empty() => ReadScope::Global,
+        "domain" if !scope_value.is_empty() => ReadScope::Domain { name: scope_value },
+        "entity" if !scope_value.is_empty() => ReadScope::Entity {
+            id: EntityId::new(scope_value),
+        },
+        "activity" if !scope_value.is_empty() => ReadScope::Activity {
+            id: ActivityId::new(scope_value),
+        },
+        _ => return Err(PostgresStoreError::InvalidRow),
+    };
+    Ok(MemberScopeGrant::new(
+        WorkspaceId::new(workspace_id),
+        PrincipalId::new(principal_id),
+        scope,
+    ))
 }
 
 fn decode_principal<Row, DriverError>(
@@ -2354,27 +2609,29 @@ mod tests {
 
     use rembrane_application::{
         AdministrativeAuditRepository, ApplicationError, CreateInvitationCommand,
-        InvitationRepository, InvitationService, MembershipRepository, RetentionRepository,
-        WorkspaceRepository,
+        InvitationRepository, InvitationService, MemberScopeGrantRepository, MembershipRepository,
+        RetentionRepository, WorkspaceRepository,
     };
     use rembrane_domain::{
         AdministrativeAction, AdministrativeAuditEvent, AdministrativeAuditEventId,
         AdministrativeTargetKind, Invitation, InvitationId, InvitationStatus, LegalHoldId,
-        LegalHoldStatus, Principal, PrincipalId, RetentionPeriod, RetentionResource, Workspace,
-        WorkspaceId, WorkspaceRetentionPolicy, WorkspaceRole,
+        LegalHoldStatus, MemberScopeGrant, Principal, PrincipalId, ReadScope, RetentionPeriod,
+        RetentionResource, Workspace, WorkspaceId, WorkspaceRetentionPolicy, WorkspaceRole,
     };
 
     use super::{
-        ACCEPT_INVITATION_SQL, ClassifiedPostgresError, EXPIRE_PENDING_INVITATION_SQL,
-        FIND_INVITATION_SQL, FIND_LEGAL_HOLD_SQL, FIND_MEMBERSHIP_SQL, FIND_PRINCIPAL_SQL,
-        FIND_PROVISIONING_PRINCIPAL_SQL, FIND_RETENTION_POLICY_SQL, FIND_WORKSPACE_SQL,
-        INSERT_ADMINISTRATIVE_AUDIT_SQL, INSERT_INVITATION_SQL, INSERT_LEGAL_HOLD_SQL,
+        ACCEPT_INVITATION_SQL, ClassifiedPostgresError, DELETE_MEMBER_SCOPE_GRANT_SQL,
+        EXPIRE_PENDING_INVITATION_SQL, FIND_INVITATION_SQL, FIND_LEGAL_HOLD_SQL,
+        FIND_MEMBERSHIP_SQL, FIND_PRINCIPAL_SQL, FIND_PROVISIONING_PRINCIPAL_SQL,
+        FIND_RETENTION_POLICY_SQL, FIND_WORKSPACE_SQL, INSERT_ADMINISTRATIVE_AUDIT_SQL,
+        INSERT_INVITATION_SQL, INSERT_LEGAL_HOLD_SQL, INSERT_MEMBER_SCOPE_GRANT_SQL,
         INSERT_MEMBERSHIP_SQL, INSERT_PRINCIPAL_SQL, INSERT_RETENTION_POLICY_SQL,
         INSERT_WORKSPACE_SQL, LIST_ACTIVE_LEGAL_HOLDS_SQL, LIST_ACTIVE_MEMBERSHIPS_SQL,
-        LIST_ADMINISTRATIVE_AUDIT_SQL, LIST_INVITATIONS_BY_STATUS_SQL, MAX_ACTIVE_MEMBERSHIPS,
-        PostgresFailureKind, PostgresParameter, PostgresPool, PostgresProvisioner,
-        PostgresProvisioningPool, PostgresRow, PostgresStore, PostgresStoreError,
-        PostgresTransaction, PostgresWorkspaceAdminStore, ProvisioningTransaction, READ_TENANT_SQL,
+        LIST_ADMINISTRATIVE_AUDIT_SQL, LIST_INVITATIONS_BY_STATUS_SQL,
+        LIST_MEMBER_SCOPE_GRANTS_SQL, MAX_ACTIVE_MEMBERSHIPS, PostgresFailureKind,
+        PostgresParameter, PostgresPool, PostgresProvisioner, PostgresProvisioningPool,
+        PostgresRow, PostgresStore, PostgresStoreError, PostgresTransaction,
+        PostgresWorkspaceAdminStore, ProvisioningTransaction, READ_TENANT_SQL,
         REPLACE_INVITATION_SQL, REPLACE_LEGAL_HOLD_SQL, REPLACE_MEMBERSHIP_SQL,
         REPLACE_RETENTION_POLICY_SQL, SET_TENANT_SQL, TenantTransaction, TenantTransactionError,
         map_application_error, map_invitation_application_error,
@@ -2426,6 +2683,23 @@ mod tests {
                     ("principal_id", principal_id.to_owned()),
                     ("role", role.to_owned()),
                     ("status", status.to_owned()),
+                ]),
+                numbers: BTreeMap::new(),
+            }
+        }
+
+        fn member_scope(
+            workspace_id: &str,
+            principal_id: &str,
+            scope_type: &str,
+            scope_value: &str,
+        ) -> Self {
+            Self {
+                columns: BTreeMap::from([
+                    ("workspace_id", workspace_id.to_owned()),
+                    ("principal_id", principal_id.to_owned()),
+                    ("scope_type", scope_type.to_owned()),
+                    ("scope_value", scope_value.to_owned()),
                 ]),
                 numbers: BTreeMap::new(),
             }
@@ -3726,6 +4000,116 @@ mod tests {
                 10,
             ),
             Err(ApplicationError::AccessDenied)
+        );
+        assert_eq!(
+            MemberScopeGrantRepository::list_member_scope_grants(
+                &tenant,
+                &WorkspaceId::new("workspace_other"),
+                &PrincipalId::new("principal_01"),
+            ),
+            Err(ApplicationError::AccessDenied)
+        );
+    }
+
+    #[test]
+    fn member_scope_port_atomically_mutates_and_strictly_lists_grants() {
+        fn audit(suffix: &str) -> AdministrativeAuditEvent {
+            AdministrativeAuditEvent::new(
+                AdministrativeAuditEventId::new(format!("audit_{suffix}")),
+                WorkspaceId::new("workspace_01"),
+                PrincipalId::new("principal_admin"),
+                AdministrativeAction::ScopeGrantChanged,
+                AdministrativeTargetKind::ScopeGrant,
+                "principal_01:domain:travel",
+                format!("request_{suffix}"),
+                150,
+            )
+            .expect("scope audit")
+        }
+
+        let grant = MemberScopeGrant::new(
+            WorkspaceId::new("workspace_01"),
+            PrincipalId::new("principal_01"),
+            ReadScope::Domain {
+                name: "travel".to_owned(),
+            },
+        );
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let store = PostgresStore::new(FakePool {
+            calls: Rc::clone(&calls),
+            tenant_batches: RefCell::new(
+                [
+                    VecDeque::from([
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                    ]),
+                    VecDeque::from([
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                    ]),
+                    VecDeque::from([
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                    ]),
+                ]
+                .into(),
+            ),
+            row_batches: RefCell::new(
+                [
+                    Vec::new(),
+                    vec![FakeRow::member_scope(
+                        "workspace_01",
+                        "principal_01",
+                        "domain",
+                        "travel",
+                    )],
+                    Vec::new(),
+                ]
+                .into(),
+            ),
+        });
+        let mut tenant = store.for_workspace(WorkspaceId::new("workspace_01"));
+
+        MemberScopeGrantRepository::insert_member_scope_grant(
+            &mut tenant,
+            grant.clone(),
+            audit("insert"),
+        )
+        .expect("insert grant");
+        assert_eq!(
+            MemberScopeGrantRepository::list_member_scope_grants(
+                &tenant,
+                &WorkspaceId::new("workspace_01"),
+                &PrincipalId::new("principal_01"),
+            )
+            .expect("list grants"),
+            vec![grant.clone()]
+        );
+        MemberScopeGrantRepository::delete_member_scope_grant(&mut tenant, &grant, audit("delete"))
+            .expect("delete grant");
+
+        let calls = calls.borrow();
+        assert!(calls.iter().any(
+            |call| matches!(call, Call::Execute(statement, _) if statement == INSERT_MEMBER_SCOPE_GRANT_SQL)
+        ));
+        assert!(calls
+            .iter()
+            .any(|call| matches!(call, Call::Query(statement, _) if statement == LIST_MEMBER_SCOPE_GRANTS_SQL)));
+        assert!(calls.iter().any(
+            |call| matches!(call, Call::Execute(statement, _) if statement == DELETE_MEMBER_SCOPE_GRANT_SQL)
+        ));
+        assert_eq!(
+            calls
+                .iter()
+                .filter(|call| matches!(call, Call::Execute(statement, _) if statement == INSERT_ADMINISTRATIVE_AUDIT_SQL))
+                .count(),
+            2
+        );
+        assert_eq!(
+            calls.iter().filter(|call| **call == Call::Commit).count(),
+            3
         );
     }
 
