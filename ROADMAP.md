@@ -947,6 +947,8 @@ This roadmap describes sequencing, not release dates.
         authenticated-message constructor and published JSON Schema.
       - [x] Require a bounded JSON acknowledgement tied to the exact protocol
         version and channel event before completing inbox delivery.
+      - [x] Add zero-dependency TypeScript helpers that strictly parse the
+        published message and create event-bound acknowledgements.
   - [x] Add a configured per-workspace channel worker executable for encrypted
     inbox recovery, retry, HTTP processor delivery, and completion.
   - [x] Package ingress and delivery workers together in the opt-in hardened

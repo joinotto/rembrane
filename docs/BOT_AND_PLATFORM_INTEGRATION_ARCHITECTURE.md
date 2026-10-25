@@ -332,6 +332,13 @@ idempotent downstream effect is durable. A generic 2xx response, mismatched
 event ID, unknown status, or malformed body leaves the encrypted inbox event
 retryable.
 
+JavaScript and TypeScript processors can use
+`parseChannelProcessorMessage` and
+`createChannelProcessorAcknowledgement` from `@rembrane/sdk`. The hosting
+service must still authenticate the worker bearer token before parsing or
+processing the body, and its processing callback must enforce durable
+idempotency for `(channel, eventId)`.
+
 ### 7.4 Explicit mobile and iMessage shares
 
 Rembrane can accept text that a user explicitly selects in an iOS share

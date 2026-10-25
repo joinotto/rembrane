@@ -5,6 +5,39 @@ export interface RembraneClientOptions {
   maximumResponseBytes?: number;
 }
 
+export type ChannelProcessorChannel =
+  | "whatsapp-business"
+  | "imessage-extension"
+  | "mobile-share";
+
+export interface ChannelProcessorMessage {
+  protocolVersion: "0.1";
+  channel: ChannelProcessorChannel;
+  eventId: string;
+  workspaceId: string;
+  principalId: string;
+  clientId: string;
+  text: string;
+  receivedAtEpochSeconds: number;
+}
+
+export type ChannelProcessorStatus = "processed" | "duplicate";
+
+export interface ChannelProcessorAcknowledgement {
+  protocolVersion: "0.1";
+  eventId: string;
+  status: ChannelProcessorStatus;
+}
+
+export function parseChannelProcessorMessage(
+  value: unknown,
+): Readonly<ChannelProcessorMessage>;
+
+export function createChannelProcessorAcknowledgement(
+  eventId: string,
+  status: ChannelProcessorStatus,
+): Readonly<ChannelProcessorAcknowledgement>;
+
 export interface WorkspaceRequest {
   workspaceId: string;
 }

@@ -1,4 +1,21 @@
 const DEFAULT_MAXIMUM_RESPONSE_BYTES = 1024 * 1024;
+const CHANNEL_PROCESSOR_PROTOCOL_VERSION = "0.1";
+const CHANNEL_PROCESSOR_CHANNELS = new Set([
+  "whatsapp-business",
+  "imessage-extension",
+  "mobile-share",
+]);
+const CHANNEL_PROCESSOR_STATUSES = new Set(["processed", "duplicate"]);
+const CHANNEL_MESSAGE_KEYS = [
+  "channel",
+  "clientId",
+  "eventId",
+  "principalId",
+  "protocolVersion",
+  "receivedAtEpochSeconds",
+  "text",
+  "workspaceId",
+];
 
 export class RembraneError extends Error {
   constructor(status, code, message) {
@@ -142,4 +159,61 @@ export class RembraneClient {
     }
     return value;
   }
+}
+
+export function parseChannelProcessorMessage(value) {
+  if (!isExactObject(value, CHANNEL_MESSAGE_KEYS)) {
+    throw new TypeError("Invalid Rembrane channel processor message");
+  }
+  if (
+    value.protocolVersion !== CHANNEL_PROCESSOR_PROTOCOL_VERSION ||
+    !CHANNEL_PROCESSOR_CHANNELS.has(value.channel) ||
+    !isBoundedToken(value.eventId, 256) ||
+    !isBoundedToken(value.workspaceId, 255) ||
+    !isBoundedToken(value.principalId, 255) ||
+    !isBoundedToken(value.clientId, 255) ||
+    typeof value.text !== "string" ||
+    value.text.trim().length === 0 ||
+    utf8Length(value.text) > 16_384 ||
+    !Number.isSafeInteger(value.receivedAtEpochSeconds) ||
+    value.receivedAtEpochSeconds < 1
+  ) {
+    throw new TypeError("Invalid Rembrane channel processor message");
+  }
+  return Object.freeze({ ...value });
+}
+
+export function createChannelProcessorAcknowledgement(eventId, status) {
+  if (!isBoundedToken(eventId, 256) || !CHANNEL_PROCESSOR_STATUSES.has(status)) {
+    throw new TypeError("Invalid Rembrane channel processor acknowledgement");
+  }
+  return Object.freeze({
+    protocolVersion: CHANNEL_PROCESSOR_PROTOCOL_VERSION,
+    eventId,
+    status,
+  });
+}
+
+function isExactObject(value, expectedKeys) {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const keys = Object.keys(value).sort();
+  return (
+    keys.length === expectedKeys.length &&
+    keys.every((key, index) => key === expectedKeys[index])
+  );
+}
+
+function isBoundedToken(value, maximumBytes) {
+  return (
+    typeof value === "string" &&
+    value.length > 0 &&
+    utf8Length(value) <= maximumBytes &&
+    !/[\s\u0000-\u001f\u007f]/u.test(value)
+  );
+}
+
+function utf8Length(value) {
+  return new TextEncoder().encode(value).length;
 }

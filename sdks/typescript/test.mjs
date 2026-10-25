@@ -1,5 +1,11 @@
 import assert from "node:assert/strict";
-import { RembraneClient, RembraneError } from "./index.js";
+import { readFile } from "node:fs/promises";
+import {
+  RembraneClient,
+  RembraneError,
+  createChannelProcessorAcknowledgement,
+  parseChannelProcessorMessage,
+} from "./index.js";
 
 const calls = [];
 const client = new RembraneClient({
@@ -119,4 +125,52 @@ await assert.rejects(
     error instanceof RembraneError &&
     error.status === 403 &&
     error.code === "access_denied",
+);
+
+const channelFixture = JSON.parse(
+  await readFile(
+    new URL("../../spec/examples/channel-processor-message.json", import.meta.url),
+    "utf8",
+  ),
+);
+const parsedChannelMessage = parseChannelProcessorMessage(channelFixture);
+assert.deepEqual(parsedChannelMessage, channelFixture);
+assert.equal(Object.isFrozen(parsedChannelMessage), true);
+
+const acknowledgement = createChannelProcessorAcknowledgement(
+  channelFixture.eventId,
+  "processed",
+);
+const acknowledgementFixture = JSON.parse(
+  await readFile(
+    new URL(
+      "../../spec/examples/channel-processor-acknowledgement.json",
+      import.meta.url,
+    ),
+    "utf8",
+  ),
+);
+assert.deepEqual(acknowledgement, acknowledgementFixture);
+assert.equal(Object.isFrozen(acknowledgement), true);
+
+for (const invalid of [
+  null,
+  { ...channelFixture, protocolVersion: "0.2" },
+  { ...channelFixture, channel: "sms" },
+  { ...channelFixture, eventId: "unsafe event" },
+  { ...channelFixture, workspaceId: "x".repeat(256) },
+  { ...channelFixture, text: " \n\t" },
+  { ...channelFixture, text: "😀".repeat(4_097) },
+  { ...channelFixture, receivedAtEpochSeconds: 0 },
+  { ...channelFixture, ignored: true },
+]) {
+  assert.throws(
+    () => parseChannelProcessorMessage(invalid),
+    /Invalid Rembrane channel processor message/,
+  );
+}
+assert.throws(
+  () =>
+    createChannelProcessorAcknowledgement(channelFixture.eventId, "accepted"),
+  /Invalid Rembrane channel processor acknowledgement/,
 );

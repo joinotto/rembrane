@@ -20,6 +20,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Strict channel processor acknowledgements now require bounded JSON,
   matching protocol and event identity, and a closed processed-or-duplicate
   status before encrypted inbox delivery can complete.
+- Zero-dependency TypeScript SDK helpers for strict channel-message parsing and
+  exact event-bound acknowledgement creation, tested against published
+  protocol fixtures and UTF-8 byte limits.
 - Fail-closed graph-context disclosure receipts recording the exact canonical
   edge revisions, query direction and validity time, verified subject and
   client, and declared purpose before context crosses the application boundary.
