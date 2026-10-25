@@ -136,6 +136,44 @@ printf '%s\n' "$zed_config" | jq -e \
             == "${REMBRANE_WORKSPACE_KEY_REFERENCE}"
         and (.context_servers.rembrane.env | has("REMBRANE_WORKSPACE_KEY_HEX") | not)' \
     >/dev/null
+cursor_config=$(
+    "$rembrane_binary" mcp-config \
+        --client cursor \
+        --server-binary "$repository_root/target/debug/rembrane-mcp"
+)
+printf '%s\n' "$cursor_config" | jq -e \
+    '.mcpServers.rembrane.type == "stdio"
+        and .mcpServers.rembrane.args == []
+        and .mcpServers.rembrane.env.REMBRANE_WORKSPACE_KEY_REFERENCE
+            == "${env:REMBRANE_WORKSPACE_KEY_REFERENCE}"
+        and (.mcpServers.rembrane.env | has("REMBRANE_WORKSPACE_KEY_HEX") | not)' \
+    >/dev/null
+vscode_config=$(
+    "$rembrane_binary" mcp-config \
+        --client vscode \
+        --server-binary "$repository_root/target/debug/rembrane-mcp"
+)
+printf '%s\n' "$vscode_config" | jq -e \
+    '.servers.rembrane.type == "stdio"
+        and .servers.rembrane.args == []
+        and .servers.rembrane.env.REMBRANE_WORKSPACE_KEY_REFERENCE
+            == "${env:REMBRANE_WORKSPACE_KEY_REFERENCE}"
+        and (.servers.rembrane.env | has("REMBRANE_WORKSPACE_KEY_HEX") | not)' \
+    >/dev/null
+opencode_config=$(
+    "$rembrane_binary" mcp-config \
+        --client opencode \
+        --server-binary "$repository_root/target/debug/rembrane-mcp"
+)
+printf '%s\n' "$opencode_config" | jq -e \
+    '.mcp.rembrane.type == "local"
+        and .mcp.rembrane.enabled == true
+        and .mcp.rembrane.command
+            == ["'"$repository_root"'/target/debug/rembrane-mcp"]
+        and .mcp.rembrane.environment.REMBRANE_WORKSPACE_KEY_REFERENCE
+            == "{env:REMBRANE_WORKSPACE_KEY_REFERENCE}"
+        and (.mcp.rembrane.environment | has("REMBRANE_WORKSPACE_KEY_HEX") | not)' \
+    >/dev/null
 generic_config=$(
     "$rembrane_binary" mcp-config \
         --client generic \
