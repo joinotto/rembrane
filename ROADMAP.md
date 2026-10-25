@@ -422,6 +422,9 @@ This roadmap describes sequencing, not release dates.
       surfaces.
       - [x] Reserve a dedicated `rembrane:graph:read` OAuth scope and
         fail-closed remote MCP operation classification.
+      - [x] Define one transport-neutral graph-context request and response
+        carrying explicit scope, temporal direction, bounds, purpose, exact
+        canonical edges, and disclosure identity.
     - [x] Persist graph disclosure evidence in the in-memory, SQLite, and
       PostgreSQL repository adapters with tenant-isolation coverage.
       - [x] Enforce exact tenant and edge-revision correlation in the

@@ -5,7 +5,8 @@ use std::error::Error;
 use std::fmt::{Display, Formatter};
 
 use rembrane_domain::{
-    ActivityId, ClientId, ContextPackId, DisclosureId, DisclosureReceipt, EntityId, MemoryRecord,
+    ActivityId, ClientId, ContextPackId, DisclosureId, DisclosureReceipt, EntityId,
+    GraphDisclosureDirection, KnowledgeEdge, KnowledgeNodeId, MemoryRecord, MemoryScope,
     PrincipalId, WorkspaceId,
 };
 
@@ -31,6 +32,26 @@ pub struct ResolveContextRequest {
 pub struct ResolveContextResponse {
     pub items: Vec<MemoryRecord>,
     pub context_pack_id: ContextPackId,
+    pub disclosure_id: DisclosureId,
+}
+
+/// Transport-neutral request for one authorized temporal graph neighbourhood.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ResolveGraphContextRequest {
+    pub workspace_id: WorkspaceId,
+    pub principal_id: PrincipalId,
+    pub node_id: KnowledgeNodeId,
+    pub scope: MemoryScope,
+    pub direction: GraphDisclosureDirection,
+    pub valid_at_epoch_seconds: u64,
+    pub maximum_candidates: usize,
+    pub purpose: String,
+}
+
+/// Canonical graph revisions returned after disclosure evidence is committed.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ResolveGraphContextResponse {
+    pub edges: Vec<KnowledgeEdge>,
     pub disclosure_id: DisclosureId,
 }
 
