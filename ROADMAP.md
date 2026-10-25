@@ -411,6 +411,8 @@ This roadmap describes sequencing, not release dates.
   - [x] Re-authorize untrusted graph-provider candidates against exact
     canonical workspace, edge version, endpoint direction, and validity time
     before exposing graph context.
+    - [x] Require the graph-context command's verified read grant to match the
+      requested workspace before invoking any provider or repository.
   - [x] Add local SQLite graph persistence and Graphiti projection adapter.
     - [x] Construct Graphiti from validated provider profiles through any
       deployment-selected secret resolver without fixed credential names.

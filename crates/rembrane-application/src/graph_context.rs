@@ -1,10 +1,15 @@
-use rembrane_domain::{KnowledgeEdge, KnowledgeNodeId};
+use rembrane_domain::{KnowledgeEdge, KnowledgeNodeId, ReadGrant};
 use rembrane_provider_sdk::{
     CURRENT_PROVIDER_PROTOCOL, Capability, GraphDirection, GraphNeighbourQuery,
     KnowledgeGraphProvider, ProviderPolicy, validate_graph_candidates,
 };
 
 use crate::{ApplicationError, KnowledgeGraphRepository};
+
+pub struct ResolveGraphContextCommand {
+    pub query: GraphNeighbourQuery,
+    pub grant: ReadGrant,
+}
 
 /// Resolves graph-provider candidates only after exact canonical tenant,
 /// version, endpoint, direction, and temporal reauthorization.
@@ -28,8 +33,12 @@ where
 
     pub fn execute(
         &self,
-        query: GraphNeighbourQuery,
+        command: ResolveGraphContextCommand,
     ) -> Result<Vec<KnowledgeEdge>, ApplicationError> {
+        if command.grant.workspace_id != command.query.workspace_id {
+            return Err(ApplicationError::AccessDenied);
+        }
+        let query = command.query;
         query
             .validate()
             .map_err(|_| ApplicationError::Validation("invalid graph context query".to_owned()))?;
@@ -104,8 +113,9 @@ fn matches_direction(
 #[cfg(test)]
 mod tests {
     use rembrane_domain::{
-        EvidenceId, EvidenceReference, EvidenceSource, KnowledgeEdge, KnowledgeEdgeId,
-        KnowledgeNode, KnowledgeNodeId, KnowledgeRelationType, TemporalValidity, WorkspaceId,
+        ClientId, EvidenceId, EvidenceReference, EvidenceSource, KnowledgeEdge, KnowledgeEdgeId,
+        KnowledgeNode, KnowledgeNodeId, KnowledgeRelationType, PrincipalId, ReadGrant, ReadScope,
+        TemporalValidity, WorkspaceId,
     };
     use rembrane_provider_sdk::{
         CURRENT_PROVIDER_PROTOCOL, CandidateKnowledgeEdge, Capability, GraphDirection,
@@ -115,7 +125,7 @@ mod tests {
 
     use crate::{ApplicationError, KnowledgeDirection, KnowledgeGraphRepository};
 
-    use super::GraphContextService;
+    use super::{GraphContextService, ResolveGraphContextCommand};
 
     struct Repository {
         edges: Vec<KnowledgeEdge>,
@@ -232,6 +242,25 @@ mod tests {
         .expect("edge")
     }
 
+    fn command(workspace_id: &str, valid_at_epoch_seconds: u64) -> ResolveGraphContextCommand {
+        ResolveGraphContextCommand {
+            query: GraphNeighbourQuery {
+                workspace_id: WorkspaceId::new(workspace_id),
+                node_id: KnowledgeNodeId::new("project"),
+                direction: GraphDirection::Outgoing,
+                valid_at_epoch_seconds,
+                maximum_candidates: 10,
+            },
+            grant: ReadGrant {
+                client_id: ClientId::new("client_01"),
+                workspace_id: WorkspaceId::new(workspace_id),
+                subject_id: PrincipalId::new("principal_01"),
+                scopes: vec![ReadScope::Global],
+                permissions: Vec::new(),
+            },
+        }
+    }
+
     #[test]
     fn returns_only_exact_canonical_neighbours() {
         let repository = Repository {
@@ -263,13 +292,7 @@ mod tests {
         };
 
         let edges = GraphContextService::new(&repository, &provider)
-            .execute(GraphNeighbourQuery {
-                workspace_id: WorkspaceId::new("workspace_01"),
-                node_id: KnowledgeNodeId::new("project"),
-                direction: GraphDirection::Outgoing,
-                valid_at_epoch_seconds: 150,
-                maximum_candidates: 10,
-            })
+            .execute(command("workspace_01", 150))
             .expect("graph context");
 
         assert_eq!(edges.len(), 1);
@@ -297,16 +320,27 @@ mod tests {
             ],
         };
 
+        let mut command = command("workspace_01", 250);
+        command.query.direction = GraphDirection::Both;
         let edges = GraphContextService::new(&repository, &provider)
-            .execute(GraphNeighbourQuery {
-                workspace_id: WorkspaceId::new("workspace_01"),
-                node_id: KnowledgeNodeId::new("project"),
-                direction: GraphDirection::Both,
-                valid_at_epoch_seconds: 250,
-                maximum_candidates: 10,
-            })
+            .execute(command)
             .expect("graph context");
 
         assert!(edges.is_empty());
+    }
+
+    #[test]
+    fn rejects_a_grant_for_another_workspace() {
+        let repository = Repository { edges: Vec::new() };
+        let provider = Provider {
+            candidates: Vec::new(),
+        };
+        let mut command = command("workspace_01", 150);
+        command.grant.workspace_id = WorkspaceId::new("workspace_02");
+
+        assert_eq!(
+            GraphContextService::new(&repository, &provider).execute(command),
+            Err(ApplicationError::AccessDenied)
+        );
     }
 }

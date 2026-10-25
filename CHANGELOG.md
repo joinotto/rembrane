@@ -174,6 +174,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - A graph-context application service that treats native or Graphiti
   candidates as untrusted hints and returns only exact canonical edges matching
   workspace, version, requested endpoint direction, and temporal validity.
+- Graph-context resolution now requires a connection-derived read grant whose
+  workspace exactly matches the graph query, rejecting mismatches before any
+  provider or storage access.
 - PostgreSQL invitation lookup and bounded deterministic listing with optional
   status filtering, numeric lifetime decoding, terminal-state restoration,
   and exact tenant/invitation correlation.
