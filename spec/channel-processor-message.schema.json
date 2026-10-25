@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rembrane.dev/spec/channel-processor-message.schema.json",
+  "title": "Rembrane authenticated channel processor message",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "protocolVersion",
+    "channel",
+    "eventId",
+    "workspaceId",
+    "principalId",
+    "clientId",
+    "text",
+    "receivedAtEpochSeconds"
+  ],
+  "properties": {
+    "protocolVersion": {
+      "const": "0.1"
+    },
+    "channel": {
+      "enum": [
+        "whatsapp-business",
+        "imessage-extension",
+        "mobile-share"
+      ]
+    },
+    "eventId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^\\S+$",
+      "x-rembrane-maxUtf8Bytes": 256
+    },
+    "workspaceId": {
+      "$ref": "#/$defs/opaqueId"
+    },
+    "principalId": {
+      "$ref": "#/$defs/opaqueId"
+    },
+    "clientId": {
+      "$ref": "#/$defs/opaqueId"
+    },
+    "text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 16384,
+      "x-rembrane-maxUtf8Bytes": 16384
+    },
+    "receivedAtEpochSeconds": {
+      "type": "integer",
+      "minimum": 1
+    }
+  },
+  "$defs": {
+    "opaqueId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[^\\u0000-\\u0020\\u007f]+$",
+      "x-rembrane-maxUtf8Bytes": 256
+    }
+  }
+}

@@ -22,6 +22,7 @@ ruby -e 'require "yaml"; YAML.load_file(ARGV.fetch(0))' spec/memory-provider-ope
 ruby -e 'require "yaml"; YAML.load_file(ARGV.fetch(0))' spec/mobile-share-openapi.yaml
 jq empty \
     spec/discovery.schema.json \
+    spec/channel-processor-message.schema.json \
     spec/mcp-client-catalog.schema.json \
     spec/memory-provider-compatibility-lock.json \
     spec/memory-provider.schema.json \
@@ -31,6 +32,7 @@ jq empty \
     spec/conformance/memory-provider-core.json \
     spec/conformance/memory-provider-core-fixtures.json \
     spec/examples/discovery.json \
+    spec/examples/channel-processor-message.json \
     spec/examples/memory-provider-discovery.json \
     spec/examples/memory-provider-context-request.json \
     spec/examples/memory-provider-context-response.json \
@@ -50,6 +52,31 @@ jq empty \
     spec/oauth-protected-resource.schema.json \
     spec/stdio-connection-manifest.schema.json \
     tests/postman/rembrane-local.postman_collection.json
+
+jq -e '
+    .additionalProperties == false
+    and .properties.protocolVersion.const == "0.1"
+    and (.properties.channel.enum == [
+        "whatsapp-business",
+        "imessage-extension",
+        "mobile-share"
+    ])
+    and .properties.eventId["x-rembrane-maxUtf8Bytes"] == 256
+    and .properties.text["x-rembrane-maxUtf8Bytes"] == 16384
+    and ."$defs".opaqueId.additionalProperties == null
+' spec/channel-processor-message.schema.json >/dev/null
+
+jq -e --slurpfile schema spec/channel-processor-message.schema.json '
+    .protocolVersion == $schema[0].properties.protocolVersion.const
+    and (.channel as $channel | $schema[0].properties.channel.enum | index($channel) != null)
+    and (.eventId | test("^\\S+$") and length <= 256)
+    and (.workspaceId | test("^\\S+$") and length <= 256)
+    and (.principalId | test("^\\S+$") and length <= 256)
+    and (.clientId | test("^\\S+$") and length <= 256)
+    and (.text | length > 0 and length <= 16384)
+    and (.receivedAtEpochSeconds | type == "number" and . > 0)
+    and ((keys | sort) == ($schema[0].required | sort))
+' spec/examples/channel-processor-message.json >/dev/null
 
 ruby -ryaml -e '
 document = YAML.load_file(ARGV.fetch(0))

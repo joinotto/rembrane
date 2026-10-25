@@ -209,4 +209,26 @@ mod tests {
         assert_eq!(encoded["channel"], "whatsapp-business");
         assert_eq!(encoded["text"], "continue");
     }
+
+    #[test]
+    fn wire_body_matches_language_neutral_protocol_fixture() {
+        let message = VerifiedChannelMessage::from_authenticated_transport(
+            ChannelKind::WhatsAppBusiness,
+            "wamid.opaque-example-event",
+            WorkspaceId::new("workspace_example"),
+            PrincipalId::new("principal_example"),
+            ClientId::new("client_whatsapp_example"),
+            "Continue my flight research",
+            1_792_890_000,
+        )
+        .expect("protocol fixture should form a valid channel message");
+        let encoded =
+            serde_json::to_value(DeliveryBody::from(&message)).expect("wire body should encode");
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../spec/examples/channel-processor-message.json"
+        ))
+        .expect("published processor fixture should be valid JSON");
+
+        assert_eq!(encoded, fixture);
+    }
 }

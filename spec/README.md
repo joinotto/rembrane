@@ -27,6 +27,12 @@ read authority. `examples/mobile-share-request.json` is a secret-free envelope
 fixture; its timestamp is illustrative and clients must generate current
 values.
 
+`channel-processor-message.schema.json` defines the strict message delivered
+from a trusted Rembrane inbox worker to a cooperative bot or agent. Canonical
+workspace, principal, and client identity originate from the authenticated
+sender binding, never from the messaging webhook. The channel and event ID
+form the downstream idempotency key.
+
 ## MCP
 
 `mcp.md` maps application use cases to tools, resources, prompts, connection identity, permissions, and safety annotations. MCP parameters deliberately exclude canonical workspace and subject identity.

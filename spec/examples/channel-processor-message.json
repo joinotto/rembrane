@@ -1,0 +1,10 @@
+{
+  "protocolVersion": "0.1",
+  "channel": "whatsapp-business",
+  "eventId": "wamid.opaque-example-event",
+  "workspaceId": "workspace_example",
+  "principalId": "principal_example",
+  "clientId": "client_whatsapp_example",
+  "text": "Continue my flight research",
+  "receivedAtEpochSeconds": 1792890000
+}

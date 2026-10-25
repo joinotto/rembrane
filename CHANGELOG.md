@@ -9,6 +9,11 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- A strict language-neutral authenticated channel-processor message schema and
+  secret-free fixture carrying canonical tenant identity and event
+  idempotency metadata to cooperative bots and agents.
+- Rust adapter regression coverage proving its serialized processor body
+  remains identical to the published language-neutral fixture.
 - Fail-closed graph-context disclosure receipts recording the exact canonical
   edge revisions, query direction and validity time, verified subject and
   client, and declared purpose before context crosses the application boundary.

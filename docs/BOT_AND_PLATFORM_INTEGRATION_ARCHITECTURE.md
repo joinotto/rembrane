@@ -318,6 +318,13 @@ channel and event ID form the downstream idempotency key. A processor must
 return success only after its own durable or idempotent handling succeeds.
 Failed calls remain pending in the encrypted inbox.
 
+The request body must validate against
+`spec/channel-processor-message.schema.json`. The accompanying
+`spec/examples/channel-processor-message.json` fixture is safe for SDK,
+webhook, and bot-adapter conformance tests. `workspaceId`, `principalId`, and
+`clientId` are assertions from the trusted worker and must never be replaced
+with identifiers supplied by message text or an upstream webhook body.
+
 ### 7.4 Explicit mobile and iMessage shares
 
 Rembrane can accept text that a user explicitly selects in an iOS share

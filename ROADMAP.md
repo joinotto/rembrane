@@ -939,6 +939,10 @@ This roadmap describes sequencing, not release dates.
     only after an idempotent bot or agent processor succeeds.
   - [x] Add a strict authenticated HTTP processor adapter for pluggable bot and
     agent endpoints with canonical identity and event idempotency metadata.
+    - [x] Publish a strict language-neutral processor message schema and
+      secret-free fixture for non-Rust bot and agent implementations.
+      - [x] Compile-test the Rust HTTP processor body against the exact
+        published language-neutral fixture.
   - [x] Add a configured per-workspace channel worker executable for encrypted
     inbox recovery, retry, HTTP processor delivery, and completion.
   - [x] Package ingress and delivery workers together in the opt-in hardened
