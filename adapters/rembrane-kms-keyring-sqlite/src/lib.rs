@@ -202,6 +202,37 @@ impl SqliteCustomerKmsKeyReferenceStore {
         }
         result
     }
+
+    /// Restores a verified owner-only snapshot into a new destination.
+    pub fn restore_to(
+        source: impl AsRef<Path>,
+        destination: impl AsRef<Path>,
+    ) -> Result<Self, ProviderError> {
+        let source = source.as_ref();
+        let destination = destination.as_ref();
+        validate_private_database_file(source)?;
+        verify_backup(source)?;
+        if destination.exists() {
+            return Err(ProviderError::Rejected(
+                "customer KMS restore destination already exists".to_owned(),
+            ));
+        }
+        prepare_private_database_file(destination)?;
+        let result = (|| {
+            let mut connection =
+                Connection::open(destination).map_err(|_| ProviderError::Unavailable)?;
+            connection
+                .restore(MAIN_DB, source, None::<fn(rusqlite::backup::Progress)>)
+                .map_err(|_| ProviderError::Unavailable)?;
+            drop(connection);
+            verify_backup(destination)?;
+            Self::open(destination)
+        })();
+        if result.is_err() {
+            let _ = std::fs::remove_file(destination);
+        }
+        result
+    }
 }
 
 fn verify_backup(path: &Path) -> Result<(), ProviderError> {
@@ -256,6 +287,25 @@ fn prepare_private_database_file(path: &Path) -> Result<(), ProviderError> {
         .open(path)
         .map_err(|_| ProviderError::Unavailable)?;
     let metadata = file.metadata().map_err(|_| ProviderError::Unavailable)?;
+    validate_private_metadata(&metadata)?;
+    Ok(())
+}
+
+#[cfg(unix)]
+fn validate_private_database_file(path: &Path) -> Result<(), ProviderError> {
+    let metadata = path
+        .symlink_metadata()
+        .map_err(|_| ProviderError::Unavailable)?;
+    if metadata.file_type().is_symlink() {
+        return Err(ProviderError::InvalidConfiguration(
+            "customer KMS database path must not be a symbolic link".to_owned(),
+        ));
+    }
+    validate_private_metadata(&metadata)
+}
+
+#[cfg(unix)]
+fn validate_private_metadata(metadata: &std::fs::Metadata) -> Result<(), ProviderError> {
     if !metadata.is_file() || metadata.permissions().mode() & 0o077 != 0 {
         return Err(ProviderError::InvalidConfiguration(
             "customer KMS database must be an owner-only regular file".to_owned(),
@@ -269,6 +319,16 @@ fn prepare_private_database_file(path: &Path) -> Result<(), ProviderError> {
     if path.as_os_str().is_empty() {
         return Err(ProviderError::InvalidConfiguration(
             "customer KMS database path is empty".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn validate_private_database_file(path: &Path) -> Result<(), ProviderError> {
+    if !path.is_file() {
+        return Err(ProviderError::InvalidConfiguration(
+            "customer KMS database must be a regular file".to_owned(),
         ));
     }
     Ok(())
@@ -641,6 +701,63 @@ mod tests {
 
         assert!(store.backup_to(&destination).is_err());
         assert_eq!(fs::read(&destination).unwrap(), b"preserve");
+        fs::remove_file(destination).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn restores_verified_backup_without_overwriting_destination() {
+        let source = temporary_database_path("restore-source");
+        let backup = temporary_database_path("restore-backup");
+        let restored_path = temporary_database_path("restore-target");
+        for path in [&source, &backup, &restored_path] {
+            let _ = fs::remove_file(path);
+        }
+        let store = SqliteCustomerKmsKeyReferenceStore::open(&source).unwrap();
+        let workspace = WorkspaceId::new("workspace-a");
+        store
+            .initialize_workspace(
+                &workspace,
+                &CustomerKmsKeyReference::new(1, "key-v1", vec![1]).unwrap(),
+            )
+            .unwrap();
+        store.backup_to(&backup).unwrap();
+
+        let restored =
+            SqliteCustomerKmsKeyReferenceStore::restore_to(&backup, &restored_path).unwrap();
+
+        assert_eq!(
+            restored
+                .load_keyring(&workspace)
+                .unwrap()
+                .active_generation(),
+            1
+        );
+        assert_eq!(
+            fs::metadata(&restored_path).unwrap().permissions().mode() & 0o077,
+            0
+        );
+        drop(restored);
+        drop(store);
+        for path in [source, backup, restored_path] {
+            fs::remove_file(path).unwrap();
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn restore_rejects_corrupt_source_and_preserves_existing_destination() {
+        let source = temporary_database_path("restore-corrupt");
+        let destination = temporary_database_path("restore-existing");
+        for path in [&source, &destination] {
+            let _ = fs::remove_file(path);
+            fs::write(path, b"preserve").unwrap();
+            fs::set_permissions(path, fs::Permissions::from_mode(0o600)).unwrap();
+        }
+
+        assert!(SqliteCustomerKmsKeyReferenceStore::restore_to(&source, &destination).is_err());
+        assert_eq!(fs::read(&destination).unwrap(), b"preserve");
+        fs::remove_file(source).unwrap();
         fs::remove_file(destination).unwrap();
     }
 

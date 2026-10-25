@@ -141,6 +141,8 @@ This roadmap describes sequencing, not release dates.
         both new and existing SQLite databases before row materialization.
       - [x] Create non-overwriting owner-only keyring backups and verify
         snapshot integrity and schema before reporting success.
+      - [x] Restore only from verified owner-only snapshots into new
+        destinations and re-verify before opening recovered keyrings.
   - [x] Add a provider-agnostic configured cipher that dispatches to local
     environment/macOS keyrings or a policy-negotiated HTTP key provider.
     - [x] Accept consumed customer key-provider configuration from

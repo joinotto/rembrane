@@ -43,6 +43,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   materialization.
 - Consistent owner-only customer-KMS keyring snapshots with non-overwrite
   behavior and post-backup SQLite integrity and schema verification.
+- Non-overwriting customer-KMS keyring restore with protected source and
+  destination checks plus pre- and post-restore integrity verification.
 - Completion of the framework-level customer-KMS resolution milestone while
   retaining an explicit acceptance gate for deployment-owned cloud SDK
   sidecars and IAM review.
