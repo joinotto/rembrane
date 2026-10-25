@@ -112,6 +112,105 @@ pub trait CustomerKmsAdapter {
     ) -> Result<Zeroizing<Vec<u8>>, ProviderError>;
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CloudKmsBinding {
+    AwsEncryptionContext,
+    AzureAdditionalAuthenticatedData,
+    GoogleAdditionalAuthenticatedData,
+}
+
+/// Borrowed cloud decrypt operation. Implementations map `associated_data`
+/// into the provider mechanism named by `binding`; silently discarding it
+/// violates the adapter contract.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CloudKmsDecryptRequest<'request> {
+    binding: CloudKmsBinding,
+    provider_key_id: &'request str,
+    wrapped_key: &'request [u8],
+    associated_data: &'request [u8],
+}
+
+impl CloudKmsDecryptRequest<'_> {
+    #[must_use]
+    pub const fn binding(&self) -> CloudKmsBinding {
+        self.binding
+    }
+
+    #[must_use]
+    pub const fn provider_key_id(&self) -> &str {
+        self.provider_key_id
+    }
+
+    #[must_use]
+    pub const fn wrapped_key(&self) -> &[u8] {
+        self.wrapped_key
+    }
+
+    #[must_use]
+    pub const fn associated_data(&self) -> &[u8] {
+        self.associated_data
+    }
+}
+
+/// Injectable customer-owned cloud SDK boundary.
+pub trait CloudKmsDecryptClient {
+    fn decrypt(
+        &self,
+        request: CloudKmsDecryptRequest<'_>,
+    ) -> Result<Zeroizing<Vec<u8>>, ProviderError>;
+}
+
+macro_rules! cloud_adapter {
+    ($adapter:ident, $binding:expr) => {
+        pub struct $adapter<Client> {
+            client: Client,
+        }
+
+        impl<Client> $adapter<Client> {
+            #[must_use]
+            pub const fn new(client: Client) -> Self {
+                Self { client }
+            }
+
+            #[must_use]
+            pub const fn client(&self) -> &Client {
+                &self.client
+            }
+        }
+
+        impl<Client: CloudKmsDecryptClient> CustomerKmsAdapter for $adapter<Client> {
+            fn unwrap_key(
+                &self,
+                context: &CustomerKmsContext,
+                reference: &CustomerKmsKeyReference,
+            ) -> Result<Zeroizing<Vec<u8>>, ProviderError> {
+                if context.generation() != reference.generation() {
+                    return Err(ProviderError::Rejected(
+                        "customer KMS generation substitution".to_owned(),
+                    ));
+                }
+                let associated_data = context.associated_data();
+                self.client.decrypt(CloudKmsDecryptRequest {
+                    binding: $binding,
+                    provider_key_id: reference.provider_key_id(),
+                    wrapped_key: reference.wrapped_key(),
+                    associated_data: &associated_data,
+                })
+            }
+        }
+    };
+}
+
+cloud_adapter!(AwsKmsAdapter, CloudKmsBinding::AwsEncryptionContext);
+cloud_adapter!(
+    AzureKeyVaultAdapter,
+    CloudKmsBinding::AzureAdditionalAuthenticatedData
+);
+cloud_adapter!(
+    GoogleCloudKmsAdapter,
+    CloudKmsBinding::GoogleAdditionalAuthenticatedData
+);
+
 /// Duplicate-safe active and historical wrapped workspace keys.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CustomerKmsKeyring {
@@ -186,7 +285,9 @@ mod tests {
     use zeroize::Zeroizing;
 
     use super::{
-        CustomerKmsAdapter, CustomerKmsContext, CustomerKmsKeyReference, CustomerKmsKeyring,
+        AwsKmsAdapter, AzureKeyVaultAdapter, CloudKmsBinding, CloudKmsDecryptClient,
+        CloudKmsDecryptRequest, CustomerKmsAdapter, CustomerKmsContext, CustomerKmsKeyReference,
+        CustomerKmsKeyring, GoogleCloudKmsAdapter,
     };
     use crate::ProviderError;
 
@@ -269,5 +370,70 @@ mod tests {
         assert!(CustomerKmsKeyReference::new(1, " key", vec![1]).is_err());
         assert!(CustomerKmsKeyReference::new(1, "key\nother", vec![1]).is_err());
         assert!(CustomerKmsKeyReference::new(1, "key", Vec::new()).is_err());
+    }
+
+    struct RecordingCloudClient {
+        binding: RefCell<Option<CloudKmsBinding>>,
+        associated_data: RefCell<Vec<u8>>,
+    }
+
+    impl CloudKmsDecryptClient for RecordingCloudClient {
+        fn decrypt(
+            &self,
+            request: CloudKmsDecryptRequest<'_>,
+        ) -> Result<Zeroizing<Vec<u8>>, ProviderError> {
+            *self.binding.borrow_mut() = Some(request.binding());
+            *self.associated_data.borrow_mut() = request.associated_data().to_vec();
+            assert_eq!(request.provider_key_id(), "provider-key");
+            Ok(Zeroizing::new(request.wrapped_key().to_vec()))
+        }
+    }
+
+    fn cloud_client() -> RecordingCloudClient {
+        RecordingCloudClient {
+            binding: RefCell::new(None),
+            associated_data: RefCell::new(Vec::new()),
+        }
+    }
+
+    #[test]
+    fn cloud_adapters_select_provider_specific_authenticated_context() {
+        let context = CustomerKmsContext::new(WorkspaceId::new("workspace-a"), 7).unwrap();
+        let reference = CustomerKmsKeyReference::new(7, "provider-key", vec![9; 32]).unwrap();
+
+        let aws = AwsKmsAdapter::new(cloud_client());
+        assert_eq!(aws.unwrap_key(&context, &reference).unwrap().len(), 32);
+        assert_eq!(
+            *aws.client().binding.borrow(),
+            Some(CloudKmsBinding::AwsEncryptionContext)
+        );
+        assert_eq!(
+            *aws.client().associated_data.borrow(),
+            context.associated_data()
+        );
+
+        let azure = AzureKeyVaultAdapter::new(cloud_client());
+        azure.unwrap_key(&context, &reference).unwrap();
+        assert_eq!(
+            *azure.client().binding.borrow(),
+            Some(CloudKmsBinding::AzureAdditionalAuthenticatedData)
+        );
+
+        let google = GoogleCloudKmsAdapter::new(cloud_client());
+        google.unwrap_key(&context, &reference).unwrap();
+        assert_eq!(
+            *google.client().binding.borrow(),
+            Some(CloudKmsBinding::GoogleAdditionalAuthenticatedData)
+        );
+    }
+
+    #[test]
+    fn cloud_adapters_reject_generation_substitution_before_client_access() {
+        let adapter = AwsKmsAdapter::new(cloud_client());
+        let context = CustomerKmsContext::new(WorkspaceId::new("workspace-a"), 2).unwrap();
+        let reference = CustomerKmsKeyReference::new(1, "provider-key", vec![9; 32]).unwrap();
+
+        assert!(adapter.unwrap_key(&context, &reference).is_err());
+        assert_eq!(*adapter.client().binding.borrow(), None);
     }
 }

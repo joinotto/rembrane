@@ -32,6 +32,13 @@ contract to the record cipher: it unwraps each generation in the sidecar,
 requires an exact 256-bit data key, writes with the active generation, and
 retains historical generations for decrypt-only reads.
 
+The provider SDK also supplies `AwsKmsAdapter`, `AzureKeyVaultAdapter`, and
+`GoogleCloudKmsAdapter`. Each wraps an application-owned
+`CloudKmsDecryptClient` and labels the canonical associated data for the
+provider's encryption-context or additional-authenticated-data mechanism.
+Cloud SDK construction, workload identity, retries, and credentials remain in
+the customer sidecar.
+
 ## Required request binding
 
 Every seal and open operation must cryptographically bind the complete

@@ -14,6 +14,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   historical keyrings, and zeroizing unwrap results inside customer sidecars.
 - A reference customer-KMS-to-record-cipher bridge with exact data-key length
   enforcement, active-generation writes, and historical-generation reads.
+- AWS KMS, Azure Key Vault, and Google Cloud KMS bridge types that keep cloud
+  SDK clients and credentials customer-owned while requiring canonical
+  tenant/generation context through each provider's authenticated-data mode.
 - A strict language-neutral authenticated channel-processor message schema and
   secret-free fixture carrying canonical tenant identity and event
   idempotency metadata to cooperative bots and agents.

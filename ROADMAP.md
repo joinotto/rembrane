@@ -114,6 +114,9 @@ This roadmap describes sequencing, not release dates.
     - [x] Bridge customer-KMS keyrings into the reference record cipher with
       exact 256-bit key validation, active-generation writes, and historical
       decrypt support.
+    - [x] Add AWS KMS, Azure Key Vault, and Google Cloud KMS bridge types over
+      injectable customer-owned clients with explicit provider-specific
+      authenticated-context binding and generation-substitution denial.
   - [x] Add a provider-agnostic configured cipher that dispatches to local
     environment/macOS keyrings or a policy-negotiated HTTP key provider.
     - [x] Accept consumed customer key-provider configuration from
