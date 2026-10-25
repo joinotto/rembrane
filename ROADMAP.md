@@ -812,6 +812,8 @@ This roadmap describes sequencing, not release dates.
     - [ ] Record pinned passing core-conformance evidence for at least two
       independent implementations, including one maintained outside this
       repository.
+      - [x] Define and tamper-test the exact two-provider release evidence set,
+        including external provenance and distinct maintainer enforcement.
     - [ ] Complete independent security review and resolve or explicitly
       accept every finding.
     - [x] Publish compatibility, deprecation, and mixed-version negotiation

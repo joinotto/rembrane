@@ -13,6 +13,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   bind release tests to the reviewed profile and fixtures, pinned client and
   provider builds, distinct disposable namespaces, both supported-minor
   directions, and fail-closed unsupported-major rejection.
+- A complete Memory Provider release-evidence set verifier requires two
+  distinct passing implementations, external-provider provenance, separate
+  maintainers and disposable namespaces, pinned revisions, ordered core
+  conformance cases, and exact mixed-version evidence with no extra files.
 - A strict customer-KMS production-evidence envelope and verifier binding each
   disposable cloud run to its provider build, core conformance profile, exact
   result and explicitly approved IAM-policy bytes, and completed resource

@@ -29,6 +29,7 @@ sh ./scripts/test-security-review-attestation.sh
 sh ./scripts/test-customer-kms-evidence.sh
 sh ./scripts/test-customer-kms-provider-set.sh
 sh ./scripts/test-memory-provider-mixed-version-evidence.sh
+sh ./scripts/test-memory-provider-release-evidence.sh
 ./scripts/check-protocols.sh
 ./scripts/test-semantic-provider-compatibility-lock.sh
 ./scripts/test-memory-provider-compatibility-lock.sh
@@ -71,6 +72,7 @@ for deployment_file in \
     scripts/test-kotlin-sdk.sh \
     scripts/test-memory-provider-compatibility-lock.sh \
     scripts/test-memory-provider-mixed-version-evidence.sh \
+    scripts/test-memory-provider-release-evidence.sh \
     scripts/test-key-provider-compatibility-lock.sh \
     scripts/test-semantic-provider-compatibility-lock.sh \
     scripts/verify-semantic-provider-compatibility.mjs \
@@ -102,6 +104,7 @@ sh -n scripts/test-ios-imessage-extension.sh
 sh -n scripts/test-kotlin-sdk.sh
 sh -n scripts/test-memory-provider-compatibility-lock.sh
 sh -n scripts/test-memory-provider-mixed-version-evidence.sh
+sh -n scripts/test-memory-provider-release-evidence.sh
 sh -n scripts/test-key-provider-compatibility-lock.sh
 sh -n scripts/test-semantic-provider-compatibility-lock.sh
 sh -n scripts/check-postgres-rls.sh

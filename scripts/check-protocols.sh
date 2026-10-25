@@ -32,6 +32,7 @@ jq empty \
     spec/memory-provider-conformance.schema.json \
     spec/memory-provider-conformance-result.schema.json \
     spec/memory-provider-mixed-version-evidence.schema.json \
+    spec/memory-provider-release-evidence.schema.json \
     spec/key-provider-conformance-result.schema.json \
     spec/key-provider-conformance.schema.json \
     spec/semantic-provider-conformance-result.schema.json \
@@ -51,6 +52,7 @@ jq empty \
     spec/examples/memory-provider-context-response.json \
     spec/examples/memory-provider-conformance-result.json \
     spec/examples/memory-provider-mixed-version-evidence.json \
+    spec/examples/memory-provider-release-evidence.json \
     spec/examples/memory-provider-proposal-request.json \
     spec/examples/memory-provider-sync-push-request.json \
     spec/examples/oauth-protected-resource.json \
@@ -533,6 +535,18 @@ jq -e --slurpfile example spec/examples/memory-provider-mixed-version-evidence.j
 ' spec/memory-provider-mixed-version-evidence.schema.json >/dev/null
 
 node --check scripts/verify-memory-provider-mixed-version-evidence.mjs
+
+jq -e --slurpfile example spec/examples/memory-provider-release-evidence.json '
+    .additionalProperties == false
+    and .properties.schemaVersion.const == 1
+    and .properties.providers.minItems == 2
+    and .properties.providers.maxItems == 2
+    and $example[0].schemaVersion == 1
+    and [$example[0].providers[].slot] == ["provider-a", "provider-b"]
+    and any($example[0].providers[]; .origin == "external")
+' spec/memory-provider-release-evidence.schema.json >/dev/null
+
+node --check scripts/verify-memory-provider-release-evidence.mjs
 
 jq -e '
     (.resource | startswith("https://"))

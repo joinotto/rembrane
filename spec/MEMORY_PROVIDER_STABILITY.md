@@ -49,3 +49,12 @@ disposable namespaces, pins every client and provider build to a source
 revision, proves both supported-minor directions, and requires rejection of an
 unsupported major generation. The checked-in example is illustrative test
 data, not release evidence.
+
+A complete candidate evidence directory is accepted only by
+`verify-memory-provider-release-evidence.mjs`. It contains exactly a manifest,
+the mixed-version artifact, and two passing provider results. The manifest
+hash-binds every artifact and requires distinct maintainers, provider IDs, and
+disposable namespaces, pinned implementation revisions, ordered core cases,
+and at least one externally maintained provider. Passing the verifier proves
+artifact completeness; it does not substitute for actually obtaining the
+external run or independent security review.
