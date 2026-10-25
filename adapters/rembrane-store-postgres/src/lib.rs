@@ -9,13 +9,14 @@ use std::error::Error;
 use std::fmt::{self, Display, Formatter};
 
 use rembrane_application::{
-    ApplicationError, InvitationRepository, MAXIMUM_INVITATION_LIST_ITEMS, MembershipRepository,
+    AdministrativeAuditRepository, ApplicationError, InvitationRepository,
+    MAX_ADMINISTRATIVE_AUDIT_PAGE, MAXIMUM_INVITATION_LIST_ITEMS, MembershipRepository,
     WorkspaceReadRepository, WorkspaceRepository,
 };
 use rembrane_domain::{
-    AdministrativeAction, AdministrativeAuditEvent, AdministrativeTargetKind, Invitation,
-    InvitationId, InvitationStatus, Membership, Principal, PrincipalId, Workspace, WorkspaceId,
-    WorkspaceKind, WorkspaceRole,
+    AdministrativeAction, AdministrativeAuditEvent, AdministrativeAuditEventId,
+    AdministrativeTargetKind, Invitation, InvitationId, InvitationStatus, Membership, Principal,
+    PrincipalId, Workspace, WorkspaceId, WorkspaceKind, WorkspaceRole,
 };
 
 pub const SET_TENANT_SQL: &str = "SELECT set_config('rembrane.workspace_id', $1, true);";
@@ -71,6 +72,11 @@ pub const INSERT_PRINCIPAL_SQL: &str = "INSERT INTO principals (id) VALUES ($1)"
 pub const INSERT_WORKSPACE_SQL: &str = "INSERT INTO workspaces (id, kind) VALUES ($1, $2)";
 pub const FIND_PROVISIONING_PRINCIPAL_SQL: &str =
     "SELECT id FROM principals WHERE id = $1 ORDER BY id LIMIT 2";
+pub const LIST_ADMINISTRATIVE_AUDIT_SQL: &str = "SELECT workspace_id, id, actor_id, action, \
+    target_kind, target_id, request_id, occurred_at_epoch_seconds \
+    FROM administrative_audit_events \
+    WHERE workspace_id = $1 AND occurred_at_epoch_seconds > $2 \
+    ORDER BY occurred_at_epoch_seconds, id LIMIT $3";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PostgresParameter<'value> {
@@ -835,6 +841,59 @@ impl<Pool: PostgresPool> PostgresStore<Pool> {
         insert_administrative_audit(&mut transaction, audit_event)?;
         transaction.commit().map_err(PostgresStoreError::Tenant)
     }
+
+    pub fn append_administrative_audit(
+        &self,
+        event: &AdministrativeAuditEvent,
+    ) -> Result<(), PostgresStoreError<Pool::Error>> {
+        let mut transaction = self.begin_tenant(event.workspace_id().clone())?;
+        insert_administrative_audit(&mut transaction, event)?;
+        transaction.commit().map_err(PostgresStoreError::Tenant)
+    }
+
+    pub fn list_administrative_audit(
+        &self,
+        workspace_id: &WorkspaceId,
+        after_epoch_seconds: u64,
+        limit: usize,
+    ) -> Result<Vec<AdministrativeAuditEvent>, PostgresStoreError<Pool::Error>>
+    where
+        <Pool::Transaction as PostgresTransaction>::Row: PostgresRow<Error = Pool::Error>,
+    {
+        if !(1..=MAX_ADMINISTRATIVE_AUDIT_PAGE).contains(&limit) {
+            return Err(PostgresStoreError::InvalidLimit);
+        }
+        let after = postgres_epoch(after_epoch_seconds)?;
+        let maximum_rows = limit;
+        let limit = i64::try_from(limit).map_err(|_| PostgresStoreError::InvalidLimit)?;
+        let mut transaction = self.begin_tenant(workspace_id.clone())?;
+        let rows = transaction
+            .query(
+                LIST_ADMINISTRATIVE_AUDIT_SQL,
+                &[
+                    PostgresParameter::Text(workspace_id.as_str()),
+                    PostgresParameter::I64(after),
+                    PostgresParameter::I64(limit),
+                ],
+            )
+            .map_err(PostgresStoreError::Tenant)?;
+        if rows.len() > maximum_rows {
+            return Err(PostgresStoreError::UnexpectedCardinality);
+        }
+        let mut ids = BTreeSet::new();
+        let events = rows
+            .iter()
+            .map(|row| {
+                let event = decode_administrative_audit(row, workspace_id)?;
+                if !ids.insert(event.id().as_str().to_owned()) {
+                    return Err(PostgresStoreError::InvalidRow);
+                }
+                Ok(event)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        transaction.commit().map_err(PostgresStoreError::Tenant)?;
+        Ok(events)
+    }
 }
 
 impl<Pool> MembershipRepository for PostgresStore<Pool>
@@ -928,6 +987,31 @@ where
     }
 }
 
+impl<Pool> AdministrativeAuditRepository for PostgresStore<Pool>
+where
+    Pool: PostgresPool,
+    Pool::Error: ClassifiedPostgresError,
+    <Pool::Transaction as PostgresTransaction>::Row: PostgresRow<Error = Pool::Error>,
+{
+    fn append_administrative_audit(
+        &mut self,
+        event: AdministrativeAuditEvent,
+    ) -> Result<(), ApplicationError> {
+        PostgresStore::append_administrative_audit(self, &event)
+            .map_err(map_audit_application_error)
+    }
+
+    fn list_administrative_audit(
+        &self,
+        workspace_id: &WorkspaceId,
+        after_epoch_seconds: u64,
+        limit: usize,
+    ) -> Result<Vec<AdministrativeAuditEvent>, ApplicationError> {
+        PostgresStore::list_administrative_audit(self, workspace_id, after_epoch_seconds, limit)
+            .map_err(map_audit_application_error)
+    }
+}
+
 impl<Pool> PostgresTenantStore<'_, Pool> {
     fn require_workspace(&self, workspace_id: &WorkspaceId) -> Result<(), ApplicationError> {
         if workspace_id == &self.workspace_id {
@@ -935,6 +1019,35 @@ impl<Pool> PostgresTenantStore<'_, Pool> {
         } else {
             Err(ApplicationError::AccessDenied)
         }
+    }
+}
+
+impl<Pool> AdministrativeAuditRepository for PostgresTenantStore<'_, Pool>
+where
+    Pool: PostgresPool,
+    Pool::Error: ClassifiedPostgresError,
+    <Pool::Transaction as PostgresTransaction>::Row: PostgresRow<Error = Pool::Error>,
+{
+    fn append_administrative_audit(
+        &mut self,
+        event: AdministrativeAuditEvent,
+    ) -> Result<(), ApplicationError> {
+        self.require_workspace(event.workspace_id())?;
+        self.store
+            .append_administrative_audit(&event)
+            .map_err(map_audit_application_error)
+    }
+
+    fn list_administrative_audit(
+        &self,
+        workspace_id: &WorkspaceId,
+        after_epoch_seconds: u64,
+        limit: usize,
+    ) -> Result<Vec<AdministrativeAuditEvent>, ApplicationError> {
+        self.require_workspace(workspace_id)?;
+        self.store
+            .list_administrative_audit(workspace_id, after_epoch_seconds, limit)
+            .map_err(map_audit_application_error)
     }
 }
 
@@ -1167,6 +1280,20 @@ where
     }
 }
 
+fn map_audit_application_error<DriverError>(
+    error: PostgresStoreError<DriverError>,
+) -> ApplicationError
+where
+    DriverError: ClassifiedPostgresError,
+{
+    match error {
+        PostgresStoreError::InvalidInput | PostgresStoreError::InvalidLimit => {
+            ApplicationError::Validation("invalid administrative audit request".to_owned())
+        }
+        other => map_application_error(other),
+    }
+}
+
 fn map_invitation_application_error<DriverError>(
     error: PostgresStoreError<DriverError>,
 ) -> ApplicationError
@@ -1279,6 +1406,66 @@ fn valid_invitation_audit(
         && event.action() == action
         && event.target_kind() == AdministrativeTargetKind::Invitation
         && event.target_id() == invitation.id().as_str()
+}
+
+fn decode_administrative_audit<Row, DriverError>(
+    row: &Row,
+    expected_workspace_id: &WorkspaceId,
+) -> Result<AdministrativeAuditEvent, PostgresStoreError<DriverError>>
+where
+    Row: PostgresRow<Error = DriverError>,
+{
+    let workspace_id = row.text("workspace_id").map_err(PostgresStoreError::Row)?;
+    if workspace_id != expected_workspace_id.as_str() {
+        return Err(PostgresStoreError::InvalidRow);
+    }
+    let action = match row
+        .text("action")
+        .map_err(PostgresStoreError::Row)?
+        .as_str()
+    {
+        "invitation-created" => AdministrativeAction::InvitationCreated,
+        "invitation-accepted" => AdministrativeAction::InvitationAccepted,
+        "invitation-revoked" => AdministrativeAction::InvitationRevoked,
+        "member-removed" => AdministrativeAction::MemberRemoved,
+        "key-rotation-required" => AdministrativeAction::KeyRotationRequired,
+        "key-rotation-completed" => AdministrativeAction::KeyRotationCompleted,
+        "scope-grant-changed" => AdministrativeAction::ScopeGrantChanged,
+        "retention-policy-changed" => AdministrativeAction::RetentionPolicyChanged,
+        "legal-hold-placed" => AdministrativeAction::LegalHoldPlaced,
+        "legal-hold-released" => AdministrativeAction::LegalHoldReleased,
+        "channel-binding-created" => AdministrativeAction::ChannelBindingCreated,
+        "channel-binding-revoked" => AdministrativeAction::ChannelBindingRevoked,
+        "channel-message-requeued" => AdministrativeAction::ChannelMessageRequeued,
+        _ => return Err(PostgresStoreError::InvalidRow),
+    };
+    let target_kind = match row
+        .text("target_kind")
+        .map_err(PostgresStoreError::Row)?
+        .as_str()
+    {
+        "invitation" => AdministrativeTargetKind::Invitation,
+        "principal" => AdministrativeTargetKind::Principal,
+        "key-rotation" => AdministrativeTargetKind::KeyRotation,
+        "scope-grant" => AdministrativeTargetKind::ScopeGrant,
+        "retention-policy" => AdministrativeTargetKind::RetentionPolicy,
+        "legal-hold" => AdministrativeTargetKind::LegalHold,
+        "channel-binding" => AdministrativeTargetKind::ChannelBinding,
+        "channel-message" => AdministrativeTargetKind::ChannelMessage,
+        _ => return Err(PostgresStoreError::InvalidRow),
+    };
+    AdministrativeAuditEvent::new(
+        AdministrativeAuditEventId::new(row.text("id").map_err(PostgresStoreError::Row)?),
+        WorkspaceId::new(workspace_id),
+        PrincipalId::new(row.text("actor_id").map_err(PostgresStoreError::Row)?),
+        action,
+        target_kind,
+        row.text("target_id").map_err(PostgresStoreError::Row)?,
+        row.text("request_id").map_err(PostgresStoreError::Row)?,
+        row.u64("occurred_at_epoch_seconds")
+            .map_err(PostgresStoreError::Row)?,
+    )
+    .map_err(|_| PostgresStoreError::InvalidRow)
 }
 
 fn decode_workspace<Row, DriverError>(
@@ -1577,8 +1764,8 @@ mod tests {
     use std::rc::Rc;
 
     use rembrane_application::{
-        ApplicationError, CreateInvitationCommand, InvitationRepository, InvitationService,
-        MembershipRepository, WorkspaceRepository,
+        AdministrativeAuditRepository, ApplicationError, CreateInvitationCommand,
+        InvitationRepository, InvitationService, MembershipRepository, WorkspaceRepository,
     };
     use rembrane_domain::{
         AdministrativeAction, AdministrativeAuditEvent, AdministrativeAuditEventId,
@@ -1591,12 +1778,13 @@ mod tests {
         FIND_INVITATION_SQL, FIND_MEMBERSHIP_SQL, FIND_PRINCIPAL_SQL,
         FIND_PROVISIONING_PRINCIPAL_SQL, FIND_WORKSPACE_SQL, INSERT_ADMINISTRATIVE_AUDIT_SQL,
         INSERT_INVITATION_SQL, INSERT_MEMBERSHIP_SQL, INSERT_PRINCIPAL_SQL, INSERT_WORKSPACE_SQL,
-        LIST_ACTIVE_MEMBERSHIPS_SQL, LIST_INVITATIONS_BY_STATUS_SQL, MAX_ACTIVE_MEMBERSHIPS,
-        PostgresFailureKind, PostgresParameter, PostgresPool, PostgresProvisioner,
-        PostgresProvisioningPool, PostgresRow, PostgresStore, PostgresStoreError,
-        PostgresTransaction, PostgresWorkspaceAdminStore, ProvisioningTransaction, READ_TENANT_SQL,
-        REPLACE_INVITATION_SQL, REPLACE_MEMBERSHIP_SQL, SET_TENANT_SQL, TenantTransaction,
-        TenantTransactionError, map_application_error, map_invitation_application_error,
+        LIST_ACTIVE_MEMBERSHIPS_SQL, LIST_ADMINISTRATIVE_AUDIT_SQL, LIST_INVITATIONS_BY_STATUS_SQL,
+        MAX_ACTIVE_MEMBERSHIPS, PostgresFailureKind, PostgresParameter, PostgresPool,
+        PostgresProvisioner, PostgresProvisioningPool, PostgresRow, PostgresStore,
+        PostgresStoreError, PostgresTransaction, PostgresWorkspaceAdminStore,
+        ProvisioningTransaction, READ_TENANT_SQL, REPLACE_INVITATION_SQL, REPLACE_MEMBERSHIP_SQL,
+        SET_TENANT_SQL, TenantTransaction, TenantTransactionError, map_application_error,
+        map_invitation_application_error,
     };
 
     #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1674,6 +1862,31 @@ mod tests {
                     ("created_at_epoch_seconds", created_at),
                     ("expires_at_epoch_seconds", expires_at),
                 ]),
+            }
+        }
+
+        #[allow(clippy::too_many_arguments)]
+        fn audit(
+            workspace_id: &str,
+            id: &str,
+            actor_id: &str,
+            action: &str,
+            target_kind: &str,
+            target_id: &str,
+            request_id: &str,
+            occurred_at: u64,
+        ) -> Self {
+            Self {
+                columns: BTreeMap::from([
+                    ("workspace_id", workspace_id.to_owned()),
+                    ("id", id.to_owned()),
+                    ("actor_id", actor_id.to_owned()),
+                    ("action", action.to_owned()),
+                    ("target_kind", target_kind.to_owned()),
+                    ("target_id", target_id.to_owned()),
+                    ("request_id", request_id.to_owned()),
+                ]),
+                numbers: BTreeMap::from([("occurred_at_epoch_seconds", occurred_at)]),
             }
         }
     }
@@ -2861,6 +3074,93 @@ mod tests {
                 10,
             ),
             Err(ApplicationError::AccessDenied)
+        );
+        assert_eq!(
+            AdministrativeAuditRepository::list_administrative_audit(
+                &tenant,
+                &WorkspaceId::new("workspace_other"),
+                0,
+                10,
+            ),
+            Err(ApplicationError::AccessDenied)
+        );
+    }
+
+    #[test]
+    fn tenant_store_appends_and_lists_closed_administrative_audit_rows() {
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let store = PostgresStore::new(FakePool {
+            calls: Rc::clone(&calls),
+            tenant_batches: RefCell::new(
+                [
+                    VecDeque::from([
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                    ]),
+                    VecDeque::from([
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                    ]),
+                ]
+                .into(),
+            ),
+            row_batches: RefCell::new(
+                [
+                    Vec::new(),
+                    vec![FakeRow::audit(
+                        "workspace_01",
+                        "audit_01",
+                        "principal_admin",
+                        "invitation-created",
+                        "invitation",
+                        "invitation_01",
+                        "request_01",
+                        150,
+                    )],
+                ]
+                .into(),
+            ),
+        });
+        let mut tenant = store.for_workspace(WorkspaceId::new("workspace_01"));
+        let event = AdministrativeAuditEvent::new(
+            AdministrativeAuditEventId::new("audit_01"),
+            WorkspaceId::new("workspace_01"),
+            PrincipalId::new("principal_admin"),
+            AdministrativeAction::InvitationCreated,
+            AdministrativeTargetKind::Invitation,
+            "invitation_01",
+            "request_01",
+            150,
+        )
+        .expect("audit event");
+
+        AdministrativeAuditRepository::append_administrative_audit(&mut tenant, event)
+            .expect("append audit");
+        let events = AdministrativeAuditRepository::list_administrative_audit(
+            &tenant,
+            &WorkspaceId::new("workspace_01"),
+            100,
+            10,
+        )
+        .expect("list audit");
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].action(), AdministrativeAction::InvitationCreated);
+        assert!(calls.borrow().contains(&Call::Query(
+            LIST_ADMINISTRATIVE_AUDIT_SQL.to_owned(),
+            vec![
+                "text:workspace_01".to_owned(),
+                "i64:100".to_owned(),
+                "i64:10".to_owned(),
+            ]
+        )));
+        assert_eq!(
+            calls
+                .borrow()
+                .iter()
+                .filter(|call| **call == Call::Commit)
+                .count(),
+            2
         );
     }
 

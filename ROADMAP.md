@@ -302,6 +302,8 @@ This roadmap describes sequencing, not release dates.
         with exact affected-row and commit enforcement.
       - [x] Implement the complete application `MembershipRepository` port
         with driver-neutral SQLSTATE classification and opaque error mapping.
+      - [x] Implement tenant-pinned administrative audit append and bounded
+        chronological reads with closed action/target decoding.
       - [x] Add exact invitation lookup and bounded status-filtered listing
         with terminal-state restoration and full tenant/identifier correlation.
       - [x] Implement atomic invitation creation, acceptance, revocation,
