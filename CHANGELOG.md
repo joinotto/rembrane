@@ -45,6 +45,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   local-only versus customer-gateway plaintext-processing boundary.
 - TypeScript and Python clients can fetch provider discovery from the origin
   well-known endpoint while explicitly omitting their bearer credentials.
+- SDK discovery now fails closed unless provider identity, protocol versions,
+  required capabilities, privacy modes, and the advertised API root are valid;
+  the advertised root must match the configured client endpoint.
 - Protected `env:` and `file:` credential references for each workspace actor
   in the portable Memory Provider conformance runner, with opaque failures,
   strict local-file validation, raw-variable compatibility, and

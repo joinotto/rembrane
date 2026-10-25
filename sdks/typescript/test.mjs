@@ -7,6 +7,22 @@ import {
   parseChannelProcessorMessage,
 } from "./index.js";
 
+const discovery = {
+  provider: { id: "local.rembrane", name: "Rembrane" },
+  protocolVersions: ["0.1"],
+  endpoints: { api: "http://127.0.0.1:8787/v1" },
+  capabilities: {
+    contextResolution: true,
+    memoryProposal: true,
+    activityCheckpoint: true,
+    disclosureReceipt: true,
+    deletionPropagation: false,
+  },
+  privacy: {
+    processingModes: ["local-only"],
+    disclosureReceipts: true,
+  },
+};
 const calls = [];
 const client = new RembraneClient({
   baseUrl: "http://127.0.0.1:8787/v1",
@@ -17,7 +33,10 @@ const client = new RembraneClient({
       ok: true,
       status: 200,
       headers: { get: () => "application/json; charset=utf-8" },
-      text: async () => '{"events":[]}',
+      text: async () =>
+        url.endsWith("/.well-known/ai-memory")
+          ? JSON.stringify(discovery)
+          : '{"events":[]}',
     };
   },
 });
@@ -195,6 +214,26 @@ assert.equal(
 assert.equal(calls[12].init.method, "GET");
 assert.equal(calls[12].init.headers.Authorization, undefined);
 assert.equal(calls[12].init.body, undefined);
+
+const invalidDiscovery = new RembraneClient({
+  baseUrl: "https://memory.example.test/v1",
+  token: "must-not-leak",
+  fetch: async () => ({
+    ok: true,
+    status: 200,
+    headers: { get: () => "application/json" },
+    text: async () =>
+      JSON.stringify({
+        ...discovery,
+        endpoints: { api: "https://attacker.example/v1" },
+      }),
+  }),
+});
+await assert.rejects(
+  invalidDiscovery.discover(),
+  (error) =>
+    error instanceof RembraneError && error.code === "invalid_discovery",
+);
 
 assert.throws(
   () =>

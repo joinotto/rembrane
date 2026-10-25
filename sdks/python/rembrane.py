@@ -17,6 +17,7 @@ CHANNEL_PROCESSOR_CHANNELS = {
     "mobile-share",
 }
 CHANNEL_PROCESSOR_STATUSES = {"processed", "duplicate"}
+DISCOVERY_PROCESSING_MODES = {"hosted", "customer-gateway", "local-only"}
 CHANNEL_PROCESSOR_MESSAGE_KEYS = {
     "protocolVersion",
     "channel",
@@ -98,7 +99,8 @@ class RembraneClient:
     def discover(self) -> Any:
         parsed = urlsplit(self._base_url)
         url = f"{parsed.scheme}://{parsed.netloc}/.well-known/ai-memory"
-        return self._request_url("GET", url, None, authenticated=False)
+        value = self._request_url("GET", url, None, authenticated=False)
+        return _validate_memory_discovery(value, self._base_url)
 
     def resolve_graph_context(self, request: Mapping[str, Any]) -> Any:
         return self._request("POST", "/graph/context/resolve", request)
@@ -326,3 +328,84 @@ def _opaque_path_id(value: Any, label: str) -> str:
     ):
         raise ValueError(f"{label} must be a bounded opaque identifier")
     return quote(value, safe="")
+
+
+def _validate_memory_discovery(value: Any, expected_api: str) -> dict[str, Any]:
+    if type(value) is not dict:
+        raise _invalid_discovery()
+    provider = value.get("provider")
+    versions = value.get("protocolVersions")
+    endpoints = value.get("endpoints")
+    capabilities = value.get("capabilities")
+    privacy = value.get("privacy")
+    required_capabilities = {
+        "contextResolution",
+        "memoryProposal",
+        "activityCheckpoint",
+        "disclosureReceipt",
+        "deletionPropagation",
+    }
+    if (
+        type(provider) is not dict
+        or not _is_bounded_text(provider.get("id"), 255)
+        or not _is_bounded_text(provider.get("name"), 255)
+        or type(versions) is not list
+        or not versions
+        or len(set(versions)) != len(versions)
+        or not all(
+            type(version) is str
+            and len(version.split(".")) == 2
+            and all(part.isdigit() and part for part in version.split("."))
+            for version in versions
+        )
+        or type(endpoints) is not dict
+        or _normalize_api_root(endpoints.get("api")) != expected_api
+        or type(capabilities) is not dict
+        or not all(
+            type(capabilities.get(name)) is bool for name in required_capabilities
+        )
+        or type(privacy) is not dict
+        or privacy.get("disclosureReceipts") is not True
+        or type(privacy.get("processingModes")) is not list
+        or not privacy["processingModes"]
+        or len(set(privacy["processingModes"])) != len(privacy["processingModes"])
+        or not all(
+            mode in DISCOVERY_PROCESSING_MODES for mode in privacy["processingModes"]
+        )
+    ):
+        raise _invalid_discovery()
+    return dict(value)
+
+
+def _normalize_api_root(value: Any) -> str | None:
+    if type(value) is not str:
+        return None
+    parsed = urlsplit(value)
+    loopback = parsed.hostname in {"localhost", "127.0.0.1", "::1"}
+    if (
+        (parsed.scheme != "https" and not (parsed.scheme == "http" and loopback))
+        or parsed.username
+        or parsed.password
+        or parsed.query
+        or parsed.fragment
+        or not parsed.netloc
+        or not parsed.path.endswith("/v1")
+    ):
+        return None
+    return value.rstrip("/")
+
+
+def _is_bounded_text(value: Any, maximum_bytes: int) -> bool:
+    return (
+        type(value) is str
+        and bool(value.strip())
+        and len(value.encode("utf-8")) <= maximum_bytes
+    )
+
+
+def _invalid_discovery() -> RembraneError:
+    return RembraneError(
+        200,
+        "invalid_discovery",
+        "Provider discovery was invalid or did not match the configured API",
+    )

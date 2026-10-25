@@ -15,10 +15,30 @@ SPEC_EXAMPLES = Path(__file__).parents[2] / "spec" / "examples"
 class RembraneClientTests(unittest.TestCase):
     def test_discovery_uses_origin_without_bearer_credentials(self) -> None:
         calls = []
+        discovery = {
+            "provider": {"id": "local.rembrane", "name": "Rembrane"},
+            "protocolVersions": ["0.1"],
+            "endpoints": {"api": "http://127.0.0.1:8787/v1"},
+            "capabilities": {
+                "contextResolution": True,
+                "memoryProposal": True,
+                "activityCheckpoint": True,
+                "disclosureReceipt": True,
+                "deletionPropagation": False,
+            },
+            "privacy": {
+                "processingModes": ["local-only"],
+                "disclosureReceipts": True,
+            },
+        }
 
         def transport(method, url, headers, body, maximum):
             calls.append((method, url, headers, body, maximum))
-            return 200, {"Content-Type": "application/json"}, b'{"provider":{}}'
+            return (
+                200,
+                {"Content-Type": "application/json"},
+                json.dumps(discovery).encode(),
+            )
 
         client = RembraneClient(
             "http://127.0.0.1:8787/v1", "must-not-leak", transport=transport
@@ -31,6 +51,11 @@ class RembraneClientTests(unittest.TestCase):
         )
         self.assertNotIn("Authorization", calls[0][2])
         self.assertIsNone(calls[0][3])
+
+        discovery["endpoints"]["api"] = "https://attacker.example/v1"
+        with self.assertRaises(RembraneError) as captured:
+            client.discover()
+        self.assertEqual(captured.exception.code, "invalid_discovery")
 
     def test_audit_request_is_authenticated_and_tenant_explicit(self) -> None:
         calls = []

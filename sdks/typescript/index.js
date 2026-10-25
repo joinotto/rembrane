@@ -6,6 +6,11 @@ const CHANNEL_PROCESSOR_CHANNELS = new Set([
   "mobile-share",
 ]);
 const CHANNEL_PROCESSOR_STATUSES = new Set(["processed", "duplicate"]);
+const DISCOVERY_PROCESSING_MODES = new Set([
+  "hosted",
+  "customer-gateway",
+  "local-only",
+]);
 const CHANNEL_MESSAGE_KEYS = [
   "channel",
   "clientId",
@@ -67,9 +72,10 @@ export class RembraneClient {
     return this.#request("POST", "/context/resolve", request);
   }
 
-  discover() {
+  async discover() {
     const url = new URL("/.well-known/ai-memory", this.#baseUrl);
-    return this.#requestUrl("GET", url.toString(), undefined, false);
+    const value = await this.#requestUrl("GET", url.toString(), undefined, false);
+    return validateMemoryDiscovery(value, this.#baseUrl);
   }
 
   resolveGraphContext(request) {
@@ -295,6 +301,87 @@ function isOpaqueId(value) {
     typeof value === "string" &&
     utf8Length(value) <= 255 &&
     /^[A-Za-z0-9][A-Za-z0-9._:-]*$/u.test(value)
+  );
+}
+
+function validateMemoryDiscovery(value, expectedApi) {
+  const capabilities = value?.capabilities;
+  const privacy = value?.privacy;
+  if (
+    !isObject(value) ||
+    !isObject(value.provider) ||
+    !isBoundedText(value.provider.id, 255) ||
+    !isBoundedText(value.provider.name, 255) ||
+    !Array.isArray(value.protocolVersions) ||
+    value.protocolVersions.length === 0 ||
+    new Set(value.protocolVersions).size !== value.protocolVersions.length ||
+    !value.protocolVersions.every(
+      (version) => typeof version === "string" && /^\d+\.\d+$/u.test(version),
+    ) ||
+    !isObject(value.endpoints) ||
+    normalizeApiRoot(value.endpoints.api) !== expectedApi ||
+    !isObject(capabilities) ||
+    ![
+      "contextResolution",
+      "memoryProposal",
+      "activityCheckpoint",
+      "disclosureReceipt",
+      "deletionPropagation",
+    ].every((key) => typeof capabilities[key] === "boolean") ||
+    !isObject(privacy) ||
+    privacy.disclosureReceipts !== true ||
+    !Array.isArray(privacy.processingModes) ||
+    privacy.processingModes.length === 0 ||
+    new Set(privacy.processingModes).size !== privacy.processingModes.length ||
+    !privacy.processingModes.every((mode) =>
+      DISCOVERY_PROCESSING_MODES.has(mode),
+    )
+  ) {
+    throw new RembraneError(
+      200,
+      "invalid_discovery",
+      "Provider discovery was invalid or did not match the configured API",
+    );
+  }
+  return value;
+}
+
+function normalizeApiRoot(value) {
+  if (typeof value !== "string") {
+    return null;
+  }
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    return null;
+  }
+  const loopback =
+    url.hostname === "localhost" ||
+    url.hostname === "127.0.0.1" ||
+    url.hostname === "::1";
+  if (
+    (url.protocol !== "https:" && !(url.protocol === "http:" && loopback)) ||
+    url.username ||
+    url.password ||
+    url.search ||
+    url.hash ||
+    !url.pathname.endsWith("/v1")
+  ) {
+    return null;
+  }
+  return url.toString().replace(/\/$/, "");
+}
+
+function isObject(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function isBoundedText(value, maximumBytes) {
+  return (
+    typeof value === "string" &&
+    value.trim().length > 0 &&
+    utf8Length(value) <= maximumBytes
   );
 }
 

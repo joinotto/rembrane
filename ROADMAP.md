@@ -221,6 +221,9 @@ This roadmap describes sequencing, not release dates.
   deployment-accurate API location, privacy mode, limits, and handoff support.
 - [x] Fetch public capability discovery through the TypeScript and Python SDKs
   without transmitting the configured bearer credential.
+- [x] Fail SDK discovery closed on malformed capabilities, privacy metadata,
+  protocol versions, or an advertised API root that differs from the
+  configured endpoint.
 - [ ] Add remote Streamable HTTP MCP with OAuth.
   - [x] Define HTTPS endpoints, RFC 9728 discovery metadata, bearer challenges,
     verified connection identity, scope ceilings, and session security rules.
