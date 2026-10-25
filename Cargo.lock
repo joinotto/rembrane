@@ -1450,6 +1450,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "rembrane-store-postgres"
+version = "0.1.0-alpha.1"
+dependencies = [
+ "rembrane-domain",
+]
+
+[[package]]
 name = "rembrane-store-sqlite"
 version = "0.1.0-alpha.1"
 dependencies = [

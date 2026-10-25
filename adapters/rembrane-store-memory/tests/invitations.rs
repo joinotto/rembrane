@@ -173,7 +173,7 @@ fn invitation_listing_is_bounded_filtered_ordered_and_admin_only() {
             limit: 1,
         })
         .expect("status filter should be applied");
-    assert_eq!(pending, [second.clone()]);
+    assert_eq!(pending, std::slice::from_ref(&second));
     assert_eq!(
         InvitationService::new(&mut store).list(&ListInvitationsQuery {
             workspace_id: WorkspaceId::new("other"),

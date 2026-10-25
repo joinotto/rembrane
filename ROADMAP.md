@@ -283,6 +283,9 @@ This roadmap describes sequencing, not release dates.
     denied cross-tenant writes, and fail-closed missing tenant context.
   - [ ] Implement the Rust PostgreSQL repository adapter and live two-tenant
     integration suite.
+    - [x] Add a driver-neutral owned transaction boundary that parameterizes
+      tenant bootstrap, requires exact canonical read-back, and rolls back
+      missing, mismatched, failed, or uncommitted tenant transactions.
     - [x] Define a reference-only PostgreSQL connection profile with explicit
       transport security and bounded pool capacity.
       - [x] Prevent derived debug logging of the database secret locator.

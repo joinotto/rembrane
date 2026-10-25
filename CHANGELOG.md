@@ -28,6 +28,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   percent-encoded tenant identifiers and exact authenticated GET-route tests.
 - Postman and shell REST acceptance coverage for bounded status-filtered
   invitation listing, lifecycle metadata, and cross-workspace denial.
+- A driver-neutral PostgreSQL transaction boundary that exposes repository
+  queries only after parameterized transaction-local tenant setup and exact
+  canonical read-back, with rollback on mismatch, failure, or dropped work.
 
 ### Changed
 
