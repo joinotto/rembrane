@@ -46,6 +46,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Deterministic PostgreSQL active-membership enumeration capped at 10,000
   canonical principals, rejecting duplicate, cross-tenant, or non-active rows
   before deriving authorization or key-rotation recipient sets.
+- Tenant-visible PostgreSQL principal lookup with exact requested/returned
+  identity correlation and bounded cardinality under membership-mediated RLS.
 
 ### Changed
 

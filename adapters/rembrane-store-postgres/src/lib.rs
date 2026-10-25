@@ -8,12 +8,13 @@ use std::collections::BTreeSet;
 use std::error::Error;
 use std::fmt::{self, Display, Formatter};
 
-use rembrane_domain::{Membership, PrincipalId, Workspace, WorkspaceId, WorkspaceRole};
+use rembrane_domain::{Membership, Principal, PrincipalId, Workspace, WorkspaceId, WorkspaceRole};
 
 pub const SET_TENANT_SQL: &str = "SELECT set_config('rembrane.workspace_id', $1, true);";
 pub const READ_TENANT_SQL: &str = "SELECT rembrane.current_workspace_id();";
 pub const FIND_WORKSPACE_SQL: &str =
     "SELECT id, kind FROM workspaces WHERE id = $1 ORDER BY id LIMIT 2";
+pub const FIND_PRINCIPAL_SQL: &str = "SELECT id FROM principals WHERE id = $1 ORDER BY id LIMIT 2";
 pub const FIND_MEMBERSHIP_SQL: &str = "SELECT workspace_id, principal_id, role, status \
     FROM memberships WHERE workspace_id = $1 AND principal_id = $2 \
     ORDER BY workspace_id, principal_id LIMIT 2";
@@ -175,6 +176,32 @@ impl<Pool: PostgresPool> PostgresStore<Pool> {
         Ok(workspace)
     }
 
+    pub fn find_principal(
+        &self,
+        workspace_id: &WorkspaceId,
+        principal_id: &PrincipalId,
+    ) -> Result<Option<Principal>, PostgresStoreError<Pool::Error>>
+    where
+        <Pool::Transaction as PostgresTransaction>::Row: PostgresRow<Error = Pool::Error>,
+    {
+        let mut transaction = self.begin_tenant(workspace_id.clone())?;
+        let rows = transaction
+            .query(
+                FIND_PRINCIPAL_SQL,
+                &[PostgresParameter::Text(principal_id.as_str())],
+            )
+            .map_err(PostgresStoreError::Tenant)?;
+        if rows.len() > 1 {
+            return Err(PostgresStoreError::UnexpectedCardinality);
+        }
+        let principal = rows
+            .first()
+            .map(|row| decode_principal(row, principal_id))
+            .transpose()?;
+        transaction.commit().map_err(PostgresStoreError::Tenant)?;
+        Ok(principal)
+    }
+
     pub fn find_membership(
         &self,
         workspace_id: &WorkspaceId,
@@ -256,6 +283,20 @@ where
         "shared" => Ok(Workspace::shared(WorkspaceId::new(id))),
         _ => Err(PostgresStoreError::InvalidRow),
     }
+}
+
+fn decode_principal<Row, DriverError>(
+    row: &Row,
+    expected_id: &PrincipalId,
+) -> Result<Principal, PostgresStoreError<DriverError>>
+where
+    Row: PostgresRow<Error = DriverError>,
+{
+    let id = row.text("id").map_err(PostgresStoreError::Row)?;
+    if id != expected_id.as_str() {
+        return Err(PostgresStoreError::InvalidRow);
+    }
+    Ok(Principal::new(PrincipalId::new(id)))
 }
 
 fn decode_membership<Row, DriverError>(
@@ -441,7 +482,7 @@ mod tests {
     use rembrane_domain::WorkspaceId;
 
     use super::{
-        FIND_MEMBERSHIP_SQL, FIND_WORKSPACE_SQL, LIST_ACTIVE_MEMBERSHIPS_SQL,
+        FIND_MEMBERSHIP_SQL, FIND_PRINCIPAL_SQL, FIND_WORKSPACE_SQL, LIST_ACTIVE_MEMBERSHIPS_SQL,
         MAX_ACTIVE_MEMBERSHIPS, PostgresParameter, PostgresPool, PostgresRow, PostgresStore,
         PostgresStoreError, PostgresTransaction, READ_TENANT_SQL, SET_TENANT_SQL,
         TenantTransaction, TenantTransactionError,
@@ -465,6 +506,12 @@ mod tests {
     }
 
     impl FakeRow {
+        fn principal(id: &str) -> Self {
+            Self {
+                columns: BTreeMap::from([("id", id.to_owned())]),
+            }
+        }
+
         fn workspace(id: &str, kind: &str) -> Self {
             Self {
                 columns: BTreeMap::from([("id", id.to_owned()), ("kind", kind.to_owned())]),
@@ -796,6 +843,70 @@ mod tests {
             assert!(
                 store
                     .find_workspace(&WorkspaceId::new("workspace_01"))
+                    .is_err()
+            );
+            assert_eq!(calls.borrow().last(), Some(&Call::Rollback));
+        }
+    }
+
+    #[test]
+    fn principal_lookup_is_tenant_verified_and_identity_exact() {
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let store = PostgresStore::new(FakePool {
+            calls: Rc::clone(&calls),
+            tenant_batches: RefCell::new(
+                [VecDeque::from([
+                    Ok(Some("workspace_01".to_owned())),
+                    Ok(Some("workspace_01".to_owned())),
+                ])]
+                .into(),
+            ),
+            row_batches: RefCell::new([vec![FakeRow::principal("principal_01")]].into()),
+        });
+
+        let principal = store
+            .find_principal(
+                &WorkspaceId::new("workspace_01"),
+                &rembrane_domain::PrincipalId::new("principal_01"),
+            )
+            .expect("principal lookup")
+            .expect("principal");
+        assert_eq!(principal.id().as_str(), "principal_01");
+        assert!(calls.borrow().contains(&Call::Query(
+            FIND_PRINCIPAL_SQL.to_owned(),
+            vec!["text:principal_01".to_owned()]
+        )));
+        assert_eq!(calls.borrow().last(), Some(&Call::Commit));
+    }
+
+    #[test]
+    fn principal_lookup_rejects_substitution_and_excessive_rows() {
+        for rows in [
+            vec![FakeRow::principal("principal_other")],
+            vec![
+                FakeRow::principal("principal_01"),
+                FakeRow::principal("principal_01"),
+            ],
+        ] {
+            let calls = Rc::new(RefCell::new(Vec::new()));
+            let store = PostgresStore::new(FakePool {
+                calls: Rc::clone(&calls),
+                tenant_batches: RefCell::new(
+                    [VecDeque::from([
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                    ])]
+                    .into(),
+                ),
+                row_batches: RefCell::new([rows].into()),
+            });
+
+            assert!(
+                store
+                    .find_principal(
+                        &WorkspaceId::new("workspace_01"),
+                        &rembrane_domain::PrincipalId::new("principal_01"),
+                    )
                     .is_err()
             );
             assert_eq!(calls.borrow().last(), Some(&Call::Rollback));

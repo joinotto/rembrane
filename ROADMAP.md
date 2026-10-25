@@ -296,6 +296,8 @@ This roadmap describes sequencing, not release dates.
         and lifecycle-status decoding for authorization decisions.
       - [x] Add deterministic bounded active-member enumeration with duplicate
         principal rejection for authorization and key-rotation recipients.
+      - [x] Add tenant-visible principal lookup with exact identity
+        correlation under the membership-mediated RLS policy.
     - [x] Define a reference-only PostgreSQL connection profile with explicit
       transport security and bounded pool capacity.
       - [x] Prevent derived debug logging of the database secret locator.
