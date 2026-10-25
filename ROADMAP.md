@@ -839,6 +839,8 @@ This roadmap describes sequencing, not release dates.
         into the two-provider release evidence set.
       - [x] Require provider and independent-review evidence to match the same
         clean release revision in strict production readiness.
+      - [x] Package exact two-provider release evidence through a
+        non-overwriting, symlink-rejecting, self-verifying local tool.
   - [x] Add a machine-verifiable compatibility lock over the canonical wire
     schemas, HTTP binding, conformance profile, and lifecycle fixtures so
     protocol changes require explicit review.

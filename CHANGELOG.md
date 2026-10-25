@@ -9,6 +9,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- A credential-free Memory Provider release packager creates a new owner-only
+  evidence directory from bounded regular inputs, copies the reviewed lock and
+  migration contract, refuses overwrites and symlinks, and removes incomplete
+  output if final verification fails.
 - Review-locked Memory Provider Protocol `0.1` to `1.0` migration guidance
   defines separate major-generation endpoints, fail-closed negotiation,
   provider/client/operator duties, rollback constraints, and the evidence

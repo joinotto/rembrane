@@ -12,7 +12,7 @@
     },
     {
       "path": "spec/MEMORY_PROVIDER_STABILITY.md",
-      "sha256": "b1c5a573254d21e1c9a1762893b94418266b971bd038858f7a958deb4fac8343"
+      "sha256": "70ccdcbaf42c04669e429131fbffcf4135c129643518bf92a38abf293be00124"
     },
     {
       "path": "spec/memory-provider.schema.json",

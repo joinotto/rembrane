@@ -69,6 +69,13 @@ production readiness applies the same binding to the independent security
 review, preventing two individually valid evidence sets for different source
 revisions from being combined.
 
+Use `package-memory-provider-release-evidence.mjs` to assemble a new
+owner-only evidence directory from two conformance results and one
+mixed-version result. The packager validates bounded regular inputs, requires
+distinct maintainers and an external implementation, refuses to overwrite an
+existing path, copies the reviewed lock and migration notes, and removes its
+new directory if final verification fails.
+
 Strict production readiness reads the completed directory from
 `REMBRANE_MEMORY_PROVIDER_EVIDENCE_DIRECTORY`. Leaving it unset makes the gate
 unavailable in development mode and fails closed under `--strict`.
