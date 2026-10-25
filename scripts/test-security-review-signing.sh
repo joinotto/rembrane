@@ -187,6 +187,33 @@ then
     exit 1
 fi
 
+jq '.manifestSha256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"' \
+    "$temporary_directory/attestation.json" \
+    >"$temporary_directory/mismatched-attestation.json"
+if REMBRANE_SECURITY_REVIEW_SIGNING_KEY="$temporary_directory/private.pem" \
+    sh "$review_repository/scripts/sign-security-review-manifest.sh" \
+    "$temporary_directory/manifest.json" \
+    "$temporary_directory/mismatched-output" \
+    "$temporary_directory/mismatched-attestation.json" >/dev/null 2>&1
+then
+    echo "security review signer accepted mismatched attestation evidence" >&2
+    exit 1
+fi
+test ! -e "$temporary_directory/mismatched-output"
+
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 \
+    -out "$temporary_directory/wrong-algorithm.pem" >/dev/null 2>&1
+chmod 600 "$temporary_directory/wrong-algorithm.pem"
+if REMBRANE_SECURITY_REVIEW_SIGNING_KEY="$temporary_directory/wrong-algorithm.pem" \
+    sh "$review_repository/scripts/sign-security-review-manifest.sh" \
+    "$temporary_directory/manifest.json" \
+    "$temporary_directory/wrong-algorithm-output" >/dev/null 2>&1
+then
+    echo "security review signer accepted a non-Ed25519 private key" >&2
+    exit 1
+fi
+test ! -e "$temporary_directory/wrong-algorithm-output"
+
 cp "$temporary_directory/private.pem" "$temporary_directory/permissive.pem"
 chmod 644 "$temporary_directory/permissive.pem"
 if REMBRANE_SECURITY_REVIEW_SIGNING_KEY="$temporary_directory/permissive.pem" \

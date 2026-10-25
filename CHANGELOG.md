@@ -1028,6 +1028,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Standalone provider-registry validation now shares the exact byte-oriented
   semantic engine used by signed bundles, including closed fields, unique
   protocols and deployment modes, canonical timestamps, and local Git proof.
+- Security-review signing now self-verifies final manifest-only or complete
+  attestation bundles under a derived public key and removes partial output
+  if final signature, correlation, or repository verification fails.
 - Restored the complete dependency-enabled workspace build by declaring
   previously implicit crate dependencies and enabling rmcp's stdio transport.
 - Corrected Memory Provider selector field casing and URL path construction so

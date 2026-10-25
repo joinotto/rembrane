@@ -51,6 +51,17 @@ if [ -e "$output_directory" ] || [ -L "$output_directory" ]; then
 fi
 mkdir "$output_directory"
 chmod 700 "$output_directory"
+complete=0
+verification_public_key=
+cleanup() {
+    if [ -n "$verification_public_key" ]; then
+        rm -f "$verification_public_key"
+    fi
+    if [ "$complete" != 1 ]; then
+        rm -rf "$output_directory"
+    fi
+}
+trap cleanup EXIT HUP INT TERM
 
 cp "$manifest" "$output_directory/security-review-manifest.json"
 node "$repository_root/scripts/verify-security-review-manifest.mjs" \
@@ -91,4 +102,21 @@ if [ -n "$attestation" ]; then
         -out "$output_directory/security-review-attestation.json.sig"
 fi
 
+find "$output_directory" -type f -exec chmod 600 {} +
+verification_public_key=$(mktemp "${TMPDIR:-/tmp}/rembrane-review-public.XXXXXX")
+chmod 600 "$verification_public_key"
+openssl pkey -in "$private_key" -pubout \
+    -out "$verification_public_key" >/dev/null 2>&1
+if [ -n "$attestation" ]; then
+    sh "$repository_root/scripts/verify-security-review-bundle.sh" \
+        "$output_directory" "$verification_public_key" \
+        --verify-repository >/dev/null
+else
+    sh "$repository_root/scripts/verify-security-review-signature.sh" \
+        "$output_directory/security-review-manifest.json" \
+        "$output_directory/security-review-manifest.json.sig" \
+        "$verification_public_key" >/dev/null
+fi
+
+complete=1
 echo "signed security review artifacts written to: $output_directory"

@@ -845,6 +845,8 @@ This roadmap describes sequencing, not release dates.
           without handing their paths back to OpenSSL.
         - [x] Verify complete signed review bundles from one immutable opened
           artifact set without cross-process path reopening.
+        - [x] Self-verify newly signed review artifacts and remove partial
+          output when final correlation or signature checks fail.
     - [x] Publish compatibility, deprecation, and mixed-version negotiation
       policy.
       - [x] Include the normative compatibility policy in the tamper-tested
