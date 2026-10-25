@@ -10,7 +10,7 @@ rust-version.workspace = true
 [dependencies]
 rembrane-domain = { path = "../../crates/rembrane-domain" }
 rembrane-provider-sdk = { path = "../../crates/rembrane-provider-sdk" }
-rusqlite = { version = "0.37", features = ["bundled"] }
+rusqlite = { version = "0.37", features = ["backup", "bundled"] }
 
 [dev-dependencies]
 rembrane-crypto = { path = "../../crates/rembrane-crypto" }

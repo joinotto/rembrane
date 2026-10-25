@@ -14,7 +14,7 @@ use rembrane_provider_sdk::{
     MAX_CUSTOMER_KMS_GENERATIONS, MAX_KMS_KEY_ID_BYTES, MAX_KMS_WORKSPACE_ID_BYTES,
     MAX_WRAPPED_KEY_BYTES, ProviderError,
 };
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{Connection, MAIN_DB, OptionalExtension, params};
 
 const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS customer_kms_key_references (
@@ -179,6 +179,57 @@ impl SqliteCustomerKmsKeyReferenceStore {
         }
         CustomerKmsKeyring::new(active.ok_or(ProviderError::Unavailable)?, references)
     }
+
+    /// Writes a consistent owner-only `SQLite` snapshot and verifies its
+    /// integrity and required schema before returning.
+    pub fn backup_to(&self, destination: impl AsRef<Path>) -> Result<(), ProviderError> {
+        let destination = destination.as_ref();
+        if destination.exists() {
+            return Err(ProviderError::Rejected(
+                "customer KMS backup destination already exists".to_owned(),
+            ));
+        }
+        prepare_private_database_file(destination)?;
+        let result = self
+            .connection
+            .lock()
+            .map_err(|_| ProviderError::Unavailable)?
+            .backup(MAIN_DB, destination, None)
+            .map_err(|_| ProviderError::Unavailable)
+            .and_then(|()| verify_backup(destination));
+        if result.is_err() {
+            let _ = std::fs::remove_file(destination);
+        }
+        result
+    }
+}
+
+fn verify_backup(path: &Path) -> Result<(), ProviderError> {
+    let connection = Connection::open(path).map_err(|_| ProviderError::Unavailable)?;
+    let integrity = connection
+        .query_row("PRAGMA quick_check", [], |row| row.get::<_, String>(0))
+        .map_err(|_| ProviderError::Unavailable)?;
+    if integrity != "ok" {
+        return Err(ProviderError::Rejected(
+            "customer KMS backup failed integrity verification".to_owned(),
+        ));
+    }
+    let table_exists = connection
+        .query_row(
+            "SELECT 1 FROM sqlite_schema
+             WHERE type = 'table' AND name = 'customer_kms_key_references'",
+            [],
+            |_| Ok(()),
+        )
+        .optional()
+        .map_err(|_| ProviderError::Unavailable)?
+        .is_some();
+    if !table_exists {
+        return Err(ProviderError::Rejected(
+            "customer KMS backup is missing its keyring schema".to_owned(),
+        ));
+    }
+    Ok(())
 }
 
 #[cfg(unix)]
@@ -538,6 +589,59 @@ mod tests {
 
         fs::remove_file(link).unwrap();
         fs::remove_file(path).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn creates_verified_owner_only_backup_with_historical_keys() {
+        let source = temporary_database_path("backup-source");
+        let backup = temporary_database_path("backup-copy");
+        let _ = fs::remove_file(&source);
+        let _ = fs::remove_file(&backup);
+        let store = SqliteCustomerKmsKeyReferenceStore::open(&source).unwrap();
+        let workspace = WorkspaceId::new("workspace-a");
+        store
+            .initialize_workspace(
+                &workspace,
+                &CustomerKmsKeyReference::new(1, "key-v1", vec![1]).unwrap(),
+            )
+            .unwrap();
+        store
+            .persist_and_activate(
+                &workspace,
+                1,
+                &CustomerKmsKeyReference::new(2, "key-v2", vec![2]).unwrap(),
+            )
+            .unwrap();
+
+        store.backup_to(&backup).unwrap();
+
+        let restored = SqliteCustomerKmsKeyReferenceStore::open(&backup).unwrap();
+        let keyring = restored.load_keyring(&workspace).unwrap();
+        assert_eq!(keyring.active_generation(), 2);
+        assert_eq!(keyring.references().len(), 2);
+        assert_eq!(
+            fs::metadata(&backup).unwrap().permissions().mode() & 0o077,
+            0
+        );
+        drop(restored);
+        drop(store);
+        fs::remove_file(backup).unwrap();
+        fs::remove_file(source).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn backup_refuses_to_replace_existing_file() {
+        let destination = temporary_database_path("backup-existing");
+        let _ = fs::remove_file(&destination);
+        fs::write(&destination, b"preserve").unwrap();
+        fs::set_permissions(&destination, fs::Permissions::from_mode(0o600)).unwrap();
+        let store = SqliteCustomerKmsKeyReferenceStore::in_memory().unwrap();
+
+        assert!(store.backup_to(&destination).is_err());
+        assert_eq!(fs::read(&destination).unwrap(), b"preserve");
+        fs::remove_file(destination).unwrap();
     }
 
     #[test]

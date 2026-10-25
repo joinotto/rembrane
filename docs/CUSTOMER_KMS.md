@@ -67,6 +67,9 @@ Workspace identity, provider key identifiers, and wrapped ciphertext are
 bounded in both the provider contract and SQLite schema. Existing databases
 receive enforcement triggers, and bounded projections reject corrupt rows
 before allocating their oversized text or blob values.
+`SqliteCustomerKmsKeyReferenceStore::backup_to` writes a consistent owner-only
+snapshot, refuses to replace an existing destination, and verifies SQLite
+integrity plus the required keyring schema before reporting success.
 
 These framework adapters are complete, but cloud SDK implementations and
 their IAM policies remain deployment-owned. The top-level production-provider
