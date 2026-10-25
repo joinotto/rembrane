@@ -16,6 +16,7 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   machine-readable case requirements that drive portable runner evidence.
 - Exact core-profile identity binding across key-provider conformance result
   schemas, fixtures, runner output, and compatibility verification.
+- Completion of the production OS-keychain and customer-KMS provider milestone.
 - Required bounded key-provider build versions in discovery, Rust negotiation,
   HTTP decoding, fixtures, and portable conformance evidence.
 - A tamper-tested key-provider compatibility lock over reviewed OpenAPI,
