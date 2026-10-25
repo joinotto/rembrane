@@ -760,7 +760,7 @@ fn print_mcp_config(arguments: &[String]) -> Result<(), String> {
         "gemini-cli" => gemini_mcp_config(server_binary, &environment),
         "cursor" => cursor_mcp_config(server_binary, &environment),
         "vscode" => vscode_mcp_config(server_binary, &environment),
-        "zed" => zed_mcp_config(server_binary),
+        "zed" => zed_mcp_config(server_binary, &environment),
         "opencode" => opencode_mcp_config(server_binary, &environment),
         "generic" => generic_mcp_config(server_binary, &environment),
         _ => {
@@ -943,12 +943,26 @@ fn vscode_mcp_config(server_binary: &str, variables: &[&str]) -> String {
     .to_string()
 }
 
-fn zed_mcp_config(server_binary: &str) -> String {
-    format!(
-        "{{\"context_servers\":{{\"rembrane\":{{\
-         \"command\":\"{}\",\"args\":[],\"env\":{{}}}}}}}}",
-        escape_config_string(server_binary)
-    )
+fn zed_mcp_config(server_binary: &str, variables: &[&str]) -> String {
+    let environment = variables
+        .iter()
+        .map(|variable| {
+            (
+                (*variable).to_owned(),
+                serde_json::Value::String(format!("${{{variable}}}")),
+            )
+        })
+        .collect::<serde_json::Map<_, _>>();
+    serde_json::json!({
+        "context_servers": {
+            "rembrane": {
+                "command": server_binary,
+                "args": [],
+                "env": environment
+            }
+        }
+    })
+    .to_string()
 }
 
 fn opencode_mcp_config(server_binary: &str, variables: &[&str]) -> String {
@@ -2315,10 +2329,13 @@ mod tests {
         assert!(!vscode.contains("REMBRANE_WORKSPACE_KEY_HEX"));
         assert!(!vscode.contains("00010203"));
 
-        let zed = zed_mcp_config("/opt/rembrane-mcp");
+        let zed = zed_mcp_config("/opt/rembrane-mcp", &environment);
         assert!(zed.contains("\"context_servers\":{\"rembrane\""));
-        assert!(zed.contains("\"env\":{}"));
+        assert!(zed.contains(
+            "\"REMBRANE_WORKSPACE_KEY_REFERENCE\":\"${REMBRANE_WORKSPACE_KEY_REFERENCE}\""
+        ));
         assert!(!zed.contains("REMBRANE_WORKSPACE_KEY_HEX"));
+        assert!(!zed.contains("00010203"));
 
         let opencode = opencode_mcp_config("/opt/rembrane-mcp", &environment);
         assert!(opencode.contains("\"$schema\":\"https://opencode.ai/config.json\""));

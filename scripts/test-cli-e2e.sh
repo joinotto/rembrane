@@ -124,6 +124,18 @@ printf '%s\n' "$gemini_config" | jq -e \
             == "${REMBRANE_WORKSPACE_KEY_REFERENCE}"
         and (.mcpServers.rembrane.env | has("REMBRANE_WORKSPACE_KEY_HEX") | not)' \
     >/dev/null
+zed_config=$(
+    "$rembrane_binary" mcp-config \
+        --client zed \
+        --server-binary "$repository_root/target/debug/rembrane-mcp"
+)
+printf '%s\n' "$zed_config" | jq -e \
+    '.context_servers.rembrane.command
+        and .context_servers.rembrane.args == []
+        and .context_servers.rembrane.env.REMBRANE_WORKSPACE_KEY_REFERENCE
+            == "${REMBRANE_WORKSPACE_KEY_REFERENCE}"
+        and (.context_servers.rembrane.env | has("REMBRANE_WORKSPACE_KEY_HEX") | not)' \
+    >/dev/null
 generic_config=$(
     "$rembrane_binary" mcp-config \
         --client generic \
