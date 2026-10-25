@@ -504,6 +504,13 @@ pub trait InvitationRepository {
         invitation_id: &InvitationId,
     ) -> Result<Option<Invitation>, ApplicationError>;
 
+    fn list_invitations(
+        &self,
+        workspace_id: &WorkspaceId,
+        status: Option<InvitationStatus>,
+        limit: usize,
+    ) -> Result<Vec<Invitation>, ApplicationError>;
+
     fn accept_invitation_with_membership(
         &mut self,
         invitation: Invitation,

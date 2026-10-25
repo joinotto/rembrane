@@ -16,6 +16,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   while releasing the one-pending-invitation uniqueness slot.
 - Atomic content-free administrative audit evidence for shared-workspace
   invitation creation, acceptance, and revocation.
+- Bounded owner/admin-only shared-workspace invitation listing with optional
+  status filtering, deterministic ordering, and tenant-isolation proofs across
+  in-memory and SQLite repositories.
 - Local CLI commands for creating shared workspaces and creating, accepting,
   or revoking bounded role-specific invitations.
 - Authenticated REST invitation creation, acceptance, and revocation,

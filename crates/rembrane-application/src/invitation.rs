@@ -1,7 +1,7 @@
 use rembrane_domain::{
     AdministrativeAction, AdministrativeAuditEvent, AdministrativeAuditEventId,
-    AdministrativeTargetKind, Invitation, InvitationId, Membership, PrincipalId, WorkspaceId,
-    WorkspaceKind, WorkspaceRole,
+    AdministrativeTargetKind, Invitation, InvitationId, InvitationStatus, Membership, PrincipalId,
+    WorkspaceId, WorkspaceKind, WorkspaceRole,
 };
 
 use crate::{ApplicationError, InvitationRepository, MembershipRepository, WorkspaceRepository};
@@ -35,6 +35,16 @@ pub struct RevokeInvitationCommand {
     pub request_id: String,
     pub revoked_at_epoch_seconds: u64,
 }
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ListInvitationsQuery {
+    pub workspace_id: WorkspaceId,
+    pub requested_by: PrincipalId,
+    pub status: Option<InvitationStatus>,
+    pub limit: usize,
+}
+
+pub const MAXIMUM_INVITATION_LIST_ITEMS: usize = 100;
 
 pub struct InvitationService<'repository, Repository> {
     repository: &'repository mut Repository,
@@ -175,6 +185,23 @@ where
         self.repository
             .replace_invitation(revoked.clone(), expected_status, audit)?;
         Ok(revoked)
+    }
+
+    pub fn list(&self, query: &ListInvitationsQuery) -> Result<Vec<Invitation>, ApplicationError> {
+        if query.limit == 0 || query.limit > MAXIMUM_INVITATION_LIST_ITEMS {
+            return Err(ApplicationError::Validation(
+                "invitation list limit must be between 1 and 100".to_owned(),
+            ));
+        }
+        let actor = self
+            .repository
+            .find_membership(&query.workspace_id, &query.requested_by)?
+            .ok_or(ApplicationError::AccessDenied)?;
+        if !actor.can_manage_members() {
+            return Err(ApplicationError::AccessDenied);
+        }
+        self.repository
+            .list_invitations(&query.workspace_id, query.status, query.limit)
     }
 }
 

@@ -1,11 +1,11 @@
 use rembrane_application::{
     AcceptInvitationCommand, AdministrativeAuditRepository, ApplicationError,
-    CreateInvitationCommand, InvitationRepository, InvitationService, MembershipRepository,
-    RevokeInvitationCommand, WorkspaceRepository,
+    CreateInvitationCommand, InvitationRepository, InvitationService, ListInvitationsQuery,
+    MembershipRepository, RevokeInvitationCommand, WorkspaceRepository,
 };
 use rembrane_domain::{
-    AdministrativeAction, InvitationId, InvitationStatus, Membership, Principal, PrincipalId,
-    Workspace, WorkspaceId, WorkspaceRole,
+    AdministrativeAction, Invitation, InvitationId, InvitationStatus, Membership, Principal,
+    PrincipalId, Workspace, WorkspaceId, WorkspaceRole,
 };
 use rembrane_store_memory::InMemoryStore;
 
@@ -127,6 +127,84 @@ fn expired_invitation_cannot_create_membership() {
             .expect("membership lookup")
             .is_none()
     );
+}
+
+#[test]
+fn invitation_listing_is_bounded_filtered_ordered_and_admin_only() {
+    let mut store = shared_store();
+    let first = InvitationService::new(&mut store)
+        .create(command("guest"))
+        .expect("first invitation");
+    InvitationService::new(&mut store)
+        .revoke(RevokeInvitationCommand {
+            invitation_id: first.id().clone(),
+            workspace_id: WorkspaceId::new("team"),
+            revoked_by: PrincipalId::new("owner"),
+            request_id: "request-revoke-list-01".to_owned(),
+            revoked_at_epoch_seconds: 1_100,
+        })
+        .expect("first invitation should revoke");
+    let mut second_command = command("guest");
+    second_command.invitation_id = InvitationId::new("invite_02");
+    second_command.request_id = "request-create-list-02".to_owned();
+    second_command.created_at_epoch_seconds = 1_200;
+    second_command.expires_at_epoch_seconds = 2_200;
+    let second = InvitationService::new(&mut store)
+        .create(second_command)
+        .expect("second invitation");
+
+    let listed = InvitationService::new(&mut store)
+        .list(&ListInvitationsQuery {
+            workspace_id: WorkspaceId::new("team"),
+            requested_by: PrincipalId::new("owner"),
+            status: None,
+            limit: 10,
+        })
+        .expect("owner should list invitations");
+    assert_eq!(
+        listed.iter().map(Invitation::id).collect::<Vec<_>>(),
+        [second.id(), first.id()]
+    );
+    let pending = InvitationService::new(&mut store)
+        .list(&ListInvitationsQuery {
+            workspace_id: WorkspaceId::new("team"),
+            requested_by: PrincipalId::new("owner"),
+            status: Some(InvitationStatus::Pending),
+            limit: 1,
+        })
+        .expect("status filter should be applied");
+    assert_eq!(pending, [second.clone()]);
+    assert_eq!(
+        InvitationService::new(&mut store).list(&ListInvitationsQuery {
+            workspace_id: WorkspaceId::new("other"),
+            requested_by: PrincipalId::new("owner"),
+            status: None,
+            limit: 10,
+        }),
+        Err(ApplicationError::AccessDenied)
+    );
+
+    InvitationService::new(&mut store)
+        .accept(accept_command(second.id(), "guest", 1_500))
+        .expect("guest should accept");
+    assert_eq!(
+        InvitationService::new(&mut store).list(&ListInvitationsQuery {
+            workspace_id: WorkspaceId::new("team"),
+            requested_by: PrincipalId::new("guest"),
+            status: None,
+            limit: 10,
+        }),
+        Err(ApplicationError::AccessDenied)
+    );
+    assert!(matches!(
+        InvitationService::new(&mut store).list(&ListInvitationsQuery {
+            workspace_id: WorkspaceId::new("team"),
+            requested_by: PrincipalId::new("owner"),
+            status: None,
+            limit: 101,
+        }),
+        Err(ApplicationError::Validation(_))
+    ));
 }
 
 #[test]

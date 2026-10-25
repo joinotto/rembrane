@@ -1544,6 +1544,83 @@ impl<C> InvitationRepository for SqliteStore<C> {
             .transpose()
     }
 
+    fn list_invitations(
+        &self,
+        workspace_id: &WorkspaceId,
+        status: Option<InvitationStatus>,
+        limit: usize,
+    ) -> Result<Vec<Invitation>, ApplicationError> {
+        let decode_row = |row: &rusqlite::Row<'_>| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, String>(4)?,
+                row.get::<_, u64>(5)?,
+                row.get::<_, u64>(6)?,
+            ))
+        };
+        let rows = if let Some(status) = status {
+            let mut statement = self
+                .connection
+                .prepare(
+                    "SELECT id, invited_principal_id, invited_by, role, status,
+                            created_at_epoch_seconds, expires_at_epoch_seconds
+                     FROM workspace_invitations
+                     WHERE workspace_id = ?1 AND status = ?2
+                     ORDER BY created_at_epoch_seconds DESC, id ASC
+                     LIMIT ?3",
+                )
+                .map_err(|_| ApplicationError::StorageUnavailable)?;
+            statement
+                .query_map(
+                    params![
+                        workspace_id.as_str(),
+                        encode_invitation_status(status),
+                        limit
+                    ],
+                    decode_row,
+                )
+                .map_err(|_| ApplicationError::StorageUnavailable)?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|_| ApplicationError::StorageUnavailable)?
+        } else {
+            let mut statement = self
+                .connection
+                .prepare(
+                    "SELECT id, invited_principal_id, invited_by, role, status,
+                            created_at_epoch_seconds, expires_at_epoch_seconds
+                     FROM workspace_invitations
+                     WHERE workspace_id = ?1
+                     ORDER BY created_at_epoch_seconds DESC, id ASC
+                     LIMIT ?2",
+                )
+                .map_err(|_| ApplicationError::StorageUnavailable)?;
+            statement
+                .query_map(params![workspace_id.as_str(), limit], decode_row)
+                .map_err(|_| ApplicationError::StorageUnavailable)?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|_| ApplicationError::StorageUnavailable)?
+        };
+        rows.into_iter()
+            .map(
+                |(id, invited, inviter, role, status, created_at, expires_at)| {
+                    decode_invitation(
+                        InvitationId::new(id),
+                        workspace_id.clone(),
+                        PrincipalId::new(invited),
+                        PrincipalId::new(inviter),
+                        &role,
+                        &status,
+                        created_at,
+                        expires_at,
+                    )
+                },
+            )
+            .collect()
+    }
+
     fn accept_invitation_with_membership(
         &mut self,
         invitation: Invitation,

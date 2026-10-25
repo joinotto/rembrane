@@ -443,6 +443,8 @@ This roadmap describes sequencing, not release dates.
       a replacement so stale rows cannot block reinvitation.
   - [x] Commit content-free invitation creation, acceptance, and revocation
     audit evidence in the same transaction as each lifecycle mutation.
+  - [x] Add bounded, status-filtered, deterministic invitation listing with
+    owner/admin authorization across in-memory and SQLite repositories.
   - [x] Expose shared-workspace creation plus invitation create, accept, and
     revoke workflows through the local CLI.
   - [x] Expose invitation creation, acceptance, and revocation through the

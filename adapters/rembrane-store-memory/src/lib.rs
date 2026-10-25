@@ -1233,6 +1233,31 @@ impl InvitationRepository for InMemoryStore {
             .cloned())
     }
 
+    fn list_invitations(
+        &self,
+        workspace_id: &WorkspaceId,
+        status: Option<InvitationStatus>,
+        limit: usize,
+    ) -> Result<Vec<Invitation>, ApplicationError> {
+        let mut invitations = self
+            .invitations
+            .iter()
+            .filter(|invitation| {
+                invitation.workspace_id() == workspace_id
+                    && status.is_none_or(|status| invitation.status() == status)
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        invitations.sort_by(|left, right| {
+            right
+                .created_at_epoch_seconds()
+                .cmp(&left.created_at_epoch_seconds())
+                .then_with(|| left.id().as_str().cmp(right.id().as_str()))
+        });
+        invitations.truncate(limit);
+        Ok(invitations)
+    }
+
     fn accept_invitation_with_membership(
         &mut self,
         invitation: Invitation,
