@@ -354,6 +354,8 @@ This roadmap describes sequencing, not release dates.
           research reads with researcher and version correlation.
           - [x] Atomically capture encrypted PostgreSQL booking research with
             a researcher-bound canonical event and optimistic stream sequence.
+          - [x] Persist exact-version PostgreSQL travel disclosures with
+            verified trip/research revisions and sensitivity flags.
       - [x] Add exact invitation lookup and bounded status-filtered listing
         with terminal-state restoration and full tenant/identifier correlation.
       - [x] Implement atomic invitation creation, acceptance, revocation,
