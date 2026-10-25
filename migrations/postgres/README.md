@@ -49,6 +49,10 @@ non-cloneable, non-debuggable consumed configuration.
 Remote deployments require full TLS verification; plaintext transport is an
 explicit trusted-boundary-only mode. Connection pools are bounded to prevent a
 tenant or configuration error from exhausting the database.
+Resolution also requires exactly one matching `sslmode`: `verify-full` for
+verified transport or `disable` for the explicit trusted-boundary plaintext
+mode. Missing, duplicate, or contradictory URL settings fail before a driver
+opens a socket.
 
 Every ordinary table containing `workspace_id` receives forced read/write RLS.
 `workspaces` is isolated by `id`. Private-to-shared proposals are isolated by

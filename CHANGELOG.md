@@ -17,6 +17,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   secret locator in logs.
 - Deployment-selected PostgreSQL URL resolution into a bounded, validated,
   non-cloneable, non-debuggable zeroizing adapter-construction value.
+- Fail-closed agreement between declared PostgreSQL transport policy and one
+  exact resolved `sslmode`, preventing URL parameters from silently weakening
+  verified transport.
 - A Zed local MCP configuration that safely inherits the application process
   environment instead of embedding unsupported `${VAR}` interpolation or raw
   credentials in settings.

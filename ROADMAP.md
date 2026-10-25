@@ -288,6 +288,8 @@ This roadmap describes sequencing, not release dates.
       - [x] Prevent derived debug logging of the database secret locator.
       - [x] Resolve and validate the PostgreSQL URL through any deployment
         secret resolver into non-cloneable zeroizing adapter configuration.
+        - [x] Reject missing, duplicate, or contradictory `sslmode` values
+          before the database driver opens a connection.
 
 ## Phase 2 — Development continuity
 

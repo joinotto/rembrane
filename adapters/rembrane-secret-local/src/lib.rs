@@ -97,7 +97,7 @@ where
     Resolver: SecretResolver + ?Sized,
 {
     let url = resolver.resolve(connection.url_reference())?;
-    validate_postgres_url(&url)?;
+    validate_postgres_url(&url, connection.transport_security())?;
     Ok(ResolvedPostgresConnection {
         url,
         transport_security: connection.transport_security(),
@@ -199,7 +199,10 @@ fn validate_value(value: Zeroizing<String>) -> Result<Zeroizing<String>, SecretR
     Ok(value)
 }
 
-fn validate_postgres_url(value: &str) -> Result<(), SecretResolutionError> {
+fn validate_postgres_url(
+    value: &str,
+    transport_security: PostgresTransportSecurity,
+) -> Result<(), SecretResolutionError> {
     if value.len() > MAX_POSTGRES_URL_BYTES
         || value.trim() != value
         || value.chars().any(char::is_control)
@@ -212,6 +215,17 @@ fn validate_postgres_url(value: &str) -> Result<(), SecretResolutionError> {
         || parsed.host().is_none()
         || parsed.fragment().is_some()
     {
+        return Err(SecretResolutionError::InvalidValue);
+    }
+    let ssl_modes = parsed
+        .query_pairs()
+        .filter_map(|(name, value)| (name == "sslmode").then_some(value))
+        .collect::<Vec<_>>();
+    let required_ssl_mode = match transport_security {
+        PostgresTransportSecurity::VerifyFull => "verify-full",
+        PostgresTransportSecurity::TrustedBoundaryPlaintext => "disable",
+    };
+    if ssl_modes.len() != 1 || ssl_modes[0] != required_ssl_mode {
         return Err(SecretResolutionError::InvalidValue);
     }
     Ok(())
@@ -394,8 +408,12 @@ mod tests {
             "https://database.example/rembrane".to_owned(),
             "postgresql:///missing-host".to_owned(),
             "postgresql://database.example/rembrane#fragment".to_owned(),
+            "postgresql://database.example/rembrane".to_owned(),
+            "postgresql://database.example/rembrane?sslmode=disable".to_owned(),
+            "postgresql://database.example/rembrane?sslmode=verify-full&sslmode=verify-full"
+                .to_owned(),
             format!(
-                "postgresql://database.example/{}",
+                "postgresql://database.example/{}?sslmode=verify-full",
                 "x".repeat(MAX_POSTGRES_URL_BYTES)
             ),
         ] {
@@ -407,6 +425,29 @@ mod tests {
                 .err(),
                 Some(SecretResolutionError::InvalidValue)
             );
+        }
+    }
+
+    #[test]
+    fn requires_resolved_url_to_match_declared_transport_security() {
+        let reference = SecretReference::environment("REMBRANE_POSTGRES_URL").expect("reference");
+        for (transport_security, ssl_mode) in [
+            (PostgresTransportSecurity::VerifyFull, "verify-full"),
+            (
+                PostgresTransportSecurity::TrustedBoundaryPlaintext,
+                "disable",
+            ),
+        ] {
+            let connection = PostgresConnection::new(reference.clone(), transport_security, 1)
+                .expect("connection");
+            let resolved = resolve_postgres_connection(
+                &PostgresFixtureResolver {
+                    value: format!("postgresql://database.example/rembrane?sslmode={ssl_mode}"),
+                },
+                &connection,
+            )
+            .expect("matching transport policy");
+            assert_eq!(resolved.transport_security(), transport_security);
         }
     }
 }
