@@ -287,15 +287,22 @@ fn referenced_secret_environment(
     locator_name: &str,
     default_variable: &str,
 ) -> Result<Zeroizing<String>, String> {
+    let reference = configured_secret_reference(locator_name, default_variable)?;
+    LocalSecretResolver
+        .resolve(&reference)
+        .map_err(|_| format!("secret referenced by {locator_name} is unavailable or invalid"))
+}
+
+fn configured_secret_reference(
+    locator_name: &str,
+    default_variable: &str,
+) -> Result<SecretReference, String> {
     let locator = match std::env::var(locator_name) {
         Ok(locator) => locator,
         Err(std::env::VarError::NotPresent) => String::new(),
         Err(_) => return Err(format!("cannot read {locator_name}")),
     };
-    let reference = selected_secret_reference(&locator, default_variable)?;
-    LocalSecretResolver
-        .resolve(&reference)
-        .map_err(|_| format!("secret referenced by {locator_name} is unavailable or invalid"))
+    selected_secret_reference(&locator, default_variable)
 }
 
 fn selected_secret_reference(
@@ -849,15 +856,22 @@ fn test_provider(arguments: &[String]) -> Result<String, String> {
             }
             validate_external_conformance_namespace(namespace)?;
             let base_url = secret_environment("MEM0_BASE_URL")?;
-            let api_key = std::env::var("MEM0_API_KEY")
-                .map_err(|_| "MEM0_API_KEY is required in the environment".to_owned())?;
-            let lookup_secret = secret_environment("MEM0_WORKSPACE_LOOKUP_SECRET")?;
-            let mut provider = Mem0SemanticProvider::from_http(
-                &base_url,
-                api_key,
-                lookup_secret.as_bytes().to_vec(),
+            let connection = ProviderConnection::remote(
+                ProviderKind::Mem0,
+                base_url.as_str().to_owned(),
+                vec![
+                    configured_secret_reference("MEM0_API_KEY_REFERENCE", "MEM0_API_KEY")?,
+                    configured_secret_reference(
+                        "MEM0_WORKSPACE_LOOKUP_SECRET_REFERENCE",
+                        "MEM0_WORKSPACE_LOOKUP_SECRET",
+                    )?,
+                ],
+                ProviderPlacement::External,
             )
-            .map_err(|error| format!("cannot configure Mem0 provider: {error}"))?;
+            .map_err(|error| format!("cannot configure Mem0 profile: {error}"))?;
+            let mut provider =
+                Mem0SemanticProvider::from_connection(&connection, &LocalSecretResolver, true)
+                    .map_err(|error| format!("cannot configure Mem0 provider: {error}"))?;
             let report = verify_semantic_provider(&mut provider, namespace)
                 .map_err(|error| format!("provider conformance failed: {error}"))?;
             serialize_provider_conformance(&report)
@@ -878,13 +892,26 @@ fn test_provider(arguments: &[String]) -> Result<String, String> {
             }
             validate_external_conformance_namespace(namespace)?;
             let base_url = secret_environment("SUPERMEMORY_BASE_URL")?;
-            let api_key = std::env::var("SUPERMEMORY_API_KEY")
-                .map_err(|_| "SUPERMEMORY_API_KEY is required in the environment".to_owned())?;
-            let lookup_secret = secret_environment("SUPERMEMORY_WORKSPACE_LOOKUP_SECRET")?;
-            let mut provider = SupermemorySemanticProvider::from_http(
-                &base_url,
-                api_key,
-                lookup_secret.as_bytes().to_vec(),
+            let connection = ProviderConnection::remote(
+                ProviderKind::Supermemory,
+                base_url.as_str().to_owned(),
+                vec![
+                    configured_secret_reference(
+                        "SUPERMEMORY_API_KEY_REFERENCE",
+                        "SUPERMEMORY_API_KEY",
+                    )?,
+                    configured_secret_reference(
+                        "SUPERMEMORY_WORKSPACE_LOOKUP_SECRET_REFERENCE",
+                        "SUPERMEMORY_WORKSPACE_LOOKUP_SECRET",
+                    )?,
+                ],
+                ProviderPlacement::External,
+            )
+            .map_err(|error| format!("cannot configure Supermemory profile: {error}"))?;
+            let mut provider = SupermemorySemanticProvider::from_connection(
+                &connection,
+                &LocalSecretResolver,
+                true,
             )
             .map_err(|error| format!("cannot configure Supermemory provider: {error}"))?;
             let report = verify_semantic_provider(&mut provider, namespace)
@@ -1578,16 +1605,27 @@ fn configured_secret_sources() -> Vec<&'static str> {
         _ => false,
     };
     let mut sources = key_provider_secret_sources(&provider, has_reference);
-    for source in [
-        "MEM0_API_KEY",
-        "SUPERMEMORY_API_KEY",
-        "GRAPHITI_CREDENTIALS",
+    for (secret, reference, reference_target) in [
+        (
+            "MEM0_API_KEY",
+            "MEM0_API_KEY_REFERENCE",
+            "MEM0_API_KEY_REFERENCE target",
+        ),
+        (
+            "SUPERMEMORY_API_KEY",
+            "SUPERMEMORY_API_KEY_REFERENCE",
+            "SUPERMEMORY_API_KEY_REFERENCE target",
+        ),
+        (
+            "GRAPHITI_CREDENTIALS",
+            "REMBRANE_GRAPHITI_BEARER_TOKEN_REFERENCE",
+            "REMBRANE_GRAPHITI_BEARER_TOKEN_REFERENCE target",
+        ),
     ] {
-        if std::env::var(source)
-            .ok()
-            .is_some_and(|value| !value.is_empty())
-        {
-            sources.push(source);
+        if nonempty_environment(reference) {
+            sources.push(reference_target);
+        } else if nonempty_environment(secret) {
+            sources.push(secret);
         }
     }
     sources

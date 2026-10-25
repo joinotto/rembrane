@@ -9,6 +9,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- Mem0 and Supermemory CLI conformance workflows now construct validated
+  reference-only provider profiles and resolve both API and independent
+  workspace-pseudonym secrets through the deployment-owned resolver.
 - The owned remote MCP service now exposes authenticated, downstream-confirmed
   session deletion and preserves retryable tenant bindings when the protocol
   service cannot terminate them.

@@ -170,6 +170,14 @@ rg -q '^# REMBRANE_KEY_PROVIDER=macos-keychain$' .env.example
 rg -q '^REMBRANE_KEYCHAIN_SERVICE=$' .env.example
 rg -q '^REMBRANE_KEYCHAIN_ACCOUNT=$' .env.example
 rg -q '^REMBRANE_KEYCHAIN_HISTORICAL_KEYS=$' .env.example
+for variable in \
+    MEM0_API_KEY_REFERENCE \
+    MEM0_WORKSPACE_LOOKUP_SECRET_REFERENCE \
+    SUPERMEMORY_API_KEY_REFERENCE \
+    SUPERMEMORY_WORKSPACE_LOOKUP_SECRET_REFERENCE
+do
+    rg -q "^${variable}=$" .env.example
+done
 rg -q '127\.0\.0\.1:8787:8787' compose.yaml
 rg -q 'no-new-privileges:true' compose.yaml
 rg -q 'cap_drop:' compose.yaml

@@ -105,8 +105,8 @@ that the target contains no production records:
 
 ```sh
 MEM0_BASE_URL=https://mem0.example \
-MEM0_API_KEY='replace-from-secret-store' \
-MEM0_WORKSPACE_LOOKUP_SECRET='independent-secret-at-least-32-bytes' \
+MEM0_API_KEY_REFERENCE=file:/run/secrets/mem0-api-key \
+MEM0_WORKSPACE_LOOKUP_SECRET_REFERENCE=file:/run/secrets/mem0-workspace-key \
 target/debug/rembrane providers test \
   --provider mem0.oss \
   --namespace mem0-20261024-a8f21c \
@@ -114,17 +114,18 @@ target/debug/rembrane providers test \
 ```
 
 The explicit acknowledgement is mandatory because semantic conformance sends
-plaintext fixtures to Mem0. Credentials are read from the process environment
-and are never accepted as command-line arguments. External namespaces accept
-only 16-80 safe ASCII characters; generate a fresh random suffix for every
-run.
+plaintext fixtures to Mem0. Credential locators are read from the process
+environment and resolved inside the deployment; raw values remain compatible
+defaults when locators are absent and are never accepted as command-line
+arguments. External namespaces accept only 16-80 safe ASCII characters;
+generate a fresh random suffix for every run.
 
 Run Supermemory v5 conformance with the same safeguards:
 
 ```sh
 SUPERMEMORY_BASE_URL=https://api.supermemory.ai \
-SUPERMEMORY_API_KEY='replace-from-secret-store' \
-SUPERMEMORY_WORKSPACE_LOOKUP_SECRET='independent-secret-at-least-32-bytes' \
+SUPERMEMORY_API_KEY_REFERENCE=file:/run/secrets/supermemory-api-key \
+SUPERMEMORY_WORKSPACE_LOOKUP_SECRET_REFERENCE=file:/run/secrets/supermemory-workspace-key \
 target/debug/rembrane providers test \
   --provider supermemory.v5 \
   --namespace supermemory-20261024-a8f21c \

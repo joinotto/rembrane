@@ -104,6 +104,15 @@ HTTP providers. When the locator is absent it resolves
 `file:path` locators are supported. Resolution failures remain opaque and the
 credential stays zeroizing across configuration and transport ownership.
 
+The CLI's direct Mem0 and Supermemory conformance workflows accept separate
+API-key and workspace-pseudonym locators:
+`MEM0_API_KEY_REFERENCE`, `MEM0_WORKSPACE_LOOKUP_SECRET_REFERENCE`,
+`SUPERMEMORY_API_KEY_REFERENCE`, and
+`SUPERMEMORY_WORKSPACE_LOOKUP_SECRET_REFERENCE`. Each defaults to its
+corresponding raw environment variable only when the locator is absent. Both
+values are resolved through `LocalSecretResolver` and transferred into the
+validated two-credential provider profile before HTTP transport construction.
+
 The portable Memory Provider conformance runner accepts separate
 `REMBRANE_MEMORY_PROVIDER_{PRIMARY,OTHER,READONLY}_TOKEN_REFERENCE` locators.
 Each supports `env:VARIABLE` or a protected regular `file:path` and applies the

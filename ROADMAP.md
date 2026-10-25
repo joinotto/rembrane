@@ -1388,8 +1388,9 @@ This roadmap describes sequencing, not release dates.
       transport for Mem0 OSS exact add, list, search, and deletion operations.
       - [x] Permit plaintext HTTP only for literal loopback IP addresses,
         rejecting remappable local hostnames consistently across sidecars.
-    - [x] Expose disposable Mem0 conformance through the CLI with environment
-      secret custody and an explicit plaintext-processing acknowledgement.
+    - [x] Expose disposable Mem0 conformance through the CLI with
+      deployment-owned secret-reference custody and an explicit
+      plaintext-processing acknowledgement.
       - [x] Require a bounded safe external namespace with enough room for a
         fresh random suffix before any provider credential is resolved.
     - [x] Accept already resolved zeroizing API credentials without a
@@ -1441,7 +1442,8 @@ This roadmap describes sequencing, not release dates.
       - [x] Classify credential failures and permanent provider rejection
         separately from transient timeout, throttling, and server failures.
     - [x] Expose disposable Supermemory conformance through the CLI with
-      environment-only secrets and explicit plaintext acknowledgement.
+      deployment-owned secret-reference custody and explicit plaintext
+      acknowledgement.
       - [x] Require exact provider-identity confirmation before replacement or
         deletion can complete.
     - [x] Accept already resolved zeroizing API credentials without a
