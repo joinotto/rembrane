@@ -10,13 +10,14 @@ use std::error::Error;
 use std::fmt::{Display, Formatter};
 
 use rembrane_application::{RemoteTokenVerificationError, RemoteTokenVerifier};
-use rembrane_contracts::{
+pub use rembrane_contracts::{
     MAX_REMOTE_AUDIENCE_BYTES, MAX_REMOTE_AUDIENCES, MAX_REMOTE_IDENTITY_BYTES,
-    MAX_REMOTE_ISSUER_BYTES, RemoteAccessScope, RemoteTokenClaims,
+    MAX_REMOTE_ISSUER_BYTES,
 };
+use rembrane_contracts::{RemoteAccessScope, RemoteTokenClaims};
 use rembrane_domain::{ClientId, PrincipalId, WorkspaceId};
 
-const MAXIMUM_SCOPE_BYTES: usize = 4_096;
+pub const MAXIMUM_SCOPE_BYTES: usize = 4_096;
 
 pub trait IntrospectionTransport {
     /// Performs an authenticated RFC 7662 introspection request.

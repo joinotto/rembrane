@@ -261,6 +261,8 @@ This roadmap describes sequencing, not release dates.
       credentials, strict timeouts, no redirects, and bounded responses.
       - [x] Reject query-bearing introspection endpoints and non-JSON
         successful claim responses.
+      - [x] Apply canonical audience-cardinality, audience-size, and scope-size
+        ceilings while decoding provider-controlled claims.
       - [x] Percent-encode the introspected bearer into a bounded
         zeroizing-owned form body without parameter-injection ambiguity.
       - [x] Zeroize the bounded raw claims response after typed decoding.

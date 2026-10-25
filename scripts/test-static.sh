@@ -220,6 +220,8 @@ rg -q 'MAXIMUM_MANIFEST_CAPABILITIES: usize = 6' \
     adapters/rembrane-graph-graphiti-http/src/lib.rs
 rg -Fq 'recipient_ids.len() > MAX_KEY_ROTATION_RECIPIENTS' \
     adapters/rembrane-key-provider-http/src/lib.rs
+rg -Fq 'audience.len() > MAX_REMOTE_AUDIENCES' \
+    adapters/rembrane-oauth-introspection-http/src/lib.rs
 rg -q 'memory provider returned too many context items' \
     adapters/rembrane-memory-provider-http/src/lib.rs
 rg -q 'memory provider returned too many supporting memories' \

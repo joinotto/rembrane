@@ -9,6 +9,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- OAuth introspection now applies canonical audience-cardinality,
+  audience-size, and scope-size ceilings while decoding provider claims.
 - Customer key-provider rotation receipts now reject recipient collections
   above the canonical 10,000-recipient ceiling before principal conversion.
 - Graphiti HTTP discovery now rejects capability collections larger than its

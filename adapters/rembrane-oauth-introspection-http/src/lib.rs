@@ -6,6 +6,7 @@ use std::time::Duration;
 use rembrane_config::RemoteMcpConfig;
 use rembrane_oauth_introspection::{
     IntrospectionResponse, IntrospectionTransport, IntrospectionTransportError,
+    MAX_REMOTE_AUDIENCE_BYTES, MAX_REMOTE_AUDIENCES, MAXIMUM_SCOPE_BYTES,
 };
 use rembrane_secret_local::SecretResolver;
 use reqwest::Url;
@@ -223,10 +224,22 @@ fn validate_token(token: &str) -> Result<(), IntrospectionTransportError> {
 fn decode_response(body: &[u8]) -> Result<IntrospectionResponse, IntrospectionTransportError> {
     let wire: WireResponse =
         serde_json::from_slice(body).map_err(|_| IntrospectionTransportError)?;
+    let audience = wire.audience.into_vec();
+    if audience.len() > MAX_REMOTE_AUDIENCES
+        || audience
+            .iter()
+            .any(|value| value.len() > MAX_REMOTE_AUDIENCE_BYTES)
+        || wire
+            .scope
+            .as_ref()
+            .is_some_and(|scope| scope.len() > MAXIMUM_SCOPE_BYTES)
+    {
+        return Err(IntrospectionTransportError);
+    }
     Ok(IntrospectionResponse {
         active: wire.active,
         issuer: wire.issuer,
-        audience: wire.audience.into_vec(),
+        audience,
         subject: wire.subject,
         client_id: wire.client_id,
         workspace_id: wire.workspace_id,
@@ -283,6 +296,9 @@ mod tests {
     use super::{
         HttpIntrospectionTransport, MAXIMUM_CLIENT_ID_BYTES, MAXIMUM_CLIENT_SECRET_BYTES,
         MAXIMUM_TOKEN_BYTES, decode_response, introspection_form_body, is_json_content_type,
+    };
+    use rembrane_oauth_introspection::{
+        MAX_REMOTE_AUDIENCE_BYTES, MAX_REMOTE_AUDIENCES, MAXIMUM_SCOPE_BYTES,
     };
 
     #[test]
@@ -455,5 +471,30 @@ mod tests {
         assert_eq!(many.audience, ["memory", "account"]);
         assert!(many.subject.is_none());
         assert!(decode_response(br#"{"active":"yes"}"#).is_err());
+
+        let excessive_audiences = serde_json::json!({
+            "active": false,
+            "aud": vec!["memory"; MAX_REMOTE_AUDIENCES + 1],
+        });
+        assert!(
+            decode_response(&serde_json::to_vec(&excessive_audiences).expect("introspection JSON"))
+                .is_err()
+        );
+        let oversized_audience = serde_json::json!({
+            "active": false,
+            "aud": ["x".repeat(MAX_REMOTE_AUDIENCE_BYTES + 1)],
+        });
+        assert!(
+            decode_response(&serde_json::to_vec(&oversized_audience).expect("introspection JSON"))
+                .is_err()
+        );
+        let oversized_scope = serde_json::json!({
+            "active": false,
+            "scope": "x".repeat(MAXIMUM_SCOPE_BYTES + 1),
+        });
+        assert!(
+            decode_response(&serde_json::to_vec(&oversized_scope).expect("introspection JSON"))
+                .is_err()
+        );
     }
 }
