@@ -877,6 +877,8 @@ This roadmap describes sequencing, not release dates.
           external maintainer, source revision, result digest, and signing time.
         - [x] Generate canonical provenance deterministically from bounded
           result bytes before external signing.
+          - [x] Document and test external signing through the shared
+            no-follow Ed25519 tool instead of direct OpenSSL path access.
         - [x] Read untrusted release artifacts through no-follow file
           descriptors and verify signatures over the already-opened bytes.
   - [x] Add a machine-verifiable compatibility lock over the canonical wire

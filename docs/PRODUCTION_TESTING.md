@@ -76,11 +76,16 @@ node scripts/generate-memory-provider-external-provenance.mjs \
   <current-UTC-time> \
   > provider-b.provenance.json
 
-openssl pkeyutl -sign -inkey maintainer-private.pem -rawin \
-  -in provider-b.provenance.json \
-  -out provider-b.provenance.json.sig
+chmod 600 maintainer-private.pem
+node scripts/sign-ed25519-document.mjs \
+  provider-b.provenance.json \
+  maintainer-private.pem \
+  provider-b.provenance.json.sig
 ```
 
-The private key remains with the external maintainer. Transfer only the
+The signer rejects symbolic, permissive, oversized, or non-Ed25519 private
+keys, opens the key without following links, and zeros its input buffer after
+constructing the signing key. The private key remains with the external
+maintainer. Transfer only the
 result, provenance statement, signature, and independently distributed public
 key.

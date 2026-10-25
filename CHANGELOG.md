@@ -1037,6 +1037,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Provider-registry releases now publish the exact three-file signed bundle in
   a dedicated directory, keep the public key outside that bundle, and execute
   full checksum, signature, and semantic verification before upload.
+- External Memory Provider maintainers and the registry-release workflow now
+  use the shared no-follow Ed25519 key tooling rather than signing or deriving
+  public keys through direct OpenSSL path access.
 - Restored the complete dependency-enabled workspace build by declaring
   previously implicit crate dependencies and enabling rmcp's stdio transport.
 - Corrected Memory Provider selector field casing and URL path construction so

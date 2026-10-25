@@ -17,10 +17,13 @@ node "$repository_root/scripts/generate-memory-provider-external-provenance.mjs"
 jq -e --arg digest "$result_sha256" \
     '.resultSha256 == $digest' "$test_root/provenance.json" >/dev/null
 openssl genpkey -algorithm Ed25519 -out "$test_root/private.pem" >/dev/null 2>&1
-openssl pkey -in "$test_root/private.pem" -pubout \
-    -out "$test_root/public.pem" >/dev/null 2>&1
-openssl pkeyutl -sign -inkey "$test_root/private.pem" -rawin \
-    -in "$test_root/provenance.json" -out "$test_root/provenance.sig"
+chmod 600 "$test_root/private.pem"
+node "$repository_root/scripts/derive-ed25519-public-key.mjs" \
+    "$test_root/private.pem" "$test_root/public.pem"
+node "$repository_root/scripts/sign-ed25519-document.mjs" \
+    "$test_root/provenance.json" \
+    "$test_root/private.pem" \
+    "$test_root/provenance.sig"
 
 verify() {
     node "$repository_root/scripts/verify-memory-provider-external-provenance.mjs" \

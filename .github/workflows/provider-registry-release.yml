@@ -29,10 +29,9 @@ jobs:
         run: |
           umask 077
           printf '%s' "$SIGNING_KEY_PEM" >"$RUNNER_TEMP/registry-signing-key.pem"
-          openssl pkey \
-            -in "$RUNNER_TEMP/registry-signing-key.pem" \
-            -pubout \
-            -out "$RUNNER_TEMP/registry-signing-public.pem"
+          node scripts/derive-ed25519-public-key.mjs \
+            "$RUNNER_TEMP/registry-signing-key.pem" \
+            "$RUNNER_TEMP/registry-signing-public.pem"
       - name: Verify and sign registry
         env:
           REMBRANE_REGISTRY_SIGNING_KEY: ${{ runner.temp }}/registry-signing-key.pem
