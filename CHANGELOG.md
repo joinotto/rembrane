@@ -26,6 +26,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   create, correct, and tombstone canonical encrypted memories using exact
   workspace identity, one requested scope, optimistic versions, and canonical
   event sequencing.
+- Direct REST activity and memory path identifiers now enforce the same
+  bounded ASCII opaque-ID grammar published by OpenAPI and the SDKs.
 - The REST service now serves `/.well-known/ai-memory` without authentication,
   reporting its configured API root, implemented capabilities, limits, and
   local-only versus customer-gateway plaintext-processing boundary.

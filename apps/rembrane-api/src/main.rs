@@ -796,6 +796,17 @@ fn valid_api_token(token: &str) -> bool {
         })
 }
 
+fn valid_opaque_id(value: &str) -> bool {
+    let mut bytes = value.bytes();
+    let Some(first) = bytes.next() else {
+        return false;
+    };
+    value.len() <= 255
+        && first.is_ascii_alphanumeric()
+        && bytes
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b':' | b'-'))
+}
+
 fn selected_api_token_reference(locator: &str) -> Result<SecretReference> {
     if locator.is_empty() {
         SecretReference::environment("REMBRANE_API_TOKEN")
@@ -1379,7 +1390,7 @@ async fn correct_memory(
     Json(request): Json<CorrectMemoryRequest>,
 ) -> Result<Json<MemoryMutationResponse>, ApiError> {
     authorize_bearer(&state, &headers)?;
-    if memory_id.trim().is_empty()
+    if !valid_opaque_id(&memory_id)
         || request.replacement.trim().is_empty()
         || request.expected_version == 0
     {
@@ -1427,7 +1438,7 @@ async fn delete_memory(
     Json(request): Json<DeleteMemoryRequest>,
 ) -> Result<Json<MemoryMutationResponse>, ApiError> {
     authorize_bearer(&state, &headers)?;
-    if memory_id.trim().is_empty()
+    if !valid_opaque_id(&memory_id)
         || request.reason.trim().is_empty()
         || request.expected_version == 0
     {
@@ -1542,7 +1553,7 @@ async fn checkpoint_activity(
     Json(request): Json<CheckpointActivityRequest>,
 ) -> Result<(StatusCode, Json<ActivityCheckpointResponse>), ApiError> {
     authorize_bearer(&state, &headers)?;
-    if activity_id.trim().is_empty()
+    if !valid_opaque_id(&activity_id)
         || request.summary.trim().is_empty()
         || request.expected_version == Some(0)
     {
@@ -1637,7 +1648,7 @@ async fn resume_activity(
     headers: HeaderMap,
 ) -> Result<Json<ActivityCheckpointResponse>, ApiError> {
     authorize_bearer(&state, &headers)?;
-    if activity_id.trim().is_empty() {
+    if !valid_opaque_id(&activity_id) {
         return Err(ApiError::invalid_request());
     }
     let mut runtime = state
@@ -2701,7 +2712,7 @@ mod tests {
         ResolveGraphRequest, ResolveRequest, advance_identifier, build_memory_discovery,
         graph_request_scope, invitation_only_grants, parse_invitation_role,
         parse_invitation_status, request_is_within_grant, selected_api_token_reference,
-        token_matches, valid_api_token,
+        token_matches, valid_api_token, valid_opaque_id,
     };
 
     #[test]
@@ -2737,6 +2748,17 @@ mod tests {
         assert!(!valid_api_token(
             &"a".repeat(super::MAXIMUM_API_TOKEN_BYTES + 1)
         ));
+    }
+
+    #[test]
+    fn opaque_path_identifiers_are_ascii_and_bounded() {
+        for valid in ["memory_01", "activity:project-1", "A.b_c:d-9"] {
+            assert!(valid_opaque_id(valid));
+        }
+        for invalid in ["", "../memory", "memory/path", "memory path", "é"] {
+            assert!(!valid_opaque_id(invalid));
+        }
+        assert!(!valid_opaque_id(&"a".repeat(256)));
     }
 
     #[test]
