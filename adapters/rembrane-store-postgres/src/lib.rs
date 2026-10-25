@@ -56,6 +56,7 @@ pub enum TenantTransactionError<DriverError> {
     Driver(DriverError),
     MissingTenant,
     TenantMismatch,
+    Closed,
 }
 
 impl<DriverError: Display> Display for TenantTransactionError<DriverError> {
@@ -67,6 +68,7 @@ impl<DriverError: Display> Display for TenantTransactionError<DriverError> {
             }
             Self::TenantMismatch => formatter
                 .write_str("PostgreSQL tenant context did not match the requested workspace"),
+            Self::Closed => formatter.write_str("PostgreSQL tenant transaction is closed"),
         }
     }
 }
@@ -125,36 +127,78 @@ impl<Transaction: PostgresTransaction> TenantTransaction<Transaction> {
         &mut self,
         statement: &str,
         parameters: &[PostgresParameter<'_>],
-    ) -> Result<u64, Transaction::Error> {
-        self.transaction_mut().execute(statement, parameters)
+    ) -> Result<u64, TenantTransactionError<Transaction::Error>> {
+        self.revalidate()?;
+        self.transaction_mut()?
+            .execute(statement, parameters)
+            .map_err(TenantTransactionError::Driver)
     }
 
     pub fn query(
         &mut self,
         statement: &str,
         parameters: &[PostgresParameter<'_>],
-    ) -> Result<Vec<Transaction::Row>, Transaction::Error> {
-        self.transaction_mut().query(statement, parameters)
+    ) -> Result<Vec<Transaction::Row>, TenantTransactionError<Transaction::Error>> {
+        self.revalidate()?;
+        self.transaction_mut()?
+            .query(statement, parameters)
+            .map_err(TenantTransactionError::Driver)
     }
 
-    pub fn commit(mut self) -> Result<(), Transaction::Error> {
-        self.take_transaction().commit()
+    pub fn commit(mut self) -> Result<(), TenantTransactionError<Transaction::Error>> {
+        self.take_transaction()?
+            .commit()
+            .map_err(TenantTransactionError::Driver)
     }
 
-    pub fn rollback(mut self) -> Result<(), Transaction::Error> {
-        self.take_transaction().rollback()
+    pub fn rollback(mut self) -> Result<(), TenantTransactionError<Transaction::Error>> {
+        self.take_transaction()?
+            .rollback()
+            .map_err(TenantTransactionError::Driver)
     }
 
-    fn transaction_mut(&mut self) -> &mut Transaction {
+    fn revalidate(&mut self) -> Result<(), TenantTransactionError<Transaction::Error>> {
+        let tenant = self
+            .transaction_mut()?
+            .query_optional_text(READ_TENANT_SQL, &[])
+            .map_err(TenantTransactionError::Driver);
+        match tenant {
+            Ok(Some(tenant)) if tenant == self.workspace_id.as_str() => Ok(()),
+            Ok(Some(_)) => {
+                self.rollback_open();
+                Err(TenantTransactionError::TenantMismatch)
+            }
+            Ok(None) => {
+                self.rollback_open();
+                Err(TenantTransactionError::MissingTenant)
+            }
+            Err(error) => {
+                self.rollback_open();
+                Err(error)
+            }
+        }
+    }
+
+    fn rollback_open(&mut self) {
+        if let Some(transaction) = self.transaction.take() {
+            let _ = transaction.rollback();
+        }
+    }
+
+    fn transaction_mut(
+        &mut self,
+    ) -> Result<&mut Transaction, TenantTransactionError<Transaction::Error>> {
         self.transaction
             .as_mut()
-            .expect("verified PostgreSQL transaction must remain present")
+            .ok_or(TenantTransactionError::Closed)
     }
 
-    fn take_transaction(&mut self) -> Transaction {
+    fn take_transaction(
+        &mut self,
+    ) -> Result<Transaction, TenantTransactionError<Transaction::Error>> {
         self.transaction
             .take()
-            .expect("verified PostgreSQL transaction must remain present")
+            .ok_or(TenantTransactionError::Closed)
     }
 }
 
@@ -169,6 +213,7 @@ impl<Transaction: PostgresTransaction> Drop for TenantTransaction<Transaction> {
 #[cfg(test)]
 mod tests {
     use std::cell::RefCell;
+    use std::collections::VecDeque;
     use std::rc::Rc;
 
     use rembrane_domain::WorkspaceId;
@@ -189,7 +234,7 @@ mod tests {
 
     struct FakeTransaction {
         calls: Rc<RefCell<Vec<Call>>>,
-        tenant: Result<Option<String>, &'static str>,
+        tenants: VecDeque<Result<Option<String>, &'static str>>,
     }
 
     impl PostgresTransaction for FakeTransaction {
@@ -226,7 +271,9 @@ mod tests {
             self.calls
                 .borrow_mut()
                 .push(Call::QueryText(statement.to_owned()));
-            self.tenant.clone()
+            self.tenants
+                .pop_front()
+                .unwrap_or(Err("unexpected tenant read"))
         }
 
         fn commit(self) -> Result<(), Self::Error> {
@@ -252,13 +299,16 @@ mod tests {
     }
 
     fn fake(
-        tenant: Result<Option<&str>, &'static str>,
+        tenants: impl IntoIterator<Item = Result<Option<&'static str>, &'static str>>,
     ) -> (FakeTransaction, Rc<RefCell<Vec<Call>>>) {
         let calls = Rc::new(RefCell::new(Vec::new()));
         (
             FakeTransaction {
                 calls: Rc::clone(&calls),
-                tenant: tenant.map(|value| value.map(str::to_owned)),
+                tenants: tenants
+                    .into_iter()
+                    .map(|tenant| tenant.map(|value| value.map(str::to_owned)))
+                    .collect(),
             },
             calls,
         )
@@ -266,7 +316,7 @@ mod tests {
 
     #[test]
     fn verifies_bound_tenant_before_allowing_queries_and_commit() {
-        let (transaction, calls) = fake(Ok(Some("workspace_01")));
+        let (transaction, calls) = fake([Ok(Some("workspace_01")), Ok(Some("workspace_01"))]);
         let mut verified = TenantTransaction::verify(transaction, WorkspaceId::new("workspace_01"))
             .expect("exact tenant should verify");
         assert_eq!(verified.workspace_id().as_str(), "workspace_01");
@@ -289,6 +339,7 @@ mod tests {
                     vec!["text:workspace_01".to_owned()]
                 ),
                 Call::QueryText(READ_TENANT_SQL.to_owned()),
+                Call::QueryText(READ_TENANT_SQL.to_owned()),
                 Call::Query(
                     "SELECT id FROM memories WHERE workspace_id = $1".to_owned(),
                     vec!["text:workspace_01".to_owned()]
@@ -307,7 +358,7 @@ mod tests {
                 TenantTransactionError::TenantMismatch,
             ),
         ] {
-            let (transaction, calls) = fake(tenant);
+            let (transaction, calls) = fake([tenant]);
             let result = TenantTransaction::verify(transaction, WorkspaceId::new("workspace_01"));
             assert!(matches!(result, Err(error) if error == expected));
             assert_eq!(calls.borrow().last(), Some(&Call::Rollback));
@@ -316,10 +367,27 @@ mod tests {
 
     #[test]
     fn uncommitted_verified_transaction_rolls_back_on_drop() {
-        let (transaction, calls) = fake(Ok(Some("workspace_01")));
+        let (transaction, calls) = fake([Ok(Some("workspace_01"))]);
         let verified = TenantTransaction::verify(transaction, WorkspaceId::new("workspace_01"))
             .expect("exact tenant should verify");
         drop(verified);
         assert_eq!(calls.borrow().last(), Some(&Call::Rollback));
+    }
+
+    #[test]
+    fn tenant_drift_rolls_back_and_poisoned_transaction_stays_closed() {
+        let (transaction, calls) = fake([Ok(Some("workspace_01")), Ok(Some("workspace_other"))]);
+        let mut verified = TenantTransaction::verify(transaction, WorkspaceId::new("workspace_01"))
+            .expect("initial tenant should verify");
+
+        assert_eq!(
+            verified.query("SELECT id FROM memories", &[]),
+            Err(TenantTransactionError::TenantMismatch)
+        );
+        assert_eq!(calls.borrow().last(), Some(&Call::Rollback));
+        assert_eq!(
+            verified.execute("DELETE FROM memories", &[]),
+            Err(TenantTransactionError::Closed)
+        );
     }
 }

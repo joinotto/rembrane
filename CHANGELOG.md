@@ -31,6 +31,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - A driver-neutral PostgreSQL transaction boundary that exposes repository
   queries only after parameterized transaction-local tenant setup and exact
   canonical read-back, with rollback on mismatch, failure, or dropped work.
+- Per-operation PostgreSQL tenant-context revalidation that immediately rolls
+  back and permanently closes a transaction after missing or mismatched RLS
+  identity.
 
 ### Changed
 
