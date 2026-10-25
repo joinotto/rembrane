@@ -15,6 +15,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Session initialization and established-session remote MCP requests now use
   the same consuming zeroizing-body path, including rollback-safe dispatch and
   allocation-identity coverage for both stateful POST stages.
+- Remote MCP request classification now streams past tool arguments instead of
+  materializing the complete private `params` tree into a second ordinary heap
+  allocation; only authorization metadata is retained beside the zeroizing
+  source body.
 - Graphiti provider diagnostics, endpoint reporting, documentation, and the
   canonical environment profile now use the same `REMBRANE_GRAPHITI_*`
   configuration consumed by the graph worker, including protected bearer-token

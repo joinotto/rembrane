@@ -302,6 +302,9 @@ This roadmap describes sequencing, not release dates.
     - [x] Classify bounded JSON-RPC bodies before SDK dispatch, rejecting
       batches, malformed envelopes, unsupported methods, and unknown or
       mismatched tool calls without trusting request headers.
+      - [x] Stream past private tool arguments during authorization
+        classification instead of duplicating the complete parameter tree
+        outside the zeroizing request body.
       - [x] Enforce SDK-compatible string or signed-integer IDs on request
         methods and forbid IDs on notification methods before OAuth dispatch.
     - [x] Couple stateless body classification and OAuth authorization in one

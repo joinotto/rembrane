@@ -526,7 +526,13 @@ struct JsonRpcEnvelope {
     #[serde(default)]
     id: JsonRpcId,
     #[serde(default)]
-    params: Option<serde_json::Value>,
+    params: Option<JsonRpcParams>,
+}
+
+#[derive(Deserialize)]
+struct JsonRpcParams {
+    #[serde(default)]
+    name: Option<String>,
 }
 
 #[derive(Default)]
@@ -586,9 +592,7 @@ pub fn classify_remote_mcp_request(
         envelope
             .params
             .as_ref()
-            .and_then(serde_json::Value::as_object)
-            .and_then(|params| params.get("name"))
-            .and_then(serde_json::Value::as_str)
+            .and_then(|params| params.name.as_deref())
             .map(str::to_owned)
     } else {
         None
@@ -2840,6 +2844,16 @@ mod tests {
         ] {
             classify_remote_mcp_request(body).expect("valid SDK request shape should classify");
         }
+    }
+
+    #[test]
+    fn json_rpc_classifier_extracts_only_authorization_metadata() {
+        let body = br#"{"jsonrpc":"2.0","id":"request-1","method":"tools/call","params":{"name":"rembrane_resolve_context","arguments":{"private_notes":["alpha",{"nested":"secret"}],"limit":20}}}"#;
+        let invocation =
+            classify_remote_mcp_request(body).expect("valid tool call should classify");
+
+        assert_eq!(invocation.method(), "tools/call");
+        assert_eq!(invocation.tool_name(), Some("rembrane_resolve_context"));
     }
 
     #[tokio::test]
