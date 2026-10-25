@@ -61,6 +61,7 @@ jq -e '
     and .supportsRotation == true
 ' "$response" >/dev/null
 maximum_plaintext_bytes=$(jq -r '.maximumPlaintextBytes' "$response")
+provider_id=$(jq -r '.providerId' "$response")
 
 unauthorized_status=$(
     curl --silent --output /dev/null --write-out '%{http_code}' \
@@ -221,4 +222,22 @@ case "$repeated_rotation_status" in
     *) exit 1 ;;
 esac
 
-printf '{"protocolVersion":"0.1","result":"pass","namespace":"%s"}\n' "$namespace"
+jq -cn \
+    --arg providerId "$provider_id" \
+    --arg namespace "$namespace" \
+    '{
+        protocolVersion: "0.1",
+        providerId: $providerId,
+        result: "pass",
+        namespace: $namespace,
+        cases: [
+            {id: "authentication", result: "pass"},
+            {id: "manifest", result: "pass"},
+            {id: "roundtrip", result: "pass"},
+            {id: "context-substitution", result: "pass"},
+            {id: "unknown-key", result: "pass"},
+            {id: "plaintext-limit", result: "pass"},
+            {id: "rotation", result: "pass"},
+            {id: "repeated-rotation", result: "pass"}
+        ]
+    }'

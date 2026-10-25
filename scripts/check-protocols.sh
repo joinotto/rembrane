@@ -29,6 +29,7 @@ jq empty \
     spec/memory-provider.schema.json \
     spec/memory-provider-conformance.schema.json \
     spec/memory-provider-conformance-result.schema.json \
+    spec/key-provider-conformance-result.schema.json \
     spec/memory-provider-fixtures.schema.json \
     spec/conformance/memory-provider-core.json \
     spec/conformance/memory-provider-core-fixtures.json \
@@ -47,6 +48,7 @@ jq empty \
     spec/examples/provider-search-request.json \
     spec/examples/provider-search-response.json \
     spec/examples/key-provider-manifest.json \
+    spec/examples/key-provider-conformance-result.json \
     spec/examples/mcp-client-catalog.json \
     spec/provider-manifest.schema.json \
     spec/provider-registry.json \
@@ -76,6 +78,17 @@ jq -e '
     and .properties.eventId["x-rembrane-maxUtf8Bytes"] == 256
     and .properties.status.enum == ["processed", "duplicate"]
 ' spec/channel-processor-acknowledgement.schema.json >/dev/null
+
+jq -e --slurpfile example spec/examples/key-provider-conformance-result.json '
+    .additionalProperties == false
+    and .properties.protocolVersion.const == "0.1"
+    and .properties.result.const == "pass"
+    and .properties.cases.minItems == 8
+    and .properties.cases.maxItems == 8
+    and ($example[0].cases | length) == 8
+    and ($example[0].cases | map(.id) | unique | length) == 8
+    and all($example[0].cases[]; .result == "pass")
+' spec/key-provider-conformance-result.schema.json >/dev/null
 
 jq -e --slurpfile schema spec/channel-processor-acknowledgement.schema.json '
     .protocolVersion == $schema[0].properties.protocolVersion.const

@@ -150,7 +150,22 @@ await new Promise((resolve, reject) =>
 );
 
 assert.equal(status, 0, stderr);
-assert.equal(JSON.parse(stdout).result, "pass");
+const result = JSON.parse(stdout);
+assert.equal(result.result, "pass");
+assert.equal(result.providerId, "rembrane.mock-key-provider");
+assert.deepEqual(
+  result.cases.map((testCase) => testCase.id),
+  [
+    "authentication",
+    "manifest",
+    "roundtrip",
+    "context-substitution",
+    "unknown-key",
+    "plaintext-limit",
+    "rotation",
+    "repeated-rotation",
+  ],
+);
 assert.equal(stdout.includes(token), false);
 assert.equal(stderr.includes(token), false);
 console.log("key provider HTTP conformance runner checks passed");

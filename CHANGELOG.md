@@ -9,6 +9,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- A strict portable key-provider conformance result schema and runner output
+  containing provider identity and explicit pass evidence for eight
+  authentication, encryption, limit, rotation, and replay cases.
 - Provider-side customer-KMS contracts for bounded opaque wrapped keys,
   tenant- and generation-bound associated data, duplicate-safe active and
   historical keyrings, and zeroizing unwrap results inside customer sidecars.

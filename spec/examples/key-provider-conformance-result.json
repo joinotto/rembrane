@@ -1,0 +1,16 @@
+{
+  "protocolVersion": "0.1",
+  "providerId": "rembrane.mock-key-provider",
+  "result": "pass",
+  "namespace": "example-run",
+  "cases": [
+    { "id": "authentication", "result": "pass" },
+    { "id": "manifest", "result": "pass" },
+    { "id": "roundtrip", "result": "pass" },
+    { "id": "context-substitution", "result": "pass" },
+    { "id": "unknown-key", "result": "pass" },
+    { "id": "plaintext-limit", "result": "pass" },
+    { "id": "rotation", "result": "pass" },
+    { "id": "repeated-rotation", "result": "pass" }
+  ]
+}
