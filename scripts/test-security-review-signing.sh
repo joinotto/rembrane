@@ -12,6 +12,8 @@ trap cleanup EXIT HUP INT TERM
 
 mkdir -p "$review_repository/scripts"
 for script in \
+    derive-ed25519-public-key.mjs \
+    ed25519-signing.mjs \
     generate-security-review-manifest.mjs \
     read-bounded-regular-file.mjs \
     security-review-evidence.mjs \
@@ -20,6 +22,7 @@ for script in \
     verify-security-review-bundle.mjs \
     verify-security-review-signature.mjs \
     sign-security-review-manifest.sh \
+    sign-ed25519-document.mjs \
     verify-security-review-signature.sh \
     verify-security-review-bundle.sh
 do

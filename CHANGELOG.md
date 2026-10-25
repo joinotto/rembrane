@@ -1031,6 +1031,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Security-review signing now self-verifies final manifest-only or complete
   attestation bundles under a derived public key and removes partial output
   if final signature, correlation, or repository verification fails.
+- Provider-registry and security-review signing now share an Ed25519-only
+  signer that opens owner-only private keys without following symlinks, zeros
+  the input key buffer after construction, and writes signatures exclusively.
 - Restored the complete dependency-enabled workspace build by declaring
   previously implicit crate dependencies and enabling rmcp's stdio transport.
 - Corrected Memory Provider selector field casing and URL path construction so

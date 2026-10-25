@@ -62,10 +62,10 @@ registry_sha256=$(
 )
 printf '%s  %s\n' "$registry_sha256" provider-registry.json \
     >"$output_directory/provider-registry.json.sha256"
-openssl pkeyutl -sign -rawin \
-    -inkey "$private_key" \
-    -in "$output_directory/provider-registry.json" \
-    -out "$output_directory/provider-registry.json.sig"
+node "$repository_root/scripts/sign-ed25519-document.mjs" \
+    "$output_directory/provider-registry.json" \
+    "$private_key" \
+    "$output_directory/provider-registry.json.sig"
 signature_bytes=$(wc -c <"$output_directory/provider-registry.json.sig" | tr -d ' ')
 if [ "$signature_bytes" -ne 64 ]; then
     echo "provider registry signer produced an invalid signature" >&2
@@ -75,8 +75,9 @@ chmod 600 "$output_directory"/*
 
 verification_public_key=$(mktemp "${TMPDIR:-/tmp}/rembrane-registry-public.XXXXXX")
 chmod 600 "$verification_public_key"
-openssl pkey -in "$private_key" -pubout \
-    -out "$verification_public_key" >/dev/null 2>&1
+rm -f "$verification_public_key"
+node "$repository_root/scripts/derive-ed25519-public-key.mjs" \
+    "$private_key" "$verification_public_key"
 "$repository_root/scripts/verify-provider-registry-bundle.sh" \
     "$output_directory" "$verification_public_key" >/dev/null
 

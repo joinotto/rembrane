@@ -73,10 +73,10 @@ manifest_sha256=$(
 )
 printf '%s  %s\n' "$manifest_sha256" security-review-manifest.json \
     >"$output_directory/security-review-manifest.json.sha256"
-openssl pkeyutl -sign -rawin \
-    -inkey "$private_key" \
-    -in "$output_directory/security-review-manifest.json" \
-    -out "$output_directory/security-review-manifest.json.sig"
+node "$repository_root/scripts/sign-ed25519-document.mjs" \
+    "$output_directory/security-review-manifest.json" \
+    "$private_key" \
+    "$output_directory/security-review-manifest.json.sig"
 
 if [ -n "$attestation" ]; then
     cp "$attestation" "$output_directory/security-review-attestation.json"
@@ -96,17 +96,18 @@ if [ -n "$attestation" ]; then
     )
     printf '%s  %s\n' "$attestation_sha256" security-review-attestation.json \
         >"$output_directory/security-review-attestation.json.sha256"
-    openssl pkeyutl -sign -rawin \
-        -inkey "$private_key" \
-        -in "$output_directory/security-review-attestation.json" \
-        -out "$output_directory/security-review-attestation.json.sig"
+    node "$repository_root/scripts/sign-ed25519-document.mjs" \
+        "$output_directory/security-review-attestation.json" \
+        "$private_key" \
+        "$output_directory/security-review-attestation.json.sig"
 fi
 
 find "$output_directory" -type f -exec chmod 600 {} +
 verification_public_key=$(mktemp "${TMPDIR:-/tmp}/rembrane-review-public.XXXXXX")
 chmod 600 "$verification_public_key"
-openssl pkey -in "$private_key" -pubout \
-    -out "$verification_public_key" >/dev/null 2>&1
+rm -f "$verification_public_key"
+node "$repository_root/scripts/derive-ed25519-public-key.mjs" \
+    "$private_key" "$verification_public_key"
 if [ -n "$attestation" ]; then
     sh "$repository_root/scripts/verify-security-review-bundle.sh" \
         "$output_directory" "$verification_public_key" \

@@ -67,6 +67,9 @@ for deployment_file in \
     docs/GRAPHITI_SIDECAR.md \
     docker/entrypoint.sh \
     scripts/check-local-alpha.sh \
+    scripts/derive-ed25519-public-key.mjs \
+    scripts/ed25519-signing.mjs \
+    scripts/sign-ed25519-document.mjs \
     scripts/customer-kms-evidence.mjs \
     scripts/generate-customer-kms-evidence.mjs \
     scripts/verify-customer-kms-evidence.mjs \

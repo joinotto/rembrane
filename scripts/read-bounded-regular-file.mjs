@@ -11,7 +11,7 @@ export function readBoundedRegularFile(
   input,
   maximum,
   label,
-  { allowEmpty = false } = {},
+  { allowEmpty = false, allowedModes } = {},
 ) {
   if (
     typeof input !== "string" ||
@@ -33,7 +33,10 @@ export function readBoundedRegularFile(
     if (
       !metadata.isFile() ||
       (!allowEmpty && metadata.size === 0) ||
-      metadata.size > maximum
+      metadata.size > maximum ||
+      (process.platform !== "win32" &&
+        allowedModes !== undefined &&
+        !allowedModes.includes(metadata.mode & 0o777))
     ) {
       throw new Error();
     }

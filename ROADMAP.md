@@ -806,6 +806,8 @@ This roadmap describes sequencing, not release dates.
     signature, and Ed25519 public-key reads.
   - [x] Produce registry signature bundles in new owner-only directories,
     rejecting unsafe keys and cleaning partial output on failure.
+    - [x] Share the no-follow, owner-mode-enforcing Ed25519 signer with
+      independent-review artifacts.
   - [x] Verify the exact three-file registry bundle, checksum, Ed25519
     signature, and provider conformance semantics in one process.
     - [x] Self-verify each newly signed bundle before publishing its path and
@@ -847,6 +849,8 @@ This roadmap describes sequencing, not release dates.
           artifact set without cross-process path reopening.
         - [x] Self-verify newly signed review artifacts and remove partial
           output when final correlation or signature checks fail.
+        - [x] Load owner-only Ed25519 signing keys through no-follow
+          descriptors and zero their input buffers after key construction.
     - [x] Publish compatibility, deprecation, and mixed-version negotiation
       policy.
       - [x] Include the normative compatibility policy in the tamper-tested
