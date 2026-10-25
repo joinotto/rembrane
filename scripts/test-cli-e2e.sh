@@ -209,8 +209,14 @@ provider_selection=$(
         --allow-provider-plaintext
 )
 printf '%s\n' "$provider_selection" | jq -e \
-    '.provider == "rembrane.native"
-        and .eligibility == "experimental-opt-in"' >/dev/null
+    '.schemaVersion == 1
+        and .provider == "rembrane.native"
+        and .eligibility == "experimental-opt-in"
+        and .protocolVersion == "0.1"
+        and .approvals.experimental == true
+        and .approvals.providerPlaintext == true
+        and (.evidence.profileSha256 | test("^[0-9a-f]{64}$"))
+        and (.evidence.sourceRevision | test("^[0-9a-f]{7,64}$"))' >/dev/null
 if "$rembrane_binary" providers check \
     --provider rembrane.native \
     --adapter-version "$native_provider_version" >/dev/null 2>&1

@@ -733,14 +733,34 @@ fn check_provider_registry(
     if plaintext_processing && !allow_provider_plaintext {
         return Err("plaintext provider requires --allow-provider-plaintext".to_owned());
     }
+    let conformance = provider
+        .get("conformance")
+        .and_then(serde_json::Value::as_object)
+        .ok_or_else(|| "provider conformance evidence is missing".to_owned())?;
+    let source_revision = provider
+        .pointer("/source/revision")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| "provider source revision is invalid".to_owned())?;
     serde_json::to_string(&serde_json::json!({
+        "schemaVersion": 1,
         "provider": provider_id,
         "adapterVersion": adapter_version,
         "status": status,
         "eligibility": eligibility,
-        "protocolVersions": provider.get("protocolVersions"),
+        "protocolVersion": conformance.get("protocolVersion"),
         "deploymentModes": provider.get("deploymentModes"),
         "plaintextProcessing": plaintext_processing,
+        "approvals": {
+            "experimental": status == "experimental" && allow_experimental,
+            "providerPlaintext": plaintext_processing && allow_provider_plaintext,
+        },
+        "evidence": {
+            "suiteId": conformance.get("suiteId"),
+            "suiteVersion": conformance.get("suiteVersion"),
+            "profileSha256": conformance.get("profileSha256"),
+            "testedAt": conformance.get("testedAt"),
+            "sourceRevision": source_revision,
+        },
     }))
     .map_err(|_| "could not serialize provider eligibility".to_owned())
 }
@@ -752,13 +772,37 @@ fn validate_provider_selection_evidence(
     let protocols = provider
         .get("protocolVersions")
         .and_then(serde_json::Value::as_array)
-        .filter(|protocols| !protocols.is_empty())
+        .filter(|protocols| {
+            !protocols.is_empty()
+                && protocols.iter().all(|protocol| {
+                    protocol.as_str().is_some_and(|value| {
+                        value.len() >= 3
+                            && value.len() <= 20
+                            && value.split_once('.').is_some_and(|(major, minor)| {
+                                !major.is_empty()
+                                    && !minor.is_empty()
+                                    && major.bytes().all(|byte| byte.is_ascii_digit())
+                                    && minor.bytes().all(|byte| byte.is_ascii_digit())
+                            })
+                    })
+                })
+        })
         .ok_or_else(|| "provider protocol evidence is invalid".to_owned())?;
     let _deployment_modes = provider
         .get("deploymentModes")
         .and_then(serde_json::Value::as_array)
         .filter(|modes| !modes.is_empty() && modes.iter().all(serde_json::Value::is_string))
         .ok_or_else(|| "provider deployment evidence is invalid".to_owned())?;
+    let _source_revision = provider
+        .pointer("/source/revision")
+        .and_then(serde_json::Value::as_str)
+        .filter(|revision| {
+            (7..=64).contains(&revision.len())
+                && revision
+                    .bytes()
+                    .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+        })
+        .ok_or_else(|| "provider source revision is invalid".to_owned())?;
     let conformance = provider
         .get("conformance")
         .and_then(serde_json::Value::as_object)
@@ -767,6 +811,11 @@ fn validate_provider_selection_evidence(
         .get("protocolVersion")
         .and_then(serde_json::Value::as_str)
         .ok_or_else(|| "provider conformance protocol is invalid".to_owned())?;
+    conformance
+        .get("testedAt")
+        .and_then(serde_json::Value::as_str)
+        .filter(|tested_at| tested_at.ends_with('Z') && tested_at.len() == 20)
+        .ok_or_else(|| "provider conformance timestamp is invalid".to_owned())?;
     if conformance
         .get("result")
         .and_then(serde_json::Value::as_str)

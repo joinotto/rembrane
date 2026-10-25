@@ -34,6 +34,7 @@ jq empty \
     spec/key-provider-conformance-result.schema.json \
     spec/key-provider-conformance.schema.json \
     spec/semantic-provider-conformance-result.schema.json \
+    spec/provider-selection-result.schema.json \
     spec/memory-provider-fixtures.schema.json \
     spec/conformance/memory-provider-core.json \
     spec/conformance/key-provider-core.json \
@@ -56,6 +57,7 @@ jq empty \
     spec/examples/key-provider-manifest.json \
     spec/examples/key-provider-conformance-result.json \
     spec/examples/semantic-provider-conformance-result.json \
+    spec/examples/provider-selection-result.json \
     spec/examples/mcp-client-catalog.json \
     spec/provider-manifest.schema.json \
     spec/provider-registry.json \
@@ -161,6 +163,23 @@ jq -e '
     and (."$defs".provider.properties.revocation.properties.reason.enum | length) == 5
     and (."$defs".provider.allOf | length) == 1
 ' spec/provider-registry.schema.json >/dev/null
+
+jq -e --slurpfile example spec/examples/provider-selection-result.json '
+    .additionalProperties == false
+    and .properties.schemaVersion.const == 1
+    and .properties.protocolVersion.const == "0.1"
+    and .properties.status.enum == ["compatible", "experimental"]
+    and .properties.eligibility.enum == ["compatible", "experimental-opt-in"]
+    and .properties.approvals.additionalProperties == false
+    and .properties.evidence.additionalProperties == false
+    and .properties.evidence.properties.profileSha256.pattern == "^[0-9a-f]{64}$"
+    and $example[0].schemaVersion == 1
+    and $example[0].protocolVersion == "0.1"
+    and $example[0].approvals.experimental == true
+    and $example[0].approvals.providerPlaintext == true
+    and $example[0].evidence.profileSha256
+        == "9073af5c5d07c6c5cbd586d8ca542645583da0e19a2fea70852fbfbe1bf5a0c5"
+' spec/provider-selection-result.schema.json >/dev/null
 
 jq -e '
     .additionalProperties == false

@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spec.rembrane.dev/provider-registry/1/selection-result.schema.json",
+  "title": "Rembrane Provider Selection Result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "provider",
+    "adapterVersion",
+    "status",
+    "eligibility",
+    "protocolVersion",
+    "deploymentModes",
+    "plaintextProcessing",
+    "approvals",
+    "evidence"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "provider": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]+$",
+      "maxLength": 255
+    },
+    "adapterVersion": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "status": {
+      "enum": ["compatible", "experimental"]
+    },
+    "eligibility": {
+      "enum": ["compatible", "experimental-opt-in"]
+    },
+    "protocolVersion": {
+      "const": "0.1"
+    },
+    "deploymentModes": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "enum": ["embedded", "local-service", "self-hosted", "managed"]
+      }
+    },
+    "plaintextProcessing": {
+      "type": "boolean"
+    },
+    "approvals": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["experimental", "providerPlaintext"],
+      "properties": {
+        "experimental": {
+          "type": "boolean"
+        },
+        "providerPlaintext": {
+          "type": "boolean"
+        }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "suiteId",
+        "suiteVersion",
+        "profileSha256",
+        "testedAt",
+        "sourceRevision"
+      ],
+      "properties": {
+        "suiteId": {
+          "const": "rembrane.semantic-provider.core"
+        },
+        "suiteVersion": {
+          "const": "0.1"
+        },
+        "profileSha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "testedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "sourceRevision": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{7,64}$"
+        }
+      }
+    }
+  }
+}

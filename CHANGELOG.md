@@ -21,6 +21,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   provider selection.
 - Provider selection now requires exact ordered passing conformance evidence
   and a separate explicit opt-in for providers that process plaintext.
+- Strict provider-selection receipt schema and example binding operator
+  approvals to exact build, protocol, source, and conformance evidence.
 - A strict portable key-provider conformance result schema and runner output
   containing provider identity and explicit pass evidence for eight
   authentication, encryption, limit, rotation, and replay cases.

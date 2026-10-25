@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "provider": "rembrane.native",
+  "adapterVersion": "0.1.0-alpha.1",
+  "status": "experimental",
+  "eligibility": "experimental-opt-in",
+  "protocolVersion": "0.1",
+  "deploymentModes": ["embedded", "local-service", "self-hosted"],
+  "plaintextProcessing": true,
+  "approvals": {
+    "experimental": true,
+    "providerPlaintext": true
+  },
+  "evidence": {
+    "suiteId": "rembrane.semantic-provider.core",
+    "suiteVersion": "0.1",
+    "profileSha256": "9073af5c5d07c6c5cbd586d8ca542645583da0e19a2fea70852fbfbe1bf5a0c5",
+    "testedAt": "2026-10-25T05:03:44Z",
+    "sourceRevision": "f3221f9"
+  }
+}
