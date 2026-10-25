@@ -1179,21 +1179,26 @@ mod tests {
 
     impl RemoteTokenVerifier for Verifier {
         fn verify(&self, token: &str) -> Result<RemoteTokenClaims, RemoteTokenVerificationError> {
-            let workspace = match token {
-                "workspace-one" => "workspace_01",
-                "workspace-two" => "workspace_02",
+            let (workspace, graph_read) = match token {
+                "workspace-one" => ("workspace_01", true),
+                "workspace-two" => ("workspace_02", true),
+                "workspace-one-no-graph" => ("workspace_01", false),
                 _ => return Err(RemoteTokenVerificationError),
             };
+            let mut scopes = BTreeSet::from([
+                RemoteAccessScope::ContextRead,
+                RemoteAccessScope::MemoryWrite,
+            ]);
+            if graph_read {
+                scopes.insert(RemoteAccessScope::GraphRead);
+            }
             Ok(RemoteTokenClaims {
                 issuer: "https://identity.example.test".to_owned(),
                 audience: vec!["https://memory.example.test/mcp".to_owned()],
                 subject_id: PrincipalId::new("principal_01"),
                 client_id: ClientId::new("client_01"),
                 workspace_id: WorkspaceId::new(workspace),
-                scopes: BTreeSet::from([
-                    RemoteAccessScope::ContextRead,
-                    RemoteAccessScope::MemoryWrite,
-                ]),
+                scopes,
                 expires_at_epoch_seconds: 2_000,
                 not_before_epoch_seconds: None,
             })
@@ -1789,6 +1794,68 @@ mod tests {
             .await
             .expect("in-memory router should respond");
         assert_eq!(denied.status(), 403);
+    }
+
+    #[tokio::test]
+    async fn graph_dispatch_requires_scope_and_preserves_tenant_identity() {
+        let config = RemoteMcpConfig::new(
+            "https://memory.example.test/mcp".to_owned(),
+            "https://identity.example.test".to_owned(),
+            "https://identity.example.test/introspect".to_owned(),
+            "rembrane".to_owned(),
+            SecretReference::environment("OAUTH_SECRET").expect("reference should be valid"),
+            vec!["https://agent.example.test".to_owned()],
+        )
+        .expect("remote profile should be valid");
+        let authorization = RemoteMcpAxumAuthorization::from_config(16, &config, Verifier)
+            .expect("owned authorization service should initialize");
+        let body = br#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"rembrane_resolve_graph_context","arguments":{"nodeId":"project_01","direction":"outgoing","validAtEpochSeconds":1700000000,"purpose":"continue project graph","entityId":"project_01"}}}"#;
+        let headers = |token: &'static str| {
+            let mut headers = HeaderMap::new();
+            headers.insert(HOST, HeaderValue::from_static("memory.example.test"));
+            headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+            headers.insert(
+                ACCEPT,
+                HeaderValue::from_static("application/json, text/event-stream"),
+            );
+            headers.insert(AUTHORIZATION, HeaderValue::from_static(token));
+            headers.insert(
+                ORIGIN,
+                HeaderValue::from_static("https://agent.example.test"),
+            );
+            headers
+        };
+
+        for (token, expected_workspace) in [
+            ("Bearer workspace-one", "workspace_01"),
+            ("Bearer workspace-two", "workspace_02"),
+        ] {
+            let dispatched = authorization
+                .authorize_and_dispatch(&headers(token), body, 1_000, &RecordingDispatcher)
+                .await
+                .expect("graph-scoped request should dispatch");
+            assert_eq!(dispatched.workspace, expected_workspace);
+            assert_eq!(dispatched.method, "tools/call");
+            assert_eq!(
+                dispatched.tool_name.as_deref(),
+                Some("rembrane_resolve_graph_context")
+            );
+            assert_eq!(dispatched.body, body);
+        }
+
+        let denied = authorization
+            .authorize_and_dispatch(
+                &headers("Bearer workspace-one-no-graph"),
+                body,
+                1_000,
+                &RecordingDispatcher,
+            )
+            .await
+            .expect_err("token without graph scope must not reach dispatch");
+        assert!(matches!(
+            denied,
+            RemoteMcpDispatchError::Authorization(RemoteMcpHttpRejection { status: 403, .. })
+        ));
     }
 
     #[tokio::test]

@@ -422,6 +422,8 @@ This roadmap describes sequencing, not release dates.
       surfaces.
       - [x] Reserve a dedicated `rembrane:graph:read` OAuth scope and
         fail-closed remote MCP operation classification.
+        - [x] Prove remote graph dispatch rejects missing OAuth graph scope and
+          preserves distinct verified workspace identity across tenants.
       - [x] Define one transport-neutral graph-context request and response
         carrying explicit scope, temporal direction, bounds, purpose, exact
         canonical edges, and disclosure identity.

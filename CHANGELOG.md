@@ -29,6 +29,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   a non-empty disclosure purpose before any provider or repository access.
 - Dedicated `rembrane:graph:read` remote authorization scope and
   `rembrane_resolve_graph_context` MCP operation classification.
+- Remote MCP graph-dispatch tests proving missing graph scope is denied before
+  dispatch and distinct verified tenant identities remain isolated.
 - Transport-neutral graph-context request and response contracts for reuse by
   MCP, REST, SDK, bot, and local integrations.
 - Application bridge from the transport-neutral graph request to provider
