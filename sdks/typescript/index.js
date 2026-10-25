@@ -145,26 +145,32 @@ export class RembraneClient {
   }
 
   createTrip(request) {
+    validateTravelRequestIdentity(request, false, false);
     return this.#request("POST", "/travel/trips", request);
   }
 
   addTripParticipant(request) {
+    validateTravelRequestIdentity(request, true, false);
     return this.#request("POST", "/travel/trip-participants", request);
   }
 
   addTripConstraint(request) {
+    validateTravelRequestIdentity(request, true, true);
     return this.#request("POST", "/travel/trip-constraints", request);
   }
 
   recordTripDecision(request) {
+    validateTravelRequestIdentity(request, true, false);
     return this.#request("POST", "/travel/trip-decisions", request);
   }
 
   captureBookingResearch(request) {
+    validateTravelRequestIdentity(request, true, false);
     return this.#request("POST", "/travel/booking-research", request);
   }
 
   resolveTravelContext(request) {
+    validateTravelRequestIdentity(request, true, false);
     return this.#request("POST", "/travel/context/resolve", request);
   }
 
@@ -326,6 +332,21 @@ function isOpaqueId(value) {
     utf8Length(value) <= 255 &&
     /^[A-Za-z0-9][A-Za-z0-9._:-]*$/u.test(value)
   );
+}
+
+function validateTravelRequestIdentity(request, requireTripId, allowParticipantId) {
+  if (
+    !isObject(request) ||
+    !isOpaqueId(request.workspaceId) ||
+    !isOpaqueId(request.subjectId) ||
+    (requireTripId && !isOpaqueId(request.tripId)) ||
+    (allowParticipantId &&
+      request.participantId !== undefined &&
+      request.participantId !== null &&
+      !isOpaqueId(request.participantId))
+  ) {
+    throw new TypeError("Travel identity fields must be bounded opaque identifiers");
+  }
 }
 
 function validateMemoryDiscovery(value, expectedApi) {

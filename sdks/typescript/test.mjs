@@ -327,6 +327,35 @@ for (const [method, path, request] of travelRequests) {
   assert.deepEqual(JSON.parse(call.init.body), request);
 }
 
+const callsBeforeInvalidTravel = calls.length;
+assert.throws(
+  () =>
+    client.resolveTravelContext({
+      workspaceId: "team",
+      subjectId: "principal-1",
+      tripId: "../trip",
+      purpose: "continue flight planning",
+      asOf: "2026-10-25T10:15:00Z",
+    }),
+  /bounded opaque identifiers/,
+);
+assert.throws(
+  () =>
+    client.addTripConstraint({
+      workspaceId: "team",
+      subjectId: "principal-1",
+      tripId: "trip-1",
+      participantId: "participant/1",
+      kind: "dietary",
+      statement: "Vegetarian meals",
+      evidenceSource: "user-statement",
+      expectedTripVersion: 2,
+      expectedPreviousSequence: 11,
+    }),
+  /bounded opaque identifiers/,
+);
+assert.equal(calls.length, callsBeforeInvalidTravel);
+
 assert.throws(
   () =>
     new RembraneClient({

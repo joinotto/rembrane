@@ -48,6 +48,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   travel-context continuation across the full implemented REST lifecycle.
 - TypeScript travel methods now return protocol-accurate response models and
   use closed unions for evidence, constraint, decision, and research kinds.
+- TypeScript travel methods now reject malformed workspace, subject, trip, and
+  participant identifiers before issuing a network request.
 - Python travel methods now expose dependency-free `TypedDict` request and
   response models with closed protocol literals instead of unstructured
   mappings and `Any` returns.
