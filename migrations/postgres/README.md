@@ -18,15 +18,22 @@ Apply numbered schema migrations in ascending order, then apply
 `9999_tenant_rls.sql` after every schema migration and before granting access
 to the runtime role. Keeping RLS last ensures every newly introduced
 `workspace_id` table is included by the deny-by-default policy generator.
-The application must begin a transaction and run:
+The application must begin a transaction and execute this as a prepared,
+parameter-bound statement:
 
 ```sql
-SET LOCAL rembrane.workspace_id = 'workspace_opaque_id';
+SELECT set_config('rembrane.workspace_id', $1, true);
 ```
 
-before any tenant query. Missing or empty identity matches no row. The runtime
-database role must be non-superuser, must not own tenant tables, and must not
-have `BYPASSRLS`; migration ownership belongs to a separate role.
+The third argument must remain `true`, making the setting local to the current
+transaction so a pooled connection cannot leak one workspace into the next.
+The adapter must read back `rembrane.current_workspace_id()` and require an
+exact match before issuing any tenant query. It must never interpolate a
+workspace identifier into `SET`, SQL text, an identifier, or a connection
+startup option. Missing, empty, mismatched, or transaction-external identity
+matches no row. The runtime database role must be non-superuser, must not own
+tenant tables, and must not have `BYPASSRLS`; migration ownership belongs to a
+separate role.
 
 Every ordinary table containing `workspace_id` receives forced read/write RLS.
 `workspaces` is isolated by `id`. Private-to-shared proposals are isolated by

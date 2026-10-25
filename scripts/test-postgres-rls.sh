@@ -291,7 +291,7 @@ result=$(
     psql "$REMBRANE_POSTGRES_URL" -v ON_ERROR_STOP=1 -qAt <<'SQL'
 BEGIN;
 SET LOCAL ROLE rembrane_runtime_test;
-SET LOCAL rembrane.workspace_id = 'workspace_01';
+SELECT set_config('rembrane.workspace_id', 'workspace_01', true);
 SELECT
     (SELECT count(*) FROM principals),
     (SELECT count(*) FROM workspaces),
@@ -320,7 +320,7 @@ test "$result" = "1|1|1|1|1|1|1|1|1|1|1|1|1|2|1|1|1|1|1"
 if psql "$REMBRANE_POSTGRES_URL" -v ON_ERROR_STOP=1 >/dev/null 2>&1 <<'SQL'
 BEGIN;
 SET LOCAL ROLE rembrane_runtime_test;
-SET LOCAL rembrane.workspace_id = 'workspace_01';
+SELECT set_config('rembrane.workspace_id', 'workspace_01', true);
 INSERT INTO memories (
     workspace_id, id, subject_id, scope_type, kind, status,
     content_ciphertext, encryption_key_id, encryption_algorithm,
@@ -365,5 +365,20 @@ ROLLBACK;
 SQL
 )
 test "$unscoped" = "0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0"
+
+pooled_connection_result=$(
+    psql "$REMBRANE_POSTGRES_URL" -v ON_ERROR_STOP=1 -qAt <<'SQL'
+SET ROLE rembrane_runtime_test;
+BEGIN;
+SELECT set_config('rembrane.workspace_id', 'workspace_01', true);
+SELECT count(*) FROM memories;
+COMMIT;
+SELECT count(*) FROM memories;
+RESET ROLE;
+SQL
+)
+test "$pooled_connection_result" = "workspace_01
+1
+0"
 
 echo "PostgreSQL two-tenant RLS test passed"

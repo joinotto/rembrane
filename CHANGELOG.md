@@ -9,6 +9,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- A parameter-bound PostgreSQL tenant-session contract with exact context
+  read-back requirements and a live pooled-connection leakage regression.
 - A Zed local MCP configuration that safely inherits the application process
   environment instead of embedding unsupported `${VAR}` interpolation or raw
   credentials in settings.

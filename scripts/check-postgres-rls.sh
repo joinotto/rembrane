@@ -173,8 +173,13 @@ do
 done
 
 for operational_invariant in \
-    'SET LOCAL rembrane.workspace_id' \
-    'must not own tenant tables' \
+    "set_config('rembrane.workspace_id', \$1, true)" \
+    'read back `rembrane.current_workspace_id()`' \
+    'must never interpolate a' \
+    'workspace identifier into `SET`' \
+    'pooled connection cannot leak one workspace into the next' \
+    'must not own' \
+    'tenant tables' \
     'BYPASSRLS' \
     'security-definer'
 do

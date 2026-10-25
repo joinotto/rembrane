@@ -277,6 +277,8 @@ This roadmap describes sequencing, not release dates.
     PostgreSQL migrations in the static security gate.
   - [x] Document transaction-local tenant identity and non-owner,
     non-`BYPASSRLS` runtime-role requirements.
+    - [x] Require prepared `set_config(..., $1, true)` tenant bootstrap,
+      exact context read-back, and pooled-connection leakage coverage.
   - [x] Run a live PostgreSQL two-tenant CI proof covering scoped reads,
     denied cross-tenant writes, and fail-closed missing tenant context.
   - [ ] Implement the Rust PostgreSQL repository adapter and live two-tenant
