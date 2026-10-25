@@ -351,6 +351,11 @@ SDK intentionally does not bundle a JSON parser, the hosting application must
 parse the request against the published schema before constructing the typed
 message.
 
+Swift processors can decode `ChannelProcessorMessage` with Foundation
+`JSONDecoder`; its custom decoder rejects unknown fields and applies the same
+protocol, identity, text, and timestamp bounds. They return a
+`ChannelProcessorAcknowledgement` encoded with `JSONEncoder`.
+
 ### 7.4 Explicit mobile and iMessage shares
 
 Rembrane can accept text that a user explicitly selects in an iOS share

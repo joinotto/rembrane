@@ -29,6 +29,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Dependency-free Kotlin/JVM channel processor models with strict protocol,
   channel, identity, text, and time validation plus canonical event-bound
   acknowledgement serialization.
+- Swift Codable channel processor models with exact-key decoding, strict
+  protocol and UTF-8 bounds, typed event acknowledgements, and executable
+  malformed-input coverage.
 - Fail-closed graph-context disclosure receipts recording the exact canonical
   edge revisions, query direction and validity time, verified subject and
   client, and declared purpose before context crosses the application boundary.

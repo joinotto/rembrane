@@ -293,5 +293,59 @@ private struct RembraneSmoke {
             precondition(error.code == "invalid_signing_key_size")
         }
         #endif
+
+        let processorJSON = Data(
+            #"{"protocolVersion":"0.1","channel":"whatsapp-business","eventId":"wamid.opaque-example-event","workspaceId":"workspace_example","principalId":"principal_example","clientId":"client_whatsapp_example","text":"Continue my flight research","receivedAtEpochSeconds":1792890000}"#.utf8
+        )
+        let processorMessage = try JSONDecoder().decode(
+            ChannelProcessorMessage.self,
+            from: processorJSON
+        )
+        precondition(processorMessage.channel == .whatsAppBusiness)
+        precondition(processorMessage.eventId == "wamid.opaque-example-event")
+        let acknowledgement = try ChannelProcessorAcknowledgement(
+            eventId: processorMessage.eventId,
+            status: .processed
+        )
+        let acknowledgementObject = try JSONSerialization.jsonObject(
+            with: JSONEncoder().encode(acknowledgement)
+        ) as? [String: Any]
+        precondition(acknowledgementObject?["protocolVersion"] as? String == "0.1")
+        precondition(
+            acknowledgementObject?["eventId"] as? String
+                == "wamid.opaque-example-event"
+        )
+        precondition(acknowledgementObject?["status"] as? String == "processed")
+
+        for invalidJSON in [
+            #"{"protocolVersion":"0.2","channel":"whatsapp-business","eventId":"event","workspaceId":"workspace","principalId":"principal","clientId":"client","text":"continue","receivedAtEpochSeconds":1}"#,
+            #"{"protocolVersion":"0.1","channel":"whatsapp-business","eventId":"unsafe event","workspaceId":"workspace","principalId":"principal","clientId":"client","text":"continue","receivedAtEpochSeconds":1}"#,
+            #"{"protocolVersion":"0.1","channel":"whatsapp-business","eventId":"event","workspaceId":"workspace","principalId":"principal","clientId":"client","text":" ","receivedAtEpochSeconds":1}"#,
+            #"{"protocolVersion":"0.1","channel":"whatsapp-business","eventId":"event","workspaceId":"workspace","principalId":"principal","clientId":"client","text":"continue","receivedAtEpochSeconds":1,"ignored":true}"#,
+        ] {
+            do {
+                _ = try JSONDecoder().decode(
+                    ChannelProcessorMessage.self,
+                    from: Data(invalidJSON.utf8)
+                )
+                preconditionFailure("invalid processor message must fail")
+            } catch {
+                // Expected.
+            }
+        }
+        do {
+            _ = try ChannelProcessorMessage(
+                channel: .mobileShare,
+                eventId: "event",
+                workspaceId: "workspace",
+                principalId: "principal",
+                clientId: "client",
+                text: String(repeating: "😀", count: 4_097),
+                receivedAtEpochSeconds: 1
+            )
+            preconditionFailure("multibyte text overflow must fail")
+        } catch {
+            // Expected.
+        }
     }
 }

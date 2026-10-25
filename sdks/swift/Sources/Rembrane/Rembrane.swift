@@ -32,6 +32,145 @@ public struct RembraneAPIError: Error, Equatable, Sendable {
     public let message: String
 }
 
+public enum ChannelProcessorChannel: String, Codable, Sendable {
+    case whatsAppBusiness = "whatsapp-business"
+    case iMessageExtension = "imessage-extension"
+    case mobileShare = "mobile-share"
+}
+
+public struct ChannelProcessorMessage: Codable, Equatable, Sendable {
+    public let protocolVersion: String
+    public let channel: ChannelProcessorChannel
+    public let eventId: String
+    public let workspaceId: String
+    public let principalId: String
+    public let clientId: String
+    public let text: String
+    public let receivedAtEpochSeconds: UInt64
+
+    private enum CodingKeys: String, CodingKey, CaseIterable {
+        case protocolVersion
+        case channel
+        case eventId
+        case workspaceId
+        case principalId
+        case clientId
+        case text
+        case receivedAtEpochSeconds
+    }
+
+    public init(
+        protocolVersion: String = "0.1",
+        channel: ChannelProcessorChannel,
+        eventId: String,
+        workspaceId: String,
+        principalId: String,
+        clientId: String,
+        text: String,
+        receivedAtEpochSeconds: UInt64
+    ) throws {
+        guard protocolVersion == "0.1",
+              Self.validToken(eventId, maximumBytes: 256),
+              Self.validToken(workspaceId, maximumBytes: 255),
+              Self.validToken(principalId, maximumBytes: 255),
+              Self.validToken(clientId, maximumBytes: 255),
+              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              text.utf8.count <= 16_384,
+              receivedAtEpochSeconds > 0 else {
+            throw Self.invalid()
+        }
+        self.protocolVersion = protocolVersion
+        self.channel = channel
+        self.eventId = eventId
+        self.workspaceId = workspaceId
+        self.principalId = principalId
+        self.clientId = clientId
+        self.text = text
+        self.receivedAtEpochSeconds = receivedAtEpochSeconds
+    }
+
+    public init(from decoder: Decoder) throws {
+        let dynamic = try decoder.container(keyedBy: DynamicCodingKey.self)
+        let expected = Set(CodingKeys.allCases.map(\.rawValue))
+        guard Set(dynamic.allKeys.map(\.stringValue)) == expected else {
+            throw Self.invalid()
+        }
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        try self.init(
+            protocolVersion: values.decode(String.self, forKey: .protocolVersion),
+            channel: values.decode(ChannelProcessorChannel.self, forKey: .channel),
+            eventId: values.decode(String.self, forKey: .eventId),
+            workspaceId: values.decode(String.self, forKey: .workspaceId),
+            principalId: values.decode(String.self, forKey: .principalId),
+            clientId: values.decode(String.self, forKey: .clientId),
+            text: values.decode(String.self, forKey: .text),
+            receivedAtEpochSeconds: values.decode(
+                UInt64.self,
+                forKey: .receivedAtEpochSeconds
+            )
+        )
+    }
+
+    private static func validToken(_ value: String, maximumBytes: Int) -> Bool {
+        !value.isEmpty && value.utf8.count <= maximumBytes
+            && value.unicodeScalars.allSatisfy {
+                !CharacterSet.whitespacesAndNewlines.contains($0)
+                    && !CharacterSet.controlCharacters.contains($0)
+            }
+    }
+
+    private static func invalid() -> RembraneAPIError {
+        RembraneAPIError(
+            status: 0,
+            code: "invalid_channel_processor_message",
+            message: "Invalid Rembrane channel processor message"
+        )
+    }
+}
+
+public enum ChannelProcessorStatus: String, Codable, Sendable {
+    case processed
+    case duplicate
+}
+
+public struct ChannelProcessorAcknowledgement: Codable, Equatable, Sendable {
+    public let protocolVersion: String
+    public let eventId: String
+    public let status: ChannelProcessorStatus
+
+    public init(eventId: String, status: ChannelProcessorStatus) throws {
+        guard !eventId.isEmpty, eventId.utf8.count <= 256,
+              eventId.unicodeScalars.allSatisfy({
+                  !CharacterSet.whitespacesAndNewlines.contains($0)
+                      && !CharacterSet.controlCharacters.contains($0)
+              }) else {
+            throw RembraneAPIError(
+                status: 0,
+                code: "invalid_channel_processor_acknowledgement",
+                message: "Invalid Rembrane channel processor acknowledgement"
+            )
+        }
+        self.protocolVersion = "0.1"
+        self.eventId = eventId
+        self.status = status
+    }
+}
+
+private struct DynamicCodingKey: CodingKey {
+    let stringValue: String
+    let intValue: Int?
+
+    init?(stringValue: String) {
+        self.stringValue = stringValue
+        self.intValue = nil
+    }
+
+    init?(intValue: Int) {
+        self.stringValue = String(intValue)
+        self.intValue = intValue
+    }
+}
+
 private final class RedirectRejectingDelegate: NSObject, URLSessionTaskDelegate,
     @unchecked Sendable
 {

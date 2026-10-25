@@ -953,6 +953,8 @@ This roadmap describes sequencing, not release dates.
         message and acknowledgement contract.
       - [x] Add dependency-free Kotlin/JVM typed processor messages and
         event-bound acknowledgements with executable validation coverage.
+      - [x] Add strict Swift Codable processor messages and acknowledgements
+        with exact-key decoding and executable multibyte-limit coverage.
   - [x] Add a configured per-workspace channel worker executable for encrypted
     inbox recovery, retry, HTTP processor delivery, and completion.
   - [x] Package ingress and delivery workers together in the opt-in hardened
