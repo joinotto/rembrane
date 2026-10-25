@@ -115,6 +115,8 @@ This roadmap describes sequencing, not release dates.
             profile exactly.
           - [x] Bind portable evidence to the SHA-256 of the exact reviewed
             profile bytes.
+            - [x] Reject evidence after profile bytes change even when the
+              modified profile is rehashed into the compatibility lock.
         - [x] Bind discovery and conformance evidence to an exact bounded
           provider build version rather than identity alone.
   - [x] Resolve or unwrap keyring material through customer KMS adapters.
@@ -774,6 +776,8 @@ This roadmap describes sequencing, not release dates.
         profile exactly.
       - [x] Bind portable evidence to SHA-256 digests of the exact reviewed
         profile and lifecycle fixture bytes.
+        - [x] Reject evidence after profile bytes change even when the
+          modified profile is rehashed into the compatibility lock.
   - [x] Add an immutable, versioned discovery manifest with standard well-known
     path, transports, operation capabilities, privacy mode, supported domains,
     and bounded context/event/sync limits.

@@ -32,6 +32,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   profile bytes.
 - Memory Provider evidence bound to SHA-256 digests of the exact profile and
   lifecycle fixture bytes, with its evidence runner added to the lock.
+- Tamper tests proving rehashed profile changes invalidate older memory and
+  key-provider conformance evidence.
 - Required bounded key-provider build versions in discovery, Rust negotiation,
   HTTP decoding, fixtures, and portable conformance evidence.
 - A tamper-tested key-provider compatibility lock over reviewed OpenAPI,

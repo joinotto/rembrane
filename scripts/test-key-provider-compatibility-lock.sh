@@ -139,4 +139,41 @@ then
     exit 1
 fi
 
+cp "$repository_root/spec/examples/key-provider-conformance-result.json" \
+    "$test_root/spec/examples/key-provider-conformance-result.json"
+jq '.cases[0].requirement += " attacker-modified"' \
+    "$repository_root/spec/conformance/key-provider-core.json" \
+    >"$test_root/spec/conformance/key-provider-core.json"
+modified_profile_hash=$(
+    node -e '
+        const {createHash} = require("node:crypto");
+        const {readFileSync} = require("node:fs");
+        process.stdout.write(
+            createHash("sha256").update(readFileSync(process.argv[1])).digest("hex")
+        );
+    ' "$test_root/spec/conformance/key-provider-core.json"
+)
+jq --arg hash "$modified_profile_hash" '
+    .artifacts |= map(
+        if .path == "spec/conformance/key-provider-core.json"
+        then .sha256 = $hash
+        else .
+        end
+    )
+' "$repository_root/spec/key-provider-compatibility-lock.json" \
+    >"$test_root/spec/key-provider-compatibility-lock.json"
+if node "$test_root/scripts/verify-key-provider-compatibility.mjs" \
+    >"$test_root/profile-bytes.stdout" 2>"$test_root/profile-bytes.stderr"
+then
+    echo "key-provider verifier accepted evidence for modified profile bytes" >&2
+    exit 1
+fi
+if ! rg -F \
+    "conformance result fixture is bound to different profile bytes" \
+    "$test_root/profile-bytes.stderr" >/dev/null
+then
+    echo "key-provider verifier missed modified profile bytes" >&2
+    exit 1
+fi
+
 echo "key provider compatibility tamper test passed"
