@@ -1308,5 +1308,7 @@ No stable release until:
 - [ ] Security-sensitive code has independent review.
   - [x] Provide a deterministic, clean-revision security-review manifest with
     SHA-256 inventory and an external-review evidence checklist.
+    - [x] Cover every tracked regular file, including the manifest generator,
+      application entry points, adapters, deployment assets, and static gates.
 - [x] Backup, restore, migration, revocation, and deletion have executable
   local-alpha coverage.

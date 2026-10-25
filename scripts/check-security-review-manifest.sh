@@ -32,7 +32,12 @@ jq -e '
 
 for required in \
     Cargo.lock \
+    Dockerfile \
+    compose.yaml \
     docs/THREAT_MODEL.md \
+    scripts/generate-security-review-manifest.mjs \
+    scripts/test-static.sh \
+    apps/rembrane-api/src/main.rs \
     crates/rembrane-application/src/lib.rs \
     crates/rembrane-crypto/src/lib.rs \
     migrations/postgres/0001_canonical_schema.sql \

@@ -7,10 +7,11 @@ node scripts/generate-security-review-manifest.mjs > security-review-manifest.js
 ```
 
 The generated manifest records the exact Git revision and SHA-256 digest of
-each tracked security-sensitive source file, protocol artifact, migration,
-workflow, threat model, and dependency lock. Reviewers should sign or otherwise
-attest to the exact manifest they examined; a branch name or moving tag is not
-sufficient evidence.
+every tracked regular file. The full-repository inventory deliberately avoids
+subjective security-sensitive filters that could omit application entry
+points, review tooling, deployment files, or indirect dependencies. Reviewers
+should sign or otherwise attest to the exact manifest they examined; a branch
+name or moving tag is not sufficient evidence.
 
 The generator refuses a dirty worktree by default. `--allow-dirty` exists only
 for deterministic local and CI validation and must not be used for review

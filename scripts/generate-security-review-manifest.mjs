@@ -23,39 +23,7 @@ const tracked = execFileSync("git", ["ls-files", "-z"], {
   .split("\0")
   .filter(Boolean);
 
-const exactFiles = new Set([
-  "Cargo.lock",
-  "Cargo.toml",
-  "SECURITY.md",
-  "docs/THREAT_MODEL.md",
-]);
-const prefixes = [
-  ".github/workflows/",
-  "adapters/rembrane-channel-",
-  "adapters/rembrane-crypto-",
-  "adapters/rembrane-key-provider-",
-  "adapters/rembrane-kms-",
-  "adapters/rembrane-memory-provider-",
-  "adapters/rembrane-oauth-",
-  "adapters/rembrane-remote-mcp-",
-  "adapters/rembrane-secret-",
-  "adapters/rembrane-store-",
-  "crates/rembrane-application/",
-  "crates/rembrane-config/",
-  "crates/rembrane-contracts/",
-  "crates/rembrane-crypto/",
-  "crates/rembrane-domain/",
-  "crates/rembrane-provider-sdk/",
-  "migrations/",
-  "spec/",
-];
-
-const paths = tracked
-  .filter(
-    (path) =>
-      exactFiles.has(path) || prefixes.some((prefix) => path.startsWith(prefix)),
-  )
-  .sort();
+const paths = tracked.sort();
 if (paths.length === 0) {
   throw new Error("security review inventory is empty");
 }
