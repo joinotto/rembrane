@@ -667,6 +667,8 @@ This roadmap describes sequencing, not release dates.
 - [x] Optional external-state fingerprints and stale handoff detection.
 - [x] Executable CLI/MCP preference and project-checkpoint handoff proof using
   independent clients over one encrypted workspace store.
+- [x] Prove REST-to-CLI project continuation after the API process stops,
+  including exact checkpoint version, state freshness, and disclosure audit.
 
 ## Phase 3 — Travel continuity
 

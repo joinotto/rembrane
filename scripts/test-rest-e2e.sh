@@ -350,6 +350,25 @@ test "$(jq -r '.code' "$cross_workspace_list_response")" = "access_denied"
 kill "$api_pid"
 wait "$api_pid" 2>/dev/null || true
 api_pid=
+
+cli_resume=$(
+    "$rembrane_binary" resume \
+        --database "$database" \
+        --principal "$REMBRANE_PRINCIPAL_ID" \
+        --workspace "$REMBRANE_WORKSPACE_ID" \
+        --activity activity_rest_e2e \
+        --client client_rest_to_cli_reader \
+        --purpose continue-after-api-handoff \
+        --state-fingerprint "git:rest456"
+)
+printf '%s\n' "$cli_resume" | jq -e \
+    '.version == 2
+        and .entityId == "project_rest_e2e"
+        and .summary == "REST checkpoint update works."
+        and .nextSteps == ["Run all clients"]
+        and .stale == false
+        and .disclosureId' >/dev/null
+
 export REMBRANE_PRINCIPAL_ID="$invited_principal_id"
 export REMBRANE_CLIENT_ID="client_rest_invited"
 export REMBRANE_READ_SCOPES="global"
@@ -418,6 +437,10 @@ test "$(
 test "$(
     sqlite3 "$database" \
         "SELECT count(*) FROM checkpoint_disclosures WHERE workspace_id = '$REMBRANE_WORKSPACE_ID' AND activity_id = 'activity_rest_e2e';"
+)" = "2"
+test "$(
+    sqlite3 "$database" \
+        "SELECT count(*) FROM checkpoint_disclosures WHERE workspace_id = '$REMBRANE_WORKSPACE_ID' AND activity_id = 'activity_rest_e2e' AND client_id = 'client_rest_to_cli_reader' AND purpose = 'continue-after-api-handoff';"
 )" = "1"
 test "$(
     sqlite3 "$database" \

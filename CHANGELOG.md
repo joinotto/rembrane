@@ -18,6 +18,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   reads and corrects it through MCP, observes the correction through the CLI,
   and resumes an MCP-created project checkpoint from both a fresh MCP client
   process and the CLI over the same encrypted workspace.
+- REST end-to-end coverage stops the API after updating a project checkpoint
+  and proves the CLI can resume the exact encrypted state with a separate
+  audited disclosure receipt.
 - Local CLI commands create and optimistically update encrypted activity
   checkpoints, then resume them with an audited disclosure receipt and
   optional stale external-state detection.
