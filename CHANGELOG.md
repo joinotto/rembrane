@@ -66,6 +66,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Axum session DELETE requests now enter that confirmed flow through bounded,
   duplicate-rejecting authorization, host, origin, session, and protocol
   header parsing.
+- PostgreSQL tenant facades now have an exhaustive mismatched-workspace denial
+  matrix across implemented point and collection reads, proving rejection
+  occurs before acquiring a pooled transaction.
 - A strict portable key-provider conformance result schema and runner output
   containing provider identity and explicit pass evidence for eight
   authentication, encryption, limit, rotation, and replay cases.

@@ -6940,7 +6940,7 @@ mod tests {
         ProjectionOutboxRepository, ProjectionOutcome, ProjectionWorker, ResolveContextCommand,
         ResolveContextService, ResolveTravelContextCommand, ResumeActivityCommand,
         RetentionRepository, TravelContextService, TravelDisclosureRepository,
-        TripMutationRepository, TripRepository, WorkspaceRepository,
+        TripMutationRepository, TripRepository, WorkspaceReadRepository, WorkspaceRepository,
     };
     use rembrane_codec::{
         encode_booking_research, encode_checkpoint, encode_knowledge_edge, encode_knowledge_node,
@@ -7459,6 +7459,17 @@ mod tests {
         calls: Rc<RefCell<Vec<Call>>>,
         tenant_batches: RefCell<VecDeque<TenantReadBatch>>,
         row_batches: RefCell<VecDeque<Vec<FakeRow>>>,
+    }
+
+    struct NeverBeginPool;
+
+    impl PostgresPool for NeverBeginPool {
+        type Error = &'static str;
+        type Transaction = FakeTransaction;
+
+        fn begin(&self) -> Result<Self::Transaction, Self::Error> {
+            Err("must not begin")
+        }
     }
 
     impl PostgresPool for FakePool {
@@ -8752,17 +8763,6 @@ mod tests {
 
     #[test]
     fn tenant_store_denies_cross_workspace_calls_before_pool_access() {
-        struct NeverBeginPool;
-
-        impl PostgresPool for NeverBeginPool {
-            type Error = &'static str;
-            type Transaction = FakeTransaction;
-
-            fn begin(&self) -> Result<Self::Transaction, Self::Error> {
-                Err("must not begin")
-            }
-        }
-
         let store = PostgresStore::new(NeverBeginPool);
         let tenant = store.for_workspace(WorkspaceId::new("workspace_01"));
         assert_eq!(
@@ -8816,18 +8816,54 @@ mod tests {
     }
 
     #[test]
+    fn tenant_store_denies_every_secondary_cross_workspace_read_before_pool_access() {
+        let store = PostgresStore::new(NeverBeginPool);
+        let tenant = store.for_workspace(WorkspaceId::new("workspace_01"));
+        let other = WorkspaceId::new("workspace_other");
+        assert_eq!(
+            WorkspaceReadRepository::find_workspace(&tenant, &other),
+            Err(ApplicationError::AccessDenied)
+        );
+        assert_eq!(
+            MembershipRepository::list_active_memberships(&tenant, &other),
+            Err(ApplicationError::AccessDenied)
+        );
+        assert_eq!(
+            InvitationRepository::find_invitation(
+                &tenant,
+                &other,
+                &InvitationId::new("invitation_01"),
+            ),
+            Err(ApplicationError::AccessDenied)
+        );
+        assert_eq!(
+            RetentionRepository::find_legal_hold(&tenant, &other, &LegalHoldId::new("hold_01"),),
+            Err(ApplicationError::AccessDenied)
+        );
+        assert_eq!(
+            RetentionRepository::list_active_legal_holds(&tenant, &other),
+            Err(ApplicationError::AccessDenied)
+        );
+        assert_eq!(
+            KeyRotationRepository::find_key_rotation_receipt(
+                &tenant,
+                &other,
+                &KeyRotationId::new("rotation_01"),
+            ),
+            Err(ApplicationError::AccessDenied)
+        );
+        assert_eq!(
+            ProjectionOutboxRepository::find_projection(
+                &tenant,
+                &other,
+                &ProjectionJobId::new("projection_01"),
+            ),
+            Err(ApplicationError::AccessDenied)
+        );
+    }
+
+    #[test]
     fn tenant_cipher_store_denies_cross_workspace_reads_before_pool_access() {
-        struct NeverBeginPool;
-
-        impl PostgresPool for NeverBeginPool {
-            type Error = &'static str;
-            type Transaction = FakeTransaction;
-
-            fn begin(&self) -> Result<Self::Transaction, Self::Error> {
-                Err("must not begin")
-            }
-        }
-
         let store = PostgresStore::new(NeverBeginPool);
         let tenant = store.for_workspace(WorkspaceId::new("workspace_01"));
         let cipher = IdentityCipher;
@@ -8883,6 +8919,47 @@ mod tests {
                 &repository,
                 &other,
                 &ProjectionJobId::new("graph_projection_01"),
+            ),
+            Err(ApplicationError::AccessDenied)
+        );
+    }
+
+    #[test]
+    fn tenant_cipher_store_denies_every_collection_read_before_pool_access() {
+        let store = PostgresStore::new(NeverBeginPool);
+        let tenant = store.for_workspace(WorkspaceId::new("workspace_01"));
+        let cipher = IdentityCipher;
+        let repository = tenant.with_cipher(&cipher);
+        let other = WorkspaceId::new("workspace_other");
+        let principal = PrincipalId::new("principal_01");
+        assert_eq!(
+            MemoryRepository::list_for_subject(&repository, &other, &principal),
+            Err(ApplicationError::AccessDenied)
+        );
+        assert_eq!(
+            CheckpointRepository::list_checkpoints_for_subject(&repository, &other, &principal),
+            Err(ApplicationError::AccessDenied)
+        );
+        assert_eq!(
+            TripRepository::list_trips_for_owner(&repository, &other, &principal),
+            Err(ApplicationError::AccessDenied)
+        );
+        assert_eq!(
+            BookingResearchRepository::list_booking_research_for_trip(
+                &repository,
+                &other,
+                &EntityId::new("trip_01"),
+            ),
+            Err(ApplicationError::AccessDenied)
+        );
+        assert_eq!(
+            KnowledgeGraphRepository::list_neighbour_edges(
+                &repository,
+                &other,
+                &KnowledgeNodeId::new("node_01"),
+                KnowledgeDirection::Both,
+                100,
+                10,
             ),
             Err(ApplicationError::AccessDenied)
         );

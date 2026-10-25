@@ -337,6 +337,8 @@ This roadmap describes sequencing, not release dates.
 - [x] Prove cross-tenant denial across SQLite user-facing read paths.
 - [x] Require workspace identity for internal projection-job lookups.
 - [ ] Prove cross-tenant denial across every future adapter read path.
+  - [x] Cover every currently implemented PostgreSQL tenant-facade point and
+    collection read with a mismatched workspace before pool access.
 - [ ] Provide the hosted PostgreSQL adapter with row-level security.
   - [x] Add deny-by-default forced RLS policy generation for every canonical
     `workspace_id` table plus explicit workspace and share-proposal policies.
@@ -373,6 +375,9 @@ This roadmap describes sequencing, not release dates.
         and lifecycle-status decoding for authorization decisions.
       - [x] Add deterministic bounded active-member enumeration with duplicate
         principal rejection for authorization and key-rotation recipients.
+      - [x] Maintain an executable cross-workspace denial matrix across all
+        implemented administrative, canonical-memory, travel, checkpoint,
+        graph, event, and projection reads.
       - [x] Add tenant-visible principal lookup with exact identity
         correlation under the membership-mediated RLS policy.
       - [x] Add tenant-verified membership insert and lifecycle replacement
