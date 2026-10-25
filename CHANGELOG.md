@@ -27,6 +27,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - A bounded shared review-manifest verifier now proves the revision, complete
   tracked inventory, byte lengths, and SHA-256 hashes against a clean checkout
   before reviewer attestation.
+- A strict security-review attestation schema and verifier bind reviewer
+  independence, source revision, manifest digest, exclusions, aggregate
+  findings, and disposition without exposing confidential finding details.
 - Explicit Memory Provider Protocol `1.0` stability gates separating the
   existing review-locked `0.1` wire surface from a future long-term
   compatibility promise.

@@ -130,6 +130,14 @@ review-locked `0.1` protocol can make a `1.0` compatibility promise.
 `MEMORY_PROVIDER_COMPATIBILITY_POLICY.md` defines version negotiation,
 compatible additions, breaking changes, deprecation, and support windows.
 
+## Security review attestation
+
+`security-review-attestation.schema.json` defines a content-free,
+machine-readable independent-review result bound to one exact source revision
+and security-review manifest digest. The public record contains aggregate
+finding counts, exclusions, reviewer independence, and disposition; detailed
+vulnerability evidence remains in the coordinated review channel.
+
 ## Semantic provider conformance
 
 `semantic-provider-conformance-result.schema.json` defines the portable

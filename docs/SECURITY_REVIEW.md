@@ -54,3 +54,18 @@ An independent report should include:
 
 Do not commit confidential vulnerability details before coordinated
 remediation. Follow `SECURITY.md` for private reporting.
+
+`spec/security-review-attestation.schema.json` defines the content-free public
+attestation record. It binds reviewer independence, the exact manifest digest
+and revision, scope exclusions, aggregate finding counts, and final
+disposition without requiring confidential finding details in the repository.
+Validate it with:
+
+```sh
+node scripts/verify-security-review-attestation.mjs review-attestation.json
+```
+
+An `approved` disposition requires no exclusions or unresolved findings.
+`approved_with_accepted_risks` still requires zero unresolved findings;
+accepted risks belong in the referenced private or coordinated report.
+`changes_required` requires at least one unresolved finding.

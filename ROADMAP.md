@@ -1320,5 +1320,8 @@ No stable release until:
         revalidate the copied manifest bytes before hashing and signing.
       - [x] Require the manifest revision, complete Git inventory, byte
         lengths, and hashes to match a clean checkout before attestation.
+    - [x] Define and validate a content-free independent-review result binding
+      reviewer independence, manifest digest, scope, aggregate findings, and
+      disposition without publishing confidential vulnerability details.
 - [x] Backup, restore, migration, revocation, and deletion have executable
   local-alpha coverage.
