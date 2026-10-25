@@ -2,13 +2,14 @@ use rembrane_application::{
     AcceptInvitationCommand, AdministrativeAuditRepository, ApplicationError,
     AuthorizeClientCommand, AuthorizeClientService, CanonicalMutationRepository,
     ChannelBindingService, ChannelInboxAdministrationService, CheckpointRepository,
-    ClientGrantBundle, CreateChannelBindingCommand, CreateInvitationCommand, DeleteMemoryCommand,
-    EventRepository, ExecuteRetentionPurgeCommand, InvitationService, ListInvitationsQuery,
-    MemberLifecycleService, MembershipRepository, MemoryLifecycleService, MemoryRepository,
-    PlaceLegalHoldCommand, ReleaseLegalHoldCommand, RememberPreferenceCommand,
-    RememberPreferenceService, RequeueChannelMessageCommand, ResolveContextCommand,
-    ResolveContextService, RetentionService, ReviseMemoryCommand, RevokeChannelBindingCommand,
-    RevokeInvitationCommand, SetRetentionPolicyCommand, WorkspaceRepository,
+    CheckpointService, ClientGrantBundle, CreateChannelBindingCommand, CreateCheckpointCommand,
+    CreateInvitationCommand, DeleteMemoryCommand, EventRepository, ExecuteRetentionPurgeCommand,
+    InvitationService, ListInvitationsQuery, MemberLifecycleService, MembershipRepository,
+    MemoryLifecycleService, MemoryRepository, PlaceLegalHoldCommand, ReleaseLegalHoldCommand,
+    RememberPreferenceCommand, RememberPreferenceService, RequeueChannelMessageCommand,
+    ResolveContextCommand, ResolveContextService, ResumeActivityCommand, RetentionService,
+    ReviseMemoryCommand, RevokeChannelBindingCommand, RevokeInvitationCommand,
+    SetRetentionPolicyCommand, UpdateCheckpointCommand, WorkspaceRepository,
 };
 use rembrane_channel_mobile_share::derive_binding_lookup_keys as derive_mobile_binding_lookup_keys;
 use rembrane_channel_whatsapp::derive_binding_lookup_keys as derive_whatsapp_binding_lookup_keys;
@@ -16,11 +17,11 @@ use rembrane_config::{ProviderConnection, ProviderKind, ProviderPlacement, Secre
 use rembrane_contracts::{ChannelKind, ChannelSenderBinding, ResolveContextRequest};
 use rembrane_crypto_configured::ConfiguredRecordCipher;
 use rembrane_domain::{
-    CanonicalEvent, ClientId, ContextPackId, DisclosureId, EventId, EventPayload, EvidenceId,
-    EvidenceReference, EvidenceSource, Invitation, InvitationStatus, LegalHoldId, Membership,
-    MemoryId, MemoryRecord, MemoryScope, Principal, PrincipalId, ReadGrant, ReadScope,
-    RetentionPeriod, Workspace, WorkspaceId, WorkspaceRetentionPolicy, WorkspaceRole,
-    WritePermission,
+    ActivityCheckpoint, ActivityId, CanonicalEvent, CheckpointId, ClientId, ContextPackId,
+    DisclosureId, EntityId, EventId, EventPayload, EvidenceId, EvidenceReference, EvidenceSource,
+    Invitation, InvitationStatus, LegalHoldId, Membership, MemoryId, MemoryRecord, MemoryScope,
+    Principal, PrincipalId, ReadGrant, ReadScope, RetentionPeriod, Workspace, WorkspaceId,
+    WorkspaceRetentionPolicy, WorkspaceRole, WritePermission,
 };
 use rembrane_memory_provider_configured::ConfiguredMemoryProvider;
 use rembrane_provider_registry::{ProviderSelectionPolicy, VerifiedProviderRegistry};
@@ -80,6 +81,8 @@ fn run(arguments: &[String]) -> Result<(), String> {
         Some("channel") => channel(&arguments[1..]),
         Some("remember") => remember(&arguments[1..]),
         Some("recall") => recall(&arguments[1..]),
+        Some("checkpoint") => checkpoint(&arguments[1..]),
+        Some("resume") => resume(&arguments[1..]),
         Some("correct") => correct(&arguments[1..]),
         Some("forget") => forget(&arguments[1..]),
         _ => {
@@ -1850,6 +1853,165 @@ fn recall(arguments: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+fn checkpoint(arguments: &[String]) -> Result<(), String> {
+    let activity_id = ActivityId::new(option(arguments, "--activity")?);
+    let summary = option(arguments, "--summary")?;
+    let expected_version = optional_option(arguments, "--version")
+        .map(str::parse::<u64>)
+        .transpose()
+        .map_err(|_| "--version must be a positive integer".to_owned())?;
+    if expected_version == Some(0) {
+        return Err("--version must be a positive integer".to_owned());
+    }
+    let client_id = optional_option(arguments, "--client").unwrap_or("rembrane-cli");
+    let next_steps = comma_separated_option(arguments, "--next-steps");
+    let blockers = comma_separated_option(arguments, "--blockers");
+    let state_fingerprint = optional_option(arguments, "--state-fingerprint");
+    let (mut store, principal_id, workspace_id) = encrypted_store(arguments)?;
+    let grants = authorize_client(
+        &store,
+        ClientId::new(client_id),
+        &workspace_id,
+        &principal_id,
+        vec![ReadScope::Activity {
+            id: activity_id.clone(),
+        }],
+        vec![WritePermission::WriteCheckpoint],
+    )?;
+    let previous_sequence = current_sequence(&store, &workspace_id)?;
+    let suffix = unique_suffix()?;
+    let checkpoint = if let Some(expected_version) = expected_version {
+        let current = CheckpointService::new(&mut store)
+            .load_for_update(&grants.read, &activity_id)
+            .map_err(|error| format!("cannot load checkpoint: {error}"))?
+            .ok_or_else(|| "activity checkpoint not found".to_owned())?;
+        if current.version() != expected_version {
+            return Err("checkpoint version conflict".to_owned());
+        }
+        let mut updated = current
+            .update(summary, next_steps, blockers)
+            .map_err(|error| format!("invalid checkpoint update: {error}"))?;
+        if let Some(fingerprint) = state_fingerprint {
+            updated = updated
+                .with_state_fingerprint(fingerprint)
+                .map_err(|error| format!("invalid state fingerprint: {error}"))?;
+        }
+        CheckpointService::new(&mut store)
+            .update(UpdateCheckpointCommand {
+                grant: grants.write,
+                checkpoint: updated,
+                expected_version,
+                event_id: EventId::new(format!("event_{suffix}")),
+                expected_previous_sequence: previous_sequence,
+            })
+            .map_err(|error| format!("cannot update checkpoint: {error}"))?
+    } else {
+        let goal = option(arguments, "--goal")?;
+        let mut created = ActivityCheckpoint::new(
+            CheckpointId::new(format!("checkpoint_{suffix}")),
+            workspace_id,
+            principal_id,
+            activity_id,
+            optional_option(arguments, "--entity").map(EntityId::new),
+            goal,
+            summary,
+            next_steps,
+            blockers,
+        )
+        .map_err(|error| format!("invalid checkpoint: {error}"))?;
+        if let Some(fingerprint) = state_fingerprint {
+            created = created
+                .with_state_fingerprint(fingerprint)
+                .map_err(|error| format!("invalid state fingerprint: {error}"))?;
+        }
+        CheckpointService::new(&mut store)
+            .create(CreateCheckpointCommand {
+                grant: grants.write,
+                checkpoint: created,
+                event_id: EventId::new(format!("event_{suffix}")),
+                expected_previous_sequence: previous_sequence,
+            })
+            .map_err(|error| format!("cannot create checkpoint: {error}"))?
+    };
+    print_checkpoint(&checkpoint, None, None)
+}
+
+fn resume(arguments: &[String]) -> Result<(), String> {
+    let activity_id = ActivityId::new(option(arguments, "--activity")?);
+    let client_id = option(arguments, "--client")?;
+    let purpose = optional_option(arguments, "--purpose").unwrap_or("resume-activity");
+    let current_fingerprint = optional_option(arguments, "--state-fingerprint");
+    let (mut store, principal_id, workspace_id) = encrypted_store(arguments)?;
+    let grants = authorize_client(
+        &store,
+        ClientId::new(client_id),
+        &workspace_id,
+        &principal_id,
+        vec![ReadScope::Activity {
+            id: activity_id.clone(),
+        }],
+        Vec::new(),
+    )?;
+    let disclosure_id = DisclosureId::new(format!("disclosure_{}", unique_suffix()?));
+    let checkpoint = CheckpointService::new(&mut store)
+        .resume(&ResumeActivityCommand {
+            grant: grants.read,
+            activity_id,
+            disclosure_id: disclosure_id.clone(),
+            purpose: purpose.to_owned(),
+        })
+        .map_err(|error| format!("cannot resume activity: {error}"))?;
+    if let Some(checkpoint) = checkpoint {
+        print_checkpoint(
+            &checkpoint,
+            current_fingerprint.map(|fingerprint| checkpoint.is_stale_against(fingerprint)),
+            Some(&disclosure_id),
+        )
+    } else {
+        println!("null");
+        Ok(())
+    }
+}
+
+fn comma_separated_option(arguments: &[String], name: &str) -> Vec<String> {
+    optional_option(arguments, name)
+        .map(|value| {
+            value
+                .split(',')
+                .map(str::trim)
+                .filter(|item| !item.is_empty())
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn print_checkpoint(
+    checkpoint: &ActivityCheckpoint,
+    stale: Option<bool>,
+    disclosure_id: Option<&DisclosureId>,
+) -> Result<(), String> {
+    let output = serde_json::json!({
+        "checkpointId": checkpoint.id().to_string(),
+        "activityId": checkpoint.activity_id().to_string(),
+        "entityId": checkpoint.entity_id().map(ToString::to_string),
+        "goal": checkpoint.goal(),
+        "summary": checkpoint.summary(),
+        "nextSteps": checkpoint.next_steps(),
+        "blockers": checkpoint.blockers(),
+        "stateFingerprint": checkpoint.state_fingerprint(),
+        "version": checkpoint.version(),
+        "stale": stale,
+        "disclosureId": disclosure_id.map(ToString::to_string),
+    });
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&output)
+            .map_err(|error| format!("cannot serialize checkpoint: {error}"))?
+    );
+    Ok(())
+}
+
 fn recall_scope_context(
     arguments: &[String],
 ) -> (
@@ -2423,6 +2585,14 @@ fn print_help() {
              --workspace <id> --client <id> --purpose <purpose> --query <query> \
              [--limit <items>] [--max-bytes <bytes>] \
              [--domain <name>] [--entity <id>] [--activity <id>]\n\
+           rembrane checkpoint --database <path> --principal <id> \
+             --workspace <id> --activity <id> --summary <text> \
+             [--goal <text> --entity <id>] [--version <n>] \
+             [--next-steps <comma-separated>] [--blockers <comma-separated>] \
+             [--state-fingerprint <fingerprint>] [--client <id>]\n\
+           rembrane resume --database <path> --principal <id> \
+             --workspace <id> --activity <id> --client <id> \
+             [--purpose <purpose>] [--state-fingerprint <fingerprint>]\n\
            rembrane correct --database <path> --principal <id> \
              --workspace <id> --memory <id> --version <n> --content <text> \
              [--domain <name> | --entity <id> | --activity <id>]\n\

@@ -540,6 +540,58 @@ if printf '%s\n' "$final_recall" | rg -F "Captain Hippo" >/dev/null; then
     exit 1
 fi
 
+"$rembrane_binary" checkpoint \
+    --database "$database" \
+    --principal principal_e2e \
+    --workspace workspace_e2e \
+    --activity activity_cli_e2e \
+    --goal "Ship CLI handoffs" \
+    --summary "Checkpoint creation works." \
+    --next-steps "Resume in another tool,Run full tests" \
+    --state-fingerprint "git:cli123" >/dev/null
+
+first_resume=$(
+    "$rembrane_binary" resume \
+        --database "$database" \
+        --principal principal_e2e \
+        --workspace workspace_e2e \
+        --activity activity_cli_e2e \
+        --client assistant_cli_e2e \
+        --state-fingerprint "git:cli123"
+)
+printf '%s\n' "$first_resume" | jq -e \
+    '.version == 1
+        and .summary == "Checkpoint creation works."
+        and .nextSteps == ["Resume in another tool", "Run full tests"]
+        and .stale == false
+        and .disclosureId' >/dev/null
+
+"$rembrane_binary" checkpoint \
+    --database "$database" \
+    --principal principal_e2e \
+    --workspace workspace_e2e \
+    --activity activity_cli_e2e \
+    --version 1 \
+    --summary "Checkpoint update works." \
+    --next-steps "Resume from the latest state" \
+    --state-fingerprint "git:cli456" >/dev/null
+
+second_resume=$(
+    "$rembrane_binary" resume \
+        --database "$database" \
+        --principal principal_e2e \
+        --workspace workspace_e2e \
+        --activity activity_cli_e2e \
+        --client assistant_cli_e2e \
+        --purpose continue-development \
+        --state-fingerprint "git:cli123"
+)
+printf '%s\n' "$second_resume" | jq -e \
+    '.version == 2
+        and .summary == "Checkpoint update works."
+        and .stale == true
+        and .disclosureId' >/dev/null
+
 event_count=$(
     sqlite3 "$database" \
         "SELECT count(*) FROM workspace_events WHERE workspace_id = 'workspace_e2e';"
@@ -552,8 +604,13 @@ plaintext_count=$(
     sqlite3 "$database" \
         "SELECT count(*) FROM memories WHERE instr(content_ciphertext, CAST('Hippo' AS BLOB)) > 0;"
 )
-test "$event_count" = "8"
+checkpoint_disclosure_count=$(
+    sqlite3 "$database" \
+        "SELECT count(*) FROM checkpoint_disclosures WHERE workspace_id = 'workspace_e2e' AND activity_id = 'activity_cli_e2e';"
+)
+test "$event_count" = "10"
 test "$disclosure_count" = "8"
+test "$checkpoint_disclosure_count" = "2"
 test "$plaintext_count" = "0"
 
 if REMBRANE_WORKSPACE_KEY_HEX="ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff" \
