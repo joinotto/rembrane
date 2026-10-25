@@ -9,6 +9,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- OAuth introspection now percent-encodes bearer tokens into bounded
+  zeroizing-owned form bodies, preventing form-parameter injection and wiping
+  the duplicated token bytes after HTTP transmission.
 - Customer key-provider HTTP requests now use bounded zeroizing-owned JSON
   bodies; seal-request base64 plaintext and decoded open-response base64 are
   explicitly wiped after their shortest required lifetime.

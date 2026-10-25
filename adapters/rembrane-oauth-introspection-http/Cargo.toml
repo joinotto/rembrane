@@ -8,6 +8,7 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+bytes = "1"
 rembrane-config = { path = "../../crates/rembrane-config" }
 rembrane-oauth-introspection = { path = "../rembrane-oauth-introspection" }
 rembrane-secret-local = { path = "../rembrane-secret-local" }

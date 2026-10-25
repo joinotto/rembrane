@@ -230,14 +230,19 @@ for zeroizing_request_adapter in \
     adapters/rembrane-graph-graphiti-http/src/lib.rs \
     adapters/rembrane-key-provider-http/src/lib.rs \
     adapters/rembrane-memory-provider-http/src/lib.rs \
+    adapters/rembrane-oauth-introspection-http/src/lib.rs \
     adapters/rembrane-semantic-mem0/src/lib.rs \
     adapters/rembrane-semantic-supermemory/src/lib.rs
 do
-    if ! rg -q 'bytes::Bytes::from_owner\(encoded\)' "$zeroizing_request_adapter"; then
+    if ! rg -q 'bytes::Bytes::from_owner\((encoded|body)\)' "$zeroizing_request_adapter"; then
         echo "HTTP adapter must preserve zeroizing serialized request ownership: $zeroizing_request_adapter" >&2
         exit 1
     fi
 done
+if rg -q '\.form\(' adapters/rembrane-oauth-introspection-http/src/lib.rs; then
+    echo "OAuth introspection must preserve zeroizing form-body ownership" >&2
+    exit 1
+fi
 rg -q 'wire\.plaintext_base64\.zeroize\(\)' adapters/rembrane-key-provider-http/src/lib.rs
 if rg -q 'errors: Vec<serde_json::Value>' adapters/rembrane-semantic-supermemory/src/lib.rs; then
     echo "Supermemory deletion errors must be streamed without arbitrary JSON retention" >&2

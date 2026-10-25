@@ -89,14 +89,40 @@ impl HttpIntrospectionTransport {
 
     fn build_request(&self, token: &str) -> Result<Request, IntrospectionTransportError> {
         validate_token(token)?;
+        let body = introspection_form_body(token)?;
         self.client
             .post(self.endpoint.clone())
             .basic_auth(&self.client_id, Some(self.client_secret.as_str()))
             .header(reqwest::header::ACCEPT, "application/json")
-            .form(&[("token", token), ("token_type_hint", "access_token")])
+            .header(
+                reqwest::header::CONTENT_TYPE,
+                "application/x-www-form-urlencoded",
+            )
+            .body(bytes::Bytes::from_owner(body))
             .build()
             .map_err(|_| IntrospectionTransportError)
     }
+}
+
+fn introspection_form_body(token: &str) -> Result<Zeroizing<Vec<u8>>, IntrospectionTransportError> {
+    validate_token(token)?;
+    let mut body = Zeroizing::new(Vec::with_capacity(token.len() * 3 + 42));
+    body.extend_from_slice(b"token=");
+    for byte in token.bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'*' | b'-' | b'.' | b'_') {
+            body.push(byte);
+        } else {
+            const HEX: &[u8; 16] = b"0123456789ABCDEF";
+            body.push(b'%');
+            body.push(HEX[usize::from(byte >> 4)]);
+            body.push(HEX[usize::from(byte & 0x0f)]);
+        }
+    }
+    body.extend_from_slice(b"&token_type_hint=access_token");
+    if body.len() > MAXIMUM_TOKEN_BYTES * 3 + 42 {
+        return Err(IntrospectionTransportError);
+    }
+    Ok(body)
 }
 
 impl IntrospectionTransport for HttpIntrospectionTransport {
@@ -239,7 +265,7 @@ mod tests {
 
     use super::{
         HttpIntrospectionTransport, MAXIMUM_CLIENT_ID_BYTES, MAXIMUM_CLIENT_SECRET_BYTES,
-        MAXIMUM_TOKEN_BYTES, decode_response,
+        MAXIMUM_TOKEN_BYTES, decode_response, introspection_form_body,
     };
 
     #[test]
@@ -332,6 +358,16 @@ mod tests {
                 .and_then(reqwest::blocking::Body::as_bytes)
                 .expect("form body"),
             b"token=opaque-access-token&token_type_hint=access_token"
+        );
+    }
+
+    #[test]
+    fn introspection_form_encodes_token_delimiters_without_parameter_injection() {
+        let body = introspection_form_body("opaque&token=other+/%~")
+            .expect("header-safe token should be form encoded");
+        assert_eq!(
+            body.as_slice(),
+            b"token=opaque%26token%3Dother%2B%2F%25%7E&token_type_hint=access_token"
         );
     }
 

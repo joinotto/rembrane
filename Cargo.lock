@@ -1378,6 +1378,7 @@ dependencies = [
 name = "rembrane-oauth-introspection-http"
 version = "0.1.0-alpha.1"
 dependencies = [
+ "bytes",
  "rembrane-config",
  "rembrane-oauth-introspection",
  "rembrane-secret-local",
