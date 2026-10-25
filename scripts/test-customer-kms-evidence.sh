@@ -36,6 +36,11 @@ jq -n \
         conformanceProfileSha256: $profile,
         conformanceResultSha256: $result,
         iamPolicySha256: $policy,
+        iamPolicyReview: {
+            reviewerId: "cloud-security-reviewer",
+            reviewedAt: "2026-01-15T11:30:00Z",
+            approved: true
+        },
         cleanup: {
             completedAt: "2026-01-15T12:30:00Z",
             resourcesDeleted: true
@@ -56,6 +61,24 @@ if verify "$test_root/not-cleaned.json" "$test_root/result.json" \
     "$test_root/iam-policy.json" >/dev/null 2>&1
 then
     echo "customer KMS evidence accepted incomplete cleanup" >&2
+    exit 1
+fi
+
+jq '.iamPolicyReview.approved = false' "$test_root/evidence.json" \
+    >"$test_root/unapproved-policy.json"
+if verify "$test_root/unapproved-policy.json" "$test_root/result.json" \
+    "$test_root/iam-policy.json" >/dev/null 2>&1
+then
+    echo "customer KMS evidence accepted an unapproved IAM policy" >&2
+    exit 1
+fi
+
+jq '.iamPolicyReview.reviewedAt = "2026-01-15T12:31:00Z"' \
+    "$test_root/evidence.json" >"$test_root/late-policy-review.json"
+if verify "$test_root/late-policy-review.json" "$test_root/result.json" \
+    "$test_root/iam-policy.json" >/dev/null 2>&1
+then
+    echo "customer KMS evidence accepted policy review after cleanup" >&2
     exit 1
 fi
 

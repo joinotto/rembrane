@@ -78,8 +78,11 @@ jq -e --slurpfile example spec/examples/customer-kms-conformance-evidence.json '
     and .properties.conformanceProfileSha256.pattern == "^[0-9a-f]{64}$"
     and .properties.conformanceResultSha256.pattern == "^[0-9a-f]{64}$"
     and .properties.iamPolicySha256.pattern == "^[0-9a-f]{64}$"
+    and .properties.iamPolicyReview.additionalProperties == false
+    and .properties.iamPolicyReview.properties.approved.const == true
     and .properties.cleanup.properties.resourcesDeleted.const == true
     and $example[0].schemaVersion == 1
+    and $example[0].iamPolicyReview.approved == true
     and $example[0].cleanup.resourcesDeleted == true
 ' spec/customer-kms-conformance-evidence.schema.json >/dev/null
 

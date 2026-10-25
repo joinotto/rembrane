@@ -30,15 +30,22 @@ requireExactKeys(evidence, [
   "conformanceResultSha256",
   "executedAt",
   "iamPolicySha256",
+  "iamPolicyReview",
   "namespace",
   "providerId",
   "providerVersion",
   "schemaVersion",
   "sidecarSourceRevision",
 ]);
+requireExactKeys(evidence.iamPolicyReview, [
+  "approved",
+  "reviewedAt",
+  "reviewerId",
+]);
 requireExactKeys(evidence.cleanup, ["completedAt", "resourcesDeleted"]);
 
 const executedAt = canonicalTimestamp(evidence.executedAt);
+const policyReviewedAt = canonicalTimestamp(evidence.iamPolicyReview.reviewedAt);
 const completedAt = canonicalTimestamp(evidence.cleanup.completedAt);
 const nowWithSkew = Date.now() + 5 * 60 * 1000;
 if (
@@ -52,10 +59,15 @@ if (
   !/^[0-9a-f]{40}$/.test(evidence.sidecarSourceRevision) ||
   !/^[A-Za-z0-9._-]{1,80}$/.test(evidence.namespace) ||
   executedAt === undefined ||
+  policyReviewedAt === undefined ||
   completedAt === undefined ||
   executedAt > nowWithSkew ||
+  policyReviewedAt > nowWithSkew ||
   completedAt > nowWithSkew ||
+  policyReviewedAt > completedAt ||
   completedAt < executedAt ||
+  !safeText(evidence.iamPolicyReview.reviewerId, 200) ||
+  evidence.iamPolicyReview.approved !== true ||
   evidence.cleanup.resourcesDeleted !== true
 ) {
   throw new Error("customer KMS evidence identity or lifecycle is invalid");

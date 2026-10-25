@@ -154,7 +154,8 @@ This roadmap describes sequencing, not release dates.
     production-ready.
       - [x] Define and verify a credential-free evidence envelope binding the
         exact provider build, disposable namespace, conformance result,
-        reviewed IAM policy, core profile, and completed resource cleanup.
+        explicitly approved IAM policy, core profile, and completed resource
+        cleanup.
       - [x] Create file-backed Unix keyring databases owner-only and reject
         permissive, non-regular, or symbolic-link targets.
       - [x] Enforce workspace, provider-key, and wrapped-ciphertext bounds in

@@ -9,6 +9,11 @@
   "conformanceProfileSha256": "aee588eabba0f29a05fb633324e54203a1ff81899bedae7dad4bab562bb2fa7b",
   "conformanceResultSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   "iamPolicySha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "iamPolicyReview": {
+    "reviewerId": "example-cloud-security-reviewer",
+    "reviewedAt": "2026-01-15T11:30:00Z",
+    "approved": true
+  },
   "cleanup": {
     "completedAt": "2026-01-15T12:30:00Z",
     "resourcesDeleted": true

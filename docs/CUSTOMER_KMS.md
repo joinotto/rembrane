@@ -174,7 +174,8 @@ node scripts/verify-customer-kms-evidence.mjs \
 
 The evidence binds the exact provider build and source revision, disposable
 namespace, current core profile, result bytes, and reviewed IAM-policy bytes.
-It is eligible only after the disposable resources are recorded as deleted.
+It records the bounded identity and time of an explicit IAM-policy approval
+and is eligible only after the disposable resources are recorded as deleted.
 Keep one verified artifact set for AWS KMS, Azure Key Vault, and Google Cloud
 KMS; these records contain hashes and identifiers, never credentials or keys.
 
