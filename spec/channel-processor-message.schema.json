@@ -45,6 +45,7 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 16384,
+      "pattern": "\\S",
       "x-rembrane-maxUtf8Bytes": 16384
     },
     "receivedAtEpochSeconds": {
@@ -56,9 +57,9 @@
     "opaqueId": {
       "type": "string",
       "minLength": 1,
-      "maxLength": 256,
+      "maxLength": 255,
       "pattern": "^[^\\u0000-\\u0020\\u007f]+$",
-      "x-rembrane-maxUtf8Bytes": 256
+      "x-rembrane-maxUtf8Bytes": 255
     }
   }
 }

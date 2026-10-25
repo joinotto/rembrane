@@ -63,6 +63,8 @@ jq -e '
     ])
     and .properties.eventId["x-rembrane-maxUtf8Bytes"] == 256
     and .properties.text["x-rembrane-maxUtf8Bytes"] == 16384
+    and .properties.text.pattern == "\\S"
+    and ."$defs".opaqueId["x-rembrane-maxUtf8Bytes"] == 255
     and ."$defs".opaqueId.additionalProperties == null
 ' spec/channel-processor-message.schema.json >/dev/null
 
@@ -70,10 +72,10 @@ jq -e --slurpfile schema spec/channel-processor-message.schema.json '
     .protocolVersion == $schema[0].properties.protocolVersion.const
     and (.channel as $channel | $schema[0].properties.channel.enum | index($channel) != null)
     and (.eventId | test("^\\S+$") and length <= 256)
-    and (.workspaceId | test("^\\S+$") and length <= 256)
-    and (.principalId | test("^\\S+$") and length <= 256)
-    and (.clientId | test("^\\S+$") and length <= 256)
-    and (.text | length > 0 and length <= 16384)
+    and (.workspaceId | test("^\\S+$") and length <= 255)
+    and (.principalId | test("^\\S+$") and length <= 255)
+    and (.clientId | test("^\\S+$") and length <= 255)
+    and (.text | test("\\S") and length <= 16384)
     and (.receivedAtEpochSeconds | type == "number" and . > 0)
     and ((keys | sort) == ($schema[0].required | sort))
 ' spec/examples/channel-processor-message.json >/dev/null

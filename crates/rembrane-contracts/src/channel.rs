@@ -7,6 +7,7 @@ use ring::digest;
 pub const MAX_CHANNEL_EVENT_ID_BYTES: usize = 256;
 pub const MAX_CHANNEL_TEXT_BYTES: usize = 16_384;
 pub const MAX_CHANNEL_LOOKUP_KEY_BYTES: usize = 256;
+pub const MAX_CHANNEL_IDENTITY_BYTES: usize = 255;
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum ChannelKind {
@@ -40,6 +41,7 @@ pub struct VerifiedChannelMessage {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ChannelMessageError {
     InvalidEventId,
+    InvalidIdentity,
     InvalidText,
     InvalidTime,
 }
@@ -108,6 +110,12 @@ impl VerifiedChannelMessage {
         let text = text.into();
         if !valid_event_id(&event_id) {
             return Err(ChannelMessageError::InvalidEventId);
+        }
+        if !valid_identity(workspace_id.as_str())
+            || !valid_identity(principal_id.as_str())
+            || !valid_identity(client_id.as_str())
+        {
+            return Err(ChannelMessageError::InvalidIdentity);
         }
         if text.trim().is_empty() || text.len() > MAX_CHANNEL_TEXT_BYTES {
             return Err(ChannelMessageError::InvalidText);
@@ -258,6 +266,14 @@ fn valid_lookup_key(value: &str) -> bool {
             .any(|byte| byte.is_ascii_control() || byte.is_ascii_whitespace())
 }
 
+fn valid_identity(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= MAX_CHANNEL_IDENTITY_BYTES
+        && !value
+            .bytes()
+            .any(|byte| byte.is_ascii_control() || byte.is_ascii_whitespace())
+}
+
 fn encode_hex(bytes: &[u8]) -> String {
     const HEX: &[u8; 16] = b"0123456789abcdef";
     let mut output = String::with_capacity(bytes.len() * 2);
@@ -272,6 +288,7 @@ impl Display for ChannelMessageError {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
         formatter.write_str(match self {
             Self::InvalidEventId => "channel event identifier is invalid",
+            Self::InvalidIdentity => "channel canonical identity is invalid",
             Self::InvalidText => "channel message text is invalid",
             Self::InvalidTime => "channel receipt time is invalid",
         })
@@ -285,8 +302,8 @@ mod tests {
     use rembrane_domain::{ClientId, PrincipalId, WorkspaceId};
 
     use super::{
-        ChannelKind, ChannelMessageError, MAX_CHANNEL_EVENT_ID_BYTES, VerifiedChannelMessage,
-        channel_event_audit_target,
+        ChannelKind, ChannelMessageError, MAX_CHANNEL_EVENT_ID_BYTES, MAX_CHANNEL_IDENTITY_BYTES,
+        VerifiedChannelMessage, channel_event_audit_target,
     };
 
     #[test]
@@ -316,6 +333,38 @@ mod tests {
             )
             .expect_err("unsafe event id must fail"),
             ChannelMessageError::InvalidEventId
+        );
+
+        for invalid_workspace in [
+            "unsafe workspace".to_owned(),
+            "x".repeat(MAX_CHANNEL_IDENTITY_BYTES + 1),
+        ] {
+            assert_eq!(
+                VerifiedChannelMessage::from_authenticated_transport(
+                    ChannelKind::MobileShare,
+                    "event_01",
+                    WorkspaceId::new(invalid_workspace),
+                    PrincipalId::new("principal_01"),
+                    ClientId::new("client_01"),
+                    "text",
+                    1_000,
+                )
+                .expect_err("unsafe canonical identity must fail"),
+                ChannelMessageError::InvalidIdentity
+            );
+        }
+        assert_eq!(
+            VerifiedChannelMessage::from_authenticated_transport(
+                ChannelKind::MobileShare,
+                "event_01",
+                WorkspaceId::new("workspace_01"),
+                PrincipalId::new("principal_01"),
+                ClientId::new("client_01"),
+                " \n\t",
+                1_000,
+            )
+            .expect_err("whitespace-only text must fail"),
+            ChannelMessageError::InvalidText
         );
     }
 

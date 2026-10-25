@@ -860,6 +860,6 @@ mod channel;
 
 pub use channel::{
     ChannelInboxSummary, ChannelKind, ChannelMessageError, ChannelSenderBinding,
-    MAX_CHANNEL_EVENT_ID_BYTES, MAX_CHANNEL_LOOKUP_KEY_BYTES, MAX_CHANNEL_TEXT_BYTES,
-    VerifiedChannelMessage, channel_event_audit_target,
+    MAX_CHANNEL_EVENT_ID_BYTES, MAX_CHANNEL_IDENTITY_BYTES, MAX_CHANNEL_LOOKUP_KEY_BYTES,
+    MAX_CHANNEL_TEXT_BYTES, VerifiedChannelMessage, channel_event_audit_target,
 };

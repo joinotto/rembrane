@@ -14,6 +14,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   idempotency metadata to cooperative bots and agents.
 - Rust adapter regression coverage proving its serialized processor body
   remains identical to the published language-neutral fixture.
+- Authenticated channel messages now reject empty, oversized, whitespace, or
+  control-bearing canonical identities, with matching non-blank text and
+  identity limits in the language-neutral processor schema.
 - Fail-closed graph-context disclosure receipts recording the exact canonical
   edge revisions, query direction and validity time, verified subject and
   client, and declared purpose before context crosses the application boundary.
