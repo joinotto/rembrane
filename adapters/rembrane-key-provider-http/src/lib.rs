@@ -9,7 +9,9 @@ use rembrane_crypto::{
     CryptoError, EncryptedPayload, EncryptionContext, KeyProviderManifest,
     KeyProviderProtocolVersion, KeyProviderTransport, OpenRequest, RotateKeyRequest, SealRequest,
 };
-use rembrane_domain::{KeyRotationReceipt, PrincipalId, ProviderId, WorkspaceId};
+use rembrane_domain::{
+    KeyRotationReceipt, MAX_KEY_ROTATION_RECIPIENTS, PrincipalId, ProviderId, WorkspaceId,
+};
 use reqwest::Url;
 use reqwest::blocking::{Client, Response};
 use reqwest::header::{ACCEPT, CONTENT_TYPE};
@@ -381,6 +383,9 @@ struct RotationReceiptResponse {
 
 impl RotationReceiptResponse {
     fn into_domain(self) -> Result<KeyRotationReceipt, CryptoError> {
+        if self.recipient_ids.len() > MAX_KEY_ROTATION_RECIPIENTS {
+            return Err(CryptoError::InvalidEnvelope);
+        }
         KeyRotationReceipt::new(
             ProviderId::new(self.provider_id),
             self.request_id,
@@ -399,8 +404,8 @@ impl RotationReceiptResponse {
 #[cfg(test)]
 mod tests {
     use super::{
-        EnvelopeResponse, HttpKeyProviderTransport, ManifestResponse, PlaintextResponse,
-        RotationReceiptResponse, validate_base_url,
+        EnvelopeResponse, HttpKeyProviderTransport, MAX_KEY_ROTATION_RECIPIENTS, ManifestResponse,
+        PlaintextResponse, RotationReceiptResponse, validate_base_url,
     };
     use rembrane_crypto::{CryptoError, EncryptedPayload, KeyProviderManifest};
 
@@ -523,6 +528,21 @@ mod tests {
             }
             .into_domain()
             .is_err()
+        );
+
+        assert_eq!(
+            RotationReceiptResponse {
+                provider_id: "rembrane.test-key-provider".to_owned(),
+                request_id: "rotate-03".to_owned(),
+                workspace_id: "workspace-01".to_owned(),
+                generation: 2,
+                key_id: "key-v2".to_owned(),
+                recipient_ids: (0..=MAX_KEY_ROTATION_RECIPIENTS)
+                    .map(|index| format!("member-{index}"))
+                    .collect(),
+            }
+            .into_domain(),
+            Err(CryptoError::InvalidEnvelope)
         );
     }
 }

@@ -863,6 +863,8 @@ This roadmap describes sequencing, not release dates.
       atomically with rotation completion.
     - [x] Transport rotation requests and strictly decoded receipts over the
       authenticated bounded HTTP adapter with replay conformance coverage.
+      - [x] Reject rotation receipts above the canonical 10,000-recipient
+        ceiling before constructing provider-controlled principal identities.
     - [x] Orchestrate provider rotation and completion through the management
       API and CLI.
       - [x] Add authorization-first application orchestration and a configured

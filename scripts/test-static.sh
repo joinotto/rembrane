@@ -218,6 +218,8 @@ rg -q 'Graphiti sidecar returned too many candidates' \
     adapters/rembrane-graph-graphiti-http/src/lib.rs
 rg -q 'MAXIMUM_MANIFEST_CAPABILITIES: usize = 6' \
     adapters/rembrane-graph-graphiti-http/src/lib.rs
+rg -Fq 'recipient_ids.len() > MAX_KEY_ROTATION_RECIPIENTS' \
+    adapters/rembrane-key-provider-http/src/lib.rs
 rg -q 'memory provider returned too many context items' \
     adapters/rembrane-memory-provider-http/src/lib.rs
 rg -q 'memory provider returned too many supporting memories' \
