@@ -439,6 +439,8 @@ This roadmap describes sequencing, not release dates.
 - [x] Shared-workspace invitations and role-bound acceptance.
   - [x] Bound invitation lifetime to 30 days and reject acceptance at or after
     expiry without creating membership.
+    - [x] Atomically transition an expired pending invitation before creating
+      a replacement so stale rows cannot block reinvitation.
 - [x] Shared-workspace exact scope grants, including entity-level access.
 - [x] Private-to-shared memory proposals.
   - [x] Content-free, exact-source-version proposal aggregate with source-owner

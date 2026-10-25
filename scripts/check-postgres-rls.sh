@@ -122,7 +122,8 @@ for invariant in \
     'administrative_audit_events_are_append_only' \
     'created_at_epoch_seconds bigint NOT NULL' \
     'expires_at_epoch_seconds bigint NOT NULL' \
-    'expires_at_epoch_seconds - created_at_epoch_seconds <= 2592000'
+    'expires_at_epoch_seconds - created_at_epoch_seconds <= 2592000' \
+    "'pending', 'accepted', 'revoked', 'expired'"
 do
     rg -F "$invariant" "$administration" >/dev/null || {
         echo "PostgreSQL administration invariant is missing: $invariant" >&2

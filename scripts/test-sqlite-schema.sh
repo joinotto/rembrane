@@ -57,7 +57,9 @@ sqlite3 "$database" < \
     "$repository_root/migrations/sqlite/0025_channel_message_audit.sql"
 sqlite3 "$database" < \
     "$repository_root/migrations/sqlite/0026_workspace_invitation_expiry.sql"
-sqlite3 "$database" "PRAGMA user_version = 26;"
+sqlite3 "$database" < \
+    "$repository_root/migrations/sqlite/0027_expired_workspace_invitations.sql"
+sqlite3 "$database" "PRAGMA user_version = 27;"
 
 sqlite3 "$database" <<'SQL'
 PRAGMA foreign_keys = ON;
@@ -679,7 +681,7 @@ table_count=$(
 )
 
 test "$table_count" -ge 9
-test "$(sqlite3 "$database" "PRAGMA user_version;")" -eq 26
+test "$(sqlite3 "$database" "PRAGMA user_version;")" -eq 27
 test "$(
     sqlite3 "$database" \
         "SELECT count(*) FROM channel_event_receipts WHERE event_id = 'event_channel_01';"

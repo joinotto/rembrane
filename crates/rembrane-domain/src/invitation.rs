@@ -10,6 +10,7 @@ pub enum InvitationStatus {
     Pending,
     Accepted,
     Revoked,
+    Expired,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -123,6 +124,17 @@ impl Invitation {
         self.status = InvitationStatus::Revoked;
         Ok(self)
     }
+
+    pub fn expire_at(mut self, now_epoch_seconds: u64) -> Result<Self, InvitationError> {
+        if self.status != InvitationStatus::Pending {
+            return Err(InvitationError::NotPending);
+        }
+        if now_epoch_seconds < self.expires_at_epoch_seconds {
+            return Err(InvitationError::NotExpired);
+        }
+        self.status = InvitationStatus::Expired;
+        Ok(self)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -131,6 +143,7 @@ pub enum InvitationError {
     Expired,
     InvalidLifetime,
     NotYetValid,
+    NotExpired,
     OwnerRoleRequiresTransfer,
     SelfInvitation,
 }
@@ -144,6 +157,7 @@ impl Display for InvitationError {
                 formatter.write_str("invitation lifetime is invalid or exceeds 30 days")
             }
             Self::NotYetValid => formatter.write_str("invitation is not yet valid"),
+            Self::NotExpired => formatter.write_str("invitation has not expired"),
             Self::OwnerRoleRequiresTransfer => {
                 formatter.write_str("owner role requires an explicit ownership transfer")
             }
@@ -210,5 +224,15 @@ mod tests {
             ),
             Err(InvitationError::InvalidLifetime)
         );
+    }
+
+    #[test]
+    fn expiration_is_an_explicit_terminal_transition() {
+        let expired = invitation(WorkspaceRole::Member)
+            .expect("invitation")
+            .expire_at(2_000)
+            .expect("expiry boundary");
+        assert_eq!(expired.status(), InvitationStatus::Expired);
+        assert_eq!(expired.expire_at(2_000), Err(InvitationError::NotPending));
     }
 }

@@ -77,7 +77,8 @@ where
             command.expires_at_epoch_seconds,
         )
         .map_err(|error| ApplicationError::Validation(error.to_string()))?;
-        self.repository.insert_invitation(invitation.clone())?;
+        self.repository
+            .insert_invitation_replacing_expired(invitation.clone())?;
         Ok(invitation)
     }
 

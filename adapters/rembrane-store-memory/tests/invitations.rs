@@ -129,6 +129,56 @@ fn expired_invitation_cannot_create_membership() {
 }
 
 #[test]
+fn reinvitation_atomically_expires_the_previous_pending_record() {
+    let mut store = shared_store();
+    let first = InvitationService::new(&mut store)
+        .create(command("guest"))
+        .expect("first invitation");
+    let mut second_command = command("guest");
+    second_command.invitation_id = InvitationId::new("invite_02");
+    second_command.created_at_epoch_seconds = 2_000;
+    second_command.expires_at_epoch_seconds = 3_000;
+
+    let second = InvitationService::new(&mut store)
+        .create(second_command)
+        .expect("expired invitation should release uniqueness slot");
+
+    assert_eq!(
+        store
+            .find_invitation(&WorkspaceId::new("team"), first.id())
+            .expect("lookup")
+            .expect("first invitation")
+            .status(),
+        InvitationStatus::Expired
+    );
+    assert_eq!(second.status(), InvitationStatus::Pending);
+}
+
+#[test]
+fn failed_reinvitation_does_not_expire_the_previous_record() {
+    let mut store = shared_store();
+    let first = InvitationService::new(&mut store)
+        .create(command("guest"))
+        .expect("first invitation");
+    let mut duplicate = command("guest");
+    duplicate.created_at_epoch_seconds = 2_000;
+    duplicate.expires_at_epoch_seconds = 3_000;
+
+    assert_eq!(
+        InvitationService::new(&mut store).create(duplicate),
+        Err(ApplicationError::AlreadyExists)
+    );
+    assert_eq!(
+        store
+            .find_invitation(&WorkspaceId::new("team"), first.id())
+            .expect("lookup")
+            .expect("first invitation")
+            .status(),
+        InvitationStatus::Pending
+    );
+}
+
+#[test]
 fn member_cannot_invite_another_principal() {
     let mut store = shared_store();
     store

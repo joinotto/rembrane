@@ -6,7 +6,8 @@ CREATE TABLE workspace_invitations (
     invited_principal_id text NOT NULL REFERENCES principals (id),
     invited_by text NOT NULL REFERENCES principals (id),
     role text NOT NULL CHECK (role IN ('admin', 'member', 'viewer')),
-    status text NOT NULL CHECK (status IN ('pending', 'accepted', 'revoked')),
+    status text NOT NULL
+        CHECK (status IN ('pending', 'accepted', 'revoked', 'expired')),
     created_at_epoch_seconds bigint NOT NULL CHECK (created_at_epoch_seconds > 0),
     expires_at_epoch_seconds bigint NOT NULL,
     created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,

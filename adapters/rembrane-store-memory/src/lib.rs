@@ -1178,14 +1178,33 @@ impl MembershipRepository for InMemoryStore {
 }
 
 impl InvitationRepository for InMemoryStore {
-    fn insert_invitation(&mut self, invitation: Invitation) -> Result<(), ApplicationError> {
-        if self.invitations.iter().any(|stored| {
-            stored.id() == invitation.id()
-                || (stored.workspace_id() == invitation.workspace_id()
+    fn insert_invitation_replacing_expired(
+        &mut self,
+        invitation: Invitation,
+    ) -> Result<(), ApplicationError> {
+        if self
+            .invitations
+            .iter()
+            .any(|stored| stored.id() == invitation.id())
+            || self.invitations.iter().any(|stored| {
+                stored.workspace_id() == invitation.workspace_id()
                     && stored.invited_principal_id() == invitation.invited_principal_id()
-                    && stored.status() == InvitationStatus::Pending)
-        }) {
+                    && stored.status() == InvitationStatus::Pending
+                    && stored.expires_at_epoch_seconds() > invitation.created_at_epoch_seconds()
+            })
+        {
             return Err(ApplicationError::AlreadyExists);
+        }
+        for stored in self.invitations.iter_mut().filter(|stored| {
+            stored.workspace_id() == invitation.workspace_id()
+                && stored.invited_principal_id() == invitation.invited_principal_id()
+                && stored.status() == InvitationStatus::Pending
+                && stored.expires_at_epoch_seconds() <= invitation.created_at_epoch_seconds()
+        }) {
+            *stored = stored
+                .clone()
+                .expire_at(invitation.created_at_epoch_seconds())
+                .map_err(|_| ApplicationError::StorageUnavailable)?;
         }
         self.invitations.push(invitation);
         Ok(())

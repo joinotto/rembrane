@@ -492,7 +492,10 @@ pub trait MembershipRepository {
 }
 
 pub trait InvitationRepository {
-    fn insert_invitation(&mut self, invitation: Invitation) -> Result<(), ApplicationError>;
+    fn insert_invitation_replacing_expired(
+        &mut self,
+        invitation: Invitation,
+    ) -> Result<(), ApplicationError>;
 
     fn find_invitation(
         &self,

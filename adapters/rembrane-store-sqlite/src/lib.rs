@@ -83,7 +83,9 @@ const CHANNEL_MESSAGE_AUDIT_MIGRATION: &str =
     include_str!("../../../migrations/sqlite/0025_channel_message_audit.sql");
 const WORKSPACE_INVITATION_EXPIRY_MIGRATION: &str =
     include_str!("../../../migrations/sqlite/0026_workspace_invitation_expiry.sql");
-const CURRENT_SCHEMA_VERSION: u32 = 26;
+const EXPIRED_WORKSPACE_INVITATION_MIGRATION: &str =
+    include_str!("../../../migrations/sqlite/0027_expired_workspace_invitations.sql");
+const CURRENT_SCHEMA_VERSION: u32 = 27;
 const CANONICAL_TABLES: [&str; 10] = [
     "activity_checkpoints",
     "disclosed_memories",
@@ -845,6 +847,12 @@ fn migrate(connection: &mut Connection) -> Result<(), ApplicationError> {
         transaction
             .execute_batch(WORKSPACE_INVITATION_EXPIRY_MIGRATION)
             .map_err(|_| ApplicationError::StorageUnavailable)?;
+        version = 26;
+    }
+    if version == 26 {
+        transaction
+            .execute_batch(EXPIRED_WORKSPACE_INVITATION_MIGRATION)
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
     }
     transaction
         .pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
@@ -1434,8 +1442,28 @@ impl<C> MembershipRepository for SqliteStore<C> {
 }
 
 impl<C> InvitationRepository for SqliteStore<C> {
-    fn insert_invitation(&mut self, invitation: Invitation) -> Result<(), ApplicationError> {
-        self.connection
+    fn insert_invitation_replacing_expired(
+        &mut self,
+        invitation: Invitation,
+    ) -> Result<(), ApplicationError> {
+        let transaction = self
+            .connection
+            .transaction()
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        transaction
+            .execute(
+                "UPDATE workspace_invitations
+                 SET status = 'expired', updated_at = CURRENT_TIMESTAMP
+                 WHERE workspace_id = ?1 AND invited_principal_id = ?2
+                   AND status = 'pending' AND expires_at_epoch_seconds <= ?3",
+                params![
+                    invitation.workspace_id().as_str(),
+                    invitation.invited_principal_id().as_str(),
+                    invitation.created_at_epoch_seconds()
+                ],
+            )
+            .map_err(map_write_error)?;
+        transaction
             .execute(
                 "INSERT INTO workspace_invitations (
                     workspace_id, id, invited_principal_id, invited_by, role, status,
@@ -1451,8 +1479,10 @@ impl<C> InvitationRepository for SqliteStore<C> {
                     invitation.expires_at_epoch_seconds()
                 ],
             )
-            .map(|_| ())
-            .map_err(map_write_error)
+            .map_err(map_write_error)?;
+        transaction
+            .commit()
+            .map_err(|_| ApplicationError::StorageUnavailable)
     }
 
     fn find_invitation(
@@ -2296,6 +2326,9 @@ fn decode_invitation(
         "revoked" => invitation
             .revoke()
             .map_err(|_| ApplicationError::StorageUnavailable),
+        "expired" => invitation
+            .expire_at(expires_at_epoch_seconds)
+            .map_err(|_| ApplicationError::StorageUnavailable),
         _ => Err(ApplicationError::StorageUnavailable),
     }
 }
@@ -2442,6 +2475,7 @@ const fn encode_invitation_status(status: InvitationStatus) -> &'static str {
         InvitationStatus::Pending => "pending",
         InvitationStatus::Accepted => "accepted",
         InvitationStatus::Revoked => "revoked",
+        InvitationStatus::Expired => "expired",
     }
 }
 
