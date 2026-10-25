@@ -806,6 +806,8 @@ This roadmap describes sequencing, not release dates.
     signature, and Ed25519 public-key reads.
   - [x] Produce registry signature bundles in new owner-only directories,
     rejecting unsafe keys and cleaning partial output on failure.
+  - [x] Verify the exact three-file registry bundle, checksum, Ed25519
+    signature, and provider conformance semantics in one process.
 - [x] Canonically parse and bound bring-your-own provider endpoints, allowing
   plaintext loopback only inside a declared trusted boundary.
 - [x] Enforce provider protocol and declared limits at projection and retrieval

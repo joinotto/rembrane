@@ -1019,6 +1019,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Provider-registry signing now requires owner-only non-symbolic private keys,
   writes only to a new owner-only directory, revalidates the copied registry,
   bounds the Ed25519 output, and removes incomplete bundles after failure.
+- A provider-registry bundle verifier now requires the exact registry,
+  checksum, and signature inventory and validates all three from one opened
+  byte set before enforcing provider and conformance semantics.
 - Restored the complete dependency-enabled workspace build by declaring
   previously implicit crate dependencies and enabling rmcp's stdio transport.
 - Corrected Memory Provider selector field casing and URL path construction so

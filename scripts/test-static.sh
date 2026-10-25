@@ -105,6 +105,9 @@ for deployment_file in \
     scripts/sign-provider-registry.sh \
     scripts/verify-provider-registry-signature.sh \
     scripts/verify-provider-registry-signature.mjs \
+    scripts/provider-registry-evidence.mjs \
+    scripts/verify-provider-registry-bundle.mjs \
+    scripts/verify-provider-registry-bundle.sh \
     scripts/test-provider-registry-signing.sh \
     scripts/test-core-offline.sh
 do

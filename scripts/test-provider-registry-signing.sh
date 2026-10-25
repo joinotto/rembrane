@@ -21,6 +21,10 @@ REMBRANE_REGISTRY_SIGNING_KEY="$temporary_directory/private.pem" \
     "$temporary_directory/artifacts/provider-registry.json.sig" \
     "$temporary_directory/public.pem" >/dev/null
 
+"$repository_root/scripts/verify-provider-registry-bundle.sh" \
+    "$temporary_directory/artifacts" \
+    "$temporary_directory/public.pem" >/dev/null
+
 ln -s "$temporary_directory/artifacts/provider-registry.json" \
     "$temporary_directory/registry-link.json"
 if "$repository_root/scripts/verify-provider-registry-signature.sh" \
@@ -64,6 +68,28 @@ then
     exit 1
 fi
 test ! -e "$temporary_directory/permissive-output"
+
+cp -R "$temporary_directory/artifacts" "$temporary_directory/bad-checksum"
+printf '%s\n' \
+    'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  provider-registry.json' \
+    >"$temporary_directory/bad-checksum/provider-registry.json.sha256"
+if "$repository_root/scripts/verify-provider-registry-bundle.sh" \
+    "$temporary_directory/bad-checksum" \
+    "$temporary_directory/public.pem" >/dev/null 2>&1
+then
+    echo "provider registry bundle accepted a false checksum" >&2
+    exit 1
+fi
+
+cp -R "$temporary_directory/artifacts" "$temporary_directory/extra-artifact"
+printf '%s\n' 'undeclared' >"$temporary_directory/extra-artifact/notes.txt"
+if "$repository_root/scripts/verify-provider-registry-bundle.sh" \
+    "$temporary_directory/extra-artifact" \
+    "$temporary_directory/public.pem" >/dev/null 2>&1
+then
+    echo "provider registry bundle accepted an undeclared artifact" >&2
+    exit 1
+fi
 
 mkdir "$temporary_directory/real-output"
 ln -s "$temporary_directory/real-output" "$temporary_directory/symbolic-output"
