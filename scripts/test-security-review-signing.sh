@@ -16,6 +16,7 @@ for script in \
     read-bounded-regular-file.mjs \
     verify-security-review-manifest.mjs \
     verify-security-review-attestation.mjs \
+    verify-security-review-signature.mjs \
     sign-security-review-manifest.sh \
     verify-security-review-signature.sh \
     verify-security-review-bundle.sh

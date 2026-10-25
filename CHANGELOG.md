@@ -1008,6 +1008,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Security-review manifest generation and verification plus attestation
   parsing now use no-follow descriptor reads, while explicitly preserving
   support for valid empty tracked files in the complete review inventory.
+- Security-review signature verification now checks Ed25519 signatures with
+  Node over exact no-follow document, signature, and public-key reads instead
+  of asking OpenSSL to reopen validated paths.
 - Restored the complete dependency-enabled workspace build by declaring
   previously implicit crate dependencies and enabling rmcp's stdio transport.
 - Corrected Memory Provider selector field casing and URL path construction so

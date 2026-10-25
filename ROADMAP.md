@@ -833,6 +833,8 @@ This roadmap describes sequencing, not release dates.
         record and contain an actual finding or explicit exclusion.
       - [x] Read review manifests, attestations, and tracked inventory through
         no-follow descriptors before hashing or parsing them.
+        - [x] Verify Ed25519 signatures over the exact opened review bytes
+          without handing their paths back to OpenSSL.
     - [x] Publish compatibility, deprecation, and mixed-version negotiation
       policy.
       - [x] Include the normative compatibility policy in the tamper-tested

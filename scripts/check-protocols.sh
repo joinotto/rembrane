@@ -578,6 +578,7 @@ node --check scripts/verify-customer-kms-provider-set.mjs
 node --check scripts/generate-security-review-manifest.mjs
 node --check scripts/verify-security-review-manifest.mjs
 node --check scripts/verify-security-review-attestation.mjs
+node --check scripts/verify-security-review-signature.mjs
 sh -n scripts/test-provider-http.sh
 node --check scripts/test-provider-http-runner.mjs
 sh -n scripts/test-key-provider-http.sh
