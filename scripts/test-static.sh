@@ -30,6 +30,7 @@ sh ./scripts/test-customer-kms-evidence.sh
 sh ./scripts/test-customer-kms-provider-set.sh
 sh ./scripts/test-memory-provider-mixed-version-evidence.sh
 sh ./scripts/test-memory-provider-release-evidence.sh
+sh ./scripts/test-memory-provider-external-provenance.sh
 sh ./scripts/test-package-memory-provider-release-evidence.sh
 ./scripts/check-protocols.sh
 ./scripts/test-semantic-provider-compatibility-lock.sh
@@ -74,6 +75,7 @@ for deployment_file in \
     scripts/test-memory-provider-compatibility-lock.sh \
     scripts/test-memory-provider-mixed-version-evidence.sh \
     scripts/test-memory-provider-release-evidence.sh \
+    scripts/test-memory-provider-external-provenance.sh \
     scripts/test-package-memory-provider-release-evidence.sh \
     scripts/package-memory-provider-release-evidence.mjs \
     scripts/test-key-provider-compatibility-lock.sh \
@@ -108,6 +110,7 @@ sh -n scripts/test-kotlin-sdk.sh
 sh -n scripts/test-memory-provider-compatibility-lock.sh
 sh -n scripts/test-memory-provider-mixed-version-evidence.sh
 sh -n scripts/test-memory-provider-release-evidence.sh
+sh -n scripts/test-memory-provider-external-provenance.sh
 sh -n scripts/test-package-memory-provider-release-evidence.sh
 sh -n scripts/test-key-provider-compatibility-lock.sh
 sh -n scripts/test-semantic-provider-compatibility-lock.sh

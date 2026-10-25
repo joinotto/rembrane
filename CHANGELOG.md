@@ -18,6 +18,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - External Memory Provider release evidence now requires a detached Ed25519
   signature over the exact conformance result and binds the independently
   supplied maintainer public key, replacing self-asserted provenance.
+- A strict external-provider provenance statement and verifier bind the
+  maintainer identity, implementation revision, exact conformance-result
+  digest, and signing time under the maintainer signature.
 - Review-locked Memory Provider Protocol `0.1` to `1.0` migration guidance
   defines separate major-generation endpoints, fail-closed negotiation,
   provider/client/operator duties, rollback constraints, and the evidence

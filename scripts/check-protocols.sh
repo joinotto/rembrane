@@ -32,6 +32,7 @@ jq empty \
     spec/memory-provider-conformance.schema.json \
     spec/memory-provider-conformance-result.schema.json \
     spec/memory-provider-mixed-version-evidence.schema.json \
+    spec/memory-provider-external-provenance.schema.json \
     spec/memory-provider-release-evidence.schema.json \
     spec/key-provider-conformance-result.schema.json \
     spec/key-provider-conformance.schema.json \
@@ -52,6 +53,7 @@ jq empty \
     spec/examples/memory-provider-context-response.json \
     spec/examples/memory-provider-conformance-result.json \
     spec/examples/memory-provider-mixed-version-evidence.json \
+    spec/examples/memory-provider-external-provenance.json \
     spec/examples/memory-provider-release-evidence.json \
     spec/examples/memory-provider-proposal-request.json \
     spec/examples/memory-provider-sync-push-request.json \
