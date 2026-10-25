@@ -845,6 +845,8 @@ This roadmap describes sequencing, not release dates.
         result signature under an operator-selected Ed25519 trust anchor.
         - [x] Define and tamper-test a signed provenance statement binding the
           external maintainer, source revision, result digest, and signing time.
+        - [x] Generate canonical provenance deterministically from bounded
+          result bytes before external signing.
   - [x] Add a machine-verifiable compatibility lock over the canonical wire
     schemas, HTTP binding, conformance profile, and lifecycle fixtures so
     protocol changes require explicit review.

@@ -22,6 +22,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - A strict external-provider provenance statement and verifier bind the
   maintainer identity, implementation revision, exact conformance-result
   digest, and signing time under the maintainer signature.
+- A deterministic credential-free provenance generator hashes exact bounded
+  conformance-result bytes and emits canonical maintainer metadata for
+  external Ed25519 signing.
 - Review-locked Memory Provider Protocol `0.1` to `1.0` migration guidance
   defines separate major-generation endpoints, fail-closed negotiation,
   provider/client/operator duties, rollback constraints, and the evidence

@@ -76,6 +76,7 @@ for deployment_file in \
     scripts/test-memory-provider-mixed-version-evidence.sh \
     scripts/test-memory-provider-release-evidence.sh \
     scripts/test-memory-provider-external-provenance.sh \
+    scripts/generate-memory-provider-external-provenance.mjs \
     scripts/test-package-memory-provider-release-evidence.sh \
     scripts/package-memory-provider-release-evidence.mjs \
     scripts/test-key-provider-compatibility-lock.sh \

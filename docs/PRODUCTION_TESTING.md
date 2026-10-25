@@ -65,3 +65,22 @@ never reads provider tokens or cloud credentials.
 The external maintainer creates the provenance JSON, signs those exact bytes,
 and supplies both files. The signed statement—not the release packager—binds
 their maintainer ID and source revision to the conformance-result digest.
+
+They can generate the canonical statement without exposing credentials:
+
+```sh
+node scripts/generate-memory-provider-external-provenance.mjs \
+  provider-b.json \
+  <external-maintainer-id> \
+  <provider-b-source-revision> \
+  <current-UTC-time> \
+  > provider-b.provenance.json
+
+openssl pkeyutl -sign -inkey maintainer-private.pem -rawin \
+  -in provider-b.provenance.json \
+  -out provider-b.provenance.json.sig
+```
+
+The private key remains with the external maintainer. Transfer only the
+result, provenance statement, signature, and independently distributed public
+key.
