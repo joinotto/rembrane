@@ -1394,6 +1394,7 @@ name = "rembrane-secret-local"
 version = "0.1.0-alpha.1"
 dependencies = [
  "rembrane-config",
+ "url",
  "zeroize",
 ]
 

@@ -4,10 +4,38 @@ use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::fs;
 
-use rembrane_config::{ProviderConnection, SecretReference, SecretReferenceSource};
+use rembrane_config::{
+    PostgresConnection, PostgresTransportSecurity, ProviderConnection, SecretReference,
+    SecretReferenceSource,
+};
+use url::Url;
 use zeroize::Zeroizing;
 
 pub const MAX_RESOLVED_SECRET_BYTES: usize = 65_536;
+pub const MAX_POSTGRES_URL_BYTES: usize = 4_096;
+
+pub struct ResolvedPostgresConnection {
+    url: Zeroizing<String>,
+    transport_security: PostgresTransportSecurity,
+    max_connections: u16,
+}
+
+impl ResolvedPostgresConnection {
+    #[must_use]
+    pub fn url(&self) -> &str {
+        &self.url
+    }
+
+    #[must_use]
+    pub const fn transport_security(&self) -> PostgresTransportSecurity {
+        self.transport_security
+    }
+
+    #[must_use]
+    pub const fn max_connections(&self) -> u16 {
+        self.max_connections
+    }
+}
 
 /// Application-owned boundary for resolving one validated secret reference.
 ///
@@ -49,6 +77,32 @@ where
         .iter()
         .map(|reference| resolver.resolve(reference))
         .collect()
+}
+
+/// Resolves and validates a `PostgreSQL` URL only at the adapter-construction
+/// boundary.
+///
+/// The returned value deliberately cannot be cloned, debug-formatted, or
+/// serialized. Its URL is wiped when the adapter construction path drops it.
+///
+/// # Errors
+///
+/// Returns an opaque resolution error when the reference is unavailable or
+/// the resolved value is not a bounded `PostgreSQL` connection URL.
+pub fn resolve_postgres_connection<Resolver>(
+    resolver: &Resolver,
+    connection: &PostgresConnection,
+) -> Result<ResolvedPostgresConnection, SecretResolutionError>
+where
+    Resolver: SecretResolver + ?Sized,
+{
+    let url = resolver.resolve(connection.url_reference())?;
+    validate_postgres_url(&url)?;
+    Ok(ResolvedPostgresConnection {
+        url,
+        transport_security: connection.transport_security(),
+        max_connections: connection.max_connections(),
+    })
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -145,17 +199,39 @@ fn validate_value(value: Zeroizing<String>) -> Result<Zeroizing<String>, SecretR
     Ok(value)
 }
 
+fn validate_postgres_url(value: &str) -> Result<(), SecretResolutionError> {
+    if value.len() > MAX_POSTGRES_URL_BYTES
+        || value.trim() != value
+        || value.chars().any(char::is_control)
+        || value.contains('\\')
+    {
+        return Err(SecretResolutionError::InvalidValue);
+    }
+    let parsed = Url::parse(value).map_err(|_| SecretResolutionError::InvalidValue)?;
+    if !matches!(parsed.scheme(), "postgres" | "postgresql")
+        || parsed.host().is_none()
+        || parsed.fragment().is_some()
+    {
+        return Err(SecretResolutionError::InvalidValue);
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use rembrane_config::SecretReference;
-    use rembrane_config::{ProviderConnection, ProviderKind, ProviderPlacement};
+    use rembrane_config::{
+        PostgresConnection, PostgresTransportSecurity, ProviderConnection, ProviderKind,
+        ProviderPlacement,
+    };
     use zeroize::Zeroizing;
 
     use super::{
-        LocalSecretResolver, MAX_RESOLVED_SECRET_BYTES, SecretResolutionError, SecretResolver,
+        LocalSecretResolver, MAX_POSTGRES_URL_BYTES, MAX_RESOLVED_SECRET_BYTES,
+        SecretResolutionError, SecretResolver, resolve_postgres_connection,
         resolve_provider_credentials,
     };
 
@@ -266,5 +342,71 @@ mod tests {
             .expect("external resolver should compose");
         assert_eq!(values[0].as_str(), "resolved:graph/token");
         assert_eq!(values[1].as_str(), "resolved:graph/model-key");
+    }
+
+    struct PostgresFixtureResolver {
+        value: String,
+    }
+
+    impl SecretResolver for PostgresFixtureResolver {
+        fn resolve(
+            &self,
+            _reference: &SecretReference,
+        ) -> Result<Zeroizing<String>, SecretResolutionError> {
+            Ok(Zeroizing::new(self.value.clone()))
+        }
+    }
+
+    #[test]
+    fn resolves_postgres_url_into_non_loggable_zeroizing_configuration() {
+        let connection = PostgresConnection::new(
+            SecretReference::external("vault", "database/rembrane").expect("reference"),
+            PostgresTransportSecurity::VerifyFull,
+            24,
+        )
+        .expect("connection");
+        let resolved = resolve_postgres_connection(
+            &PostgresFixtureResolver {
+                value: "postgresql://rembrane:secret@database.example/rembrane?sslmode=verify-full"
+                    .to_owned(),
+            },
+            &connection,
+        )
+        .expect("resolved PostgreSQL connection");
+
+        assert_eq!(
+            resolved.transport_security(),
+            PostgresTransportSecurity::VerifyFull
+        );
+        assert_eq!(resolved.max_connections(), 24);
+        assert!(resolved.url().starts_with("postgresql://rembrane:"));
+    }
+
+    #[test]
+    fn rejects_non_postgres_or_unbounded_resolved_database_values() {
+        let connection = PostgresConnection::new(
+            SecretReference::environment("REMBRANE_POSTGRES_URL").expect("reference"),
+            PostgresTransportSecurity::VerifyFull,
+            1,
+        )
+        .expect("connection");
+        for invalid in [
+            "https://database.example/rembrane".to_owned(),
+            "postgresql:///missing-host".to_owned(),
+            "postgresql://database.example/rembrane#fragment".to_owned(),
+            format!(
+                "postgresql://database.example/{}",
+                "x".repeat(MAX_POSTGRES_URL_BYTES)
+            ),
+        ] {
+            assert_eq!(
+                resolve_postgres_connection(
+                    &PostgresFixtureResolver { value: invalid },
+                    &connection,
+                )
+                .err(),
+                Some(SecretResolutionError::InvalidValue)
+            );
+        }
     }
 }

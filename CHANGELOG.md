@@ -15,6 +15,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   full-verification versus trusted-boundary transport policy and bounded pool
   capacity, without a derived debug representation that could expose its
   secret locator in logs.
+- Deployment-selected PostgreSQL URL resolution into a bounded, validated,
+  non-cloneable, non-debuggable zeroizing adapter-construction value.
 - A Zed local MCP configuration that safely inherits the application process
   environment instead of embedding unsupported `${VAR}` interpolation or raw
   credentials in settings.

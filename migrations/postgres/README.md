@@ -42,6 +42,10 @@ URL, including any password, must remain short-lived and must never be
 serialized, logged, returned by diagnostics, or stored in a provider profile.
 The typed connection profile deliberately has no debug representation, so its
 secret locator cannot be included accidentally by derived structured logging.
+The deployment-selected `SecretResolver` resolves it only while constructing
+the database adapter. The resolved URL is validated as a bounded `postgres` or
+`postgresql` URL with a host, kept in zeroizing memory, and represented by a
+non-cloneable, non-debuggable consumed configuration.
 Remote deployments require full TLS verification; plaintext transport is an
 explicit trusted-boundary-only mode. Connection pools are bounded to prevent a
 tenant or configuration error from exhausting the database.
