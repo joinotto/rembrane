@@ -135,6 +135,8 @@ This roadmap describes sequencing, not release dates.
         with explicit overflow rejection.
       - [x] Prove generate, persist-before-activate, reload, current decrypt,
         and historical decrypt as one executable sidecar rotation flow.
+      - [x] Create file-backed Unix keyring databases owner-only and reject
+        permissive, non-regular, or symbolic-link targets.
   - [x] Add a provider-agnostic configured cipher that dispatches to local
     environment/macOS keyrings or a policy-negotiated HTTP key provider.
     - [x] Accept consumed customer key-provider configuration from

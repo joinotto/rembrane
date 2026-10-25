@@ -2,6 +2,11 @@
 
 use std::path::Path;
 use std::sync::Mutex;
+#[cfg(unix)]
+use std::{
+    fs::OpenOptions,
+    os::unix::fs::{OpenOptionsExt, PermissionsExt},
+};
 
 use rembrane_domain::WorkspaceId;
 use rembrane_provider_sdk::{
@@ -29,6 +34,8 @@ pub struct SqliteCustomerKmsKeyReferenceStore {
 
 impl SqliteCustomerKmsKeyReferenceStore {
     pub fn open(path: impl AsRef<Path>) -> Result<Self, ProviderError> {
+        let path = path.as_ref();
+        prepare_private_database_file(path)?;
         let connection = Connection::open(path).map_err(|_| ProviderError::Unavailable)?;
         Self::initialize(connection)
     }
@@ -141,6 +148,48 @@ impl SqliteCustomerKmsKeyReferenceStore {
     }
 }
 
+#[cfg(unix)]
+fn prepare_private_database_file(path: &Path) -> Result<(), ProviderError> {
+    if path.as_os_str().is_empty() {
+        return Err(ProviderError::InvalidConfiguration(
+            "customer KMS database path is empty".to_owned(),
+        ));
+    }
+    if path
+        .symlink_metadata()
+        .is_ok_and(|metadata| metadata.file_type().is_symlink())
+    {
+        return Err(ProviderError::InvalidConfiguration(
+            "customer KMS database path must not be a symbolic link".to_owned(),
+        ));
+    }
+    let file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .mode(0o600)
+        .open(path)
+        .map_err(|_| ProviderError::Unavailable)?;
+    let metadata = file.metadata().map_err(|_| ProviderError::Unavailable)?;
+    if !metadata.is_file() || metadata.permissions().mode() & 0o077 != 0 {
+        return Err(ProviderError::InvalidConfiguration(
+            "customer KMS database must be an owner-only regular file".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn prepare_private_database_file(path: &Path) -> Result<(), ProviderError> {
+    if path.as_os_str().is_empty() {
+        return Err(ProviderError::InvalidConfiguration(
+            "customer KMS database path is empty".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
 impl CustomerKmsKeyReferenceStore for SqliteCustomerKmsKeyReferenceStore {
     fn persist_and_activate(
         &self,
@@ -206,7 +255,10 @@ impl CustomerKmsKeyReferenceStore for SqliteCustomerKmsKeyReferenceStore {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
     use std::sync::{Arc, Barrier};
+    #[cfg(unix)]
+    use std::{fs, os::unix::fs::PermissionsExt};
 
     use rembrane_crypto::{EncryptionContext, PayloadPurpose, RecordCipher};
     use rembrane_crypto_rustcrypto::{RustCryptoKeyringCipher, RustCryptoRecordCipher};
@@ -411,5 +463,46 @@ mod tests {
             cipher.open(&context(&workspace), &current).unwrap(),
             b"after rotation"
         );
+    }
+
+    #[cfg(unix)]
+    fn temporary_database_path(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "rembrane-kms-{name}-{}-{}.sqlite",
+            std::process::id(),
+            std::thread::current().name().unwrap_or("test")
+        ))
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn creates_owner_only_database_files() {
+        let path = temporary_database_path("private");
+        let _ = fs::remove_file(&path);
+
+        let store = SqliteCustomerKmsKeyReferenceStore::open(&path).unwrap();
+        drop(store);
+
+        let mode = fs::metadata(&path).unwrap().permissions().mode();
+        assert_eq!(mode & 0o077, 0);
+        fs::remove_file(path).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn rejects_permissive_or_symlinked_database_files() {
+        let path = temporary_database_path("permissive");
+        let link = temporary_database_path("symlink");
+        let _ = fs::remove_file(&path);
+        let _ = fs::remove_file(&link);
+        fs::write(&path, []).unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+
+        assert!(SqliteCustomerKmsKeyReferenceStore::open(&path).is_err());
+        std::os::unix::fs::symlink(&path, &link).unwrap();
+        assert!(SqliteCustomerKmsKeyReferenceStore::open(&link).is_err());
+
+        fs::remove_file(link).unwrap();
+        fs::remove_file(path).unwrap();
     }
 }

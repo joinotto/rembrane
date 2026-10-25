@@ -61,6 +61,8 @@ are capped at 1,024 generations and SQLite reads stop after one overflow row.
 The adapter test suite executes the complete rotation lifecycle: generate,
 persist-before-activate, seal with the new generation, reload the durable
 keyring, and decrypt records from both current and historical generations.
+On Unix, file-backed keyring databases are created owner-only and existing
+group/world-accessible, non-regular, or symbolic-link targets are rejected.
 
 These framework adapters are complete, but cloud SDK implementations and
 their IAM policies remain deployment-owned. The top-level production-provider

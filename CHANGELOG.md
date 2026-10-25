@@ -36,6 +36,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - End-to-end customer-KMS sidecar coverage spanning key generation,
   persistence-before-activation, durable reload, and current plus historical
   record decryption.
+- Owner-only Unix customer-KMS database creation with rejection of permissive,
+  non-regular, and symbolic-link targets.
 - Completion of the framework-level customer-KMS resolution milestone while
   retaining an explicit acceptance gate for deployment-owned cloud SDK
   sidecars and IAM review.
