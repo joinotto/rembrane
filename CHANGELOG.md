@@ -60,6 +60,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - PostgreSQL retention-policy lookup with exact tenant correlation, bounded
   cardinality, validated policy restoration, and explicit `NULL`-to-forever
   period decoding.
+- Atomic PostgreSQL retention-policy insertion and optimistic replacement with
+  strict successor checks, nullable forever-period parameters, exact affected
+  rows, and mandatory administrative audit evidence.
 - PostgreSQL invitation lookup and bounded deterministic listing with optional
   status filtering, numeric lifetime decoding, terminal-state restoration,
   and exact tenant/invitation correlation.

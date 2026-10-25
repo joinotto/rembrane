@@ -11,13 +11,13 @@ use std::fmt::{self, Display, Formatter};
 use rembrane_application::{
     AdministrativeAuditRepository, ApplicationError, InvitationRepository,
     MAX_ADMINISTRATIVE_AUDIT_PAGE, MAXIMUM_INVITATION_LIST_ITEMS, MembershipRepository,
-    WorkspaceReadRepository, WorkspaceRepository,
+    WorkspaceReadRepository, WorkspaceRepository, is_strict_successor,
 };
 use rembrane_domain::{
     AdministrativeAction, AdministrativeAuditEvent, AdministrativeAuditEventId,
     AdministrativeTargetKind, Invitation, InvitationId, InvitationStatus, Membership, Principal,
-    PrincipalId, RetentionPeriod, Workspace, WorkspaceId, WorkspaceKind, WorkspaceRetentionPolicy,
-    WorkspaceRole,
+    PrincipalId, RetentionPeriod, RetentionResource, Workspace, WorkspaceId, WorkspaceKind,
+    WorkspaceRetentionPolicy, WorkspaceRole,
 };
 
 pub const SET_TENANT_SQL: &str = "SELECT set_config('rembrane.workspace_id', $1, true);";
@@ -87,11 +87,20 @@ pub const FIND_RETENTION_POLICY_SQL: &str = "SELECT workspace_id, version, \
     COALESCE(administrative_audit_days, 0) AS administrative_audit_days \
     FROM workspace_retention_policies WHERE workspace_id = $1 \
     ORDER BY workspace_id LIMIT 2";
+pub const INSERT_RETENTION_POLICY_SQL: &str = "INSERT INTO workspace_retention_policies \
+    (workspace_id, version, user_memory_days, activity_checkpoint_days, travel_research_days, \
+    disclosure_receipt_days, canonical_event_days, administrative_audit_days) \
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)";
+pub const REPLACE_RETENTION_POLICY_SQL: &str = "UPDATE workspace_retention_policies SET \
+    version = $2, user_memory_days = $3, activity_checkpoint_days = $4, \
+    travel_research_days = $5, disclosure_receipt_days = $6, canonical_event_days = $7, \
+    administrative_audit_days = $8 WHERE workspace_id = $1 AND version = $9";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PostgresParameter<'value> {
     Text(&'value str),
     I64(i64),
+    OptionalI64(Option<i64>),
     Bytes(&'value [u8]),
 }
 
@@ -929,6 +938,59 @@ impl<Pool: PostgresPool> PostgresStore<Pool> {
         transaction.commit().map_err(PostgresStoreError::Tenant)?;
         Ok(policy)
     }
+
+    pub fn replace_retention_policy(
+        &self,
+        policy: &WorkspaceRetentionPolicy,
+        expected_version: Option<u64>,
+        audit_event: &AdministrativeAuditEvent,
+    ) -> Result<(), PostgresStoreError<Pool::Error>> {
+        if !valid_retention_audit(policy, audit_event) {
+            return Err(PostgresStoreError::InvalidInput);
+        }
+        let version = postgres_epoch(policy.version())?;
+        let values = retention_policy_parameters(policy);
+        let mut transaction = self.begin_tenant(policy.workspace_id().clone())?;
+        let changed = match expected_version {
+            None if policy.version() == 1 => transaction.execute(
+                INSERT_RETENTION_POLICY_SQL,
+                &[
+                    PostgresParameter::Text(policy.workspace_id().as_str()),
+                    PostgresParameter::I64(version),
+                    values[0],
+                    values[1],
+                    values[2],
+                    values[3],
+                    values[4],
+                    values[5],
+                ],
+            ),
+            Some(expected) if is_strict_successor(expected, policy.version()) => {
+                let expected = postgres_epoch(expected)?;
+                transaction.execute(
+                    REPLACE_RETENTION_POLICY_SQL,
+                    &[
+                        PostgresParameter::Text(policy.workspace_id().as_str()),
+                        PostgresParameter::I64(version),
+                        values[0],
+                        values[1],
+                        values[2],
+                        values[3],
+                        values[4],
+                        values[5],
+                        PostgresParameter::I64(expected),
+                    ],
+                )
+            }
+            None | Some(_) => return Err(PostgresStoreError::VersionConflict),
+        }
+        .map_err(PostgresStoreError::Tenant)?;
+        if changed != 1 {
+            return Err(PostgresStoreError::VersionConflict);
+        }
+        insert_administrative_audit(&mut transaction, audit_event)?;
+        transaction.commit().map_err(PostgresStoreError::Tenant)
+    }
 }
 
 impl<Pool> MembershipRepository for PostgresStore<Pool>
@@ -1069,6 +1131,23 @@ impl<Pool> PostgresTenantStore<'_, Pool> {
         self.store
             .find_retention_policy(workspace_id)
             .map_err(map_application_error)
+    }
+
+    pub fn replace_retention_policy(
+        &mut self,
+        policy: &WorkspaceRetentionPolicy,
+        expected_version: Option<u64>,
+        audit_event: &AdministrativeAuditEvent,
+    ) -> Result<(), ApplicationError>
+    where
+        Pool: PostgresPool,
+        Pool::Error: ClassifiedPostgresError,
+    {
+        self.require_workspace(policy.workspace_id())?;
+        self.require_workspace(audit_event.workspace_id())?;
+        self.store
+            .replace_retention_policy(policy, expected_version, audit_event)
+            .map_err(map_retention_application_error)
     }
 }
 
@@ -1344,6 +1423,21 @@ where
     }
 }
 
+fn map_retention_application_error<DriverError>(
+    error: PostgresStoreError<DriverError>,
+) -> ApplicationError
+where
+    DriverError: ClassifiedPostgresError,
+{
+    match error {
+        PostgresStoreError::InvalidInput => {
+            ApplicationError::Validation("invalid retention persistence request".to_owned())
+        }
+        PostgresStoreError::VersionConflict => ApplicationError::VersionConflict,
+        other => map_application_error(other),
+    }
+}
+
 fn map_invitation_application_error<DriverError>(
     error: PostgresStoreError<DriverError>,
 ) -> ApplicationError
@@ -1456,6 +1550,30 @@ fn valid_invitation_audit(
         && event.action() == action
         && event.target_kind() == AdministrativeTargetKind::Invitation
         && event.target_id() == invitation.id().as_str()
+}
+
+fn valid_retention_audit(
+    policy: &WorkspaceRetentionPolicy,
+    event: &AdministrativeAuditEvent,
+) -> bool {
+    event.workspace_id() == policy.workspace_id()
+        && event.action() == AdministrativeAction::RetentionPolicyChanged
+        && event.target_kind() == AdministrativeTargetKind::RetentionPolicy
+        && event.target_id() == policy.workspace_id().as_str()
+}
+
+fn retention_policy_parameters(
+    policy: &WorkspaceRetentionPolicy,
+) -> [PostgresParameter<'static>; 6] {
+    let period = |resource| policy.period(resource).days_value().map(i64::from);
+    [
+        PostgresParameter::OptionalI64(period(RetentionResource::UserMemory)),
+        PostgresParameter::OptionalI64(period(RetentionResource::ActivityCheckpoint)),
+        PostgresParameter::OptionalI64(period(RetentionResource::TravelResearch)),
+        PostgresParameter::OptionalI64(period(RetentionResource::DisclosureReceipt)),
+        PostgresParameter::OptionalI64(period(RetentionResource::CanonicalEvent)),
+        PostgresParameter::OptionalI64(period(RetentionResource::AdministrativeAudit)),
+    ]
 }
 
 fn decode_administrative_audit<Row, DriverError>(
@@ -1859,7 +1977,8 @@ mod tests {
     use rembrane_domain::{
         AdministrativeAction, AdministrativeAuditEvent, AdministrativeAuditEventId,
         AdministrativeTargetKind, Invitation, InvitationId, InvitationStatus, Principal,
-        PrincipalId, RetentionPeriod, RetentionResource, Workspace, WorkspaceId, WorkspaceRole,
+        PrincipalId, RetentionPeriod, RetentionResource, Workspace, WorkspaceId,
+        WorkspaceRetentionPolicy, WorkspaceRole,
     };
 
     use super::{
@@ -1867,13 +1986,14 @@ mod tests {
         FIND_INVITATION_SQL, FIND_MEMBERSHIP_SQL, FIND_PRINCIPAL_SQL,
         FIND_PROVISIONING_PRINCIPAL_SQL, FIND_RETENTION_POLICY_SQL, FIND_WORKSPACE_SQL,
         INSERT_ADMINISTRATIVE_AUDIT_SQL, INSERT_INVITATION_SQL, INSERT_MEMBERSHIP_SQL,
-        INSERT_PRINCIPAL_SQL, INSERT_WORKSPACE_SQL, LIST_ACTIVE_MEMBERSHIPS_SQL,
-        LIST_ADMINISTRATIVE_AUDIT_SQL, LIST_INVITATIONS_BY_STATUS_SQL, MAX_ACTIVE_MEMBERSHIPS,
-        PostgresFailureKind, PostgresParameter, PostgresPool, PostgresProvisioner,
-        PostgresProvisioningPool, PostgresRow, PostgresStore, PostgresStoreError,
-        PostgresTransaction, PostgresWorkspaceAdminStore, ProvisioningTransaction, READ_TENANT_SQL,
-        REPLACE_INVITATION_SQL, REPLACE_MEMBERSHIP_SQL, SET_TENANT_SQL, TenantTransaction,
-        TenantTransactionError, map_application_error, map_invitation_application_error,
+        INSERT_PRINCIPAL_SQL, INSERT_RETENTION_POLICY_SQL, INSERT_WORKSPACE_SQL,
+        LIST_ACTIVE_MEMBERSHIPS_SQL, LIST_ADMINISTRATIVE_AUDIT_SQL, LIST_INVITATIONS_BY_STATUS_SQL,
+        MAX_ACTIVE_MEMBERSHIPS, PostgresFailureKind, PostgresParameter, PostgresPool,
+        PostgresProvisioner, PostgresProvisioningPool, PostgresRow, PostgresStore,
+        PostgresStoreError, PostgresTransaction, PostgresWorkspaceAdminStore,
+        ProvisioningTransaction, READ_TENANT_SQL, REPLACE_INVITATION_SQL, REPLACE_MEMBERSHIP_SQL,
+        REPLACE_RETENTION_POLICY_SQL, SET_TENANT_SQL, TenantTransaction, TenantTransactionError,
+        map_application_error, map_invitation_application_error,
     };
 
     #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2101,6 +2221,10 @@ mod tests {
             .map(|parameter| match parameter {
                 PostgresParameter::Text(value) => format!("text:{value}"),
                 PostgresParameter::I64(value) => format!("i64:{value}"),
+                PostgresParameter::OptionalI64(value) => match value {
+                    Some(value) => format!("optional-i64:{value}"),
+                    None => "optional-i64:null".to_owned(),
+                },
                 PostgresParameter::Bytes(value) => format!("bytes:{}", value.len()),
             })
             .collect()
@@ -3301,6 +3425,86 @@ mod tests {
             vec!["text:workspace_01".to_owned()]
         )));
         assert_eq!(calls.borrow().last(), Some(&Call::Commit));
+    }
+
+    #[test]
+    fn tenant_store_atomically_inserts_and_replaces_retention_policy_with_audit() {
+        fn policy(version: u64) -> WorkspaceRetentionPolicy {
+            WorkspaceRetentionPolicy::new(
+                WorkspaceId::new("workspace_01"),
+                version,
+                RetentionPeriod::days(30).expect("memory"),
+                RetentionPeriod::days(7).expect("checkpoint"),
+                RetentionPeriod::Forever,
+                RetentionPeriod::days(90).expect("disclosure"),
+                RetentionPeriod::days(365).expect("event"),
+                RetentionPeriod::days(365).expect("audit"),
+            )
+            .expect("policy")
+        }
+
+        fn audit(suffix: &str) -> AdministrativeAuditEvent {
+            AdministrativeAuditEvent::new(
+                AdministrativeAuditEventId::new(format!("audit_{suffix}")),
+                WorkspaceId::new("workspace_01"),
+                PrincipalId::new("principal_admin"),
+                AdministrativeAction::RetentionPolicyChanged,
+                AdministrativeTargetKind::RetentionPolicy,
+                "workspace_01",
+                format!("request_{suffix}"),
+                150,
+            )
+            .expect("audit")
+        }
+
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let store = PostgresStore::new(FakePool {
+            calls: Rc::clone(&calls),
+            tenant_batches: RefCell::new(
+                [
+                    VecDeque::from([
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                    ]),
+                    VecDeque::from([
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                        Ok(Some("workspace_01".to_owned())),
+                    ]),
+                ]
+                .into(),
+            ),
+            row_batches: RefCell::new([Vec::new(), Vec::new()].into()),
+        });
+        let mut tenant = store.for_workspace(WorkspaceId::new("workspace_01"));
+
+        tenant
+            .replace_retention_policy(&policy(1), None, &audit("create"))
+            .expect("insert policy");
+        tenant
+            .replace_retention_policy(&policy(2), Some(1), &audit("replace"))
+            .expect("replace policy");
+
+        let calls = calls.borrow();
+        assert!(calls.iter().any(
+            |call| matches!(call, Call::Execute(statement, _) if statement == INSERT_RETENTION_POLICY_SQL)
+        ));
+        assert!(calls.iter().any(
+            |call| matches!(call, Call::Execute(statement, _) if statement == REPLACE_RETENTION_POLICY_SQL)
+        ));
+        assert!(calls.iter().any(|call| {
+            matches!(
+                call,
+                Call::Execute(statement, parameters)
+                    if statement == INSERT_RETENTION_POLICY_SQL
+                        && parameters.contains(&"optional-i64:null".to_owned())
+            )
+        }));
+        assert_eq!(
+            calls.iter().filter(|call| **call == Call::Commit).count(),
+            2
+        );
     }
 
     #[test]

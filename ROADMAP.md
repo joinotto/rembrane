@@ -306,6 +306,8 @@ This roadmap describes sequencing, not release dates.
         chronological reads with closed action/target decoding.
       - [x] Add exact tenant-scoped retention-policy lookup with bounded
         cardinality and closed finite/forever period decoding.
+        - [x] Add atomic audited policy insertion and optimistic replacement
+          with strict successor validation and nullable forever periods.
       - [x] Add exact invitation lookup and bounded status-filtered listing
         with terminal-state restoration and full tenant/identifier correlation.
       - [x] Implement atomic invitation creation, acceptance, revocation,
