@@ -10,7 +10,7 @@ use std::fmt::{self, Display, Formatter};
 
 use rembrane_application::{
     ApplicationError, InvitationRepository, MAXIMUM_INVITATION_LIST_ITEMS, MembershipRepository,
-    WorkspaceReadRepository,
+    WorkspaceReadRepository, WorkspaceRepository,
 };
 use rembrane_domain::{
     AdministrativeAction, AdministrativeAuditEvent, AdministrativeTargetKind, Invitation,
@@ -168,6 +168,27 @@ pub struct PostgresProvisioner<Pool> {
     pool: Pool,
 }
 
+pub struct PostgresWorkspaceAdminStore<RuntimePool, ProvisioningPool> {
+    runtime: PostgresStore<RuntimePool>,
+    provisioner: PostgresProvisioner<ProvisioningPool>,
+    workspace_id: WorkspaceId,
+}
+
+impl<RuntimePool, ProvisioningPool> PostgresWorkspaceAdminStore<RuntimePool, ProvisioningPool> {
+    #[must_use]
+    pub const fn new(
+        runtime: PostgresStore<RuntimePool>,
+        provisioner: PostgresProvisioner<ProvisioningPool>,
+        workspace_id: WorkspaceId,
+    ) -> Self {
+        Self {
+            runtime,
+            provisioner,
+            workspace_id,
+        }
+    }
+}
+
 impl<Pool> PostgresProvisioner<Pool>
 where
     Pool: PostgresProvisioningPool,
@@ -256,6 +277,27 @@ where
             ],
         )?;
         transaction.commit().map_err(PostgresStoreError::Tenant)
+    }
+
+    pub fn find_principal(
+        &self,
+        principal_id: &PrincipalId,
+    ) -> Result<Option<Principal>, PostgresStoreError<Pool::Error>> {
+        let mut transaction =
+            ProvisioningTransaction::begin(&self.pool).map_err(PostgresStoreError::Begin)?;
+        let returned_id = transaction
+            .query_optional_text(
+                FIND_PROVISIONING_PRINCIPAL_SQL,
+                &[PostgresParameter::Text(principal_id.as_str())],
+            )
+            .map_err(PostgresStoreError::Tenant)?;
+        let principal = match returned_id {
+            Some(id) if id == principal_id.as_str() => Some(Principal::new(PrincipalId::new(id))),
+            Some(_) => return Err(PostgresStoreError::InvalidRow),
+            None => None,
+        };
+        transaction.commit().map_err(PostgresStoreError::Tenant)?;
+        Ok(principal)
     }
 }
 
@@ -1021,6 +1063,64 @@ where
     }
 }
 
+impl<RuntimePool, ProvisioningPool> WorkspaceRepository
+    for PostgresWorkspaceAdminStore<RuntimePool, ProvisioningPool>
+where
+    RuntimePool: PostgresPool,
+    RuntimePool::Error: ClassifiedPostgresError,
+    <RuntimePool::Transaction as PostgresTransaction>::Row: PostgresRow<Error = RuntimePool::Error>,
+    ProvisioningPool: PostgresProvisioningPool,
+    ProvisioningPool::Error: ClassifiedPostgresError,
+{
+    fn initialize_personal_workspace(
+        &mut self,
+        principal: Principal,
+        workspace: Workspace,
+        owner_membership: Membership,
+    ) -> Result<(), ApplicationError> {
+        if workspace.id() != &self.workspace_id {
+            return Err(ApplicationError::AccessDenied);
+        }
+        self.provisioner
+            .initialize_personal_workspace(&principal, &workspace, &owner_membership)
+            .map_err(map_workspace_application_error)
+    }
+
+    fn initialize_shared_workspace(
+        &mut self,
+        workspace: Workspace,
+        owner_membership: Membership,
+    ) -> Result<(), ApplicationError> {
+        if workspace.id() != &self.workspace_id {
+            return Err(ApplicationError::AccessDenied);
+        }
+        self.provisioner
+            .initialize_shared_workspace(&workspace, &owner_membership)
+            .map_err(map_workspace_application_error)
+    }
+
+    fn find_principal(
+        &self,
+        principal_id: &PrincipalId,
+    ) -> Result<Option<Principal>, ApplicationError> {
+        self.provisioner
+            .find_principal(principal_id)
+            .map_err(map_workspace_application_error)
+    }
+
+    fn find_workspace(
+        &self,
+        workspace_id: &WorkspaceId,
+    ) -> Result<Option<Workspace>, ApplicationError> {
+        if workspace_id != &self.workspace_id {
+            return Err(ApplicationError::AccessDenied);
+        }
+        self.runtime
+            .find_workspace(workspace_id)
+            .map_err(map_application_error)
+    }
+}
+
 fn map_application_error<DriverError>(error: PostgresStoreError<DriverError>) -> ApplicationError
 where
     DriverError: ClassifiedPostgresError,
@@ -1050,6 +1150,20 @@ where
         | PostgresStoreError::InvalidInput
         | PostgresStoreError::VersionConflict
         | PostgresStoreError::UnexpectedCardinality => ApplicationError::StorageUnavailable,
+    }
+}
+
+fn map_workspace_application_error<DriverError>(
+    error: PostgresStoreError<DriverError>,
+) -> ApplicationError
+where
+    DriverError: ClassifiedPostgresError,
+{
+    match error {
+        PostgresStoreError::InvalidInput => {
+            ApplicationError::Validation("invalid workspace bootstrap request".to_owned())
+        }
+        other => map_application_error(other),
     }
 }
 
@@ -1464,7 +1578,7 @@ mod tests {
 
     use rembrane_application::{
         ApplicationError, CreateInvitationCommand, InvitationRepository, InvitationService,
-        MembershipRepository,
+        MembershipRepository, WorkspaceRepository,
     };
     use rembrane_domain::{
         AdministrativeAction, AdministrativeAuditEvent, AdministrativeAuditEventId,
@@ -1480,9 +1594,9 @@ mod tests {
         LIST_ACTIVE_MEMBERSHIPS_SQL, LIST_INVITATIONS_BY_STATUS_SQL, MAX_ACTIVE_MEMBERSHIPS,
         PostgresFailureKind, PostgresParameter, PostgresPool, PostgresProvisioner,
         PostgresProvisioningPool, PostgresRow, PostgresStore, PostgresStoreError,
-        PostgresTransaction, ProvisioningTransaction, READ_TENANT_SQL, REPLACE_INVITATION_SQL,
-        REPLACE_MEMBERSHIP_SQL, SET_TENANT_SQL, TenantTransaction, TenantTransactionError,
-        map_application_error, map_invitation_application_error,
+        PostgresTransaction, PostgresWorkspaceAdminStore, ProvisioningTransaction, READ_TENANT_SQL,
+        REPLACE_INVITATION_SQL, REPLACE_MEMBERSHIP_SQL, SET_TENANT_SQL, TenantTransaction,
+        TenantTransactionError, map_application_error, map_invitation_application_error,
     };
 
     #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1817,6 +1931,74 @@ mod tests {
         assert_eq!(
             calls.iter().filter(|call| **call == Call::Commit).count(),
             2
+        );
+    }
+
+    #[test]
+    fn workspace_admin_store_confines_provisioning_to_its_target_workspace() {
+        struct NeverBeginRuntimePool;
+
+        impl PostgresPool for NeverBeginRuntimePool {
+            type Error = &'static str;
+            type Transaction = FakeTransaction;
+
+            fn begin(&self) -> Result<Self::Transaction, Self::Error> {
+                Err("runtime pool must not begin")
+            }
+        }
+
+        struct PrincipalDirectoryPool {
+            calls: Rc<RefCell<Vec<Call>>>,
+        }
+
+        impl PostgresProvisioningPool for PrincipalDirectoryPool {
+            type Error = &'static str;
+            type Transaction = FakeTransaction;
+
+            fn begin_provisioning(&self) -> Result<Self::Transaction, Self::Error> {
+                Ok(FakeTransaction {
+                    calls: Rc::clone(&self.calls),
+                    tenants: VecDeque::from([Ok(Some("principal_01".to_owned()))]),
+                    rows: Vec::new(),
+                })
+            }
+        }
+
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let runtime = PostgresStore::new(NeverBeginRuntimePool);
+        let provisioner = PostgresProvisioner::new(PrincipalDirectoryPool {
+            calls: Rc::clone(&calls),
+        });
+        let mut admin = PostgresWorkspaceAdminStore::new(
+            runtime,
+            provisioner,
+            WorkspaceId::new("workspace_01"),
+        );
+
+        assert_eq!(
+            WorkspaceRepository::find_principal(&admin, &PrincipalId::new("principal_01"))
+                .expect("principal directory lookup")
+                .expect("principal")
+                .id()
+                .as_str(),
+            "principal_01"
+        );
+        assert_eq!(calls.borrow().last(), Some(&Call::Commit));
+        assert_eq!(
+            WorkspaceRepository::initialize_shared_workspace(
+                &mut admin,
+                Workspace::shared(WorkspaceId::new("workspace_other")),
+                rembrane_domain::Membership::new(
+                    WorkspaceId::new("workspace_other"),
+                    PrincipalId::new("principal_01"),
+                    WorkspaceRole::Owner,
+                ),
+            ),
+            Err(ApplicationError::AccessDenied)
+        );
+        assert_eq!(
+            WorkspaceRepository::find_workspace(&admin, &WorkspaceId::new("workspace_other"),),
+            Err(ApplicationError::AccessDenied)
         );
     }
 

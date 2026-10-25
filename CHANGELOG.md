@@ -75,6 +75,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Atomic PostgreSQL personal and shared workspace provisioning with closed
   aggregate validation, exact existing-owner correlation, and exact affected
   row enforcement.
+- A target-workspace-bound PostgreSQL control-plane store implementing the
+  complete `WorkspaceRepository` while confining privileged principal lookup
+  and provisioning credentials outside runtime tenant stores.
 
 ### Changed
 

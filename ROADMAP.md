@@ -317,6 +317,8 @@ This roadmap describes sequencing, not release dates.
         accidentally.
         - [x] Atomically provision personal identities and shared workspaces
           with correlated active owner memberships and exact write counts.
+        - [x] Implement the full workspace administration port through a
+          target-bound control-plane store with privileged principal lookup.
     - [x] Define a reference-only PostgreSQL connection profile with explicit
       transport security and bounded pool capacity.
       - [x] Prevent derived debug logging of the database secret locator.
