@@ -102,6 +102,7 @@ for deployment_file in \
     scripts/test-memory-provider-context-result.sh \
     scripts/memory-provider-sync-result.jq \
     scripts/test-memory-provider-sync-result.sh \
+    scripts/verify-memory-provider-sync-result.sh \
     scripts/run-memory-provider-conformance.mjs \
     scripts/test-memory-provider-conformance-secrets.mjs \
     scripts/test-memory-provider-mixed-version-evidence.sh \

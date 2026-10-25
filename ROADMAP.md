@@ -990,6 +990,8 @@ This roadmap describes sequencing, not release dates.
     sensitivity, confidence, validity, and disclosure constraints.
   - [x] Validate closed sync pages, cursor and pagination invariants, change
     variants, resources, payload limits, and Node-side payload SHA-256 binding.
+  - [x] Verify actual upsert payload SHA-256 values in the portable shell
+    conformance path without exposing decoded payloads.
     - [x] Add bounded context-resolution requests with global, domain, entity,
       and activity selectors constrained by provider-advertised limits.
       - [x] Seal selector representation so callers cannot bypass domain and

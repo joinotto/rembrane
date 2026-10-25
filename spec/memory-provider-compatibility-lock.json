@@ -96,7 +96,11 @@
     },
     {
       "path": "scripts/test-memory-provider-http.sh",
-      "sha256": "7b7b523b3b060501c4cfd2a51697defc111dc175dc42eb9216fdab21290493af"
+      "sha256": "2c09c46839eafebf908077f39041ad8b0b8b87784e672822610444f7dd787303"
+    },
+    {
+      "path": "scripts/verify-memory-provider-sync-result.sh",
+      "sha256": "a4b1ffef085cd21ff79860e59743a98a2fb8503d0e57339325c557d7963d3e48"
     }
   ]
 }

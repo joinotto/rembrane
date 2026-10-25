@@ -462,7 +462,7 @@ jq -e --arg memoryId "$primary_memory_id" \
 status=$(call "$primary_auth" GET \
     "/v1/sync/pull?maximumItems=$maximum_sync_items" sync_primary)
 test "$status" = 200
-jq -e -f "$repository_root/scripts/memory-provider-sync-result.jq" \
+"$repository_root/scripts/verify-memory-provider-sync-result.sh" \
     "$response" >/dev/null
 jq -e \
     --arg otherMemoryId "$other_memory_id" \

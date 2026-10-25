@@ -44,6 +44,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Sync conformance responses now validate exact page and change shapes,
   cursors, pagination invariants, resources, versions, payload limits, and
   payload SHA-256 binding before cross-workspace ordering checks.
+- The shell conformance path now decodes sync payloads only inside a bounded
+  digest pipeline and verifies their actual SHA-256 values without printing
+  plaintext.
 - Project metadata, security reporting, API contact information, offline
   workspace fixtures, and provider provenance now consistently identify the
   canonical `joinotto/rembrane` repository.

@@ -38,6 +38,7 @@ const expectedArtifacts = [
   "scripts/memory-provider-conformance-secrets.mjs",
   "scripts/run-memory-provider-conformance.mjs",
   "scripts/test-memory-provider-http.sh",
+  "scripts/verify-memory-provider-sync-result.sh",
 ];
 assert.deepEqual(
   lock.artifacts.map((artifact) => artifact.path).sort(),
