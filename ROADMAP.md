@@ -78,7 +78,7 @@ This roadmap describes sequencing, not release dates.
   - [x] Stage file-backed Compose secrets into an owner-only runtime tmpfs
     before dropping privileges so strict file validation does not depend on
     Compose implementations honoring secret ownership metadata.
-- [x] Add production OS-keychain and customer-KMS key providers.
+- [ ] Add production OS-keychain and customer-KMS key providers.
   - [x] Honor environment or macOS Keychain selection uniformly in the CLI,
     REST API, and MCP server, including historical-key reads.
   - [x] Support active-key writes and historical-key reads through a
@@ -143,6 +143,9 @@ This roadmap describes sequencing, not release dates.
         with explicit overflow rejection.
       - [x] Prove generate, persist-before-activate, reload, current decrypt,
         and historical decrypt as one executable sidecar rotation flow.
+  - [ ] Record reviewable disposable-sidecar conformance evidence for AWS KMS,
+    Azure Key Vault, and Google Cloud KMS before calling the providers
+    production-ready.
       - [x] Create file-backed Unix keyring databases owner-only and reject
         permissive, non-regular, or symbolic-link targets.
       - [x] Enforce workspace, provider-key, and wrapped-ciphertext bounds in
