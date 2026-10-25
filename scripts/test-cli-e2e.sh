@@ -210,6 +210,8 @@ provider_selection=$(
 )
 printf '%s\n' "$provider_selection" | jq -e \
     '.schemaVersion == 1
+        and (.registryGeneratedAt | fromdateiso8601) <= now
+        and (.registrySha256 | test("^[0-9a-f]{64}$"))
         and .provider == "rembrane.native"
         and .eligibility == "experimental-opt-in"
         and .protocolVersion == "0.1"

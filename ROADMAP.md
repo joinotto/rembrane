@@ -977,6 +977,8 @@ This roadmap describes sequencing, not release dates.
     - [x] Emit a strict portable selection receipt binding approvals to the
       exact provider build, protocol, source revision, conformance profile,
       and test timestamp.
+      - [x] Bind each selection receipt to the exact registry snapshot bytes
+        and generation timestamp.
 - [x] Run installed native-provider conformance through the CLI.
 - [x] Automated external-provider registry verification and release signing.
   - [x] Verify registry identity, timestamps, conformance status, and pinned

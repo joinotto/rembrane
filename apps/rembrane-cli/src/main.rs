@@ -687,8 +687,14 @@ fn check_provider_registry(
     allow_experimental: bool,
     allow_provider_plaintext: bool,
 ) -> Result<String, String> {
+    let registry_sha256 = sha256_hex(registry.as_bytes());
     let registry: serde_json::Value = serde_json::from_str(registry)
         .map_err(|_| "provider registry is not valid JSON".to_owned())?;
+    let generated_at = registry
+        .get("generatedAt")
+        .and_then(serde_json::Value::as_str)
+        .filter(|value| canonical_registry_timestamp(value))
+        .ok_or_else(|| "provider registry generation timestamp is invalid".to_owned())?;
     let providers = registry
         .get("providers")
         .and_then(serde_json::Value::as_array)
@@ -741,8 +747,17 @@ fn check_provider_registry(
         .pointer("/source/revision")
         .and_then(serde_json::Value::as_str)
         .ok_or_else(|| "provider source revision is invalid".to_owned())?;
+    let tested_at = conformance
+        .get("testedAt")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| "provider conformance timestamp is invalid".to_owned())?;
+    if tested_at > generated_at {
+        return Err("provider conformance postdates its registry snapshot".to_owned());
+    }
     serde_json::to_string(&serde_json::json!({
         "schemaVersion": 1,
+        "registryGeneratedAt": generated_at,
+        "registrySha256": registry_sha256,
         "provider": provider_id,
         "adapterVersion": adapter_version,
         "status": status,
@@ -758,11 +773,40 @@ fn check_provider_registry(
             "suiteId": conformance.get("suiteId"),
             "suiteVersion": conformance.get("suiteVersion"),
             "profileSha256": conformance.get("profileSha256"),
-            "testedAt": conformance.get("testedAt"),
+            "testedAt": tested_at,
             "sourceRevision": source_revision,
         },
     }))
     .map_err(|_| "could not serialize provider eligibility".to_owned())
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let digest = ring::digest::digest(&ring::digest::SHA256, bytes);
+    let mut encoded = String::with_capacity(64);
+    for byte in digest.as_ref() {
+        encoded.push(char::from(HEX[usize::from(byte >> 4)]));
+        encoded.push(char::from(HEX[usize::from(byte & 0x0f)]));
+    }
+    encoded
+}
+
+fn canonical_registry_timestamp(value: &str) -> bool {
+    value.len() == 20
+        && value.ends_with('Z')
+        && value.bytes().enumerate().all(|(index, byte)| {
+            if matches!(index, 4 | 7) {
+                byte == b'-'
+            } else if index == 10 {
+                byte == b'T'
+            } else if matches!(index, 13 | 16) {
+                byte == b':'
+            } else if index == 19 {
+                byte == b'Z'
+            } else {
+                byte.is_ascii_digit()
+            }
+        })
 }
 
 fn validate_provider_selection_evidence(
@@ -814,7 +858,7 @@ fn validate_provider_selection_evidence(
     conformance
         .get("testedAt")
         .and_then(serde_json::Value::as_str)
-        .filter(|tested_at| tested_at.ends_with('Z') && tested_at.len() == 20)
+        .filter(|tested_at| canonical_registry_timestamp(tested_at))
         .ok_or_else(|| "provider conformance timestamp is invalid".to_owned())?;
     if conformance
         .get("result")
@@ -2888,6 +2932,11 @@ mod tests {
         assert_eq!(selected["provider"], "rembrane.native");
         assert_eq!(selected["adapterVersion"], env!("CARGO_PKG_VERSION"));
         assert_eq!(selected["eligibility"], "experimental-opt-in");
+        assert_eq!(selected["registryGeneratedAt"], "2026-10-25T05:03:44Z");
+        assert_eq!(
+            selected["registrySha256"],
+            "abd7139c64eab7e61c110bce6de6f1f2645dae9e69582d69e099fe1e5935c044"
+        );
 
         let plaintext_denied = check_provider_registry(
             super::PROVIDER_REGISTRY,
@@ -2954,6 +3003,23 @@ mod tests {
             )
             .expect_err("reordered cases must fail")
             .contains("cases")
+        );
+
+        let mut postdated = serde_json::from_str::<serde_json::Value>(super::PROVIDER_REGISTRY)
+            .expect("embedded registry");
+        postdated["providers"][0]["conformance"]["testedAt"] =
+            serde_json::Value::String("2026-10-25T05:03:45Z".to_owned());
+        let postdated = serde_json::to_string(&postdated).expect("postdated registry");
+        assert!(
+            check_provider_registry(
+                &postdated,
+                "rembrane.native",
+                env!("CARGO_PKG_VERSION"),
+                true,
+                true,
+            )
+            .expect_err("evidence newer than the snapshot must fail")
+            .contains("postdates")
         );
     }
 

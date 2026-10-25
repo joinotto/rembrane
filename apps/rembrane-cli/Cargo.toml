@@ -24,6 +24,7 @@ rembrane-semantic-supermemory = { path = "../../adapters/rembrane-semantic-super
 rembrane-secret-local = { path = "../../adapters/rembrane-secret-local" }
 rembrane-store-memory = { path = "../../adapters/rembrane-store-memory" }
 rembrane-store-sqlite = { path = "../../adapters/rembrane-store-sqlite" }
+ring = "0.17"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 zeroize = "1"

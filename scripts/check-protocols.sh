@@ -167,6 +167,7 @@ jq -e '
 jq -e --slurpfile example spec/examples/provider-selection-result.json '
     .additionalProperties == false
     and .properties.schemaVersion.const == 1
+    and .properties.registrySha256.pattern == "^[0-9a-f]{64}$"
     and .properties.protocolVersion.const == "0.1"
     and .properties.status.enum == ["compatible", "experimental"]
     and .properties.eligibility.enum == ["compatible", "experimental-opt-in"]
@@ -174,6 +175,7 @@ jq -e --slurpfile example spec/examples/provider-selection-result.json '
     and .properties.evidence.additionalProperties == false
     and .properties.evidence.properties.profileSha256.pattern == "^[0-9a-f]{64}$"
     and $example[0].schemaVersion == 1
+    and ($example[0].registrySha256 | test("^[0-9a-f]{64}$"))
     and $example[0].protocolVersion == "0.1"
     and $example[0].approvals.experimental == true
     and $example[0].approvals.providerPlaintext == true

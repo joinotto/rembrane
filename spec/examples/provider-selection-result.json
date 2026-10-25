@@ -1,5 +1,7 @@
 {
   "schemaVersion": 1,
+  "registryGeneratedAt": "2026-10-25T05:03:44Z",
+  "registrySha256": "abd7139c64eab7e61c110bce6de6f1f2645dae9e69582d69e099fe1e5935c044",
   "provider": "rembrane.native",
   "adapterVersion": "0.1.0-alpha.1",
   "status": "experimental",
