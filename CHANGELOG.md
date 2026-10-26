@@ -29,6 +29,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Tenant-aware protocol-service selection now has executable two-workspace
   coverage across POST, stateless event-stream GET, and confirmed session
   DELETE dispatch.
+- Tenant-specific MCP service construction failures now stop before protocol
+  dispatch and remain distinguishable from downstream service failures.
 - Static TypeScript SDK syntax validation now selects ES-module parsing
   explicitly across supported Node.js versions.
 - OAuth introspection now applies canonical audience-cardinality,

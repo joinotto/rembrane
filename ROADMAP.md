@@ -398,6 +398,8 @@ This roadmap describes sequencing, not release dates.
       bearer credential into the protocol service.
       - [x] Prove per-tenant service selection for authorized POST,
         stateless event-stream GET, and confirmed session DELETE dispatch.
+      - [x] Fail closed before protocol dispatch when tenant-specific service
+        construction is unavailable.
     - [x] Add a consuming Tower dispatcher that reconstructs only validated
       MCP protocol headers, strips the bearer credential at the OAuth boundary,
       and injects verified tenant access into request extensions for the

@@ -2335,11 +2335,11 @@ mod tests {
         MAX_REMOTE_MCP_HEADER_BYTES, MCP_PROTOCOL_VERSION_HEADER_NAME, MCP_SESSION_HEADER_NAME,
         RemoteMcpAxumAuthorization, RemoteMcpDispatchError, RemoteMcpHttpGate,
         RemoteMcpHttpRejection, RemoteMcpHttpRequest, RemoteMcpInvocation,
-        TenantAwareTowerMcpDispatcher, authorize_axum_session_body,
-        authorize_axum_session_deletion, authorize_axum_stateless_body,
-        authorize_axum_stateless_owned_body, classify_remote_mcp_request,
-        establish_and_dispatch_axum_session, establish_axum_session_body,
-        request_from_axum_headers,
+        TenantAwareTowerMcpDispatchError, TenantAwareTowerMcpDispatcher,
+        authorize_axum_session_body, authorize_axum_session_deletion,
+        authorize_axum_stateless_body, authorize_axum_stateless_owned_body,
+        classify_remote_mcp_request, establish_and_dispatch_axum_session,
+        establish_axum_session_body, request_from_axum_headers,
     };
 
     struct Verifier;
@@ -3418,6 +3418,65 @@ mod tests {
             *selected.lock().expect("selection log"),
             ["workspace_01", "workspace_02"]
         );
+    }
+
+    #[tokio::test]
+    async fn tenant_aware_tower_factory_failure_stops_before_protocol_dispatch() {
+        let verifier = Verifier;
+        let authenticator = RemoteAccessAuthenticator::new(
+            &verifier,
+            "https://identity.example.test",
+            "https://memory.example.test/mcp",
+        );
+        let authorization = RemoteHttpAuthorization::new(&authenticator, &[]);
+        let gate = RemoteMcpHttpGate::new(
+            1,
+            "https://memory.example.test/.well-known/oauth-protected-resource/mcp",
+            &["memory.example.test"],
+        )
+        .expect("gate should be valid");
+        let protocol_calls = Arc::new(Mutex::new(0_u64));
+        let protocol_calls_from_service = Arc::clone(&protocol_calls);
+        let fallback_service = tower::service_fn(move |_request: Request<Body>| {
+            let protocol_calls = Arc::clone(&protocol_calls_from_service);
+            async move {
+                *protocol_calls.lock().expect("protocol call count") += 1;
+                Ok::<_, std::convert::Infallible>(())
+            }
+        });
+        let dispatcher = TenantAwareTowerMcpDispatcher::new(
+            move |_access: &rembrane_contracts::VerifiedRemoteAccess| -> Result<_, &'static str> {
+                if std::hint::black_box(true) {
+                    Err("tenant service unavailable")
+                } else {
+                    Ok(fallback_service.clone())
+                }
+            },
+        );
+        let body = br#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"rembrane_resolve_context","arguments":{}}}"#;
+        let authorized = gate
+            .authorize_stateless_body(
+                &authorization,
+                RemoteMcpHttpRequest {
+                    authorization: Some("Bearer workspace-one"),
+                    host: Some("memory.example.test"),
+                    origin: None,
+                    session_id: None,
+                },
+                body,
+                1_000,
+            )
+            .expect("tenant request should authorize");
+
+        let error = authorized
+            .dispatch_with(&dispatcher)
+            .await
+            .expect_err("factory failure must stop dispatch");
+        assert!(matches!(
+            error,
+            TenantAwareTowerMcpDispatchError::Factory("tenant service unavailable")
+        ));
+        assert_eq!(*protocol_calls.lock().expect("protocol call count"), 0);
     }
 
     #[tokio::test]
