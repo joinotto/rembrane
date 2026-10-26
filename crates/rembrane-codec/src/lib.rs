@@ -24,8 +24,9 @@ pub use knowledge_graph::{
 };
 pub use portability::{
     MAX_MEMORY_JSONL_ARCHIVE_BYTES, MAX_MEMORY_JSONL_ARCHIVE_RECORDS, MAX_MEMORY_JSONL_LINE_BYTES,
-    MEMORY_JSONL_FORMAT, MEMORY_JSONL_VERSION, decode_memory_jsonl_archive,
-    decode_memory_jsonl_record, encode_memory_jsonl_record,
+    MEMORY_JSONL_FORMAT, MEMORY_JSONL_VERSION, MEMORY_MARKDOWN_FORMAT, MEMORY_MARKDOWN_VERSION,
+    decode_memory_jsonl_archive, decode_memory_jsonl_record, encode_memory_jsonl_record,
+    encode_memory_markdown_archive,
 };
 pub use trip::{decode_trip, encode_trip};
 

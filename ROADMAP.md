@@ -103,6 +103,9 @@ This roadmap describes sequencing, not release dates.
   record/byte bounds, owner-only exclusive output, durable synchronization,
   and replacement-safe partial-file cleanup.
 - [ ] Add authenticated import plus Markdown and graph portability formats.
+  - [x] Define a deterministic, bounded, provider-independent Markdown export
+    with tenant/revision validation, stable ordering, provenance metadata, and
+    content fences that remain safe when memories contain Markdown backticks.
   - [x] Move the JSONL record contract into the provider-independent codec and
     add strict decoding with closed fields, exact format/version checks, domain
     invariant restoration, and a per-record byte ceiling.

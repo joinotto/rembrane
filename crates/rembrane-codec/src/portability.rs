@@ -9,6 +9,8 @@ use crate::CodecError;
 
 pub const MEMORY_JSONL_FORMAT: &str = "rembrane-memory-jsonl";
 pub const MEMORY_JSONL_VERSION: u32 = 1;
+pub const MEMORY_MARKDOWN_FORMAT: &str = "rembrane-memory-markdown";
+pub const MEMORY_MARKDOWN_VERSION: u32 = 1;
 pub const MAX_MEMORY_JSONL_LINE_BYTES: usize = 1_048_576;
 pub const MAX_MEMORY_JSONL_ARCHIVE_BYTES: usize = 67_108_864;
 pub const MAX_MEMORY_JSONL_ARCHIVE_RECORDS: usize = 10_000;
@@ -108,6 +110,113 @@ pub fn decode_memory_jsonl_archive(payload: &[u8]) -> Result<Vec<MemoryRecord>, 
         MAX_MEMORY_JSONL_ARCHIVE_RECORDS,
         MAX_MEMORY_JSONL_ARCHIVE_BYTES,
     )
+}
+
+pub fn encode_memory_markdown_archive(memories: &[MemoryRecord]) -> Result<Vec<u8>, CodecError> {
+    if memories.len() > MAX_MEMORY_JSONL_ARCHIVE_RECORDS {
+        return Err(CodecError::MalformedPayload);
+    }
+    let mut memories = memories.iter().collect::<Vec<_>>();
+    memories.sort_unstable_by(|left, right| {
+        left.id()
+            .as_str()
+            .cmp(right.id().as_str())
+            .then_with(|| left.version().cmp(&right.version()))
+    });
+    let mut tenant = None;
+    let mut revisions = HashSet::new();
+    let mut output = format!(
+        "<!-- {MEMORY_MARKDOWN_FORMAT}-v{MEMORY_MARKDOWN_VERSION} -->\n\
+         # Rembrane memory export\n\n"
+    );
+    for memory in memories {
+        let record_tenant = (memory.workspace_id().as_str(), memory.subject_id().as_str());
+        if tenant.is_some_and(|expected| expected != record_tenant)
+            || !revisions.insert((memory.id().as_str(), memory.version()))
+        {
+            return Err(CodecError::InvalidDomainRecord);
+        }
+        tenant = Some(record_tenant);
+        encode_memory_markdown_record(memory, &mut output);
+        if output.len() > MAX_MEMORY_JSONL_ARCHIVE_BYTES {
+            return Err(CodecError::MalformedPayload);
+        }
+    }
+    Ok(output.into_bytes())
+}
+
+fn encode_memory_markdown_record(memory: &MemoryRecord, output: &mut String) {
+    use std::fmt::Write as _;
+
+    let (scope_type, scope_value) = match memory.scope() {
+        MemoryScope::Global => ("global", None),
+        MemoryScope::Domain { name } => ("domain", Some(name.as_str())),
+        MemoryScope::Entity { id } => ("entity", Some(id.as_str())),
+        MemoryScope::Activity { id } => ("activity", Some(id.as_str())),
+    };
+    let kind = match memory.kind() {
+        MemoryKind::Preference => "preference",
+        MemoryKind::Semantic => "semantic",
+        MemoryKind::Episodic => "episodic",
+        MemoryKind::Procedural => "procedural",
+        MemoryKind::Observation => "observation",
+        MemoryKind::Working => "working",
+    };
+    let status = match memory.status() {
+        MemoryStatus::Proposed => "proposed",
+        MemoryStatus::Confirmed => "confirmed",
+        MemoryStatus::Superseded => "superseded",
+        MemoryStatus::Deleted => "deleted",
+    };
+    let _ = writeln!(
+        output,
+        "## Memory `{}`\n\n\
+         - Workspace: `{}`\n\
+         - Subject: `{}`\n\
+         - Version: `{}`\n\
+         - Scope: `{scope_type}`{}\n\
+         - Kind: `{kind}`\n\
+         - Status: `{status}`\n\n\
+         ### Content\n",
+        memory.id(),
+        memory.workspace_id(),
+        memory.subject_id(),
+        memory.version(),
+        scope_value.map_or_else(String::new, |value| format!(" / `{value}`")),
+    );
+    let fence = "`".repeat(
+        longest_backtick_run(memory.content())
+            .saturating_add(1)
+            .max(3),
+    );
+    let _ = writeln!(
+        output,
+        "{fence}\n{}\n{fence}\n\n### Evidence\n",
+        memory.content()
+    );
+    if memory.evidence().is_empty() {
+        output.push_str("- None\n\n");
+    } else {
+        for evidence in memory.evidence() {
+            let source = match evidence.source {
+                EvidenceSource::UserStatement => "user-statement",
+                EvidenceSource::AgentObservation => "agent-observation",
+                EvidenceSource::ToolResult => "tool-result",
+                EvidenceSource::ImportedRecord => "imported-record",
+                EvidenceSource::WorkspaceDecision => "workspace-decision",
+            };
+            let _ = writeln!(output, "- `{}` — `{source}`", evidence.id);
+        }
+        output.push('\n');
+    }
+}
+
+fn longest_backtick_run(value: &str) -> usize {
+    value
+        .split(|character| character != '`')
+        .map(str::len)
+        .max()
+        .unwrap_or(0)
 }
 
 fn decode_memory_jsonl_archive_with_limits(
@@ -321,7 +430,7 @@ mod tests {
         MAX_MEMORY_JSONL_ARCHIVE_BYTES, MAX_MEMORY_JSONL_ARCHIVE_RECORDS,
         MAX_MEMORY_JSONL_LINE_BYTES, decode_memory_jsonl_archive,
         decode_memory_jsonl_archive_with_limits, decode_memory_jsonl_record,
-        encode_memory_jsonl_record,
+        encode_memory_jsonl_record, encode_memory_markdown_archive,
     };
     use crate::CodecError;
 
@@ -443,5 +552,51 @@ mod tests {
             Err(CodecError::MalformedPayload)
         );
         assert!(MAX_MEMORY_JSONL_ARCHIVE_BYTES > two_records.len());
+    }
+
+    #[test]
+    fn markdown_archive_is_deterministic_and_uses_safe_content_fences() {
+        let later = fixture();
+        let earlier = MemoryRecord::confirmed_preference(
+            MemoryId::new("memory_00"),
+            WorkspaceId::new("workspace_01"),
+            PrincipalId::new("principal_01"),
+            MemoryScope::Global,
+            "Use ``` fenced examples",
+            EvidenceReference::new(
+                EvidenceId::new("evidence_00"),
+                EvidenceSource::UserStatement,
+            ),
+        )
+        .expect("valid fixture");
+
+        let encoded = encode_memory_markdown_archive(&[later, earlier]).expect("Markdown export");
+        let markdown = String::from_utf8(encoded).expect("UTF-8 Markdown");
+        assert!(markdown.starts_with("<!-- rembrane-memory-markdown-v1 -->"));
+        assert!(markdown.find("## Memory `memory_00`") < markdown.find("## Memory `memory_01`"));
+        assert!(markdown.contains("````\nUse ``` fenced examples\n````"));
+        assert!(markdown.contains("- `evidence_00` — `user-statement`"));
+    }
+
+    #[test]
+    fn markdown_archive_rejects_mixed_tenants() {
+        let first = fixture();
+        let second = MemoryRecord::confirmed_preference(
+            MemoryId::new("memory_02"),
+            WorkspaceId::new("workspace_other"),
+            PrincipalId::new("principal_01"),
+            MemoryScope::Global,
+            "Other tenant",
+            EvidenceReference::new(
+                EvidenceId::new("evidence_02"),
+                EvidenceSource::UserStatement,
+            ),
+        )
+        .expect("valid fixture");
+
+        assert_eq!(
+            encode_memory_markdown_archive(&[first, second]),
+            Err(CodecError::InvalidDomainRecord)
+        );
     }
 }
