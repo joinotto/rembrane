@@ -1917,6 +1917,124 @@ pub struct RemoteMcpAxumAuthorization<Verifier> {
     trusted_origins: Vec<String>,
 }
 
+/// Thread-safe remote MCP authorization state for concurrent HTTP routing.
+///
+/// The bounded session registry is locked only for local authorization or
+/// commit work. Downstream SDK futures are never awaited while that lock is
+/// held, so one slow tenant cannot serialize unrelated protocol execution.
+pub struct SharedRemoteMcpAxumAuthorization<Verifier> {
+    gate: Mutex<RemoteMcpHttpGate>,
+    verifier: Verifier,
+    issuer: String,
+    resource: String,
+    trusted_origins: Vec<String>,
+}
+
+impl<Verifier> SharedRemoteMcpAxumAuthorization<Verifier>
+where
+    Verifier: RemoteTokenVerifier,
+{
+    /// Builds concurrent authorization state from one validated deployment
+    /// profile.
+    ///
+    /// # Errors
+    ///
+    /// Returns an HTTP-ready rejection when the configured session capacity
+    /// or derived HTTP gate is invalid.
+    pub fn from_config(
+        maximum_sessions: usize,
+        config: &RemoteMcpConfig,
+        verifier: Verifier,
+    ) -> Result<Self, RemoteMcpHttpRejection> {
+        Ok(Self {
+            gate: Mutex::new(RemoteMcpHttpGate::from_config(maximum_sessions, config)?),
+            verifier,
+            issuer: config.issuer().to_owned(),
+            resource: config.resource().to_owned(),
+            trusted_origins: config.trusted_origins().to_vec(),
+        })
+    }
+
+    /// Consumes one sessionless initialization without holding the shared
+    /// registry lock across official SDK initialization or compensation.
+    ///
+    /// # Errors
+    ///
+    /// Distinguishes authorization, initialization, binding, and compensating
+    /// downstream termination failures.
+    pub async fn initialize_and_commit_owned_session<Dispatcher>(
+        &self,
+        headers: &HeaderMap,
+        body: Zeroizing<Vec<u8>>,
+        now_epoch_seconds: u64,
+        dispatcher: &Dispatcher,
+    ) -> Result<
+        InitializedRemoteMcpSession<Dispatcher::Output>,
+        RemoteMcpInitializationError<Dispatcher::InitializeError, Dispatcher::TerminationError>,
+    >
+    where
+        Dispatcher: AuthorizedRemoteMcpInitializationDispatcher,
+    {
+        let protocol_headers = protocol_headers_from_axum(headers)
+            .map_err(RemoteMcpInitializationError::Authorization)?;
+        let request = request_from_axum_headers(headers)
+            .map_err(RemoteMcpInitializationError::Authorization)?;
+        let authenticator =
+            RemoteAccessAuthenticator::new(&self.verifier, &self.issuer, &self.resource);
+        let trusted_origins = self
+            .trusted_origins
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>();
+        let authorization = RemoteHttpAuthorization::new(&authenticator, &trusted_origins);
+        let authorized = {
+            let gate = self
+                .gate
+                .lock()
+                .map_err(|_| RemoteMcpInitializationError::Authorization(lock_rejection()))?;
+            gate.authorize_sessionless_initialize_owned_body(
+                &authorization,
+                request,
+                body,
+                now_epoch_seconds,
+            )
+            .map_err(RemoteMcpInitializationError::Authorization)?
+        };
+        let access = authorized.access().clone();
+        let (access_for_dispatch, invocation, _, body) = authorized.into_dispatch_parts();
+        let termination_headers = protocol_headers.clone();
+        let initialized = dispatcher
+            .initialize(access_for_dispatch, invocation, protocol_headers, body)
+            .await
+            .map_err(RemoteMcpInitializationError::Initialize)?;
+        let session_id = initialized.session_id().clone();
+        let commit = self
+            .gate
+            .lock()
+            .map_err(|_| RemoteMcpInitializationError::Authorization(lock_rejection()))?
+            .commit_sdk_generated_session(session_id.clone(), &access, now_epoch_seconds);
+        if let Err(rejection) = commit {
+            let termination_error = dispatcher
+                .terminate(access, session_id, termination_headers)
+                .await
+                .err();
+            return Err(RemoteMcpInitializationError::Commit {
+                rejection,
+                termination_error,
+            });
+        }
+        Ok(initialized)
+    }
+}
+
+fn lock_rejection() -> RemoteMcpHttpRejection {
+    RemoteMcpHttpRejection {
+        status: 503,
+        www_authenticate: None,
+        retry_after_seconds: Some(1),
+    }
+}
+
 impl<Verifier> RemoteMcpAxumAuthorization<Verifier>
 where
     Verifier: RemoteTokenVerifier,
@@ -3102,11 +3220,12 @@ mod tests {
         MAX_REMOTE_MCP_HEADER_BYTES, MCP_PROTOCOL_VERSION_HEADER_NAME, MCP_SESSION_HEADER_NAME,
         RemoteMcpAxumAuthorization, RemoteMcpDispatchError, RemoteMcpHttpGate,
         RemoteMcpHttpRejection, RemoteMcpHttpRequest, RemoteMcpInitializationError,
-        RemoteMcpInvocation, TenantAwareTowerMcpDispatchError, TenantAwareTowerMcpDispatcher,
-        TenantServiceCacheError, authorize_axum_session_body, authorize_axum_session_deletion,
-        authorize_axum_stateless_body, authorize_axum_stateless_owned_body,
-        classify_remote_mcp_request, establish_and_dispatch_axum_session,
-        establish_axum_session_body, request_from_axum_headers,
+        RemoteMcpInvocation, SharedRemoteMcpAxumAuthorization, TenantAwareTowerMcpDispatchError,
+        TenantAwareTowerMcpDispatcher, TenantServiceCacheError, authorize_axum_session_body,
+        authorize_axum_session_deletion, authorize_axum_stateless_body,
+        authorize_axum_stateless_owned_body, classify_remote_mcp_request,
+        establish_and_dispatch_axum_session, establish_axum_session_body,
+        request_from_axum_headers,
     };
 
     struct Verifier;
@@ -3178,6 +3297,48 @@ mod tests {
         session_id: RemoteSessionId,
         terminated: Arc<Mutex<Vec<(String, String)>>>,
         fail_termination: bool,
+    }
+
+    struct LockProbeInitializationDispatcher<'gate> {
+        gate: &'gate Mutex<RemoteMcpHttpGate>,
+        session_id: RemoteSessionId,
+        observed_unlocked: Arc<Mutex<Vec<bool>>>,
+    }
+
+    impl AuthorizedRemoteMcpInitializationDispatcher for LockProbeInitializationDispatcher<'_> {
+        type Output = ();
+        type InitializeError = std::convert::Infallible;
+        type TerminationError = std::convert::Infallible;
+        type InitializeFuture = std::future::Ready<
+            Result<InitializedRemoteMcpSession<Self::Output>, Self::InitializeError>,
+        >;
+        type TerminationFuture = std::future::Ready<Result<(), Self::TerminationError>>;
+
+        fn initialize(
+            &self,
+            _access: rembrane_contracts::VerifiedRemoteAccess,
+            _invocation: RemoteMcpInvocation,
+            _protocol_headers: super::RemoteMcpProtocolHeaders,
+            _body: zeroize::Zeroizing<Vec<u8>>,
+        ) -> Self::InitializeFuture {
+            self.observed_unlocked
+                .lock()
+                .expect("probe log")
+                .push(self.gate.try_lock().is_ok());
+            std::future::ready(Ok(InitializedRemoteMcpSession::new(
+                (),
+                self.session_id.clone(),
+            )))
+        }
+
+        fn terminate(
+            &self,
+            _access: rembrane_contracts::VerifiedRemoteAccess,
+            _session_id: RemoteSessionId,
+            _protocol_headers: super::RemoteMcpProtocolHeaders,
+        ) -> Self::TerminationFuture {
+            std::future::ready(Ok(()))
+        }
     }
 
     impl AuthorizedRemoteMcpInitializationDispatcher for ConfirmedInitializationDispatcher {
@@ -5575,6 +5736,64 @@ mod tests {
                 .lock()
                 .expect("termination recording lock should remain available")
                 .is_empty()
+        );
+    }
+
+    #[tokio::test]
+    async fn shared_axum_initialization_never_awaits_with_registry_locked() {
+        let config = RemoteMcpConfig::new(
+            "https://memory.example.test/mcp".to_owned(),
+            "https://identity.example.test".to_owned(),
+            "https://identity.example.test/introspect".to_owned(),
+            "rembrane".to_owned(),
+            SecretReference::environment("OAUTH_SECRET").expect("reference should be valid"),
+            vec!["https://agent.example.test".to_owned()],
+        )
+        .expect("remote profile should be valid");
+        let authorization = SharedRemoteMcpAxumAuthorization::from_config(2, &config, Verifier)
+            .expect("shared authorization should initialize");
+        let mut headers = HeaderMap::new();
+        headers.insert(HOST, HeaderValue::from_static("memory.example.test"));
+        headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+        headers.insert(
+            ACCEPT,
+            HeaderValue::from_static("application/json, text/event-stream"),
+        );
+        headers.insert(
+            AUTHORIZATION,
+            HeaderValue::from_static("Bearer workspace-one"),
+        );
+        headers.insert(
+            ORIGIN,
+            HeaderValue::from_static("https://agent.example.test"),
+        );
+        let observed_unlocked = Arc::new(Mutex::new(Vec::new()));
+        let dispatcher = LockProbeInitializationDispatcher {
+            gate: &authorization.gate,
+            session_id: RemoteSessionId::new("session_shared_probe_0123456789")
+                .expect("session fixture should validate"),
+            observed_unlocked: Arc::clone(&observed_unlocked),
+        };
+
+        authorization
+            .initialize_and_commit_owned_session(&headers, initialize_body(), 1_000, &dispatcher)
+            .await
+            .expect("first shared initialization should commit");
+        let duplicate = authorization
+            .initialize_and_commit_owned_session(&headers, initialize_body(), 1_001, &dispatcher)
+            .await
+            .expect_err("duplicate SDK session should fail local commit");
+        assert!(matches!(
+            duplicate,
+            RemoteMcpInitializationError::Commit {
+                rejection: RemoteMcpHttpRejection { status: 409, .. },
+                termination_error: None,
+            }
+        ));
+        assert_eq!(
+            *observed_unlocked.lock().expect("probe log"),
+            [true, true],
+            "SDK dispatch and compensation must run outside the registry lock"
         );
     }
 

@@ -52,6 +52,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Borrowed and owned Axum authorization surfaces now expose confirmed
   official-SDK initialization without duplicating the zeroizing plaintext
   request body or reimplementing header validation.
+- A shared concurrent Axum authorization service now performs sessionless
+  authorization and confirmed binding in two local lock phases, never holding
+  the session-registry mutex while awaiting SDK initialization or compensation.
 - The concrete Tower initializer now accepts only successful SDK responses
   carrying exactly one valid `Mcp-Session-Id`, and performs compensation DELETE
   with the original validated host, origin, protocol version, and tenant.

@@ -504,6 +504,9 @@ This roadmap describes sequencing, not release dates.
           fail-closed operational handling.
         - [x] Expose confirmed initialization through borrowed and owned Axum
           boundaries while preserving one zeroizing request-body allocation.
+          - [x] Provide shared concurrent Axum authorization that releases the
+            bounded session-registry lock before every SDK initialization or
+            compensating termination await.
         - [x] Validate successful Tower SDK responses with exactly one
           canonical session ID and reuse the validated host, origin, and
           protocol metadata for compensating DELETE requests.
