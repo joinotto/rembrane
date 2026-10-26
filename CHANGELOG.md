@@ -46,15 +46,19 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   SDK-generated response ID for confirmed binding.
 - The remote MCP gate can now commit a validated official-SDK response session
   ID to the exact verified tenant with duplicate, capacity, and replay denial.
-- Confirmed remote MCP initialization now compensates duplicate or capacity
-  commit rejection by terminating the generated downstream SDK session, with
-  typed propagation when that cleanup itself fails.
+- Confirmed remote MCP initialization now compensates capacity rejection by
+  terminating the generated downstream SDK session, but never deletes on a
+  duplicate-ID collision that could refer to a pre-existing live session.
+  Cleanup failures remain typed.
 - Borrowed and owned Axum authorization surfaces now expose confirmed
   official-SDK initialization without duplicating the zeroizing plaintext
   request body or reimplementing header validation.
 - A shared concurrent Axum authorization service now performs sessionless
   authorization and confirmed binding in two local lock phases, never holding
   the session-registry mutex while awaiting SDK initialization or compensation.
+- Shared established-session POST and confirmed DELETE now use the same
+  lock-minimizing flow, retain bindings after failed deletion dispatch, and
+  deny replay after a successful local deletion commit.
 - The concrete Tower initializer now accepts only successful SDK responses
   carrying exactly one valid `Mcp-Session-Id`, and performs compensation DELETE
   with the original validated host, origin, protocol version, and tenant.

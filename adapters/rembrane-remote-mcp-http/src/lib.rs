@@ -2014,16 +2014,134 @@ where
             .map_err(|_| RemoteMcpInitializationError::Authorization(lock_rejection()))?
             .commit_sdk_generated_session(session_id.clone(), &access, now_epoch_seconds);
         if let Err(rejection) = commit {
-            let termination_error = dispatcher
-                .terminate(access, session_id, termination_headers)
-                .await
-                .err();
+            let termination_error = if rejection.status == 409 {
+                None
+            } else {
+                dispatcher
+                    .terminate(access, session_id, termination_headers)
+                    .await
+                    .err()
+            };
             return Err(RemoteMcpInitializationError::Commit {
                 rejection,
                 termination_error,
             });
         }
         Ok(initialized)
+    }
+
+    /// Consumes and dispatches one established-session request while holding
+    /// the registry lock only for local reauthentication and tenant binding.
+    ///
+    /// # Errors
+    ///
+    /// Distinguishes fail-closed HTTP authorization from downstream protocol
+    /// dispatch failure.
+    pub async fn authorize_and_dispatch_owned_session<Dispatcher>(
+        &self,
+        headers: &HeaderMap,
+        body: Zeroizing<Vec<u8>>,
+        now_epoch_seconds: u64,
+        dispatcher: &Dispatcher,
+    ) -> Result<Dispatcher::Output, RemoteMcpDispatchError<Dispatcher::Error>>
+    where
+        Dispatcher: AuthorizedRemoteMcpDispatcher,
+    {
+        let protocol_headers =
+            protocol_headers_from_axum(headers).map_err(RemoteMcpDispatchError::Authorization)?;
+        let request =
+            request_from_axum_headers(headers).map_err(RemoteMcpDispatchError::Authorization)?;
+        let authenticator =
+            RemoteAccessAuthenticator::new(&self.verifier, &self.issuer, &self.resource);
+        let trusted_origins = self
+            .trusted_origins
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>();
+        let authorization = RemoteHttpAuthorization::new(&authenticator, &trusted_origins);
+        let mut authorized = {
+            let mut gate = self
+                .gate
+                .lock()
+                .map_err(|_| RemoteMcpDispatchError::Authorization(lock_rejection()))?;
+            gate.authorize_session_owned_body(&authorization, request, body, now_epoch_seconds)
+                .map_err(RemoteMcpDispatchError::Authorization)?
+        };
+        authorized.protocol_headers = protocol_headers;
+        authorized
+            .dispatch_with(dispatcher)
+            .await
+            .map_err(RemoteMcpDispatchError::Dispatch)
+    }
+
+    /// Reauthenticates a session DELETE, dispatches it without the registry
+    /// lock, and removes the local binding only after downstream confirmation.
+    ///
+    /// # Errors
+    ///
+    /// Distinguishes fail-closed HTTP/session authorization from downstream
+    /// termination failure. Failed downstream termination retains the local
+    /// binding for retry.
+    pub async fn authorize_and_dispatch_termination<Dispatcher>(
+        &self,
+        headers: &HeaderMap,
+        now_epoch_seconds: u64,
+        dispatcher: &Dispatcher,
+    ) -> Result<Dispatcher::Output, RemoteMcpDispatchError<Dispatcher::Error>>
+    where
+        Dispatcher: AuthorizedRemoteMcpSessionDeletionDispatcher,
+    {
+        let (request, protocol_version) = session_deletion_from_axum_headers(headers)
+            .map_err(RemoteMcpDispatchError::Authorization)?;
+        let authenticator =
+            RemoteAccessAuthenticator::new(&self.verifier, &self.issuer, &self.resource);
+        let trusted_origins = self
+            .trusted_origins
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>();
+        let authorization = RemoteHttpAuthorization::new(&authenticator, &trusted_origins);
+        let session_id = RemoteMcpHttpGate::session_id(request.session_id)
+            .map_err(RemoteMcpDispatchError::Authorization)?;
+        let access = {
+            let mut gate = self
+                .gate
+                .lock()
+                .map_err(|_| RemoteMcpDispatchError::Authorization(lock_rejection()))?;
+            gate.require_allowed_host(request.host)
+                .map_err(RemoteMcpDispatchError::Authorization)?;
+            gate.sessions
+                .authorize_termination_for_http(
+                    &authorization,
+                    &session_id,
+                    request.authorization,
+                    request.origin,
+                    now_epoch_seconds,
+                )
+                .map_err(|error| RemoteMcpDispatchError::Authorization(gate.rejection(error)))?
+        };
+        let output = dispatcher
+            .terminate(
+                access.clone(),
+                session_id.clone(),
+                protocol_version.map(str::to_owned),
+                request.host.unwrap_or_default().to_owned(),
+                request.origin.map(str::to_owned),
+            )
+            .await
+            .map_err(RemoteMcpDispatchError::Dispatch)?;
+        let mut gate = self
+            .gate
+            .lock()
+            .map_err(|_| RemoteMcpDispatchError::Authorization(lock_rejection()))?;
+        gate.sessions
+            .terminate(&session_id, &access, now_epoch_seconds)
+            .map_err(|_| {
+                RemoteMcpDispatchError::Authorization(
+                    gate.rejection(RemoteSessionHttpError::Forbidden),
+                )
+            })?;
+        Ok(output)
     }
 }
 
@@ -2653,10 +2771,14 @@ impl RemoteMcpHttpGate {
         if let Err(rejection) =
             self.commit_sdk_generated_session(session_id.clone(), &access, now_epoch_seconds)
         {
-            let termination_error = dispatcher
-                .terminate(access, session_id, termination_headers)
-                .await
-                .err();
+            let termination_error = if rejection.status == 409 {
+                None
+            } else {
+                dispatcher
+                    .terminate(access, session_id, termination_headers)
+                    .await
+                    .err()
+            };
             return Err(RemoteMcpInitializationError::Commit {
                 rejection,
                 termination_error,
@@ -3337,6 +3459,51 @@ mod tests {
             _session_id: RemoteSessionId,
             _protocol_headers: super::RemoteMcpProtocolHeaders,
         ) -> Self::TerminationFuture {
+            self.observed_unlocked
+                .lock()
+                .expect("probe log")
+                .push(self.gate.try_lock().is_ok());
+            std::future::ready(Ok(()))
+        }
+    }
+
+    impl AuthorizedRemoteMcpDispatcher for LockProbeInitializationDispatcher<'_> {
+        type Output = ();
+        type Error = std::convert::Infallible;
+        type DispatchFuture = std::future::Ready<Result<Self::Output, Self::Error>>;
+
+        fn dispatch(
+            &self,
+            _access: rembrane_contracts::VerifiedRemoteAccess,
+            _invocation: RemoteMcpInvocation,
+            _protocol_headers: super::RemoteMcpProtocolHeaders,
+            _body: zeroize::Zeroizing<Vec<u8>>,
+        ) -> Self::DispatchFuture {
+            self.observed_unlocked
+                .lock()
+                .expect("probe log")
+                .push(self.gate.try_lock().is_ok());
+            std::future::ready(Ok(()))
+        }
+    }
+
+    impl AuthorizedRemoteMcpSessionDeletionDispatcher for LockProbeInitializationDispatcher<'_> {
+        type Output = ();
+        type Error = std::convert::Infallible;
+        type DispatchFuture = std::future::Ready<Result<Self::Output, Self::Error>>;
+
+        fn terminate(
+            &self,
+            _access: rembrane_contracts::VerifiedRemoteAccess,
+            _session_id: RemoteSessionId,
+            _protocol_version: Option<String>,
+            _validated_host: String,
+            _validated_origin: Option<String>,
+        ) -> Self::DispatchFuture {
+            self.observed_unlocked
+                .lock()
+                .expect("probe log")
+                .push(self.gate.try_lock().is_ok());
             std::future::ready(Ok(()))
         }
     }
@@ -5790,10 +5957,44 @@ mod tests {
                 termination_error: None,
             }
         ));
+        headers.insert(
+            MCP_SESSION_HEADER_NAME,
+            HeaderValue::from_static("session_shared_probe_0123456789"),
+        );
+        authorization
+            .authorize_and_dispatch_owned_session(
+                &headers,
+                zeroize::Zeroizing::new(
+                    br#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#.to_vec(),
+                ),
+                1_002,
+                &dispatcher,
+            )
+            .await
+            .expect("shared established session should dispatch");
+        authorization
+            .authorize_and_dispatch_termination(&headers, 1_003, &dispatcher)
+            .await
+            .expect("shared session deletion should commit after dispatch");
+        let deleted = authorization
+            .authorize_and_dispatch_owned_session(
+                &headers,
+                zeroize::Zeroizing::new(
+                    br#"{"jsonrpc":"2.0","id":3,"method":"tools/list"}"#.to_vec(),
+                ),
+                1_004,
+                &dispatcher,
+            )
+            .await
+            .expect_err("deleted shared session must no longer authorize");
+        assert!(matches!(
+            deleted,
+            RemoteMcpDispatchError::Authorization(RemoteMcpHttpRejection { status: 403, .. })
+        ));
         assert_eq!(
             *observed_unlocked.lock().expect("probe log"),
-            [true, true],
-            "SDK dispatch and compensation must run outside the registry lock"
+            [true, true, true, true],
+            "duplicate conflict must not compensate, and SDK awaits must run outside the lock"
         );
     }
 
