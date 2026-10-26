@@ -11,11 +11,11 @@
 //! synchronous and must not use blocking network clients on an async executor.
 //! Prefer the owned/shared service entrypoints for HTTP routing.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::time::Instant;
 
 use axum::{
@@ -48,6 +48,8 @@ pub const MAX_REMOTE_MCP_HEADER_BYTES: usize = 8_192;
 pub const MAX_REMOTE_MCP_TENANT_SERVICES: usize = 10_000;
 const MAX_REMOTE_AUTHORIZATION_OPERATIONS: usize = 8;
 static AUTHORIZATION_OPERATIONS: OnceLock<Arc<Semaphore>> = OnceLock::new();
+const MAX_TENANT_FACTORY_OPERATIONS: usize = 8;
+static TENANT_FACTORY_OPERATIONS: OnceLock<Arc<Semaphore>> = OnceLock::new();
 
 struct TimelyTokenVerifier<'verifier, Verifier> {
     verifier: &'verifier Verifier,
@@ -519,6 +521,62 @@ struct CachedTenantService<Service> {
     retain_until_epoch_seconds: u64,
 }
 
+struct TenantServiceCacheState<Service> {
+    services: BTreeMap<RemoteTenantServiceKey, CachedTenantService<Service>>,
+    pending: BTreeSet<RemoteTenantServiceKey>,
+}
+
+struct TenantServiceCacheStorage<Service> {
+    state: Mutex<TenantServiceCacheState<Service>>,
+    completed: Condvar,
+}
+
+struct TenantServiceConstruction<'cache, Service> {
+    cache: &'cache TenantServiceCacheStorage<Service>,
+    key: Option<RemoteTenantServiceKey>,
+}
+
+impl<Service> TenantServiceConstruction<'_, Service> {
+    fn commit(
+        mut self,
+        service: Service,
+        retain_until_epoch_seconds: u64,
+    ) -> Result<(), TenantServiceCacheError<std::convert::Infallible>> {
+        let mut state = self
+            .cache
+            .state
+            .lock()
+            .map_err(|_| TenantServiceCacheError::LockUnavailable)?;
+        let key = self
+            .key
+            .take()
+            .ok_or(TenantServiceCacheError::LockUnavailable)?;
+        state.pending.remove(&key);
+        state.services.insert(
+            key,
+            CachedTenantService {
+                service,
+                retain_until_epoch_seconds,
+            },
+        );
+        self.cache.completed.notify_all();
+        Ok(())
+    }
+}
+
+impl<Service> Drop for TenantServiceConstruction<'_, Service> {
+    fn drop(&mut self) {
+        if let Some(key) = self.key.take() {
+            if let Ok(mut state) = self.cache.state.lock() {
+                state.pending.remove(&key);
+            }
+            // Wake waiters even on poison so they fail closed instead of
+            // retaining blocking-worker capacity indefinitely.
+            self.cache.completed.notify_all();
+        }
+    }
+}
+
 /// Retains one tenant-pinned Tower service for the lifetime of its MCP
 /// transport sessions.
 ///
@@ -529,7 +587,7 @@ struct CachedTenantService<Service> {
 pub struct BoundedTenantTowerMcpServiceCache<Factory, Service> {
     factory: Factory,
     maximum_services: usize,
-    services: Arc<Mutex<BTreeMap<RemoteTenantServiceKey, CachedTenantService<Service>>>>,
+    services: Arc<TenantServiceCacheStorage<Service>>,
 }
 
 impl<Factory, Service> BoundedTenantTowerMcpServiceCache<Factory, Service> {
@@ -549,13 +607,22 @@ impl<Factory, Service> BoundedTenantTowerMcpServiceCache<Factory, Service> {
         Ok(Self {
             factory,
             maximum_services,
-            services: Arc::new(Mutex::new(BTreeMap::new())),
+            services: Arc::new(TenantServiceCacheStorage {
+                state: Mutex::new(TenantServiceCacheState {
+                    services: BTreeMap::new(),
+                    pending: BTreeSet::new(),
+                }),
+                completed: Condvar::new(),
+            }),
         })
     }
 
     #[must_use]
     pub fn len(&self) -> usize {
-        self.services.lock().map_or(0, |services| services.len())
+        self.services
+            .state
+            .lock()
+            .map_or(0, |state| state.services.len())
     }
 
     #[must_use]
@@ -576,13 +643,16 @@ impl<Factory, Service> BoundedTenantTowerMcpServiceCache<Factory, Service> {
         &self,
         now_epoch_seconds: u64,
     ) -> Result<usize, TenantServiceCacheError<std::convert::Infallible>> {
-        let mut services = self
+        let mut state = self
             .services
+            .state
             .lock()
             .map_err(|_| TenantServiceCacheError::LockUnavailable)?;
-        let previous = services.len();
-        services.retain(|_, cached| cached.retain_until_epoch_seconds > now_epoch_seconds);
-        Ok(previous.saturating_sub(services.len()))
+        let previous = state.services.len();
+        state
+            .services
+            .retain(|_, cached| cached.retain_until_epoch_seconds > now_epoch_seconds);
+        Ok(previous.saturating_sub(state.services.len()))
     }
 }
 
@@ -599,27 +669,43 @@ where
 
     fn create(&self, access: &VerifiedRemoteAccess) -> Result<Self::Service, Self::Error> {
         let key = RemoteTenantServiceKey::from(access);
-        let mut services = self
+        let mut state = self
             .services
+            .state
             .lock()
             .map_err(|_| TenantServiceCacheError::LockUnavailable)?;
-        if let Some(cached) = services.get_mut(&key) {
-            cached.retain_until_epoch_seconds = cached
-                .retain_until_epoch_seconds
-                .max(access.expires_at_epoch_seconds());
-            return Ok(cached.service.clone());
+        loop {
+            if let Some(cached) = state.services.get_mut(&key) {
+                cached.retain_until_epoch_seconds = cached
+                    .retain_until_epoch_seconds
+                    .max(access.expires_at_epoch_seconds());
+                return Ok(cached.service.clone());
+            }
+            if state.pending.contains(&key) {
+                state = self
+                    .services
+                    .completed
+                    .wait(state)
+                    .map_err(|_| TenantServiceCacheError::LockUnavailable)?;
+                continue;
+            }
+            if state.services.len().saturating_add(state.pending.len()) >= self.maximum_services {
+                return Err(TenantServiceCacheError::CapacityExceeded);
+            }
+            state.pending.insert(key.clone());
+            break;
         }
-        if services.len() >= self.maximum_services {
-            return Err(TenantServiceCacheError::CapacityExceeded);
-        }
+        let construction = TenantServiceConstruction {
+            cache: &self.services,
+            key: Some(key),
+        };
+        drop(state);
+        // A slow or panicking provider must not hold/poison the global cache
+        // mutex or prevent an unrelated tenant from selecting its own service.
         let service = (self.factory)(access).map_err(TenantServiceCacheError::Factory)?;
-        services.insert(
-            key,
-            CachedTenantService {
-                service: service.clone(),
-                retain_until_epoch_seconds: access.expires_at_epoch_seconds(),
-            },
-        );
+        construction
+            .commit(service.clone(), access.expires_at_epoch_seconds())
+            .map_err(|_| TenantServiceCacheError::LockUnavailable)?;
         Ok(service)
     }
 }
@@ -642,12 +728,47 @@ where
 #[derive(Clone)]
 pub struct TenantAwareTowerMcpDispatcher<Factory> {
     factory: Factory,
+    factory_operations: Arc<Semaphore>,
 }
 
 impl<Factory> TenantAwareTowerMcpDispatcher<Factory> {
     #[must_use]
-    pub const fn new(factory: Factory) -> Self {
-        Self { factory }
+    pub fn new(factory: Factory) -> Self {
+        Self {
+            factory,
+            factory_operations: Arc::clone(
+                TENANT_FACTORY_OPERATIONS
+                    .get_or_init(|| Arc::new(Semaphore::new(MAX_TENANT_FACTORY_OPERATIONS))),
+            ),
+        }
+    }
+}
+
+impl<Factory> TenantAwareTowerMcpDispatcher<Factory>
+where
+    Factory: AuthorizedTowerMcpServiceFactory,
+    Factory::Service: Send + 'static,
+    Factory::Error: Send + 'static,
+{
+    async fn create_service<ServiceError>(
+        &self,
+        access: &VerifiedRemoteAccess,
+    ) -> Result<Factory::Service, TenantAwareTowerMcpDispatchError<Factory::Error, ServiceError>>
+    {
+        let permit = Arc::clone(&self.factory_operations)
+            .try_acquire_owned()
+            .map_err(|_| TenantAwareTowerMcpDispatchError::FactoryUnavailable)?;
+        let factory = self.factory.clone();
+        let access = access.clone();
+        tokio::task::spawn_blocking(move || {
+            // Construction and cache waiters remain bounded even if the
+            // requesting async future is abandoned during initialization.
+            let _permit = permit;
+            factory.create(&access)
+        })
+        .await
+        .map_err(|_| TenantAwareTowerMcpDispatchError::FactoryUnavailable)?
+        .map_err(TenantAwareTowerMcpDispatchError::Factory)
     }
 }
 
@@ -670,6 +791,7 @@ impl<ServiceError> fmt::Debug for TowerMcpDispatchError<ServiceError> {
 pub enum TenantAwareTowerMcpDispatchError<FactoryError, ServiceError> {
     InvalidAuthorizedMetadata,
     InvalidSdkResponse,
+    FactoryUnavailable,
     Factory(FactoryError),
     Service(ServiceError),
 }
@@ -681,6 +803,7 @@ impl<FactoryError, ServiceError> fmt::Debug
         formatter.write_str(match self {
             Self::InvalidAuthorizedMetadata => "InvalidAuthorizedMetadata",
             Self::InvalidSdkResponse => "InvalidSdkResponse",
+            Self::FactoryUnavailable => "FactoryUnavailable",
             Self::Factory(_) => "Factory([REDACTED])",
             Self::Service(_) => "Service([REDACTED])",
         })
@@ -995,11 +1118,9 @@ where
         protocol_headers: RemoteMcpProtocolHeaders,
         body: Zeroizing<Vec<u8>>,
     ) -> Self::DispatchFuture {
-        let factory = self.factory.clone();
+        let dispatcher = self.clone();
         Box::pin(async move {
-            let service = factory
-                .create(&access)
-                .map_err(TenantAwareTowerMcpDispatchError::Factory)?;
+            let service = dispatcher.create_service(&access).await?;
             let mut request = Request::builder()
                 .method(Method::POST)
                 .body(Body::from(bytes::Bytes::from_owner(body)))
@@ -1074,11 +1195,9 @@ where
         protocol_headers: RemoteMcpProtocolHeaders,
         body: Zeroizing<Vec<u8>>,
     ) -> Self::InitializeFuture {
-        let factory = self.factory.clone();
+        let dispatcher = self.clone();
         Box::pin(async move {
-            let service = factory
-                .create(&access)
-                .map_err(TenantAwareTowerMcpDispatchError::Factory)?;
+            let service = dispatcher.create_service(&access).await?;
             let mut request = Request::builder()
                 .method(Method::POST)
                 .body(Body::from(bytes::Bytes::from_owner(body)))
@@ -1139,14 +1258,12 @@ where
         session_id: RemoteSessionId,
         protocol_headers: RemoteMcpProtocolHeaders,
     ) -> Self::TerminationFuture {
-        let factory = self.factory.clone();
+        let dispatcher = self.clone();
         Box::pin(async move {
             let validated_host = protocol_headers
                 .validated_host()
                 .ok_or(TenantAwareTowerMcpDispatchError::InvalidAuthorizedMetadata)?;
-            let service = factory
-                .create(&access)
-                .map_err(TenantAwareTowerMcpDispatchError::Factory)?;
+            let service = dispatcher.create_service(&access).await?;
             let mut request = Request::builder()
                 .method(Method::DELETE)
                 .body(Body::empty())
@@ -1205,11 +1322,9 @@ where
         validated_host: Option<String>,
         validated_origin: Option<String>,
     ) -> Self::DispatchFuture {
-        let factory = self.factory.clone();
+        let dispatcher = self.clone();
         Box::pin(async move {
-            let service = factory
-                .create(&access)
-                .map_err(TenantAwareTowerMcpDispatchError::Factory)?;
+            let service = dispatcher.create_service(&access).await?;
             let mut request = Request::builder()
                 .method(Method::GET)
                 .body(Body::empty())
@@ -1265,11 +1380,9 @@ where
         validated_host: String,
         validated_origin: Option<String>,
     ) -> Self::DispatchFuture {
-        let factory = self.factory.clone();
+        let dispatcher = self.clone();
         Box::pin(async move {
-            let service = factory
-                .create(&access)
-                .map_err(TenantAwareTowerMcpDispatchError::Factory)?;
+            let service = dispatcher.create_service(&access).await?;
             let mut request = Request::builder()
                 .method(Method::DELETE)
                 .body(Body::empty())
@@ -3885,6 +3998,477 @@ mod tests {
         })
     }
 
+    fn fixture_tenant_dispatcher<Factory>(
+        factory: Factory,
+    ) -> TenantAwareTowerMcpDispatcher<Factory> {
+        let mut dispatcher = TenantAwareTowerMcpDispatcher::new(factory);
+        dispatcher.factory_operations = Arc::new(Semaphore::new(8));
+        dispatcher
+    }
+
+    fn factory_access(workspace: &str) -> rembrane_contracts::VerifiedRemoteAccess {
+        verified_access(
+            workspace,
+            2_000,
+            BTreeSet::from([RemoteAccessScope::ContextRead]),
+        )
+    }
+
+    #[test]
+    fn tenant_dispatchers_share_a_separate_process_factory_budget() {
+        let factory = |_access: &rembrane_contracts::VerifiedRemoteAccess| {
+            Ok::<_, std::convert::Infallible>(())
+        };
+        let first = TenantAwareTowerMcpDispatcher::new(factory);
+        let second = TenantAwareTowerMcpDispatcher::new(factory);
+        let authorization =
+            SharedRemoteMcpAxumAuthorization::from_config(1, &runtime_config(), Verifier)
+                .expect("production authorization constructor");
+        assert!(Arc::ptr_eq(
+            &first.factory_operations,
+            &second.factory_operations
+        ));
+        assert!(!Arc::ptr_eq(
+            &first.factory_operations,
+            &authorization.authorization_operations
+        ));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn tenant_factory_runs_off_executor_and_preserves_exact_verified_access() {
+        let executor_thread = std::thread::current().id();
+        let dispatcher =
+            fixture_tenant_dispatcher(|access: &rembrane_contracts::VerifiedRemoteAccess| {
+                let _client = reqwest::blocking::Client::builder()
+                    .build()
+                    .expect("blocking provider construction");
+                Ok::<_, std::convert::Infallible>((std::thread::current().id(), access.clone()))
+            });
+        let access = factory_access("workspace_01");
+        let (worker_thread, selected) = dispatcher
+            .create_service::<std::convert::Infallible>(&access)
+            .await
+            .expect("tenant construction");
+        assert_ne!(worker_thread, executor_thread);
+        assert_eq!(selected, access);
+        assert_eq!(dispatcher.factory_operations.available_permits(), 8);
+    }
+
+    #[tokio::test]
+    async fn unavailable_factory_capacity_never_constructs_a_service() {
+        let mut dispatcher = fixture_tenant_dispatcher(
+            |_access: &rembrane_contracts::VerifiedRemoteAccess| -> Result<(), &'static str> {
+                panic!("unavailable capacity must not execute provider construction")
+            },
+        );
+        dispatcher.factory_operations = Arc::new(Semaphore::new(1));
+        let capacity = Arc::clone(&dispatcher.factory_operations);
+        let permit = capacity.try_acquire().expect("saturated factory budget");
+        let access = factory_access("workspace_01");
+        assert!(matches!(
+            dispatcher
+                .create_service::<std::convert::Infallible>(&access)
+                .await,
+            Err(TenantAwareTowerMcpDispatchError::FactoryUnavailable),
+        ));
+        drop(permit);
+        capacity.close();
+        assert!(matches!(
+            dispatcher
+                .create_service::<std::convert::Infallible>(&access)
+                .await,
+            Err(TenantAwareTowerMcpDispatchError::FactoryUnavailable),
+        ));
+    }
+
+    #[tokio::test]
+    async fn factory_panic_releases_cache_reservation_without_poisoning_other_tenants() {
+        let attempts = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counter = Arc::clone(&attempts);
+        let cache = BoundedTenantTowerMcpServiceCache::new(
+            1,
+            move |access: &rembrane_contracts::VerifiedRemoteAccess| {
+                assert_ne!(
+                    counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst),
+                    0,
+                    "private provider panic with token and tenant details",
+                );
+                Ok::<_, std::convert::Infallible>(access.workspace_id().to_string())
+            },
+        )
+        .expect("tenant cache");
+        let dispatcher = fixture_tenant_dispatcher(cache.clone());
+        let failure = dispatcher
+            .create_service::<std::convert::Infallible>(&factory_access("workspace_01"))
+            .await
+            .expect_err("first constructor panic");
+        assert!(matches!(
+            failure,
+            TenantAwareTowerMcpDispatchError::FactoryUnavailable
+        ));
+        assert_eq!(format!("{failure:?}"), "FactoryUnavailable");
+        assert_eq!(dispatcher.factory_operations.available_permits(), 8);
+        assert!(cache.is_empty());
+        assert!(
+            cache
+                .services
+                .state
+                .lock()
+                .expect("unpoisoned cache")
+                .pending
+                .is_empty()
+        );
+        let recovered = dispatcher
+            .create_service::<std::convert::Infallible>(&factory_access("workspace_02"))
+            .await
+            .expect("different tenant reclaims capacity");
+        assert_eq!(recovered, "workspace_02");
+        assert_eq!(attempts.load(std::sync::atomic::Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn abandoned_construction_keeps_worker_and_cache_capacity_until_real_completion() {
+        use std::time::Duration;
+        use tokio::{sync::oneshot, time::timeout};
+        let (started, worker_started) = oneshot::channel();
+        let signal = Arc::new(Mutex::new(Some(started)));
+        let (release, wait_for_release) = std::sync::mpsc::channel();
+        let receiver = Arc::new(Mutex::new(wait_for_release));
+        let attempts = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counter = Arc::clone(&attempts);
+        let cache = BoundedTenantTowerMcpServiceCache::new(
+            1,
+            move |access: &rembrane_contracts::VerifiedRemoteAccess| {
+                counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                signal
+                    .lock()
+                    .expect("signal")
+                    .take()
+                    .expect("one construction")
+                    .send(())
+                    .expect("started");
+                receiver
+                    .lock()
+                    .expect("receiver")
+                    .recv_timeout(Duration::from_secs(5))
+                    .expect("bounded release");
+                Ok::<_, std::convert::Infallible>(access.workspace_id().to_string())
+            },
+        )
+        .expect("tenant cache");
+        let mut dispatcher = fixture_tenant_dispatcher(cache.clone());
+        dispatcher.factory_operations = Arc::new(Semaphore::new(1));
+        let worker = dispatcher.clone();
+        let pending = tokio::spawn(async move {
+            worker
+                .create_service::<std::convert::Infallible>(&factory_access("workspace_01"))
+                .await
+        });
+        timeout(Duration::from_secs(5), worker_started)
+            .await
+            .expect("bounded construction start")
+            .expect("started");
+        pending.abort();
+        assert!(pending.await.expect_err("abandoned request").is_cancelled());
+        assert_eq!(dispatcher.factory_operations.available_permits(), 0);
+        assert!(matches!(
+            dispatcher
+                .create_service::<std::convert::Infallible>(&factory_access("workspace_02"))
+                .await,
+            Err(TenantAwareTowerMcpDispatchError::FactoryUnavailable),
+        ));
+        assert_eq!(
+            cache
+                .services
+                .state
+                .lock()
+                .expect("cache state")
+                .pending
+                .len(),
+            1
+        );
+        release.send(()).expect("release constructor");
+        let permit = timeout(
+            Duration::from_secs(5),
+            dispatcher.factory_operations.acquire(),
+        )
+        .await
+        .expect("worker eventually completes")
+        .expect("capacity available");
+        drop(permit);
+        assert_eq!(cache.len(), 1);
+        assert!(
+            cache
+                .services
+                .state
+                .lock()
+                .expect("cache state")
+                .pending
+                .is_empty()
+        );
+        let reused = dispatcher
+            .create_service::<std::convert::Infallible>(&factory_access("workspace_01"))
+            .await
+            .expect("completed abandoned initialization retained");
+        assert_eq!(reused, "workspace_01");
+        assert_eq!(attempts.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn slow_constructor_does_not_block_other_tenants_and_pending_slots_count_toward_capacity()
+    {
+        use std::time::Duration;
+        use tokio::{sync::oneshot, time::timeout};
+        let (started, worker_started) = oneshot::channel();
+        let signal = Arc::new(Mutex::new(Some(started)));
+        let (release, wait_for_release) = std::sync::mpsc::channel();
+        let receiver = Arc::new(Mutex::new(wait_for_release));
+        let cache = BoundedTenantTowerMcpServiceCache::new(
+            3,
+            move |access: &rembrane_contracts::VerifiedRemoteAccess| {
+                if access.workspace_id().to_string() == "workspace_01" {
+                    signal
+                        .lock()
+                        .expect("signal")
+                        .take()
+                        .expect("one constructor")
+                        .send(())
+                        .expect("started");
+                    receiver
+                        .lock()
+                        .expect("receiver")
+                        .recv_timeout(Duration::from_secs(5))
+                        .expect("bounded release");
+                }
+                Ok::<_, std::convert::Infallible>(access.workspace_id().to_string())
+            },
+        )
+        .expect("tenant cache");
+        cache
+            .create(&factory_access("workspace_02"))
+            .expect("warm other tenant");
+        let dispatcher = fixture_tenant_dispatcher(cache.clone());
+        let worker = dispatcher.clone();
+        let pending = tokio::spawn(async move {
+            worker
+                .create_service::<std::convert::Infallible>(&factory_access("workspace_01"))
+                .await
+        });
+        timeout(Duration::from_secs(5), worker_started)
+            .await
+            .expect("bounded construction start")
+            .expect("started");
+        {
+            let state = cache
+                .services
+                .state
+                .try_lock()
+                .expect("constructor must not hold cache lock");
+            assert_eq!(state.pending.len(), 1);
+            assert_eq!(state.services.len(), 1);
+        }
+        for workspace in ["workspace_02", "workspace_03"] {
+            let result = timeout(
+                Duration::from_secs(2),
+                dispatcher.create_service::<std::convert::Infallible>(&factory_access(workspace)),
+            )
+            .await
+            .expect("other tenant must complete while first constructor is still blocked")
+            .expect("other tenant service");
+            assert_eq!(result, workspace);
+        }
+        assert!(matches!(
+            dispatcher
+                .create_service::<std::convert::Infallible>(&factory_access("workspace_04"))
+                .await,
+            Err(TenantAwareTowerMcpDispatchError::Factory(
+                TenantServiceCacheError::CapacityExceeded
+            )),
+        ));
+        release.send(()).expect("release constructor");
+        let result = timeout(Duration::from_secs(5), pending)
+            .await
+            .expect("bounded completion")
+            .expect("worker task")
+            .expect("tenant service");
+        assert_eq!(result, "workspace_01");
+        assert_eq!(cache.len(), 3);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn concurrent_cached_construction_is_single_flight_and_retains_latest_validated_expiry() {
+        use std::time::Duration;
+        use tokio::{sync::oneshot, time::timeout};
+        let (started, worker_started) = oneshot::channel();
+        let signal = Arc::new(Mutex::new(Some(started)));
+        let (release, wait_for_release) = std::sync::mpsc::channel();
+        let receiver = Arc::new(Mutex::new(wait_for_release));
+        let attempts = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counter = Arc::clone(&attempts);
+        let cache = BoundedTenantTowerMcpServiceCache::new(
+            1,
+            move |access: &rembrane_contracts::VerifiedRemoteAccess| {
+                counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                signal
+                    .lock()
+                    .expect("signal")
+                    .take()
+                    .expect("one constructor")
+                    .send(())
+                    .expect("started");
+                receiver
+                    .lock()
+                    .expect("receiver")
+                    .recv_timeout(Duration::from_secs(5))
+                    .expect("bounded release");
+                Ok::<_, std::convert::Infallible>(access.workspace_id().to_string())
+            },
+        )
+        .expect("tenant cache");
+        let dispatcher = fixture_tenant_dispatcher(cache.clone());
+        let first = dispatcher.clone();
+        let initial = tokio::spawn(async move {
+            first
+                .create_service::<std::convert::Infallible>(&factory_access("workspace_01"))
+                .await
+        });
+        timeout(Duration::from_secs(5), worker_started)
+            .await
+            .expect("bounded construction start")
+            .expect("started");
+        let second = dispatcher.clone();
+        let refreshed = tokio::spawn(async move {
+            let access = verified_access(
+                "workspace_01",
+                3_000,
+                BTreeSet::from([RemoteAccessScope::ContextRead]),
+            );
+            second
+                .create_service::<std::convert::Infallible>(&access)
+                .await
+        });
+        timeout(Duration::from_secs(5), async {
+            while dispatcher.factory_operations.available_permits() != 6 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("both requests admitted");
+        release.send(()).expect("release constructor");
+        let original = timeout(Duration::from_secs(5), initial)
+            .await
+            .expect("bounded completion")
+            .expect("worker task")
+            .expect("initial service");
+        let newer = timeout(Duration::from_secs(5), refreshed)
+            .await
+            .expect("bounded completion")
+            .expect("worker task")
+            .expect("refreshed service");
+        assert_eq!(original, newer);
+        assert_eq!(attempts.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert_eq!(
+            cache
+                .prune_expired(2_500)
+                .expect("retain refreshed service"),
+            0
+        );
+        assert_eq!(cache.prune_expired(3_000).expect("expired service"), 1);
+    }
+
+    fn assert_factory_unavailable<Output, FactoryError, ServiceError>(
+        result: &Result<Output, TenantAwareTowerMcpDispatchError<FactoryError, ServiceError>>,
+    ) {
+        assert!(matches!(
+            result,
+            Err(TenantAwareTowerMcpDispatchError::FactoryUnavailable)
+        ));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn every_tenant_dispatch_path_rejects_factory_overload_before_construction_or_sdk_calls()
+    {
+        let attempts = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counter = Arc::clone(&attempts);
+        let mut dispatcher =
+            fixture_tenant_dispatcher(move |_access: &rembrane_contracts::VerifiedRemoteAccess| {
+                counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                Ok::<_, std::convert::Infallible>(tower::service_fn(
+                    |_request: Request<Body>| async {
+                        panic!("SDK must not run after denied construction");
+                        #[allow(unreachable_code)]
+                        Ok::<_, std::convert::Infallible>(Response::new(Body::empty()))
+                    },
+                ))
+            });
+        dispatcher.factory_operations = Arc::new(Semaphore::new(0));
+        let access = factory_access("workspace_01");
+        let headers = RemoteMcpProtocolHeaders {
+            content_type: "application/json".to_owned(),
+            accept: "application/json, text/event-stream".to_owned(),
+            protocol_version: None,
+            validated_host: Some("memory.example.test".to_owned()),
+            validated_origin: None,
+        };
+        let invocation = RemoteMcpInvocation {
+            method: "initialize".to_owned(),
+            tool_name: None,
+        };
+        let session = RemoteSessionId::new("session_factory_0123456789").expect("fixture session");
+        assert_factory_unavailable(
+            &dispatcher
+                .dispatch(
+                    access.clone(),
+                    invocation.clone(),
+                    headers.clone(),
+                    initialize_body(),
+                )
+                .await,
+        );
+        assert_factory_unavailable(
+            &dispatcher
+                .initialize(
+                    access.clone(),
+                    invocation,
+                    headers.clone(),
+                    initialize_body(),
+                )
+                .await,
+        );
+        assert_factory_unavailable(
+            &AuthorizedRemoteMcpInitializationDispatcher::terminate(
+                &dispatcher,
+                access.clone(),
+                session.clone(),
+                headers,
+            )
+            .await,
+        );
+        assert_factory_unavailable(
+            &dispatcher
+                .open(
+                    access.clone(),
+                    "text/event-stream".to_owned(),
+                    None,
+                    Some("memory.example.test".to_owned()),
+                    None,
+                )
+                .await,
+        );
+        assert_factory_unavailable(
+            &AuthorizedRemoteMcpSessionDeletionDispatcher::terminate(
+                &dispatcher,
+                access,
+                session,
+                None,
+                "memory.example.test".to_owned(),
+                None,
+            )
+            .await,
+        );
+        assert_eq!(attempts.load(std::sync::atomic::Ordering::SeqCst), 0);
+    }
+
     fn runtime_config() -> RemoteMcpConfig {
         RemoteMcpConfig::new(
             "https://memory.example.test/mcp".to_owned(),
@@ -6044,8 +6628,8 @@ mod tests {
         .expect("gate should be valid");
         let selected = Arc::new(Mutex::new(Vec::new()));
         let selected_by_factory = Arc::clone(&selected);
-        let dispatcher = TenantAwareTowerMcpDispatcher::new(
-            move |access: &rembrane_contracts::VerifiedRemoteAccess| {
+        let dispatcher =
+            fixture_tenant_dispatcher(move |access: &rembrane_contracts::VerifiedRemoteAccess| {
                 let selected_workspace = access.workspace_id().to_string();
                 selected_by_factory
                     .lock()
@@ -6069,8 +6653,7 @@ mod tests {
                         }
                     },
                 ))
-            },
-        );
+            });
         let body = br#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"rembrane_resolve_context","arguments":{}}}"#;
 
         for (token, workspace) in [
@@ -6268,8 +6851,8 @@ mod tests {
         );
         let selected = Arc::new(Mutex::new(Vec::new()));
         let selected_by_factory = Arc::clone(&selected);
-        let dispatcher = TenantAwareTowerMcpDispatcher::new(
-            move |access: &rembrane_contracts::VerifiedRemoteAccess| {
+        let dispatcher =
+            fixture_tenant_dispatcher(move |access: &rembrane_contracts::VerifiedRemoteAccess| {
                 let selected_workspace = access.workspace_id().to_string();
                 selected_by_factory
                     .lock()
@@ -6300,8 +6883,7 @@ mod tests {
                         }
                     },
                 ))
-            },
-        );
+            });
         let workspace_one = authenticator
             .authenticate("workspace-one", 1_000, RemoteAccessScope::ContextRead)
             .expect("workspace one access");
@@ -6397,7 +6979,7 @@ mod tests {
             },
         )
         .expect("tenant cache should be valid");
-        let dispatcher = TenantAwareTowerMcpDispatcher::new(factory);
+        let dispatcher = fixture_tenant_dispatcher(factory);
         let mut sessions = Vec::new();
         for (token, expected_workspace) in [
             ("Bearer workspace-one", "workspace_01"),
@@ -6521,7 +7103,7 @@ mod tests {
             },
         )
         .expect("tenant cache should be valid");
-        let dispatcher = TenantAwareTowerMcpDispatcher::new(factory);
+        let dispatcher = fixture_tenant_dispatcher(factory);
         let error = gate
             .initialize_and_commit_sdk_session(
                 &authorization,
@@ -6572,7 +7154,7 @@ mod tests {
                 Ok::<_, std::convert::Infallible>(())
             }
         });
-        let dispatcher = TenantAwareTowerMcpDispatcher::new(
+        let dispatcher = fixture_tenant_dispatcher(
             move |_access: &rembrane_contracts::VerifiedRemoteAccess| -> Result<_, &'static str> {
                 if std::hint::black_box(true) {
                     Err("tenant service unavailable")

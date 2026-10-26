@@ -169,6 +169,47 @@ These tests do not establish live Streamable HTTP support, real HTTPS
 introspection, cloud-provider conformance, measured load limits, or production
 readiness. Actual SDK listener and staging verification remain required.
 
+## Tenant service construction and cache concurrency
+
+The remote adapter test command above also covers the tenant Tower dispatcher.
+POST, SDK initialization, compensation, event-stream GET, and session DELETE
+select their exact verified tenant service on blocking workers. Production
+dispatchers share a separate eight-job factory budget. It includes cache
+lookups and threads waiting for the same in-progress constructor; it is not a
+fairness guarantee or measured performance target.
+
+Saturated/closed capacity or a panicked worker returns the closed, redacted
+`TenantAwareTowerMcpDispatchError::FactoryUnavailable`. Factory errors retain
+their existing redacted error boundary. No SDK request starts on those paths.
+The concrete HTTP listener must map factory-unavailable failures to its
+overload response; this library test does not establish that unwired mapping.
+
+The cache counts ready services plus pending constructions against its
+configured capacity. Only one constructor runs for an exact issuer/resource/
+subject/client/workspace/scope identity. It runs outside the global cache
+mutex; other ready or cold tenants can proceed if capacity remains. Same-key
+waiters release that mutex while waiting, then reuse the completed service
+and extend retention only from their latest validated expiry.
+
+Failed/panicked constructors release their pending slot and notify waiters;
+an ordinary constructor panic no longer poisons the global cache mutex. A
+poisoned cache still fails closed. An abandoned async request cannot free a
+running worker slot or permit duplicate construction: initialization may
+complete and remain cached until its retention deadline. Provider timeouts
+remain necessary because synchronous constructors are not forcibly stopped.
+
+Tests prove actual blocking HTTP-client construction off the executor, exact
+verified access preservation, process-shared factory budgets, all five dispatch
+paths denying overload before constructor/SDK invocation, panic recovery for
+another tenant, cancellation-safe worker/cache ownership, unrelated tenant
+progress during blocked construction, ready-plus-pending capacity, and
+single-flight construction with refreshed-token retention.
+
+Direct synchronous factory/cache methods are lower-level APIs, not automatic
+offload boundaries. Embed them through the tenant-aware async dispatcher or
+provide caller-managed blocking execution. Real SDK listener integration,
+provider startup/shutdown, load/fairness, and recovery drills remain pending.
+
 Provider authors should also run the shared Rust conformance harness against a
 disposable provider tenant:
 

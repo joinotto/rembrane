@@ -703,9 +703,9 @@ are in [First Production Release Plan](docs/PRODUCTION_PLAN.md).
     - [x] Separate termination authorization from deletion commit so an HTTP
       transport can retain the local binding until downstream confirmation.
   - [ ] Serve Streamable HTTP through the official Rust MCP SDK.
-    - [ ] Isolate synchronous provider construction, tool execution, and OAuth
-      introspection from async executor threads with bounded admission and
-      cancellation-safe capacity ownership.
+    - [ ] Wire the implemented provider-construction, tool, and OAuth worker
+      boundaries into the actual SDK listener and verify end-to-end overload,
+      cancellation, and real-provider behavior.
     - [x] Pin the reviewed official Rust MCP SDK release exactly so the
       transport API and dependency resolution cannot drift before remote
       transport enablement.
@@ -763,6 +763,15 @@ are in [First Production Release Plan](docs/PRODUCTION_PLAN.md).
         stateless event-stream GET, and confirmed session DELETE dispatch.
       - [x] Fail closed before protocol dispatch when tenant-specific service
         construction is unavailable.
+      - [x] Move tenant service selection/construction off executor threads
+        for POST, SDK initialization/compensation, GET, and DELETE through a
+        process-shared eight-job factory budget separate from OAuth/tool work.
+        - [x] Return a redacted factory-unavailable failure before construction
+          or SDK work when capacity is exhausted/closed or a worker panics.
+        - [x] Hold factory capacity until real completion after abandonment
+          and retain completed cached initialization without duplicate builds.
+        - [x] Prove blocking-client construction, exact verified identity,
+          all-route overload denial, panic cleanup, and cancellation ownership.
       - [x] Cache tenant-pinned Tower services by exact issuer, resource,
         principal, client, workspace, and OAuth scope set so refreshed tokens
         preserve SDK sessions without cross-tenant reuse.
@@ -770,6 +779,14 @@ are in [First Production Release Plan](docs/PRODUCTION_PLAN.md).
           rather than silently discarding live protocol session state.
         - [x] Serialize concurrent first construction per tenant and leave
           capacity reusable after a failed service build.
+          - [x] Reserve ready-plus-pending capacity atomically, release the
+            global cache lock before construction, and wait only for the same
+            exact tenant identity without blocking unrelated cache lookups.
+          - [x] Release pending reservations and wake waiters after errors or
+            constructor panic without poisoning the shared cache mutex.
+          - [x] Prove unrelated ready/cold tenants continue during a slow
+            constructor, pending slots count toward capacity, and concurrent
+            refresh reuses one service while retaining the latest expiry.
         - [x] Track the latest validated token expiry per exact tenant service
           and reclaim only entries whose authorization lifetime has ended.
     - [x] Add a consuming Tower dispatcher that reconstructs only validated

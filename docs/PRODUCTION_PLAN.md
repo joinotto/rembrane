@@ -34,6 +34,11 @@ evidence and the strict readiness command.
   services now isolate synchronous OAuth verification on a separate bounded
   worker budget; the real remote HTTP service and HTTPS/staging tests remain
   required.
+- Tenant Tower dispatch now isolates synchronous service selection and provider
+  construction on bounded workers. The cache reserves pending capacity but
+  releases its global lock during construction, preserving single-flight
+  initialization without serializing unrelated tenant lookups. Library tests
+  cover panic/cancellation cleanup and overload, not a deployed SDK listener.
 - The PostgreSQL boundary includes a fail-closed runtime-authority guard with
   74 passing adapter unit tests. Its new shared SQL fixtures still require
   live PostgreSQL execution; the concrete database driver remains missing.
@@ -96,6 +101,8 @@ No existing strict release gate is waived by this plan.
   after cancellation.
 - [x] Isolate synchronous OAuth verification on bounded workers in the
   owned/shared remote authorization-service async entrypoints.
+- [x] Isolate tenant service factories on a separate bounded worker budget and
+  release the global service-cache lock during per-identity construction.
 - [ ] Exercise that boundary with the actual official SDK remote listener
   and real HTTPS introspection; do not route blocking verifier clients through
   the lower-level borrowing compatibility helpers on an executor.

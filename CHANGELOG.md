@@ -9,6 +9,20 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Fixed
 
+- Tenant-aware MCP Tower dispatch now selects/constructs services on
+  process-shared bounded workers across POST, initialization/compensation,
+  GET, and DELETE. Overload and worker panic return a redacted factory-unavailable
+  failure before SDK invocation; abandonment retains worker capacity until
+  actual completion.
+- Tenant service caches now reserve ready-plus-pending capacity atomically and
+  construct outside the global mutex. Exact-identity requests reuse one
+  construction while unrelated tenants can proceed; errors/panics release
+  reservations and notify waiters without poisoning the cache mutex.
+- Tenant construction tests cover blocking-client executor isolation, exact
+  verified access, all-route overload, panic recovery, cancellation ownership,
+  unrelated tenant progress, pending capacity, and refreshed-token retention.
+  Actual remote listener/HTTP overload mapping and real-provider/load evidence
+  remain pending.
 - Owned/shared remote MCP authorization-service async routes now perform fresh
   synchronous token verification on process-shared bounded workers, including
   initialization, stateless calls, event streams, session requests, and deletion.
