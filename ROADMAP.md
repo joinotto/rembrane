@@ -1341,6 +1341,8 @@ This roadmap describes sequencing, not release dates.
     transport and a redirect-rejecting URLSession implementation.
   - [x] Publish a dependency-free Kotlin/JVM client package with injected
     transport and an executable smoke fixture.
+    - [x] Add authenticated raw-byte portable exports and bounded atomic JSONL
+      imports with strict metadata, opaque-ID, and response validation.
     - [x] Execute the Kotlin compiler smoke fixture in a pinned Ubuntu 24.04
       CI environment that fails if `kotlinc` or Java is unavailable.
 - [x] Reusable semantic-provider conformance suite.

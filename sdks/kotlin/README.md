@@ -19,3 +19,8 @@ typed validation and canonical JSON serialization for cooperative JVM/Android
 bot processors. Parse inbound JSON with the host application's JSON library
 against the published Rembrane schema, then construct
 `ChannelProcessorMessage` before processing it.
+
+Portable JSONL, Markdown, and graph exports are available through
+`exportPortableData`. They are plaintext and must be written to a private file.
+`importPortableMemories` accepts a bounded JSONL byte array and an optimistic
+workspace event sequence; imported records remain reviewable proposals.

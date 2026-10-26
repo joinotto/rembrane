@@ -14,11 +14,32 @@ fun main() {
     val captured = mutableListOf<CapturedRequest>()
     val transport = RembraneTransport { method, uri, headers, body, _ ->
         captured.add(CapturedRequest(method, uri, headers, body))
-        RembraneResponse(
-            status = 200,
-            headers = mapOf("content-type" to listOf("application/json")),
-            body = """{"events":[]}""".toByteArray(StandardCharsets.UTF_8),
-        )
+        when (uri.path) {
+            "/v1/exports" -> RembraneResponse(
+                status = 200,
+                headers = mapOf(
+                    "content-type" to listOf("application/x-ndjson"),
+                    "content-disposition" to listOf(
+                        """attachment; filename="rembrane-memories.jsonl"""",
+                    ),
+                    "cache-control" to listOf("no-store"),
+                    "x-content-type-options" to listOf("nosniff"),
+                ),
+                body = """{"format":"rembrane-memory-jsonl"}"""
+                    .toByteArray(StandardCharsets.UTF_8),
+            )
+            "/v1/imports" -> RembraneResponse(
+                status = 201,
+                headers = mapOf("content-type" to listOf("application/json")),
+                body = """{"imported":1,"status":"proposed"}"""
+                    .toByteArray(StandardCharsets.UTF_8),
+            )
+            else -> RembraneResponse(
+                status = 200,
+                headers = mapOf("content-type" to listOf("application/json")),
+                body = """{"events":[]}""".toByteArray(StandardCharsets.UTF_8),
+            )
+        }
     }
     val client = RembraneClient(
         baseUrl = "http://127.0.0.1:8787/v1",
@@ -82,6 +103,112 @@ fun main() {
     check(graph.headers["Authorization"] == "Bearer test-token")
     check(graph.headers["Content-Type"] == "application/json")
     check(graph.body?.toString(StandardCharsets.UTF_8) == graphBody)
+
+    val exported = client.exportPortableData(
+        "team:name",
+        "principal-1",
+        PortableExportFormat.JSONL,
+    )
+    check(exported.filename == "rembrane-memories.jsonl")
+    check(
+        exported.body.toString(StandardCharsets.UTF_8) ==
+            """{"format":"rembrane-memory-jsonl"}"""
+    )
+    val exportRequest = captured[6]
+    check(exportRequest.method == "POST")
+    check(
+        exportRequest.uri.toString() ==
+            "http://127.0.0.1:8787/v1/exports?workspaceId=team%3Aname&subjectId=principal-1&format=jsonl"
+    )
+    check(exportRequest.headers["Accept"] == "application/x-ndjson")
+    check(exportRequest.headers["Authorization"] == "Bearer test-token")
+    check(exportRequest.body == null)
+
+    val importArchive = """{"format":"rembrane-memory-jsonl"}"""
+        .toByteArray(StandardCharsets.UTF_8)
+    val imported = client.importPortableMemories(
+        "team:name",
+        "principal-1",
+        42,
+        importArchive,
+    )
+    check(imported == PortableImportResult(1, "proposed"))
+    val importRequest = captured[7]
+    check(importRequest.method == "POST")
+    check(
+        importRequest.uri.toString() ==
+            "http://127.0.0.1:8787/v1/imports?workspaceId=team%3Aname&subjectId=principal-1&expectedPreviousSequence=42"
+    )
+    check(importRequest.headers["Accept"] == "application/json")
+    check(importRequest.headers["Authorization"] == "Bearer test-token")
+    check(importRequest.headers["Content-Type"] == "application/x-ndjson")
+    check(importRequest.body.contentEquals(importArchive))
+
+    val callsBeforeInvalidPortability = captured.size
+    check(
+        runCatching {
+            client.exportPortableData(
+                "unsafe/workspace",
+                "principal-1",
+                PortableExportFormat.JSONL,
+            )
+        }.isFailure,
+    )
+    check(
+        runCatching {
+            client.importPortableMemories("team", "principal-1", -1, importArchive)
+        }.isFailure,
+    )
+    check(captured.size == callsBeforeInvalidPortability)
+
+    val invalidExportClient = RembraneClient(
+        baseUrl = "https://memory.example.test/v1",
+        token = "token",
+        transport = RembraneTransport { _, _, _, _, _ ->
+            RembraneResponse(
+                200,
+                mapOf("content-type" to listOf("application/x-ndjson")),
+                byteArrayOf(1),
+            )
+        },
+    )
+    val invalidExport = runCatching {
+        invalidExportClient.exportPortableData(
+            "team",
+            "principal-1",
+            PortableExportFormat.JSONL,
+        )
+    }.exceptionOrNull()
+    check(
+        invalidExport is RembraneApiException &&
+            invalidExport.code == "invalid_response",
+    )
+
+    val conflictingImportClient = RembraneClient(
+        baseUrl = "https://memory.example.test/v1",
+        token = "token",
+        transport = RembraneTransport { _, _, _, _, _ ->
+            RembraneResponse(
+                409,
+                mapOf("content-type" to listOf("application/json")),
+                """{"code":"sequence_conflict","message":"Sequence changed"}"""
+                    .toByteArray(StandardCharsets.UTF_8),
+            )
+        },
+    )
+    val conflict = runCatching {
+        conflictingImportClient.importPortableMemories(
+            "team",
+            "principal-1",
+            0,
+            importArchive,
+        )
+    }.exceptionOrNull()
+    check(
+        conflict is RembraneApiException &&
+            conflict.status == 409 &&
+            conflict.code == "sequence_conflict",
+    )
 
     check(
         runCatching {

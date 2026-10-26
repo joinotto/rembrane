@@ -9,6 +9,7 @@ import java.nio.charset.StandardCharsets
 import java.time.Duration
 
 private const val CHANNEL_PROCESSOR_PROTOCOL_VERSION = "0.1"
+private const val MAXIMUM_PORTABLE_IMPORT_BYTES = 67_108_864
 private val CHANNEL_PROCESSOR_CHANNELS = setOf(
     "whatsapp-business",
     "imessage-extension",
@@ -72,6 +73,29 @@ class RembraneApiException(
     val code: String,
     override val message: String,
 ) : RuntimeException(message)
+
+enum class PortableExportFormat(
+    val wireValue: String,
+    val contentType: String,
+    val filename: String,
+) {
+    JSONL("jsonl", "application/x-ndjson", "rembrane-memories.jsonl"),
+    MARKDOWN("markdown", "text/markdown; charset=utf-8", "rembrane-memories.md"),
+    GRAPH_JSON(
+        "graph-json",
+        "application/vnd.rembrane.knowledge-graph+json",
+        "rembrane-knowledge-graph.json",
+    ),
+}
+
+data class PortableExport(
+    val format: PortableExportFormat,
+    val contentType: String,
+    val filename: String,
+    val body: ByteArray,
+)
+
+data class PortableImportResult(val imported: Int, val status: String)
 
 class RembraneClient(
     baseUrl: String,
@@ -151,6 +175,96 @@ class RembraneClient(
         return request("GET", "/administrative-audit?$query", null)
     }
 
+    fun exportPortableData(
+        workspaceId: String,
+        subjectId: String,
+        format: PortableExportFormat,
+    ): PortableExport {
+        requireOpaqueId(workspaceId, "workspaceId")
+        requireOpaqueId(subjectId, "subjectId")
+        val query = "workspaceId=${encode(workspaceId)}" +
+            "&subjectId=${encode(subjectId)}&format=${format.wireValue}"
+        val response = transport.send(
+            "POST",
+            URI("$baseUri/exports?$query"),
+            mapOf(
+                "Accept" to format.contentType,
+                "Authorization" to "Bearer $token",
+            ),
+            null,
+            maximumResponseBytes,
+        )
+        enforceResponseLimit(response)
+        if (response.status !in 200..299) throwProblem(response)
+        val contentType = response.header("content-type")
+        if (
+            !contentType.equals(format.contentType, ignoreCase = true) ||
+            response.header("content-disposition") !=
+            """attachment; filename="${format.filename}"""" ||
+            !response.header("cache-control").equals("no-store", ignoreCase = true) ||
+            !response.header("x-content-type-options").equals("nosniff", ignoreCase = true)
+        ) {
+            throw RembraneApiException(
+                response.status,
+                "invalid_response",
+                "Portable export metadata was invalid",
+            )
+        }
+        return PortableExport(format, contentType, format.filename, response.body)
+    }
+
+    fun importPortableMemories(
+        workspaceId: String,
+        subjectId: String,
+        expectedPreviousSequence: Long,
+        jsonl: ByteArray,
+    ): PortableImportResult {
+        requireOpaqueId(workspaceId, "workspaceId")
+        requireOpaqueId(subjectId, "subjectId")
+        require(expectedPreviousSequence >= 0) {
+            "expectedPreviousSequence must be non-negative"
+        }
+        require(jsonl.isNotEmpty() && jsonl.size <= MAXIMUM_PORTABLE_IMPORT_BYTES) {
+            "Portable import archive size is invalid"
+        }
+        val query = "workspaceId=${encode(workspaceId)}" +
+            "&subjectId=${encode(subjectId)}" +
+            "&expectedPreviousSequence=$expectedPreviousSequence"
+        val response = transport.send(
+            "POST",
+            URI("$baseUri/imports?$query"),
+            mapOf(
+                "Accept" to "application/json",
+                "Authorization" to "Bearer $token",
+                "Content-Type" to "application/x-ndjson",
+            ),
+            jsonl,
+            maximumResponseBytes,
+        )
+        enforceResponseLimit(response)
+        if (response.status !in 200..299) throwProblem(response)
+        if (!response.header("content-type").startsWith("application/json", true)) {
+            throw RembraneApiException(
+                response.status,
+                "invalid_response",
+                "Expected JSON response",
+            )
+        }
+        val text = response.body.toString(StandardCharsets.UTF_8)
+        val match = Regex(
+            """^\s*\{\s*"imported"\s*:\s*([0-9]+)\s*,\s*"status"\s*:\s*"proposed"\s*}\s*$""",
+        ).matchEntire(text)
+        val imported = match?.groupValues?.get(1)?.toIntOrNull()
+        if (imported == null || imported !in 1..10_000) {
+            throw RembraneApiException(
+                response.status,
+                "invalid_response",
+                "Portable import response was invalid",
+            )
+        }
+        return PortableImportResult(imported, "proposed")
+    }
+
     private fun request(method: String, path: String, jsonBody: String?): String {
         val body = jsonBody?.toByteArray(StandardCharsets.UTF_8)
         val headers = buildMap {
@@ -165,18 +279,8 @@ class RembraneClient(
             body,
             maximumResponseBytes,
         )
-        if (response.body.size > maximumResponseBytes) {
-            throw RembraneApiException(
-                response.status,
-                "response_too_large",
-                "Response exceeded limit",
-            )
-        }
-        val contentType = response.headers.entries
-            .firstOrNull { it.key.equals("content-type", ignoreCase = true) }
-            ?.value
-            ?.firstOrNull()
-            .orEmpty()
+        enforceResponseLimit(response)
+        val contentType = response.header("content-type")
         if (!contentType.startsWith("application/json", ignoreCase = true)) {
             throw RembraneApiException(
                 response.status,
@@ -195,12 +299,53 @@ class RembraneClient(
         return text
     }
 
+    private fun enforceResponseLimit(response: RembraneResponse) {
+        if (response.body.size > maximumResponseBytes) {
+            throw RembraneApiException(
+                response.status,
+                "response_too_large",
+                "Response exceeded limit",
+            )
+        }
+    }
+
+    private fun throwProblem(response: RembraneResponse): Nothing {
+        if (!response.header("content-type").startsWith("application/json", true)) {
+            throw RembraneApiException(
+                response.status,
+                "invalid_response",
+                "Expected JSON problem response",
+            )
+        }
+        val text = response.body.toString(StandardCharsets.UTF_8)
+        throw RembraneApiException(
+            response.status,
+            jsonString(text, "code") ?: "request_failed",
+            jsonString(text, "message") ?: "Rembrane request failed",
+        )
+    }
+
     private fun encode(value: String): String =
         URLEncoder.encode(value, StandardCharsets.UTF_8).replace("+", "%20")
 
     private fun jsonString(json: String, field: String): String? {
         val pattern = Regex("\"${Regex.escape(field)}\"\\s*:\\s*\"([^\"\\\\]*)\"")
         return pattern.find(json)?.groupValues?.get(1)
+    }
+}
+
+private fun RembraneResponse.header(name: String): String =
+    headers.entries.firstOrNull { it.key.equals(name, ignoreCase = true) }
+        ?.value?.firstOrNull().orEmpty()
+
+private fun requireOpaqueId(value: String, field: String) {
+    require(
+        value.isNotEmpty() &&
+            value.toByteArray(StandardCharsets.UTF_8).size <= 255 &&
+            value.first().isLetterOrDigit() &&
+            value.all { it.isLetterOrDigit() && it.code < 128 || it in "._:-" },
+    ) {
+        "$field must be a bounded opaque identifier"
     }
 }
 
