@@ -987,7 +987,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   files, rejects permissive and symbolic-link paths, refuses snapshot
   overwrites, and enables SQLite's native no-follow open flag.
 - Failed SQLite snapshot attempts now remove their newly created destination
-  across path encoding, database write, and post-write validation failures.
+  across database write and post-write validation failures.
+- Canonical SQLite snapshots now copy into an already opened no-follow
+  connection and clean up platform-rejected destination paths.
 - Failed initialization of a newly created SQLite database now removes its
   database and journal sidecars, while existing databases remain untouched.
 - Customer-KMS keyring opens, backup verification, recovery-floor validation,

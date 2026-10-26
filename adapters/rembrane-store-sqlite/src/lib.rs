@@ -36,6 +36,7 @@ use rembrane_domain::{
     ShareProposalId, ShareProposalStatus, Workspace, WorkspaceId, WorkspaceKeyRotation,
     WorkspaceKind, WorkspaceLegalHold, WorkspaceRetentionPolicy, WorkspaceRole,
 };
+use rusqlite::backup::{Backup, StepResult};
 use rusqlite::{Connection, ErrorCode, OpenFlags, OptionalExtension, params};
 
 const CANONICAL_SCHEMA: &str = include_str!("../../../migrations/sqlite/0001_canonical_schema.sql");
@@ -970,19 +971,40 @@ impl<C> SqliteStore<C> {
         prepare_private_database_file(destination, true)?;
         let result = (|| {
             let canonical_destination = canonical_database_path(destination)?;
-            let destination = canonical_destination
-                .to_str()
-                .ok_or(ApplicationError::StorageUnavailable)?;
-            self.connection
-                .execute("VACUUM INTO ?1", [destination])
-                .map_err(map_write_error)?;
+            let mut destination_connection = Connection::open_with_flags(
+                &canonical_destination,
+                OpenFlags::SQLITE_OPEN_READ_WRITE
+                    | OpenFlags::SQLITE_OPEN_NO_MUTEX
+                    | OpenFlags::SQLITE_OPEN_NOFOLLOW,
+            )
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+            copy_database(&self.connection, &mut destination_connection)?;
+            drop(destination_connection);
             validate_private_database_file(&canonical_destination)
         })();
         if let Err(error) = result {
-            let _ = std::fs::remove_file(destination);
+            remove_sqlite_files(destination);
             return Err(error);
         }
         Ok(())
+    }
+}
+
+fn copy_database(
+    source: &Connection,
+    destination: &mut Connection,
+) -> Result<(), ApplicationError> {
+    let backup =
+        Backup::new(source, destination).map_err(|_| ApplicationError::StorageUnavailable)?;
+    loop {
+        match backup
+            .step(100)
+            .map_err(|_| ApplicationError::StorageUnavailable)?
+        {
+            StepResult::Done => return Ok(()),
+            StepResult::More => {}
+            _ => return Err(ApplicationError::StorageUnavailable),
+        }
     }
 }
 
@@ -1193,7 +1215,7 @@ mod migration_tests {
 
     #[cfg(unix)]
     #[test]
-    fn failed_database_backup_removes_its_new_destination() {
+    fn failed_database_backup_removes_non_utf8_destination() {
         use std::ffi::OsString;
         use std::os::unix::ffi::{OsStrExt as _, OsStringExt as _};
 

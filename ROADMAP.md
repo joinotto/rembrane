@@ -57,6 +57,8 @@ This roadmap describes sequencing, not release dates.
     symbolic-link database paths, and open through SQLite no-follow mode.
     - [x] Remove newly created snapshot destinations on every failed backup
       preparation, encoding, write, or post-write validation path.
+    - [x] Copy snapshots into an already opened no-follow SQLite connection
+      and clean up destinations rejected by the platform path encoding.
     - [x] Remove partial files after failed initialization of a new database
       while preserving every pre-existing database on startup failure.
 - [x] Add development-key encrypted CLI remember and recall commands.
