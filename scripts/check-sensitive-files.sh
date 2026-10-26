@@ -144,6 +144,18 @@ then
     exit 1
 fi
 
+for membership_command_source in \
+    crates/rembrane-application/src/member_scope.rs \
+    crates/rembrane-application/src/member_lifecycle.rs
+do
+    if sed '/^#\[cfg(test)\]/,$d' "$membership_command_source" |
+        rg -n -U '#\[derive\([^]]*Debug[^]]*\)\]\n(?:pub )?struct '
+    then
+        echo "membership administration commands must use explicitly reviewed redacted Debug implementations: $membership_command_source" >&2
+        exit 1
+    fi
+done
+
 if sed '/^#\[cfg(test)\]/,$d' adapters/rembrane-remote-mcp-http/src/lib.rs |
     rg -n -U '#\[derive\([^]]*Debug[^]]*\)\]\n(?:pub )?struct '
 then

@@ -1,3 +1,4 @@
+use std::fmt;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use rembrane_domain::{
@@ -10,7 +11,7 @@ use crate::{
     ApplicationError, KeyRotationRepository, MemberLifecycleRepository, MembershipRepository,
 };
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct RemoveMemberCommand {
     pub workspace_id: WorkspaceId,
     pub principal_id: PrincipalId,
@@ -18,10 +19,28 @@ pub struct RemoveMemberCommand {
     pub rotation_id: KeyRotationId,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+impl fmt::Debug for RemoveMemberCommand {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("RemoveMemberCommand")
+            .finish_non_exhaustive()
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
 pub struct CompleteKeyRotationCommand {
     pub receipt: KeyRotationReceipt,
     pub completed_by: PrincipalId,
+}
+
+impl fmt::Debug for CompleteKeyRotationCommand {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("CompleteKeyRotationCommand")
+            .field("generation", &self.receipt.generation())
+            .field("recipient_count", &self.receipt.recipient_ids().len())
+            .finish_non_exhaustive()
+    }
 }
 
 pub struct MemberLifecycleService<'repository, Repository> {
@@ -231,8 +250,10 @@ const fn can_remove(actor: WorkspaceRole, target: WorkspaceRole) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::can_remove;
-    use rembrane_domain::WorkspaceRole;
+    use super::{can_remove, RemoveMemberCommand};
+    use rembrane_domain::{
+        KeyRotationId, PrincipalId, WorkspaceId, WorkspaceRole,
+    };
 
     #[test]
     fn role_hierarchy_protects_owners_and_peer_admins() {
@@ -240,5 +261,25 @@ mod tests {
         assert!(can_remove(WorkspaceRole::Admin, WorkspaceRole::Member));
         assert!(!can_remove(WorkspaceRole::Admin, WorkspaceRole::Admin));
         assert!(!can_remove(WorkspaceRole::Owner, WorkspaceRole::Owner));
+    }
+
+    #[test]
+    fn member_removal_diagnostics_redact_administrative_identities() {
+        let command = RemoveMemberCommand {
+            workspace_id: WorkspaceId::new("private-workspace"),
+            principal_id: PrincipalId::new("private-member"),
+            removed_by: PrincipalId::new("private-admin"),
+            rotation_id: KeyRotationId::new("private-rotation"),
+        };
+
+        let diagnostic = format!("{command:?}");
+        for secret in [
+            "private-workspace",
+            "private-member",
+            "private-admin",
+            "private-rotation",
+        ] {
+            assert!(!diagnostic.contains(secret), "diagnostic exposed {secret}");
+        }
     }
 }

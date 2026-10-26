@@ -1,3 +1,4 @@
+use std::fmt;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use rembrane_domain::{
@@ -7,7 +8,7 @@ use rembrane_domain::{
 
 use crate::{ApplicationError, MemberScopeGrantRepository, MembershipRepository};
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct GrantMemberScopeCommand {
     pub workspace_id: WorkspaceId,
     pub principal_id: PrincipalId,
@@ -16,13 +17,31 @@ pub struct GrantMemberScopeCommand {
     pub request_id: String,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+impl fmt::Debug for GrantMemberScopeCommand {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("GrantMemberScopeCommand")
+            .field("scope_kind", &scope_identity(&self.scope).0)
+            .finish_non_exhaustive()
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
 pub struct RevokeMemberScopeCommand {
     pub workspace_id: WorkspaceId,
     pub principal_id: PrincipalId,
     pub revoked_by: PrincipalId,
     pub scope: ReadScope,
     pub request_id: String,
+}
+
+impl fmt::Debug for RevokeMemberScopeCommand {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("RevokeMemberScopeCommand")
+            .field("scope_kind", &scope_identity(&self.scope).0)
+            .finish_non_exhaustive()
+    }
 }
 
 pub struct MemberScopeGrantService<'repository, Repository> {
@@ -147,4 +166,36 @@ fn now_epoch_seconds() -> Result<u64, ApplicationError> {
         .duration_since(UNIX_EPOCH)
         .map_err(|_| ApplicationError::StorageUnavailable)
         .map(|duration| duration.as_secs())
+}
+
+#[cfg(test)]
+mod diagnostic_tests {
+    use rembrane_domain::{EntityId, PrincipalId, ReadScope, WorkspaceId};
+
+    use super::GrantMemberScopeCommand;
+
+    #[test]
+    fn member_scope_diagnostics_redact_tenant_actor_and_resource() {
+        let command = GrantMemberScopeCommand {
+            workspace_id: WorkspaceId::new("private-workspace"),
+            principal_id: PrincipalId::new("private-member"),
+            granted_by: PrincipalId::new("private-admin"),
+            scope: ReadScope::Entity {
+                id: EntityId::new("private-entity"),
+            },
+            request_id: "private-request".to_owned(),
+        };
+
+        let diagnostic = format!("{command:?}");
+        for secret in [
+            "private-workspace",
+            "private-member",
+            "private-admin",
+            "private-entity",
+            "private-request",
+        ] {
+            assert!(!diagnostic.contains(secret), "diagnostic exposed {secret}");
+        }
+        assert!(diagnostic.contains("entity"));
+    }
 }

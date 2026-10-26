@@ -77,6 +77,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Client authorization request and effective-grant diagnostics now expose only
   scope and permission counts instead of client, workspace, principal, or
   entity identities.
+- Member scope, removal, and key-rotation completion diagnostics now expose
+  only safe scope kinds, generations, and recipient counts instead of tenant,
+  member, administrator, request, provider, key, or resource identities.
 - Provider-independent key seal requests now retain copied plaintext in
   redacted zeroize-on-drop ownership instead of an ordinary byte vector.
 - Key-provider plaintext responses are now explicitly wiped before oversized

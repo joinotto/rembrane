@@ -760,6 +760,9 @@ This roadmap describes sequencing, not release dates.
           optimistic completion, receipt/recipient writes, and audit evidence.
       - [x] Atomically remove members, revoke all stored scopes, serialize the
         next required key generation, and persist both lifecycle audit events.
+        - [x] Redact workspace, member, administrator, scope-resource, request,
+          rotation, provider, and key identities from membership administration
+          diagnostics.
       - [x] Compose PostgreSQL membership, scope, and key-rotation ports through
         client authorization, including fail-closed pending-rotation denial.
         - [x] Redact client, workspace, principal, scope, and effective-grant
