@@ -38,7 +38,7 @@ impl Error for KeyRotationError {}
 ///
 /// The receipt contains only opaque identities and an exact recipient set,
 /// never raw, wrapped, or encrypted workspace key material.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct KeyRotationReceipt {
     provider_id: ProviderId,
     request_id: String,
@@ -46,6 +46,20 @@ pub struct KeyRotationReceipt {
     generation: u64,
     key_id: String,
     recipient_ids: Vec<PrincipalId>,
+}
+
+impl fmt::Debug for KeyRotationReceipt {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("KeyRotationReceipt")
+            .field("provider_id", &"[REDACTED]")
+            .field("request_id", &"[REDACTED]")
+            .field("workspace_id", &"[REDACTED]")
+            .field("generation", &self.generation)
+            .field("key_id", &"[REDACTED]")
+            .field("recipient_count", &self.recipient_ids.len())
+            .finish()
+    }
 }
 
 impl KeyRotationReceipt {
@@ -128,7 +142,7 @@ impl KeyRotationReceipt {
 /// Raw keys and wrapped key material never enter this aggregate. A key
 /// provider performs the cryptographic rotation and records only the new
 /// opaque key identifier when completion is confirmed.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct WorkspaceKeyRotation {
     id: KeyRotationId,
     workspace_id: WorkspaceId,
@@ -138,6 +152,28 @@ pub struct WorkspaceKeyRotation {
     status: KeyRotationStatus,
     completed_key_id: Option<String>,
     completed_by: Option<PrincipalId>,
+}
+
+impl fmt::Debug for WorkspaceKeyRotation {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("WorkspaceKeyRotation")
+            .field("id", &"[REDACTED]")
+            .field("workspace_id", &"[REDACTED]")
+            .field("generation", &self.generation)
+            .field("removed_principal_id", &"[REDACTED]")
+            .field("requested_by", &"[REDACTED]")
+            .field("status", &self.status)
+            .field(
+                "completed_key_id",
+                &self.completed_key_id.as_ref().map(|_| "[REDACTED]"),
+            )
+            .field(
+                "completed_by",
+                &self.completed_by.as_ref().map(|_| "[REDACTED]"),
+            )
+            .finish()
+    }
 }
 
 impl WorkspaceKeyRotation {
@@ -312,6 +348,16 @@ mod tests {
                 .complete("workspace-key:v3", PrincipalId::new("owner_01")),
             Err(KeyRotationError::AlreadyCompleted)
         );
+        let debug = format!("{rotation:?}");
+        for private in [
+            "rotation_01",
+            "workspace_01",
+            "removed_01",
+            "owner_01",
+            "workspace-key:v2",
+        ] {
+            assert!(!debug.contains(private));
+        }
     }
 
     #[test]
@@ -351,6 +397,18 @@ mod tests {
             receipt.recipient_ids(),
             &[PrincipalId::new("alice"), PrincipalId::new("zoe")]
         );
+        let debug = format!("{receipt:?}");
+        for private in [
+            "customer.kms",
+            "rotate-request-01",
+            "workspace_01",
+            "workspace-key:v2",
+            "alice",
+            "zoe",
+        ] {
+            assert!(!debug.contains(private));
+        }
+        assert!(debug.contains("recipient_count"));
     }
 
     #[test]
