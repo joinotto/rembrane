@@ -3149,6 +3149,31 @@ mod tests {
         }
     }
 
+    fn assert_tenant_compensation(
+        constructions: &Mutex<Vec<String>>,
+        calls: &Mutex<Vec<(String, String, Method)>>,
+    ) {
+        assert_eq!(
+            *constructions.lock().expect("construction log"),
+            ["workspace_01"]
+        );
+        assert_eq!(
+            *calls.lock().expect("call log"),
+            [
+                (
+                    "workspace_01".to_owned(),
+                    "workspace_01".to_owned(),
+                    Method::POST
+                ),
+                (
+                    "workspace_01".to_owned(),
+                    "workspace_01".to_owned(),
+                    Method::DELETE
+                )
+            ]
+        );
+    }
+
     struct ConfirmedInitializationDispatcher {
         session_id: RemoteSessionId,
         terminated: Arc<Mutex<Vec<(String, String)>>>,
@@ -4979,6 +5004,105 @@ mod tests {
             *selected.lock().expect("selection log"),
             ["workspace_01", "workspace_02"]
         );
+    }
+
+    #[tokio::test]
+    async fn tenant_aware_commit_rejection_uses_same_cached_service_for_compensation() {
+        let verifier = Verifier;
+        let authenticator = RemoteAccessAuthenticator::new(
+            &verifier,
+            "https://identity.example.test",
+            "https://memory.example.test/mcp",
+        );
+        let authorization = RemoteHttpAuthorization::new(&authenticator, &[]);
+        let mut gate = RemoteMcpHttpGate::new(
+            1,
+            "https://memory.example.test/.well-known/oauth-protected-resource/mcp",
+            &["memory.example.test"],
+        )
+        .expect("gate should be valid");
+        let existing_access = authorization
+            .authorize_connection(Some("Bearer workspace-two"), None, 1_000)
+            .expect("fixture access should authorize");
+        gate.commit_sdk_generated_session(
+            RemoteSessionId::new("session_existing_tenant_0123456789")
+                .expect("existing session fixture should validate"),
+            &existing_access,
+            1_000,
+        )
+        .expect("existing session should fill local capacity");
+
+        let constructions = Arc::new(Mutex::new(Vec::new()));
+        let constructions_from_factory = Arc::clone(&constructions);
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let calls_from_factory = Arc::clone(&calls);
+        let factory = BoundedTenantTowerMcpServiceCache::new(
+            1,
+            move |access: &rembrane_contracts::VerifiedRemoteAccess| {
+                let workspace = access.workspace_id().to_string();
+                constructions_from_factory
+                    .lock()
+                    .expect("construction log")
+                    .push(workspace.clone());
+                let calls = Arc::clone(&calls_from_factory);
+                Ok::<_, std::convert::Infallible>(tower::service_fn(
+                    move |mut request: Request<Body>| {
+                        let calls = Arc::clone(&calls);
+                        let workspace = workspace.clone();
+                        async move {
+                            let dispatched_workspace = request
+                                .extensions_mut()
+                                .remove::<rembrane_contracts::VerifiedRemoteAccess>()
+                                .expect("verified access extension")
+                                .workspace_id()
+                                .to_string();
+                            let method = request.method().clone();
+                            calls.lock().expect("call log").push((
+                                workspace.clone(),
+                                dispatched_workspace,
+                                method.clone(),
+                            ));
+                            let mut response = Response::builder().status(StatusCode::OK);
+                            if method == Method::POST {
+                                response = response.header(
+                                    MCP_SESSION_HEADER_NAME,
+                                    "session_tenant_compensate_0123456789",
+                                );
+                            }
+                            Ok::<_, std::convert::Infallible>(
+                                response.body(Body::empty()).expect("response should build"),
+                            )
+                        }
+                    },
+                ))
+            },
+        )
+        .expect("tenant cache should be valid");
+        let dispatcher = TenantAwareTowerMcpDispatcher::new(factory);
+        let error = gate
+            .initialize_and_commit_sdk_session(
+                &authorization,
+                RemoteMcpHttpRequest {
+                    authorization: Some("Bearer workspace-one"),
+                    host: Some("memory.example.test"),
+                    origin: None,
+                    session_id: None,
+                },
+                super::RemoteMcpProtocolHeaders::transport_neutral(),
+                initialize_body(),
+                1_001,
+                &dispatcher,
+            )
+            .await
+            .expect_err("full local capacity must compensate the SDK session");
+        assert!(matches!(
+            error,
+            RemoteMcpInitializationError::Commit {
+                rejection: RemoteMcpHttpRejection { status: 503, .. },
+                termination_error: None,
+            }
+        ));
+        assert_tenant_compensation(&constructions, &calls);
     }
 
     #[tokio::test]

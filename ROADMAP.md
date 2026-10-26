@@ -510,6 +510,9 @@ This roadmap describes sequencing, not release dates.
         - [x] Route confirmed initialization and compensation through the
           exact tenant-aware service factory/cache, proving distinct generated
           sessions remain isolated across two workspaces.
+          - [x] Prove local commit rejection reuses the same cached tenant
+            service for downstream compensation without reconstruction or
+            cross-tenant selection.
     - [x] Require every remote tool invocation to carry the exact verified
       subject, client, and workspace identity through the SDK request context,
       rejecting missing or substituted tenant extensions.
