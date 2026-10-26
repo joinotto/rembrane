@@ -26,6 +26,8 @@
     ],
     "exports": [
       "jsonl",
+      "markdown",
+      "graph-json",
       "encrypted-archive"
     ]
   },

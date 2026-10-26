@@ -102,7 +102,7 @@ This roadmap describes sequencing, not release dates.
   with deterministic ordering, closed versioned records, tenant checks,
   record/byte bounds, owner-only exclusive output, durable synchronization,
   and replacement-safe partial-file cleanup.
-- [ ] Add authenticated import plus Markdown and graph portability formats.
+- [x] Add authenticated import plus Markdown and graph portability formats.
   - [x] Define a deterministic, bounded, provider-independent Markdown export
     with tenant/revision validation, stable ordering, provenance metadata, and
     content fences that remain safe when memories contain Markdown backticks.
@@ -119,6 +119,8 @@ This roadmap describes sequencing, not release dates.
       record decryption.
   - [x] Expose owner/admin-only whole-workspace graph JSON export through the
     CLI with explicit plaintext consent and private durable output.
+  - [x] Advertise implemented JSONL, Markdown, graph JSON, and encrypted
+    archive exports through discovery with executable drift checks.
   - [x] Move the JSONL record contract into the provider-independent codec and
     add strict decoding with closed fields, exact format/version checks, domain
     invariant restoration, and a per-record byte ceiling.

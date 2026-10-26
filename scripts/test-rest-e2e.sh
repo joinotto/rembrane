@@ -111,6 +111,7 @@ jq -e \
         and .capabilities.disclosureReceipt == true
         and .capabilities.memoryProposal == true
         and .capabilities.imports == ["jsonl"]
+        and .capabilities.exports == ["jsonl", "markdown", "graph-json", "encrypted-archive"]
         and .privacy.processingModes == ["local-only"]
         and .privacy.plaintextProcessingLocation == "user-device"' \
     "$discovery_response" >/dev/null

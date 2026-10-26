@@ -69,6 +69,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - CLI export now supports owner/admin-only `--format graph-json`, reading
   authenticated canonical graph snapshots and writing versioned private
   plaintext archives with explicit consent.
+- Capability discovery now advertises all implemented export formats: JSONL,
+  Markdown, graph JSON, and encrypted archive.
 - The application layer now defines a bounded, authorized memory-import batch
   that re-admits external content as destination-scoped proposals with fresh
   identities and contiguous canonical events through an atomic repository

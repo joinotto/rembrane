@@ -2886,7 +2886,7 @@ fn build_memory_discovery(api: String) -> Result<MemoryDiscovery> {
             deletion_propagation: false,
             sync: false,
             imports: vec!["jsonl"],
-            exports: vec!["encrypted-archive"],
+            exports: vec!["jsonl", "markdown", "graph-json", "encrypted-archive"],
         },
         limits: DiscoveryLimits {
             maximum_context_items: 100,
@@ -3121,6 +3121,10 @@ mod tests {
         assert_eq!(local.privacy.processing_modes, ["local-only"]);
         assert_eq!(local.privacy.plaintext_processing_location, "user-device");
         assert_eq!(local.capabilities.imports, ["jsonl"]);
+        assert_eq!(
+            local.capabilities.exports,
+            ["jsonl", "markdown", "graph-json", "encrypted-archive"]
+        );
 
         let public = build_memory_discovery("https://memory.example.test/v1".to_owned())
             .expect("public HTTPS discovery");
