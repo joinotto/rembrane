@@ -9,10 +9,20 @@ use crate::{
 pub const MAX_TRIP_FIELD_BYTES: usize = 4_096;
 pub const MAX_TRIP_AGGREGATE_BYTES: usize = 262_144;
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct TravelDateWindow {
     depart_not_before: String,
     return_not_after: String,
+}
+
+impl fmt::Debug for TravelDateWindow {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("TravelDateWindow")
+            .field("depart_not_before", &"<redacted>")
+            .field("return_not_after", &"<redacted>")
+            .finish()
+    }
 }
 
 impl TravelDateWindow {
@@ -45,10 +55,20 @@ impl TravelDateWindow {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct TripParticipant {
     id: TripParticipantId,
     label: String,
+}
+
+impl fmt::Debug for TripParticipant {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("TripParticipant")
+            .field("id", &"<redacted>")
+            .field("label_bytes", &self.label.len())
+            .finish()
+    }
 }
 
 impl TripParticipant {
@@ -81,13 +101,26 @@ pub enum TripConstraintKind {
     Other,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct TripConstraint {
     id: TripConstraintId,
     participant_id: Option<TripParticipantId>,
     kind: TripConstraintKind,
     statement: String,
     evidence: EvidenceReference,
+}
+
+impl fmt::Debug for TripConstraint {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("TripConstraint")
+            .field("id", &"<redacted>")
+            .field("participant_id_present", &self.participant_id.is_some())
+            .field("kind", &self.kind)
+            .field("statement_bytes", &self.statement.len())
+            .field("evidence", &"<redacted>")
+            .finish()
+    }
 }
 
 impl TripConstraint {
@@ -142,7 +175,7 @@ pub enum DecisionStatus {
     Rejected,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct TripDecision {
     id: TripDecisionId,
     status: DecisionStatus,
@@ -150,6 +183,24 @@ pub struct TripDecision {
     rationale: Option<String>,
     decided_by: PrincipalId,
     evidence: EvidenceReference,
+}
+
+impl fmt::Debug for TripDecision {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("TripDecision")
+            .field("id", &"<redacted>")
+            .field("status", &self.status)
+            .field("summary_bytes", &self.summary.len())
+            .field("rationale_present", &self.rationale.is_some())
+            .field(
+                "rationale_bytes",
+                &self.rationale.as_deref().map_or(0, str::len),
+            )
+            .field("decided_by", &"<redacted>")
+            .field("evidence", &"<redacted>")
+            .finish()
+    }
 }
 
 impl TripDecision {
@@ -207,7 +258,7 @@ impl TripDecision {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct Trip {
     id: EntityId,
     workspace_id: WorkspaceId,
@@ -220,6 +271,29 @@ pub struct Trip {
     constraints: Vec<TripConstraint>,
     decisions: Vec<TripDecision>,
     version: u64,
+}
+
+impl fmt::Debug for Trip {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("Trip")
+            .field("id", &"<redacted>")
+            .field("workspace_id", &"<redacted>")
+            .field("owner_subject_id", &"<redacted>")
+            .field("title_bytes", &self.title.len())
+            .field("origin_bytes", &self.origin.len())
+            .field("destination_count", &self.destinations.len())
+            .field(
+                "destination_bytes",
+                &self.destinations.iter().map(String::len).sum::<usize>(),
+            )
+            .field("date_window", &"<redacted>")
+            .field("participant_count", &self.participants.len())
+            .field("constraint_count", &self.constraints.len())
+            .field("decision_count", &self.decisions.len())
+            .field("version", &self.version)
+            .finish()
+    }
 }
 
 impl Trip {
@@ -681,5 +755,85 @@ mod tests {
             ),
             Err(TripError::UnknownParticipant)
         );
+    }
+
+    #[test]
+    fn debug_output_redacts_trip_content_dates_and_identities() {
+        let date_window =
+            TravelDateWindow::new("2028-04-11", "2028-04-19").expect("date window should be valid");
+        let participant = TripParticipant::new(
+            TripParticipantId::new("private_participant"),
+            "Private traveler",
+        )
+        .expect("participant should be valid");
+        let constraint = TripConstraint::new(
+            TripConstraintId::new("private_constraint"),
+            Some(TripParticipantId::new("private_participant")),
+            TripConstraintKind::Dietary,
+            "Private dietary requirement",
+            evidence("private_constraint_evidence"),
+        )
+        .expect("constraint should be valid");
+        let decision = TripDecision::new(
+            TripDecisionId::new("private_decision"),
+            DecisionStatus::Selected,
+            "Private booking decision",
+            Some("Private decision rationale".to_owned()),
+            PrincipalId::new("private_decider"),
+            evidence("private_decision_evidence"),
+        )
+        .expect("decision should be valid");
+        let trip = Trip::new(
+            EntityId::new("private_trip"),
+            WorkspaceId::new("private_workspace"),
+            PrincipalId::new("private_owner"),
+            "Private holiday",
+            "Private origin",
+            vec!["Private destination".to_owned()],
+            date_window.clone(),
+        )
+        .expect("trip should be valid")
+        .add_participant(participant.clone())
+        .expect("participant should be added")
+        .add_constraint(constraint.clone())
+        .expect("constraint should be added")
+        .record_decision(decision.clone())
+        .expect("decision should be recorded");
+
+        let diagnostic =
+            format!("{date_window:?} {participant:?} {constraint:?} {decision:?} {trip:?}");
+
+        for private_value in [
+            "2028-04-11",
+            "2028-04-19",
+            "private_participant",
+            "Private traveler",
+            "private_constraint",
+            "Private dietary requirement",
+            "private_constraint_evidence",
+            "private_decision",
+            "Private booking decision",
+            "Private decision rationale",
+            "private_decider",
+            "private_decision_evidence",
+            "private_trip",
+            "private_workspace",
+            "private_owner",
+            "Private holiday",
+            "Private origin",
+            "Private destination",
+        ] {
+            assert!(!diagnostic.contains(private_value));
+        }
+        assert!(diagnostic.contains("label_bytes: 16"));
+        assert!(diagnostic.contains("kind: Dietary"));
+        assert!(diagnostic.contains("statement_bytes: 27"));
+        assert!(diagnostic.contains("status: Selected"));
+        assert!(diagnostic.contains("summary_bytes: 24"));
+        assert!(diagnostic.contains("destination_count: 1"));
+        assert!(diagnostic.contains("participant_count: 1"));
+        assert!(diagnostic.contains("constraint_count: 1"));
+        assert!(diagnostic.contains("decision_count: 1"));
+        assert!(diagnostic.contains("version: 4"));
     }
 }

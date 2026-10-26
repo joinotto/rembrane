@@ -974,6 +974,8 @@ This roadmap describes sequencing, not release dates.
     date windows, evidence-backed constraints, and attributed decisions.
   - [x] Versioned canonical trip wire format with strict aggregate
     reconstruction.
+  - [x] Redact itineraries, dates, participant details, constraints, decisions,
+    evidence, and identities from aggregate and nested travel diagnostics.
   - [x] Authorized create/revise application service with exact entity-scoped
     grants and an atomic in-memory reference repository.
   - [x] Dedicated travel-domain capability for creating new trip entities;

@@ -97,6 +97,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Booking-research diagnostics now expose only research kind, payload sizes,
   and version while redacting travel identities, provider and source details,
   evidence references, summaries, and observation timelines.
+- Trip diagnostics now expose only safe payload sizes, collection counts,
+  closed kinds and statuses, and version while redacting itineraries, dates,
+  participant details, constraints, decisions, evidence, and identities.
 - Canonical SQLite initialization and backup now require the path opened by
   SQLite to retain the exact protected file's device/inode identity, and
   failure cleanup refuses to remove a path replaced after preparation.
