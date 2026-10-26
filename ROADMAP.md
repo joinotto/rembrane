@@ -166,6 +166,8 @@ This roadmap describes sequencing, not release dates.
     working state, fingerprints, tenant routing, paths, or internal errors.
 - [x] Expose work-trace capture as structured CLI success and secret-safe
   failure results for generic agents and bots.
+  - [x] Reject unsafe routing IDs, empty/NUL summaries, and oversized trace
+    content before opening tenant storage.
 - [x] Publish an executable local-alpha acceptance contract with independent
   static, Rust/E2E, and container CI gates.
 - [x] Add a secret-safe local installation doctor command.

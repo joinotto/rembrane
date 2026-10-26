@@ -34,6 +34,7 @@ use rembrane_domain::{
     Invitation, InvitationStatus, LegalHoldId, Membership, MemoryId, MemoryKind, MemoryRecord,
     MemoryScope, Principal, PrincipalId, ReadGrant, ReadScope, RetentionPeriod, Workspace,
     WorkspaceId, WorkspaceRetentionPolicy, WorkspaceRole, WritePermission,
+    MAX_MEMORY_CONTENT_BYTES,
 };
 use rembrane_memory_provider_configured::ConfiguredMemoryProvider;
 use rembrane_provider_registry::{ProviderSelectionPolicy, VerifiedProviderRegistry};
@@ -2584,6 +2585,23 @@ fn trace(arguments: &[String]) -> Result<(), String> {
     let summary = option(arguments, "--summary")?;
     let entity_id = optional_option(arguments, "--entity");
     let client_id = optional_option(arguments, "--client").unwrap_or("rembrane-cli");
+    validate_cli_opaque_id("activity", activity_id.as_str())?;
+    validate_cli_opaque_id("client", client_id)?;
+    if let Some(entity_id) = entity_id {
+        validate_cli_opaque_id("entity", entity_id)?;
+    }
+    if summary.trim().is_empty() || summary.contains('\0') {
+        return Err("trace summary must be non-empty and contain no null characters".to_owned());
+    }
+    let content = entity_id.map_or_else(
+        || summary.to_owned(),
+        |entity_id| format!("[entity:{entity_id}] {summary}"),
+    );
+    if content.len() > MAX_MEMORY_CONTENT_BYTES {
+        return Err(format!(
+            "trace content must not exceed {MAX_MEMORY_CONTENT_BYTES} bytes"
+        ));
+    }
     let scope = MemoryScope::Activity {
         id: activity_id.clone(),
     };
@@ -2598,10 +2616,6 @@ fn trace(arguments: &[String]) -> Result<(), String> {
     )?;
     let previous_sequence = current_sequence(&store, &workspace_id)?;
     let suffix = unique_suffix()?;
-    let content = entity_id.map_or_else(
-        || summary.to_owned(),
-        |entity_id| format!("[entity:{entity_id}] {summary}"),
-    );
     let memory = MemoryProposalService::new(&mut store)
         .propose(ProposeMemoryCommand {
             grant: grants.write,
@@ -2624,6 +2638,22 @@ fn trace(arguments: &[String]) -> Result<(), String> {
         println!("Proposed {}", memory.id());
     }
     Ok(())
+}
+
+fn validate_cli_opaque_id(label: &str, value: &str) -> Result<(), String> {
+    if value.is_empty()
+        || value.len() > 255
+        || !value.is_ascii()
+        || value
+            .bytes()
+            .any(|byte| byte.is_ascii_control() || byte.is_ascii_whitespace())
+    {
+        Err(format!(
+            "{label} must contain 1 to 255 safe ASCII characters"
+        ))
+    } else {
+        Ok(())
+    }
 }
 
 fn trace_json(memory: &MemoryRecord) -> serde_json::Value {
@@ -3429,7 +3459,7 @@ mod tests {
     use rembrane_store_sqlite::SqliteStore;
 
     use super::{
-        EXPORT_MAGIC, MAX_CLI_RECALL_BYTES, MAX_CLI_RECALL_ITEMS,
+        EXPORT_MAGIC, MAX_CLI_RECALL_BYTES, MAX_CLI_RECALL_ITEMS, MAX_MEMORY_CONTENT_BYTES,
         SEMANTIC_PROVIDER_CONFORMANCE_PROFILE_SHA256, build_remote_mcp_profile,
         check_provider_registry, claude_mcp_config, codex_mcp_config, create_parent_directory,
         cursor_mcp_config, doctor_failure_json, doctor_json, doctor_json_requested,
@@ -3441,8 +3471,8 @@ mod tests {
         redact_endpoint, render_mcp_config,
         requested_memory_privacy, requested_memory_scope, run, selected_secret_reference,
         test_provider, trace_failure_json, trace_json_requested,
-        validate_external_conformance_namespace, validate_mcp_server_binary, vscode_mcp_config,
-        working_memory_failure_json, write_export,
+        validate_cli_opaque_id, validate_external_conformance_namespace,
+        validate_mcp_server_binary, vscode_mcp_config, working_memory_failure_json, write_export,
         write_knowledge_graph_export, write_memory_jsonl_export, write_memory_markdown_export,
         zed_mcp_config,
     };
@@ -3605,6 +3635,35 @@ mod tests {
         );
         assert!(!result.to_string().contains("private work trace"));
         assert!(!result.to_string().contains("project.sqlite"));
+    }
+
+    #[test]
+    fn trace_rejects_invalid_input_before_storage_access() {
+        let invalid_ids = [
+            String::new(),
+            "has spaces".to_owned(),
+            "é".to_owned(),
+            "x".repeat(256),
+        ];
+        for invalid_id in &invalid_ids {
+            assert!(validate_cli_opaque_id("activity", invalid_id).is_err());
+        }
+        assert!(validate_cli_opaque_id("activity", "activity_01").is_ok());
+
+        let arguments = vec![
+            "trace".to_owned(),
+            "--activity".to_owned(),
+            "activity_01".to_owned(),
+            "--summary".to_owned(),
+            "x".repeat(MAX_MEMORY_CONTENT_BYTES + 1),
+            "--json".to_owned(),
+        ];
+        assert_eq!(
+            run(&arguments),
+            Err(format!(
+                "trace content must not exceed {MAX_MEMORY_CONTENT_BYTES} bytes"
+            ))
+        );
     }
 
     fn request_run(arguments: &[&str]) -> Result<(), String> {

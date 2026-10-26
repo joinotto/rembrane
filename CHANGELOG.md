@@ -15,6 +15,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Structured work-trace results now have a versioned JSON Schema, canonical
   success/failure examples, protocol drift checks, and integration
   documentation.
+- CLI work-trace capture now rejects unsafe activity/entity/client IDs,
+  empty or NUL-containing summaries, and content above 256 KiB before opening
+  tenant storage.
 - CLI checkpoint and resume results now carry `schemaVersion: 1`, allowing
   fresh agent processes to consume project working-memory state through an
   explicitly versioned output surface.
