@@ -114,6 +114,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   only safe revision metadata, inclusion flags, direction, and collection
   counts while redacting routing identities, purposes, resources, and
   timelines.
+- Evidence-reference diagnostics now expose only the closed provenance source
+  while redacting the canonical evidence identity.
 - Canonical SQLite initialization and backup now require the path opened by
   SQLite to retain the exact protected file's device/inode identity, and
   failure cleanup refuses to remove a path replaced after preparation.
