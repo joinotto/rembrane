@@ -12,7 +12,8 @@ use rembrane_provider_sdk::{
     MAX_CUSTOMER_KMS_GENERATIONS, MAX_KMS_KEY_ID_BYTES, MAX_KMS_WORKSPACE_ID_BYTES,
     MAX_WRAPPED_KEY_BYTES, ProviderError,
 };
-use rusqlite::{Connection, MAIN_DB, OpenFlags, OptionalExtension, params};
+use rusqlite::backup::{Backup, StepResult};
+use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
 
 pub const MAX_KMS_RECOVERY_WORKSPACES: usize = 10_000;
 
@@ -223,13 +224,16 @@ impl SqliteCustomerKmsKeyReferenceStore {
     pub fn backup_to(&self, destination: impl AsRef<Path>) -> Result<(), ProviderError> {
         let destination = destination.as_ref();
         prepare_private_database_file(destination, true)?;
-        let result = self
-            .connection
-            .lock()
-            .map_err(|_| ProviderError::Unavailable)?
-            .backup(MAIN_DB, destination, None)
-            .map_err(|_| ProviderError::Unavailable)
-            .and_then(|()| verify_backup(destination));
+        let result = (|| {
+            let source = self
+                .connection
+                .lock()
+                .map_err(|_| ProviderError::Unavailable)?;
+            let mut destination_connection = open_private_database(destination, true)?;
+            copy_database(&source, &mut destination_connection)?;
+            drop(destination_connection);
+            verify_backup(destination)
+        })();
         if result.is_err() {
             remove_sqlite_files(destination);
         }
@@ -249,11 +253,11 @@ impl SqliteCustomerKmsKeyReferenceStore {
         validate_recovery_floors(recovery_floors)?;
         prepare_private_database_file(destination, true)?;
         let result = (|| {
+            let source_connection = open_private_database(source, false)?;
             let mut connection = open_private_database(destination, true)?;
-            connection
-                .restore(MAIN_DB, source, None::<fn(rusqlite::backup::Progress)>)
-                .map_err(|_| ProviderError::Unavailable)?;
+            copy_database(&source_connection, &mut connection)?;
             drop(connection);
+            drop(source_connection);
             verify_backup(destination)?;
             verify_recovery_floors(destination, recovery_floors)?;
             Self::open(destination)
@@ -262,6 +266,17 @@ impl SqliteCustomerKmsKeyReferenceStore {
             remove_sqlite_files(destination);
         }
         result
+    }
+}
+
+fn copy_database(source: &Connection, destination: &mut Connection) -> Result<(), ProviderError> {
+    let backup = Backup::new(source, destination).map_err(|_| ProviderError::Unavailable)?;
+    loop {
+        match backup.step(100).map_err(|_| ProviderError::Unavailable)? {
+            StepResult::Done => return Ok(()),
+            StepResult::More => {}
+            _ => return Err(ProviderError::Unavailable),
+        }
     }
 }
 

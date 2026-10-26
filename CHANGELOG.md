@@ -996,6 +996,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Customer-KMS keyring creation now distinguishes new and existing databases,
   atomically refuses backup or restore overwrites, and removes partial database
   and journal files after failed first-time initialization.
+- Customer-KMS backup and restore now copy only between already hardened open
+  SQLite connections instead of using convenience APIs that reopen paths.
 - CLI initialization, backup, and restore now create new local storage
   directory components with owner-only Unix permissions.
 - Available-mode production readiness now reports exact missing prerequisites

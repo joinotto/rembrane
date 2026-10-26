@@ -69,6 +69,8 @@ final database path.
 Backup and restore destinations use atomic exclusive creation instead of a
 separate existence check. Failed initialization of a new keyring removes its
 database and journal sidecars; an existing keyring is never deleted.
+Snapshot copying operates only between already opened, validated no-follow
+connections; backup and restore never delegate a path reopen to SQLite.
 Workspace identity, provider key identifiers, and wrapped ciphertext are
 bounded in both the provider contract and SQLite schema. Existing databases
 receive enforcement triggers, and bounded projections reject corrupt rows

@@ -202,6 +202,8 @@ This roadmap describes sequencing, not release dates.
           through SQLite no-follow mode after canonicalizing only the parent.
         - [x] Create backup and restore destinations atomically and clean up
           partial files after failed first-time keyring initialization.
+        - [x] Copy backups and restores only between already hardened SQLite
+          connections so convenience APIs cannot reopen mutable paths.
       - [x] Enforce workspace, provider-key, and wrapped-ciphertext bounds in
         both new and existing SQLite databases before row materialization.
       - [x] Create non-overwriting owner-only keyring backups and verify
