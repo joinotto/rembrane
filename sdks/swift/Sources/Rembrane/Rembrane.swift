@@ -331,6 +331,91 @@ public struct RembraneClient<Transport: RembraneTransport>: Sendable {
         try await post("/graph/context/resolve", request: request, as: responseType)
     }
 
+    public func rememberPreference<Request: Encodable, Response: Decodable>(
+        _ request: Request,
+        as responseType: Response.Type = Response.self
+    ) async throws -> Response {
+        try await post("/memories/preferences", request: request, as: responseType)
+    }
+
+    public func recordWorkTrace<Request: Encodable, Response: Decodable>(
+        _ request: Request,
+        as responseType: Response.Type = Response.self
+    ) async throws -> Response {
+        try await post("/memories/work-traces", request: request, as: responseType)
+    }
+
+    public func correctMemory<Request: Encodable, Response: Decodable>(
+        memoryID: String,
+        request: Request,
+        as responseType: Response.Type = Response.self
+    ) async throws -> Response {
+        try Self.requireOpaqueID(memoryID, field: "memoryID")
+        return try await post(
+            "/memories/\(memoryID)/correction",
+            request: request,
+            as: responseType
+        )
+    }
+
+    public func deleteMemory<Request: Encodable, Response: Decodable>(
+        memoryID: String,
+        request: Request,
+        as responseType: Response.Type = Response.self
+    ) async throws -> Response {
+        try Self.requireOpaqueID(memoryID, field: "memoryID")
+        return try await post(
+            "/memories/\(memoryID)/deletion",
+            request: request,
+            as: responseType
+        )
+    }
+
+    public func checkpointActivity<Request: Encodable, Response: Decodable>(
+        activityID: String,
+        request: Request,
+        as responseType: Response.Type = Response.self
+    ) async throws -> Response {
+        try Self.requireOpaqueID(activityID, field: "activityID")
+        return try await post(
+            "/activities/\(activityID)/checkpoint",
+            request: request,
+            as: responseType
+        )
+    }
+
+    public func resumeActivity<Response: Decodable>(
+        activityID: String,
+        workspaceID: String,
+        subjectID: String,
+        purpose: String? = nil,
+        stateFingerprint: String? = nil,
+        as responseType: Response.Type = Response.self
+    ) async throws -> Response {
+        try Self.requireOpaqueID(activityID, field: "activityID")
+        try Self.requireOpaqueID(workspaceID, field: "workspaceID")
+        try Self.requireOpaqueID(subjectID, field: "subjectID")
+        var items = [
+            URLQueryItem(name: "workspaceId", value: workspaceID),
+            URLQueryItem(name: "subjectId", value: subjectID),
+        ]
+        if let purpose {
+            items.append(URLQueryItem(name: "purpose", value: purpose))
+        }
+        if let stateFingerprint {
+            items.append(
+                URLQueryItem(name: "stateFingerprint", value: stateFingerprint)
+            )
+        }
+        let query = try Self.portabilityQuery(items)
+        return try await execute(
+            method: "GET",
+            path: "/activities/\(activityID)/resume?\(query)",
+            body: nil,
+            as: responseType
+        )
+    }
+
     public func acceptWorkspaceInvitation<Request: Encodable, Response: Decodable>(
         _ request: Request,
         as responseType: Response.Type = Response.self

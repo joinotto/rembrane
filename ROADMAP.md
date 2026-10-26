@@ -1343,6 +1343,8 @@ This roadmap describes sequencing, not release dates.
       imports with strict metadata, opaque-ID, and response validation.
     - [x] Document protected plaintext handling and sequence-safe imports for
       Swift adopters, and link all application SDK guides from the project root.
+    - [x] Add named Swift preference, work-trace, correction, deletion,
+      checkpoint, and resume operations with path-safe opaque identifiers.
   - [x] Publish a dependency-free Kotlin/JVM client package with injected
     transport and an executable smoke fixture.
     - [x] Add authenticated raw-byte portable exports and bounded atomic JSONL

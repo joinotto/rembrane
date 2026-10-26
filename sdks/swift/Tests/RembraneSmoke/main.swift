@@ -29,6 +29,13 @@ private actor MockTransport: RembraneTransport {
                 body: Data(#"{"imported":1,"status":"proposed"}"#.utf8)
             )
         }
+        if request.url?.path.hasSuffix("/resume") == true {
+            return RembraneHTTPResponse(
+                status: 200,
+                headers: ["content-type": "application/json"],
+                body: Data(#"{"status":"pending"}"#.utf8)
+            )
+        }
         let body: Data
         if request.url?.path.hasSuffix("/graph/context/resolve") == true {
             body = Data(#"{"disclosureId":"d1","edges":[]}"#.utf8)
@@ -83,6 +90,12 @@ private struct GraphContextRequest: Encodable {
 private struct GraphContextResponse: Decodable {
     let disclosureId: String
     let edges: [String]
+}
+
+private struct ContinuityRequest: Encodable {
+    let workspaceId: String
+    let subjectId: String
+    let content: String
 }
 
 private struct MockShareSigner: RembraneMobileShareSigner {
@@ -210,6 +223,77 @@ private struct RembraneSmoke {
             graphRequest?.value(forHTTPHeaderField: "Authorization")
                 == "Bearer test-token"
         )
+
+        let continuityRequest = ContinuityRequest(
+            workspaceId: "team",
+            subjectId: "principal-1",
+            content: "Call me Hippo"
+        )
+        let _: InvitationResponse = try await client.rememberPreference(
+            continuityRequest
+        )
+        var continuityHTTP = await transport.request
+        precondition(
+            continuityHTTP?.url?.path
+                == "/v1/memories/preferences"
+        )
+        let _: InvitationResponse = try await client.recordWorkTrace(
+            continuityRequest
+        )
+        continuityHTTP = await transport.request
+        precondition(continuityHTTP?.url?.path == "/v1/memories/work-traces")
+        let _: InvitationResponse = try await client.correctMemory(
+            memoryID: "memory:preference-1",
+            request: continuityRequest
+        )
+        continuityHTTP = await transport.request
+        precondition(
+            continuityHTTP?.url?.path
+                == "/v1/memories/memory:preference-1/correction"
+        )
+        let _: InvitationResponse = try await client.deleteMemory(
+            memoryID: "memory:preference-1",
+            request: continuityRequest
+        )
+        continuityHTTP = await transport.request
+        precondition(
+            continuityHTTP?.url?.path
+                == "/v1/memories/memory:preference-1/deletion"
+        )
+        let _: InvitationResponse = try await client.checkpointActivity(
+            activityID: "activity:project-1",
+            request: continuityRequest
+        )
+        continuityHTTP = await transport.request
+        precondition(
+            continuityHTTP?.url?.path
+                == "/v1/activities/activity:project-1/checkpoint"
+        )
+        let _: InvitationResponse = try await client.resumeActivity(
+            activityID: "activity:project-1",
+            workspaceID: "team",
+            subjectID: "principal-1",
+            purpose: "continue development",
+            stateFingerprint: "git:abc/123"
+        )
+        continuityHTTP = await transport.request
+        precondition(continuityHTTP?.httpMethod == "GET")
+        precondition(
+            continuityHTTP?.url?.absoluteString
+                == "http://127.0.0.1:8787/v1/activities/activity:project-1/resume?workspaceId=team&subjectId=principal-1&purpose=continue%20development&stateFingerprint=git:abc/123"
+        )
+        let requestBeforeInvalidMemory = await transport.request
+        do {
+            let _: InvitationResponse = try await client.correctMemory(
+                memoryID: "../memory",
+                request: continuityRequest
+            )
+            preconditionFailure("unsafe memory identity must fail")
+        } catch let error as RembraneAPIError {
+            precondition(error.code == "invalid_identifier")
+        }
+        let requestAfterInvalidMemory = await transport.request
+        precondition(requestAfterInvalidMemory?.url == requestBeforeInvalidMemory?.url)
 
         let archive = try await client.exportPortableData(
             workspaceID: "team_workspace",
