@@ -4,17 +4,21 @@ use rembrane_application::{
     ChannelBindingService, ChannelInboxAdministrationService, CheckpointRepository,
     CheckpointService, ClientGrantBundle, CreateChannelBindingCommand, CreateCheckpointCommand,
     CreateInvitationCommand, DeleteMemoryCommand, EventRepository, ExecuteRetentionPurgeCommand,
-    InvitationService, ListInvitationsQuery, MemberLifecycleService, MembershipRepository,
-    MemoryLifecycleService, MemoryProposalService, MemoryRepository, PlaceLegalHoldCommand,
-    ProposeMemoryCommand, ReleaseLegalHoldCommand, RememberPreferenceCommand,
-    RememberPreferenceService, RequeueChannelMessageCommand, ResolveContextCommand,
-    ResolveContextService, ResumeActivityCommand, RetentionService, ReviseMemoryCommand,
-    RevokeChannelBindingCommand, RevokeInvitationCommand, SetRetentionPolicyCommand,
-    UpdateCheckpointCommand, WorkspaceRepository,
+    ImportMemoryBatchCommand, ImportMemoryBatchService, ImportedMemoryProposal, InvitationService,
+    ListInvitationsQuery, MemberLifecycleService, MembershipRepository, MemoryLifecycleService,
+    MemoryProposalService, MemoryRepository, PlaceLegalHoldCommand, ProposeMemoryCommand,
+    ReleaseLegalHoldCommand, RememberPreferenceCommand, RememberPreferenceService,
+    RequeueChannelMessageCommand, ResolveContextCommand, ResolveContextService,
+    ResumeActivityCommand, RetentionService, ReviseMemoryCommand, RevokeChannelBindingCommand,
+    RevokeInvitationCommand, SetRetentionPolicyCommand, UpdateCheckpointCommand,
+    WorkspaceRepository,
 };
 use rembrane_channel_mobile_share::derive_binding_lookup_keys as derive_mobile_binding_lookup_keys;
 use rembrane_channel_whatsapp::derive_binding_lookup_keys as derive_whatsapp_binding_lookup_keys;
-use rembrane_codec::{MEMORY_JSONL_FORMAT, MEMORY_JSONL_VERSION, encode_memory_jsonl_record};
+use rembrane_codec::{
+    MAX_MEMORY_JSONL_ARCHIVE_BYTES, MEMORY_JSONL_FORMAT, MEMORY_JSONL_VERSION,
+    decode_memory_jsonl_archive, encode_memory_jsonl_record,
+};
 use rembrane_config::{
     ProviderConnection, ProviderKind, ProviderPlacement, RemoteMcpConfig, SecretReference,
 };
@@ -77,6 +81,7 @@ fn run(arguments: &[String]) -> Result<(), String> {
         Some("backup") => backup(&arguments[1..]),
         Some("restore") => restore(&arguments[1..]),
         Some("export") => export_memories(&arguments[1..]),
+        Some("import") => import_memories(&arguments[1..]),
         Some("fingerprint-git") => fingerprint_git(&arguments[1..]),
         Some("mcp-config") => print_mcp_config(&arguments[1..]),
         Some("providers") => providers(&arguments[1..]),
@@ -1488,6 +1493,105 @@ fn export_memories(arguments: &[String]) -> Result<(), String> {
     println!("Warning: output contains decrypted memory plaintext");
     println!("Output: {}", output.display());
     Ok(())
+}
+
+fn import_memories(arguments: &[String]) -> Result<(), String> {
+    if optional_option(arguments, "--format").unwrap_or("jsonl") != "jsonl" {
+        return Err("only --format jsonl is currently supported".to_owned());
+    }
+    if !arguments
+        .iter()
+        .any(|argument| argument == "--allow-plaintext-import")
+    {
+        return Err(
+            "JSONL contains plaintext memory; repeat with --allow-plaintext-import to confirm"
+                .to_owned(),
+        );
+    }
+    let input = option(arguments, "--input")?;
+    let bytes = read_bounded_memory_import(input)?;
+    let source_records = decode_memory_jsonl_archive(&bytes)
+        .map_err(|error| format!("cannot validate memory import: {error}"))?;
+    if source_records.is_empty() {
+        return Err("memory import contains no records".to_owned());
+    }
+    if source_records
+        .iter()
+        .any(|record| record.status() == rembrane_domain::MemoryStatus::Deleted)
+    {
+        return Err("deleted memory tombstones cannot be imported as proposals".to_owned());
+    }
+    let mut requested_scopes = Vec::new();
+    for record in &source_records {
+        let scope = read_scope(record.scope());
+        if !requested_scopes.contains(&scope) {
+            requested_scopes.push(scope);
+        }
+    }
+    let client_id = optional_option(arguments, "--client").unwrap_or("rembrane-cli");
+    let (mut store, principal_id, workspace_id) = encrypted_store(arguments)?;
+    let grants = authorize_client(
+        &store,
+        ClientId::new(client_id),
+        &workspace_id,
+        &principal_id,
+        requested_scopes,
+        vec![WritePermission::ProposeMemory],
+    )?;
+    let previous_sequence = current_sequence(&store, &workspace_id)?;
+    let suffix = unique_suffix()?;
+    let items = source_records
+        .into_iter()
+        .enumerate()
+        .map(|(index, record)| ImportedMemoryProposal {
+            memory_id: MemoryId::new(format!("import_{suffix}_{index}")),
+            event_id: EventId::new(format!("event_import_{suffix}_{index}")),
+            scope: record.scope().clone(),
+            kind: record.kind(),
+            content: record.content().to_owned(),
+            evidence: EvidenceReference::new(
+                EvidenceId::new(format!("evidence_import_{suffix}_{index}")),
+                EvidenceSource::ImportedRecord,
+            ),
+        })
+        .collect();
+    let imported = ImportMemoryBatchService::new(&mut store)
+        .execute(ImportMemoryBatchCommand {
+            grant: grants.write,
+            items,
+            expected_previous_sequence: previous_sequence,
+        })
+        .map_err(|error| format!("cannot import memories: {error}"))?;
+    println!("Imported {} memory proposals", imported.len());
+    println!("Destination workspace: {workspace_id}");
+    println!("Destination subject: {principal_id}");
+    println!("Review and confirm proposals before they become trusted memory");
+    Ok(())
+}
+
+fn read_bounded_memory_import(path: &str) -> Result<Vec<u8>, String> {
+    use std::io::Read as _;
+
+    let file = open_regular_file_for_read(std::path::Path::new(path))
+        .map_err(|error| format!("cannot open memory import: {error}"))?;
+    let metadata = file
+        .metadata()
+        .map_err(|error| format!("cannot inspect memory import: {error}"))?;
+    let maximum_bytes = u64::try_from(MAX_MEMORY_JSONL_ARCHIVE_BYTES)
+        .map_err(|_| "memory import byte limit is unsupported".to_owned())?;
+    if metadata.len() == 0 || metadata.len() > maximum_bytes {
+        return Err("memory import file size is invalid".to_owned());
+    }
+    let capacity = usize::try_from(metadata.len())
+        .map_err(|_| "memory import file size is invalid".to_owned())?;
+    let mut bytes = Vec::with_capacity(capacity);
+    file.take(maximum_bytes.saturating_add(1))
+        .read_to_end(&mut bytes)
+        .map_err(|error| format!("cannot read memory import: {error}"))?;
+    if u64::try_from(bytes.len()).ok() != Some(metadata.len()) {
+        return Err("memory import changed while reading".to_owned());
+    }
+    Ok(bytes)
 }
 
 fn write_memory_jsonl_export(
@@ -2975,6 +3079,8 @@ fn print_help() {
              --principal <id> --workspace <id>\n\
            rembrane export --database <path> --principal <id> --workspace <id> \
              --format jsonl --output <new-path> --allow-plaintext-export\n\
+           rembrane import --database <path> --principal <id> --workspace <id> \
+             --format jsonl --input <path> --allow-plaintext-import [--client <id>]\n\
            rembrane fingerprint-git --repository <path>\n\
            rembrane providers list\n\
            rembrane providers check --provider <id> --adapter-version <version> \
@@ -3983,6 +4089,24 @@ mod tests {
         .expect_err("plaintext export must require confirmation before opening storage");
 
         assert!(error.contains("--allow-plaintext-export"));
+    }
+
+    #[test]
+    fn plaintext_memory_import_requires_explicit_confirmation() {
+        let error = request_run(&[
+            "import",
+            "--database",
+            "unused.sqlite",
+            "--principal",
+            "principal",
+            "--workspace",
+            "workspace",
+            "--input",
+            "unused.jsonl",
+        ])
+        .expect_err("plaintext import must require confirmation before reading input");
+
+        assert!(error.contains("--allow-plaintext-import"));
     }
 
     #[cfg(unix)]

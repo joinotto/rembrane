@@ -109,7 +109,9 @@ This roadmap describes sequencing, not release dates.
   - [x] Provide whole-archive validation with fixed record/byte ceilings,
     homogeneous source tenancy, duplicate revision rejection, and no blank
     records so import surfaces can validate before canonical mutation.
-  - [ ] Apply validated imports as one authorized atomic canonical mutation.
+  - [x] Apply validated JSONL imports as one authorized atomic canonical
+    mutation, admitting external content as reviewable proposals rather than
+    silently confirmed memory.
     - [x] Define a bounded import-as-proposals application use case and atomic
       repository port with destination scope authorization, fresh target
       identity checks, and contiguous canonical event construction.
@@ -117,6 +119,9 @@ This roadmap describes sequencing, not release dates.
     - [x] Implement the atomic port in encrypted SQLite, sealing every memory
       and event before one transaction and rolling back all earlier inserts
       when a later record conflicts.
+    - [x] Expose protected-file JSONL import through the CLI with explicit
+      plaintext acknowledgement, complete pre-mutation validation,
+      destination scope authorization, and fresh target identities.
 - [x] Package the local REST service for loopback-only Docker Compose
   self-hosting with persistent encrypted storage.
   - [x] Resolve the REST bearer credential from validated environment or

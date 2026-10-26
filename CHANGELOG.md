@@ -59,6 +59,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   transaction after sealing every proposal and event, with repository-level
   tenant, identity, and sequence validation plus verified rollback when a
   later record conflicts.
+- CLI JSONL import now reads bounded no-follow regular files, validates the
+  complete archive before opening destination storage, requires explicit
+  plaintext acknowledgement, authorizes every destination scope, assigns
+  fresh identities, and atomically stores imported content as proposals.
 - Remote MCP now provides a bounded, non-evicting tenant Tower-service cache
   keyed by exact issuer, resource, principal, client, workspace, and OAuth
   scope set, preserving protocol sessions across token refresh while failing

@@ -516,6 +516,20 @@ evidence references. The command never exports provider credentials or
 infrastructure secrets. JSONL is intentionally plaintext for interoperability;
 encrypted backup remains the safer choice for recovery and opaque transfer.
 
+The matching implemented import surface is:
+
+```text
+rembrane import --database <path> --principal <id> --workspace <id> \
+  --format jsonl --input <path> --allow-plaintext-import [--client <id>]
+```
+
+Import validates the complete bounded archive before destination access,
+requires an active destination membership and grants for every represented
+scope, replaces all source-controlled target identifiers, and commits the
+batch atomically with contiguous canonical events. Imported content is always
+stored as a proposal requiring review and confirmation; an external archive
+cannot directly establish trusted memory.
+
 `rembrane init` should:
 
 1. Select local, Docker, Cloudflare, Kubernetes, or custom deployment.
