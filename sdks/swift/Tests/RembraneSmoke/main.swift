@@ -9,6 +9,15 @@ private actor MockTransport: RembraneTransport {
         maximumResponseBytes: Int
     ) async throws -> RembraneHTTPResponse {
         self.request = request
+        if request.url?.path == "/.well-known/ai-memory" {
+            return RembraneHTTPResponse(
+                status: 200,
+                headers: ["content-type": "application/json"],
+                body: Data(
+                    #"{"provider":{"id":"local.rembrane","name":"Local Rembrane","implementation":"rembrane"},"protocolVersions":["0.1"],"endpoints":{"api":"http://127.0.0.1:8787/v1"},"capabilities":{"contextResolution":true,"questionResolution":false,"memoryProposal":true,"activityCheckpoint":true,"disclosureReceipt":true,"deletionPropagation":true,"sync":false,"imports":["jsonl"],"exports":["jsonl","markdown","graph-json","encrypted-archive"]},"limits":{"maximumContextItems":50,"maximumContextBytes":65536,"maximumEventBytes":262144},"privacy":{"processingModes":["local-only"],"disclosureReceipts":true,"plaintextProcessingLocation":"user-device"},"extensions":{}}"#.utf8
+                )
+            )
+        }
         if request.url?.path.hasSuffix("/exports") == true {
             return RembraneHTTPResponse(
                 status: 200,
@@ -114,6 +123,23 @@ private struct RembraneSmoke {
             token: "test-token",
             transport: transport
         )
+        let discovery = try await client.discover()
+        precondition(discovery.providerID == "local.rembrane")
+        precondition(discovery.protocolVersions == ["0.1"])
+        precondition(discovery.importFormats == ["jsonl"])
+        precondition(
+            discovery.exportFormats
+                == ["jsonl", "markdown", "graph-json", "encrypted-archive"]
+        )
+        let discoveryRequest = await transport.request
+        precondition(
+            discoveryRequest?.url?.absoluteString
+                == "http://127.0.0.1:8787/.well-known/ai-memory"
+        )
+        precondition(
+            discoveryRequest?.value(forHTTPHeaderField: "Authorization") == nil
+        )
+
         let response: AuditResponse = try await client.listAdministrativeAudit(
             workspaceID: "team",
             afterEpochSeconds: 10,
@@ -478,6 +504,51 @@ private struct RembraneSmoke {
         } catch let error as RembraneAPIError {
             precondition(error.status == 409)
             precondition(error.code == "sequence_conflict")
+        }
+
+        let invalidDiscoveryTransport = FixedResponseTransport(
+            response: RembraneHTTPResponse(
+                status: 200,
+                headers: ["content-type": "application/json"],
+                body: Data(
+                    #"{"provider":{"id":"local.rembrane","name":"Local Rembrane"},"protocolVersions":["0.1"],"endpoints":{"api":"https://attacker.example/v1"},"capabilities":{"contextResolution":true,"memoryProposal":true,"activityCheckpoint":true,"disclosureReceipt":true,"deletionPropagation":true},"privacy":{"processingModes":["local-only"],"disclosureReceipts":true}}"#.utf8
+                )
+            )
+        )
+        let invalidDiscoveryClient = try RembraneClient(
+            baseURL: URL(string: "https://memory.example.test/v1")!,
+            token: "must-not-leak",
+            transport: invalidDiscoveryTransport
+        )
+        do {
+            _ = try await invalidDiscoveryClient.discover()
+            preconditionFailure("mismatched discovery API must fail")
+        } catch let error as RembraneAPIError {
+            precondition(error.code == "invalid_discovery")
+        }
+        for invalidDocument in [
+            #"{"provider":{"id":"local.rembrane","name":"Local Rembrane"},"protocolVersions":["0.1","0.1"],"endpoints":{"api":"https://memory.example.test/v1"},"capabilities":{"contextResolution":true,"memoryProposal":true,"activityCheckpoint":true,"disclosureReceipt":true,"deletionPropagation":true},"privacy":{"processingModes":["local-only"],"disclosureReceipts":true}}"#,
+            #"{"provider":{"id":"local.rembrane","name":"Local Rembrane"},"protocolVersions":["0.1"],"endpoints":{"api":"https://memory.example.test/v1"},"capabilities":{"contextResolution":true,"memoryProposal":true,"activityCheckpoint":true,"disclosureReceipt":true,"deletionPropagation":true,"unknown":true},"privacy":{"processingModes":["local-only"],"disclosureReceipts":true}}"#,
+            #"{"provider":{"id":"local.rembrane","name":"Local Rembrane"},"protocolVersions":["0.1"],"endpoints":{"api":"https://memory.example.test/v1"},"capabilities":{"contextResolution":true,"memoryProposal":true,"activityCheckpoint":true,"disclosureReceipt":true,"deletionPropagation":true},"privacy":{"processingModes":["browser"],"disclosureReceipts":true}}"#,
+            #"{"provider":{"id":"local.rembrane","name":"Local Rembrane"},"protocolVersions":["0.1"],"endpoints":{"api":"https://memory.example.test/v1"},"capabilities":{"contextResolution":true,"memoryProposal":true,"activityCheckpoint":true,"disclosureReceipt":true,"deletionPropagation":true},"privacy":{"processingModes":["local-only"],"disclosureReceipts":true},"extensions":{"unsafe":true}}"#,
+        ] {
+            let invalidClient = try RembraneClient(
+                baseURL: URL(string: "https://memory.example.test/v1")!,
+                token: "must-not-leak",
+                transport: FixedResponseTransport(
+                    response: RembraneHTTPResponse(
+                        status: 200,
+                        headers: ["content-type": "application/json"],
+                        body: Data(invalidDocument.utf8)
+                    )
+                )
+            )
+            do {
+                _ = try await invalidClient.discover()
+                preconditionFailure("malformed discovery must fail")
+            } catch let error as RembraneAPIError {
+                precondition(error.code == "invalid_discovery")
+            }
         }
 
         do {

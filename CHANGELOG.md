@@ -103,6 +103,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   administration, including legal holds and bounded hold-aware purges.
 - The Swift SDK now exposes named audited context resolution instead of
   requiring callers to construct its REST path through the generic helper.
+- The Swift SDK now fetches public capability discovery without bearer
+  credentials and fails closed on schema, privacy, URL, or API-root drift.
 - The application layer now defines a bounded, authorized memory-import batch
   that re-admits external content as destination-scoped proposals with fresh
   identities and contiguous canonical events through an atomic repository

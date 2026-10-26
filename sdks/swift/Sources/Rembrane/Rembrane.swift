@@ -1,4 +1,5 @@
 import Foundation
+import CoreFoundation
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
@@ -75,6 +76,17 @@ public struct PortableImportResult: Decodable, Equatable, Sendable {
         self.imported = imported
         self.status = status
     }
+}
+
+public struct MemoryDiscovery: Sendable {
+    public let providerID: String
+    public let providerName: String
+    public let protocolVersions: [String]
+    public let apiEndpoint: URL
+    public let processingModes: [String]
+    public let importFormats: [String]
+    public let exportFormats: [String]
+    public let rawDocument: Data
 }
 
 public enum ChannelProcessorChannel: String, Codable, Sendable {
@@ -315,6 +327,38 @@ public struct RembraneClient<Transport: RembraneTransport>: Sendable {
         as responseType: Response.Type = Response.self
     ) async throws -> Response {
         try await execute(method: "POST", path: path, body: encoder.encode(request), as: responseType)
+    }
+
+    public func discover() async throws -> MemoryDiscovery {
+        guard var components = URLComponents(
+            url: baseURL,
+            resolvingAgainstBaseURL: false
+        ) else {
+            throw Self.invalidDiscovery()
+        }
+        components.path = "/.well-known/ai-memory"
+        components.query = nil
+        components.fragment = nil
+        guard let url = components.url else {
+            throw Self.invalidDiscovery()
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        let response = try await transport.send(
+            request,
+            maximumResponseBytes: maximumResponseBytes
+        )
+        try enforceResponseLimit(response)
+        guard (200..<300).contains(response.status),
+              response.header("content-type").lowercased()
+                .hasPrefix("application/json") else {
+            if !(200..<300).contains(response.status) {
+                throw problem(from: response)
+            }
+            throw Self.invalidDiscovery()
+        }
+        return try Self.validateDiscovery(response.body, expectedAPI: baseURL)
     }
 
     public func createWorkspaceInvitation<Request: Encodable, Response: Decodable>(
@@ -808,6 +852,252 @@ public struct RembraneClient<Transport: RembraneTransport>: Sendable {
                 message: "\(field) must be a bounded opaque identifier"
             )
         }
+    }
+
+    private static func validateDiscovery(
+        _ data: Data,
+        expectedAPI: URL
+    ) throws -> MemoryDiscovery {
+        guard let root = try? JSONSerialization.jsonObject(with: data),
+              let document = root as? [String: Any],
+              hasOnlyKeys(
+                document,
+                allowed: [
+                    "provider", "protocolVersions", "endpoints", "capabilities",
+                    "limits", "privacy", "extensions",
+                ]
+              ),
+              let provider = document["provider"] as? [String: Any],
+              hasOnlyKeys(
+                provider,
+                allowed: ["id", "name", "implementation"]
+              ),
+              let providerID = provider["id"] as? String,
+              boundedText(providerID),
+              let providerName = provider["name"] as? String,
+              boundedText(providerName),
+              optionalBoundedText(provider, key: "implementation"),
+              let versions = uniqueStrings(document["protocolVersions"]),
+              !versions.isEmpty,
+              versions.allSatisfy(validProtocolVersion),
+              let endpoints = document["endpoints"] as? [String: Any],
+              hasOnlyKeys(
+                endpoints,
+                allowed: ["api", "oauthAuthorization", "oauthToken", "mcp"]
+              ),
+              let apiText = endpoints["api"] as? String,
+              normalizedAPIRoot(apiText) == normalizedAPIRoot(expectedAPI.absoluteString),
+              optionalAbsoluteURL(
+                endpoints,
+                key: "oauthAuthorization",
+                requireHTTPS: true
+              ),
+              optionalAbsoluteURL(
+                endpoints,
+                key: "oauthToken",
+                requireHTTPS: true
+              ),
+              optionalAbsoluteURL(endpoints, key: "mcp", requireHTTPS: false),
+              let apiEndpoint = URL(string: apiText),
+              let capabilities = document["capabilities"] as? [String: Any],
+              hasOnlyKeys(
+                capabilities,
+                allowed: [
+                    "contextResolution", "questionResolution", "memoryProposal",
+                    "activityCheckpoint", "disclosureReceipt",
+                    "deletionPropagation", "sync", "imports", "exports",
+                ]
+              ),
+              requiredBooleans(
+                capabilities,
+                keys: [
+                    "contextResolution", "memoryProposal", "activityCheckpoint",
+                    "disclosureReceipt", "deletionPropagation",
+                ]
+              ),
+              optionalBooleans(
+                capabilities,
+                keys: ["questionResolution", "sync"]
+              ),
+              optionalUniqueStrings(capabilities, key: "imports"),
+              optionalUniqueStrings(capabilities, key: "exports"),
+              validLimits(document["limits"]),
+              let privacy = document["privacy"] as? [String: Any],
+              hasOnlyKeys(
+                privacy,
+                allowed: [
+                    "processingModes", "disclosureReceipts",
+                    "plaintextProcessingLocation",
+                ]
+              ),
+              privacy["disclosureReceipts"] as? Bool == true,
+              let modes = uniqueStrings(privacy["processingModes"]),
+              !modes.isEmpty,
+              modes.allSatisfy(
+                Set(["hosted", "customer-gateway", "local-only"]).contains
+              ),
+              validPlaintextLocation(privacy),
+              validExtensions(document["extensions"])
+        else {
+            throw invalidDiscovery()
+        }
+        return MemoryDiscovery(
+            providerID: providerID,
+            providerName: providerName,
+            protocolVersions: versions,
+            apiEndpoint: apiEndpoint,
+            processingModes: modes,
+            importFormats: uniqueStrings(capabilities["imports"]) ?? [],
+            exportFormats: uniqueStrings(capabilities["exports"]) ?? [],
+            rawDocument: data
+        )
+    }
+
+    private static func hasOnlyKeys(
+        _ object: [String: Any],
+        allowed: Set<String>
+    ) -> Bool {
+        Set(object.keys).isSubset(of: allowed)
+    }
+
+    private static func boundedText(_ value: String) -> Bool {
+        !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && value.utf8.count <= 255
+    }
+
+    private static func optionalBoundedText(
+        _ object: [String: Any],
+        key: String
+    ) -> Bool {
+        guard let value = object[key] else { return true }
+        guard let text = value as? String else { return false }
+        return text.utf8.count <= 255
+    }
+
+    private static func uniqueStrings(_ value: Any?) -> [String]? {
+        guard let values = value as? [Any],
+              values.allSatisfy({ $0 is String }) else {
+            return nil
+        }
+        let strings = values.compactMap { $0 as? String }
+        return Set(strings).count == strings.count ? strings : nil
+    }
+
+    private static func validProtocolVersion(_ value: String) -> Bool {
+        value.range(
+            of: #"^[0-9]+\.[0-9]+$"#,
+            options: .regularExpression
+        ) != nil
+    }
+
+    private static func normalizedAPIRoot(_ value: String) -> String? {
+        guard let url = URL(string: value),
+              let scheme = url.scheme,
+              let host = url.host,
+              url.user == nil,
+              url.password == nil,
+              url.query == nil,
+              url.fragment == nil,
+              url.path.hasSuffix("/v1") else {
+            return nil
+        }
+        let loopback = ["localhost", "127.0.0.1", "::1"].contains(host)
+        guard scheme == "https" || (scheme == "http" && loopback) else {
+            return nil
+        }
+        return url.absoluteString.trimmingCharacters(
+            in: CharacterSet(charactersIn: "/")
+        )
+    }
+
+    private static func optionalAbsoluteURL(
+        _ object: [String: Any],
+        key: String,
+        requireHTTPS: Bool
+    ) -> Bool {
+        guard let value = object[key] else { return true }
+        guard let text = value as? String,
+              let url = URL(string: text),
+              url.host != nil,
+              !requireHTTPS || url.scheme == "https" else {
+            return false
+        }
+        return true
+    }
+
+    private static func requiredBooleans(
+        _ object: [String: Any],
+        keys: Set<String>
+    ) -> Bool {
+        keys.allSatisfy { object[$0] is Bool }
+    }
+
+    private static func optionalBooleans(
+        _ object: [String: Any],
+        keys: Set<String>
+    ) -> Bool {
+        keys.allSatisfy { object[$0] == nil || object[$0] is Bool }
+    }
+
+    private static func optionalUniqueStrings(
+        _ object: [String: Any],
+        key: String
+    ) -> Bool {
+        object[key] == nil || uniqueStrings(object[key]) != nil
+    }
+
+    private static func validLimits(_ value: Any?) -> Bool {
+        guard let value else { return true }
+        guard let limits = value as? [String: Any],
+              hasOnlyKeys(
+                limits,
+                allowed: [
+                    "maximumContextItems", "maximumContextBytes",
+                    "maximumEventBytes",
+                ]
+              ) else {
+            return false
+        }
+        return limits.values.allSatisfy {
+            guard let number = $0 as? NSNumber,
+                  CFGetTypeID(number) != CFBooleanGetTypeID() else {
+                return false
+            }
+            return number.int64Value > 0
+                && NSNumber(value: number.int64Value) == number
+        }
+    }
+
+    private static func validPlaintextLocation(
+        _ privacy: [String: Any]
+    ) -> Bool {
+        guard let value = privacy["plaintextProcessingLocation"] else {
+            return true
+        }
+        guard let location = value as? String else { return false }
+        return Set([
+            "provider", "customer-gateway", "user-device", "mode-dependent",
+        ]).contains(location)
+    }
+
+    private static func validExtensions(_ value: Any?) -> Bool {
+        guard let value else { return true }
+        guard let extensions = value as? [String: Any] else { return false }
+        return extensions.keys.allSatisfy {
+            $0.range(
+                of: #"^[a-z0-9][a-z0-9.-]+/[A-Za-z0-9._-]+$"#,
+                options: .regularExpression
+            ) != nil
+        }
+    }
+
+    private static func invalidDiscovery() -> RembraneAPIError {
+        RembraneAPIError(
+            status: 200,
+            code: "invalid_discovery",
+            message:
+                "Provider discovery was invalid or did not match the configured API"
+        )
     }
 }
 
