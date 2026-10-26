@@ -208,6 +208,6 @@ mod tests {
             error,
             ApplicationError::Validation(_) | ApplicationError::AccessDenied
         ));
-        assert!(repository.mutations.is_empty());
+        assert_eq!(repository.mutations.len(), 0);
     }
 }
