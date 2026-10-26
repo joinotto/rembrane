@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use rembrane_contracts::{
     RemoteMcpRequestAuthorization, RemoteSessionBinding, RemoteSessionId, VerifiedRemoteAccess,
@@ -18,7 +18,14 @@ pub enum RemoteSessionHttpError {
 
 pub struct RemoteSessionRegistry {
     sessions: BTreeMap<RemoteSessionId, RemoteSessionBinding>,
+    pending_initializations: BTreeSet<u64>,
+    next_reservation_id: u64,
     maximum_sessions: usize,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct RemoteSessionReservation {
+    id: u64,
 }
 
 impl RemoteSessionRegistry {
@@ -35,8 +42,89 @@ impl RemoteSessionRegistry {
         }
         Ok(Self {
             sessions: BTreeMap::new(),
+            pending_initializations: BTreeSet::new(),
+            next_reservation_id: 1,
             maximum_sessions,
         })
+    }
+
+    /// Reserves one anonymous initialization slot before an SDK-generated
+    /// session identifier exists.
+    ///
+    /// The move-only reservation must be consumed by
+    /// [`Self::commit_reservation`] or [`Self::cancel_reservation`].
+    ///
+    /// # Errors
+    ///
+    /// Returns `StorageUnavailable` when live sessions plus pending
+    /// initializations reach the configured bound, or reservation identifiers
+    /// can no longer be generated safely.
+    pub fn reserve_initialization(
+        &mut self,
+        now_epoch_seconds: u64,
+    ) -> Result<RemoteSessionReservation, ApplicationError> {
+        self.prune_expired(now_epoch_seconds);
+        if self
+            .sessions
+            .len()
+            .saturating_add(self.pending_initializations.len())
+            >= self.maximum_sessions
+        {
+            return Err(ApplicationError::StorageUnavailable);
+        }
+        let id = self.next_reservation_id;
+        self.next_reservation_id = self
+            .next_reservation_id
+            .checked_add(1)
+            .ok_or(ApplicationError::StorageUnavailable)?;
+        if !self.pending_initializations.insert(id) {
+            return Err(ApplicationError::StorageUnavailable);
+        }
+        Ok(RemoteSessionReservation { id })
+    }
+
+    /// Commits an SDK-generated session into its previously reserved slot.
+    ///
+    /// The reservation is consumed even when the generated identifier
+    /// conflicts, preventing failed initialization from leaking capacity.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AccessDenied` for a foreign or already consumed reservation,
+    /// `AlreadyExists` for an identifier collision, or the normal bounded
+    /// registry error.
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn commit_reservation(
+        &mut self,
+        reservation: RemoteSessionReservation,
+        session_id: RemoteSessionId,
+        access: &VerifiedRemoteAccess,
+        now_epoch_seconds: u64,
+    ) -> Result<(), ApplicationError> {
+        let RemoteSessionReservation { id } = reservation;
+        if !self.pending_initializations.remove(&id) {
+            return Err(ApplicationError::AccessDenied);
+        }
+        self.establish(session_id, access, now_epoch_seconds)
+    }
+
+    /// Releases one pending SDK initialization slot without creating a
+    /// session.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AccessDenied` for a foreign or already consumed reservation.
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn cancel_reservation(
+        &mut self,
+        reservation: RemoteSessionReservation,
+    ) -> Result<(), ApplicationError> {
+        let RemoteSessionReservation { id } = reservation;
+        if self.pending_initializations.remove(&id) {
+            Ok(())
+        } else {
+            Err(ApplicationError::AccessDenied)
+        }
     }
 
     /// Establishes a session bound to one verified authorization context.
@@ -55,7 +143,12 @@ impl RemoteSessionRegistry {
         if self.sessions.contains_key(&session_id) {
             return Err(ApplicationError::AlreadyExists);
         }
-        if self.sessions.len() >= self.maximum_sessions {
+        if self
+            .sessions
+            .len()
+            .saturating_add(self.pending_initializations.len())
+            >= self.maximum_sessions
+        {
             return Err(ApplicationError::StorageUnavailable);
         }
         self.sessions.insert(session_id, access.session_binding());
@@ -387,6 +480,11 @@ impl RemoteSessionRegistry {
     pub fn is_empty(&self) -> bool {
         self.sessions.is_empty()
     }
+
+    #[must_use]
+    pub fn pending_initializations(&self) -> usize {
+        self.pending_initializations.len()
+    }
 }
 
 impl From<RemoteHttpAuthorizationError> for RemoteSessionHttpError {
@@ -491,6 +589,59 @@ mod tests {
             .terminate(&first, &access, 1_100)
             .expect("bound access should terminate session");
         assert!(registry.is_empty());
+    }
+
+    #[test]
+    fn anonymous_initialization_reservations_bound_and_release_capacity() {
+        let access = access("workspace_01", &[RemoteAccessScope::ContextRead]);
+        let session = RemoteSessionId::new("session_reserved_0123456789")
+            .expect("session id should be valid");
+        let mut registry = RemoteSessionRegistry::new(1).expect("capacity should be valid");
+        let reservation = registry
+            .reserve_initialization(1_000)
+            .expect("first initialization should reserve capacity");
+        assert_eq!(registry.pending_initializations(), 1);
+        assert_eq!(
+            registry
+                .establish(session.clone(), &access, 1_000)
+                .expect_err("normal establishment must respect pending capacity"),
+            ApplicationError::StorageUnavailable
+        );
+        registry
+            .commit_reservation(reservation, session.clone(), &access, 1_000)
+            .expect("reserved initialization should commit");
+        assert_eq!(registry.pending_initializations(), 0);
+        assert_eq!(registry.len(), 1);
+
+        registry
+            .terminate(&session, &access, 1_001)
+            .expect("committed session should terminate");
+        let cancelled = registry
+            .reserve_initialization(1_002)
+            .expect("released capacity should reserve again");
+        registry
+            .cancel_reservation(cancelled)
+            .expect("cancelled initialization should release capacity");
+        assert_eq!(registry.pending_initializations(), 0);
+        registry
+            .establish(session.clone(), &access, 1_003)
+            .expect("cancelled reservation must leave capacity reusable");
+
+        let mut collision_registry =
+            RemoteSessionRegistry::new(2).expect("collision capacity should be valid");
+        collision_registry
+            .establish(session.clone(), &access, 1_004)
+            .expect("collision fixture session should establish");
+        let collision = collision_registry
+            .reserve_initialization(1_004)
+            .expect("collision fixture should reserve");
+        assert_eq!(
+            collision_registry
+                .commit_reservation(collision, session, &access, 1_004)
+                .expect_err("duplicate generated ID must fail"),
+            ApplicationError::AlreadyExists
+        );
+        assert_eq!(collision_registry.pending_initializations(), 0);
     }
 
     #[test]

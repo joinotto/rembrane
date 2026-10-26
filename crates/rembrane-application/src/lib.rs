@@ -86,7 +86,7 @@ pub use remote_access::{
     RemoteAccessAuthenticator, RemoteHttpAuthorization, RemoteHttpAuthorizationError,
     RemoteTokenVerificationError, RemoteTokenVerifier,
 };
-pub use remote_session::{RemoteSessionHttpError, RemoteSessionRegistry};
+pub use remote_session::{RemoteSessionHttpError, RemoteSessionRegistry, RemoteSessionReservation};
 pub use resolve_context::{ResolveContextCommand, ResolveContextService};
 pub use retention::{
     ExecuteRetentionPurgeCommand, PlaceLegalHoldCommand, ReleaseLegalHoldCommand,

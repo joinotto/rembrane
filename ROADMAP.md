@@ -497,6 +497,9 @@ This roadmap describes sequencing, not release dates.
   - [ ] Serve Streamable HTTP through the official Rust MCP SDK.
     - [x] Authorize protocol-correct sessionless initialize requests without
       reserving a client-supplied ID before the official SDK response.
+      - [x] Bound concurrent downstream initialization with anonymous,
+        move-only capacity reservations that never trust a client-supplied
+        session identifier.
       - [x] Commit only the official SDK response session ID against the exact
         verified tenant with bounded duplicate and capacity enforcement.
         - [x] Compensate a capacity-rejected local session commit by

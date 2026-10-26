@@ -44,6 +44,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - The remote MCP OAuth gate can now issue a consuming sessionless initialize
   proof without reserving a client-supplied session ID, preparing the official
   SDK-generated response ID for confirmed binding.
+- The bounded session registry now supports anonymous move-only initialization
+  reservations, preventing concurrent SDK work from exceeding configured
+  capacity before generated session identifiers exist.
 - The remote MCP gate can now commit a validated official-SDK response session
   ID to the exact verified tenant with duplicate, capacity, and replay denial.
 - Confirmed remote MCP initialization now compensates capacity rejection by
