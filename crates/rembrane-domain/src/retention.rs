@@ -5,10 +5,23 @@ use crate::{LegalHoldId, PrincipalId, WorkspaceId};
 
 pub const MAX_RETENTION_DAYS: u32 = 36_500;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Eq, PartialEq)]
 pub enum RetentionPeriod {
     Days(u32),
     Forever,
+}
+
+impl fmt::Debug for RetentionPeriod {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let kind = match self {
+            Self::Days(_) => "finite",
+            Self::Forever => "forever",
+        };
+        formatter
+            .debug_struct("RetentionPeriod")
+            .field("kind", &kind)
+            .finish()
+    }
 }
 
 impl RetentionPeriod {
@@ -91,7 +104,7 @@ impl Display for LegalHoldError {
 
 impl Error for LegalHoldError {}
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct WorkspaceLegalHold {
     id: LegalHoldId,
     workspace_id: WorkspaceId,
@@ -101,6 +114,25 @@ pub struct WorkspaceLegalHold {
     version: u64,
     released_by: Option<PrincipalId>,
     released_at_epoch_seconds: Option<u64>,
+}
+
+impl fmt::Debug for WorkspaceLegalHold {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("WorkspaceLegalHold")
+            .field("id", &"<redacted>")
+            .field("workspace_id", &"<redacted>")
+            .field("placed_by", &"<redacted>")
+            .field("placed_at_epoch_seconds", &"<redacted>")
+            .field("status", &self.status)
+            .field("version", &self.version)
+            .field("released_by_present", &self.released_by.is_some())
+            .field(
+                "released_at_epoch_seconds_present",
+                &self.released_at_epoch_seconds.is_some(),
+            )
+            .finish()
+    }
 }
 
 impl WorkspaceLegalHold {
@@ -252,7 +284,7 @@ impl Display for RetentionPolicyError {
 
 impl Error for RetentionPolicyError {}
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct WorkspaceRetentionPolicy {
     workspace_id: WorkspaceId,
     version: u64,
@@ -264,6 +296,21 @@ pub struct WorkspaceRetentionPolicy {
     administrative_audit: RetentionPeriod,
 }
 
+impl fmt::Debug for WorkspaceRetentionPolicy {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("WorkspaceRetentionPolicy")
+            .field("workspace_id", &"<redacted>")
+            .field("version", &self.version)
+            .field("user_memory", &self.user_memory)
+            .field("activity_checkpoint", &self.activity_checkpoint)
+            .field("travel_research", &self.travel_research)
+            .field("disclosure_receipt", &self.disclosure_receipt)
+            .field("canonical_event", &self.canonical_event)
+            .field("administrative_audit", &self.administrative_audit)
+            .finish()
+    }
+}
 impl WorkspaceRetentionPolicy {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -424,5 +471,54 @@ mod tests {
             released.clone().release(PrincipalId::new("owner_01"), 300),
             Err(LegalHoldError::AlreadyReleased)
         );
+    }
+
+    #[test]
+    fn debug_output_redacts_retention_schedule_and_legal_hold_routing() {
+        let policy = WorkspaceRetentionPolicy::new(
+            WorkspaceId::new("private_workspace"),
+            3,
+            RetentionPeriod::days(31).expect("memory period"),
+            RetentionPeriod::days(8).expect("checkpoint period"),
+            RetentionPeriod::days(15).expect("travel period"),
+            RetentionPeriod::days(91).expect("disclosure period"),
+            RetentionPeriod::days(366).expect("event period"),
+            RetentionPeriod::Forever,
+        )
+        .expect("policy should validate");
+        let hold = WorkspaceLegalHold::active(
+            LegalHoldId::new("private_hold"),
+            WorkspaceId::new("private_workspace"),
+            PrincipalId::new("private_placer"),
+            1_900_000_001,
+        )
+        .expect("hold should validate")
+        .release(PrincipalId::new("private_releaser"), 1_900_000_999)
+        .expect("hold should release");
+
+        let diagnostic = format!("{policy:?} {hold:?}");
+
+        for private_value in [
+            "private_workspace",
+            "private_hold",
+            "private_placer",
+            "private_releaser",
+            "1900000001",
+            "1900000999",
+            "Days(31)",
+            "Days(8)",
+            "Days(15)",
+            "Days(91)",
+            "Days(366)",
+        ] {
+            assert!(!diagnostic.contains(private_value));
+        }
+        assert!(diagnostic.contains("version: 3"));
+        assert!(diagnostic.contains("kind: \"finite\""));
+        assert!(diagnostic.contains("kind: \"forever\""));
+        assert!(diagnostic.contains("status: Released"));
+        assert!(diagnostic.contains("version: 2"));
+        assert!(diagnostic.contains("released_by_present: true"));
+        assert!(diagnostic.contains("released_at_epoch_seconds_present: true"));
     }
 }

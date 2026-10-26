@@ -1115,6 +1115,8 @@ This roadmap describes sequencing, not release dates.
 - [x] Organizational audit and retention controls.
   - [x] Redact workspace, principal, membership, grant, and exact scope
     identities from authorization diagnostics.
+  - [x] Redact exact retention schedules, legal-hold routing identities,
+    actors, and timestamps from diagnostics.
   - [x] Define an immutable bounded content-free administrative audit event
     contract with tenant, actor, closed action, opaque target, request
     correlation, and occurrence time.
