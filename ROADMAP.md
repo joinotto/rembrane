@@ -69,6 +69,10 @@ This roadmap describes sequencing, not release dates.
   owner-only Unix permissions without modifying existing parent directories.
 - [x] Create encrypted backup exports and restored databases atomically with
   owner-only permissions and durable file synchronization.
+  - [x] Retain opened-file identity through export and restore validation,
+    refusing destructive cleanup when a protected path is replaced.
+  - [x] Read temporary snapshot size and contents through the same opened file
+    and remove only that exact snapshot identity after export.
 - [x] Enforce provider-registry input bounds while streaming file contents,
   including files that change after metadata validation.
 - [x] Add an executable encrypted CLI lifecycle smoke test.

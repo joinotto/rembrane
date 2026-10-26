@@ -1367,18 +1367,7 @@ fn backup(arguments: &[String]) -> Result<(), String> {
             .map_err(|error| format!("cannot create snapshot: {error}"))?;
         write_export(&temporary, destination)
     })();
-    let cleanup_result = if temporary.exists() {
-        std::fs::remove_file(&temporary)
-            .map_err(|error| format!("cannot remove temporary snapshot: {error}"))
-    } else {
-        Ok(())
-    };
-    if let Err(error) = result {
-        let _ = std::fs::remove_file(destination);
-        cleanup_result?;
-        return Err(error);
-    }
-    cleanup_result?;
+    result?;
 
     println!("Encrypted backup created");
     println!("Format: rembrane-encrypted-export-v{EXPORT_VERSION}");
@@ -1393,9 +1382,10 @@ fn restore(arguments: &[String]) -> Result<(), String> {
         return Err("restore destination already exists".to_owned());
     }
     create_parent_directory(destination)?;
-    read_export(source, destination)?;
+    let restored_file = read_export(source, destination)?;
 
     let result = (|| {
+        validate_open_file_path(destination, &restored_file)?;
         let principal_id = PrincipalId::new(option(arguments, "--principal")?);
         let workspace_id = WorkspaceId::new(option(arguments, "--workspace")?);
         let cipher = ConfiguredRecordCipher::from_environment()
@@ -1403,11 +1393,12 @@ fn restore(arguments: &[String]) -> Result<(), String> {
         let store = SqliteStore::open(destination)
             .map_err(|error| format!("cannot open restored database: {error}"))?
             .with_cipher(cipher);
+        validate_open_file_path(destination, &restored_file)?;
         verify_installation(&store, &workspace_id, &principal_id)
     })();
 
     if let Err(error) = result {
-        std::fs::remove_file(destination).map_err(|cleanup_error| {
+        remove_open_file_path(destination, &restored_file).map_err(|cleanup_error| {
             format!(
                 "{error}; additionally failed to remove invalid restore: \
                  {cleanup_error}"
@@ -1425,31 +1416,44 @@ fn restore(arguments: &[String]) -> Result<(), String> {
 fn write_export(snapshot: &std::path::Path, destination: &std::path::Path) -> Result<(), String> {
     use std::io::Write;
 
-    let payload_length = snapshot
+    let mut input =
+        std::fs::File::open(snapshot).map_err(|error| format!("cannot open snapshot: {error}"))?;
+    let payload_length = input
         .metadata()
         .map_err(|error| format!("cannot inspect snapshot: {error}"))?
         .len();
-    let mut input =
-        std::fs::File::open(snapshot).map_err(|error| format!("cannot open snapshot: {error}"))?;
     let mut output = private_create_new_options()
         .open(destination)
         .map_err(|error| format!("cannot create export: {error}"))?;
-    output
-        .write_all(EXPORT_MAGIC)
-        .and_then(|()| output.write_all(&EXPORT_VERSION.to_be_bytes()))
-        .and_then(|()| output.write_all(&payload_length.to_be_bytes()))
-        .map_err(|error| format!("cannot write export header: {error}"))?;
-    let copied = std::io::copy(&mut input, &mut output)
-        .map_err(|error| format!("cannot write export payload: {error}"))?;
-    if copied != payload_length {
-        return Err("snapshot changed while export was created".to_owned());
+    let result = (|| {
+        output
+            .write_all(EXPORT_MAGIC)
+            .and_then(|()| output.write_all(&EXPORT_VERSION.to_be_bytes()))
+            .and_then(|()| output.write_all(&payload_length.to_be_bytes()))
+            .map_err(|error| format!("cannot write export header: {error}"))?;
+        let copied = std::io::copy(&mut input, &mut output)
+            .map_err(|error| format!("cannot write export payload: {error}"))?;
+        if copied != payload_length {
+            return Err("snapshot changed while export was created".to_owned());
+        }
+        output
+            .sync_all()
+            .map_err(|error| format!("cannot persist export: {error}"))
+    })();
+    if let Err(error) = result {
+        let cleanup = remove_open_file_path(destination, &output);
+        let _ = remove_open_file_path(snapshot, &input);
+        cleanup?;
+        return Err(error);
     }
-    output
-        .sync_all()
-        .map_err(|error| format!("cannot persist export: {error}"))
+    remove_open_file_path(snapshot, &input)
+        .map_err(|error| format!("cannot remove temporary snapshot: {error}"))
 }
 
-fn read_export(source: &std::path::Path, destination: &std::path::Path) -> Result<(), String> {
+fn read_export(
+    source: &std::path::Path,
+    destination: &std::path::Path,
+) -> Result<std::fs::File, String> {
     use std::io::Read;
 
     let mut input =
@@ -1496,27 +1500,57 @@ fn read_export(source: &std::path::Path, destination: &std::path::Path) -> Resul
     let mut output = private_create_new_options()
         .open(destination)
         .map_err(|error| format!("cannot create restore destination: {error}"))?;
-    let copied = match std::io::copy(
-        &mut std::io::Read::by_ref(&mut input).take(payload_length),
-        &mut output,
-    ) {
-        Ok(copied) => copied,
-        Err(error) => {
-            drop(output);
-            let _ = std::fs::remove_file(destination);
-            return Err(format!("cannot restore export payload: {error}"));
+    let result = (|| {
+        let copied = std::io::copy(
+            &mut std::io::Read::by_ref(&mut input).take(payload_length),
+            &mut output,
+        )
+        .map_err(|error| format!("cannot restore export payload: {error}"))?;
+        if copied != payload_length {
+            return Err("export payload is truncated".to_owned());
         }
-    };
-    if copied != payload_length {
-        let _ = std::fs::remove_file(destination);
-        return Err("export payload is truncated".to_owned());
+        output
+            .sync_all()
+            .map_err(|error| format!("cannot persist restored database: {error}"))
+    })();
+    if let Err(error) = result {
+        remove_open_file_path(destination, &output)?;
+        return Err(error);
     }
-    if let Err(error) = output.sync_all() {
-        drop(output);
-        let _ = std::fs::remove_file(destination);
-        return Err(format!("cannot persist restored database: {error}"));
+    Ok(output)
+}
+
+#[cfg(unix)]
+fn validate_open_file_path(path: &std::path::Path, file: &std::fs::File) -> Result<(), String> {
+    use std::os::unix::fs::MetadataExt as _;
+
+    let opened = file
+        .metadata()
+        .map_err(|error| format!("cannot inspect opened file: {error}"))?;
+    let current = path
+        .symlink_metadata()
+        .map_err(|error| format!("cannot inspect file path: {error}"))?;
+    if current.file_type().is_symlink()
+        || opened.dev() != current.dev()
+        || opened.ino() != current.ino()
+    {
+        return Err("file path changed after protected creation".to_owned());
     }
     Ok(())
+}
+
+#[cfg(not(unix))]
+fn validate_open_file_path(path: &std::path::Path, _file: &std::fs::File) -> Result<(), String> {
+    if path.is_file() {
+        Ok(())
+    } else {
+        Err("file path changed after protected creation".to_owned())
+    }
+}
+
+fn remove_open_file_path(path: &std::path::Path, file: &std::fs::File) -> Result<(), String> {
+    validate_open_file_path(path, file)?;
+    std::fs::remove_file(path).map_err(|error| format!("cannot remove protected file: {error}"))
 }
 
 fn private_create_new_options() -> std::fs::OpenOptions {
@@ -3677,8 +3711,10 @@ mod tests {
         std::fs::write(&snapshot, payload).expect("snapshot should be written");
 
         write_export(&snapshot, &export).expect("export should be created");
-        read_export(&export, &restored).expect("export should restore");
+        let restored_file = read_export(&export, &restored).expect("export should restore");
+        drop(restored_file);
 
+        assert!(!snapshot.exists());
         assert_eq!(
             std::fs::read(&restored).expect("restore should be readable"),
             payload
@@ -3704,9 +3740,29 @@ mod tests {
                 0o600
             );
         }
-        std::fs::remove_file(snapshot).expect("snapshot should be removed");
         std::fs::remove_file(export).expect("export should be removed");
         std::fs::remove_file(restored).expect("restore should be removed");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn protected_cleanup_preserves_a_replaced_path() {
+        let original = temporary_path("cleanup-original");
+        let replacement = temporary_path("cleanup-replacement");
+        std::fs::write(&original, b"original").expect("original fixture");
+        std::fs::write(&replacement, b"replacement").expect("replacement fixture");
+        let opened = std::fs::File::open(&original).expect("open original");
+
+        std::fs::remove_file(&original).expect("unlink original");
+        std::fs::rename(&replacement, &original).expect("install replacement");
+
+        assert!(super::remove_open_file_path(&original, &opened).is_err());
+        assert_eq!(
+            std::fs::read(&original).expect("replacement should remain"),
+            b"replacement"
+        );
+
+        std::fs::remove_file(original).expect("fixture cleanup");
     }
 
     #[test]

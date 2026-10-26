@@ -15,6 +15,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Customer-KMS keyring initialization, verification, backup, and restore now
   bind protected paths to one device/inode identity, with replacement-safe
   cleanup for newly created databases.
+- CLI encrypted export and restore now retain opened-file identity through
+  validation and cleanup, preserve path replacements instead of deleting
+  them, and read snapshot size and content from the same file handle.
 - Remote MCP JSON-RPC request-ID classification now satisfies the
   warnings-as-errors production Clippy gate.
 - Protocol script syntax checks now select ES-module parsing explicitly,
