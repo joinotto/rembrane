@@ -77,6 +77,7 @@ jq empty \
     spec/channel-processor-acknowledgement.schema.json \
     spec/production-readiness.schema.json \
     spec/local-doctor.schema.json \
+    spec/cli-recall.schema.json \
     spec/mcp-client-catalog.schema.json \
     spec/memory-provider-compatibility-lock.json \
     spec/key-provider-compatibility-lock.json \
@@ -104,6 +105,7 @@ jq empty \
     spec/examples/production-readiness.json \
     spec/examples/local-doctor.json \
     spec/examples/local-doctor-failure.json \
+    spec/examples/cli-recall.json \
     spec/examples/memory-provider-discovery.json \
     spec/examples/memory-provider-context-request.json \
     spec/examples/memory-provider-context-response.json \
@@ -170,6 +172,21 @@ jq -e \
     and .properties.error.properties.code.const == "doctor_failed"
     and (.allOf | length) == 1
 ' spec/local-doctor.schema.json >/dev/null
+
+jq -e --slurpfile example spec/examples/cli-recall.json '
+    .additionalProperties == false
+    and .properties.schemaVersion.const == 1
+    and .properties.items.maxItems == 100
+    and ."$defs".item.additionalProperties == false
+    and ."$defs".item.properties.version.minimum == 1
+    and ."$defs".item.properties.content.maxLength == 262144
+    and ."x-rembrane-maximumContextBytes" == 1048576
+    and $example[0].schemaVersion == 1
+    and ($example[0].items | length) == 1
+    and $example[0].items[0].content == "Call me Hippo"
+' spec/cli-recall.schema.json >/dev/null
+rg -q '^const MAX_CLI_RECALL_ITEMS: usize = 100;$' apps/rembrane-cli/src/main.rs
+rg -q '^const MAX_CLI_RECALL_BYTES: usize = 1_048_576;$' apps/rembrane-cli/src/main.rs
 
 jq -e --slurpfile example spec/examples/customer-kms-conformance-evidence.json '
     .additionalProperties == false

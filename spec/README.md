@@ -76,6 +76,14 @@ the principal ID, workspace ID, key material, database path, or record content.
 Failures use a mutually exclusive generic error envelope and never include
 arbitrary internal diagnostic text.
 
+## CLI recall result
+
+`cli-recall.schema.json` defines the authorized context result emitted by
+`rembrane recall --json`. It carries bounded memory content with exact memory
+versions plus the context-pack and disclosure-receipt identifiers needed for
+auditing. The CLI enforces at most 100 items and 1 MiB of selected plaintext
+before storage-backed resolution.
+
 ## Provider adapter manifest
 
 `provider-manifest.schema.json` defines capability negotiation between the

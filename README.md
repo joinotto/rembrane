@@ -363,6 +363,24 @@ it never prints their values. The generic output follows the versioned
 `spec/stdio-connection-manifest.schema.json` contract for other apps, bots,
 launchers, and agent platforms.
 
+Generic launchers and bots can request an authorized structured context pack
+without parsing human CLI output:
+
+```sh
+target/debug/rembrane recall \
+  --database .rembrane/memory.sqlite \
+  --principal "$REMBRANE_PRINCIPAL_ID" \
+  --workspace "$REMBRANE_WORKSPACE_ID" \
+  --client generic-agent \
+  --purpose continue-project \
+  --query "What should I work on next?" \
+  --entity project_example \
+  --json
+```
+
+The result follows `spec/cli-recall.schema.json` and includes the persisted
+disclosure receipt identifier.
+
 The local REST server additionally requires `REMBRANE_DATABASE`,
 `REMBRANE_PRINCIPAL_ID`, `REMBRANE_WORKSPACE_ID`, `REMBRANE_CLIENT_ID`, and
 `REMBRANE_API_TOKEN`. It listens on `127.0.0.1:8787` by default. Set

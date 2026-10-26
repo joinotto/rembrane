@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "contextPackId": "context_example_01",
+  "disclosureId": "disclosure_example_01",
+  "items": [
+    {
+      "memoryId": "memory_example_01",
+      "version": 1,
+      "content": "Call me Hippo"
+    }
+  ]
+}

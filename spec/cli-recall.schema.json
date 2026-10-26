@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rembrane.dev/spec/cli-recall.schema.json",
+  "title": "Rembrane CLI recall result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "contextPackId", "disclosureId", "items"],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "contextPackId": {
+      "$ref": "#/$defs/opaqueId"
+    },
+    "disclosureId": {
+      "$ref": "#/$defs/opaqueId"
+    },
+    "items": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "$ref": "#/$defs/item"
+      }
+    }
+  },
+  "$defs": {
+    "opaqueId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096,
+      "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+    },
+    "item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["memoryId", "version", "content"],
+      "properties": {
+        "memoryId": {
+          "$ref": "#/$defs/opaqueId"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "content": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 262144
+        }
+      }
+    }
+  },
+  "x-rembrane-maximumContextBytes": 1048576
+}
