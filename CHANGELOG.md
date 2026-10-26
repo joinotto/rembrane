@@ -20,6 +20,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   blockers; provider payload-size accumulation is also overflow-safe.
 - The normative Memory Provider schema now advertises the checkpoint list
   ceiling and is locked against drift with the canonical Rust invariant.
+- Canonical, CLI, and Memory Provider checkpoint contracts now consistently
+  reject whitespace-only or NUL-containing next steps and blockers.
 - CLI checkpoint and resume output now has a versioned JSON Schema, canonical
   example, protocol drift checks, and cross-agent continuity documentation
   tied to the canonical payload and collection bounds.

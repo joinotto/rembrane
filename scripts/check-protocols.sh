@@ -209,6 +209,8 @@ jq -e \
     and .properties.schemaVersion.const == 1
     and .properties.version.minimum == 1
     and ."$defs".textList.maxItems == 1024
+    and ."$defs".textList.items.minLength == 1
+    and ."$defs".textList.items.pattern == "^(?=.*\\S)[^\\u0000]+$"
     and ."x-rembrane-maximumCombinedListItems" == 1024
     and ."x-rembrane-maximumPayloadBytes" == 262144
     and .properties.error.properties.code.enum
@@ -233,6 +235,8 @@ rg -q '^pub const MAX_CHECKPOINT_PAYLOAD_BYTES: usize = 262_144;$' \
     crates/rembrane-domain/src/activity.rs
 jq -e '
     ."$defs".checkpointTextList.maxItems == 1024
+    and ."$defs".checkpointTextList.items.pattern
+        == "^(?=.*\\S)[^\\u0000]+$"
     and (
         ."$defs".checkpointActivityPayload.description
         | contains("at most 1024 combined items")

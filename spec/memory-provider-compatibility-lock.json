@@ -16,7 +16,7 @@
     },
     {
       "path": "spec/memory-provider.schema.json",
-      "sha256": "bc9938912445f42bc962506d1e7679850b657d4ddac1b185f2c7f39991726653"
+      "sha256": "8f9841438d63891fe744ad0bf081c32c9617d06dc0534b17d9e12e08801a9d5e"
     },
     {
       "path": "spec/memory-provider-openapi.yaml",

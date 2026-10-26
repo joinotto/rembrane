@@ -23,7 +23,9 @@ impl Display for CheckpointError {
             Self::EmptyGoal => formatter.write_str("activity goal must not be empty"),
             Self::EmptySummary => formatter.write_str("activity summary must not be empty"),
             Self::InvalidListItem => {
-                formatter.write_str("checkpoint list items must not be empty")
+                formatter.write_str(
+                    "checkpoint list items must not be empty or contain null characters",
+                )
             }
             Self::EmptyStateFingerprint => {
                 formatter.write_str("state fingerprint must not be empty")
@@ -294,7 +296,7 @@ fn validate_payload_size(
     if next_steps
         .iter()
         .chain(blockers)
-        .any(|item| item.trim().is_empty())
+        .any(|item| item.trim().is_empty() || item.contains('\0'))
     {
         return Err(CheckpointError::InvalidListItem);
     }
@@ -417,6 +419,15 @@ mod tests {
         .expect_err("empty checkpoint list item should fail");
 
         assert_eq!(error, super::CheckpointError::InvalidListItem);
+
+        let null_error = checkpoint()
+            .update(
+                "Summary",
+                Vec::new(),
+                vec!["blocked\0secret".to_owned()],
+            )
+            .expect_err("null checkpoint list item should fail");
+        assert_eq!(null_error, super::CheckpointError::InvalidListItem);
     }
 
     #[test]
