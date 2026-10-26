@@ -13,6 +13,7 @@ use crate::{CryptoError, EncryptedPayload, EncryptionContext, RecordCipher};
 pub const CURRENT_KEY_PROVIDER_PROTOCOL: KeyProviderProtocolVersion =
     KeyProviderProtocolVersion::new(0, 1);
 pub const MAX_KEY_PROVIDER_ALGORITHMS: usize = 32;
+pub const MAX_KEY_PROVIDER_PLAINTEXT_BYTES: usize = 1_048_576;
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct KeyProviderProtocolVersion {
@@ -74,6 +75,7 @@ impl KeyProviderManifest {
                 .enumerate()
                 .any(|(index, algorithm)| self.algorithms[..index].contains(algorithm))
             || self.maximum_plaintext_bytes == 0
+            || self.maximum_plaintext_bytes > MAX_KEY_PROVIDER_PLAINTEXT_BYTES
         {
             return Err(KeyProviderProtocolError::InvalidManifest);
         }
@@ -590,6 +592,13 @@ mod tests {
                 Err(KeyProviderProtocolError::InvalidManifest)
             );
         }
+
+        let mut excessive_plaintext = manifest();
+        excessive_plaintext.maximum_plaintext_bytes = super::MAX_KEY_PROVIDER_PLAINTEXT_BYTES + 1;
+        assert_eq!(
+            excessive_plaintext.validate(),
+            Err(KeyProviderProtocolError::InvalidManifest)
+        );
     }
 
     #[test]

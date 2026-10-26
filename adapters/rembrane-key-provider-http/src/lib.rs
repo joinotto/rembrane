@@ -7,7 +7,8 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use rembrane_crypto::{
     CryptoError, EncryptedPayload, EncryptionContext, KeyProviderManifest,
-    KeyProviderProtocolVersion, KeyProviderTransport, OpenRequest, RotateKeyRequest, SealRequest,
+    KeyProviderProtocolVersion, KeyProviderTransport, MAX_KEY_PROVIDER_PLAINTEXT_BYTES,
+    OpenRequest, RotateKeyRequest, SealRequest,
 };
 use rembrane_domain::{
     KeyRotationReceipt, MAX_KEY_ROTATION_RECIPIENTS, PrincipalId, ProviderId, WorkspaceId,
@@ -20,7 +21,6 @@ use zeroize::{Zeroize, Zeroizing};
 
 const MAXIMUM_RESPONSE_BYTES: u64 = 1_500_000;
 const MAXIMUM_REQUEST_BYTES: usize = 1_500_000;
-const MAXIMUM_ADVERTISED_PLAINTEXT_BYTES: usize = 1_048_576;
 
 pub struct HttpKeyProviderTransport {
     client: Client,
@@ -253,7 +253,7 @@ impl TryFrom<ManifestResponse> for KeyProviderManifest {
 
     fn try_from(wire: ManifestResponse) -> Result<Self, Self::Error> {
         if wire.protocol_version != "0.1"
-            || wire.maximum_plaintext_bytes > MAXIMUM_ADVERTISED_PLAINTEXT_BYTES
+            || wire.maximum_plaintext_bytes > MAX_KEY_PROVIDER_PLAINTEXT_BYTES
         {
             return Err(CryptoError::KeyUnavailable);
         }

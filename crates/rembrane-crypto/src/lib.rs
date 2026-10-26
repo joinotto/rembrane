@@ -20,7 +20,8 @@ pub const MAX_ENCRYPTION_NONCE_BYTES: usize = 64;
 pub use provider_protocol::{
     CURRENT_KEY_PROVIDER_PROTOCOL, KeyProviderCipher, KeyProviderManifest, KeyProviderPolicy,
     KeyProviderProtocolError, KeyProviderProtocolVersion, KeyProviderTransport,
-    MAX_KEY_PROVIDER_ALGORITHMS, OpenRequest, RotateKeyRequest, SealRequest,
+    MAX_KEY_PROVIDER_ALGORITHMS, MAX_KEY_PROVIDER_PLAINTEXT_BYTES, OpenRequest, RotateKeyRequest,
+    SealRequest,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

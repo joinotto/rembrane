@@ -230,6 +230,8 @@ This roadmap describes sequencing, not release dates.
         key-provider operation before transport dispatch.
     - [x] Bound untrusted manifest algorithm collections and require closed
       portable algorithm identifiers before capability negotiation.
+      - [x] Enforce the 1 MiB advertised plaintext ceiling in the core
+        protocol for every transport implementation.
     - [x] Bind rotation to the authenticated HTTP protocol and black-box
       provider conformance runner without exposing key material.
       - [x] Keep provider-bound seal-request plaintext in redacted,
