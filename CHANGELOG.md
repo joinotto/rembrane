@@ -20,6 +20,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Failed `doctor --json` runs now emit a generic machine-readable error code
   without serializing arbitrary internal errors, paths, tenant identities, key
   metadata, or provider diagnostics.
+- The local doctor schema now defines mutually exclusive success and generic
+  failure results, with canonical fixtures and protocol drift checks for both.
 - Remote MCP initialization tests now use the standard no-op waker and current
   idiomatic control flow, restoring strict Clippy compatibility on the latest
   supported Rust toolchain without changing authorization semantics.

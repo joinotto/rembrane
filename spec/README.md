@@ -73,6 +73,8 @@ can parse stdout directly.
 `rembrane doctor --json`. It reports authenticated local installation health,
 record counts, membership role, and secret-source categories without exposing
 the principal ID, workspace ID, key material, database path, or record content.
+Failures use a mutually exclusive generic error envelope and never include
+arbitrary internal diagnostic text.
 
 ## Provider adapter manifest
 

@@ -349,7 +349,8 @@ target/debug/rembrane recall \
 
 The JSON doctor result validates against `spec/local-doctor.schema.json` and
 omits principal and workspace identifiers so installers, launchers, agents,
-and bots can consume health without receiving tenant-routing metadata.
+and bots can consume health without receiving tenant-routing metadata. Failed
+checks exit non-zero and return only the closed `doctor_failed` JSON code.
 
 ## MCP client profile
 

@@ -387,6 +387,28 @@ then
     echo "doctor unexpectedly mixed JSON and privacy diagnostics" >&2
     exit 1
 fi
+doctor_failure="$test_directory/doctor-failure.json"
+doctor_failure_stderr="$test_directory/doctor-failure.stderr"
+if "$rembrane_binary" doctor \
+    --database "$test_directory/missing.sqlite" \
+    --principal principal_private \
+    --workspace workspace_private \
+    --json >"$doctor_failure" 2>"$doctor_failure_stderr"
+then
+    echo "doctor unexpectedly accepted a missing database" >&2
+    exit 1
+fi
+jq -e '
+    . == {
+        "schemaVersion": 1,
+        "ready": false,
+        "error": {"code": "doctor_failed"}
+    }
+    and ((tostring | contains("missing.sqlite")) | not)
+    and ((tostring | contains("principal_private")) | not)
+    and ((tostring | contains("workspace_private")) | not)
+' "$doctor_failure" >/dev/null
+test ! -s "$doctor_failure_stderr"
 
 project_remember_output=$(
     "$rembrane_binary" remember \

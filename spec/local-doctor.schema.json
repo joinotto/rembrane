@@ -4,18 +4,10 @@
   "title": "Rembrane local doctor result",
   "type": "object",
   "additionalProperties": false,
-  "required": [
-    "schemaVersion",
-    "ready",
-    "databaseSchema",
-    "membership",
-    "workspaceKey",
-    "authenticatedRecords",
-    "secretSources"
-  ],
+  "required": ["schemaVersion", "ready"],
   "properties": {
     "schemaVersion": { "const": 1 },
-    "ready": { "const": true },
+    "ready": { "type": "boolean" },
     "databaseSchema": { "const": "compatible" },
     "membership": {
       "type": "object",
@@ -53,6 +45,50 @@
         "minLength": 1,
         "maxLength": 128
       }
+    },
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code"],
+      "properties": {
+        "code": {
+          "const": "doctor_failed"
+        }
+      }
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "ready": { "const": true }
+        },
+        "required": ["ready"]
+      },
+      "then": {
+        "required": [
+          "databaseSchema",
+          "membership",
+          "workspaceKey",
+          "authenticatedRecords",
+          "secretSources"
+        ],
+        "not": {
+          "required": ["error"]
+        }
+      },
+      "else": {
+        "required": ["error"],
+        "not": {
+          "anyOf": [
+            { "required": ["databaseSchema"] },
+            { "required": ["membership"] },
+            { "required": ["workspaceKey"] },
+            { "required": ["authenticatedRecords"] },
+            { "required": ["secretSources"] }
+          ]
+        }
+      }
+    }
+  ]
 }

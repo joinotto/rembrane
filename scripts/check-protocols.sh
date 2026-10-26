@@ -103,6 +103,7 @@ jq empty \
     spec/examples/channel-processor-acknowledgement.json \
     spec/examples/production-readiness.json \
     spec/examples/local-doctor.json \
+    spec/examples/local-doctor-failure.json \
     spec/examples/memory-provider-discovery.json \
     spec/examples/memory-provider-context-request.json \
     spec/examples/memory-provider-context-response.json \
@@ -144,10 +145,12 @@ jq -e --slurpfile example spec/examples/production-readiness.json '
     and ($example[0].missing | length) > 0
 ' spec/production-readiness.schema.json >/dev/null
 
-jq -e --slurpfile example spec/examples/local-doctor.json '
+jq -e \
+    --slurpfile example spec/examples/local-doctor.json \
+    --slurpfile failure spec/examples/local-doctor-failure.json '
     .additionalProperties == false
     and .properties.schemaVersion.const == 1
-    and .properties.ready.const == true
+    and .properties.ready.type == "boolean"
     and .properties.databaseSchema.const == "compatible"
     and .properties.membership.properties.role.enum
         == ["owner", "admin", "member", "viewer"]
@@ -159,6 +162,13 @@ jq -e --slurpfile example spec/examples/local-doctor.json '
     and $example[0].membership.role == "owner"
     and ($example[0] | has("workspaceId") | not)
     and ($example[0] | has("principalId") | not)
+    and $failure[0] == {
+        "schemaVersion": 1,
+        "ready": false,
+        "error": {"code": "doctor_failed"}
+    }
+    and .properties.error.properties.code.const == "doctor_failed"
+    and (.allOf | length) == 1
 ' spec/local-doctor.schema.json >/dev/null
 
 jq -e --slurpfile example spec/examples/customer-kms-conformance-evidence.json '
