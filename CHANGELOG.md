@@ -15,6 +15,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Canonical working-memory checkpoints now reject more than 1,024 combined
   next-step and blocker entries, preventing tiny strings from bypassing the
   existing 256 KiB payload bound through collection overhead.
+- CLI checkpoint and resume output now has a versioned JSON Schema, canonical
+  example, protocol drift checks, and cross-agent continuity documentation
+  tied to the canonical payload and collection bounds.
 - `rembrane recall --json` now emits versioned structured memory items plus
   context-pack and disclosure-receipt IDs for generic bots, launchers, and
   agent runtimes without requiring human-output parsing.

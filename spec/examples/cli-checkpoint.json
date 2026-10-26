@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "checkpointId": "checkpoint_example_01",
+  "activityId": "activity_example_01",
+  "entityId": "project_example_01",
+  "goal": "Ship the central memory integration",
+  "summary": "The storage and MCP boundaries are implemented.",
+  "nextSteps": [
+    "Run the cross-tool continuity suite"
+  ],
+  "blockers": [],
+  "stateFingerprint": "git:abc123:clean",
+  "version": 2,
+  "stale": false,
+  "disclosureId": "disclosure_example_01"
+}

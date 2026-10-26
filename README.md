@@ -382,6 +382,11 @@ The result follows `spec/cli-recall.schema.json` and includes the persisted
 disclosure receipt identifier. Failed JSON recalls exit non-zero with only the
 closed `recall_failed` code.
 
+`rembrane checkpoint` and `rembrane resume` return the versioned
+`spec/cli-checkpoint.schema.json` working-memory document, allowing a new agent
+process to resume the exact activity, next steps, blockers, and state
+fingerprint while retaining the disclosure receipt.
+
 The local REST server additionally requires `REMBRANE_DATABASE`,
 `REMBRANE_PRINCIPAL_ID`, `REMBRANE_WORKSPACE_ID`, `REMBRANE_CLIENT_ID`, and
 `REMBRANE_API_TOKEN`. It listens on `127.0.0.1:8787` by default. Set

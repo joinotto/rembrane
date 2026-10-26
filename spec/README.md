@@ -86,6 +86,14 @@ before storage-backed resolution.
 Failures use a mutually exclusive generic envelope that never carries query,
 tenant-routing, storage, key, or downstream-provider diagnostic text.
 
+## CLI checkpoint and resume result
+
+`cli-checkpoint.schema.json` defines the versioned working-memory state emitted
+by both `rembrane checkpoint` and `rembrane resume`. It preserves activity and
+optional entity continuity, optimistic version, next steps, blockers, source
+state fingerprint, staleness, and the resume disclosure receipt. The canonical
+domain enforces a 256 KiB payload ceiling and 1,024 combined list items.
+
 ## Provider adapter manifest
 
 `provider-manifest.schema.json` defines capability negotiation between the
