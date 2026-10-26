@@ -30,7 +30,23 @@ The suite performs:
 3. Rust formatting, Clippy, unit, and integration tests;
 4. complete encrypted CLI lifecycle testing;
 5. MCP stdio initialization and tool invocation;
-6. REST authentication and tenant-isolation checks through Postman.
+6. CLI-to-fresh-MCP continuity for preferences, approved work traces, and
+   working-memory checkpoints, including exact-version disclosure receipts;
+7. REST authentication and tenant-isolation checks through Postman.
+
+Run just the local cross-tool handoff after building the binaries:
+
+```sh
+cargo build -p rembrane-cli -p rembrane-mcp
+./scripts/test-cross-tool-continuity.sh
+```
+
+This disposable encrypted scenario proves proposed observations stay out of
+confirmed-only recall, approval adds user-statement provenance, and a fresh
+agent recalls the confirmed version. Missing approval, wrong scope/key,
+foreign tenant routing, stale versions, and repeated confirmation must fail
+without modifying canonical memory, evidence, or audit events. The CLI
+lifecycle suite additionally rejects confirmation of a deleted observation.
 
 Provider authors should also run the shared Rust conformance harness against a
 disposable provider tenant:

@@ -1,6 +1,8 @@
 # Rembrane Roadmap
 
 This roadmap describes sequencing, not release dates.
+The gate-driven first-release execution plan and conditional timing estimate
+are in [First Production Release Plan](docs/PRODUCTION_PLAN.md).
 
 ## Phase 0 — Foundation
 
@@ -128,11 +130,27 @@ This roadmap describes sequencing, not release dates.
     before opening tenant storage.
   - [x] Validate recall purpose, query, scope selectors, and client identity
     against provider-compatible bounds before opening tenant storage.
+  - [x] Reject malformed and repeated memory-command value options before
+    dispatch so an invalid explicit scope or version cannot become a default.
+    - [x] Reject unrecognized flags, unsupported equals-value spellings, and
+      stray positional arguments before storage so typos cannot broaden scope.
+- [x] Expose exact-version proposal approval through the local encrypted CLI.
+  - [x] Require explicit review attestation, matching scope, subject ownership,
+    and canonical owner/admin confirmation permission.
+  - [x] Return versioned, secret-safe confirmation results with schema
+    fixtures and pre-storage input validation.
+  - [x] Prove unapproved work traces are excluded from recall, approval retains
+    observation provenance, and a fresh MCP client receives the confirmed
+    version with a durable disclosure receipt.
+  - [x] Reject denied, stale, repeated, wrong-key, and deleted-record approvals
+    without changing canonical memory, evidence, or events.
 - [x] Add encrypted CLI correction and deletion commands.
   - [x] Add structured, secret-safe correction and deletion results for
     cross-agent lifecycle synchronization.
   - [x] Prove structured correction and deletion success, stale-version
     rejection, version advancement, and secret-safe failures end to end.
+  - [x] Preserve every canonical memory kind in lifecycle results and prove
+    encrypted deletion of proposed observations returns the correct tombstone.
   - [x] Validate resume activity/client routing, disclosure purpose, and state
     fingerprint before opening tenant storage.
   - [x] Validate checkpoint routing, required create fields, list ceilings,
@@ -652,6 +670,8 @@ This roadmap describes sequencing, not release dates.
       service are all wired into the MCP application.
       - [x] Derive pinned SDK features and adapter dependencies from offline
         Cargo metadata and reject comment-only service-instantiation markers.
+      - [x] Require the detected official SDK service to compile from the
+        committed lockfile in offline mode before production readiness passes.
     - [x] Authorize protocol-correct sessionless initialize requests without
       reserving a client-supplied ID before the official SDK response.
       - [x] Bound concurrent downstream initialization with anonymous,
@@ -768,6 +788,13 @@ This roadmap describes sequencing, not release dates.
     PostgreSQL migrations in the static security gate.
   - [x] Document transaction-local tenant identity and non-owner,
     non-`BYPASSRLS` runtime-role requirements.
+    - [x] Verify restricted runtime authority before tenant setup and each
+      repository read/write, with opaque denial and rollback on proof failure
+      or role drift.
+    - [x] Share the exact runtime guard SQL with live PostgreSQL role,
+      ownership, forced-RLS, view, and search-path-shadowing fixtures.
+    - [ ] Execute the new runtime-authority SQL fixtures against PostgreSQL;
+      local driver-boundary unit tests do not substitute for this proof.
     - [x] Require prepared `set_config(..., $1, true)` tenant bootstrap,
       exact context read-back, and pooled-connection leakage coverage.
   - [x] Run a live PostgreSQL two-tenant CI proof covering scoped reads,

@@ -50,6 +50,7 @@ The platform owns identity, workspaces, encryption orchestration, canonical even
 
 ## Documents
 
+- [First Production Release Plan](docs/PRODUCTION_PLAN.md)
 - [Portable Memory Provider Client](docs/MEMORY_PROVIDER_CLIENT.md)
 - [TypeScript SDK](sdks/typescript/README.md)
 - [Python SDK](sdks/python/README.md)
@@ -391,14 +392,30 @@ only the closed `checkpoint_failed` or `resume_failed` code.
 Generic agents can record activity-scoped work through `rembrane trace --json`;
 the result follows `spec/cli-trace.schema.json` and returns the canonical
 proposed-memory ID without repeating the trace content or tenant routing.
+Proposals are excluded from confirmed-memory recall. After reviewing the
+recorded content, a local owner/admin can explicitly approve the exact version:
+
+```sh
+rembrane confirm --database ./rembrane.sqlite \
+  --principal principal_you --workspace workspace_personal \
+  --memory trace_from_capture --version 1 \
+  --activity activity_from_capture --approve --json
+```
+
+Use the proposal's actual identifiers and matching domain/entity/activity
+selector; omit the selector only for a global proposal. Confirmation advances
+the version and records user-statement evidence and an audit event. Fresh CLI
+and MCP clients with that scope can then recall the confirmed observation.
+`--approve` attests caller review; it is not human-presence verification and
+must not be supplied automatically by an untrusted agent.
 
 Assistants can persist an explicitly confirmed preference through
 `rembrane remember --json`; the result follows `spec/cli-remember.schema.json`
 and returns its canonical memory ID and version without echoing preference
 content or routing metadata. Failed operations return only `remember_failed`.
-The related `correct --json` and `forget --json` commands follow
-`spec/cli-memory-lifecycle.schema.json`, allowing another assistant to observe
-the new version or deletion without receiving the corrected content.
+The related `confirm --json`, `correct --json`, and `forget --json` commands
+follow `spec/cli-memory-lifecycle.schema.json`, allowing another assistant to
+observe the new version or deletion without receiving the memory content.
 
 The local REST server additionally requires `REMBRANE_DATABASE`,
 `REMBRANE_PRINCIPAL_ID`, `REMBRANE_WORKSPACE_ID`, `REMBRANE_CLIENT_ID`, and

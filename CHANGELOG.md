@@ -9,9 +9,24 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Fixed
 
+- PostgreSQL tenant transactions now require restricted runtime authority
+  before tenant initialization and each repository read/write. Unproven
+  authority or role drift fails closed, rolls back, and prevents further SQL.
+  The shared guard checks privileged/owner-role membership, forced RLS,
+  protected relation kinds, and search-path shadowing; live SQL fixtures
+  are added separately from local Rust boundary coverage.
+- Memory CLI commands now reject missing, blank, repeated, and unrecognized
+  options before dispatch, preventing malformed or misspelled explicit
+  entity/domain/activity selectors from silently broadening to global memory
+  or bypassing versions. Unknown positional arguments and unsupported
+  `--option=value` spellings also fail closed.
+- Structured CLI correction and deletion results now preserve the canonical
+  memory kind and status instead of relabelling every record as a preference.
+  Regression coverage includes encrypted deletion of a proposed work trace.
 - Official Streamable HTTP production readiness now inspects offline Cargo
   metadata for the exact pinned SDK feature and remote authorization adapter,
-  and rejects comment-only service-instantiation markers.
+  rejects comment-only service-instantiation markers, and requires the
+  detected service to compile from the locked offline dependency graph.
 - CLI checkpoint creation and update now validate activity/entity/client
   routing, required create goals, scalar and list text, the 1,024-item ceiling,
   and the 256 KiB aggregate payload bound before opening tenant storage.
@@ -415,6 +430,17 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- A gate-driven first-production execution plan documents verified local
+  progress, the remaining MCP/PostgreSQL runtime gaps, staging and recovery
+  testing, independent evidence requirements, and conditional release timing.
+- `rembrane confirm` exposes the existing canonical proposal-confirmation use
+  case through the local encrypted CLI. Approval requires `--approve`, the
+  exact version and scope, and owner/admin permission for the memory subject;
+  it atomically adds user-statement evidence and a confirmation audit event.
+- `rembrane confirm --json` returns the confirmed memory identity, version,
+  kind, and status with a closed `confirm_failed` envelope. Schema fixtures,
+  pre-storage validation, and CLI-to-fresh-MCP work-trace continuity tests
+  cover explicit consent, provenance, encryption, and exact-version disclosure.
 - The remote MCP OAuth gate can now issue a consuming sessionless initialize
   proof without reserving a client-supplied session ID, preparing the official
   SDK-generated response ID for confirmed binding.
