@@ -311,6 +311,12 @@ pub enum TenantServiceCacheError<FactoryError> {
     Factory(FactoryError),
 }
 
+#[derive(Clone)]
+struct CachedTenantService<Service> {
+    service: Service,
+    retain_until_epoch_seconds: u64,
+}
+
 /// Retains one tenant-pinned Tower service for the lifetime of its MCP
 /// transport sessions.
 ///
@@ -321,7 +327,7 @@ pub enum TenantServiceCacheError<FactoryError> {
 pub struct BoundedTenantTowerMcpServiceCache<Factory, Service> {
     factory: Factory,
     maximum_services: usize,
-    services: Arc<Mutex<BTreeMap<RemoteTenantServiceKey, Service>>>,
+    services: Arc<Mutex<BTreeMap<RemoteTenantServiceKey, CachedTenantService<Service>>>>,
 }
 
 impl<Factory, Service> BoundedTenantTowerMcpServiceCache<Factory, Service> {
@@ -354,6 +360,28 @@ impl<Factory, Service> BoundedTenantTowerMcpServiceCache<Factory, Service> {
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
+
+    /// Removes services whose latest validated token expiry has passed.
+    ///
+    /// The caller should use the same trusted clock supplied to remote token
+    /// validation. A cached service's retention deadline only extends when an
+    /// otherwise exact tenant and scope identity presents a later expiry.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if another thread poisoned the cache lock.
+    pub fn prune_expired(
+        &self,
+        now_epoch_seconds: u64,
+    ) -> Result<usize, TenantServiceCacheError<std::convert::Infallible>> {
+        let mut services = self
+            .services
+            .lock()
+            .map_err(|_| TenantServiceCacheError::LockUnavailable)?;
+        let previous = services.len();
+        services.retain(|_, cached| cached.retain_until_epoch_seconds > now_epoch_seconds);
+        Ok(previous.saturating_sub(services.len()))
+    }
 }
 
 impl<Factory, Service, FactoryError> AuthorizedTowerMcpServiceFactory
@@ -373,14 +401,23 @@ where
             .services
             .lock()
             .map_err(|_| TenantServiceCacheError::LockUnavailable)?;
-        if let Some(service) = services.get(&key) {
-            return Ok(service.clone());
+        if let Some(cached) = services.get_mut(&key) {
+            cached.retain_until_epoch_seconds = cached
+                .retain_until_epoch_seconds
+                .max(access.expires_at_epoch_seconds());
+            return Ok(cached.service.clone());
         }
         if services.len() >= self.maximum_services {
             return Err(TenantServiceCacheError::CapacityExceeded);
         }
         let service = (self.factory)(access).map_err(TenantServiceCacheError::Factory)?;
-        services.insert(key, service.clone());
+        services.insert(
+            key,
+            CachedTenantService {
+                service: service.clone(),
+                retain_until_epoch_seconds: access.expires_at_epoch_seconds(),
+            },
+        );
         Ok(service)
     }
 }
@@ -3497,6 +3534,9 @@ mod tests {
         assert_eq!(first_service, refreshed_service);
         assert_eq!(*builds.lock().expect("build count"), 1);
         assert_eq!(cache.len(), 1);
+        assert_eq!(cache.prune_expired(2_500).expect("prune cache"), 0);
+        assert_eq!(cache.prune_expired(3_000).expect("prune cache"), 1);
+        assert!(cache.is_empty());
     }
 
     #[test]
@@ -3526,6 +3566,11 @@ mod tests {
             Err(TenantServiceCacheError::CapacityExceeded)
         ));
         assert_eq!(cache.len(), 2);
+        assert_eq!(cache.prune_expired(2_000).expect("prune cache"), 2);
+        assert_eq!(
+            cache.create(&workspace_two).expect("reclaimed capacity"),
+            "workspace_02"
+        );
     }
 
     #[test]

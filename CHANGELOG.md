@@ -51,6 +51,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Tenant MCP service caching now constructs at most one service during
   concurrent first access and does not consume bounded capacity when service
   construction fails.
+- Tenant MCP service caching now tracks the maximum validated token expiry per
+  exact tenant and provides trusted-clock pruning, reclaiming capacity without
+  evicting services that may still back authorized sessions.
 - MCP connection identity is now encapsulated independently from storage and
   provider state, preparing the official Streamable HTTP handler to source
   tenant identity only from verified request extensions.

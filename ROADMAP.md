@@ -451,6 +451,8 @@ This roadmap describes sequencing, not release dates.
           rather than silently discarding live protocol session state.
         - [x] Serialize concurrent first construction per tenant and leave
           capacity reusable after a failed service build.
+        - [x] Track the latest validated token expiry per exact tenant service
+          and reclaim only entries whose authorization lifetime has ended.
     - [x] Add a consuming Tower dispatcher that reconstructs only validated
       MCP protocol headers, strips the bearer credential at the OAuth boundary,
       and injects verified tenant access into request extensions for the
