@@ -3,9 +3,9 @@ set -eu
 
 mode=${1:-available}
 case "$mode" in
-    available|--strict) ;;
+    available|--available|--strict) ;;
     *)
-        echo "usage: ./scripts/check-production-readiness.sh [available|--strict]" >&2
+        echo "usage: ./scripts/check-production-readiness.sh [available|--available|--strict]" >&2
         exit 2
         ;;
 esac
@@ -16,40 +16,59 @@ test "$mode" = "--strict" && strict=1
 ./scripts/check-local-alpha.sh --core
 
 missing=
-require_or_skip() {
+record_missing() {
     label=$1
-    available=$2
-    if [ "$available" = "1" ]; then
-        return 0
-    fi
     missing="${missing}${missing:+, }${label}"
-    return 1
 }
 
-if command -v postman >/dev/null 2>&1 &&
-    command -v cargo >/dev/null 2>&1 &&
-    command -v ruby >/dev/null 2>&1 &&
-    ruby -rsocket -e \
-        'server = TCPServer.new("127.0.0.1", 0); server.close' \
-        >/dev/null 2>&1 &&
-    cargo metadata --format-version 1 >/dev/null 2>&1
+all_suite_ready=1
+if ! command -v postman >/dev/null 2>&1; then
+    record_missing "Postman CLI"
+    all_suite_ready=0
+fi
+if ! command -v cargo >/dev/null 2>&1; then
+    record_missing "Cargo"
+    all_suite_ready=0
+elif ! cargo metadata --format-version 1 >/dev/null 2>&1; then
+    record_missing "Cargo dependency resolution"
+    all_suite_ready=0
+fi
+if ! command -v ruby >/dev/null 2>&1; then
+    record_missing "Ruby loopback probe"
+    all_suite_ready=0
+elif ! ruby -rsocket -e \
+    'server = TCPServer.new("127.0.0.1", 0); server.close' \
+    >/dev/null 2>&1
 then
+    record_missing "loopback bind permission"
+    all_suite_ready=0
+fi
+if [ "$all_suite_ready" = "1" ]; then
     ./scripts/test-all.sh
-else
-    require_or_skip "dependency-enabled Rust/Postman/loopback suite" 0 || true
 fi
 
-if command -v psql >/dev/null 2>&1 &&
-    [ -n "${REMBRANE_POSTGRES_URL:-}" ]
-then
+postgres_ready=1
+if ! command -v psql >/dev/null 2>&1; then
+    record_missing "PostgreSQL client"
+    postgres_ready=0
+fi
+if [ -z "${REMBRANE_POSTGRES_URL:-}" ]; then
+    record_missing "REMBRANE_POSTGRES_URL"
+    postgres_ready=0
+fi
+if [ "$postgres_ready" = "1" ]; then
     ./scripts/test-postgres-rls.sh
-else
-    require_or_skip "live PostgreSQL RLS suite" 0 || true
 fi
 
-if command -v docker >/dev/null 2>&1 &&
-    docker info >/dev/null 2>&1
-then
+docker_ready=1
+if ! command -v docker >/dev/null 2>&1; then
+    record_missing "Docker CLI"
+    docker_ready=0
+elif ! docker info >/dev/null 2>&1; then
+    record_missing "Docker daemon"
+    docker_ready=0
+fi
+if [ "$docker_ready" = "1" ]; then
     REMBRANE_PRINCIPAL_ID=principal_readiness \
     REMBRANE_WORKSPACE_ID=workspace_readiness \
     REMBRANE_CLIENT_ID=client_readiness \
@@ -58,8 +77,6 @@ then
     REMBRANE_API_TOKEN=token_readiness \
         docker compose config --quiet
     docker build --tag rembrane:readiness .
-else
-    require_or_skip "container build" 0 || true
 fi
 
 if [ -n "${REMBRANE_SECURITY_REVIEW_BUNDLE:-}" ] &&
@@ -71,14 +88,14 @@ then
         --verify-repository \
         --require-approval
 else
-    require_or_skip "independent security-review bundle" 0 || true
+    record_missing "independent security-review bundle"
 fi
 
 if [ -n "${REMBRANE_CUSTOMER_KMS_EVIDENCE_DIRECTORY:-}" ]; then
     node ./scripts/verify-customer-kms-provider-set.mjs \
         "$REMBRANE_CUSTOMER_KMS_EVIDENCE_DIRECTORY"
 else
-    require_or_skip "AWS/Azure/GCP customer-KMS evidence set" 0 || true
+    record_missing "AWS/Azure/GCP customer-KMS evidence set"
 fi
 
 if [ -n "${REMBRANE_MEMORY_PROVIDER_EVIDENCE_DIRECTORY:-}" ] &&
@@ -89,7 +106,7 @@ then
         "$REMBRANE_MEMORY_PROVIDER_EXTERNAL_PUBLIC_KEY" \
         --verify-repository
 else
-    require_or_skip "signed two-provider protocol release evidence set" 0 || true
+    record_missing "signed two-provider protocol release evidence set"
 fi
 
 if [ -n "$missing" ]; then

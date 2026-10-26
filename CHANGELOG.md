@@ -990,6 +990,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   across path encoding, database write, and post-write validation failures.
 - CLI initialization, backup, and restore now create new local storage
   directory components with owner-only Unix permissions.
+- Available-mode production readiness now reports exact missing prerequisites
+  instead of grouping Cargo, Postman, loopback, PostgreSQL, and Docker failures.
 - Ordered all-or-error provider credential resolution through any secret
   resolver, zeroizing already resolved values when a later reference fails.
 - A transport-injectable Mem0 OSS semantic adapter mapping authorized

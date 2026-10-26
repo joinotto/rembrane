@@ -28,10 +28,12 @@ signature valid under the separately supplied maintainer trust anchor; an
 `changes_required` remains inspectable, but strict readiness accepts only
 `approved` or `approved_with_accepted_risks`.
 
-`available` mode runs every usable gate and reports missing infrastructure. It
-probes loopback binding before starting transport tests, so restricted
-sandboxes report that suite as unavailable instead of failing midway. It is
-suitable during offline development but is not production approval.
+`available` (or `--available`) mode runs every usable gate and reports each
+missing prerequisite separately. It distinguishes Cargo dependency resolution,
+Postman, loopback binding, the PostgreSQL client and URL, and the Docker CLI
+and daemon. Restricted sandboxes therefore identify the exact unavailable
+capability instead of hiding it behind one grouped suite label. Available mode
+is suitable during offline development but is not production approval.
 
 Platform credentials and real WhatsApp/Apple integration accounts remain
 human or external-system release gates and cannot be self-certified by this
