@@ -250,10 +250,8 @@ const fn can_remove(actor: WorkspaceRole, target: WorkspaceRole) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{can_remove, RemoveMemberCommand};
-    use rembrane_domain::{
-        KeyRotationId, PrincipalId, WorkspaceId, WorkspaceRole,
-    };
+    use super::{RemoveMemberCommand, can_remove};
+    use rembrane_domain::{KeyRotationId, PrincipalId, WorkspaceId, WorkspaceRole};
 
     #[test]
     fn role_hierarchy_protects_owners_and_peer_admins() {

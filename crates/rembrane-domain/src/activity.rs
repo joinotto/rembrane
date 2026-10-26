@@ -24,20 +24,16 @@ impl Display for CheckpointError {
         match self {
             Self::EmptyGoal => formatter.write_str("activity goal must not be empty"),
             Self::EmptySummary => formatter.write_str("activity summary must not be empty"),
-            Self::InvalidListItem => {
-                formatter.write_str(
-                    "checkpoint list items must not be empty or contain null characters",
-                )
-            }
+            Self::InvalidListItem => formatter
+                .write_str("checkpoint list items must not be empty or contain null characters"),
             Self::EmptyStateFingerprint => {
                 formatter.write_str("state fingerprint must not be empty")
             }
             Self::InvalidText => {
                 formatter.write_str("checkpoint text must not contain null characters")
             }
-            Self::InvalidIdentifier => {
-                formatter.write_str("checkpoint identifiers must contain 1 to 255 safe ASCII characters")
-            }
+            Self::InvalidIdentifier => formatter
+                .write_str("checkpoint identifiers must contain 1 to 255 safe ASCII characters"),
             Self::PayloadTooLarge => {
                 formatter.write_str("checkpoint exceeds the canonical byte limit")
             }
@@ -297,17 +293,22 @@ fn validate_identifiers(
     activity_id: &ActivityId,
     entity_id: Option<&EntityId>,
 ) -> Result<(), CheckpointError> {
-    let valid = [id.as_str(), workspace_id.as_str(), subject_id.as_str(), activity_id.as_str()]
-        .into_iter()
-        .chain(entity_id.map(EntityId::as_str))
-        .all(|value| {
-            !value.is_empty()
-                && value.len() <= 255
-                && value.is_ascii()
-                && !value
-                    .bytes()
-                    .any(|byte| byte.is_ascii_control() || byte.is_ascii_whitespace())
-        });
+    let valid = [
+        id.as_str(),
+        workspace_id.as_str(),
+        subject_id.as_str(),
+        activity_id.as_str(),
+    ]
+    .into_iter()
+    .chain(entity_id.map(EntityId::as_str))
+    .all(|value| {
+        !value.is_empty()
+            && value.len() <= 255
+            && value.is_ascii()
+            && !value
+                .bytes()
+                .any(|byte| byte.is_ascii_control() || byte.is_ascii_whitespace())
+    });
     if valid {
         Ok(())
     } else {
@@ -473,11 +474,7 @@ mod tests {
         assert_eq!(error, super::CheckpointError::InvalidListItem);
 
         let null_error = checkpoint()
-            .update(
-                "Summary",
-                Vec::new(),
-                vec!["blocked\0secret".to_owned()],
-            )
+            .update("Summary", Vec::new(), vec!["blocked\0secret".to_owned()])
             .expect_err("null checkpoint list item should fail");
         assert_eq!(null_error, super::CheckpointError::InvalidListItem);
     }

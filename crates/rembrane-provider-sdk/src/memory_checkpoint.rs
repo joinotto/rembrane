@@ -299,8 +299,7 @@ fn validate_identifier(label: &str, value: &str) -> Result<(), ProviderError> {
 #[cfg(test)]
 mod tests {
     use rembrane_domain::{
-        ActivityId, CheckpointId, EntityId, MAX_CHECKPOINT_LIST_ITEMS,
-        MAX_CHECKPOINT_PAYLOAD_BYTES,
+        ActivityId, CheckpointId, EntityId, MAX_CHECKPOINT_LIST_ITEMS, MAX_CHECKPOINT_PAYLOAD_BYTES,
     };
 
     use super::{CheckpointActivityPayload, CheckpointActivityResult};
@@ -417,7 +416,10 @@ mod tests {
             None,
         );
 
-        assert!(matches!(result, Err(crate::ProviderError::InvalidConfiguration(_))));
+        assert!(matches!(
+            result,
+            Err(crate::ProviderError::InvalidConfiguration(_))
+        ));
     }
 
     #[test]

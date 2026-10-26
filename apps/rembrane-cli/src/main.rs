@@ -39,9 +39,9 @@ use rembrane_domain::{
 use rembrane_memory_provider_configured::ConfiguredMemoryProvider;
 use rembrane_provider_registry::{ProviderSelectionPolicy, VerifiedProviderRegistry};
 use rembrane_provider_sdk::{
-    CURRENT_MEMORY_PROVIDER_PROTOCOL, MemoryProviderCapability, MemoryProviderLimits,
-    MemoryProviderPolicy, MemoryProviderPrivacyMode, MemoryProviderTransport,
-    MAX_CONTEXT_PURPOSE_BYTES, MAX_CONTEXT_QUERY_BYTES,
+    CURRENT_MEMORY_PROVIDER_PROTOCOL, MAX_CONTEXT_PURPOSE_BYTES, MAX_CONTEXT_QUERY_BYTES,
+    MemoryProviderCapability, MemoryProviderLimits, MemoryProviderPolicy,
+    MemoryProviderPrivacyMode, MemoryProviderTransport,
     SEMANTIC_PROVIDER_CONFORMANCE_PROFILE_SHA256, SEMANTIC_PROVIDER_CONFORMANCE_SUITE_ID,
     SEMANTIC_PROVIDER_CONFORMANCE_SUITE_VERSION, SemanticProviderConformanceReport,
     verify_semantic_provider,
@@ -2836,13 +2836,7 @@ fn checkpoint(arguments: &[String]) -> Result<(), String> {
     if let Some(entity_id) = entity_id {
         validate_cli_opaque_id("entity", entity_id)?;
     }
-    validate_checkpoint_cli_input(
-        goal,
-        summary,
-        &next_steps,
-        &blockers,
-        state_fingerprint,
-    )?;
+    validate_checkpoint_cli_input(goal, summary, &next_steps, &blockers, state_fingerprint)?;
     let (mut store, principal_id, workspace_id) = encrypted_store(arguments)?;
     let grants = authorize_client(
         &store,
@@ -2921,11 +2915,7 @@ fn validate_checkpoint_cli_input(
     if let Some(goal) = goal {
         validate_cli_text("checkpoint goal", goal, MAX_CHECKPOINT_PAYLOAD_BYTES)?;
     }
-    validate_cli_text(
-        "checkpoint summary",
-        summary,
-        MAX_CHECKPOINT_PAYLOAD_BYTES,
-    )?;
+    validate_cli_text("checkpoint summary", summary, MAX_CHECKPOINT_PAYLOAD_BYTES)?;
     if next_steps.len().saturating_add(blockers.len()) > MAX_CHECKPOINT_LIST_ITEMS {
         return Err(format!(
             "checkpoint must not exceed {MAX_CHECKPOINT_LIST_ITEMS} combined list items"
@@ -2941,7 +2931,8 @@ fn validate_checkpoint_cli_input(
             MAX_CHECKPOINT_PAYLOAD_BYTES,
         )?;
     }
-    let payload_bytes = goal.map_or(0, str::len)
+    let payload_bytes = goal
+        .map_or(0, str::len)
         .saturating_add(summary.len())
         .saturating_add(
             next_steps
@@ -3011,13 +3002,7 @@ fn resume(arguments: &[String]) -> Result<(), String> {
 
 fn comma_separated_option(arguments: &[String], name: &str) -> Vec<String> {
     optional_option(arguments, name)
-        .map(|value| {
-            value
-                .split(',')
-                .map(str::trim)
-                .map(str::to_owned)
-                .collect()
-        })
+        .map(|value| value.split(',').map(str::trim).map(str::to_owned).collect())
         .unwrap_or_default()
 }
 
@@ -3688,9 +3673,8 @@ mod tests {
         render_mcp_config, requested_memory_privacy, requested_memory_scope, run,
         selected_secret_reference, test_provider, trace_failure_json, trace_json_requested,
         validate_checkpoint_cli_input, validate_cli_memory_scope, validate_cli_opaque_id,
-        validate_cli_text,
-        validate_external_conformance_namespace, validate_mcp_server_binary, vscode_mcp_config,
-        working_memory_failure_json, write_export, write_knowledge_graph_export,
+        validate_cli_text, validate_external_conformance_namespace, validate_mcp_server_binary,
+        vscode_mcp_config, working_memory_failure_json, write_export, write_knowledge_graph_export,
         write_memory_jsonl_export, write_memory_markdown_export, zed_mcp_config,
     };
 
@@ -3756,10 +3740,7 @@ mod tests {
             "project",
         ];
         let mut excessive_items = common.map(str::to_owned).to_vec();
-        excessive_items.extend([
-            "--limit".to_owned(),
-            (MAX_CLI_RECALL_ITEMS + 1).to_string(),
-        ]);
+        excessive_items.extend(["--limit".to_owned(), (MAX_CLI_RECALL_ITEMS + 1).to_string()]);
         assert_eq!(
             run(&excessive_items),
             Err(format!(
@@ -3848,13 +3829,7 @@ mod tests {
     #[test]
     fn resume_rejects_invalid_agent_input_before_storage_access() {
         for arguments in [
-            vec![
-                "resume",
-                "--activity",
-                "has spaces",
-                "--client",
-                "agent_01",
-            ],
+            vec!["resume", "--activity", "has spaces", "--client", "agent_01"],
             vec![
                 "resume",
                 "--activity",
@@ -3969,10 +3944,7 @@ mod tests {
         ];
         assert_eq!(
             run(&empty_list_item),
-            Err(
-                "checkpoint list item must be non-empty and contain no null characters"
-                    .to_owned()
-            )
+            Err("checkpoint list item must be non-empty and contain no null characters".to_owned())
         );
     }
 
@@ -4018,11 +3990,7 @@ mod tests {
         .expect("resume failure should be structured");
         assert_eq!(resume["error"]["code"], "resume_failed");
         let diagnostics = format!("{checkpoint}{resume}");
-        for private_value in [
-            "private progress",
-            "project.sqlite",
-            "private fingerprint",
-        ] {
+        for private_value in ["private progress", "project.sqlite", "private fingerprint"] {
             assert!(!diagnostics.contains(private_value));
         }
     }

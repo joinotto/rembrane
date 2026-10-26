@@ -26,10 +26,7 @@ impl fmt::Debug for CreateShareProposalCommand {
             .debug_struct("CreateShareProposalCommand")
             .field("source_memory_version", &self.source_memory_version)
             .field("target_scope_kind", &scope_kind(&self.target_scope))
-            .field(
-                "expected_source_sequence",
-                &self.expected_source_sequence,
-            )
+            .field("expected_source_sequence", &self.expected_source_sequence)
             .finish_non_exhaustive()
     }
 }
@@ -52,14 +49,8 @@ impl fmt::Debug for ApproveShareProposalCommand {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("ApproveShareProposalCommand")
-            .field(
-                "expected_source_sequence",
-                &self.expected_source_sequence,
-            )
-            .field(
-                "expected_target_sequence",
-                &self.expected_target_sequence,
-            )
+            .field("expected_source_sequence", &self.expected_source_sequence)
+            .field("expected_target_sequence", &self.expected_target_sequence)
             .field("projection_count", &self.projections.len())
             .finish_non_exhaustive()
     }

@@ -23,7 +23,10 @@ impl fmt::Debug for AuthorizeClientCommand {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("AuthorizeClientCommand")
-            .field("requested_read_scope_count", &self.requested_read_scopes.len())
+            .field(
+                "requested_read_scope_count",
+                &self.requested_read_scopes.len(),
+            )
             .field(
                 "requested_read_permission_count",
                 &self.requested_read_permissions.len(),
@@ -49,10 +52,7 @@ impl fmt::Debug for ClientGrantBundle {
             .field("read_scope_count", &self.read.scopes.len())
             .field("read_permission_count", &self.read.permissions.len())
             .field("write_scope_count", &self.write.scopes.len())
-            .field(
-                "write_permission_count",
-                &self.write.permissions.len(),
-            )
+            .field("write_permission_count", &self.write.permissions.len())
             .finish()
     }
 }

@@ -26,14 +26,8 @@ impl fmt::Debug for ResolveTravelContextCommand {
             .debug_struct("ResolveTravelContextCommand")
             .field("purpose_bytes", &self.purpose.len())
             .field("as_of_bytes", &self.as_of.len())
-            .field(
-                "include_source_references",
-                &self.include_source_references,
-            )
-            .field(
-                "include_sensitive_profile",
-                &self.include_sensitive_profile,
-            )
+            .field("include_source_references", &self.include_source_references)
+            .field("include_sensitive_profile", &self.include_sensitive_profile)
             .finish_non_exhaustive()
     }
 }
