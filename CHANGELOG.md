@@ -9,6 +9,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Fixed
 
+- CLI end-to-end coverage now proves structured preference correction and
+  deletion advance optimistic versions, reject stale writers, suppress updated
+  content from success output, and emit no internal diagnostics on failure.
 - Structured correction and deletion results now have a shared versioned JSON
   Schema, canonical success/failure fixtures, protocol drift checks, and
   cross-agent integration documentation.

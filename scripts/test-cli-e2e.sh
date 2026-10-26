@@ -536,14 +536,52 @@ layered_identity_recall=$(
 printf '%s\n' "$layered_identity_recall" |
     rg -F "$memory_id: Call me Hippo" >/dev/null
 
-"$rembrane_binary" correct \
+correct_output=$(
+    "$rembrane_binary" correct \
     --database "$database" \
     --principal principal_e2e \
     --workspace workspace_e2e \
     --entity project_e2e \
     --memory "$project_memory_id" \
     --version 1 \
-    --content "Use Rust and SQLite for the Rembrane core" >/dev/null
+    --content "Use Rust and SQLite for the Rembrane core" \
+    --json
+)
+printf '%s\n' "$correct_output" | jq -e \
+    --arg memory_id "$project_memory_id" '
+    . == {
+        "schemaVersion": 1,
+        "memoryId": $memory_id,
+        "version": 2,
+        "kind": "preference",
+        "status": "confirmed"
+    }
+    and ((tostring | contains("Rust and SQLite")) | not)
+' >/dev/null
+
+correct_failure="$test_directory/correct-failure.json"
+correct_failure_stderr="$test_directory/correct-failure.stderr"
+if "$rembrane_binary" correct \
+    --database "$database" \
+    --principal principal_e2e \
+    --workspace workspace_e2e \
+    --entity project_e2e \
+    --memory "$project_memory_id" \
+    --version 1 \
+    --content "Private stale correction" \
+    --json >"$correct_failure" 2>"$correct_failure_stderr"
+then
+    echo "JSON correction unexpectedly accepted a stale version" >&2
+    exit 1
+fi
+jq -e '
+    . == {
+        "schemaVersion": 1,
+        "error": {"code": "correct_failed"}
+    }
+    and ((tostring | contains("Private stale correction")) | not)
+' "$correct_failure" >/dev/null
+test ! -s "$correct_failure_stderr"
 
 corrected_project_recall=$(
     "$rembrane_binary" recall \
@@ -559,13 +597,48 @@ printf '%s\n' "$corrected_project_recall" |
     rg -F "$project_memory_id: Use Rust and SQLite for the Rembrane core" \
         >/dev/null
 
-"$rembrane_binary" forget \
+forget_output=$(
+    "$rembrane_binary" forget \
     --database "$database" \
     --principal principal_e2e \
     --workspace workspace_e2e \
     --entity project_e2e \
     --memory "$project_memory_id" \
-    --version 2 >/dev/null
+    --version 2 \
+    --json
+)
+printf '%s\n' "$forget_output" | jq -e \
+    --arg memory_id "$project_memory_id" '
+    . == {
+        "schemaVersion": 1,
+        "memoryId": $memory_id,
+        "version": 3,
+        "kind": "preference",
+        "status": "deleted"
+    }
+' >/dev/null
+
+forget_failure="$test_directory/forget-failure.json"
+forget_failure_stderr="$test_directory/forget-failure.stderr"
+if "$rembrane_binary" forget \
+    --database "$database" \
+    --principal principal_e2e \
+    --workspace workspace_e2e \
+    --entity project_e2e \
+    --memory "$project_memory_id" \
+    --version 2 \
+    --json >"$forget_failure" 2>"$forget_failure_stderr"
+then
+    echo "JSON deletion unexpectedly accepted a stale version" >&2
+    exit 1
+fi
+jq -e '
+    . == {
+        "schemaVersion": 1,
+        "error": {"code": "forget_failed"}
+    }
+' "$forget_failure" >/dev/null
+test ! -s "$forget_failure_stderr"
 
 deleted_project_recall=$(
     "$rembrane_binary" recall \

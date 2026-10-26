@@ -3552,10 +3552,10 @@ fn print_help() {
              [--purpose <purpose>] [--state-fingerprint <fingerprint>]\n\
            rembrane correct --database <path> --principal <id> \
              --workspace <id> --memory <id> --version <n> --content <text> \
-             [--domain <name> | --entity <id> | --activity <id>]\n\
+             [--domain <name> | --entity <id> | --activity <id>] [--json]\n\
            rembrane forget --database <path> --principal <id> \
              --workspace <id> --memory <id> --version <n> \
-             [--domain <name> | --entity <id> | --activity <id>]"
+             [--domain <name> | --entity <id> | --activity <id>] [--json]"
     );
 }
 
