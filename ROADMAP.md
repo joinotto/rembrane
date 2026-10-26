@@ -1339,6 +1339,8 @@ This roadmap describes sequencing, not release dates.
     implementation.
   - [x] Publish and compile-test a Swift Package with injectable async
     transport and a redirect-rejecting URLSession implementation.
+    - [x] Add authenticated raw-byte portable exports and bounded atomic JSONL
+      imports with strict metadata, opaque-ID, and response validation.
   - [x] Publish a dependency-free Kotlin/JVM client package with injected
     transport and an executable smoke fixture.
     - [x] Add authenticated raw-byte portable exports and bounded atomic JSONL

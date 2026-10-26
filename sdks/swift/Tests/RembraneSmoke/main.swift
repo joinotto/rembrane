@@ -9,6 +9,26 @@ private actor MockTransport: RembraneTransport {
         maximumResponseBytes: Int
     ) async throws -> RembraneHTTPResponse {
         self.request = request
+        if request.url?.path.hasSuffix("/exports") == true {
+            return RembraneHTTPResponse(
+                status: 200,
+                headers: [
+                    "content-type": "application/x-ndjson",
+                    "content-disposition":
+                        #"attachment; filename="rembrane-memories.jsonl""#,
+                    "cache-control": "no-store",
+                    "x-content-type-options": "nosniff",
+                ],
+                body: Data(#"{"format":"rembrane-memory-jsonl"}"#.utf8)
+            )
+        }
+        if request.url?.path.hasSuffix("/imports") == true {
+            return RembraneHTTPResponse(
+                status: 201,
+                headers: ["content-type": "application/json"],
+                body: Data(#"{"imported":1,"status":"proposed"}"#.utf8)
+            )
+        }
         let body: Data
         if request.url?.path.hasSuffix("/graph/context/resolve") == true {
             body = Data(#"{"disclosureId":"d1","edges":[]}"#.utf8)
@@ -191,6 +211,115 @@ private struct RembraneSmoke {
                 == "Bearer test-token"
         )
 
+        let archive = try await client.exportPortableData(
+            workspaceID: "team_workspace",
+            subjectID: "principal-1",
+            format: .jsonl
+        )
+        precondition(archive.filename == "rembrane-memories.jsonl")
+        precondition(
+            String(data: archive.body, encoding: .utf8)
+                == #"{"format":"rembrane-memory-jsonl"}"#
+        )
+        let exportRequest = await transport.request
+        precondition(exportRequest?.httpMethod == "POST")
+        precondition(
+            exportRequest?.url?.absoluteString
+                == "http://127.0.0.1:8787/v1/exports?workspaceId=team_workspace&subjectId=principal-1&format=jsonl"
+        )
+        precondition(
+            exportRequest?.value(forHTTPHeaderField: "Accept")
+                == "application/x-ndjson"
+        )
+        precondition(exportRequest?.httpBody == nil)
+
+        let importArchive = Data(#"{"format":"rembrane-memory-jsonl"}"#.utf8)
+        let imported = try await client.importPortableMemories(
+            workspaceID: "team_workspace",
+            subjectID: "principal-1",
+            expectedPreviousSequence: 42,
+            jsonl: importArchive
+        )
+        precondition(imported == PortableImportResult(imported: 1, status: "proposed"))
+        let importRequest = await transport.request
+        precondition(importRequest?.httpMethod == "POST")
+        precondition(
+            importRequest?.url?.absoluteString
+                == "http://127.0.0.1:8787/v1/imports?workspaceId=team_workspace&subjectId=principal-1&expectedPreviousSequence=42"
+        )
+        precondition(
+            importRequest?.value(forHTTPHeaderField: "Content-Type")
+                == "application/x-ndjson"
+        )
+        precondition(importRequest?.httpBody == importArchive)
+
+        let requestBeforeInvalidPortability = await transport.request
+        do {
+            _ = try await client.exportPortableData(
+                workspaceID: "unsafe/workspace",
+                subjectID: "principal-1",
+                format: .jsonl
+            )
+            preconditionFailure("unsafe export identity must be rejected")
+        } catch let error as RembraneAPIError {
+            precondition(error.code == "invalid_identifier")
+        }
+        let requestAfterInvalidPortability = await transport.request
+        precondition(
+            requestAfterInvalidPortability?.url
+                == requestBeforeInvalidPortability?.url
+        )
+
+        let invalidMetadataTransport = FixedResponseTransport(
+            response: RembraneHTTPResponse(
+                status: 200,
+                headers: ["content-type": "application/x-ndjson"],
+                body: Data("archive".utf8)
+            )
+        )
+        let invalidMetadataClient = try RembraneClient(
+            baseURL: URL(string: "https://memory.example.test/v1")!,
+            token: "token",
+            transport: invalidMetadataTransport
+        )
+        do {
+            _ = try await invalidMetadataClient.exportPortableData(
+                workspaceID: "team",
+                subjectID: "principal-1",
+                format: .jsonl
+            )
+            preconditionFailure("incomplete export metadata must fail")
+        } catch let error as RembraneAPIError {
+            precondition(error.code == "invalid_response")
+        }
+
+        let conflictTransport = FixedResponseTransport(
+            response: RembraneHTTPResponse(
+                status: 409,
+                headers: ["content-type": "application/json"],
+                body: Data(
+                    #"{"code":"sequence_conflict","message":"Sequence changed"}"#.utf8
+                )
+            )
+        )
+        let conflictClient = try RembraneClient(
+            baseURL: URL(string: "https://memory.example.test/v1")!,
+            token: "token",
+            transport: conflictTransport
+        )
+        do {
+            _ = try await conflictClient.importPortableMemories(
+                workspaceID: "team",
+                subjectID: "principal-1",
+                expectedPreviousSequence: 0,
+                jsonl: importArchive
+            )
+            preconditionFailure("sequence conflict must fail")
+        } catch let error as RembraneAPIError {
+            precondition(error.status == 409)
+            precondition(error.code == "sequence_conflict")
+        }
+
         do {
             _ = try RembraneClient(
                 baseURL: URL(string: "http://memory.example.test/v1")!,
@@ -347,5 +476,16 @@ private struct RembraneSmoke {
         } catch {
             // Expected.
         }
+    }
+}
+
+private struct FixedResponseTransport: RembraneTransport {
+    let response: RembraneHTTPResponse
+
+    func send(
+        _ request: URLRequest,
+        maximumResponseBytes: Int
+    ) async throws -> RembraneHTTPResponse {
+        response
     }
 }

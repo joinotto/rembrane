@@ -32,6 +32,51 @@ public struct RembraneAPIError: Error, Equatable, Sendable {
     public let message: String
 }
 
+public enum PortableExportFormat: String, Sendable {
+    case jsonl
+    case markdown
+    case graphJSON = "graph-json"
+
+    fileprivate var contentType: String {
+        switch self {
+        case .jsonl:
+            "application/x-ndjson"
+        case .markdown:
+            "text/markdown; charset=utf-8"
+        case .graphJSON:
+            "application/vnd.rembrane.knowledge-graph+json"
+        }
+    }
+
+    fileprivate var filename: String {
+        switch self {
+        case .jsonl:
+            "rembrane-memories.jsonl"
+        case .markdown:
+            "rembrane-memories.md"
+        case .graphJSON:
+            "rembrane-knowledge-graph.json"
+        }
+    }
+}
+
+public struct PortableExport: Sendable {
+    public let format: PortableExportFormat
+    public let contentType: String
+    public let filename: String
+    public let body: Data
+}
+
+public struct PortableImportResult: Decodable, Equatable, Sendable {
+    public let imported: Int
+    public let status: String
+
+    public init(imported: Int, status: String) {
+        self.imported = imported
+        self.status = status
+    }
+}
+
 public enum ChannelProcessorChannel: String, Codable, Sendable {
     case whatsAppBusiness = "whatsapp-business"
     case iMessageExtension = "imessage-extension"
@@ -342,20 +387,125 @@ public struct RembraneClient<Transport: RembraneTransport>: Sendable {
         )
     }
 
+    public func exportPortableData(
+        workspaceID: String,
+        subjectID: String,
+        format: PortableExportFormat
+    ) async throws -> PortableExport {
+        try Self.requireOpaqueID(workspaceID, field: "workspaceID")
+        try Self.requireOpaqueID(subjectID, field: "subjectID")
+        let query = try Self.portabilityQuery([
+            URLQueryItem(name: "workspaceId", value: workspaceID),
+            URLQueryItem(name: "subjectId", value: subjectID),
+            URLQueryItem(name: "format", value: format.rawValue),
+        ])
+        var request = try authenticatedRequest(
+            path: "/exports?\(query)",
+            method: "POST"
+        )
+        request.setValue(format.contentType, forHTTPHeaderField: "Accept")
+        let response = try await transport.send(
+            request,
+            maximumResponseBytes: maximumResponseBytes
+        )
+        try enforceResponseLimit(response)
+        if !(200..<300).contains(response.status) {
+            throw problem(from: response)
+        }
+        guard response.header("content-type").lowercased()
+                == format.contentType.lowercased(),
+              response.header("content-disposition")
+                == "attachment; filename=\"\(format.filename)\"",
+              response.header("cache-control").lowercased() == "no-store",
+              response.header("x-content-type-options").lowercased() == "nosniff"
+        else {
+            throw RembraneAPIError(
+                status: response.status,
+                code: "invalid_response",
+                message: "Portable export metadata was invalid"
+            )
+        }
+        return PortableExport(
+            format: format,
+            contentType: response.header("content-type"),
+            filename: format.filename,
+            body: response.body
+        )
+    }
+
+    public func importPortableMemories(
+        workspaceID: String,
+        subjectID: String,
+        expectedPreviousSequence: UInt64,
+        jsonl: Data
+    ) async throws -> PortableImportResult {
+        try Self.requireOpaqueID(workspaceID, field: "workspaceID")
+        try Self.requireOpaqueID(subjectID, field: "subjectID")
+        guard !jsonl.isEmpty, jsonl.count <= 67_108_864 else {
+            throw RembraneAPIError(
+                status: 0,
+                code: "invalid_import",
+                message: "Portable import archive size is invalid"
+            )
+        }
+        let query = try Self.portabilityQuery([
+            URLQueryItem(name: "workspaceId", value: workspaceID),
+            URLQueryItem(name: "subjectId", value: subjectID),
+            URLQueryItem(
+                name: "expectedPreviousSequence",
+                value: String(expectedPreviousSequence)
+            ),
+        ])
+        var request = try authenticatedRequest(
+            path: "/imports?\(query)",
+            method: "POST"
+        )
+        request.httpBody = jsonl
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue(
+            "application/x-ndjson",
+            forHTTPHeaderField: "Content-Type"
+        )
+        let response = try await transport.send(
+            request,
+            maximumResponseBytes: maximumResponseBytes
+        )
+        try enforceResponseLimit(response)
+        if !(200..<300).contains(response.status) {
+            throw problem(from: response)
+        }
+        guard response.header("content-type").lowercased()
+                .hasPrefix("application/json") else {
+            throw RembraneAPIError(
+                status: response.status,
+                code: "invalid_response",
+                message: "Expected JSON response"
+            )
+        }
+        guard let object = try? JSONSerialization.jsonObject(with: response.body),
+              let fields = object as? [String: Any],
+              Set(fields.keys) == ["imported", "status"],
+              let imported = fields["imported"] as? Int,
+              (1...10_000).contains(imported),
+              fields["status"] as? String == "proposed" else {
+            throw RembraneAPIError(
+                status: response.status,
+                code: "invalid_response",
+                message: "Portable import response was invalid"
+            )
+        }
+        return PortableImportResult(imported: imported, status: "proposed")
+    }
+
     private func execute<Response: Decodable>(
         method: String,
         path: String,
         body: Data?,
         as responseType: Response.Type
     ) async throws -> Response {
-        guard let url = URL(string: baseURL.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/")) + path) else {
-            throw RembraneAPIError(status: 0, code: "invalid_endpoint", message: "Invalid request URL")
-        }
-        var request = URLRequest(url: url)
-        request.httpMethod = method
+        var request = try authenticatedRequest(path: path, method: method)
         request.httpBody = body
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         if body != nil {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         }
@@ -363,14 +513,9 @@ public struct RembraneClient<Transport: RembraneTransport>: Sendable {
             request,
             maximumResponseBytes: maximumResponseBytes
         )
-        guard response.body.count <= maximumResponseBytes else {
-            throw RembraneAPIError(
-                status: response.status,
-                code: "response_too_large",
-                message: "Response exceeded limit"
-            )
-        }
-        guard response.headers["content-type"]?.lowercased().hasPrefix("application/json") == true else {
+        try enforceResponseLimit(response)
+        guard response.header("content-type").lowercased()
+                .hasPrefix("application/json") else {
             throw RembraneAPIError(
                 status: response.status,
                 code: "invalid_response",
@@ -378,14 +523,97 @@ public struct RembraneClient<Transport: RembraneTransport>: Sendable {
             )
         }
         if !(200..<300).contains(response.status) {
-            let problem = (try? decoder.decode(Problem.self, from: response.body))
-            throw RembraneAPIError(
-                status: response.status,
-                code: problem?.code ?? "request_failed",
-                message: problem?.message ?? "Rembrane request failed"
-            )
+            throw problem(from: response)
         }
         return try decoder.decode(responseType, from: response.body)
+    }
+
+    private func authenticatedRequest(
+        path: String,
+        method: String
+    ) throws -> URLRequest {
+        let root = baseURL.absoluteString.trimmingCharacters(
+            in: CharacterSet(charactersIn: "/")
+        )
+        guard let url = URL(string: root + path) else {
+            throw RembraneAPIError(
+                status: 0,
+                code: "invalid_endpoint",
+                message: "Invalid request URL"
+            )
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        return request
+    }
+
+    private func enforceResponseLimit(_ response: RembraneHTTPResponse) throws {
+        guard response.body.count <= maximumResponseBytes else {
+            throw RembraneAPIError(
+                status: response.status,
+                code: "response_too_large",
+                message: "Response exceeded limit"
+            )
+        }
+    }
+
+    private func problem(from response: RembraneHTTPResponse) -> RembraneAPIError {
+        guard response.header("content-type").lowercased()
+                .hasPrefix("application/json") else {
+            return RembraneAPIError(
+                status: response.status,
+                code: "invalid_response",
+                message: "Expected JSON problem response"
+            )
+        }
+        let decoded = try? decoder.decode(Problem.self, from: response.body)
+        return RembraneAPIError(
+            status: response.status,
+            code: decoded?.code ?? "request_failed",
+            message: decoded?.message ?? "Rembrane request failed"
+        )
+    }
+
+    private static func portabilityQuery(
+        _ items: [URLQueryItem]
+    ) throws -> String {
+        var components = URLComponents()
+        components.queryItems = items
+        guard let query = components.percentEncodedQuery, !query.isEmpty else {
+            throw RembraneAPIError(
+                status: 0,
+                code: "invalid_request",
+                message: "Portable request query was invalid"
+            )
+        }
+        return query
+    }
+
+    private static func requireOpaqueID(
+        _ value: String,
+        field: String
+    ) throws {
+        let allowed = CharacterSet(
+            charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._:-"
+        )
+        guard !value.isEmpty, value.utf8.count <= 255,
+              value.unicodeScalars.first.map(CharacterSet.alphanumerics.contains)
+                == true,
+              value.unicodeScalars.allSatisfy(allowed.contains) else {
+            throw RembraneAPIError(
+                status: 0,
+                code: "invalid_identifier",
+                message: "\(field) must be a bounded opaque identifier"
+            )
+        }
+    }
+}
+
+private extension RembraneHTTPResponse {
+    func header(_ name: String) -> String {
+        headers.first { $0.key.caseInsensitiveCompare(name) == .orderedSame }?
+            .value ?? ""
     }
 }
 

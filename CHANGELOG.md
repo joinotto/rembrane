@@ -87,6 +87,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   publish allowlist excludes test fixtures and other development-only files.
 - The Kotlin SDK now exposes authenticated raw-byte portability exports and
   bounded sequence-safe JSONL imports with closed metadata and result checks.
+- The Swift SDK now exposes authenticated raw-byte portability exports and
+  bounded sequence-safe JSONL imports with closed metadata and result checks.
 - The application layer now defines a bounded, authorized memory-import batch
   that re-admits external content as destination-scoped proposals with fresh
   identities and contiguous canonical events through an atomic repository
