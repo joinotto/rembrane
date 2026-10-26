@@ -896,10 +896,15 @@ mod tests {
         let _ = fs::remove_file(&path);
 
         let store = SqliteCustomerKmsKeyReferenceStore::open(&path).unwrap();
-        drop(store);
-
         let mode = fs::metadata(&path).unwrap().permissions().mode();
         assert_eq!(mode & 0o077, 0);
+        for suffix in ["-wal", "-shm"] {
+            let mut sidecar = path.as_os_str().to_os_string();
+            sidecar.push(suffix);
+            let metadata = fs::metadata(sidecar).expect("SQLite sidecar should exist");
+            assert_eq!(metadata.permissions().mode() & 0o077, 0);
+        }
+        drop(store);
         fs::remove_file(path).unwrap();
     }
 

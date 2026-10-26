@@ -1198,7 +1198,7 @@ mod migration_tests {
         use std::os::unix::fs::{PermissionsExt as _, symlink};
 
         let database = database_path("private-database");
-        SqliteStore::open(&database).expect("database should initialize");
+        let store = SqliteStore::open(&database).expect("database should initialize");
         assert_eq!(
             fs::metadata(&database)
                 .expect("database metadata")
@@ -1207,6 +1207,13 @@ mod migration_tests {
                 & 0o077,
             0
         );
+        for suffix in ["-wal", "-shm"] {
+            let mut sidecar = database.as_os_str().to_os_string();
+            sidecar.push(suffix);
+            let metadata = fs::metadata(&sidecar).expect("SQLite sidecar should exist");
+            assert_eq!(metadata.permissions().mode() & 0o077, 0);
+        }
+        drop(store);
 
         fs::set_permissions(&database, fs::Permissions::from_mode(0o644)).expect("permissive mode");
         assert!(SqliteStore::open(&database).is_err());

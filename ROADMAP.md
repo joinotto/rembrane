@@ -55,6 +55,8 @@ This roadmap describes sequencing, not release dates.
 - [x] Implement the encrypted local SQLite adapter.
   - [x] Create owner-only database and snapshot files, reject permissive or
     symbolic-link database paths, and open through SQLite no-follow mode.
+    - [x] Prove active WAL and shared-memory sidecars remain owner-only while
+      the canonical encrypted database is open.
     - [x] Remove newly created snapshot destinations on every failed backup
       preparation, encoding, write, or post-write validation path.
     - [x] Copy snapshots into an already opened no-follow SQLite connection
@@ -208,6 +210,8 @@ This roadmap describes sequencing, not release dates.
             without reopening evidence across subprocess boundaries.
       - [x] Create file-backed Unix keyring databases owner-only and reject
         permissive, non-regular, or symbolic-link targets.
+        - [x] Prove active keyring WAL and shared-memory sidecars remain
+          owner-only while the customer sidecar database is open.
         - [x] Open keyrings, backup verification, and restore connections
           through SQLite no-follow mode after canonicalizing only the parent.
         - [x] Create backup and restore destinations atomically and clean up
