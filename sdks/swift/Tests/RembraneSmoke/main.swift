@@ -229,6 +229,11 @@ private struct RembraneSmoke {
             subjectId: "principal-1",
             content: "Call me Hippo"
         )
+        let _: InvitationResponse = try await client.resolveContext(
+            continuityRequest
+        )
+        let contextRequest = await transport.request
+        precondition(contextRequest?.url?.path == "/v1/context/resolve")
         let _: InvitationResponse = try await client.rememberPreference(
             continuityRequest
         )

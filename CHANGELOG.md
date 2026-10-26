@@ -101,6 +101,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   including expiring booking research and audited context resolution.
 - The Swift SDK now exposes workspace key rotation and retention
   administration, including legal holds and bounded hold-aware purges.
+- The Swift SDK now exposes named audited context resolution instead of
+  requiring callers to construct its REST path through the generic helper.
 - The application layer now defines a bounded, authorized memory-import batch
   that re-admits external content as destination-scoped proposals with fresh
   identities and contiguous canonical events through an atomic repository

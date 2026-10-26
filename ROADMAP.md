@@ -1349,6 +1349,7 @@ This roadmap describes sequencing, not release dates.
       Swift adopters, and link all application SDK guides from the project root.
     - [x] Add named Swift preference, work-trace, correction, deletion,
       checkpoint, and resume operations with path-safe opaque identifiers.
+    - [x] Add named Swift audited context resolution for API parity.
     - [x] Add the complete Swift travel continuity route set for trips,
       participants, constraints, decisions, research, and context resolution.
     - [x] Add Swift workspace key-rotation and retention administration routes

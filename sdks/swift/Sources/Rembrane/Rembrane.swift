@@ -324,6 +324,13 @@ public struct RembraneClient<Transport: RembraneTransport>: Sendable {
         try await post("/workspaces/invitations", request: request, as: responseType)
     }
 
+    public func resolveContext<Request: Encodable, Response: Decodable>(
+        _ request: Request,
+        as responseType: Response.Type = Response.self
+    ) async throws -> Response {
+        try await post("/context/resolve", request: request, as: responseType)
+    }
+
     public func resolveGraphContext<Request: Encodable, Response: Decodable>(
         _ request: Request,
         as responseType: Response.Type = Response.self
