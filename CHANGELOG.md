@@ -83,6 +83,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - TypeScript and Python SDK guides now document credential handling, strict
   transport behavior, private plaintext export writes, and sequence-safe
   proposal imports.
+- SDK package manifests now ship their usage guides, while the TypeScript
+  publish allowlist excludes test fixtures and other development-only files.
 - The application layer now defines a bounded, authorized memory-import batch
   that re-admits external content as destination-scoped proposals with fresh
   identities and contiguous canonical events through an atomic repository

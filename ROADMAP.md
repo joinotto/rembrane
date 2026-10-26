@@ -1333,6 +1333,8 @@ This roadmap describes sequencing, not release dates.
     authenticated REST surface.
   - [x] Document secure TypeScript and Python client setup, portable
     export/import handling, plaintext risk, and optimistic import sequencing.
+  - [x] Bound the published TypeScript package to runtime, declarations, and
+    documentation, and include the Python SDK guide as package metadata.
   - [x] Publish the transport-neutral Rust provider SDK and authenticated HTTP
     implementation.
   - [x] Publish and compile-test a Swift Package with injectable async
