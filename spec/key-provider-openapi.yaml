@@ -103,6 +103,8 @@ components:
       properties:
         providerId:
           type: string
+          minLength: 2
+          maxLength: 255
           pattern: "^[a-z0-9][a-z0-9._-]+$"
         providerVersion:
           type: string
@@ -113,12 +115,17 @@ components:
         algorithms:
           type: array
           minItems: 1
+          maxItems: 32
           uniqueItems: true
           items:
             type: string
+            minLength: 1
+            maxLength: 100
+            pattern: "^[a-z0-9][a-z0-9._-]*$"
         maximumPlaintextBytes:
           type: integer
           minimum: 1
+          maximum: 1048576
         supportsHistoricalKeys:
           type: boolean
           default: false
@@ -133,9 +140,11 @@ components:
         workspaceId:
           type: string
           minLength: 1
+          maxLength: 255
         recordId:
           type: string
           minLength: 1
+          maxLength: 1024
         recordVersion:
           type: integer
           minimum: 1
@@ -144,6 +153,9 @@ components:
             - activity-checkpoint
             - booking-research
             - canonical-event
+            - channel-message
+            - knowledge-edge
+            - knowledge-node
             - memory-content
             - trip-entity
     SealRequest:
@@ -154,6 +166,8 @@ components:
         requestId:
           type: string
           minLength: 1
+          maxLength: 255
+          pattern: "^[A-Za-z0-9._:-]+$"
         context:
           $ref: "#/components/schemas/EncryptionContext"
         plaintextBase64:
@@ -167,6 +181,8 @@ components:
         requestId:
           type: string
           minLength: 1
+          maxLength: 255
+          pattern: "^[A-Za-z0-9._:-]+$"
         context:
           $ref: "#/components/schemas/EncryptionContext"
         envelope:
@@ -182,9 +198,12 @@ components:
         keyId:
           type: string
           minLength: 1
+          maxLength: 2048
         algorithm:
           type: string
           minLength: 1
+          maxLength: 100
+          pattern: "^[a-z0-9][a-z0-9._-]*$"
         nonceBase64:
           type: string
           contentEncoding: base64
@@ -205,9 +224,12 @@ components:
           type: string
           minLength: 1
           maxLength: 255
+          pattern: "^[A-Za-z0-9._:-]+$"
         workspaceId:
           type: string
           minLength: 1
+          maxLength: 255
+          pattern: "^[A-Za-z0-9._:-]+$"
         generation:
           type: integer
           minimum: 1
@@ -219,6 +241,8 @@ components:
           items:
             type: string
             minLength: 1
+            maxLength: 255
+            pattern: "^[A-Za-z0-9._:-]+$"
     KeyRotationReceipt:
       type: object
       additionalProperties: false
@@ -227,20 +251,27 @@ components:
       properties:
         providerId:
           type: string
+          minLength: 2
+          maxLength: 255
           pattern: "^[a-z0-9][a-z0-9._-]+$"
         requestId:
           type: string
           minLength: 1
           maxLength: 255
+          pattern: "^[A-Za-z0-9._:-]+$"
         workspaceId:
           type: string
           minLength: 1
+          maxLength: 255
+          pattern: "^[A-Za-z0-9._:-]+$"
         generation:
           type: integer
           minimum: 1
         keyId:
           type: string
           minLength: 1
+          maxLength: 200
+          pattern: "^[A-Za-z0-9._:-]+$"
         recipientIds:
           type: array
           minItems: 1
@@ -249,3 +280,5 @@ components:
           items:
             type: string
             minLength: 1
+            maxLength: 255
+            pattern: "^[A-Za-z0-9._:-]+$"

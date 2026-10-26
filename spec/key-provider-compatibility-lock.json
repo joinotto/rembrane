@@ -4,7 +4,7 @@
   "artifacts": [
     {
       "path": "spec/key-provider-openapi.yaml",
-      "sha256": "fbfc4db730754dc0409748fbc0ea40f38f01af508fbb93367043b06049efe9c6"
+      "sha256": "feb19ce814f14f43bd7cb1c90b15e29b5a4695f9d4a44bb8fb93843eebcc432f"
     },
     {
       "path": "spec/examples/key-provider-manifest.json",

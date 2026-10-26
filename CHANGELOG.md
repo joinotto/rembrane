@@ -53,6 +53,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   before transport dispatch.
 - Core key-provider manifest validation now caps advertised plaintext capacity
   at 1 MiB for every transport, rather than relying on the HTTP adapter alone.
+- The normative key-provider OpenAPI contract now publishes the enforced
+  manifest, request, context, envelope, rotation identity, and payload bounds,
+  including every supported encrypted payload purpose.
 - Canonical SQLite initialization and backup now require the path opened by
   SQLite to retain the exact protected file's device/inode identity, and
   failure cleanup refuses to remove a path replaced after preparation.
