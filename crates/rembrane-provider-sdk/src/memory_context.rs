@@ -1,3 +1,5 @@
+use std::fmt;
+
 use rembrane_domain::{
     ActivityId, ContextPackId, DisclosureId, EntityId, EvidenceReference, MAX_MEMORY_CONTENT_BYTES,
     MemoryId, MemoryKind, MemoryScope,
@@ -8,9 +10,18 @@ use crate::{MemoryProviderLimits, ProviderError};
 pub const MAX_CONTEXT_PURPOSE_BYTES: usize = 4_096;
 pub const MAX_CONTEXT_QUERY_BYTES: usize = 32_768;
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct MemoryProviderContextSelector {
     scope: MemoryScope,
+}
+
+impl fmt::Debug for MemoryProviderContextSelector {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("MemoryProviderContextSelector")
+            .field("scope", &self.scope)
+            .finish()
+    }
 }
 
 impl MemoryProviderContextSelector {
@@ -64,13 +75,26 @@ impl MemoryProviderContextSelector {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct ResolveContextPayload {
     purpose: String,
     query: String,
     selector: MemoryProviderContextSelector,
     maximum_items: usize,
     maximum_bytes: usize,
+}
+
+impl fmt::Debug for ResolveContextPayload {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ResolveContextPayload")
+            .field("purpose_bytes", &self.purpose.len())
+            .field("query_bytes", &self.query.len())
+            .field("selector", &self.selector)
+            .field("maximum_items", &self.maximum_items)
+            .field("maximum_bytes", &self.maximum_bytes)
+            .finish()
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -80,7 +104,7 @@ pub enum MemoryProviderSensitivity {
     Restricted,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub enum MemoryProviderDisclosureConstraint {
     PurposeBound,
     NoTraining,
@@ -88,7 +112,18 @@ pub enum MemoryProviderDisclosureConstraint {
     ExpiresAt(u64),
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+impl fmt::Debug for MemoryProviderDisclosureConstraint {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::PurposeBound => "PurposeBound",
+            Self::NoTraining => "NoTraining",
+            Self::NoRetention => "NoRetention",
+            Self::ExpiresAt(_) => "ExpiresAt(<redacted>)",
+        })
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
 pub struct MemoryProviderContextItem {
     memory_id: MemoryId,
     version: u64,
@@ -101,6 +136,34 @@ pub struct MemoryProviderContextItem {
     valid_until_epoch_seconds: Option<u64>,
     sensitivity: MemoryProviderSensitivity,
     disclosure_constraints: Vec<MemoryProviderDisclosureConstraint>,
+}
+
+impl fmt::Debug for MemoryProviderContextItem {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("MemoryProviderContextItem")
+            .field("memory_id", &"<redacted>")
+            .field("version", &self.version)
+            .field("scope", &self.scope)
+            .field("kind", &self.kind)
+            .field("content_bytes", &self.content.len())
+            .field("evidence_count", &self.evidence.len())
+            .field("confidence_millionths", &self.confidence_millionths)
+            .field(
+                "valid_from_epoch_seconds_present",
+                &self.valid_from_epoch_seconds.is_some(),
+            )
+            .field(
+                "valid_until_epoch_seconds_present",
+                &self.valid_until_epoch_seconds.is_some(),
+            )
+            .field("sensitivity", &self.sensitivity)
+            .field(
+                "disclosure_constraint_count",
+                &self.disclosure_constraints.len(),
+            )
+            .finish()
+    }
 }
 
 impl MemoryProviderContextItem {
@@ -245,11 +308,30 @@ impl MemoryProviderContextItem {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct ResolveContextResult {
     context_pack_id: ContextPackId,
     disclosure_id: DisclosureId,
     items: Vec<MemoryProviderContextItem>,
+}
+
+impl fmt::Debug for ResolveContextResult {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ResolveContextResult")
+            .field("context_pack_id", &"<redacted>")
+            .field("disclosure_id", &"<redacted>")
+            .field("item_count", &self.items.len())
+            .field(
+                "content_bytes",
+                &self
+                    .items
+                    .iter()
+                    .map(|item| item.content.len())
+                    .sum::<usize>(),
+            )
+            .finish()
+    }
 }
 
 impl ResolveContextResult {
@@ -617,5 +699,75 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn context_diagnostics_redact_queries_content_timeline_and_identities() {
+        let request = ResolveContextPayload::new(
+            "private context purpose",
+            "private context query",
+            MemoryProviderContextSelector::domain("private_domain")
+                .expect("selector should be valid"),
+            2,
+            1_024,
+            limits(),
+        )
+        .expect("request should be valid");
+        let context_item = MemoryProviderContextItem::new(
+            MemoryId::new("private_memory"),
+            5,
+            MemoryScope::Entity {
+                id: EntityId::new("private_entity"),
+            },
+            MemoryKind::Preference,
+            "Private memory content",
+            vec![EvidenceReference::new(
+                EvidenceId::new("private_evidence"),
+                EvidenceSource::UserStatement,
+            )],
+            875_000,
+            Some(1_900_000_001),
+            Some(1_900_000_999),
+            MemoryProviderSensitivity::Sensitive,
+            vec![MemoryProviderDisclosureConstraint::ExpiresAt(1_900_001_111)],
+        )
+        .expect("context item should be valid");
+        let result = ResolveContextResult::new(
+            ContextPackId::new("private_context_pack"),
+            DisclosureId::new("private_disclosure"),
+            vec![context_item.clone()],
+            &request,
+        )
+        .expect("result should be valid");
+
+        let diagnostic = format!(
+            "{request:?} {context_item:?} {:?} {result:?}",
+            MemoryProviderDisclosureConstraint::ExpiresAt(1_900_001_111)
+        );
+
+        for private_value in [
+            "private context purpose",
+            "private context query",
+            "private_domain",
+            "private_memory",
+            "private_entity",
+            "Private memory content",
+            "private_evidence",
+            "1900000001",
+            "1900000999",
+            "1900001111",
+            "private_context_pack",
+            "private_disclosure",
+        ] {
+            assert!(!diagnostic.contains(private_value));
+        }
+        assert!(diagnostic.contains("purpose_bytes: 23"));
+        assert!(diagnostic.contains("query_bytes: 21"));
+        assert!(diagnostic.contains("content_bytes: 22"));
+        assert!(diagnostic.contains("version: 5"));
+        assert!(diagnostic.contains("evidence_count: 1"));
+        assert!(diagnostic.contains("sensitivity: Sensitive"));
+        assert!(diagnostic.contains("ExpiresAt(<redacted>)"));
+        assert!(diagnostic.contains("item_count: 1"));
     }
 }

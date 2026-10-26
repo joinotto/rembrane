@@ -138,6 +138,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   scope kind, memory kind, provenance class, source-reference presence, and
   result version while redacting content, references, timestamps, and
   identities.
+- Memory-provider context diagnostics now expose only selector kind, payload
+  sizes, limits, versions, confidence, sensitivity, constraint counts, and
+  temporal-bound presence while redacting queries, purposes, memory content,
+  evidence, exact validity times, and disclosure identities.
 - Canonical SQLite initialization and backup now require the path opened by
   SQLite to retain the exact protected file's device/inode identity, and
   failure cleanup refuses to remove a path replaced after preparation.

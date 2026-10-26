@@ -1310,6 +1310,9 @@ This roadmap describes sequencing, not release dates.
     - [x] Add bounded context responses carrying canonical IDs, versions,
       scopes, kinds, evidence, confidence, validity, sensitivity, disclosure
       constraints, and disclosure receipts.
+      - [x] Redact provider context queries, purposes, memory plaintext,
+        provenance identities, validity times, expiry times, and disclosure
+        identities from diagnostics.
     - [x] Add idempotent memory-proposal payloads that preserve validated
       scope, memory kind, provenance source, and observation time without
       allowing clients to assert confirmed status.
