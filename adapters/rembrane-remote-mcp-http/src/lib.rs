@@ -2131,10 +2131,10 @@ impl<'gate> SharedInitializationReservation<'gate> {
 
 impl Drop for SharedInitializationReservation<'_> {
     fn drop(&mut self) {
-        if let Some(reservation) = self.reservation.take() {
-            if let Ok(mut gate) = self.gate.lock() {
-                let _ = gate.sessions.cancel_reservation(reservation);
-            }
+        if let Some(reservation) = self.reservation.take()
+            && let Ok(mut gate) = self.gate.lock()
+        {
+            let _ = gate.sessions.cancel_reservation(reservation);
         }
     }
 }
@@ -4487,7 +4487,7 @@ mod tests {
             .expect_err("duplicate generated session must fail");
         assert_eq!(duplicate.status, 409);
 
-        let supplied_session = match gate.authorize_sessionless_initialize_owned_body(
+        let Err(supplied_session) = gate.authorize_sessionless_initialize_owned_body(
                 &authorization,
                 RemoteMcpHttpRequest {
                     authorization: Some("Bearer workspace-one"),
@@ -4500,9 +4500,9 @@ mod tests {
                         .to_vec(),
                 ),
                 1_000,
-            ) {
-            Ok(_) => panic!("client-supplied initialize session must fail"),
-            Err(error) => error,
+            )
+        else {
+            panic!("client-supplied initialize session must fail");
         };
         assert_eq!(supplied_session.status, 403);
     }
@@ -6745,13 +6745,7 @@ mod tests {
     #[tokio::test]
     async fn shared_initialization_reservation_releases_when_request_is_cancelled() {
         use std::future::Future;
-        use std::task::{Context, Poll, Wake, Waker};
-
-        struct NoopWake;
-
-        impl Wake for NoopWake {
-            fn wake(self: Arc<Self>) {}
-        }
+        use std::task::{Context, Poll, Waker};
 
         let config = RemoteMcpConfig::new(
             "https://memory.example.test/mcp".to_owned(),
@@ -6782,8 +6776,8 @@ mod tests {
             1_000,
             &PendingInitializationDispatcher,
         ));
-        let waker = Waker::from(Arc::new(NoopWake));
-        let mut context = Context::from_waker(&waker);
+        let waker = Waker::noop();
+        let mut context = Context::from_waker(waker);
         assert_eq!(initialization.as_mut().poll(&mut context), Poll::Pending);
         assert_eq!(
             authorization
@@ -6813,13 +6807,7 @@ mod tests {
     #[tokio::test]
     async fn shared_initialization_reservation_rejects_competing_dispatch_at_capacity() {
         use std::future::Future;
-        use std::task::{Context, Poll, Wake, Waker};
-
-        struct NoopWake;
-
-        impl Wake for NoopWake {
-            fn wake(self: Arc<Self>) {}
-        }
+        use std::task::{Context, Poll, Waker};
 
         let config = RemoteMcpConfig::new(
             "https://memory.example.test/mcp".to_owned(),
@@ -6850,8 +6838,8 @@ mod tests {
             1_000,
             &PendingInitializationDispatcher,
         ));
-        let waker = Waker::from(Arc::new(NoopWake));
-        let mut context = Context::from_waker(&waker);
+        let waker = Waker::noop();
+        let mut context = Context::from_waker(waker);
         assert_eq!(in_flight.as_mut().poll(&mut context), Poll::Pending);
 
         let competing_calls = Arc::new(Mutex::new(0));

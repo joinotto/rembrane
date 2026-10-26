@@ -1305,6 +1305,9 @@ This roadmap describes sequencing, not release dates.
         into the two-provider release evidence set.
       - [x] Require provider and independent-review evidence to match the same
         clean release revision in strict production readiness.
+      - [x] Expose production readiness as stable machine-readable JSON so
+        installers, CI, bots, and hosted control planes can report every
+        unavailable release gate without parsing human diagnostics.
       - [x] Package exact two-provider release evidence through a
         non-overwriting, symlink-rejecting, self-verifying local tool.
       - [x] Replace self-asserted external provenance with a detached provider

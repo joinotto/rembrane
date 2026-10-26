@@ -5,7 +5,16 @@ mode=${1:-available}
 case "$mode" in
     available|--available|--strict) ;;
     *)
-        echo "usage: ./scripts/check-production-readiness.sh [available|--available|--strict]" >&2
+        echo "usage: ./scripts/check-production-readiness.sh [available|--available|--strict] [--json]" >&2
+        exit 2
+        ;;
+esac
+
+output=${2:-text}
+case "$output" in
+    text|--json) ;;
+    *)
+        echo "usage: ./scripts/check-production-readiness.sh [available|--available|--strict] [--json]" >&2
         exit 2
         ;;
 esac
@@ -13,12 +22,20 @@ esac
 strict=0
 test "$mode" = "--strict" && strict=1
 
+if [ "$output" = "--json" ]; then
+    exec 3>&1
+    exec 1>&2
+fi
+
 ./scripts/check-local-alpha.sh --core
 
 missing=
+missing_json=
 record_missing() {
     label=$1
     missing="${missing}${missing:+, }${label}"
+    escaped_label=$(printf '%s' "$label" | sed 's/\\/\\\\/g; s/"/\\"/g')
+    missing_json="${missing_json}${missing_json:+,}\"${escaped_label}\""
 }
 
 all_suite_ready=1
@@ -117,11 +134,25 @@ else
 fi
 
 if [ -n "$missing" ]; then
+    if [ "$output" = "--json" ]; then
+        printf '{"ready":false,"strict":%s,"missing":[%s]}\n' \
+            "$([ "$strict" = "1" ] && printf true || printf false)" \
+            "$missing_json" >&3
+    fi
     if [ "$strict" = "1" ]; then
-        echo "NOT READY: unavailable required gates: $missing" >&2
+        if [ "$output" = "text" ]; then
+            echo "NOT READY: unavailable required gates: $missing" >&2
+        fi
         exit 1
     fi
-    echo "AVAILABLE GATES PASSED; unavailable gates: $missing"
+    if [ "$output" = "text" ]; then
+        echo "AVAILABLE GATES PASSED; unavailable gates: $missing"
+    fi
 else
-    echo "READY: all production-readiness gates passed"
+    if [ "$output" = "--json" ]; then
+        printf '{"ready":true,"strict":%s,"missing":[]}\n' \
+            "$([ "$strict" = "1" ] && printf true || printf false)" >&3
+    else
+        echo "READY: all production-readiness gates passed"
+    fi
 fi
