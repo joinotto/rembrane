@@ -18,6 +18,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Canonical encrypted payloads now reject oversized ciphertext, key IDs,
   algorithms, and nonces plus whitespace- or control-bearing metadata before
   entering storage adapters.
+- Encryption contexts now reject oversized, whitespace-padded, or
+  control-bearing workspace and record identifiers before associated-data
+  encoding or provider dispatch.
 - Canonical SQLite initialization and backup now require the path opened by
   SQLite to retain the exact protected file's device/inode identity, and
   failure cleanup refuses to remove a path replaced after preparation.

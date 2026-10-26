@@ -11,6 +11,8 @@ use rembrane_domain::WorkspaceId;
 mod provider_protocol;
 
 pub const MAX_ENCRYPTED_CIPHERTEXT_BYTES: usize = 1_500_000;
+pub const MAX_ENCRYPTION_CONTEXT_RECORD_ID_BYTES: usize = 1_024;
+pub const MAX_ENCRYPTION_CONTEXT_WORKSPACE_ID_BYTES: usize = 255;
 pub const MAX_ENCRYPTION_KEY_ID_BYTES: usize = 2_048;
 pub const MAX_ENCRYPTION_ALGORITHM_BYTES: usize = 100;
 pub const MAX_ENCRYPTION_NONCE_BYTES: usize = 64;
@@ -66,7 +68,13 @@ impl EncryptionContext {
     ) -> Result<Self, CryptoError> {
         let record_id = record_id.into();
         if workspace_id.as_str().trim().is_empty()
+            || workspace_id.as_str().trim() != workspace_id.as_str()
+            || workspace_id.as_str().len() > MAX_ENCRYPTION_CONTEXT_WORKSPACE_ID_BYTES
+            || workspace_id.as_str().chars().any(char::is_control)
             || record_id.trim().is_empty()
+            || record_id.trim() != record_id
+            || record_id.len() > MAX_ENCRYPTION_CONTEXT_RECORD_ID_BYTES
+            || record_id.chars().any(char::is_control)
             || record_version == 0
         {
             return Err(CryptoError::InvalidContext);
@@ -229,8 +237,9 @@ pub trait RecordCipher {
 mod tests {
     use super::{
         CryptoError, EncryptedPayload, EncryptionContext, MAX_ENCRYPTED_CIPHERTEXT_BYTES,
-        MAX_ENCRYPTION_ALGORITHM_BYTES, MAX_ENCRYPTION_KEY_ID_BYTES, MAX_ENCRYPTION_NONCE_BYTES,
-        PayloadPurpose,
+        MAX_ENCRYPTION_ALGORITHM_BYTES, MAX_ENCRYPTION_CONTEXT_RECORD_ID_BYTES,
+        MAX_ENCRYPTION_CONTEXT_WORKSPACE_ID_BYTES, MAX_ENCRYPTION_KEY_ID_BYTES,
+        MAX_ENCRYPTION_NONCE_BYTES, PayloadPurpose,
     };
     use rembrane_domain::WorkspaceId;
 
@@ -324,5 +333,39 @@ mod tests {
         .expect_err("zero version must fail");
 
         assert_eq!(error, CryptoError::InvalidContext);
+    }
+
+    #[test]
+    fn rejects_unbounded_or_noncanonical_encryption_context_identifiers() {
+        for workspace_id in [
+            " workspace_01".to_owned(),
+            "workspace_01\n".to_owned(),
+            "w".repeat(MAX_ENCRYPTION_CONTEXT_WORKSPACE_ID_BYTES + 1),
+        ] {
+            assert_eq!(
+                EncryptionContext::new(
+                    WorkspaceId::new(workspace_id),
+                    "memory_01",
+                    1,
+                    PayloadPurpose::MemoryContent,
+                ),
+                Err(CryptoError::InvalidContext)
+            );
+        }
+        for record_id in [
+            " memory_01".to_owned(),
+            "memory_01\n".to_owned(),
+            "r".repeat(MAX_ENCRYPTION_CONTEXT_RECORD_ID_BYTES + 1),
+        ] {
+            assert_eq!(
+                EncryptionContext::new(
+                    WorkspaceId::new("workspace_01"),
+                    record_id,
+                    1,
+                    PayloadPurpose::MemoryContent,
+                ),
+                Err(CryptoError::InvalidContext)
+            );
+        }
     }
 }

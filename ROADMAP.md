@@ -23,6 +23,8 @@ This roadmap describes sequencing, not release dates.
 - [x] Define an opaque record-encryption boundary.
   - [x] Bound canonical ciphertext, key identifier, algorithm, and nonce
     metadata before encrypted payloads enter any storage adapter.
+  - [x] Bound and canonicalize workspace and record identifiers before they
+    become encryption associated data or customer-provider request metadata.
 - [x] Define and verify the tenant-isolated SQLite schema.
 - [x] Add versioned, idempotent SQLite schema initialization.
 - [x] Configure bounded SQLite lock waiting and WAL concurrency.
