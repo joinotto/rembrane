@@ -12,6 +12,18 @@ REMBRANE_MEMORY_PROVIDER_EXTERNAL_PUBLIC_KEY=/secure/external-provider-maintaine
   ./scripts/check-production-readiness.sh --strict
 ```
 
+For CI, installers, bots, and hosted control planes, request a single
+machine-readable result on stdout:
+
+```sh
+./scripts/check-production-readiness.sh --strict --json
+```
+
+Progress and diagnostics remain on stderr. The stdout document validates
+against `spec/production-readiness.schema.json`; `schemaVersion` is currently
+`1`, `ready: true` requires an empty `missing` collection, and strict mode
+still exits non-zero when any required gate is unavailable.
+
 Strict mode requires dependency resolution, Rust and Postman tests, a live
 PostgreSQL database dedicated to the destructive RLS fixture, and a working
 Docker daemon. The HTTP suites require permission to bind an ephemeral

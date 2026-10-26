@@ -75,6 +75,7 @@ jq empty \
     spec/discovery.schema.json \
     spec/channel-processor-message.schema.json \
     spec/channel-processor-acknowledgement.schema.json \
+    spec/production-readiness.schema.json \
     spec/mcp-client-catalog.schema.json \
     spec/memory-provider-compatibility-lock.json \
     spec/key-provider-compatibility-lock.json \
@@ -99,6 +100,7 @@ jq empty \
     spec/examples/discovery.json \
     spec/examples/channel-processor-message.json \
     spec/examples/channel-processor-acknowledgement.json \
+    spec/examples/production-readiness.json \
     spec/examples/memory-provider-discovery.json \
     spec/examples/memory-provider-context-request.json \
     spec/examples/memory-provider-context-response.json \
@@ -126,6 +128,19 @@ jq empty \
     spec/oauth-protected-resource.schema.json \
     spec/stdio-connection-manifest.schema.json \
     tests/postman/rembrane-local.postman_collection.json
+
+jq -e --slurpfile example spec/examples/production-readiness.json '
+    .additionalProperties == false
+    and .properties.schemaVersion.const == 1
+    and .properties.missing.maxItems == 64
+    and .properties.missing.uniqueItems == true
+    and .properties.missing.items.maxLength == 128
+    and ($example[0] | keys | sort)
+        == ["missing", "ready", "schemaVersion", "strict"]
+    and $example[0].schemaVersion == 1
+    and $example[0].ready == false
+    and ($example[0].missing | length) > 0
+' spec/production-readiness.schema.json >/dev/null
 
 jq -e --slurpfile example spec/examples/customer-kms-conformance-evidence.json '
     .additionalProperties == false

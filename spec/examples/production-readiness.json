@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "ready": false,
+  "strict": true,
+  "missing": [
+    "official MCP SDK Streamable HTTP transport",
+    "concrete Rust PostgreSQL runtime adapter"
+  ]
+}

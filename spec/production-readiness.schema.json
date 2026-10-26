@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rembrane.dev/spec/production-readiness.schema.json",
+  "title": "Rembrane production readiness result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "ready", "strict", "missing"],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "ready": {
+      "type": "boolean"
+    },
+    "strict": {
+      "type": "boolean"
+    },
+    "missing": {
+      "type": "array",
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "ready": {
+            "const": true
+          }
+        },
+        "required": ["ready"]
+      },
+      "then": {
+        "properties": {
+          "missing": {
+            "maxItems": 0
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "missing": {
+            "minItems": 1
+          }
+        }
+      }
+    }
+  ]
+}

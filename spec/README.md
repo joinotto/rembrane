@@ -59,6 +59,14 @@ credential-reference locators rather than raw workspace keys or provider
 tokens. Commands and arguments are bounded and reject control characters;
 launchers execute them directly without a shell.
 
+## Production readiness result
+
+`production-readiness.schema.json` defines the versioned result emitted by
+`scripts/check-production-readiness.sh ... --json`. A ready result has no
+missing gates; a non-ready result lists bounded, unique operator-facing gate
+labels. Operational progress remains outside the JSON document so automation
+can parse stdout directly.
+
 ## Provider adapter manifest
 
 `provider-manifest.schema.json` defines capability negotiation between the

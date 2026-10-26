@@ -12,9 +12,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Remote MCP initialization tests now use the standard no-op waker and current
   idiomatic control flow, restoring strict Clippy compatibility on the latest
   supported Rust toolchain without changing authorization semantics.
-- Production readiness now supports a `--json` output mode with a stable
-  readiness boolean, strict-mode flag, and complete missing-gate collection
-  for CI, installers, bots, and hosted control planes.
+- Production readiness now supports a versioned, schema-validated `--json`
+  output mode with a stable readiness boolean, strict-mode flag, and complete
+  missing-gate collection for CI, installers, bots, and hosted control planes.
 - Production readiness now distinguishes the live PostgreSQL schema/RLS proof
   from a usable hosted-storage implementation and fails closed until a
   concrete Rust driver plus public runtime pool or repository are present.

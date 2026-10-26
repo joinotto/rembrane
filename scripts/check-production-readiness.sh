@@ -135,7 +135,7 @@ fi
 
 if [ -n "$missing" ]; then
     if [ "$output" = "--json" ]; then
-        printf '{"ready":false,"strict":%s,"missing":[%s]}\n' \
+        printf '{"schemaVersion":1,"ready":false,"strict":%s,"missing":[%s]}\n' \
             "$([ "$strict" = "1" ] && printf true || printf false)" \
             "$missing_json" >&3
     fi
@@ -150,7 +150,7 @@ if [ -n "$missing" ]; then
     fi
 else
     if [ "$output" = "--json" ]; then
-        printf '{"ready":true,"strict":%s,"missing":[]}\n' \
+        printf '{"schemaVersion":1,"ready":true,"strict":%s,"missing":[]}\n' \
             "$([ "$strict" = "1" ] && printf true || printf false)" >&3
     else
         echo "READY: all production-readiness gates passed"
