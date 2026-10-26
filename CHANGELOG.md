@@ -9,6 +9,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Fixed
 
+- `rembrane remember --json` now returns the confirmed preference memory ID
+  and version for arbitrary assistants, with a closed failure code that omits
+  preference content, tenant routing, storage paths, keys, and internal errors.
 - `rembrane trace --json` now returns the canonical proposed-memory identity
   and version for generic agents, with a closed failure code that omits trace
   content, tenant routing, database paths, keys, and internal errors.

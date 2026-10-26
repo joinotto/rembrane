@@ -37,10 +37,41 @@ remember_output=$(
         --database "$database" \
         --principal principal_e2e \
         --workspace workspace_e2e \
-        --content "Call me Hippo"
+        --content "Call me Hippo" \
+        --json
 )
-memory_id=$(printf '%s\n' "$remember_output" | awk '/^Remembered / { print $2 }')
+memory_id=$(printf '%s\n' "$remember_output" | jq -r '
+    select(
+        .schemaVersion == 1
+        and .version == 1
+        and .kind == "preference"
+        and .status == "confirmed"
+    )
+    | .memoryId
+')
 test -n "$memory_id"
+
+remember_failure="$test_directory/remember-failure.json"
+remember_failure_stderr="$test_directory/remember-failure.stderr"
+if "$rembrane_binary" remember \
+    --database "$test_directory/missing-remember.sqlite" \
+    --principal principal_private \
+    --workspace workspace_private \
+    --content "Call me Private Name" \
+    --json >"$remember_failure" 2>"$remember_failure_stderr"
+then
+    echo "JSON remember unexpectedly accepted a missing database" >&2
+    exit 1
+fi
+jq -e '
+    . == {
+        "schemaVersion": 1,
+        "error": {"code": "remember_failed"}
+    }
+    and ((tostring | contains("Private Name")) | not)
+    and ((tostring | contains("workspace_private")) | not)
+' "$remember_failure" >/dev/null
+test ! -s "$remember_failure_stderr"
 
 "$rembrane_binary" backup \
     --database "$database" \

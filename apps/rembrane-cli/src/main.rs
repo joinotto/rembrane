@@ -72,6 +72,8 @@ fn main() {
             println!("{}", recall_failure_json());
         } else if trace_json_requested(&arguments) {
             println!("{}", trace_failure_json());
+        } else if remember_json_requested(&arguments) {
+            println!("{}", remember_failure_json());
         } else if let Some(failure) = working_memory_failure_json(&arguments) {
             println!("{failure}");
         } else {
@@ -93,6 +95,11 @@ fn recall_json_requested(arguments: &[String]) -> bool {
 
 fn trace_json_requested(arguments: &[String]) -> bool {
     arguments.first().map(String::as_str) == Some("trace")
+        && arguments.iter().any(|argument| argument == "--json")
+}
+
+fn remember_json_requested(arguments: &[String]) -> bool {
+    arguments.first().map(String::as_str) == Some("remember")
         && arguments.iter().any(|argument| argument == "--json")
 }
 
@@ -2409,8 +2416,31 @@ fn remember(arguments: &[String]) -> Result<(), String> {
         })
         .map_err(|error| format!("cannot remember preference: {error}"))?;
 
-    println!("Remembered {}", memory.id());
+    if arguments.iter().any(|argument| argument == "--json") {
+        println!("{}", remember_json(&memory));
+    } else {
+        println!("Remembered {}", memory.id());
+    }
     Ok(())
+}
+
+fn remember_json(memory: &MemoryRecord) -> serde_json::Value {
+    serde_json::json!({
+        "schemaVersion": 1,
+        "memoryId": memory.id().to_string(),
+        "version": memory.version(),
+        "kind": "preference",
+        "status": "confirmed"
+    })
+}
+
+fn remember_failure_json() -> serde_json::Value {
+    serde_json::json!({
+        "schemaVersion": 1,
+        "error": {
+            "code": "remember_failed"
+        }
+    })
 }
 
 fn correct(arguments: &[String]) -> Result<(), String> {
@@ -3422,7 +3452,7 @@ fn print_help() {
            rembrane mcp-config clients\n\
            rembrane remember --database <path> --principal <id> \
              --workspace <id> --content <preference> \
-             [--domain <name> | --entity <id> | --activity <id>]\n\
+             [--domain <name> | --entity <id> | --activity <id>] [--json]\n\
            rembrane trace --database <path> --principal <id> \
              --workspace <id> --activity <id> --summary <text> \
              [--entity <id>] [--client <id>] [--json]\n\
@@ -3468,7 +3498,7 @@ mod tests {
         mcp_environment_variables, memory_privacy_mode_name, memory_provider_check_policy,
         opencode_mcp_config, option, positive_u64, providers, read_bounded_registry_file,
         read_export, recall_failure_json, recall_json_requested, recall_scope_context,
-        redact_endpoint, render_mcp_config,
+        redact_endpoint, remember_failure_json, remember_json_requested, render_mcp_config,
         requested_memory_privacy, requested_memory_scope, run, selected_secret_reference,
         test_provider, trace_failure_json, trace_json_requested,
         validate_cli_opaque_id, validate_external_conformance_namespace,
@@ -3635,6 +3665,29 @@ mod tests {
         );
         assert!(!result.to_string().contains("private work trace"));
         assert!(!result.to_string().contains("project.sqlite"));
+    }
+
+    #[test]
+    fn remember_json_failure_is_generic_and_secret_safe() {
+        let arguments = vec![
+            "remember".to_owned(),
+            "--content".to_owned(),
+            "Call me Private Name".to_owned(),
+            "--database".to_owned(),
+            "/private/preferences.sqlite".to_owned(),
+            "--json".to_owned(),
+        ];
+        assert!(remember_json_requested(&arguments));
+        let result = remember_failure_json();
+        assert_eq!(
+            result,
+            serde_json::json!({
+                "schemaVersion": 1,
+                "error": {"code": "remember_failed"}
+            })
+        );
+        assert!(!result.to_string().contains("Private Name"));
+        assert!(!result.to_string().contains("preferences.sqlite"));
     }
 
     #[test]

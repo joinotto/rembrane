@@ -168,6 +168,8 @@ This roadmap describes sequencing, not release dates.
   failure results for generic agents and bots.
   - [x] Reject unsafe routing IDs, empty/NUL summaries, and oversized trace
     content before opening tenant storage.
+- [x] Expose confirmed preference capture as structured CLI success and
+  secret-safe failure results for arbitrary assistants and bots.
 - [x] Publish an executable local-alpha acceptance contract with independent
   static, Rust/E2E, and container CI gates.
 - [x] Add a secret-safe local installation doctor command.
