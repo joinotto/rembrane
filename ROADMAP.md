@@ -423,6 +423,8 @@ This roadmap describes sequencing, not release dates.
       remote-MCP HTTP request diagnostics.
     - [x] Redact verified claims, tenant identity, and session routing
       capabilities in shared remote-access contract diagnostics.
+    - [x] Redact arbitrary factory, SDK, dispatch, initialization, and
+      compensation errors at the remote-MCP adapter boundary.
     - [x] Reject oversized bearer credentials before signature verification or
       authenticated introspection work.
     - [x] Authenticate initialize, discovery, event-stream, and session-delete

@@ -304,7 +304,7 @@ pub trait AuthorizedRemoteMcpInitializationDispatcher {
     ) -> Self::TerminationFuture;
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub enum RemoteMcpInitializationError<InitializeError, TerminationError> {
     Authorization(RemoteMcpHttpRejection),
     Initialize(InitializeError),
@@ -312,6 +312,18 @@ pub enum RemoteMcpInitializationError<InitializeError, TerminationError> {
         rejection: RemoteMcpHttpRejection,
         termination_error: Option<TerminationError>,
     },
+}
+
+impl<InitializeError, TerminationError> fmt::Debug
+    for RemoteMcpInitializationError<InitializeError, TerminationError>
+{
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::Authorization(_) => "Authorization([REDACTED])",
+            Self::Initialize(_) => "Initialize([REDACTED])",
+            Self::Commit { .. } => "Commit([REDACTED])",
+        })
+    }
 }
 
 /// Adapts authorized POST requests to a cloneable Tower MCP service.
@@ -374,11 +386,20 @@ pub enum TenantServiceCacheConfigurationError {
     InvalidCapacity,
 }
 
-#[derive(Debug)]
 pub enum TenantServiceCacheError<FactoryError> {
     CapacityExceeded,
     LockUnavailable,
     Factory(FactoryError),
+}
+
+impl<FactoryError> fmt::Debug for TenantServiceCacheError<FactoryError> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::CapacityExceeded => "CapacityExceeded",
+            Self::LockUnavailable => "LockUnavailable",
+            Self::Factory(_) => "Factory([REDACTED])",
+        })
+    }
 }
 
 #[derive(Clone)]
@@ -519,19 +540,40 @@ impl<Factory> TenantAwareTowerMcpDispatcher<Factory> {
     }
 }
 
-#[derive(Debug)]
 pub enum TowerMcpDispatchError<ServiceError> {
     InvalidAuthorizedMetadata,
     InvalidSdkResponse,
     Service(ServiceError),
 }
 
-#[derive(Debug)]
+impl<ServiceError> fmt::Debug for TowerMcpDispatchError<ServiceError> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::InvalidAuthorizedMetadata => "InvalidAuthorizedMetadata",
+            Self::InvalidSdkResponse => "InvalidSdkResponse",
+            Self::Service(_) => "Service([REDACTED])",
+        })
+    }
+}
+
 pub enum TenantAwareTowerMcpDispatchError<FactoryError, ServiceError> {
     InvalidAuthorizedMetadata,
     InvalidSdkResponse,
     Factory(FactoryError),
     Service(ServiceError),
+}
+
+impl<FactoryError, ServiceError> fmt::Debug
+    for TenantAwareTowerMcpDispatchError<FactoryError, ServiceError>
+{
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::InvalidAuthorizedMetadata => "InvalidAuthorizedMetadata",
+            Self::InvalidSdkResponse => "InvalidSdkResponse",
+            Self::Factory(_) => "Factory([REDACTED])",
+            Self::Service(_) => "Service([REDACTED])",
+        })
+    }
 }
 
 impl<Service> AuthorizedRemoteMcpDispatcher for AuthorizedTowerMcpDispatcher<Service>
@@ -1190,10 +1232,19 @@ fn insert_optional_validated_header<ServiceError>(
     Ok(())
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub enum RemoteMcpDispatchError<DispatchError> {
     Authorization(RemoteMcpHttpRejection),
     Dispatch(DispatchError),
+}
+
+impl<DispatchError> fmt::Debug for RemoteMcpDispatchError<DispatchError> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::Authorization(_) => "Authorization([REDACTED])",
+            Self::Dispatch(_) => "Dispatch([REDACTED])",
+        })
+    }
 }
 
 impl AuthorizedRemoteMcpRequest {
@@ -3602,11 +3653,11 @@ mod tests {
         RemoteMcpAxumAuthorization, RemoteMcpDispatchError, RemoteMcpHttpGate,
         RemoteMcpHttpRejection, RemoteMcpHttpRequest, RemoteMcpInitializationError,
         RemoteMcpInvocation, SharedRemoteMcpAxumAuthorization, TenantAwareTowerMcpDispatchError,
-        TenantAwareTowerMcpDispatcher, TenantServiceCacheError, authorize_axum_session_body,
-        authorize_axum_session_deletion, authorize_axum_stateless_body,
-        authorize_axum_stateless_owned_body, classify_remote_mcp_request,
-        establish_and_dispatch_axum_session, establish_axum_session_body,
-        request_from_axum_headers,
+        TenantAwareTowerMcpDispatcher, TenantServiceCacheError, TowerMcpDispatchError,
+        authorize_axum_session_body, authorize_axum_session_deletion,
+        authorize_axum_stateless_body, authorize_axum_stateless_owned_body,
+        classify_remote_mcp_request, establish_and_dispatch_axum_session,
+        establish_axum_session_body, request_from_axum_headers,
     };
 
     struct Verifier;
@@ -4139,6 +4190,37 @@ mod tests {
         }
         assert!(debug.contains("authorization_present: true"));
         assert!(debug.contains("session_id_present: true"));
+    }
+
+    #[test]
+    fn downstream_error_debug_redacts_untrusted_diagnostics() {
+        let private = "Bearer private-token workspace_01 memory plaintext";
+        let initialization = RemoteMcpInitializationError::<&str, &str>::Initialize(private);
+        let compensation = RemoteMcpInitializationError::<&str, &str>::Commit {
+            rejection: RemoteMcpHttpRejection {
+                status: 503,
+                www_authenticate: None,
+                retry_after_seconds: None,
+            },
+            termination_error: Some(private),
+        };
+        let dispatch = RemoteMcpDispatchError::Dispatch(private);
+        let cache = TenantServiceCacheError::Factory(private);
+        let tower = TowerMcpDispatchError::Service(private);
+        let tenant_tower = TenantAwareTowerMcpDispatchError::<&str, &str>::Factory(private);
+
+        for debug in [
+            format!("{initialization:?}"),
+            format!("{compensation:?}"),
+            format!("{dispatch:?}"),
+            format!("{cache:?}"),
+            format!("{tower:?}"),
+            format!("{tenant_tower:?}"),
+        ] {
+            assert!(!debug.contains(private));
+            assert!(!debug.contains("workspace_01"));
+            assert!(debug.contains("[REDACTED]"));
+        }
     }
 
     #[test]

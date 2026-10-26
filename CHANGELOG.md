@@ -75,6 +75,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Shared remote-access contracts now redact issuer, resource, audience,
   principal, client, workspace, and session routing identities while retaining
   safe scope counts and validity timestamps.
+- Remote-MCP initialization, dispatch, tenant-service factory, SDK service,
+  and compensation errors now render only their closed variant, redacting
+  arbitrary downstream diagnostics.
 - Canonical SQLite initialization and backup now require the path opened by
   SQLite to retain the exact protected file's device/inode identity, and
   failure cleanup refuses to remove a path replaced after preparation.
