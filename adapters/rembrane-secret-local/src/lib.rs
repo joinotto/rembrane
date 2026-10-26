@@ -2,7 +2,8 @@
 
 use std::error::Error;
 use std::fmt::{Display, Formatter};
-use std::fs;
+use std::fs::{self, File, Metadata};
+use std::io::Read as _;
 
 use rembrane_config::{
     PostgresConnection, PostgresTransportSecurity, ProviderConnection, SecretReference,
@@ -155,7 +156,34 @@ impl SecretResolver for LocalSecretResolver {
 }
 
 fn resolve_file(path: &str) -> Result<Zeroizing<String>, SecretResolutionError> {
-    let metadata = fs::symlink_metadata(path).map_err(|_| SecretResolutionError::Unavailable)?;
+    let path_metadata =
+        fs::symlink_metadata(path).map_err(|_| SecretResolutionError::Unavailable)?;
+    validate_file_metadata(&path_metadata)?;
+    let file = File::open(path).map_err(|_| SecretResolutionError::Unavailable)?;
+    let opened_metadata = file
+        .metadata()
+        .map_err(|_| SecretResolutionError::Unavailable)?;
+    validate_file_metadata(&opened_metadata)?;
+    ensure_same_file(&path_metadata, &opened_metadata)?;
+
+    let current_path_metadata =
+        fs::symlink_metadata(path).map_err(|_| SecretResolutionError::Unavailable)?;
+    validate_file_metadata(&current_path_metadata)?;
+    ensure_same_file(&opened_metadata, &current_path_metadata)?;
+
+    let mut bytes = Zeroizing::new(Vec::with_capacity(
+        usize::try_from(opened_metadata.len()).unwrap_or(MAX_RESOLVED_SECRET_BYTES),
+    ));
+    file.take((MAX_RESOLVED_SECRET_BYTES + 1) as u64)
+        .read_to_end(&mut bytes)
+        .map_err(|_| SecretResolutionError::Unavailable)?;
+    if bytes.len() > MAX_RESOLVED_SECRET_BYTES {
+        return Err(SecretResolutionError::UnsafeFile);
+    }
+    normalize_file_value(bytes)
+}
+
+fn validate_file_metadata(metadata: &Metadata) -> Result<(), SecretResolutionError> {
     if !metadata.file_type().is_file()
         || metadata.file_type().is_symlink()
         || metadata.len() > MAX_RESOLVED_SECRET_BYTES as u64
@@ -170,8 +198,27 @@ fn resolve_file(path: &str) -> Result<Zeroizing<String>, SecretResolutionError> 
             return Err(SecretResolutionError::UnsafeFile);
         }
     }
+    Ok(())
+}
 
-    let mut bytes = Zeroizing::new(fs::read(path).map_err(|_| SecretResolutionError::Unavailable)?);
+#[cfg(unix)]
+fn ensure_same_file(left: &Metadata, right: &Metadata) -> Result<(), SecretResolutionError> {
+    use std::os::unix::fs::MetadataExt as _;
+
+    if left.dev() != right.dev() || left.ino() != right.ino() {
+        return Err(SecretResolutionError::UnsafeFile);
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn ensure_same_file(_left: &Metadata, _right: &Metadata) -> Result<(), SecretResolutionError> {
+    Ok(())
+}
+
+fn normalize_file_value(
+    mut bytes: Zeroizing<Vec<u8>>,
+) -> Result<Zeroizing<String>, SecretResolutionError> {
     if bytes.ends_with(b"\n") {
         bytes.pop();
         if bytes.ends_with(b"\r") {
@@ -245,7 +292,7 @@ mod tests {
 
     use super::{
         LocalSecretResolver, MAX_POSTGRES_URL_BYTES, MAX_RESOLVED_SECRET_BYTES,
-        SecretResolutionError, SecretResolver, resolve_postgres_connection,
+        SecretResolutionError, SecretResolver, ensure_same_file, resolve_postgres_connection,
         resolve_provider_credentials,
     };
 
@@ -309,6 +356,40 @@ mod tests {
             .expect("oversized secret");
         assert_eq!(
             LocalSecretResolver.resolve(&reference),
+            Err(SecretResolutionError::UnsafeFile)
+        );
+
+        fs::remove_dir_all(directory).expect("temporary cleanup");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn file_identity_check_rejects_path_replacement() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let directory = std::env::temp_dir().join(format!(
+            "rembrane-secret-identity-test-{}-{suffix}",
+            std::process::id()
+        ));
+        fs::create_dir(&directory).expect("temporary directory");
+        let first_path = directory.join("first");
+        let second_path = directory.join("second");
+        fs::write(&first_path, b"first").expect("first file");
+        fs::write(&second_path, b"second").expect("second file");
+        fs::set_permissions(&first_path, fs::Permissions::from_mode(0o600))
+            .expect("first permissions");
+        fs::set_permissions(&second_path, fs::Permissions::from_mode(0o600))
+            .expect("second permissions");
+
+        assert_eq!(
+            ensure_same_file(
+                &fs::metadata(&first_path).expect("first metadata"),
+                &fs::metadata(&second_path).expect("second metadata")
+            ),
             Err(SecretResolutionError::UnsafeFile)
         );
 

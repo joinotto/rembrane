@@ -46,6 +46,8 @@ This roadmap describes sequencing, not release dates.
       environment and secret-file implementation.
       - [x] Resolve validated provider credential lists atomically from the
         caller's selected local or external resolver.
+      - [x] Bind protected-file validation and bounded reads to one opened
+        file identity, rejecting path replacement during resolution.
   - [x] Bound and deduplicate each provider profile's credential-reference
     list before any secret-manager resolution.
   - [x] Make validated provider profiles opaque so callers cannot bypass

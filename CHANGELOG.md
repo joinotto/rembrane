@@ -976,6 +976,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - A pluggable zeroizing secret-resolver port with a local environment and
   protected-file adapter that bounds values, rejects nulls, unsafe permissions,
   non-regular files, and symlinks, and leaves external managers replaceable.
+- Protected-file secret reads now bind validation to one opened file identity,
+  reject Unix path replacement by device and inode, and enforce the byte bound
+  while reading instead of trusting an earlier size check.
 - Ordered all-or-error provider credential resolution through any secret
   resolver, zeroizing already resolved values when a later reference fails.
 - A transport-injectable Mem0 OSS semantic adapter mapping authorized

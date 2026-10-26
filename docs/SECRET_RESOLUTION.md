@@ -14,7 +14,10 @@ Resolved strings are held in zeroizing memory and limited to 64 KiB. File
 resolution rejects symbolic links, non-regular files, empty or invalid UTF-8
 values, null bytes, and oversized content. On Unix, group or other permission
 bits are rejected. One final LF or CRLF written by a secret-mount mechanism is
-removed; all other bytes remain unchanged.
+removed; all other bytes remain unchanged. The resolver validates and reads
+one opened file descriptor, verifies its device and inode against the path
+before and after opening on Unix, and enforces the byte limit while reading.
+Path replacement and file growth therefore fail closed.
 
 External references deliberately return `UnsupportedSource` from the local
 resolver. A deployment integrates Vault, AWS Secrets Manager, Azure Key Vault,
