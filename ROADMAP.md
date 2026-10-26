@@ -146,6 +146,9 @@ This roadmap describes sequencing, not release dates.
   MCP-created project-checkpoint resumption by both a fresh agent process and
   the CLI.
 - [x] Add a single full preflight test command and operator testing guide.
+- [x] Expose authorized CLI recall as structured JSON for generic bots,
+  launchers, and agent runtimes while preserving context-pack and disclosure
+  receipt identity.
 - [x] Publish an executable local-alpha acceptance contract with independent
   static, Rust/E2E, and container CI gates.
 - [x] Add a secret-safe local installation doctor command.

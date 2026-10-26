@@ -437,6 +437,33 @@ project_recall=$(
 printf '%s\n' "$project_recall" |
     rg -F "$project_memory_id: Use Rust for the Rembrane core" >/dev/null
 
+project_recall_json=$(
+    "$rembrane_binary" recall \
+        --database "$database" \
+        --principal principal_e2e \
+        --workspace workspace_e2e \
+        --client coding_agent_json_e2e \
+        --entity project_e2e \
+        --purpose continue-project \
+        --query "Which language should power the Rembrane core?" \
+        --json
+)
+printf '%s\n' "$project_recall_json" | jq -e \
+    --arg memory_id "$project_memory_id" '
+    .schemaVersion == 1
+    and (.contextPackId | type) == "string"
+    and (.disclosureId | type) == "string"
+    and .items == [{
+        "memoryId": $memory_id,
+        "version": 1,
+        "content": "Use Rust for the Rembrane core"
+    }]
+    and (has("workspaceId") | not)
+    and (has("principalId") | not)
+    and ((tostring | contains("workspace_e2e")) | not)
+    and ((tostring | contains("principal_e2e")) | not)
+' >/dev/null
+
 layered_identity_recall=$(
     "$rembrane_binary" recall \
         --database "$database" \
@@ -680,7 +707,7 @@ trace_count=$(
         "SELECT count(*) FROM memories WHERE workspace_id = 'workspace_e2e' AND id = '$trace_id' AND kind = 'observation' AND status = 'proposed' AND scope_type = 'activity' AND scope_value = 'activity_cli_e2e';"
 )
 test "$event_count" = "11"
-test "$disclosure_count" = "8"
+test "$disclosure_count" = "9"
 test "$checkpoint_disclosure_count" = "2"
 test "$trace_count" = "1"
 test "$plaintext_count" = "0"

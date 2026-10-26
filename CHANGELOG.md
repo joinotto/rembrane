@@ -9,6 +9,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Fixed
 
+- `rembrane recall --json` now emits versioned structured memory items plus
+  context-pack and disclosure-receipt IDs for generic bots, launchers, and
+  agent runtimes without requiring human-output parsing.
 - `rembrane doctor --json` now emits structured installation health, closed
   membership role, authenticated-record counts, and secret-source categories
   without principal or workspace identifiers; mixed JSON/privacy output is

@@ -24,7 +24,9 @@ use rembrane_codec::{
 use rembrane_config::{
     ProviderConnection, ProviderKind, ProviderPlacement, RemoteMcpConfig, SecretReference,
 };
-use rembrane_contracts::{ChannelKind, ChannelSenderBinding, ResolveContextRequest};
+use rembrane_contracts::{
+    ChannelKind, ChannelSenderBinding, ResolveContextRequest, ResolveContextResponse,
+};
 use rembrane_crypto_configured::ConfiguredRecordCipher;
 use rembrane_domain::{
     ActivityCheckpoint, ActivityId, CanonicalEvent, CheckpointId, ClientId, ContextPackId,
@@ -2497,12 +2499,36 @@ fn recall(arguments: &[String]) -> Result<(), String> {
         })
         .map_err(|error| format!("cannot recall context: {error}"))?;
 
-    for item in &response.items {
-        println!("{}: {}", item.id(), item.content());
+    if arguments.iter().any(|argument| argument == "--json") {
+        println!("{}", recall_json(&response));
+    } else {
+        for item in &response.items {
+            println!("{}: {}", item.id(), item.content());
+        }
+        println!("Context pack: {}", response.context_pack_id);
+        println!("Disclosure receipt: {}", response.disclosure_id);
     }
-    println!("Context pack: {}", response.context_pack_id);
-    println!("Disclosure receipt: {}", response.disclosure_id);
     Ok(())
+}
+
+fn recall_json(response: &ResolveContextResponse) -> serde_json::Value {
+    let items = response
+        .items
+        .iter()
+        .map(|item| {
+            serde_json::json!({
+                "memoryId": item.id().to_string(),
+                "version": item.version(),
+                "content": item.content()
+            })
+        })
+        .collect::<Vec<_>>();
+    serde_json::json!({
+        "schemaVersion": 1,
+        "contextPackId": response.context_pack_id.to_string(),
+        "disclosureId": response.disclosure_id.to_string(),
+        "items": items
+    })
 }
 
 fn trace(arguments: &[String]) -> Result<(), String> {
@@ -3302,7 +3328,7 @@ fn print_help() {
            rembrane recall --database <path> --principal <id> \
              --workspace <id> --client <id> --purpose <purpose> --query <query> \
              [--limit <items>] [--max-bytes <bytes>] \
-             [--domain <name>] [--entity <id>] [--activity <id>]\n\
+             [--domain <name>] [--entity <id>] [--activity <id>] [--json]\n\
            rembrane checkpoint --database <path> --principal <id> \
              --workspace <id> --activity <id> --summary <text> \
              [--goal <text> --entity <id>] [--version <n>] \
