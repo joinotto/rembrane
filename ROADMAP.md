@@ -1349,6 +1349,8 @@ This roadmap describes sequencing, not release dates.
       Swift adopters, and link all application SDK guides from the project root.
     - [x] Add named Swift preference, work-trace, correction, deletion,
       checkpoint, and resume operations with path-safe opaque identifiers.
+    - [x] Add the complete Swift travel continuity route set for trips,
+      participants, constraints, decisions, research, and context resolution.
   - [x] Publish a dependency-free Kotlin/JVM client package with injected
     transport and an executable smoke fixture.
     - [x] Add authenticated raw-byte portable exports and bounded atomic JSONL

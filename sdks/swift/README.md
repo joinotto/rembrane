@@ -60,6 +60,9 @@ Imports are limited to 64 MiB, validated atomically by the server, and admitted
 only as reviewable proposals. The expected previous sequence rejects writes
 against stale workspace state.
 
+Named travel methods cover trip creation, participants, constraints, decisions,
+time-sensitive booking research, and audited travel-context resolution.
+
 ## Verify
 
 From the repository root:

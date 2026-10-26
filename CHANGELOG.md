@@ -97,6 +97,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   and activity handoff operations with pre-network opaque-ID validation.
 - The Kotlin SDK now exposes the complete travel continuity route set,
   including expiring booking research and audited context resolution.
+- The Swift SDK now exposes the complete travel continuity route set,
+  including expiring booking research and audited context resolution.
 - The application layer now defines a bounded, authorized memory-import batch
   that re-admits external content as destination-scoped proposals with fresh
   identities and contiguous canonical events through an atomic repository

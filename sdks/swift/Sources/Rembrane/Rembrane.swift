@@ -416,6 +416,68 @@ public struct RembraneClient<Transport: RembraneTransport>: Sendable {
         )
     }
 
+    public func createTrip<Request: Encodable, Response: Decodable>(
+        _ request: Request,
+        as responseType: Response.Type = Response.self
+    ) async throws -> Response {
+        try await post("/travel/trips", request: request, as: responseType)
+    }
+
+    public func addTripParticipant<Request: Encodable, Response: Decodable>(
+        _ request: Request,
+        as responseType: Response.Type = Response.self
+    ) async throws -> Response {
+        try await post(
+            "/travel/trip-participants",
+            request: request,
+            as: responseType
+        )
+    }
+
+    public func addTripConstraint<Request: Encodable, Response: Decodable>(
+        _ request: Request,
+        as responseType: Response.Type = Response.self
+    ) async throws -> Response {
+        try await post(
+            "/travel/trip-constraints",
+            request: request,
+            as: responseType
+        )
+    }
+
+    public func recordTripDecision<Request: Encodable, Response: Decodable>(
+        _ request: Request,
+        as responseType: Response.Type = Response.self
+    ) async throws -> Response {
+        try await post(
+            "/travel/trip-decisions",
+            request: request,
+            as: responseType
+        )
+    }
+
+    public func captureBookingResearch<Request: Encodable, Response: Decodable>(
+        _ request: Request,
+        as responseType: Response.Type = Response.self
+    ) async throws -> Response {
+        try await post(
+            "/travel/booking-research",
+            request: request,
+            as: responseType
+        )
+    }
+
+    public func resolveTravelContext<Request: Encodable, Response: Decodable>(
+        _ request: Request,
+        as responseType: Response.Type = Response.self
+    ) async throws -> Response {
+        try await post(
+            "/travel/context/resolve",
+            request: request,
+            as: responseType
+        )
+    }
+
     public func acceptWorkspaceInvitation<Request: Encodable, Response: Decodable>(
         _ request: Request,
         as responseType: Response.Type = Response.self

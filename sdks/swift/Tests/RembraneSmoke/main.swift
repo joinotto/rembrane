@@ -295,6 +295,46 @@ private struct RembraneSmoke {
         let requestAfterInvalidMemory = await transport.request
         precondition(requestAfterInvalidMemory?.url == requestBeforeInvalidMemory?.url)
 
+        var travelPaths: [String] = []
+        let _: InvitationResponse = try await client.createTrip(continuityRequest)
+        travelPaths.append(await transport.request?.url?.path ?? "")
+        let _: InvitationResponse = try await client.addTripParticipant(
+            continuityRequest
+        )
+        travelPaths.append(await transport.request?.url?.path ?? "")
+        let _: InvitationResponse = try await client.addTripConstraint(
+            continuityRequest
+        )
+        travelPaths.append(await transport.request?.url?.path ?? "")
+        let _: InvitationResponse = try await client.recordTripDecision(
+            continuityRequest
+        )
+        travelPaths.append(await transport.request?.url?.path ?? "")
+        let _: InvitationResponse = try await client.captureBookingResearch(
+            continuityRequest
+        )
+        travelPaths.append(await transport.request?.url?.path ?? "")
+        let _: InvitationResponse = try await client.resolveTravelContext(
+            continuityRequest
+        )
+        travelPaths.append(await transport.request?.url?.path ?? "")
+        precondition(
+            travelPaths == [
+                "/v1/travel/trips",
+                "/v1/travel/trip-participants",
+                "/v1/travel/trip-constraints",
+                "/v1/travel/trip-decisions",
+                "/v1/travel/booking-research",
+                "/v1/travel/context/resolve",
+            ]
+        )
+        let finalTravelRequest = await transport.request
+        precondition(finalTravelRequest?.httpMethod == "POST")
+        precondition(
+            finalTravelRequest?.value(forHTTPHeaderField: "Authorization")
+                == "Bearer test-token"
+        )
+
         let archive = try await client.exportPortableData(
             workspaceID: "team_workspace",
             subjectID: "principal-1",
