@@ -13,6 +13,7 @@ mod checkpoint;
 mod error;
 mod graph_context;
 mod graph_projection_worker;
+mod import_memory;
 mod invitation;
 mod member_lifecycle;
 mod member_scope;
@@ -46,6 +47,10 @@ pub use checkpoint::{
 pub use error::ApplicationError;
 pub use graph_context::{GraphContextService, ResolveGraphContextCommand};
 pub use graph_projection_worker::GraphProjectionWorker;
+pub use import_memory::{
+    ImportMemoryBatchCommand, ImportMemoryBatchService, ImportedMemoryProposal,
+    MAXIMUM_MEMORY_IMPORT_ITEMS,
+};
 pub use invitation::{
     AcceptInvitationCommand, CreateInvitationCommand, InvitationService, ListInvitationsQuery,
     MAXIMUM_INVITATION_LIST_ITEMS, RevokeInvitationCommand,
@@ -68,10 +73,10 @@ pub use ports::{
     KeyRotationRepository, KnowledgeDirection, KnowledgeGraphMutationRepository,
     KnowledgeGraphRepository, MAX_ADMINISTRATIVE_AUDIT_PAGE, MAX_CHANNEL_INBOX_PAGE,
     MAX_KNOWLEDGE_NEIGHBOURS, MemberLifecycleRepository, MemberScopeGrantRepository,
-    MembershipRepository, MemoryRepository, ProjectionOutboxRepository, RetentionPurgeRepository,
-    RetentionRepository, ShareProposalMutationRepository, ShareProposalRepository,
-    TravelContextRepository, TravelDisclosureRepository, TripMutationRepository, TripRepository,
-    WorkspaceReadRepository, WorkspaceRepository,
+    MembershipRepository, MemoryImportRepository, MemoryRepository, ProjectionOutboxRepository,
+    RetentionPurgeRepository, RetentionRepository, ShareProposalMutationRepository,
+    ShareProposalRepository, TravelContextRepository, TravelDisclosureRepository,
+    TripMutationRepository, TripRepository, WorkspaceReadRepository, WorkspaceRepository,
 };
 pub use projection_worker::{ProjectionOutcome, ProjectionWorker};
 pub use propose_memory::{ConfirmMemoryCommand, MemoryProposalService, ProposeMemoryCommand};

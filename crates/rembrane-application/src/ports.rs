@@ -400,6 +400,18 @@ pub trait CanonicalMutationRepository: EventRepository + MemoryRepository {
     ) -> Result<(), ApplicationError>;
 }
 
+/// Atomic destination-scoped admission of already validated import proposals.
+///
+/// Implementations must commit every memory and its contiguous canonical event
+/// or leave the destination unchanged.
+pub trait MemoryImportRepository {
+    fn insert_imported_memory_batch(
+        &mut self,
+        mutations: &[(MemoryRecord, CanonicalEvent)],
+        expected_previous_sequence: u64,
+    ) -> Result<(), ApplicationError>;
+}
+
 pub trait CheckpointRepository {
     fn latest_checkpoint(
         &self,

@@ -51,6 +51,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Portable JSONL archive decoding now enforces fixed aggregate record and byte
   ceilings, one source tenant, unique memory revisions, and no blank records
   before returning any validated canonical memories.
+- The application layer now defines a bounded, authorized memory-import batch
+  that re-admits external content as destination-scoped proposals with fresh
+  identities and contiguous canonical events through an atomic repository
+  port; the in-memory reference adapter implements all-or-nothing admission.
 - Remote MCP now provides a bounded, non-evicting tenant Tower-service cache
   keyed by exact issuer, resource, principal, client, workspace, and OAuth
   scope set, preserving protocol sessions across token refresh while failing

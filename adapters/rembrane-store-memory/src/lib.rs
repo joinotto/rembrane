@@ -8,10 +8,10 @@ use rembrane_application::{
     GraphProjectionOutboxRepository, InvitationRepository, KeyRotationRepository,
     KnowledgeDirection, KnowledgeGraphMutationRepository, KnowledgeGraphRepository,
     MAX_ADMINISTRATIVE_AUDIT_PAGE, MAX_KNOWLEDGE_NEIGHBOURS, MemberLifecycleRepository,
-    MemberScopeGrantRepository, MembershipRepository, MemoryRepository, ProjectionOutboxRepository,
-    RetentionRepository, ShareProposalMutationRepository, ShareProposalRepository,
-    TravelDisclosureRepository, TripMutationRepository, TripRepository, WorkspaceReadRepository,
-    WorkspaceRepository, is_strict_successor,
+    MemberScopeGrantRepository, MembershipRepository, MemoryImportRepository, MemoryRepository,
+    ProjectionOutboxRepository, RetentionRepository, ShareProposalMutationRepository,
+    ShareProposalRepository, TravelDisclosureRepository, TripMutationRepository, TripRepository,
+    WorkspaceReadRepository, WorkspaceRepository, is_strict_successor,
 };
 use rembrane_domain::{
     ActivityCheckpoint, ActivityId, AdministrativeAction, AdministrativeAuditEvent,
@@ -956,6 +956,67 @@ impl CanonicalMutationRepository for InMemoryStore {
         self.memories[position] = memory;
         self.events.push(event);
         self.projections.extend(projections);
+        Ok(())
+    }
+}
+
+impl MemoryImportRepository for InMemoryStore {
+    fn insert_imported_memory_batch(
+        &mut self,
+        mutations: &[(MemoryRecord, CanonicalEvent)],
+        expected_previous_sequence: u64,
+    ) -> Result<(), ApplicationError> {
+        let current_sequence = self
+            .events
+            .iter()
+            .filter(|event| {
+                mutations
+                    .first()
+                    .is_some_and(|(_, imported)| event.workspace_id() == imported.workspace_id())
+            })
+            .map(CanonicalEvent::sequence)
+            .max()
+            .unwrap_or(0);
+        if current_sequence != expected_previous_sequence {
+            return Err(ApplicationError::SequenceConflict);
+        }
+        let mut memory_ids = std::collections::HashSet::new();
+        let mut event_ids = std::collections::HashSet::new();
+        for (offset, (memory, event)) in mutations.iter().enumerate() {
+            let increment = u64::try_from(offset)
+                .ok()
+                .and_then(|offset| offset.checked_add(1))
+                .ok_or(ApplicationError::SequenceConflict)?;
+            if event.sequence()
+                != expected_previous_sequence
+                    .checked_add(increment)
+                    .ok_or(ApplicationError::SequenceConflict)?
+                || memory.workspace_id() != event.workspace_id()
+                || event.subject_id() != Some(memory.subject_id())
+                || !matches!(
+                    event.payload(),
+                    EventPayload::MemoryProposed { memory_id, version }
+                        if memory_id == memory.id() && *version == memory.version()
+                )
+            {
+                return Err(ApplicationError::Validation(
+                    "invalid imported memory mutation".to_owned(),
+                ));
+            }
+            if !memory_ids.insert((memory.workspace_id().clone(), memory.id().clone()))
+                || self.memories.iter().any(|stored| {
+                    stored.workspace_id() == memory.workspace_id() && stored.id() == memory.id()
+                })
+                || !event_ids.insert(event.id().clone())
+                || self.events.iter().any(|stored| stored.id() == event.id())
+            {
+                return Err(ApplicationError::AlreadyExists);
+            }
+        }
+        self.memories
+            .extend(mutations.iter().map(|(memory, _)| memory.clone()));
+        self.events
+            .extend(mutations.iter().map(|(_, event)| event.clone()));
         Ok(())
     }
 }

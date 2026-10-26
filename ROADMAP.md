@@ -110,6 +110,11 @@ This roadmap describes sequencing, not release dates.
     homogeneous source tenancy, duplicate revision rejection, and no blank
     records so import surfaces can validate before canonical mutation.
   - [ ] Apply validated imports as one authorized atomic canonical mutation.
+    - [x] Define a bounded import-as-proposals application use case and atomic
+      repository port with destination scope authorization, fresh target
+      identity checks, and contiguous canonical event construction.
+    - [x] Implement the atomic port in the in-memory reference adapter.
+    - [ ] Implement and verify the atomic port in encrypted SQLite.
 - [x] Package the local REST service for loopback-only Docker Compose
   self-hosting with persistent encrypted storage.
   - [x] Resolve the REST bearer credential from validated environment or
