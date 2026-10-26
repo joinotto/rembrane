@@ -2,7 +2,10 @@ use std::error::Error;
 use std::fmt::{self, Display};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use rembrane_domain::{KeyRotationReceipt, MAX_KEY_ROTATION_RECIPIENTS, PrincipalId, WorkspaceId};
+use rembrane_domain::{
+    KeyRotationReceipt, MAX_KEY_ROTATION_IDENTITY_BYTES, MAX_KEY_ROTATION_RECIPIENTS, PrincipalId,
+    WorkspaceId,
+};
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::{CryptoError, EncryptedPayload, EncryptionContext, RecordCipher};
@@ -156,13 +159,13 @@ impl RotateKeyRequest {
     ) -> Result<Self, KeyProviderProtocolError> {
         let request_id = request_id.into();
         validate_request_id(&request_id)?;
-        if workspace_id.as_str().is_empty()
+        if !valid_rotation_identity(workspace_id.as_str())
             || generation == 0
             || recipient_ids.is_empty()
             || recipient_ids.len() > MAX_KEY_ROTATION_RECIPIENTS
             || recipient_ids
                 .iter()
-                .any(|recipient| recipient.as_str().is_empty())
+                .any(|recipient| !valid_rotation_identity(recipient.as_str()))
         {
             return Err(KeyProviderProtocolError::InvalidRequest);
         }
@@ -197,6 +200,14 @@ impl RotateKeyRequest {
     pub fn recipient_ids(&self) -> &[PrincipalId] {
         &self.recipient_ids
     }
+}
+
+fn valid_rotation_identity(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= MAX_KEY_ROTATION_IDENTITY_BYTES
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b':'))
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -697,6 +708,42 @@ mod tests {
         assert!(!debug.contains("member-private"));
         assert!(!debug.contains("owner-private"));
         assert!(debug.contains("recipient_count"));
+    }
+
+    #[test]
+    fn rotation_request_rejects_unsafe_or_unbounded_identities_before_transport() {
+        let request = |workspace_id, recipients| {
+            RotateKeyRequest::new(
+                "rotation-request",
+                WorkspaceId::new(workspace_id),
+                2,
+                recipients,
+            )
+        };
+
+        assert_eq!(
+            request(
+                "workspace\n01",
+                vec![PrincipalId::new("owner"), PrincipalId::new("member")],
+            ),
+            Err(KeyProviderProtocolError::InvalidRequest)
+        );
+        assert_eq!(
+            request(
+                "workspace_01",
+                vec![PrincipalId::new("owner"), PrincipalId::new("member/01")],
+            ),
+            Err(KeyProviderProtocolError::InvalidRequest)
+        );
+
+        let oversized = "a".repeat(rembrane_domain::MAX_KEY_ROTATION_IDENTITY_BYTES + 1);
+        assert_eq!(
+            request(
+                "workspace_01",
+                vec![PrincipalId::new("owner"), PrincipalId::new(oversized)],
+            ),
+            Err(KeyProviderProtocolError::InvalidRequest)
+        );
     }
 
     #[test]
