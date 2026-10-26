@@ -1321,6 +1321,8 @@ This roadmap describes sequencing, not release dates.
         diagnostics.
     - [x] Add bounded idempotent activity-checkpoint create/update payloads
       with explicit optimistic versions and canonical checkpoint identities.
+      - [x] Redact provider checkpoint working memory, state fingerprints,
+        idempotency keys, and canonical identities from diagnostics.
     - [x] Add append-only disclosure receipt payloads containing exact memory
       revisions while deriving workspace, subject, and client identity solely
       from authenticated connection context.

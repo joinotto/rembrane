@@ -1,8 +1,10 @@
+use std::fmt;
+
 use rembrane_domain::{ActivityId, CheckpointId, EntityId, MAX_CHECKPOINT_PAYLOAD_BYTES};
 
 use crate::{MemoryProviderIdempotencyKey, ProviderError};
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct CheckpointActivityPayload {
     idempotency_key: MemoryProviderIdempotencyKey,
     activity_id: ActivityId,
@@ -13,6 +15,26 @@ pub struct CheckpointActivityPayload {
     next_steps: Vec<String>,
     blockers: Vec<String>,
     state_fingerprint: Option<String>,
+}
+
+impl fmt::Debug for CheckpointActivityPayload {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("CheckpointActivityPayload")
+            .field("idempotency_key", &"<redacted>")
+            .field("activity_id", &"<redacted>")
+            .field("entity_id_present", &self.entity_id.is_some())
+            .field("expected_version", &self.expected_version)
+            .field("goal_bytes", &self.goal.as_deref().map_or(0, str::len))
+            .field("summary_bytes", &self.summary.len())
+            .field("next_step_count", &self.next_steps.len())
+            .field("blocker_count", &self.blockers.len())
+            .field(
+                "state_fingerprint_present",
+                &self.state_fingerprint.is_some(),
+            )
+            .finish()
+    }
 }
 
 impl CheckpointActivityPayload {
@@ -149,10 +171,20 @@ impl CheckpointActivityPayload {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct CheckpointActivityResult {
     checkpoint_id: CheckpointId,
     version: u64,
+}
+
+impl fmt::Debug for CheckpointActivityResult {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("CheckpointActivityResult")
+            .field("checkpoint_id", &"<redacted>")
+            .field("version", &self.version)
+            .finish()
+    }
 }
 
 impl CheckpointActivityResult {
@@ -344,5 +376,47 @@ mod tests {
         );
         assert!(CheckpointActivityResult::new(CheckpointId::new(""), 1).is_err());
         assert!(CheckpointActivityResult::new(CheckpointId::new("checkpoint_01"), 0).is_err());
+    }
+
+    #[test]
+    fn checkpoint_diagnostics_redact_working_memory_and_identity() {
+        let payload = CheckpointActivityPayload::create(
+            MemoryProviderIdempotencyKey::new("private_checkpoint_key")
+                .expect("idempotency key should be valid"),
+            ActivityId::new("private_activity"),
+            Some(EntityId::new("private_entity")),
+            "Private checkpoint goal",
+            "Private checkpoint summary",
+            vec!["Private next step".to_owned()],
+            vec!["Private blocker".to_owned()],
+            Some("private_state_fingerprint".to_owned()),
+        )
+        .expect("payload should be valid");
+        let result = CheckpointActivityResult::new(CheckpointId::new("private_checkpoint"), 6)
+            .expect("result should be valid");
+
+        let diagnostic = format!("{payload:?} {result:?}");
+
+        for private_value in [
+            "private_checkpoint_key",
+            "private_activity",
+            "private_entity",
+            "Private checkpoint goal",
+            "Private checkpoint summary",
+            "Private next step",
+            "Private blocker",
+            "private_state_fingerprint",
+            "private_checkpoint",
+        ] {
+            assert!(!diagnostic.contains(private_value));
+        }
+        assert!(diagnostic.contains("entity_id_present: true"));
+        assert!(diagnostic.contains("expected_version: None"));
+        assert!(diagnostic.contains("goal_bytes: 23"));
+        assert!(diagnostic.contains("summary_bytes: 26"));
+        assert!(diagnostic.contains("next_step_count: 1"));
+        assert!(diagnostic.contains("blocker_count: 1"));
+        assert!(diagnostic.contains("state_fingerprint_present: true"));
+        assert!(diagnostic.contains("version: 6"));
     }
 }

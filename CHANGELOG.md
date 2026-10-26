@@ -142,6 +142,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   sizes, limits, versions, confidence, sensitivity, constraint counts, and
   temporal-bound presence while redacting queries, purposes, memory content,
   evidence, exact validity times, and disclosure identities.
+- Memory-provider checkpoint diagnostics now expose only payload sizes,
+  collection counts, optional-field presence, expected version, and result
+  version while redacting working memory, fingerprints, idempotency keys, and
+  canonical identities.
 - Canonical SQLite initialization and backup now require the path opened by
   SQLite to retain the exact protected file's device/inode identity, and
   failure cleanup refuses to remove a path replaced after preparation.
