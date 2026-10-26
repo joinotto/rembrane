@@ -820,6 +820,8 @@ This roadmap describes sequencing, not release dates.
         with terminal-state restoration and full tenant/identifier correlation.
       - [x] Implement atomic invitation creation, acceptance, revocation,
         membership activation, and content-free administrative audit writes.
+        - [x] Redact invitation, workspace, invitee, actor, request, and
+          timeline identities from application command diagnostics.
         - [x] Move invited-principal existence enforcement into each storage
           boundary so tenant services never require a global principal read.
       - [x] Add an application-facing tenant store that pins membership and

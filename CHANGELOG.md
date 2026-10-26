@@ -71,6 +71,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Cross-agent context-resolution command diagnostics now expose only scope
   presence, query and purpose sizes, and context budgets instead of query
   plaintext, tenant routing, grants, or disclosure identities.
+- Shared-workspace invitation diagnostics now expose only safe role, status,
+  and limit metadata instead of workspace, invitee, administrator, request,
+  invitation, or timeline identities.
 - Provider-independent key seal requests now retain copied plaintext in
   redacted zeroize-on-drop ownership instead of an ordinary byte vector.
 - Key-provider plaintext responses are now explicitly wiped before oversized

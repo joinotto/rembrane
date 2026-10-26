@@ -1,3 +1,5 @@
+use std::fmt;
+
 use rembrane_domain::{
     AdministrativeAction, AdministrativeAuditEvent, AdministrativeAuditEventId,
     AdministrativeTargetKind, Invitation, InvitationId, InvitationStatus, Membership, PrincipalId,
@@ -8,7 +10,7 @@ use crate::{
     ApplicationError, InvitationRepository, MembershipRepository, WorkspaceReadRepository,
 };
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct CreateInvitationCommand {
     pub invitation_id: InvitationId,
     pub workspace_id: WorkspaceId,
@@ -20,7 +22,16 @@ pub struct CreateInvitationCommand {
     pub expires_at_epoch_seconds: u64,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+impl fmt::Debug for CreateInvitationCommand {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("CreateInvitationCommand")
+            .field("role", &self.role)
+            .finish_non_exhaustive()
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
 pub struct AcceptInvitationCommand {
     pub invitation_id: InvitationId,
     pub workspace_id: WorkspaceId,
@@ -29,7 +40,15 @@ pub struct AcceptInvitationCommand {
     pub accepted_at_epoch_seconds: u64,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+impl fmt::Debug for AcceptInvitationCommand {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("AcceptInvitationCommand")
+            .finish_non_exhaustive()
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
 pub struct RevokeInvitationCommand {
     pub invitation_id: InvitationId,
     pub workspace_id: WorkspaceId,
@@ -38,12 +57,30 @@ pub struct RevokeInvitationCommand {
     pub revoked_at_epoch_seconds: u64,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+impl fmt::Debug for RevokeInvitationCommand {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("RevokeInvitationCommand")
+            .finish_non_exhaustive()
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
 pub struct ListInvitationsQuery {
     pub workspace_id: WorkspaceId,
     pub requested_by: PrincipalId,
     pub status: Option<InvitationStatus>,
     pub limit: usize,
+}
+
+impl fmt::Debug for ListInvitationsQuery {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ListInvitationsQuery")
+            .field("status", &self.status)
+            .field("limit", &self.limit)
+            .finish_non_exhaustive()
+    }
 }
 
 pub const MAXIMUM_INVITATION_LIST_ITEMS: usize = 100;
@@ -218,4 +255,27 @@ fn invitation_audit(
         occurred_at_epoch_seconds,
     )
     .map_err(|error| ApplicationError::Validation(error.to_string()))
+}
+
+#[cfg(test)]
+mod diagnostic_tests {
+    use rembrane_domain::{InvitationStatus, PrincipalId, WorkspaceId};
+
+    use super::ListInvitationsQuery;
+
+    #[test]
+    fn invitation_query_diagnostics_redact_workspace_and_actor() {
+        let query = ListInvitationsQuery {
+            workspace_id: WorkspaceId::new("private-workspace"),
+            requested_by: PrincipalId::new("private-admin"),
+            status: Some(InvitationStatus::Pending),
+            limit: 25,
+        };
+
+        let diagnostic = format!("{query:?}");
+        assert!(!diagnostic.contains("private-workspace"));
+        assert!(!diagnostic.contains("private-admin"));
+        assert!(diagnostic.contains("Pending"));
+        assert!(diagnostic.contains("25"));
+    }
 }
