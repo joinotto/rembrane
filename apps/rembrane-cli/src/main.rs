@@ -1918,6 +1918,25 @@ fn doctor(arguments: &[String]) -> Result<(), String> {
     let (role, memory_count, event_count, checkpoint_count) =
         verify_installation(&store, &workspace_id, &principal_id)?;
 
+    let json = arguments.iter().any(|argument| argument == "--json");
+    let privacy = arguments.iter().any(|argument| argument == "--privacy");
+    if json && privacy {
+        return Err("doctor accepts only one of --json or --privacy".to_owned());
+    }
+    if json {
+        println!(
+            "{}",
+            doctor_json(
+                role,
+                memory_count,
+                event_count,
+                checkpoint_count,
+                &configured_secret_sources(),
+            )
+        );
+        return Ok(());
+    }
+
     println!("Rembrane doctor: ready");
     println!("Database schema: compatible");
     println!("Workspace: {workspace_id}");
@@ -1929,10 +1948,37 @@ fn doctor(arguments: &[String]) -> Result<(), String> {
     println!("Authenticated events: {event_count}");
     println!("Authenticated checkpoints: {checkpoint_count}");
     println!("Secret sources: {}", configured_secret_sources().join(", "));
-    if arguments.iter().any(|argument| argument == "--privacy") {
+    if privacy {
         print_privacy_diagnostics()?;
     }
     Ok(())
+}
+
+fn doctor_json(
+    role: WorkspaceRole,
+    memory_count: usize,
+    event_count: usize,
+    checkpoint_count: usize,
+    secret_sources: &[&str],
+) -> serde_json::Value {
+    serde_json::json!({
+        "schemaVersion": 1,
+        "ready": true,
+        "databaseSchema": "compatible",
+        "membership": {
+            "active": true,
+            "role": workspace_role_label(role)
+        },
+        "workspaceKey": {
+            "loaded": true
+        },
+        "authenticatedRecords": {
+            "memories": memory_count,
+            "events": event_count,
+            "checkpoints": checkpoint_count
+        },
+        "secretSources": secret_sources
+    })
 }
 
 fn print_privacy_diagnostics() -> Result<(), String> {
@@ -3181,7 +3227,7 @@ fn print_help() {
            rembrane invitation list --database <path> --principal <owner-or-admin-id> \
              --workspace <id> [--status <pending|accepted|revoked|expired>] [--limit <1-100>]\n\
            rembrane doctor --database <path> --principal <id> --workspace <id> \
-             [--privacy]\n\
+             [--privacy|--json]\n\
            rembrane backup --database <path> --principal <id> \
              --workspace <id> --output <path>\n\
            rembrane restore --input <path> --database <new-path> \
@@ -3270,10 +3316,11 @@ mod tests {
         EXPORT_MAGIC, SEMANTIC_PROVIDER_CONFORMANCE_PROFILE_SHA256, build_remote_mcp_profile,
         check_provider_registry, claude_mcp_config, codex_mcp_config, create_parent_directory,
         cursor_mcp_config, format_read_scopes, gemini_mcp_config, generic_mcp_config,
-        invitation_list_json, invitation_status, key_provider_secret_sources, mcp_client_catalog,
-        mcp_environment_variables, memory_privacy_mode_name, memory_provider_check_policy,
-        opencode_mcp_config, option, positive_u64, providers, read_bounded_registry_file,
-        read_export, recall_scope_context, redact_endpoint, render_mcp_config,
+        doctor_json, invitation_list_json, invitation_status, key_provider_secret_sources,
+        mcp_client_catalog, mcp_environment_variables, memory_privacy_mode_name,
+        memory_provider_check_policy, opencode_mcp_config, option, positive_u64, providers,
+        read_bounded_registry_file, read_export, recall_scope_context, redact_endpoint,
+        render_mcp_config,
         requested_memory_privacy, requested_memory_scope, run, selected_secret_reference,
         test_provider, validate_external_conformance_namespace, validate_mcp_server_binary,
         vscode_mcp_config, write_export, write_knowledge_graph_export, write_memory_jsonl_export,
@@ -3289,6 +3336,27 @@ mod tests {
             "rembrane-cli-{name}-{}-{suffix}",
             std::process::id()
         ))
+    }
+
+    #[test]
+    fn doctor_json_is_machine_readable_without_tenant_identity() {
+        let result = doctor_json(
+            WorkspaceRole::Admin,
+            3,
+            5,
+            2,
+            &["workspace key: protected file reference"],
+        );
+
+        assert_eq!(result["schemaVersion"], 1);
+        assert_eq!(result["ready"], true);
+        assert_eq!(result["membership"]["role"], "admin");
+        assert_eq!(result["authenticatedRecords"]["memories"], 3);
+        assert_eq!(result["authenticatedRecords"]["events"], 5);
+        assert_eq!(result["authenticatedRecords"]["checkpoints"], 2);
+        assert!(result.get("workspaceId").is_none());
+        assert!(result.get("principalId").is_none());
+        assert!(result.to_string().contains("protected file reference"));
     }
 
     fn request_run(arguments: &[&str]) -> Result<(), String> {

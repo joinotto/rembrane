@@ -149,6 +149,8 @@ This roadmap describes sequencing, not release dates.
 - [x] Publish an executable local-alpha acceptance contract with independent
   static, Rust/E2E, and container CI gates.
 - [x] Add a secret-safe local installation doctor command.
+  - [x] Provide identity-minimizing structured doctor output for launchers,
+    installers, agents, and bots without exposing principal or workspace IDs.
 - [x] Report production-readiness prerequisites individually, including
   dependency resolution, loopback binding, PostgreSQL, and Docker capabilities.
 - [x] Report local processing, connection scopes, endpoints, and secret sources

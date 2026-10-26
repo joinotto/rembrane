@@ -9,6 +9,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Fixed
 
+- `rembrane doctor --json` now emits structured installation health, closed
+  membership role, authenticated-record counts, and secret-source categories
+  without principal or workspace identifiers; mixed JSON/privacy output is
+  rejected to preserve a single parseable document.
 - Remote MCP initialization tests now use the standard no-op waker and current
   idiomatic control flow, restoring strict Clippy compatibility on the latest
   supported Rust toolchain without changing authorization semantics.
