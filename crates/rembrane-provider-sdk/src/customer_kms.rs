@@ -1,3 +1,5 @@
+use std::fmt;
+
 use rembrane_domain::WorkspaceId;
 use zeroize::Zeroizing;
 
@@ -13,10 +15,20 @@ pub const MAX_CUSTOMER_KMS_GENERATIONS: usize = 1_024;
 /// Adapters must bind this context through the provider's encryption-context
 /// or authenticated-data mechanism so wrapped keys cannot move between
 /// workspaces or generations.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct CustomerKmsContext {
     workspace_id: WorkspaceId,
     generation: u64,
+}
+
+impl fmt::Debug for CustomerKmsContext {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("CustomerKmsContext")
+            .field("workspace_id", &"[REDACTED]")
+            .field("generation", &self.generation)
+            .finish()
+    }
 }
 
 impl CustomerKmsContext {
@@ -60,11 +72,22 @@ impl CustomerKmsContext {
 }
 
 /// Opaque KMS ciphertext and the exact provider key version needed to open it.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct CustomerKmsKeyReference {
     generation: u64,
     provider_key_id: String,
     wrapped_key: Vec<u8>,
+}
+
+impl fmt::Debug for CustomerKmsKeyReference {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("CustomerKmsKeyReference")
+            .field("generation", &self.generation)
+            .field("provider_key_id", &"[REDACTED]")
+            .field("wrapped_key_bytes", &self.wrapped_key.len())
+            .finish()
+    }
 }
 
 impl CustomerKmsKeyReference {
@@ -129,12 +152,24 @@ pub enum CloudKmsBinding {
 /// Borrowed cloud decrypt operation. Implementations map `associated_data`
 /// into the provider mechanism named by `binding`; silently discarding it
 /// violates the adapter contract.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Eq, PartialEq)]
 pub struct CloudKmsDecryptRequest<'request> {
     binding: CloudKmsBinding,
     provider_key_id: &'request str,
     wrapped_key: &'request [u8],
     associated_data: &'request [u8],
+}
+
+impl fmt::Debug for CloudKmsDecryptRequest<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("CloudKmsDecryptRequest")
+            .field("binding", &self.binding)
+            .field("provider_key_id", &"[REDACTED]")
+            .field("wrapped_key_bytes", &self.wrapped_key.len())
+            .field("associated_data_bytes", &self.associated_data.len())
+            .finish()
+    }
 }
 
 impl CloudKmsDecryptRequest<'_> {
@@ -167,11 +202,22 @@ pub trait CloudKmsDecryptClient {
     ) -> Result<Zeroizing<Vec<u8>>, ProviderError>;
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Eq, PartialEq)]
 pub struct CloudKmsGenerateRequest<'request> {
     binding: CloudKmsBinding,
     associated_data: &'request [u8],
     plaintext_key_bytes: usize,
+}
+
+impl fmt::Debug for CloudKmsGenerateRequest<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("CloudKmsGenerateRequest")
+            .field("binding", &self.binding)
+            .field("associated_data_bytes", &self.associated_data.len())
+            .field("plaintext_key_bytes", &self.plaintext_key_bytes)
+            .finish()
+    }
 }
 
 impl CloudKmsGenerateRequest<'_> {
@@ -353,10 +399,20 @@ cloud_adapter!(
 );
 
 /// Duplicate-safe active and historical wrapped workspace keys.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct CustomerKmsKeyring {
     active_generation: u64,
     references: Vec<CustomerKmsKeyReference>,
+}
+
+impl fmt::Debug for CustomerKmsKeyring {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("CustomerKmsKeyring")
+            .field("active_generation", &self.active_generation)
+            .field("reference_count", &self.references.len())
+            .finish()
+    }
 }
 
 impl CustomerKmsKeyring {
@@ -502,6 +558,22 @@ mod tests {
                 .unwrap()
                 .associated_data()
         );
+        let debug = format!("{keyring:?}");
+        assert!(!debug.contains("kms/key/versions"));
+        assert!(!debug.contains("[1, 1"));
+    }
+
+    #[test]
+    fn customer_kms_diagnostics_redact_tenant_and_wrapped_key_material() {
+        let context = CustomerKmsContext::new(WorkspaceId::new("workspace-private"), 7).unwrap();
+        let reference = CustomerKmsKeyReference::new(7, "cloud-key-private", vec![9; 32]).unwrap();
+
+        let context_debug = format!("{context:?}");
+        assert!(!context_debug.contains("workspace-private"));
+        let reference_debug = format!("{reference:?}");
+        assert!(!reference_debug.contains("cloud-key-private"));
+        assert!(!reference_debug.contains("[9, 9"));
+        assert!(reference_debug.contains("wrapped_key_bytes"));
     }
 
     #[test]

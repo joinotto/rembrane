@@ -30,6 +30,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Secret-reference debug output now exposes only the reference source and
   redacts environment names, protected paths, and external secret-manager
   keys throughout composed provider and remote-service configuration.
+- Customer-KMS diagnostics now redact workspace context, provider key
+  locators, wrapped-key bytes, and authenticated data while retaining safe
+  generation and size information.
 - Canonical SQLite initialization and backup now require the path opened by
   SQLite to retain the exact protected file's device/inode identity, and
   failure cleanup refuses to remove a path replaced after preparation.
