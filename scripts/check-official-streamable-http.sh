@@ -56,4 +56,9 @@ rg -q '^[[:space:]]*let([[:space:]]+mut)?[[:space:]]+[A-Za-z_][A-Za-z0-9_]*[[:sp
     exit 1
 }
 
+cargo check --package rembrane-mcp --locked --offline >/dev/null 2>&1 || {
+    echo "official MCP SDK Streamable HTTP service does not compile from the lockfile" >&2
+    exit 1
+}
+
 echo "official MCP SDK Streamable HTTP transport is wired"
