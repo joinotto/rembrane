@@ -3015,7 +3015,6 @@ fn comma_separated_option(arguments: &[String], name: &str) -> Vec<String> {
             value
                 .split(',')
                 .map(str::trim)
-                .filter(|item| !item.is_empty())
                 .map(str::to_owned)
                 .collect()
         })
@@ -3955,6 +3954,25 @@ mod tests {
             Err(format!(
                 "checkpoint payload must not exceed {MAX_CHECKPOINT_PAYLOAD_BYTES} bytes"
             ))
+        );
+
+        let empty_list_item = vec![
+            "checkpoint".to_owned(),
+            "--activity".to_owned(),
+            "activity_01".to_owned(),
+            "--goal".to_owned(),
+            "Ship".to_owned(),
+            "--summary".to_owned(),
+            "Progress".to_owned(),
+            "--next-steps".to_owned(),
+            "implement,,test".to_owned(),
+        ];
+        assert_eq!(
+            run(&empty_list_item),
+            Err(
+                "checkpoint list item must be non-empty and contain no null characters"
+                    .to_owned()
+            )
         );
     }
 

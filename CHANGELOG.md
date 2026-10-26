@@ -12,6 +12,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - CLI checkpoint creation and update now validate activity/entity/client
   routing, required create goals, scalar and list text, the 1,024-item ceiling,
   and the 256 KiB aggregate payload bound before opening tenant storage.
+- Comma-separated checkpoint lists now preserve malformed empty entries for
+  rejection instead of silently normalizing them away.
 - CLI working-memory resume now rejects unsafe activity/client identifiers,
   empty or NUL-containing disclosure purposes and fingerprints, purposes above
   4 KiB, and fingerprints above 256 KiB before opening tenant storage.
