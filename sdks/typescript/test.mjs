@@ -471,6 +471,130 @@ await assert.rejects(
     error.code === "access_denied",
 );
 
+const portableFormats = {
+  jsonl: {
+    contentType: "application/x-ndjson",
+    filename: "rembrane-memories.jsonl",
+    text: '{"format":"rembrane-memory-jsonl"}\n',
+  },
+  markdown: {
+    contentType: "text/markdown; charset=utf-8",
+    filename: "rembrane-memories.md",
+    text: "# Rembrane memories\n",
+  },
+  "graph-json": {
+    contentType: "application/vnd.rembrane.knowledge-graph+json",
+    filename: "rembrane-knowledge-graph.json",
+    text: '{"format":"rembrane-knowledge-graph"}',
+  },
+};
+for (const [format, expected] of Object.entries(portableFormats)) {
+  const exportCalls = [];
+  const exportClient = new RembraneClient({
+    baseUrl: "https://memory.example.test/v1",
+    token: "export-token",
+    fetch: async (url, init) => {
+      exportCalls.push({ url, init });
+      const responseHeaders = {
+        "content-type": expected.contentType,
+        "content-disposition": `attachment; filename="${expected.filename}"`,
+        "cache-control": "no-store",
+        "x-content-type-options": "nosniff",
+      };
+      return {
+        ok: true,
+        status: 200,
+        headers: {
+          get: (name) => responseHeaders[name.toLowerCase()] ?? null,
+        },
+        text: async () => expected.text,
+      };
+    },
+  });
+  const result = await exportClient.exportPortableData({
+    workspaceId: "team:name",
+    subjectId: "principal-1",
+    format,
+  });
+  assert.equal(
+    exportCalls[0].url,
+    `https://memory.example.test/v1/exports?workspaceId=team%3Aname&subjectId=principal-1&format=${format}`,
+  );
+  assert.equal(exportCalls[0].init.method, "POST");
+  assert.equal(exportCalls[0].init.headers.Accept, expected.contentType);
+  assert.equal(
+    exportCalls[0].init.headers.Authorization,
+    "Bearer export-token",
+  );
+  assert.equal(exportCalls[0].init.body, undefined);
+  assert.deepEqual(result, {
+    format,
+    contentType: expected.contentType,
+    filename: expected.filename,
+    text: expected.text,
+  });
+  assert.equal(Object.isFrozen(result), true);
+}
+
+const noExportNetwork = new RembraneClient({
+  baseUrl: "https://memory.example.test/v1",
+  token: "token",
+  fetch: async () => assert.fail("invalid export reached the network"),
+});
+await assert.rejects(
+  noExportNetwork.exportPortableData({
+    workspaceId: "team",
+    subjectId: "principal-1",
+    format: "pdf",
+  }),
+  TypeError,
+);
+
+const invalidExportMetadata = new RembraneClient({
+  baseUrl: "https://memory.example.test/v1",
+  token: "token",
+  fetch: async () => ({
+    ok: true,
+    status: 200,
+    headers: { get: () => null },
+    text: async () => "archive",
+  }),
+});
+await assert.rejects(
+  invalidExportMetadata.exportPortableData({
+    workspaceId: "team",
+    subjectId: "principal-1",
+    format: "jsonl",
+  }),
+  (error) =>
+    error instanceof RembraneError && error.code === "invalid_response",
+);
+
+const deniedExport = new RembraneClient({
+  baseUrl: "https://memory.example.test/v1",
+  token: "token",
+  fetch: async () => ({
+    ok: false,
+    status: 403,
+    headers: {
+      get: (name) =>
+        name.toLowerCase() === "content-type" ? "application/json" : null,
+    },
+    text: async () => '{"code":"access_denied","message":"Access denied"}',
+  }),
+});
+await assert.rejects(
+  deniedExport.exportPortableData({
+    workspaceId: "team",
+    subjectId: "principal-1",
+    format: "graph-json",
+  }),
+  (error) =>
+    error instanceof RembraneError &&
+    error.status === 403 &&
+    error.code === "access_denied",
+);
+
 const channelFixture = JSON.parse(
   await readFile(
     new URL("../../spec/examples/channel-processor-message.json", import.meta.url),

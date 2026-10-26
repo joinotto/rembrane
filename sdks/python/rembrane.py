@@ -24,6 +24,14 @@ DISCOVERY_PLAINTEXT_LOCATIONS = {
     "user-device",
     "mode-dependent",
 }
+PORTABLE_EXPORTS = {
+    "jsonl": ("application/x-ndjson", "rembrane-memories.jsonl"),
+    "markdown": ("text/markdown; charset=utf-8", "rembrane-memories.md"),
+    "graph-json": (
+        "application/vnd.rembrane.knowledge-graph+json",
+        "rembrane-knowledge-graph.json",
+    ),
+}
 CHANNEL_PROCESSOR_MESSAGE_KEYS = {
     "protocolVersion",
     "channel",
@@ -275,6 +283,17 @@ class RembraneError(Exception):
         return self.message
 
 
+@dataclass(frozen=True)
+class PortableExport:
+    format: Literal["jsonl", "markdown", "graph-json"]
+    content_type: str
+    filename: str
+    payload: bytes
+
+    def text(self) -> str:
+        return self.payload.decode("utf-8")
+
+
 class _RejectRedirects(HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):  # type: ignore[no-untyped-def]
         raise RembraneError(code, "redirect_rejected", "Redirects are not allowed")
@@ -465,6 +484,55 @@ class RembraneClient:
     def execute_retention_purge(self, request: Mapping[str, Any]) -> Any:
         return self._request("POST", "/retention/purge", request)
 
+    def export_portable_data(
+        self,
+        workspace_id: str,
+        subject_id: str,
+        format: Literal["jsonl", "markdown", "graph-json"],
+    ) -> PortableExport:
+        if (
+            not _is_bounded_token(workspace_id, 255)
+            or not _is_bounded_token(subject_id, 255)
+            or format not in PORTABLE_EXPORTS
+        ):
+            raise ValueError("Portable export identity or format is invalid")
+        content_type, filename = PORTABLE_EXPORTS[format]
+        query = urlencode(
+            {
+                "workspaceId": workspace_id,
+                "subjectId": subject_id,
+                "format": format,
+            }
+        )
+        status, response_headers, payload = self._transport(
+            "POST",
+            f"{self._base_url}/exports?{query}",
+            {
+                "Accept": content_type,
+                "Authorization": f"Bearer {self._token}",
+            },
+            None,
+            self._maximum_response_bytes,
+        )
+        if len(payload) > self._maximum_response_bytes:
+            raise RembraneError(status, "response_too_large", "Response exceeded limit")
+        if not 200 <= status < 300:
+            _raise_problem_response(status, response_headers, payload)
+        if (
+            _header(response_headers, "content-type").lower() != content_type
+            or _header(response_headers, "content-disposition")
+            != f'attachment; filename="{filename}"'
+            or _header(response_headers, "cache-control").lower() != "no-store"
+            or _header(response_headers, "x-content-type-options").lower()
+            != "nosniff"
+        ):
+            raise RembraneError(
+                status,
+                "invalid_response",
+                "Portable export metadata was invalid",
+            )
+        return PortableExport(format, content_type, filename, payload)
+
     def _request(self, method: str, path: str, body: Mapping[str, Any] | None) -> Any:
         return self._request_url(
             method,
@@ -531,6 +599,35 @@ class RembraneClient:
             )
             raise RembraneError(status, str(code), str(message))
         return value
+
+
+def _header(headers: Mapping[str, str], name: str) -> str:
+    return next(
+        (value for key, value in headers.items() if key.lower() == name.lower()),
+        "",
+    )
+
+
+def _raise_problem_response(
+    status: int, headers: Mapping[str, str], payload: bytes
+) -> None:
+    if not _header(headers, "content-type").lower().startswith("application/json"):
+        raise RembraneError(
+            status, "invalid_response", "Expected JSON problem response"
+        )
+    try:
+        value = json.loads(payload)
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise RembraneError(
+            status, "invalid_response", "Problem response was not valid JSON"
+        ) from error
+    code = value.get("code", "request_failed") if isinstance(value, dict) else "request_failed"
+    message = (
+        value.get("message", "Rembrane request failed")
+        if isinstance(value, dict)
+        else "Rembrane request failed"
+    )
+    raise RembraneError(status, str(code), str(message))
 
 
 def parse_channel_processor_message(value: Any) -> dict[str, Any]:

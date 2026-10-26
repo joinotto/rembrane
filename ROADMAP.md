@@ -106,6 +106,8 @@ This roadmap describes sequencing, not release dates.
   - [x] Expose authenticated REST exports for JSONL, Markdown, and owner/admin
     graph JSON with tenant binding, fixed attachment names, no-store and
     nosniff response policy, OpenAPI, and black-box protocol coverage.
+  - [x] Expose typed and bounded portable REST exports through the TypeScript
+    and Python SDKs with exact content metadata and JSON problem handling.
   - [x] Define a deterministic, bounded, provider-independent Markdown export
     with tenant/revision validation, stable ordering, provenance metadata, and
     content fences that remain safe when memories contain Markdown backticks.

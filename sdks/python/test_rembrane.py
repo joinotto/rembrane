@@ -3,6 +3,7 @@ import unittest
 from pathlib import Path
 
 from rembrane import (
+    PortableExport,
     RembraneClient,
     RembraneError,
     create_channel_processor_acknowledgement,
@@ -480,6 +481,103 @@ class RembraneClientTests(unittest.TestCase):
         )
         with self.assertRaises(RembraneError) as captured:
             client.rotate_workspace_key({"workspaceId": "team"})
+        self.assertEqual(captured.exception.status, 403)
+        self.assertEqual(captured.exception.code, "access_denied")
+
+    def test_portable_exports_are_authenticated_and_metadata_bound(self) -> None:
+        formats = {
+            "jsonl": (
+                "application/x-ndjson",
+                "rembrane-memories.jsonl",
+                b'{"format":"rembrane-memory-jsonl"}\n',
+            ),
+            "markdown": (
+                "text/markdown; charset=utf-8",
+                "rembrane-memories.md",
+                b"# Rembrane memories\n",
+            ),
+            "graph-json": (
+                "application/vnd.rembrane.knowledge-graph+json",
+                "rembrane-knowledge-graph.json",
+                b'{"format":"rembrane-knowledge-graph"}',
+            ),
+        }
+        for format, (content_type, filename, payload) in formats.items():
+            with self.subTest(format=format):
+                calls = []
+
+                def transport(method, url, headers, body, maximum):
+                    calls.append((method, url, headers, body, maximum))
+                    return (
+                        200,
+                        {
+                            "Content-Type": content_type,
+                            "Content-Disposition": (
+                                f'attachment; filename="{filename}"'
+                            ),
+                            "Cache-Control": "no-store",
+                            "X-Content-Type-Options": "nosniff",
+                        },
+                        payload,
+                    )
+
+                client = RembraneClient(
+                    "https://memory.example.test/v1",
+                    "export-token",
+                    transport=transport,
+                )
+                result = client.export_portable_data(
+                    "team:name", "principal-1", format
+                )
+                self.assertIsInstance(result, PortableExport)
+                self.assertEqual(result.format, format)
+                self.assertEqual(result.content_type, content_type)
+                self.assertEqual(result.filename, filename)
+                self.assertEqual(result.payload, payload)
+                self.assertEqual(result.text(), payload.decode("utf-8"))
+                self.assertEqual(calls[0][0], "POST")
+                self.assertEqual(
+                    calls[0][1],
+                    "https://memory.example.test/v1/exports"
+                    f"?workspaceId=team%3Aname&subjectId=principal-1&format={format}",
+                )
+                self.assertEqual(calls[0][2]["Accept"], content_type)
+                self.assertEqual(
+                    calls[0][2]["Authorization"], "Bearer export-token"
+                )
+                self.assertIsNone(calls[0][3])
+
+    def test_portable_export_fails_closed_before_and_after_transport(self) -> None:
+        client = RembraneClient(
+            "https://memory.example.test/v1",
+            "token",
+            transport=lambda *_: self.fail("invalid export reached transport"),
+        )
+        with self.assertRaises(ValueError):
+            client.export_portable_data("team", "principal-1", "pdf")
+
+        invalid_metadata = RembraneClient(
+            "https://memory.example.test/v1",
+            "token",
+            transport=lambda *_: (200, {}, b"archive"),
+        )
+        with self.assertRaises(RembraneError) as captured:
+            invalid_metadata.export_portable_data(
+                "team", "principal-1", "jsonl"
+            )
+        self.assertEqual(captured.exception.code, "invalid_response")
+
+        denied = RembraneClient(
+            "https://memory.example.test/v1",
+            "token",
+            transport=lambda *_: (
+                403,
+                {"Content-Type": "application/json"},
+                b'{"code":"access_denied","message":"Access denied"}',
+            ),
+        )
+        with self.assertRaises(RembraneError) as captured:
+            denied.export_portable_data("team", "principal-1", "graph-json")
         self.assertEqual(captured.exception.status, 403)
         self.assertEqual(captured.exception.code, "access_denied")
 

@@ -17,6 +17,20 @@ const DISCOVERY_PLAINTEXT_LOCATIONS = new Set([
   "user-device",
   "mode-dependent",
 ]);
+const PORTABLE_EXPORTS = Object.freeze({
+  jsonl: Object.freeze({
+    contentType: "application/x-ndjson",
+    filename: "rembrane-memories.jsonl",
+  }),
+  markdown: Object.freeze({
+    contentType: "text/markdown; charset=utf-8",
+    filename: "rembrane-memories.md",
+  }),
+  "graph-json": Object.freeze({
+    contentType: "application/vnd.rembrane.knowledge-graph+json",
+    filename: "rembrane-knowledge-graph.json",
+  }),
+});
 const CHANNEL_MESSAGE_KEYS = [
   "channel",
   "clientId",
@@ -234,6 +248,69 @@ export class RembraneClient {
     return this.#request("POST", "/retention/purge", request);
   }
 
+  async exportPortableData(query) {
+    if (
+      !query ||
+      !isOpaqueId(query.workspaceId) ||
+      !isOpaqueId(query.subjectId) ||
+      !Object.hasOwn(PORTABLE_EXPORTS, query.format)
+    ) {
+      throw new TypeError("Portable export identity or format is invalid");
+    }
+    const parameters = new URLSearchParams({
+      workspaceId: query.workspaceId,
+      subjectId: query.subjectId,
+      format: query.format,
+    });
+    const expected = PORTABLE_EXPORTS[query.format];
+    const response = await this.#fetch(
+      `${this.#baseUrl}/exports?${parameters}`,
+      {
+        method: "POST",
+        redirect: "error",
+        headers: {
+          Accept: expected.contentType,
+          Authorization: `Bearer ${this.#token}`,
+        },
+      },
+    );
+    const text = await response.text();
+    const byteLength = new TextEncoder().encode(text).length;
+    if (byteLength > this.#maximumResponseBytes) {
+      throw new RembraneError(
+        response.status,
+        "response_too_large",
+        "Response exceeded limit",
+      );
+    }
+    if (!response.ok) {
+      throwProblemResponse(response, text);
+    }
+    const contentType = response.headers.get("content-type") ?? "";
+    const disposition = response.headers.get("content-disposition") ?? "";
+    const cacheControl = response.headers.get("cache-control") ?? "";
+    const contentTypeOptions =
+      response.headers.get("x-content-type-options") ?? "";
+    if (
+      contentType.toLowerCase() !== expected.contentType ||
+      disposition !== `attachment; filename="${expected.filename}"` ||
+      cacheControl.toLowerCase() !== "no-store" ||
+      contentTypeOptions.toLowerCase() !== "nosniff"
+    ) {
+      throw new RembraneError(
+        response.status,
+        "invalid_response",
+        "Portable export metadata was invalid",
+      );
+    }
+    return Object.freeze({
+      format: query.format,
+      contentType,
+      filename: expected.filename,
+      text,
+    });
+  }
+
   async #request(method, path, body) {
     return this.#requestUrl(
       method,
@@ -277,6 +354,34 @@ export class RembraneClient {
     }
     return value;
   }
+}
+
+function throwProblemResponse(response, text) {
+  const contentType = response.headers.get("content-type") ?? "";
+  if (!contentType.toLowerCase().startsWith("application/json")) {
+    throw new RembraneError(
+      response.status,
+      "invalid_response",
+      "Expected JSON problem response",
+    );
+  }
+  let value;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    throw new RembraneError(
+      response.status,
+      "invalid_response",
+      "Problem response was not valid JSON",
+    );
+  }
+  throw new RembraneError(
+    response.status,
+    typeof value.code === "string" ? value.code : "request_failed",
+    typeof value.message === "string"
+      ? value.message
+      : "Rembrane request failed",
+  );
 }
 
 export function parseChannelProcessorMessage(value) {
