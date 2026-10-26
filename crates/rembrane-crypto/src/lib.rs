@@ -10,6 +10,11 @@ use rembrane_domain::WorkspaceId;
 
 mod provider_protocol;
 
+pub const MAX_ENCRYPTED_CIPHERTEXT_BYTES: usize = 1_500_000;
+pub const MAX_ENCRYPTION_KEY_ID_BYTES: usize = 2_048;
+pub const MAX_ENCRYPTION_ALGORITHM_BYTES: usize = 100;
+pub const MAX_ENCRYPTION_NONCE_BYTES: usize = 64;
+
 pub use provider_protocol::{
     CURRENT_KEY_PROVIDER_PROTOCOL, KeyProviderCipher, KeyProviderManifest, KeyProviderPolicy,
     KeyProviderProtocolError, KeyProviderProtocolVersion, KeyProviderTransport,
@@ -136,9 +141,16 @@ impl EncryptedPayload {
         let key_id = key_id.into();
         let algorithm = algorithm.into();
         if ciphertext.is_empty()
+            || ciphertext.len() > MAX_ENCRYPTED_CIPHERTEXT_BYTES
             || key_id.trim().is_empty()
+            || key_id.trim() != key_id
+            || key_id.len() > MAX_ENCRYPTION_KEY_ID_BYTES
+            || key_id.chars().any(char::is_control)
             || algorithm.trim().is_empty()
-            || nonce.len() < 12
+            || algorithm.trim() != algorithm
+            || algorithm.len() > MAX_ENCRYPTION_ALGORITHM_BYTES
+            || algorithm.chars().any(char::is_control)
+            || !(12..=MAX_ENCRYPTION_NONCE_BYTES).contains(&nonce.len())
         {
             return Err(CryptoError::InvalidEnvelope);
         }
@@ -215,7 +227,11 @@ pub trait RecordCipher {
 
 #[cfg(test)]
 mod tests {
-    use super::{CryptoError, EncryptedPayload, EncryptionContext, PayloadPurpose};
+    use super::{
+        CryptoError, EncryptedPayload, EncryptionContext, MAX_ENCRYPTED_CIPHERTEXT_BYTES,
+        MAX_ENCRYPTION_ALGORITHM_BYTES, MAX_ENCRYPTION_KEY_ID_BYTES, MAX_ENCRYPTION_NONCE_BYTES,
+        PayloadPurpose,
+    };
     use rembrane_domain::WorkspaceId;
 
     #[test]
@@ -244,6 +260,57 @@ mod tests {
             .expect_err("short nonce must fail");
 
         assert_eq!(error, CryptoError::InvalidEnvelope);
+    }
+
+    #[test]
+    fn rejects_unbounded_or_unsafe_encryption_envelope_metadata() {
+        let valid =
+            || EncryptedPayload::new(vec![1], "key_01", "xchacha20poly1305-ietf", vec![0; 24]);
+        assert!(valid().is_ok());
+        assert_eq!(
+            EncryptedPayload::new(
+                vec![0; MAX_ENCRYPTED_CIPHERTEXT_BYTES + 1],
+                "key_01",
+                "xchacha20poly1305-ietf",
+                vec![0; 24],
+            ),
+            Err(CryptoError::InvalidEnvelope)
+        );
+        assert_eq!(
+            EncryptedPayload::new(
+                vec![1],
+                "k".repeat(MAX_ENCRYPTION_KEY_ID_BYTES + 1),
+                "xchacha20poly1305-ietf",
+                vec![0; 24],
+            ),
+            Err(CryptoError::InvalidEnvelope)
+        );
+        assert_eq!(
+            EncryptedPayload::new(
+                vec![1],
+                "key_01",
+                "a".repeat(MAX_ENCRYPTION_ALGORITHM_BYTES + 1),
+                vec![0; 24],
+            ),
+            Err(CryptoError::InvalidEnvelope)
+        );
+        for nonce_length in [11, MAX_ENCRYPTION_NONCE_BYTES + 1] {
+            assert_eq!(
+                EncryptedPayload::new(
+                    vec![1],
+                    "key_01",
+                    "xchacha20poly1305-ietf",
+                    vec![0; nonce_length],
+                ),
+                Err(CryptoError::InvalidEnvelope)
+            );
+        }
+        for value in [" key_01", "key_01\n"] {
+            assert_eq!(
+                EncryptedPayload::new(vec![1], value, "xchacha20poly1305-ietf", vec![0; 24],),
+                Err(CryptoError::InvalidEnvelope)
+            );
+        }
     }
 
     #[test]

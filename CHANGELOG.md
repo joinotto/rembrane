@@ -15,6 +15,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   responses are rejected at the negotiated protocol boundary.
 - Key-provider manifests now enforce a finite algorithm collection and closed
   portable algorithm identifiers before capability negotiation.
+- Canonical encrypted payloads now reject oversized ciphertext, key IDs,
+  algorithms, and nonces plus whitespace- or control-bearing metadata before
+  entering storage adapters.
 - Canonical SQLite initialization and backup now require the path opened by
   SQLite to retain the exact protected file's device/inode identity, and
   failure cleanup refuses to remove a path replaced after preparation.
