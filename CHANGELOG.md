@@ -63,6 +63,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - The application boundary now exposes bounded canonical graph snapshots;
   in-memory and encrypted SQLite adapters implement tenant-filtered reads
   without leaking storage-specific queries into export clients.
+- CLI export now supports owner/admin-only `--format graph-json`, reading
+  authenticated canonical graph snapshots and writing versioned private
+  plaintext archives with explicit consent.
 - The application layer now defines a bounded, authorized memory-import batch
   that re-admits external content as destination-scoped proposals with fresh
   identities and contiguous canonical events through an atomic repository

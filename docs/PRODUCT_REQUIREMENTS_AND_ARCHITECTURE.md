@@ -506,7 +506,8 @@ The initial implemented portability surface is:
 
 ```text
 rembrane export --database <path> --principal <id> --workspace <id> \
-  --format <jsonl|markdown> --output <new-path> --allow-plaintext-export
+  --format <jsonl|markdown|graph-json> --output <new-path> \
+  --allow-plaintext-export
 ```
 
 It exports the authenticated current canonical records for that subject in
@@ -514,9 +515,10 @@ deterministic memory-ID/version order. Each line carries a closed format
 identifier and version, tenant identity, lifecycle state, scope, content, and
 evidence references. The command never exports provider credentials or
 infrastructure secrets. JSONL supports machine interoperability, while Markdown
-is intended for human review and tools such as Obsidian. Both formats are
-intentionally plaintext; encrypted backup remains the safer choice for recovery
-and opaque transfer.
+is intended for human review and tools such as Obsidian. Owner/admin-only graph
+JSON preserves the workspace knowledge graph, temporal validity, evidence, and
+revision lineage. All three formats are intentionally plaintext; encrypted
+backup remains the safer choice for recovery and opaque transfer.
 
 The matching implemented import surface is:
 

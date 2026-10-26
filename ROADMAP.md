@@ -114,6 +114,8 @@ This roadmap describes sequencing, not release dates.
     supersession while rejecting mixed workspaces and dangling endpoints.
   - [x] Add a bounded canonical graph-snapshot repository port with
     tenant-filtered in-memory and authenticated encrypted-SQLite adapters.
+  - [x] Expose owner/admin-only whole-workspace graph JSON export through the
+    CLI with explicit plaintext consent and private durable output.
   - [x] Move the JSONL record contract into the provider-independent codec and
     add strict decoding with closed fields, exact format/version checks, domain
     invariant restoration, and a per-record byte ceiling.

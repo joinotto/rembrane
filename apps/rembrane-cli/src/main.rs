@@ -5,20 +5,21 @@ use rembrane_application::{
     CheckpointService, ClientGrantBundle, CreateChannelBindingCommand, CreateCheckpointCommand,
     CreateInvitationCommand, DeleteMemoryCommand, EventRepository, ExecuteRetentionPurgeCommand,
     ImportMemoryBatchCommand, ImportMemoryBatchService, ImportedMemoryProposal, InvitationService,
-    ListInvitationsQuery, MemberLifecycleService, MembershipRepository, MemoryLifecycleService,
-    MemoryProposalService, MemoryRepository, PlaceLegalHoldCommand, ProposeMemoryCommand,
-    ReleaseLegalHoldCommand, RememberPreferenceCommand, RememberPreferenceService,
-    RequeueChannelMessageCommand, ResolveContextCommand, ResolveContextService,
-    ResumeActivityCommand, RetentionService, ReviseMemoryCommand, RevokeChannelBindingCommand,
-    RevokeInvitationCommand, SetRetentionPolicyCommand, UpdateCheckpointCommand,
-    WorkspaceRepository,
+    KnowledgeGraphExportRepository, ListInvitationsQuery, MemberLifecycleService,
+    MembershipRepository, MemoryLifecycleService, MemoryProposalService, MemoryRepository,
+    PlaceLegalHoldCommand, ProposeMemoryCommand, ReleaseLegalHoldCommand,
+    RememberPreferenceCommand, RememberPreferenceService, RequeueChannelMessageCommand,
+    ResolveContextCommand, ResolveContextService, ResumeActivityCommand, RetentionService,
+    ReviseMemoryCommand, RevokeChannelBindingCommand, RevokeInvitationCommand,
+    SetRetentionPolicyCommand, UpdateCheckpointCommand, WorkspaceRepository,
 };
 use rembrane_channel_mobile_share::derive_binding_lookup_keys as derive_mobile_binding_lookup_keys;
 use rembrane_channel_whatsapp::derive_binding_lookup_keys as derive_whatsapp_binding_lookup_keys;
 use rembrane_codec::{
+    KNOWLEDGE_GRAPH_ARCHIVE_FORMAT, KNOWLEDGE_GRAPH_ARCHIVE_VERSION,
     MAX_MEMORY_JSONL_ARCHIVE_BYTES, MEMORY_JSONL_FORMAT, MEMORY_JSONL_VERSION,
     MEMORY_MARKDOWN_FORMAT, MEMORY_MARKDOWN_VERSION, decode_memory_jsonl_archive,
-    encode_memory_jsonl_record, encode_memory_markdown_archive,
+    encode_knowledge_graph_archive, encode_memory_jsonl_record, encode_memory_markdown_archive,
 };
 use rembrane_config::{
     ProviderConnection, ProviderKind, ProviderPlacement, RemoteMcpConfig, SecretReference,
@@ -1464,8 +1465,10 @@ fn write_export(snapshot: &std::path::Path, destination: &std::path::Path) -> Re
 
 fn export_memories(arguments: &[String]) -> Result<(), String> {
     let format = optional_option(arguments, "--format").unwrap_or("jsonl");
-    if !matches!(format, "jsonl" | "markdown") {
-        return Err("only --format jsonl or markdown is currently supported".to_owned());
+    if !matches!(format, "jsonl" | "markdown" | "graph-json") {
+        return Err(
+            "only --format jsonl, markdown, or graph-json is currently supported".to_owned(),
+        );
     }
     if !arguments
         .iter()
@@ -1486,18 +1489,45 @@ fn export_memories(arguments: &[String]) -> Result<(), String> {
     if !membership.is_active() {
         return Err("configured workspace membership is not active".to_owned());
     }
-    let records = store
-        .list_for_subject(&workspace_id, &principal_id)
-        .map_err(|error| format!("cannot authenticate memories for export: {error}"))?;
     let count = match format {
-        "jsonl" => write_memory_jsonl_export(&records, &workspace_id, &principal_id, output)?,
-        "markdown" => write_memory_markdown_export(&records, &workspace_id, &principal_id, output)?,
+        "jsonl" | "markdown" => {
+            let records = store
+                .list_for_subject(&workspace_id, &principal_id)
+                .map_err(|error| format!("cannot authenticate memories for export: {error}"))?;
+            match format {
+                "jsonl" => {
+                    write_memory_jsonl_export(&records, &workspace_id, &principal_id, output)?
+                }
+                "markdown" => {
+                    write_memory_markdown_export(&records, &workspace_id, &principal_id, output)?
+                }
+                _ => unreachable!("validated memory export format"),
+            }
+        }
+        "graph-json" => {
+            if !membership.can_manage_members() {
+                return Err(
+                    "whole-workspace graph export requires an active owner or administrator"
+                        .to_owned(),
+                );
+            }
+            let (nodes, edges) =
+                store
+                    .list_knowledge_graph_snapshot(&workspace_id)
+                    .map_err(|error| {
+                        format!("cannot authenticate knowledge graph for export: {error}")
+                    })?;
+            write_knowledge_graph_export(&nodes, &edges, &workspace_id, output)?
+        }
         _ => unreachable!("validated export format"),
     };
-    println!("Exported {count} memories");
+    println!("Exported {count} records");
     match format {
         "jsonl" => println!("Format: {MEMORY_JSONL_FORMAT}-v{MEMORY_JSONL_VERSION}"),
         "markdown" => println!("Format: {MEMORY_MARKDOWN_FORMAT}-v{MEMORY_MARKDOWN_VERSION}"),
+        "graph-json" => {
+            println!("Format: {KNOWLEDGE_GRAPH_ARCHIVE_FORMAT}-v{KNOWLEDGE_GRAPH_ARCHIVE_VERSION}");
+        }
         _ => unreachable!("validated export format"),
     }
     println!("Warning: output contains decrypted memory plaintext");
@@ -1696,6 +1726,39 @@ fn write_memory_markdown_export(
         return Err(error);
     }
     Ok(records.len())
+}
+
+fn write_knowledge_graph_export(
+    nodes: &[rembrane_domain::KnowledgeNode],
+    edges: &[rembrane_domain::KnowledgeEdge],
+    workspace_id: &WorkspaceId,
+    destination: &std::path::Path,
+) -> Result<usize, String> {
+    use std::io::Write as _;
+
+    let archive = encode_knowledge_graph_archive(workspace_id, nodes, edges)
+        .map_err(|error| format!("cannot encode knowledge graph export: {error}"))?;
+    let mut output = private_create_new_options()
+        .open(destination)
+        .map_err(|error| format!("cannot create knowledge graph export: {error}"))?;
+    let result = (|| {
+        output
+            .write_all(&archive)
+            .map_err(|error| format!("cannot write knowledge graph export: {error}"))?;
+        output
+            .sync_all()
+            .map_err(|error| format!("cannot persist knowledge graph export: {error}"))?;
+        sync_parent_directory(destination)
+            .map_err(|error| format!("cannot persist graph export directory entry: {error}"))
+    })();
+    if let Err(error) = result {
+        remove_open_file_path(destination, &output)?;
+        return Err(error);
+    }
+    nodes
+        .len()
+        .checked_add(edges.len())
+        .ok_or_else(|| "knowledge graph export count overflowed".to_owned())
 }
 
 fn read_export(
@@ -3124,7 +3187,8 @@ fn print_help() {
            rembrane restore --input <path> --database <new-path> \
              --principal <id> --workspace <id>\n\
            rembrane export --database <path> --principal <id> --workspace <id> \
-             --format <jsonl|markdown> --output <new-path> --allow-plaintext-export\n\
+             --format <jsonl|markdown|graph-json> --output <new-path> \
+             --allow-plaintext-export\n\
            rembrane import --database <path> --principal <id> --workspace <id> \
              --format jsonl --input <path> --allow-plaintext-import [--client <id>]\n\
            rembrane fingerprint-git --repository <path>\n\
@@ -3212,8 +3276,8 @@ mod tests {
         read_export, recall_scope_context, redact_endpoint, render_mcp_config,
         requested_memory_privacy, requested_memory_scope, run, selected_secret_reference,
         test_provider, validate_external_conformance_namespace, validate_mcp_server_binary,
-        vscode_mcp_config, write_export, write_memory_jsonl_export, write_memory_markdown_export,
-        zed_mcp_config,
+        vscode_mcp_config, write_export, write_knowledge_graph_export, write_memory_jsonl_export,
+        write_memory_markdown_export, zed_mcp_config,
     };
 
     fn temporary_path(name: &str) -> std::path::PathBuf {
@@ -4146,6 +4210,53 @@ mod tests {
         let markdown = std::fs::read_to_string(&export).expect("read Markdown export");
         assert!(markdown.starts_with("<!-- rembrane-memory-markdown-v1 -->"));
         assert!(markdown.contains("Call me Hippo"));
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+
+            assert_eq!(
+                std::fs::metadata(&export)
+                    .expect("export metadata")
+                    .permissions()
+                    .mode()
+                    & 0o777,
+                0o600
+            );
+        }
+        std::fs::remove_file(export).expect("fixture cleanup");
+    }
+
+    #[test]
+    fn knowledge_graph_export_is_private_and_versioned() {
+        let workspace = WorkspaceId::new("workspace_export");
+        let validity =
+            rembrane_domain::TemporalValidity::new(100, None, 100).expect("validity fixture");
+        let node = rembrane_domain::KnowledgeNode::new(
+            rembrane_domain::KnowledgeNodeId::new("node_project"),
+            workspace.clone(),
+            rembrane_domain::KnowledgeNodeKind::Project,
+            "Rembrane".to_owned(),
+            Vec::new(),
+            vec![EvidenceReference::new(
+                EvidenceId::new("evidence_graph"),
+                EvidenceSource::WorkspaceDecision,
+            )],
+            validity,
+            1,
+        )
+        .expect("node fixture");
+        let export = temporary_path("knowledge-graph");
+
+        assert_eq!(
+            write_knowledge_graph_export(&[node], &[], &workspace, &export).expect("graph export"),
+            1
+        );
+        let archive: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&export).expect("read graph export"))
+                .expect("graph JSON");
+        assert_eq!(archive["format"], "rembrane.knowledge-graph");
+        assert_eq!(archive["version"], 1);
+        assert_eq!(archive["workspace_id"], "workspace_export");
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt as _;
