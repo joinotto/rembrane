@@ -2673,10 +2673,25 @@ fn create_parent_directory(path: &std::path::Path) -> Result<(), String> {
     if let Some(parent) = path.parent()
         && !parent.as_os_str().is_empty()
     {
-        std::fs::create_dir_all(parent)
-            .map_err(|error| format!("cannot create directory: {error}"))?;
+        create_private_directory_all(parent)?;
     }
     Ok(())
+}
+
+#[cfg(unix)]
+fn create_private_directory_all(path: &std::path::Path) -> Result<(), String> {
+    use std::os::unix::fs::DirBuilderExt as _;
+
+    let mut builder = std::fs::DirBuilder::new();
+    builder.recursive(true).mode(0o700);
+    builder
+        .create(path)
+        .map_err(|error| format!("cannot create directory: {error}"))
+}
+
+#[cfg(not(unix))]
+fn create_private_directory_all(path: &std::path::Path) -> Result<(), String> {
+    std::fs::create_dir_all(path).map_err(|error| format!("cannot create directory: {error}"))
 }
 
 fn option<'a>(arguments: &'a [String], name: &str) -> Result<&'a str, String> {
@@ -2865,9 +2880,9 @@ mod tests {
 
     use super::{
         EXPORT_MAGIC, SEMANTIC_PROVIDER_CONFORMANCE_PROFILE_SHA256, build_remote_mcp_profile,
-        check_provider_registry, claude_mcp_config, codex_mcp_config, cursor_mcp_config,
-        format_read_scopes, gemini_mcp_config, generic_mcp_config, invitation_list_json,
-        invitation_status, key_provider_secret_sources, mcp_client_catalog,
+        check_provider_registry, claude_mcp_config, codex_mcp_config, create_parent_directory,
+        cursor_mcp_config, format_read_scopes, gemini_mcp_config, generic_mcp_config,
+        invitation_list_json, invitation_status, key_provider_secret_sources, mcp_client_catalog,
         mcp_environment_variables, memory_privacy_mode_name, memory_provider_check_policy,
         opencode_mcp_config, option, positive_u64, providers, read_bounded_registry_file,
         read_export, recall_scope_context, redact_endpoint, render_mcp_config,
@@ -3733,6 +3748,29 @@ mod tests {
         );
 
         std::fs::remove_file(file).expect("fixture should be removed");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn newly_created_storage_directories_are_owner_only() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let root = temporary_path("private-directory");
+        let database = root.join("nested").join("rembrane.db");
+        create_parent_directory(&database).expect("private directories should be created");
+
+        for directory in [&root, &root.join("nested")] {
+            assert_eq!(
+                std::fs::metadata(directory)
+                    .expect("directory metadata")
+                    .permissions()
+                    .mode()
+                    & 0o077,
+                0
+            );
+        }
+
+        std::fs::remove_dir_all(root).expect("fixture should be removed");
     }
 
     #[test]

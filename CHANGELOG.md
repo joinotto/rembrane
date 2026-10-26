@@ -988,6 +988,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   overwrites, and enables SQLite's native no-follow open flag.
 - Failed SQLite snapshot attempts now remove their newly created destination
   across path encoding, database write, and post-write validation failures.
+- CLI initialization, backup, and restore now create new local storage
+  directory components with owner-only Unix permissions.
 - Ordered all-or-error provider credential resolution through any secret
   resolver, zeroizing already resolved values when a later reference fails.
 - A transport-injectable Mem0 OSS semantic adapter mapping authorized

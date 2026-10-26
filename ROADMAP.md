@@ -59,6 +59,8 @@ This roadmap describes sequencing, not release dates.
       preparation, encoding, write, or post-write validation path.
 - [x] Add development-key encrypted CLI remember and recall commands.
 - [x] Add encrypted CLI correction and deletion commands.
+- [x] Create new local database, backup, and restore directory components with
+  owner-only Unix permissions without modifying existing parent directories.
 - [x] Create encrypted backup exports and restored databases atomically with
   owner-only permissions and durable file synchronization.
 - [x] Enforce provider-registry input bounds while streaming file contents,

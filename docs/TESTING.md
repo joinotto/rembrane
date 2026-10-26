@@ -191,6 +191,13 @@ export REMBRANE_WORKSPACE_KEY_HEX="$(openssl rand -hex 32)"
 export REMBRANE_API_TOKEN="$(openssl rand -hex 32)"
 ```
 
+The CLI creates missing database, backup, and restore directories with mode
+`0700` on Unix. If `.rembrane` already exists, protect it before use:
+
+```text
+chmod 700 .rembrane
+```
+
 Do not put real keys directly in shell history, command arguments, committed
 configuration, screenshots, logs, or issue reports.
 
