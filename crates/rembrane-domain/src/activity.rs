@@ -4,6 +4,7 @@ use std::fmt::{self, Display};
 use crate::{ActivityId, CheckpointId, EntityId, PrincipalId, WorkspaceId};
 
 pub const MAX_CHECKPOINT_PAYLOAD_BYTES: usize = 262_144;
+pub const MAX_CHECKPOINT_LIST_ITEMS: usize = 1_024;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CheckpointError {
@@ -286,6 +287,13 @@ fn validate_payload_size(
     blockers: &[String],
     state_fingerprint: Option<&str>,
 ) -> Result<(), CheckpointError> {
+    let list_items = next_steps
+        .len()
+        .checked_add(blockers.len())
+        .ok_or(CheckpointError::PayloadTooLarge)?;
+    if list_items > MAX_CHECKPOINT_LIST_ITEMS {
+        return Err(CheckpointError::PayloadTooLarge);
+    }
     let mut fields = next_steps
         .iter()
         .chain(blockers)
@@ -360,6 +368,24 @@ mod tests {
             Vec::new(),
         )
         .expect_err("oversized checkpoint should fail");
+
+        assert_eq!(error, super::CheckpointError::PayloadTooLarge);
+    }
+
+    #[test]
+    fn rejects_unbounded_checkpoint_collections_with_small_items() {
+        let error = ActivityCheckpoint::new(
+            CheckpointId::new("checkpoint_many_items"),
+            WorkspaceId::new("workspace_01"),
+            PrincipalId::new("principal_01"),
+            ActivityId::new("activity_01"),
+            None,
+            "Goal",
+            "Summary",
+            vec![String::new(); super::MAX_CHECKPOINT_LIST_ITEMS + 1],
+            Vec::new(),
+        )
+        .expect_err("unbounded checkpoint collection should fail");
 
         assert_eq!(error, super::CheckpointError::PayloadTooLarge);
     }

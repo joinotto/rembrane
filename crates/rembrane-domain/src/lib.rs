@@ -25,7 +25,9 @@ mod share_proposal;
 mod trip;
 mod workspace;
 
-pub use activity::{ActivityCheckpoint, CheckpointError, MAX_CHECKPOINT_PAYLOAD_BYTES};
+pub use activity::{
+    ActivityCheckpoint, CheckpointError, MAX_CHECKPOINT_LIST_ITEMS, MAX_CHECKPOINT_PAYLOAD_BYTES,
+};
 pub use audit::{
     AdministrativeAction, AdministrativeAuditError, AdministrativeAuditEvent,
     AdministrativeTargetKind, MAX_AUDIT_REQUEST_ID_BYTES, MAX_AUDIT_TARGET_ID_BYTES,
