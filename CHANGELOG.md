@@ -107,6 +107,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Canonical event diagnostics now expose only closed event kind, applicable
   resource versions, stream sequence, and subject presence while redacting
   event, tenant, actor, subject, and payload resource identities.
+- Administrative-audit diagnostics now expose only closed action and target
+  kinds while redacting audit, tenant, actor, target, request, and occurrence
+  identities.
 - Canonical SQLite initialization and backup now require the path opened by
   SQLite to retain the exact protected file's device/inode identity, and
   failure cleanup refuses to remove a path replaced after preparation.

@@ -97,7 +97,7 @@ impl Error for AdministrativeAuditError {}
 ///
 /// The record deliberately excludes memory content, plaintext, credentials,
 /// raw or wrapped keys, and arbitrary caller-supplied detail fields.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct AdministrativeAuditEvent {
     id: AdministrativeAuditEventId,
     workspace_id: WorkspaceId,
@@ -107,6 +107,22 @@ pub struct AdministrativeAuditEvent {
     target_id: String,
     request_id: String,
     occurred_at_epoch_seconds: u64,
+}
+
+impl fmt::Debug for AdministrativeAuditEvent {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("AdministrativeAuditEvent")
+            .field("id", &"<redacted>")
+            .field("workspace_id", &"<redacted>")
+            .field("actor_id", &"<redacted>")
+            .field("action", &self.action)
+            .field("target_kind", &self.target_kind)
+            .field("target_id", &"<redacted>")
+            .field("request_id", &"<redacted>")
+            .field("occurred_at_epoch_seconds", &"<redacted>")
+            .finish()
+    }
 }
 
 impl AdministrativeAuditEvent {
@@ -253,5 +269,35 @@ mod tests {
             event("member_01", "request_01", 0),
             Err(AdministrativeAuditError::InvalidOccurrenceTime)
         );
+    }
+
+    #[test]
+    fn debug_output_redacts_audit_routing_and_timeline() {
+        let event = AdministrativeAuditEvent::new(
+            AdministrativeAuditEventId::new("private_audit"),
+            WorkspaceId::new("private_workspace"),
+            PrincipalId::new("private_actor"),
+            AdministrativeAction::MemberRemoved,
+            AdministrativeTargetKind::Principal,
+            "private_target",
+            "private_request",
+            1_798_765_432,
+        )
+        .expect("event should validate");
+
+        let diagnostic = format!("{event:?}");
+
+        for private_value in [
+            "private_audit",
+            "private_workspace",
+            "private_actor",
+            "private_target",
+            "private_request",
+            "1798765432",
+        ] {
+            assert!(!diagnostic.contains(private_value));
+        }
+        assert!(diagnostic.contains("action: MemberRemoved"));
+        assert!(diagnostic.contains("target_kind: Principal"));
     }
 }
