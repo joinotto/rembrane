@@ -31,10 +31,10 @@ use rembrane_crypto_configured::ConfiguredRecordCipher;
 use rembrane_domain::{
     ActivityCheckpoint, ActivityId, CanonicalEvent, CheckpointId, ClientId, ContextPackId,
     DisclosureId, EntityId, EventId, EventPayload, EvidenceId, EvidenceReference, EvidenceSource,
-    Invitation, InvitationStatus, LegalHoldId, MAX_MEMORY_CONTENT_BYTES, Membership, MemoryId,
-    MemoryKind, MemoryRecord, MemoryScope, Principal, PrincipalId, ReadGrant, ReadScope,
-    RetentionPeriod, Workspace, WorkspaceId, WorkspaceRetentionPolicy, WorkspaceRole,
-    WritePermission, MAX_CHECKPOINT_PAYLOAD_BYTES,
+    Invitation, InvitationStatus, LegalHoldId, MAX_CHECKPOINT_LIST_ITEMS,
+    MAX_CHECKPOINT_PAYLOAD_BYTES, MAX_MEMORY_CONTENT_BYTES, Membership, MemoryId, MemoryKind,
+    MemoryRecord, MemoryScope, Principal, PrincipalId, ReadGrant, ReadScope, RetentionPeriod,
+    Workspace, WorkspaceId, WorkspaceRetentionPolicy, WorkspaceRole, WritePermission,
 };
 use rembrane_memory_provider_configured::ConfiguredMemoryProvider;
 use rembrane_provider_registry::{ProviderSelectionPolicy, VerifiedProviderRegistry};
@@ -2825,6 +2825,24 @@ fn checkpoint(arguments: &[String]) -> Result<(), String> {
     let next_steps = comma_separated_option(arguments, "--next-steps");
     let blockers = comma_separated_option(arguments, "--blockers");
     let state_fingerprint = optional_option(arguments, "--state-fingerprint");
+    let goal = if expected_version.is_none() {
+        Some(option(arguments, "--goal")?)
+    } else {
+        None
+    };
+    let entity_id = optional_option(arguments, "--entity");
+    validate_cli_opaque_id("activity", activity_id.as_str())?;
+    validate_cli_opaque_id("client", client_id)?;
+    if let Some(entity_id) = entity_id {
+        validate_cli_opaque_id("entity", entity_id)?;
+    }
+    validate_checkpoint_cli_input(
+        goal,
+        summary,
+        &next_steps,
+        &blockers,
+        state_fingerprint,
+    )?;
     let (mut store, principal_id, workspace_id) = encrypted_store(arguments)?;
     let grants = authorize_client(
         &store,
@@ -2864,14 +2882,13 @@ fn checkpoint(arguments: &[String]) -> Result<(), String> {
             })
             .map_err(|error| format!("cannot update checkpoint: {error}"))?
     } else {
-        let goal = option(arguments, "--goal")?;
         let mut created = ActivityCheckpoint::new(
             CheckpointId::new(format!("checkpoint_{suffix}")),
             workspace_id,
             principal_id,
             activity_id,
-            optional_option(arguments, "--entity").map(EntityId::new),
-            goal,
+            entity_id.map(EntityId::new),
+            goal.expect("new checkpoints require a prevalidated goal"),
             summary,
             next_steps,
             blockers,
@@ -2892,6 +2909,57 @@ fn checkpoint(arguments: &[String]) -> Result<(), String> {
             .map_err(|error| format!("cannot create checkpoint: {error}"))?
     };
     print_checkpoint(&checkpoint, None, None)
+}
+
+fn validate_checkpoint_cli_input(
+    goal: Option<&str>,
+    summary: &str,
+    next_steps: &[String],
+    blockers: &[String],
+    state_fingerprint: Option<&str>,
+) -> Result<(), String> {
+    if let Some(goal) = goal {
+        validate_cli_text("checkpoint goal", goal, MAX_CHECKPOINT_PAYLOAD_BYTES)?;
+    }
+    validate_cli_text(
+        "checkpoint summary",
+        summary,
+        MAX_CHECKPOINT_PAYLOAD_BYTES,
+    )?;
+    if next_steps.len().saturating_add(blockers.len()) > MAX_CHECKPOINT_LIST_ITEMS {
+        return Err(format!(
+            "checkpoint must not exceed {MAX_CHECKPOINT_LIST_ITEMS} combined list items"
+        ));
+    }
+    for item in next_steps.iter().chain(blockers) {
+        validate_cli_text("checkpoint list item", item, MAX_CHECKPOINT_PAYLOAD_BYTES)?;
+    }
+    if let Some(fingerprint) = state_fingerprint {
+        validate_cli_text(
+            "state fingerprint",
+            fingerprint,
+            MAX_CHECKPOINT_PAYLOAD_BYTES,
+        )?;
+    }
+    let payload_bytes = goal.map_or(0, str::len)
+        .saturating_add(summary.len())
+        .saturating_add(
+            next_steps
+                .iter()
+                .fold(0usize, |total, item| total.saturating_add(item.len())),
+        )
+        .saturating_add(
+            blockers
+                .iter()
+                .fold(0usize, |total, item| total.saturating_add(item.len())),
+        )
+        .saturating_add(state_fingerprint.map_or(0, str::len));
+    if payload_bytes > MAX_CHECKPOINT_PAYLOAD_BYTES {
+        return Err(format!(
+            "checkpoint payload must not exceed {MAX_CHECKPOINT_PAYLOAD_BYTES} bytes"
+        ));
+    }
+    Ok(())
 }
 
 fn resume(arguments: &[String]) -> Result<(), String> {
@@ -3606,8 +3674,9 @@ mod tests {
     use rembrane_store_sqlite::SqliteStore;
 
     use super::{
-        EXPORT_MAGIC, MAX_CHECKPOINT_PAYLOAD_BYTES, MAX_CLI_RECALL_BYTES, MAX_CLI_RECALL_ITEMS,
-        MAX_CONTEXT_PURPOSE_BYTES, MAX_CONTEXT_QUERY_BYTES, MAX_MEMORY_CONTENT_BYTES,
+        EXPORT_MAGIC, MAX_CHECKPOINT_LIST_ITEMS, MAX_CHECKPOINT_PAYLOAD_BYTES,
+        MAX_CLI_RECALL_BYTES, MAX_CLI_RECALL_ITEMS, MAX_CONTEXT_PURPOSE_BYTES,
+        MAX_CONTEXT_QUERY_BYTES, MAX_MEMORY_CONTENT_BYTES,
         SEMANTIC_PROVIDER_CONFORMANCE_PROFILE_SHA256, build_remote_mcp_profile,
         check_provider_registry, claude_mcp_config, codex_mcp_config, create_parent_directory,
         cursor_mcp_config, doctor_failure_json, doctor_json, doctor_json_requested,
@@ -3619,7 +3688,8 @@ mod tests {
         recall_scope_context, redact_endpoint, remember_failure_json, remember_json_requested,
         render_mcp_config, requested_memory_privacy, requested_memory_scope, run,
         selected_secret_reference, test_provider, trace_failure_json, trace_json_requested,
-        validate_cli_memory_scope, validate_cli_opaque_id, validate_cli_text,
+        validate_checkpoint_cli_input, validate_cli_memory_scope, validate_cli_opaque_id,
+        validate_cli_text,
         validate_external_conformance_namespace, validate_mcp_server_binary, vscode_mcp_config,
         working_memory_failure_json, write_export, write_knowledge_graph_export,
         write_memory_jsonl_export, write_memory_markdown_export, zed_mcp_config,
@@ -3828,6 +3898,62 @@ mod tests {
             run(&invalid_fingerprint),
             Err(format!(
                 "state fingerprint must not exceed {MAX_CHECKPOINT_PAYLOAD_BYTES} bytes"
+            ))
+        );
+    }
+
+    #[test]
+    fn checkpoint_rejects_invalid_state_before_storage_access() {
+        let missing_goal = vec![
+            "checkpoint".to_owned(),
+            "--database".to_owned(),
+            "/path/that/does/not/exist.sqlite".to_owned(),
+            "--activity".to_owned(),
+            "activity_01".to_owned(),
+            "--summary".to_owned(),
+            "Progress".to_owned(),
+        ];
+        assert_eq!(
+            run(&missing_goal),
+            Err("missing required option --goal".to_owned())
+        );
+
+        let invalid_activity = vec![
+            "checkpoint".to_owned(),
+            "--activity".to_owned(),
+            "has spaces".to_owned(),
+            "--goal".to_owned(),
+            "Ship".to_owned(),
+            "--summary".to_owned(),
+            "Progress".to_owned(),
+        ];
+        assert_eq!(
+            run(&invalid_activity),
+            Err("activity must contain 1 to 255 safe ASCII characters".to_owned())
+        );
+
+        assert_eq!(
+            validate_checkpoint_cli_input(
+                Some("Ship"),
+                "Progress",
+                &vec!["next".to_owned(); MAX_CHECKPOINT_LIST_ITEMS + 1],
+                &[],
+                None,
+            ),
+            Err(format!(
+                "checkpoint must not exceed {MAX_CHECKPOINT_LIST_ITEMS} combined list items"
+            ))
+        );
+        assert_eq!(
+            validate_checkpoint_cli_input(
+                Some("Ship"),
+                &"x".repeat(MAX_CHECKPOINT_PAYLOAD_BYTES),
+                &["next".to_owned()],
+                &[],
+                None,
+            ),
+            Err(format!(
+                "checkpoint payload must not exceed {MAX_CHECKPOINT_PAYLOAD_BYTES} bytes"
             ))
         );
     }
