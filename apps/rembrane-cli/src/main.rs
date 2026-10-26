@@ -69,6 +69,8 @@ fn main() {
             println!("{}", doctor_failure_json());
         } else if recall_json_requested(&arguments) {
             println!("{}", recall_failure_json());
+        } else if let Some(failure) = working_memory_failure_json(&arguments) {
+            println!("{failure}");
         } else {
             eprintln!("error: {error}");
         }
@@ -84,6 +86,20 @@ fn doctor_json_requested(arguments: &[String]) -> bool {
 fn recall_json_requested(arguments: &[String]) -> bool {
     arguments.first().map(String::as_str) == Some("recall")
         && arguments.iter().any(|argument| argument == "--json")
+}
+
+fn working_memory_failure_json(arguments: &[String]) -> Option<serde_json::Value> {
+    let code = match arguments.first().map(String::as_str) {
+        Some("checkpoint") => "checkpoint_failed",
+        Some("resume") => "resume_failed",
+        _ => return None,
+    };
+    Some(serde_json::json!({
+        "schemaVersion": 1,
+        "error": {
+            "code": code
+        }
+    }))
 }
 
 fn run(arguments: &[String]) -> Result<(), String> {
@@ -3396,8 +3412,9 @@ mod tests {
         redact_endpoint, render_mcp_config,
         requested_memory_privacy, requested_memory_scope, run, selected_secret_reference,
         test_provider, validate_external_conformance_namespace, validate_mcp_server_binary,
-        vscode_mcp_config, write_export, write_knowledge_graph_export, write_memory_jsonl_export,
-        write_memory_markdown_export, zed_mcp_config,
+        vscode_mcp_config, working_memory_failure_json, write_export,
+        write_knowledge_graph_export, write_memory_jsonl_export, write_memory_markdown_export,
+        zed_mcp_config,
     };
 
     fn temporary_path(name: &str) -> std::path::PathBuf {
@@ -3504,6 +3521,37 @@ mod tests {
         assert_eq!(result.as_object().map(serde_json::Map::len), Some(2));
         assert!(!result.to_string().contains("tenant.sqlite"));
         assert!(!result.to_string().contains("private query"));
+    }
+
+    #[test]
+    fn working_memory_failures_are_closed_and_secret_safe() {
+        let checkpoint = working_memory_failure_json(&[
+            "checkpoint".to_owned(),
+            "--summary".to_owned(),
+            "private progress".to_owned(),
+            "--database".to_owned(),
+            "/private/project.sqlite".to_owned(),
+        ])
+        .expect("checkpoint failure should be structured");
+        assert_eq!(checkpoint["schemaVersion"], 1);
+        assert_eq!(checkpoint["error"]["code"], "checkpoint_failed");
+        assert_eq!(checkpoint.as_object().map(serde_json::Map::len), Some(2));
+
+        let resume = working_memory_failure_json(&[
+            "resume".to_owned(),
+            "--state-fingerprint".to_owned(),
+            "private fingerprint".to_owned(),
+        ])
+        .expect("resume failure should be structured");
+        assert_eq!(resume["error"]["code"], "resume_failed");
+        let diagnostics = format!("{checkpoint}{resume}");
+        for private_value in [
+            "private progress",
+            "project.sqlite",
+            "private fingerprint",
+        ] {
+            assert!(!diagnostics.contains(private_value));
+        }
     }
 
     fn request_run(arguments: &[&str]) -> Result<(), String> {

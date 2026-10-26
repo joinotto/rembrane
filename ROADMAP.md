@@ -156,6 +156,8 @@ This roadmap describes sequencing, not release dates.
   consume working-memory state through a stable protocol surface.
   - [x] Bound canonical checkpoint next-step and blocker collections to 1,024
     combined items in addition to the existing 256 KiB payload ceiling.
+  - [x] Return closed checkpoint and resume failure envelopes without exposing
+    working state, fingerprints, tenant routing, paths, or internal errors.
 - [x] Publish an executable local-alpha acceptance contract with independent
   static, Rust/E2E, and container CI gates.
 - [x] Add a secret-safe local installation doctor command.

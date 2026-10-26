@@ -18,6 +18,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - CLI checkpoint and resume output now has a versioned JSON Schema, canonical
   example, protocol drift checks, and cross-agent continuity documentation
   tied to the canonical payload and collection bounds.
+- Failed CLI checkpoint and resume operations now emit closed generic error
+  codes without serializing working state, fingerprints, tenant identities,
+  database paths, key metadata, or arbitrary internal errors.
 - `rembrane recall --json` now emits versioned structured memory items plus
   context-pack and disclosure-receipt IDs for generic bots, launchers, and
   agent runtimes without requiring human-output parsing.
