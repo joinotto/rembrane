@@ -816,7 +816,7 @@
       "$ref": "#/$defs/exactMemoryRevision"
     },
     "checkpointActivityPayload": {
-      "description": "The combined UTF-8 byte length of goal, summary, nextSteps, blockers, and stateFingerprint must not exceed 262144 bytes.",
+      "description": "The combined UTF-8 byte length of goal, summary, nextSteps, blockers, and stateFingerprint must not exceed 262144 bytes. nextSteps and blockers must contain at most 1024 combined items.",
       "oneOf": [
         {
           "type": "object",
@@ -913,6 +913,7 @@
     },
     "checkpointTextList": {
       "type": "array",
+      "maxItems": 1024,
       "items": {
         "type": "string",
         "minLength": 1,

@@ -15,6 +15,11 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Canonical working-memory checkpoints now reject more than 1,024 combined
   next-step and blocker entries, preventing tiny strings from bypassing the
   existing 256 KiB payload bound through collection overhead.
+- Canonical and external-provider checkpoint boundaries now consistently
+  reject empty list entries and more than 1,024 combined next steps and
+  blockers; provider payload-size accumulation is also overflow-safe.
+- The normative Memory Provider schema now advertises the checkpoint list
+  ceiling and is locked against drift with the canonical Rust invariant.
 - CLI checkpoint and resume output now has a versioned JSON Schema, canonical
   example, protocol drift checks, and cross-agent continuity documentation
   tied to the canonical payload and collection bounds.

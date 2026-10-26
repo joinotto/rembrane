@@ -231,6 +231,13 @@ rg -q '^pub const MAX_CHECKPOINT_LIST_ITEMS: usize = 1_024;$' \
     crates/rembrane-domain/src/activity.rs
 rg -q '^pub const MAX_CHECKPOINT_PAYLOAD_BYTES: usize = 262_144;$' \
     crates/rembrane-domain/src/activity.rs
+jq -e '
+    ."$defs".checkpointTextList.maxItems == 1024
+    and (
+        ."$defs".checkpointActivityPayload.description
+        | contains("at most 1024 combined items")
+    )
+' spec/memory-provider.schema.json >/dev/null
 
 jq -e --slurpfile example spec/examples/customer-kms-conformance-evidence.json '
     .additionalProperties == false

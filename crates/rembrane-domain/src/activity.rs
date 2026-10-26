@@ -10,6 +10,7 @@ pub const MAX_CHECKPOINT_LIST_ITEMS: usize = 1_024;
 pub enum CheckpointError {
     EmptyGoal,
     EmptySummary,
+    InvalidListItem,
     EmptyStateFingerprint,
     PayloadTooLarge,
     InvalidVersion,
@@ -21,6 +22,9 @@ impl Display for CheckpointError {
         match self {
             Self::EmptyGoal => formatter.write_str("activity goal must not be empty"),
             Self::EmptySummary => formatter.write_str("activity summary must not be empty"),
+            Self::InvalidListItem => {
+                formatter.write_str("checkpoint list items must not be empty")
+            }
             Self::EmptyStateFingerprint => {
                 formatter.write_str("state fingerprint must not be empty")
             }
@@ -287,6 +291,13 @@ fn validate_payload_size(
     blockers: &[String],
     state_fingerprint: Option<&str>,
 ) -> Result<(), CheckpointError> {
+    if next_steps
+        .iter()
+        .chain(blockers)
+        .any(|item| item.trim().is_empty())
+    {
+        return Err(CheckpointError::InvalidListItem);
+    }
     let list_items = next_steps
         .len()
         .checked_add(blockers.len())
@@ -382,12 +393,30 @@ mod tests {
             None,
             "Goal",
             "Summary",
-            vec![String::new(); super::MAX_CHECKPOINT_LIST_ITEMS + 1],
+            vec!["x".to_owned(); super::MAX_CHECKPOINT_LIST_ITEMS + 1],
             Vec::new(),
         )
         .expect_err("unbounded checkpoint collection should fail");
 
         assert_eq!(error, super::CheckpointError::PayloadTooLarge);
+    }
+
+    #[test]
+    fn rejects_empty_or_whitespace_checkpoint_list_items() {
+        let error = ActivityCheckpoint::new(
+            CheckpointId::new("checkpoint_empty_item"),
+            WorkspaceId::new("workspace_01"),
+            PrincipalId::new("principal_01"),
+            ActivityId::new("activity_01"),
+            None,
+            "Goal",
+            "Summary",
+            vec!["  ".to_owned()],
+            Vec::new(),
+        )
+        .expect_err("empty checkpoint list item should fail");
+
+        assert_eq!(error, super::CheckpointError::InvalidListItem);
     }
 
     #[test]

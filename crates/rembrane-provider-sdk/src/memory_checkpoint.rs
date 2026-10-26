@@ -1,6 +1,8 @@
 use std::fmt;
 
-use rembrane_domain::{ActivityId, CheckpointId, EntityId, MAX_CHECKPOINT_PAYLOAD_BYTES};
+use rembrane_domain::{
+    ActivityId, CheckpointId, EntityId, MAX_CHECKPOINT_LIST_ITEMS, MAX_CHECKPOINT_PAYLOAD_BYTES,
+};
 
 use crate::{MemoryProviderIdempotencyKey, ProviderError};
 
@@ -245,11 +247,32 @@ fn validate_checkpoint_fields(
         ));
     }
 
-    let payload_bytes = goal.map_or(0, str::len)
-        + summary.len()
-        + next_steps.iter().map(String::len).sum::<usize>()
-        + blockers.iter().map(String::len).sum::<usize>()
-        + state_fingerprint.map_or(0, str::len);
+    let list_items = next_steps
+        .len()
+        .checked_add(blockers.len())
+        .ok_or_else(|| {
+            ProviderError::InvalidConfiguration(
+                "checkpoint exceeds the canonical list item limit".to_owned(),
+            )
+        })?;
+    if list_items > MAX_CHECKPOINT_LIST_ITEMS {
+        return Err(ProviderError::InvalidConfiguration(
+            "checkpoint exceeds the canonical list item limit".to_owned(),
+        ));
+    }
+    let mut field_lengths = next_steps
+        .iter()
+        .chain(blockers)
+        .map(String::len)
+        .chain([goal.map_or(0, str::len), summary.len()])
+        .chain(state_fingerprint.map(str::len));
+    let payload_bytes = field_lengths
+        .try_fold(0_usize, usize::checked_add)
+        .ok_or_else(|| {
+            ProviderError::InvalidConfiguration(
+                "checkpoint exceeds the canonical payload byte limit".to_owned(),
+            )
+        })?;
     if payload_bytes > MAX_CHECKPOINT_PAYLOAD_BYTES {
         return Err(ProviderError::InvalidConfiguration(
             "checkpoint exceeds the canonical payload byte limit".to_owned(),
@@ -275,7 +298,10 @@ fn validate_identifier(label: &str, value: &str) -> Result<(), ProviderError> {
 
 #[cfg(test)]
 mod tests {
-    use rembrane_domain::{ActivityId, CheckpointId, EntityId, MAX_CHECKPOINT_PAYLOAD_BYTES};
+    use rembrane_domain::{
+        ActivityId, CheckpointId, EntityId, MAX_CHECKPOINT_LIST_ITEMS,
+        MAX_CHECKPOINT_PAYLOAD_BYTES,
+    };
 
     use super::{CheckpointActivityPayload, CheckpointActivityResult};
     use crate::MemoryProviderIdempotencyKey;
@@ -376,6 +402,22 @@ mod tests {
         );
         assert!(CheckpointActivityResult::new(CheckpointId::new(""), 1).is_err());
         assert!(CheckpointActivityResult::new(CheckpointId::new("checkpoint_01"), 0).is_err());
+    }
+
+    #[test]
+    fn rejects_checkpoint_collections_above_the_canonical_limit() {
+        let result = CheckpointActivityPayload::create(
+            key(),
+            ActivityId::new("activity_01"),
+            None,
+            "goal",
+            "summary",
+            vec!["x".to_owned(); MAX_CHECKPOINT_LIST_ITEMS + 1],
+            Vec::new(),
+            None,
+        );
+
+        assert!(matches!(result, Err(crate::ProviderError::InvalidConfiguration(_))));
     }
 
     #[test]
