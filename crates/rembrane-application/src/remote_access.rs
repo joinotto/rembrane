@@ -1,5 +1,5 @@
 use std::error::Error;
-use std::fmt::{Display, Formatter};
+use std::fmt::{self, Display, Formatter};
 
 use rembrane_contracts::{
     RemoteAccessScope, RemoteMcpOperation, RemoteMcpRequestAuthorization, RemoteTokenClaims,
@@ -24,8 +24,14 @@ pub trait RemoteTokenVerifier {
     -> Result<RemoteTokenClaims, RemoteTokenVerificationError>;
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Eq, PartialEq)]
 pub struct RemoteTokenVerificationError;
+
+impl fmt::Debug for RemoteTokenVerificationError {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
+        formatter.write_str("RemoteTokenVerificationError")
+    }
+}
 
 impl Display for RemoteTokenVerificationError {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {

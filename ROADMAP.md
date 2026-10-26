@@ -44,6 +44,8 @@ This roadmap describes sequencing, not release dates.
     routing from preference and memory-lifecycle command diagnostics.
   - [x] Redact arbitrary application validation details from debug output and
     interoperable MCP error responses.
+  - [x] Enforce explicitly reviewed debug output for every production
+    application struct, including future use cases and protocol boundaries.
 - [x] Model correction and deletion lifecycle operations.
 - [x] Redact source and target tenant routing, principals, clients, memory and
   proposal identities, target scope values, provenance, and event identities

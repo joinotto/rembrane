@@ -89,6 +89,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Retention-policy, legal-hold, purge-plan, and purge-command diagnostics now
   expose only safe versions, counts, bounds, and cutoff-presence flags instead
   of tenant, administrator, request, hold, or retention timeline identities.
+- Every production application struct now requires explicitly reviewed debug
+  output; channel dispatch reports retain safe counts, token-verification
+  errors remain opaque, and remote session reservation IDs are redacted.
 - Provider-independent key seal requests now retain copied plaintext in
   redacted zeroize-on-drop ownership instead of an ordinary byte vector.
 - Key-provider plaintext responses are now explicitly wiped before oversized

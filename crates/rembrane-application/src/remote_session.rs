@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt;
 
 use rembrane_contracts::{
     RemoteMcpRequestAuthorization, RemoteSessionBinding, RemoteSessionId, VerifiedRemoteAccess,
@@ -23,9 +24,15 @@ pub struct RemoteSessionRegistry {
     maximum_sessions: usize,
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Eq, PartialEq)]
 pub struct RemoteSessionReservation {
     id: u64,
+}
+
+impl fmt::Debug for RemoteSessionReservation {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("RemoteSessionReservation(<redacted>)")
+    }
 }
 
 impl RemoteSessionRegistry {

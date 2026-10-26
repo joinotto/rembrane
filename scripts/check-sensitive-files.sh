@@ -79,6 +79,15 @@ then
     exit 1
 fi
 
+for application_source in crates/rembrane-application/src/*.rs; do
+    if sed '/^#\[cfg(test)\]/,$d' "$application_source" |
+        rg -n -U '#\[derive\([^]]*Debug[^]]*\)\]\n(?:pub )?struct '
+    then
+        echo "application structs must use explicitly reviewed Debug implementations: $application_source" >&2
+        exit 1
+    fi
+done
+
 for adapter_source in adapters/*/src/*.rs; do
     if sed '/^#\[cfg(test)\]/,$d' "$adapter_source" |
         rg -n -U '#\[derive\([^]]*Debug[^]]*\)\]\n(?:pub )?struct '

@@ -1,15 +1,29 @@
+use std::fmt;
+
 use rembrane_domain::WorkspaceId;
 
 use crate::{
     ApplicationError, ChannelInboxRepository, ChannelMessageProcessor, MAX_CHANNEL_INBOX_PAGE,
 };
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Default, Eq, PartialEq)]
 pub struct ChannelDispatchReport {
     pub attempted: usize,
     pub completed: usize,
     pub retried: usize,
     pub quarantined: usize,
+}
+
+impl fmt::Debug for ChannelDispatchReport {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ChannelDispatchReport")
+            .field("attempted", &self.attempted)
+            .field("completed", &self.completed)
+            .field("retried", &self.retried)
+            .field("quarantined", &self.quarantined)
+            .finish()
+    }
 }
 
 pub struct ChannelInboxWorker<'worker, Repository, Processor> {
