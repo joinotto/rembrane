@@ -158,6 +158,8 @@ This roadmap describes sequencing, not release dates.
     combined items in addition to the existing 256 KiB payload ceiling.
     - [x] Reject empty list entries and enforce the same collection ceiling at
       the external Memory Provider Protocol boundary.
+    - [x] Reject NUL characters in canonical checkpoint goals, summaries, and
+      state fingerprints consistently with the provider boundary.
   - [x] Return closed checkpoint and resume failure envelopes without exposing
     working state, fingerprints, tenant routing, paths, or internal errors.
 - [x] Publish an executable local-alpha acceptance contract with independent

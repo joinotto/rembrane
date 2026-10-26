@@ -12,6 +12,7 @@ pub enum CheckpointError {
     EmptySummary,
     InvalidListItem,
     EmptyStateFingerprint,
+    InvalidText,
     PayloadTooLarge,
     InvalidVersion,
     VersionOverflow,
@@ -29,6 +30,9 @@ impl Display for CheckpointError {
             }
             Self::EmptyStateFingerprint => {
                 formatter.write_str("state fingerprint must not be empty")
+            }
+            Self::InvalidText => {
+                formatter.write_str("checkpoint text must not contain null characters")
             }
             Self::PayloadTooLarge => {
                 formatter.write_str("checkpoint exceeds the canonical byte limit")
@@ -98,14 +102,10 @@ impl ActivityCheckpoint {
         version: u64,
     ) -> Result<Self, CheckpointError> {
         let goal = goal.into();
-        if goal.trim().is_empty() {
-            return Err(CheckpointError::EmptyGoal);
-        }
+        validate_required_text(&goal, CheckpointError::EmptyGoal)?;
 
         let summary = summary.into();
-        if summary.trim().is_empty() {
-            return Err(CheckpointError::EmptySummary);
-        }
+        validate_required_text(&summary, CheckpointError::EmptySummary)?;
         if version == 0 {
             return Err(CheckpointError::InvalidVersion);
         }
@@ -145,14 +145,10 @@ impl ActivityCheckpoint {
         blockers: Vec<String>,
     ) -> Result<Self, CheckpointError> {
         let goal = goal.into();
-        if goal.trim().is_empty() {
-            return Err(CheckpointError::EmptyGoal);
-        }
+        validate_required_text(&goal, CheckpointError::EmptyGoal)?;
 
         let summary = summary.into();
-        if summary.trim().is_empty() {
-            return Err(CheckpointError::EmptySummary);
-        }
+        validate_required_text(&summary, CheckpointError::EmptySummary)?;
         validate_payload_size(&goal, &summary, &next_steps, &blockers, None)?;
 
         Ok(Self {
@@ -194,9 +190,7 @@ impl ActivityCheckpoint {
         blockers: Vec<String>,
     ) -> Result<Self, CheckpointError> {
         let summary = summary.into();
-        if summary.trim().is_empty() {
-            return Err(CheckpointError::EmptySummary);
-        }
+        validate_required_text(&summary, CheckpointError::EmptySummary)?;
         validate_payload_size(
             &self.goal,
             &summary,
@@ -278,9 +272,24 @@ impl ActivityCheckpoint {
     }
 }
 
+fn validate_required_text(
+    value: &str,
+    empty_error: CheckpointError,
+) -> Result<(), CheckpointError> {
+    if value.trim().is_empty() {
+        Err(empty_error)
+    } else if value.contains('\0') {
+        Err(CheckpointError::InvalidText)
+    } else {
+        Ok(())
+    }
+}
+
 fn validate_state_fingerprint(state_fingerprint: Option<&str>) -> Result<(), CheckpointError> {
     if state_fingerprint.is_some_and(|value| value.trim().is_empty()) {
         Err(CheckpointError::EmptyStateFingerprint)
+    } else if state_fingerprint.is_some_and(|value| value.contains('\0')) {
+        Err(CheckpointError::InvalidText)
     } else {
         Ok(())
     }
@@ -428,6 +437,33 @@ mod tests {
             )
             .expect_err("null checkpoint list item should fail");
         assert_eq!(null_error, super::CheckpointError::InvalidListItem);
+    }
+
+    #[test]
+    fn rejects_null_characters_in_scalar_checkpoint_text() {
+        let goal_error = ActivityCheckpoint::new(
+            CheckpointId::new("checkpoint_null_goal"),
+            WorkspaceId::new("workspace_01"),
+            PrincipalId::new("principal_01"),
+            ActivityId::new("activity_01"),
+            None,
+            "Goal\0hidden",
+            "Summary",
+            Vec::new(),
+            Vec::new(),
+        )
+        .expect_err("null goal should fail");
+        assert_eq!(goal_error, super::CheckpointError::InvalidText);
+
+        let summary_error = checkpoint()
+            .update("Summary\0hidden", Vec::new(), Vec::new())
+            .expect_err("null summary should fail");
+        assert_eq!(summary_error, super::CheckpointError::InvalidText);
+
+        let fingerprint_error = checkpoint()
+            .with_state_fingerprint("git:abc\0hidden")
+            .expect_err("null fingerprint should fail");
+        assert_eq!(fingerprint_error, super::CheckpointError::InvalidText);
     }
 
     #[test]
