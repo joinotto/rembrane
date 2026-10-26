@@ -118,6 +118,7 @@ for deployment_file in \
     scripts/test-semantic-provider-compatibility-lock.sh \
     scripts/verify-semantic-provider-compatibility.mjs \
     scripts/check-postgres-rls.sh \
+    scripts/check-official-streamable-http.sh \
     scripts/check-ci-security.sh \
     scripts/test-postgres-rls.sh \
     scripts/check-production-readiness.sh \
@@ -157,6 +158,7 @@ sh -n scripts/test-package-memory-provider-release-evidence.sh
 sh -n scripts/test-key-provider-compatibility-lock.sh
 sh -n scripts/test-semantic-provider-compatibility-lock.sh
 sh -n scripts/check-postgres-rls.sh
+sh -n scripts/check-official-streamable-http.sh
 sh -n scripts/check-ci-security.sh
 sh -n scripts/test-postgres-rls.sh
 sh -n scripts/check-production-readiness.sh

@@ -605,6 +605,9 @@ This roadmap describes sequencing, not release dates.
     - [x] Pin the reviewed official Rust MCP SDK release exactly so the
       transport API and dependency resolution cannot drift before remote
       transport enablement.
+    - [x] Make production readiness fail closed until the official SDK server
+      feature, remote authorization adapter, and concrete Streamable HTTP
+      service are all wired into the MCP application.
     - [x] Authorize protocol-correct sessionless initialize requests without
       reserving a client-supplied ID before the official SDK response.
       - [x] Bound concurrent downstream initialization with anonymous,
