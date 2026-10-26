@@ -255,16 +255,26 @@ pub struct DeploymentPolicy {
     pub processing_mode: ProcessingMode,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct SecretReference {
     kind: SecretReferenceKind,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 enum SecretReferenceKind {
     Environment { variable: String },
     File { path: String },
     External { provider: String, key: String },
+}
+
+impl fmt::Debug for SecretReference {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("SecretReference")
+            .field("source", &self.source())
+            .field("target", &"[REDACTED]")
+            .finish()
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -787,6 +797,9 @@ mod tests {
             Some("REMBRANE_DATABASE_URL")
         );
         assert_eq!(reference.file_path(), None);
+        let debug = format!("{reference:?}");
+        assert!(debug.contains("Environment"));
+        assert!(!debug.contains("REMBRANE_DATABASE_URL"));
     }
 
     #[test]
@@ -911,6 +924,26 @@ mod tests {
             "external::secret".parse::<SecretReference>(),
             Err(SecretReferenceError::EmptyField)
         );
+    }
+
+    #[test]
+    fn composed_provider_debug_redacts_every_secret_locator() {
+        let profile = ProviderConnection::remote(
+            ProviderKind::Mem0,
+            "https://memory.example.test",
+            vec![
+                SecretReference::file("/run/secrets/provider-token").expect("file reference"),
+                SecretReference::external("vault", "secret/rembrane/provider")
+                    .expect("external reference"),
+            ],
+            ProviderPlacement::External,
+        )
+        .expect("provider profile");
+
+        let debug = format!("{profile:?}");
+        assert!(!debug.contains("/run/secrets/provider-token"));
+        assert!(!debug.contains("secret/rembrane/provider"));
+        assert!(debug.contains("[REDACTED]"));
     }
 
     #[test]

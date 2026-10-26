@@ -48,6 +48,8 @@ This roadmap describes sequencing, not release dates.
     secret-manager references before storing configuration.
     - [x] Make secret references opaque with source-specific read-only
       accessors so integrations cannot construct unvalidated variants.
+      - [x] Redact environment names, protected file paths, and external vault
+        keys from standalone and composed configuration debug output.
     - [x] Add a pluggable zeroizing resolver port plus a protected local
       environment and secret-file implementation.
       - [x] Resolve validated provider credential lists atomically from the

@@ -27,6 +27,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Cryptographic debug output now redacts workspace, record, and key
   identifiers plus ciphertext and nonce bytes while retaining safe structural
   diagnostics.
+- Secret-reference debug output now exposes only the reference source and
+  redacts environment names, protected paths, and external secret-manager
+  keys throughout composed provider and remote-service configuration.
 - Canonical SQLite initialization and backup now require the path opened by
   SQLite to retain the exact protected file's device/inode identity, and
   failure cleanup refuses to remove a path replaced after preparation.
