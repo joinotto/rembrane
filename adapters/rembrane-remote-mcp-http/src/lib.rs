@@ -299,6 +299,7 @@ pub trait AuthorizedRemoteMcpInitializationDispatcher {
         &self,
         access: VerifiedRemoteAccess,
         session_id: RemoteSessionId,
+        protocol_headers: RemoteMcpProtocolHeaders,
     ) -> Self::TerminationFuture;
 }
 
@@ -520,6 +521,7 @@ impl<Factory> TenantAwareTowerMcpDispatcher<Factory> {
 #[derive(Debug)]
 pub enum TowerMcpDispatchError<ServiceError> {
     InvalidAuthorizedMetadata,
+    InvalidSdkResponse,
     Service(ServiceError),
 }
 
@@ -582,6 +584,132 @@ where
                 .oneshot(request)
                 .await
                 .map_err(TowerMcpDispatchError::Service)
+        })
+    }
+}
+
+impl<Service> AuthorizedRemoteMcpInitializationDispatcher for AuthorizedTowerMcpDispatcher<Service>
+where
+    Service: tower::Service<Request<Body>, Response = Response> + Clone + Send + 'static,
+    Service::Future: Send + 'static,
+    Service::Error: Send + 'static,
+{
+    type Output = Response;
+    type InitializeError = TowerMcpDispatchError<Service::Error>;
+    type TerminationError = TowerMcpDispatchError<Service::Error>;
+    type InitializeFuture = Pin<
+        Box<
+            dyn Future<
+                    Output = Result<
+                        InitializedRemoteMcpSession<Self::Output>,
+                        Self::InitializeError,
+                    >,
+                > + Send
+                + 'static,
+        >,
+    >;
+    type TerminationFuture =
+        Pin<Box<dyn Future<Output = Result<(), Self::TerminationError>> + Send + 'static>>;
+
+    fn initialize(
+        &self,
+        access: VerifiedRemoteAccess,
+        invocation: RemoteMcpInvocation,
+        protocol_headers: RemoteMcpProtocolHeaders,
+        body: Zeroizing<Vec<u8>>,
+    ) -> Self::InitializeFuture {
+        let service = self.service.clone();
+        Box::pin(async move {
+            let mut request = Request::builder()
+                .method(Method::POST)
+                .body(Body::from(bytes::Bytes::from_owner(body)))
+                .map_err(|_| TowerMcpDispatchError::InvalidAuthorizedMetadata)?;
+            insert_validated_header(
+                request.headers_mut(),
+                CONTENT_TYPE,
+                protocol_headers.content_type(),
+            )?;
+            insert_validated_header(request.headers_mut(), ACCEPT, protocol_headers.accept())?;
+            insert_optional_validated_header(
+                request.headers_mut(),
+                MCP_PROTOCOL_VERSION_HEADER_NAME,
+                protocol_headers.protocol_version(),
+            )?;
+            insert_optional_validated_header(
+                request.headers_mut(),
+                HOST,
+                protocol_headers.validated_host(),
+            )?;
+            insert_optional_validated_header(
+                request.headers_mut(),
+                ORIGIN,
+                protocol_headers.validated_origin(),
+            )?;
+            request.extensions_mut().insert(access);
+            request.extensions_mut().insert(invocation);
+            let response = service
+                .oneshot(request)
+                .await
+                .map_err(TowerMcpDispatchError::Service)?;
+            if !response.status().is_success() {
+                return Err(TowerMcpDispatchError::InvalidSdkResponse);
+            }
+            let mut session_headers = response.headers().get_all(MCP_SESSION_HEADER_NAME).iter();
+            let session_header = session_headers
+                .next()
+                .ok_or(TowerMcpDispatchError::InvalidSdkResponse)?;
+            if session_headers.next().is_some() {
+                return Err(TowerMcpDispatchError::InvalidSdkResponse);
+            }
+            let session_id = session_header
+                .to_str()
+                .ok()
+                .and_then(|value| RemoteSessionId::new(value.to_owned()).ok())
+                .ok_or(TowerMcpDispatchError::InvalidSdkResponse)?;
+            Ok(InitializedRemoteMcpSession::new(response, session_id))
+        })
+    }
+
+    fn terminate(
+        &self,
+        access: VerifiedRemoteAccess,
+        session_id: RemoteSessionId,
+        protocol_headers: RemoteMcpProtocolHeaders,
+    ) -> Self::TerminationFuture {
+        let service = self.service.clone();
+        Box::pin(async move {
+            let validated_host = protocol_headers
+                .validated_host()
+                .ok_or(TowerMcpDispatchError::InvalidAuthorizedMetadata)?;
+            let mut request = Request::builder()
+                .method(Method::DELETE)
+                .body(Body::empty())
+                .map_err(|_| TowerMcpDispatchError::InvalidAuthorizedMetadata)?;
+            insert_validated_header(
+                request.headers_mut(),
+                MCP_SESSION_HEADER_NAME,
+                session_id.as_str(),
+            )?;
+            insert_optional_validated_header(
+                request.headers_mut(),
+                MCP_PROTOCOL_VERSION_HEADER_NAME,
+                protocol_headers.protocol_version(),
+            )?;
+            insert_validated_header(request.headers_mut(), HOST, validated_host)?;
+            insert_optional_validated_header(
+                request.headers_mut(),
+                ORIGIN,
+                protocol_headers.validated_origin(),
+            )?;
+            request.extensions_mut().insert(access);
+            let response = service
+                .oneshot(request)
+                .await
+                .map_err(TowerMcpDispatchError::Service)?;
+            if !response.status().is_success() {
+                return Err(TowerMcpDispatchError::InvalidSdkResponse);
+            }
+            Ok(())
         })
     }
 }
@@ -2256,6 +2384,7 @@ impl RemoteMcpHttpGate {
             .map_err(RemoteMcpInitializationError::Authorization)?;
         let access = authorized.access().clone();
         let (access_for_dispatch, invocation, _, body) = authorized.into_dispatch_parts();
+        let termination_headers = protocol_headers.clone();
         let initialized = dispatcher
             .initialize(access_for_dispatch, invocation, protocol_headers, body)
             .await
@@ -2264,7 +2393,10 @@ impl RemoteMcpHttpGate {
         if let Err(rejection) =
             self.commit_sdk_generated_session(session_id.clone(), &access, now_epoch_seconds)
         {
-            let termination_error = dispatcher.terminate(access, session_id).await.err();
+            let termination_error = dispatcher
+                .terminate(access, session_id, termination_headers)
+                .await
+                .err();
             return Err(RemoteMcpInitializationError::Commit {
                 rejection,
                 termination_error,
@@ -2799,12 +2931,12 @@ mod tests {
         body::{Body, Bytes, to_bytes},
         extract::State,
         http::{
-            HeaderMap, HeaderValue, Method, Request,
+            HeaderMap, HeaderValue, Method, Request, StatusCode,
             header::{
                 ACCEPT, AUTHORIZATION, CONTENT_TYPE, HOST, ORIGIN, RETRY_AFTER, WWW_AUTHENTICATE,
             },
         },
-        response::IntoResponse,
+        response::{IntoResponse, Response},
         routing::{get, post},
     };
     use rembrane_application::{
@@ -2842,6 +2974,39 @@ mod tests {
     struct RecordingEventStreamDispatcher;
     struct AllocationRecordingDispatcher;
 
+    type TowerInitializationCall = (
+        Method,
+        String,
+        Option<String>,
+        Option<HeaderValue>,
+        Option<HeaderValue>,
+        bool,
+    );
+
+    fn assert_compensated_tower_initialization(calls: &[TowerInitializationCall]) {
+        assert_eq!(calls.len(), 2);
+        assert_eq!(calls[0].0, Method::POST);
+        assert_eq!(calls[0].1, "workspace_01");
+        assert_eq!(calls[0].2, None);
+        assert_eq!(calls[1].0, Method::DELETE);
+        assert_eq!(calls[1].1, "workspace_01");
+        assert_eq!(
+            calls[1].2.as_deref(),
+            Some("session_generated_tower_0123456789")
+        );
+        for call in calls {
+            assert_eq!(
+                call.3.as_ref().and_then(|value| value.to_str().ok()),
+                Some("memory.example.test")
+            );
+            assert_eq!(
+                call.4.as_ref().and_then(|value| value.to_str().ok()),
+                Some("https://agent.example.test")
+            );
+            assert!(!call.5, "bearer credential must not reach the SDK service");
+        }
+    }
+
     struct ConfirmedInitializationDispatcher {
         session_id: RemoteSessionId,
         terminated: Arc<Mutex<Vec<(String, String)>>>,
@@ -2874,6 +3039,7 @@ mod tests {
             &self,
             access: rembrane_contracts::VerifiedRemoteAccess,
             session_id: RemoteSessionId,
+            _protocol_headers: super::RemoteMcpProtocolHeaders,
         ) -> Self::TerminationFuture {
             self.terminated
                 .lock()
@@ -4098,6 +4264,150 @@ mod tests {
             "bearer credential must stop at OAuth boundary"
         );
         assert_eq!(dispatched.4, body);
+    }
+
+    #[tokio::test]
+    async fn tower_initialization_validates_response_and_compensates_with_delete() {
+        let verifier = Verifier;
+        let authenticator = RemoteAccessAuthenticator::new(
+            &verifier,
+            "https://identity.example.test",
+            "https://memory.example.test/mcp",
+        );
+        let origins = ["https://agent.example.test"];
+        let authorization = RemoteHttpAuthorization::new(&authenticator, &origins);
+        let mut gate = RemoteMcpHttpGate::new(
+            1,
+            "https://memory.example.test/.well-known/oauth-protected-resource/mcp",
+            &["memory.example.test"],
+        )
+        .expect("gate should be valid");
+        let existing_access = authorization
+            .authorize_connection(Some("Bearer workspace-two"), None, 1_000)
+            .expect("fixture access should authorize");
+        gate.commit_sdk_generated_session(
+            RemoteSessionId::new("session_existing_tower_0123456789")
+                .expect("existing session fixture should validate"),
+            &existing_access,
+            1_000,
+        )
+        .expect("existing session should fill capacity");
+
+        let calls = Arc::new(Mutex::new(Vec::<TowerInitializationCall>::new()));
+        let calls_from_service = Arc::clone(&calls);
+        let service = tower::service_fn(move |mut request: Request<Body>| {
+            let calls = Arc::clone(&calls_from_service);
+            async move {
+                let access = request
+                    .extensions_mut()
+                    .remove::<rembrane_contracts::VerifiedRemoteAccess>()
+                    .expect("verified access extension");
+                let session = request
+                    .headers()
+                    .get(MCP_SESSION_HEADER_NAME)
+                    .and_then(|value| value.to_str().ok())
+                    .map(str::to_owned);
+                calls.lock().expect("call log").push((
+                    request.method().clone(),
+                    access.workspace_id().to_string(),
+                    session,
+                    request.headers().get(HOST).cloned(),
+                    request.headers().get(ORIGIN).cloned(),
+                    request.headers().contains_key(AUTHORIZATION),
+                ));
+                let response = if request.method() == Method::POST {
+                    Response::builder()
+                        .status(StatusCode::OK)
+                        .header(
+                            MCP_SESSION_HEADER_NAME,
+                            "session_generated_tower_0123456789",
+                        )
+                        .body(Body::from("initialized"))
+                        .expect("initialize response should build")
+                } else {
+                    Response::builder()
+                        .status(StatusCode::NO_CONTENT)
+                        .body(Body::empty())
+                        .expect("termination response should build")
+                };
+                Ok::<_, std::convert::Infallible>(response)
+            }
+        });
+        let dispatcher = AuthorizedTowerMcpDispatcher::new(service);
+        let error = gate
+            .initialize_and_commit_sdk_session(
+                &authorization,
+                RemoteMcpHttpRequest {
+                    authorization: Some("Bearer workspace-one"),
+                    host: Some("memory.example.test"),
+                    origin: Some("https://agent.example.test"),
+                    session_id: None,
+                },
+                super::RemoteMcpProtocolHeaders::transport_neutral(),
+                zeroize::Zeroizing::new(
+                    br#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}"#
+                        .to_vec(),
+                ),
+                1_001,
+                &dispatcher,
+            )
+            .await
+            .expect_err("full local capacity should trigger SDK compensation");
+        assert!(
+            matches!(
+                &error,
+                RemoteMcpInitializationError::Commit {
+                    rejection: RemoteMcpHttpRejection { status: 503, .. },
+                    termination_error: None,
+                }
+            ),
+            "unexpected initialization error: {error:?}"
+        );
+        assert_compensated_tower_initialization(&calls.lock().expect("call log"));
+    }
+
+    #[tokio::test]
+    async fn tower_initialization_rejects_missing_or_duplicate_session_response() {
+        for duplicate in [false, true] {
+            let service = tower::service_fn(move |_request: Request<Body>| async move {
+                let mut response = Response::builder()
+                    .status(StatusCode::OK)
+                    .body(Body::empty())
+                    .expect("response should build");
+                if duplicate {
+                    response.headers_mut().append(
+                        MCP_SESSION_HEADER_NAME,
+                        HeaderValue::from_static("session_one_0123456789"),
+                    );
+                    response.headers_mut().append(
+                        MCP_SESSION_HEADER_NAME,
+                        HeaderValue::from_static("session_two_0123456789"),
+                    );
+                }
+                Ok::<_, std::convert::Infallible>(response)
+            });
+            let dispatcher = AuthorizedTowerMcpDispatcher::new(service);
+            let access = verified_access(
+                "workspace_01",
+                2_000,
+                [RemoteAccessScope::ContextRead].into_iter().collect(),
+            );
+            let result = AuthorizedRemoteMcpInitializationDispatcher::initialize(
+                &dispatcher,
+                access,
+                RemoteMcpInvocation {
+                    method: "initialize".to_owned(),
+                    tool_name: None,
+                },
+                super::RemoteMcpProtocolHeaders::transport_neutral(),
+                zeroize::Zeroizing::new(Vec::new()),
+            )
+            .await;
+            assert!(matches!(
+                result,
+                Err(super::TowerMcpDispatchError::InvalidSdkResponse)
+            ));
+        }
     }
 
     #[tokio::test]

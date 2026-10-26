@@ -504,6 +504,9 @@ This roadmap describes sequencing, not release dates.
           fail-closed operational handling.
         - [x] Expose confirmed initialization through borrowed and owned Axum
           boundaries while preserving one zeroizing request-body allocation.
+        - [x] Validate successful Tower SDK responses with exactly one
+          canonical session ID and reuse the validated host, origin, and
+          protocol metadata for compensating DELETE requests.
     - [x] Require every remote tool invocation to carry the exact verified
       subject, client, and workspace identity through the SDK request context,
       rejecting missing or substituted tenant extensions.

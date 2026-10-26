@@ -52,6 +52,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Borrowed and owned Axum authorization surfaces now expose confirmed
   official-SDK initialization without duplicating the zeroizing plaintext
   request body or reimplementing header validation.
+- The concrete Tower initializer now accepts only successful SDK responses
+  carrying exactly one valid `Mcp-Session-Id`, and performs compensation DELETE
+  with the original validated host, origin, protocol version, and tenant.
 
 - CLI now exports authenticated canonical memories as deterministic, versioned
   JSONL after explicit plaintext confirmation, with exact tenant validation,
