@@ -979,6 +979,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Protected-file secret reads now bind validation to one opened file identity,
   reject Unix path replacement by device and inode, and enforce the byte bound
   while reading instead of trusting an earlier size check.
+- CLI encrypted exports and restored databases are now created exclusively
+  with owner-only Unix permissions and synchronized before success is reported.
 - Ordered all-or-error provider credential resolution through any secret
   resolver, zeroizing already resolved values when a later reference fails.
 - A transport-injectable Mem0 OSS semantic adapter mapping authorized

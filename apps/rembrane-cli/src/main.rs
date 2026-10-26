@@ -1422,9 +1422,7 @@ fn write_export(snapshot: &std::path::Path, destination: &std::path::Path) -> Re
         .len();
     let mut input =
         std::fs::File::open(snapshot).map_err(|error| format!("cannot open snapshot: {error}"))?;
-    let mut output = std::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
+    let mut output = private_create_new_options()
         .open(destination)
         .map_err(|error| format!("cannot create export: {error}"))?;
     output
@@ -1438,12 +1436,12 @@ fn write_export(snapshot: &std::path::Path, destination: &std::path::Path) -> Re
         return Err("snapshot changed while export was created".to_owned());
     }
     output
-        .flush()
-        .map_err(|error| format!("cannot flush export: {error}"))
+        .sync_all()
+        .map_err(|error| format!("cannot persist export: {error}"))
 }
 
 fn read_export(source: &std::path::Path, destination: &std::path::Path) -> Result<(), String> {
-    use std::io::{Read, Write};
+    use std::io::Read;
 
     let mut input =
         std::fs::File::open(source).map_err(|error| format!("cannot open export: {error}"))?;
@@ -1486,9 +1484,7 @@ fn read_export(source: &std::path::Path, destination: &std::path::Path) -> Resul
         });
     }
 
-    let mut output = std::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
+    let mut output = private_create_new_options()
         .open(destination)
         .map_err(|error| format!("cannot create restore destination: {error}"))?;
     let copied = match std::io::copy(
@@ -1506,12 +1502,24 @@ fn read_export(source: &std::path::Path, destination: &std::path::Path) -> Resul
         let _ = std::fs::remove_file(destination);
         return Err("export payload is truncated".to_owned());
     }
-    if let Err(error) = output.flush() {
+    if let Err(error) = output.sync_all() {
         drop(output);
         let _ = std::fs::remove_file(destination);
-        return Err(format!("cannot flush restored database: {error}"));
+        return Err(format!("cannot persist restored database: {error}"));
     }
     Ok(())
+}
+
+fn private_create_new_options() -> std::fs::OpenOptions {
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt as _;
+
+        options.mode(0o600);
+    }
+    options
 }
 
 fn doctor(arguments: &[String]) -> Result<(), String> {
@@ -1632,7 +1640,7 @@ fn validate_configured_remote_mcp_profile() -> Result<(), String> {
         trusted_origins.as_ref(),
     ]
     .iter()
-    .all(|value| value.is_none())
+    .all(Option::is_none)
     {
         return Ok(());
     }
@@ -3650,6 +3658,27 @@ mod tests {
             std::fs::read(&restored).expect("restore should be readable"),
             payload
         );
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+
+            assert_eq!(
+                std::fs::metadata(&export)
+                    .expect("export metadata")
+                    .permissions()
+                    .mode()
+                    & 0o777,
+                0o600
+            );
+            assert_eq!(
+                std::fs::metadata(&restored)
+                    .expect("restored metadata")
+                    .permissions()
+                    .mode()
+                    & 0o777,
+                0o600
+            );
+        }
         std::fs::remove_file(snapshot).expect("snapshot should be removed");
         std::fs::remove_file(export).expect("export should be removed");
         std::fs::remove_file(restored).expect("restore should be removed");
