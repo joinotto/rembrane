@@ -1621,6 +1621,8 @@ This roadmap describes sequencing, not release dates.
   - [x] Resolve active sender identity and reserve replay protection in one
     atomic storage transaction to prevent membership-revocation races.
 - [x] Mobile share flows and iMessage extension.
+  - [x] Redact authenticated message text, platform event/lookup identifiers,
+    and canonical identities from shared channel-contract diagnostics.
   - [x] Reuse the authenticated-channel contract for explicit iMessage
     extension and mobile-share ingestion without claiming conversation
     interception.

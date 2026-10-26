@@ -1,5 +1,5 @@
 use std::error::Error;
-use std::fmt::{Display, Formatter};
+use std::fmt::{self, Display, Formatter};
 
 use rembrane_domain::{ClientId, PrincipalId, WorkspaceId};
 use ring::digest;
@@ -27,7 +27,7 @@ impl ChannelKind {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct VerifiedChannelMessage {
     channel: ChannelKind,
     event_id: String,
@@ -38,6 +38,21 @@ pub struct VerifiedChannelMessage {
     received_at_epoch_seconds: u64,
 }
 
+impl fmt::Debug for VerifiedChannelMessage {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("VerifiedChannelMessage")
+            .field("channel", &self.channel)
+            .field("event_id", &"[REDACTED]")
+            .field("workspace_id", &"[REDACTED]")
+            .field("principal_id", &"[REDACTED]")
+            .field("client_id", &"[REDACTED]")
+            .field("text_bytes", &self.text.len())
+            .field("received_at_epoch_seconds", &self.received_at_epoch_seconds)
+            .finish()
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ChannelMessageError {
     InvalidEventId,
@@ -46,7 +61,7 @@ pub enum ChannelMessageError {
     InvalidTime,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct ChannelSenderBinding {
     channel: ChannelKind,
     account_lookup_key: String,
@@ -54,6 +69,20 @@ pub struct ChannelSenderBinding {
     workspace_id: WorkspaceId,
     principal_id: PrincipalId,
     client_id: ClientId,
+}
+
+impl fmt::Debug for ChannelSenderBinding {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ChannelSenderBinding")
+            .field("channel", &self.channel)
+            .field("account_lookup_key", &"[REDACTED]")
+            .field("sender_lookup_key", &"[REDACTED]")
+            .field("workspace_id", &"[REDACTED]")
+            .field("principal_id", &"[REDACTED]")
+            .field("client_id", &"[REDACTED]")
+            .finish()
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -302,8 +331,8 @@ mod tests {
     use rembrane_domain::{ClientId, PrincipalId, WorkspaceId};
 
     use super::{
-        ChannelKind, ChannelMessageError, MAX_CHANNEL_EVENT_ID_BYTES, MAX_CHANNEL_IDENTITY_BYTES,
-        VerifiedChannelMessage, channel_event_audit_target,
+        ChannelKind, ChannelMessageError, ChannelSenderBinding, MAX_CHANNEL_EVENT_ID_BYTES,
+        MAX_CHANNEL_IDENTITY_BYTES, VerifiedChannelMessage, channel_event_audit_target,
     };
 
     #[test]
@@ -396,5 +425,43 @@ mod tests {
             channel_event_audit_target(ChannelKind::IMessageExtension, &event_id)
                 .expect("channel namespace should alter fingerprint")
         );
+    }
+
+    #[test]
+    fn channel_diagnostics_redact_message_and_sender_identity() {
+        let message = VerifiedChannelMessage::from_authenticated_transport(
+            ChannelKind::IMessageExtension,
+            "private-event-id",
+            WorkspaceId::new("private-workspace"),
+            PrincipalId::new("private-principal"),
+            ClientId::new("private-client"),
+            "private message text",
+            1_000,
+        )
+        .expect("message fixture");
+        let binding = ChannelSenderBinding::new(
+            ChannelKind::IMessageExtension,
+            "private-account-lookup",
+            "private-sender-lookup",
+            WorkspaceId::new("private-workspace"),
+            PrincipalId::new("private-principal"),
+            ClientId::new("private-client"),
+        )
+        .expect("binding fixture");
+
+        for debug in [format!("{message:?}"), format!("{binding:?}")] {
+            for private in [
+                "private-event-id",
+                "private-workspace",
+                "private-principal",
+                "private-client",
+                "private message text",
+                "private-account-lookup",
+                "private-sender-lookup",
+            ] {
+                assert!(!debug.contains(private));
+            }
+        }
+        assert!(format!("{message:?}").contains("text_bytes: 20"));
     }
 }

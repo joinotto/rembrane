@@ -84,6 +84,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Shared context and graph retrieval contracts now expose only safe structural
   diagnostics, redacting queries, purposes, tenant/subject identities, scopes,
   memory contents, graph identities, and disclosure receipts.
+- Authenticated channel-message and sender-binding diagnostics now redact
+  message text, platform event/lookup identifiers, workspace, principal, and
+  client identities for WhatsApp, iMessage extensions, and mobile sharing.
 - Canonical SQLite initialization and backup now require the path opened by
   SQLite to retain the exact protected file's device/inode identity, and
   failure cleanup refuses to remove a path replaced after preparation.
