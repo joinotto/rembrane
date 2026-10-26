@@ -4,15 +4,31 @@ use rembrane_domain::{
     MemoryStatus, ReadGrant,
 };
 use std::collections::BTreeSet;
+use std::fmt;
 
 use crate::{ApplicationError, ContextReadRepository};
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct ResolveContextCommand {
     pub request: ResolveContextRequest,
     pub grant: ReadGrant,
     pub context_pack_id: ContextPackId,
     pub disclosure_id: DisclosureId,
+}
+
+impl fmt::Debug for ResolveContextCommand {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ResolveContextCommand")
+            .field("domain_present", &self.request.domain.is_some())
+            .field("entity_present", &self.request.entity_id.is_some())
+            .field("activity_present", &self.request.activity_id.is_some())
+            .field("purpose_bytes", &self.request.purpose.len())
+            .field("query_bytes", &self.request.query.len())
+            .field("maximum_items", &self.request.maximum_items)
+            .field("maximum_bytes", &self.request.maximum_bytes)
+            .finish_non_exhaustive()
+    }
 }
 
 pub struct ResolveContextService<'repository, Repository> {
@@ -298,6 +314,35 @@ mod tests {
             },
             context_pack_id: ContextPackId::new("context_01"),
             disclosure_id: DisclosureId::new("disclosure_01"),
+        }
+    }
+
+    #[test]
+    fn context_command_diagnostics_redact_query_purpose_and_identity() {
+        let mut command = command(5);
+        command.request.workspace_id = WorkspaceId::new("private-workspace");
+        command.request.principal_id = PrincipalId::new("private-principal");
+        command.request.domain = Some("private-domain".to_owned());
+        command.request.entity_id = Some(EntityId::new("private-entity"));
+        command.request.activity_id = Some(ActivityId::new("private-activity"));
+        command.request.purpose = "private disclosure purpose".to_owned();
+        command.request.query = "Call me Hippo in every assistant".to_owned();
+        command.context_pack_id = ContextPackId::new("private-context-pack");
+        command.disclosure_id = DisclosureId::new("private-disclosure");
+
+        let diagnostic = format!("{command:?}");
+        for secret in [
+            "private-workspace",
+            "private-principal",
+            "private-domain",
+            "private-entity",
+            "private-activity",
+            "private disclosure purpose",
+            "Call me Hippo in every assistant",
+            "private-context-pack",
+            "private-disclosure",
+        ] {
+            assert!(!diagnostic.contains(secret), "diagnostic exposed {secret}");
         }
     }
 

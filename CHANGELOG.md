@@ -68,6 +68,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Trip creation, replacement, participant, constraint, and decision command
   diagnostics now expose only safe sizes, closed kinds and statuses, versions,
   and sequence metadata instead of itinerary or traveler details.
+- Cross-agent context-resolution command diagnostics now expose only scope
+  presence, query and purpose sizes, and context budgets instead of query
+  plaintext, tenant routing, grants, or disclosure identities.
 - Provider-independent key seal requests now retain copied plaintext in
   redacted zeroize-on-drop ownership instead of an ordinary byte vector.
 - Key-provider plaintext responses are now explicitly wiped before oversized
