@@ -63,6 +63,9 @@ fi
 if [ "$postgres_ready" = "1" ]; then
     ./scripts/test-postgres-rls.sh
 fi
+if ! ./scripts/check-postgres-runtime-adapter.sh >/dev/null 2>&1; then
+    record_missing "concrete Rust PostgreSQL runtime adapter"
+fi
 
 docker_ready=1
 if ! command -v docker >/dev/null 2>&1; then

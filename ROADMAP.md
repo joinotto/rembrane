@@ -730,6 +730,9 @@ This roadmap describes sequencing, not release dates.
     denied cross-tenant writes, and fail-closed missing tenant context.
   - [ ] Implement the Rust PostgreSQL repository adapter and live two-tenant
     integration suite.
+    - [x] Make production readiness fail closed when only the schema/RLS proof
+      exists without a concrete Rust database driver and public runtime
+      pool-or-repository implementation.
     - [x] Add a driver-neutral owned transaction boundary that parameterizes
       tenant bootstrap, requires exact canonical read-back, and rolls back
       missing, mismatched, failed, or uncommitted tenant transactions.

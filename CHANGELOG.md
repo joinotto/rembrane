@@ -9,6 +9,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Fixed
 
+- Production readiness now distinguishes the live PostgreSQL schema/RLS proof
+  from a usable hosted-storage implementation and fails closed until a
+  concrete Rust driver plus public runtime pool or repository are present.
 - Production readiness now reports the official MCP SDK Streamable HTTP
   transport as unavailable until the server feature, remote authorization
   adapter, and concrete SDK service are all wired into the MCP application.
