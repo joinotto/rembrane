@@ -103,6 +103,10 @@ This roadmap describes sequencing, not release dates.
   record/byte bounds, owner-only exclusive output, durable synchronization,
   and replacement-safe partial-file cleanup.
 - [ ] Add authenticated import plus Markdown and graph portability formats.
+  - [x] Move the JSONL record contract into the provider-independent codec and
+    add strict decoding with closed fields, exact format/version checks, domain
+    invariant restoration, and a per-record byte ceiling.
+  - [ ] Validate complete bounded JSONL imports before canonical mutation.
 - [x] Package the local REST service for loopback-only Docker Compose
   self-hosting with persistent encrypted storage.
   - [x] Resolve the REST bearer credential from validated environment or

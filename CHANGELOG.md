@@ -45,6 +45,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   JSONL after explicit plaintext confirmation, with exact tenant validation,
   bounded records and bytes, owner-only exclusive output, durable
   synchronization, and replacement-safe failure cleanup.
+- The provider-independent codec now owns the portable JSONL memory contract
+  and provides strict bounded decoding that rejects unknown fields, formats,
+  versions, malformed domain records, and oversized lines.
 - Remote MCP now provides a bounded, non-evicting tenant Tower-service cache
   keyed by exact issuer, resource, principal, client, workspace, and OAuth
   scope set, preserving protocol sessions across token refresh while failing

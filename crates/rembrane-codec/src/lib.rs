@@ -4,6 +4,7 @@ mod booking_research;
 mod checkpoint;
 mod event;
 mod knowledge_graph;
+mod portability;
 mod trip;
 
 use std::error::Error;
@@ -20,6 +21,10 @@ pub use checkpoint::{decode_checkpoint, encode_checkpoint};
 pub use event::{decode_event, encode_event};
 pub use knowledge_graph::{
     decode_knowledge_edge, decode_knowledge_node, encode_knowledge_edge, encode_knowledge_node,
+};
+pub use portability::{
+    MAX_MEMORY_JSONL_LINE_BYTES, MEMORY_JSONL_FORMAT, MEMORY_JSONL_VERSION,
+    decode_memory_jsonl_record, encode_memory_jsonl_record,
 };
 pub use trip::{decode_trip, encode_trip};
 

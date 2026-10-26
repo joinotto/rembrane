@@ -1138,6 +1138,7 @@ dependencies = [
  "rembrane-application",
  "rembrane-channel-mobile-share",
  "rembrane-channel-whatsapp",
+ "rembrane-codec",
  "rembrane-config",
  "rembrane-contracts",
  "rembrane-crypto",

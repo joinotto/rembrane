@@ -14,6 +14,7 @@ use rembrane_application::{
 };
 use rembrane_channel_mobile_share::derive_binding_lookup_keys as derive_mobile_binding_lookup_keys;
 use rembrane_channel_whatsapp::derive_binding_lookup_keys as derive_whatsapp_binding_lookup_keys;
+use rembrane_codec::{MEMORY_JSONL_FORMAT, MEMORY_JSONL_VERSION, encode_memory_jsonl_record};
 use rembrane_config::{
     ProviderConnection, ProviderKind, ProviderPlacement, RemoteMcpConfig, SecretReference,
 };
@@ -46,8 +47,6 @@ use zeroize::Zeroizing;
 
 const EXPORT_MAGIC: &[u8; 16] = b"REMBRANE-EXPORT\n";
 const EXPORT_VERSION: u32 = 1;
-const MEMORY_JSONL_FORMAT: &str = "rembrane-memory-jsonl";
-const MEMORY_JSONL_VERSION: u32 = 1;
 const MAX_MEMORY_JSONL_RECORDS: usize = 10_000;
 const MAX_MEMORY_JSONL_BYTES: usize = 67_108_864;
 const MAX_PROVIDER_REGISTRY_BYTES: u64 = 1_048_576;
@@ -1457,38 +1456,6 @@ fn write_export(snapshot: &std::path::Path, destination: &std::path::Path) -> Re
         .map_err(|error| format!("cannot remove temporary snapshot: {error}"))
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct MemoryJsonlRecord<'a> {
-    format: &'static str,
-    format_version: u32,
-    workspace_id: String,
-    subject_id: String,
-    memory_id: String,
-    version: u64,
-    scope: MemoryJsonlScope,
-    kind: &'static str,
-    status: &'static str,
-    content: &'a str,
-    evidence: Vec<MemoryJsonlEvidence>,
-}
-
-#[derive(Serialize)]
-#[serde(tag = "type", rename_all = "kebab-case")]
-enum MemoryJsonlScope {
-    Global,
-    Domain { name: String },
-    Entity { id: String },
-    Activity { id: String },
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct MemoryJsonlEvidence {
-    id: String,
-    source: &'static str,
-}
-
 fn export_memories(arguments: &[String]) -> Result<(), String> {
     if optional_option(arguments, "--format").unwrap_or("jsonl") != "jsonl" {
         return Err("only --format jsonl is currently supported".to_owned());
@@ -1554,10 +1521,8 @@ fn write_memory_jsonl_export(
                     "memory export contains a record outside the requested tenant".to_owned(),
                 );
             }
-            let record = memory_jsonl_record(memory);
-            let mut line = serde_json::to_vec(&record)
+            let line = encode_memory_jsonl_record(memory)
                 .map_err(|error| format!("cannot encode memory export: {error}"))?;
-            line.push(b'\n');
             written = written
                 .checked_add(line.len())
                 .ok_or_else(|| "memory export size overflowed".to_owned())?;
@@ -1581,52 +1546,6 @@ fn write_memory_jsonl_export(
         return Err(error);
     }
     Ok(records.len())
-}
-
-fn memory_jsonl_record(memory: &MemoryRecord) -> MemoryJsonlRecord<'_> {
-    MemoryJsonlRecord {
-        format: MEMORY_JSONL_FORMAT,
-        format_version: MEMORY_JSONL_VERSION,
-        workspace_id: memory.workspace_id().to_string(),
-        subject_id: memory.subject_id().to_string(),
-        memory_id: memory.id().to_string(),
-        version: memory.version(),
-        scope: match memory.scope() {
-            MemoryScope::Global => MemoryJsonlScope::Global,
-            MemoryScope::Domain { name } => MemoryJsonlScope::Domain { name: name.clone() },
-            MemoryScope::Entity { id } => MemoryJsonlScope::Entity { id: id.to_string() },
-            MemoryScope::Activity { id } => MemoryJsonlScope::Activity { id: id.to_string() },
-        },
-        kind: match memory.kind() {
-            MemoryKind::Preference => "preference",
-            MemoryKind::Semantic => "semantic",
-            MemoryKind::Episodic => "episodic",
-            MemoryKind::Procedural => "procedural",
-            MemoryKind::Observation => "observation",
-            MemoryKind::Working => "working",
-        },
-        status: match memory.status() {
-            rembrane_domain::MemoryStatus::Proposed => "proposed",
-            rembrane_domain::MemoryStatus::Confirmed => "confirmed",
-            rembrane_domain::MemoryStatus::Superseded => "superseded",
-            rembrane_domain::MemoryStatus::Deleted => "deleted",
-        },
-        content: memory.content(),
-        evidence: memory
-            .evidence()
-            .iter()
-            .map(|evidence| MemoryJsonlEvidence {
-                id: evidence.id.to_string(),
-                source: match evidence.source {
-                    EvidenceSource::UserStatement => "user-statement",
-                    EvidenceSource::AgentObservation => "agent-observation",
-                    EvidenceSource::ToolResult => "tool-result",
-                    EvidenceSource::ImportedRecord => "imported-record",
-                    EvidenceSource::WorkspaceDecision => "workspace-decision",
-                },
-            })
-            .collect(),
-    }
 }
 
 fn read_export(

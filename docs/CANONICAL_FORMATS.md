@@ -4,6 +4,14 @@ Rembrane encrypts versioned canonical payloads rather than Rust memory layouts
 or provider-specific objects. This keeps persisted data portable across local,
 self-hosted, and managed deployments.
 
+Portable plaintext interchange uses the separate `rembrane-memory-jsonl`
+version 1 contract. Each line contains one complete memory and is decoded with
+unknown-field rejection, an exact format/version match, a 1 MiB per-line
+ceiling, and full canonical domain validation. The shared `rembrane-codec`
+implementation exposes `encode_memory_jsonl_record` and
+`decode_memory_jsonl_record`; CLI and API portability surfaces must use these
+functions rather than defining independent wire structures.
+
 ## Compatibility rules
 
 - Every payload carries a stable format name and integer format version.

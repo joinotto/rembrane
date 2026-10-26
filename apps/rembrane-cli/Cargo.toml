@@ -16,6 +16,7 @@ rembrane-application = { path = "../../crates/rembrane-application" }
 rembrane-crypto-configured = { path = "../../adapters/rembrane-crypto-configured" }
 rembrane-contracts = { path = "../../crates/rembrane-contracts" }
 rembrane-config = { path = "../../crates/rembrane-config" }
+rembrane-codec = { path = "../../crates/rembrane-codec" }
 rembrane-crypto = { path = "../../crates/rembrane-crypto" }
 rembrane-domain = { path = "../../crates/rembrane-domain" }
 rembrane-memory-provider-configured = { path = "../../adapters/rembrane-memory-provider-configured" }
