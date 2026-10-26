@@ -17,7 +17,8 @@ use rembrane_channel_mobile_share::derive_binding_lookup_keys as derive_mobile_b
 use rembrane_channel_whatsapp::derive_binding_lookup_keys as derive_whatsapp_binding_lookup_keys;
 use rembrane_codec::{
     MAX_MEMORY_JSONL_ARCHIVE_BYTES, MEMORY_JSONL_FORMAT, MEMORY_JSONL_VERSION,
-    decode_memory_jsonl_archive, encode_memory_jsonl_record,
+    MEMORY_MARKDOWN_FORMAT, MEMORY_MARKDOWN_VERSION, decode_memory_jsonl_archive,
+    encode_memory_jsonl_record, encode_memory_markdown_archive,
 };
 use rembrane_config::{
     ProviderConnection, ProviderKind, ProviderPlacement, RemoteMcpConfig, SecretReference,
@@ -1462,15 +1463,16 @@ fn write_export(snapshot: &std::path::Path, destination: &std::path::Path) -> Re
 }
 
 fn export_memories(arguments: &[String]) -> Result<(), String> {
-    if optional_option(arguments, "--format").unwrap_or("jsonl") != "jsonl" {
-        return Err("only --format jsonl is currently supported".to_owned());
+    let format = optional_option(arguments, "--format").unwrap_or("jsonl");
+    if !matches!(format, "jsonl" | "markdown") {
+        return Err("only --format jsonl or markdown is currently supported".to_owned());
     }
     if !arguments
         .iter()
         .any(|argument| argument == "--allow-plaintext-export")
     {
         return Err(
-            "JSONL contains decrypted memory; repeat with --allow-plaintext-export to confirm"
+            "export contains decrypted memory; repeat with --allow-plaintext-export to confirm"
                 .to_owned(),
         );
     }
@@ -1487,9 +1489,17 @@ fn export_memories(arguments: &[String]) -> Result<(), String> {
     let records = store
         .list_for_subject(&workspace_id, &principal_id)
         .map_err(|error| format!("cannot authenticate memories for export: {error}"))?;
-    let count = write_memory_jsonl_export(&records, &workspace_id, &principal_id, output)?;
+    let count = match format {
+        "jsonl" => write_memory_jsonl_export(&records, &workspace_id, &principal_id, output)?,
+        "markdown" => write_memory_markdown_export(&records, &workspace_id, &principal_id, output)?,
+        _ => unreachable!("validated export format"),
+    };
     println!("Exported {count} memories");
-    println!("Format: {MEMORY_JSONL_FORMAT}-v{MEMORY_JSONL_VERSION}");
+    match format {
+        "jsonl" => println!("Format: {MEMORY_JSONL_FORMAT}-v{MEMORY_JSONL_VERSION}"),
+        "markdown" => println!("Format: {MEMORY_MARKDOWN_FORMAT}-v{MEMORY_MARKDOWN_VERSION}"),
+        _ => unreachable!("validated export format"),
+    }
     println!("Warning: output contains decrypted memory plaintext");
     println!("Output: {}", output.display());
     Ok(())
@@ -1639,6 +1649,42 @@ fn write_memory_jsonl_export(
                 .write_all(&line)
                 .map_err(|error| format!("cannot write memory export: {error}"))?;
         }
+        output
+            .sync_all()
+            .map_err(|error| format!("cannot persist memory export: {error}"))?;
+        sync_parent_directory(destination)
+            .map_err(|error| format!("cannot persist memory export directory entry: {error}"))
+    })();
+    if let Err(error) = result {
+        remove_open_file_path(destination, &output)?;
+        return Err(error);
+    }
+    Ok(records.len())
+}
+
+fn write_memory_markdown_export(
+    records: &[MemoryRecord],
+    workspace_id: &WorkspaceId,
+    principal_id: &PrincipalId,
+    destination: &std::path::Path,
+) -> Result<usize, String> {
+    use std::io::Write as _;
+
+    if records
+        .iter()
+        .any(|memory| memory.workspace_id() != workspace_id || memory.subject_id() != principal_id)
+    {
+        return Err("memory export contains a record outside the requested tenant".to_owned());
+    }
+    let archive = encode_memory_markdown_archive(records)
+        .map_err(|error| format!("cannot encode memory export: {error}"))?;
+    let mut output = private_create_new_options()
+        .open(destination)
+        .map_err(|error| format!("cannot create memory export: {error}"))?;
+    let result = (|| {
+        output
+            .write_all(&archive)
+            .map_err(|error| format!("cannot write memory export: {error}"))?;
         output
             .sync_all()
             .map_err(|error| format!("cannot persist memory export: {error}"))?;
@@ -3078,7 +3124,7 @@ fn print_help() {
            rembrane restore --input <path> --database <new-path> \
              --principal <id> --workspace <id>\n\
            rembrane export --database <path> --principal <id> --workspace <id> \
-             --format jsonl --output <new-path> --allow-plaintext-export\n\
+             --format <jsonl|markdown> --output <new-path> --allow-plaintext-export\n\
            rembrane import --database <path> --principal <id> --workspace <id> \
              --format jsonl --input <path> --allow-plaintext-import [--client <id>]\n\
            rembrane fingerprint-git --repository <path>\n\
@@ -3166,7 +3212,8 @@ mod tests {
         read_export, recall_scope_context, redact_endpoint, render_mcp_config,
         requested_memory_privacy, requested_memory_scope, run, selected_secret_reference,
         test_provider, validate_external_conformance_namespace, validate_mcp_server_binary,
-        vscode_mcp_config, write_export, write_memory_jsonl_export, zed_mcp_config,
+        vscode_mcp_config, write_export, write_memory_jsonl_export, write_memory_markdown_export,
+        zed_mcp_config,
     };
 
     fn temporary_path(name: &str) -> std::path::PathBuf {
@@ -4071,6 +4118,48 @@ mod tests {
 
         assert!(write_memory_jsonl_export(&[memory], &workspace, &principal, &export).is_err());
         assert!(!export.exists());
+    }
+
+    #[test]
+    fn memory_markdown_export_is_private_and_tenant_scoped() {
+        let workspace = WorkspaceId::new("workspace_export");
+        let principal = PrincipalId::new("principal_export");
+        let memory = MemoryRecord::confirmed_preference(
+            MemoryId::new("memory_markdown"),
+            workspace.clone(),
+            principal.clone(),
+            MemoryScope::Global,
+            "Call me Hippo",
+            EvidenceReference::new(
+                EvidenceId::new("evidence_markdown"),
+                EvidenceSource::UserStatement,
+            ),
+        )
+        .expect("memory fixture");
+        let export = temporary_path("memory-markdown");
+
+        assert_eq!(
+            write_memory_markdown_export(&[memory], &workspace, &principal, &export)
+                .expect("Markdown export"),
+            1
+        );
+        let markdown = std::fs::read_to_string(&export).expect("read Markdown export");
+        assert!(markdown.starts_with("<!-- rembrane-memory-markdown-v1 -->"));
+        assert!(markdown.contains("Call me Hippo"));
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+
+            assert_eq!(
+                std::fs::metadata(&export)
+                    .expect("export metadata")
+                    .permissions()
+                    .mode()
+                    & 0o777,
+                0o600
+            );
+        }
+        std::fs::remove_file(export).expect("fixture cleanup");
     }
 
     #[test]
