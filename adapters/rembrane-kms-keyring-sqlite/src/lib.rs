@@ -96,10 +96,24 @@ impl SqliteCustomerKmsKeyReferenceStore {
     {
         let prepared = prepare_private_database_file(path, false)?;
         let result = open_prepared_private_database(path, true, &prepared).and_then(initialize);
-        if result.is_err() && prepared.created {
-            remove_prepared_sqlite_files(path, &prepared);
+        match result {
+            Ok(store) => {
+                if prepared.created
+                    && let Err(error) = sync_prepared_database_file(path, &prepared)
+                {
+                    drop(store);
+                    remove_prepared_sqlite_files(path, &prepared);
+                    return Err(error);
+                }
+                Ok(store)
+            }
+            Err(error) => {
+                if prepared.created {
+                    remove_prepared_sqlite_files(path, &prepared);
+                }
+                Err(error)
+            }
         }
-        result
     }
 
     pub fn in_memory() -> Result<Self, ProviderError> {
@@ -233,7 +247,8 @@ impl SqliteCustomerKmsKeyReferenceStore {
                 open_prepared_private_database(destination, true, &prepared)?;
             copy_database(&source, &mut destination_connection)?;
             drop(destination_connection);
-            verify_prepared_backup(destination, &prepared)
+            verify_prepared_backup(destination, &prepared)?;
+            sync_prepared_database_file(destination, &prepared)
         })();
         if result.is_err() {
             remove_prepared_sqlite_files(destination, &prepared);
@@ -260,6 +275,7 @@ impl SqliteCustomerKmsKeyReferenceStore {
             drop(source_connection);
             verify_prepared_backup(destination, &prepared)?;
             verify_recovery_floors(destination, recovery_floors)?;
+            sync_prepared_database_file(destination, &prepared)?;
             Self::open(destination)
         })();
         if result.is_err() {
@@ -294,6 +310,8 @@ fn remove_prepared_sqlite_files(path: &Path, prepared: &PreparedDatabaseFile) {
 
 struct PreparedDatabaseFile {
     created: bool,
+    #[cfg(unix)]
+    file: std::fs::File,
     #[cfg(unix)]
     device: u64,
     #[cfg(unix)]
@@ -497,6 +515,7 @@ fn prepare_private_database_file(
     validate_private_metadata(&metadata)?;
     Ok(PreparedDatabaseFile {
         created,
+        file,
         device: metadata.dev(),
         inode: metadata.ino(),
     })
@@ -517,6 +536,7 @@ fn capture_private_database_file(path: &Path) -> Result<PreparedDatabaseFile, Pr
     validate_private_metadata(&metadata)?;
     Ok(PreparedDatabaseFile {
         created: false,
+        file,
         device: metadata.dev(),
         inode: metadata.ino(),
     })
@@ -550,6 +570,25 @@ fn validate_private_metadata(metadata: &std::fs::Metadata) -> Result<(), Provide
         ));
     }
     Ok(())
+}
+
+#[cfg(unix)]
+fn sync_prepared_database_file(
+    path: &Path,
+    prepared: &PreparedDatabaseFile,
+) -> Result<(), ProviderError> {
+    validate_prepared_database_file(path, prepared)?;
+    prepared
+        .file
+        .sync_all()
+        .map_err(|_| ProviderError::Unavailable)?;
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    std::fs::File::open(parent)
+        .and_then(|directory| directory.sync_all())
+        .map_err(|_| ProviderError::Unavailable)
 }
 
 #[cfg(not(unix))]
@@ -602,6 +641,14 @@ fn validate_prepared_database_file(
         ));
     }
     Ok(())
+}
+
+#[cfg(not(unix))]
+fn sync_prepared_database_file(
+    path: &Path,
+    prepared: &PreparedDatabaseFile,
+) -> Result<(), ProviderError> {
+    validate_prepared_database_file(path, prepared)
 }
 
 impl CustomerKmsKeyReferenceStore for SqliteCustomerKmsKeyReferenceStore {

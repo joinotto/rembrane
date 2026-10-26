@@ -224,6 +224,8 @@ This roadmap describes sequencing, not release dates.
           connections so convenience APIs cannot reopen mutable paths.
         - [x] Bind keyring preparation, verification, backup, and restore opens
           to one device/inode identity without deleting swapped-in files.
+        - [x] Retain and synchronize the exact prepared keyring handle plus its
+          parent directory before creation, backup, or restore reports success.
       - [x] Enforce workspace, provider-key, and wrapped-ciphertext bounds in
         both new and existing SQLite databases before row materialization.
       - [x] Create non-overwriting owner-only keyring backups and verify

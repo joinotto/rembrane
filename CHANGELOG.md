@@ -30,6 +30,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Canonical SQLite initialization and backup now retain the originally
   prepared database handle and synchronize that exact file plus its containing
   Unix directory before reporting success.
+- Customer-KMS keyring initialization, backup, and restore now retain and
+  synchronize the exact prepared database handle and containing Unix directory
+  before reporting durable completion.
 - Remote MCP JSON-RPC request-ID classification now satisfies the
   warnings-as-errors production Clippy gate.
 - Protocol script syntax checks now select ES-module parsing explicitly,
