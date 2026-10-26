@@ -133,6 +133,8 @@ This roadmap describes sequencing, not release dates.
     cross-agent lifecycle synchronization.
   - [x] Prove structured correction and deletion success, stale-version
     rejection, version advancement, and secret-safe failures end to end.
+  - [x] Validate resume activity/client routing, disclosure purpose, and state
+    fingerprint before opening tenant storage.
 - [x] Create new local database, backup, and restore directory components with
   owner-only Unix permissions without modifying existing parent directories.
 - [x] Create encrypted backup exports and restored databases atomically with

@@ -9,6 +9,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Fixed
 
+- CLI working-memory resume now rejects unsafe activity/client identifiers,
+  empty or NUL-containing disclosure purposes and fingerprints, purposes above
+  4 KiB, and fingerprints above 256 KiB before opening tenant storage.
 - CLI recall now rejects unsafe client and scope identifiers, empty or
   NUL-containing purpose/query text, purposes above 4 KiB, and queries above
   32 KiB before opening tenant storage, matching Memory Provider bounds.

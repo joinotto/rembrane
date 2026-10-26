@@ -34,7 +34,7 @@ use rembrane_domain::{
     Invitation, InvitationStatus, LegalHoldId, MAX_MEMORY_CONTENT_BYTES, Membership, MemoryId,
     MemoryKind, MemoryRecord, MemoryScope, Principal, PrincipalId, ReadGrant, ReadScope,
     RetentionPeriod, Workspace, WorkspaceId, WorkspaceRetentionPolicy, WorkspaceRole,
-    WritePermission,
+    WritePermission, MAX_CHECKPOINT_PAYLOAD_BYTES,
 };
 use rembrane_memory_provider_configured::ConfiguredMemoryProvider;
 use rembrane_provider_registry::{ProviderSelectionPolicy, VerifiedProviderRegistry};
@@ -2899,6 +2899,16 @@ fn resume(arguments: &[String]) -> Result<(), String> {
     let client_id = option(arguments, "--client")?;
     let purpose = optional_option(arguments, "--purpose").unwrap_or("resume-activity");
     let current_fingerprint = optional_option(arguments, "--state-fingerprint");
+    validate_cli_opaque_id("activity", activity_id.as_str())?;
+    validate_cli_opaque_id("client", client_id)?;
+    validate_cli_text("resume purpose", purpose, MAX_CONTEXT_PURPOSE_BYTES)?;
+    if let Some(fingerprint) = current_fingerprint {
+        validate_cli_text(
+            "state fingerprint",
+            fingerprint,
+            MAX_CHECKPOINT_PAYLOAD_BYTES,
+        )?;
+    }
     let (mut store, principal_id, workspace_id) = encrypted_store(arguments)?;
     let grants = authorize_client(
         &store,
@@ -3596,8 +3606,8 @@ mod tests {
     use rembrane_store_sqlite::SqliteStore;
 
     use super::{
-        EXPORT_MAGIC, MAX_CLI_RECALL_BYTES, MAX_CLI_RECALL_ITEMS, MAX_CONTEXT_PURPOSE_BYTES,
-        MAX_CONTEXT_QUERY_BYTES, MAX_MEMORY_CONTENT_BYTES,
+        EXPORT_MAGIC, MAX_CHECKPOINT_PAYLOAD_BYTES, MAX_CLI_RECALL_BYTES, MAX_CLI_RECALL_ITEMS,
+        MAX_CONTEXT_PURPOSE_BYTES, MAX_CONTEXT_QUERY_BYTES, MAX_MEMORY_CONTENT_BYTES,
         SEMANTIC_PROVIDER_CONFORMANCE_PROFILE_SHA256, build_remote_mcp_profile,
         check_provider_registry, claude_mcp_config, codex_mcp_config, create_parent_directory,
         cursor_mcp_config, doctor_failure_json, doctor_json, doctor_json_requested,
@@ -3762,6 +3772,62 @@ mod tests {
             run(&oversized_query),
             Err(format!(
                 "recall query must not exceed {MAX_CONTEXT_QUERY_BYTES} bytes"
+            ))
+        );
+    }
+
+    #[test]
+    fn resume_rejects_invalid_agent_input_before_storage_access() {
+        for arguments in [
+            vec![
+                "resume",
+                "--activity",
+                "has spaces",
+                "--client",
+                "agent_01",
+            ],
+            vec![
+                "resume",
+                "--activity",
+                "activity_01",
+                "--client",
+                "has spaces",
+            ],
+        ] {
+            let arguments = arguments.into_iter().map(str::to_owned).collect::<Vec<_>>();
+            let error = run(&arguments).expect_err("unsafe resume input must fail");
+            assert!(error.contains("safe ASCII characters"), "{error}");
+        }
+
+        let oversized_purpose = vec![
+            "resume".to_owned(),
+            "--activity".to_owned(),
+            "activity_01".to_owned(),
+            "--client".to_owned(),
+            "agent_01".to_owned(),
+            "--purpose".to_owned(),
+            "x".repeat(MAX_CONTEXT_PURPOSE_BYTES + 1),
+        ];
+        assert_eq!(
+            run(&oversized_purpose),
+            Err(format!(
+                "resume purpose must not exceed {MAX_CONTEXT_PURPOSE_BYTES} bytes"
+            ))
+        );
+
+        let invalid_fingerprint = vec![
+            "resume".to_owned(),
+            "--activity".to_owned(),
+            "activity_01".to_owned(),
+            "--client".to_owned(),
+            "agent_01".to_owned(),
+            "--state-fingerprint".to_owned(),
+            "x".repeat(MAX_CHECKPOINT_PAYLOAD_BYTES + 1),
+        ];
+        assert_eq!(
+            run(&invalid_fingerprint),
+            Err(format!(
+                "state fingerprint must not exceed {MAX_CHECKPOINT_PAYLOAD_BYTES} bytes"
             ))
         );
     }
