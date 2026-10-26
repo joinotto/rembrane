@@ -56,6 +56,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - A shared concurrent Axum authorization service now performs sessionless
   authorization and confirmed binding in two local lock phases, never holding
   the session-registry mutex while awaiting SDK initialization or compensation.
+- Shared remote MCP routes now perform bearer verification, browser-origin
+  checks, and operation-scope authorization before acquiring the session
+  registry mutex; a verifier probe proves remote introspection cannot serialize
+  tenants through that lock.
 - Shared established-session POST and confirmed DELETE now use the same
   lock-minimizing flow, retain bindings after failed deletion dispatch, and
   deny replay after a successful local deletion commit.

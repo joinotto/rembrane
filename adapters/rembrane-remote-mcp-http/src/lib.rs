@@ -1934,6 +1934,15 @@ impl<Verifier> SharedRemoteMcpAxumAuthorization<Verifier>
 where
     Verifier: RemoteTokenVerifier,
 {
+    fn authorization_rejection(
+        &self,
+        error: RemoteHttpAuthorizationError,
+    ) -> RemoteMcpHttpRejection {
+        self.gate
+            .lock()
+            .map_or_else(|_| lock_rejection(), |gate| gate.rejection(error.into()))
+    }
+
     /// Builds concurrent authorization state from one validated deployment
     /// profile.
     ///
@@ -1987,24 +1996,34 @@ where
             .map(String::as_str)
             .collect::<Vec<_>>();
         let authorization = RemoteHttpAuthorization::new(&authenticator, &trusted_origins);
-        let authorized = {
+        let invocation = classify_remote_mcp_request(body.as_slice())
+            .map_err(RemoteMcpInitializationError::Authorization)?;
+        if invocation.method() != "initialize" || invocation.tool_name().is_some() {
+            return Err(RemoteMcpInitializationError::Authorization(
+                RemoteMcpHttpGate::forbidden(),
+            ));
+        }
+        {
             let gate = self
                 .gate
                 .lock()
                 .map_err(|_| RemoteMcpInitializationError::Authorization(lock_rejection()))?;
-            gate.authorize_sessionless_initialize_owned_body(
-                &authorization,
-                request,
-                body,
-                now_epoch_seconds,
-            )
-            .map_err(RemoteMcpInitializationError::Authorization)?
-        };
-        let access = authorized.access().clone();
-        let (access_for_dispatch, invocation, _, body) = authorized.into_dispatch_parts();
+            gate.require_allowed_host(request.host)
+                .map_err(RemoteMcpInitializationError::Authorization)?;
+            if request.session_id.is_some() {
+                return Err(RemoteMcpInitializationError::Authorization(
+                    RemoteMcpHttpGate::forbidden(),
+                ));
+            }
+        }
+        let access = authorization
+            .authorize_connection_for_http(request.authorization, request.origin, now_epoch_seconds)
+            .map_err(|error| {
+                RemoteMcpInitializationError::Authorization(self.authorization_rejection(error))
+            })?;
         let termination_headers = protocol_headers.clone();
         let initialized = dispatcher
-            .initialize(access_for_dispatch, invocation, protocol_headers, body)
+            .initialize(access.clone(), invocation, protocol_headers, body)
             .await
             .map_err(RemoteMcpInitializationError::Initialize)?;
         let session_id = initialized.session_id().clone();
@@ -2061,19 +2080,41 @@ where
             .map(String::as_str)
             .collect::<Vec<_>>();
         let authorization = RemoteHttpAuthorization::new(&authenticator, &trusted_origins);
-        let mut authorized = {
+        let invocation = classify_remote_mcp_request(body.as_slice())
+            .map_err(RemoteMcpDispatchError::Authorization)?;
+        {
             let gate = self
                 .gate
                 .lock()
                 .map_err(|_| RemoteMcpDispatchError::Authorization(lock_rejection()))?;
-            gate.authorize_stateless_owned_body(&authorization, request, body, now_epoch_seconds)
-                .map_err(RemoteMcpDispatchError::Authorization)?
-        };
-        authorized.protocol_headers = protocol_headers;
-        authorized
-            .dispatch_with(dispatcher)
-            .await
-            .map_err(RemoteMcpDispatchError::Dispatch)
+            gate.require_allowed_host(request.host)
+                .map_err(RemoteMcpDispatchError::Authorization)?;
+            if request.session_id.is_some() || invocation.method() == "notifications/cancelled" {
+                return Err(RemoteMcpDispatchError::Authorization(
+                    RemoteMcpHttpGate::forbidden(),
+                ));
+            }
+        }
+        let access = authorization
+            .authorize_request_for_http(
+                request.authorization,
+                request.origin,
+                invocation.method(),
+                invocation.tool_name(),
+                now_epoch_seconds,
+            )
+            .map_err(|error| {
+                RemoteMcpDispatchError::Authorization(self.authorization_rejection(error))
+            })?;
+        AuthorizedRemoteMcpRequest {
+            access,
+            invocation,
+            protocol_headers,
+            body,
+        }
+        .dispatch_with(dispatcher)
+        .await
+        .map_err(RemoteMcpDispatchError::Dispatch)
     }
 
     /// Authorizes and opens one stateless server event stream without holding
@@ -2104,14 +2145,24 @@ where
             .map(String::as_str)
             .collect::<Vec<_>>();
         let authorization = RemoteHttpAuthorization::new(&authenticator, &trusted_origins);
-        let access = {
+        {
             let gate = self
                 .gate
                 .lock()
                 .map_err(|_| RemoteMcpDispatchError::Authorization(lock_rejection()))?;
-            gate.authorize_stateless_connection(&authorization, request, now_epoch_seconds)
-                .map_err(RemoteMcpDispatchError::Authorization)?
-        };
+            gate.require_allowed_host(request.host)
+                .map_err(RemoteMcpDispatchError::Authorization)?;
+            if request.session_id.is_some() {
+                return Err(RemoteMcpDispatchError::Authorization(
+                    RemoteMcpHttpGate::forbidden(),
+                ));
+            }
+        }
+        let access = authorization
+            .authorize_connection_for_http(request.authorization, request.origin, now_epoch_seconds)
+            .map_err(|error| {
+                RemoteMcpDispatchError::Authorization(self.authorization_rejection(error))
+            })?;
         AuthorizedRemoteMcpEventStream {
             access,
             accept,
@@ -2153,19 +2204,51 @@ where
             .map(String::as_str)
             .collect::<Vec<_>>();
         let authorization = RemoteHttpAuthorization::new(&authenticator, &trusted_origins);
-        let mut authorized = {
+        let invocation = classify_remote_mcp_request(body.as_slice())
+            .map_err(RemoteMcpDispatchError::Authorization)?;
+        let session_id = RemoteMcpHttpGate::session_id(request.session_id)
+            .map_err(RemoteMcpDispatchError::Authorization)?;
+        {
+            let gate = self
+                .gate
+                .lock()
+                .map_err(|_| RemoteMcpDispatchError::Authorization(lock_rejection()))?;
+            gate.require_allowed_host(request.host)
+                .map_err(RemoteMcpDispatchError::Authorization)?;
+        }
+        let access = authorization
+            .authorize_request_for_http(
+                request.authorization,
+                request.origin,
+                invocation.method(),
+                invocation.tool_name(),
+                now_epoch_seconds,
+            )
+            .map_err(|error| {
+                RemoteMcpDispatchError::Authorization(self.authorization_rejection(error))
+            })?;
+        {
             let mut gate = self
                 .gate
                 .lock()
                 .map_err(|_| RemoteMcpDispatchError::Authorization(lock_rejection()))?;
-            gate.authorize_session_owned_body(&authorization, request, body, now_epoch_seconds)
-                .map_err(RemoteMcpDispatchError::Authorization)?
-        };
-        authorized.protocol_headers = protocol_headers;
-        authorized
-            .dispatch_with(dispatcher)
-            .await
-            .map_err(RemoteMcpDispatchError::Dispatch)
+            gate.sessions
+                .revalidate(&session_id, &access, now_epoch_seconds)
+                .map_err(|_| {
+                    RemoteMcpDispatchError::Authorization(
+                        gate.rejection(RemoteSessionHttpError::Forbidden),
+                    )
+                })?;
+        }
+        AuthorizedRemoteMcpRequest {
+            access,
+            invocation,
+            protocol_headers,
+            body,
+        }
+        .dispatch_with(dispatcher)
+        .await
+        .map_err(RemoteMcpDispatchError::Dispatch)
     }
 
     /// Reauthenticates a session DELETE, dispatches it without the registry
@@ -2197,23 +2280,32 @@ where
         let authorization = RemoteHttpAuthorization::new(&authenticator, &trusted_origins);
         let session_id = RemoteMcpHttpGate::session_id(request.session_id)
             .map_err(RemoteMcpDispatchError::Authorization)?;
-        let access = {
-            let mut gate = self
+        {
+            let gate = self
                 .gate
                 .lock()
                 .map_err(|_| RemoteMcpDispatchError::Authorization(lock_rejection()))?;
             gate.require_allowed_host(request.host)
                 .map_err(RemoteMcpDispatchError::Authorization)?;
+        }
+        let access = authorization
+            .authorize_connection_for_http(request.authorization, request.origin, now_epoch_seconds)
+            .map_err(|error| {
+                RemoteMcpDispatchError::Authorization(self.authorization_rejection(error))
+            })?;
+        {
+            let mut gate = self
+                .gate
+                .lock()
+                .map_err(|_| RemoteMcpDispatchError::Authorization(lock_rejection()))?;
             gate.sessions
-                .authorize_termination_for_http(
-                    &authorization,
-                    &session_id,
-                    request.authorization,
-                    request.origin,
-                    now_epoch_seconds,
-                )
-                .map_err(|error| RemoteMcpDispatchError::Authorization(gate.rejection(error)))?
-        };
+                .revalidate(&session_id, &access, now_epoch_seconds)
+                .map_err(|_| {
+                    RemoteMcpDispatchError::Authorization(
+                        gate.rejection(RemoteSessionHttpError::Forbidden),
+                    )
+                })?;
+        }
         let output = dispatcher
             .terminate(
                 access.clone(),
@@ -3446,6 +3538,11 @@ mod tests {
 
     struct Verifier;
     struct OAuthFixtureTransport;
+    type VerificationProbe = Arc<Mutex<Option<Box<dyn Fn() + Send + Sync>>>>;
+
+    struct LockAwareVerifier {
+        probe: VerificationProbe,
+    }
 
     struct RecordingDispatcher;
     struct RecordingEventStreamDispatcher;
@@ -3775,6 +3872,15 @@ mod tests {
                 expires_at_epoch_seconds: 2_000,
                 not_before_epoch_seconds: None,
             })
+        }
+    }
+
+    impl RemoteTokenVerifier for LockAwareVerifier {
+        fn verify(&self, token: &str) -> Result<RemoteTokenClaims, RemoteTokenVerificationError> {
+            if let Some(probe) = self.probe.lock().expect("verification probe lock").as_ref() {
+                probe();
+            }
+            Verifier.verify(token)
         }
     }
 
@@ -6110,6 +6216,66 @@ mod tests {
             *observed_unlocked.lock().expect("probe log"),
             [true, true, true, true, true, true],
             "all SDK dispatch must run outside the lock and duplicate conflicts must not compensate"
+        );
+    }
+
+    #[tokio::test]
+    async fn shared_axum_token_verification_runs_outside_registry_lock() {
+        let config = RemoteMcpConfig::new(
+            "https://memory.example.test/mcp".to_owned(),
+            "https://identity.example.test".to_owned(),
+            "https://identity.example.test/introspect".to_owned(),
+            "rembrane".to_owned(),
+            SecretReference::environment("OAUTH_SECRET").expect("reference should be valid"),
+            vec![],
+        )
+        .expect("remote profile should be valid");
+        let probe = Arc::new(Mutex::new(None));
+        let authorization = Arc::new(
+            SharedRemoteMcpAxumAuthorization::from_config(
+                2,
+                &config,
+                LockAwareVerifier {
+                    probe: Arc::clone(&probe),
+                },
+            )
+            .expect("shared authorization should initialize"),
+        );
+        let observed_unlocked = Arc::new(Mutex::new(Vec::new()));
+        let observed_from_probe = Arc::clone(&observed_unlocked);
+        let weak_authorization = Arc::downgrade(&authorization);
+        *probe.lock().expect("verification probe lock") = Some(Box::new(move || {
+            let authorization = weak_authorization
+                .upgrade()
+                .expect("shared authorization should remain alive");
+            let unlocked = authorization.gate.try_lock().is_ok();
+            observed_from_probe
+                .lock()
+                .expect("verification observation lock")
+                .push(unlocked);
+        }));
+        let mut headers = HeaderMap::new();
+        headers.insert(HOST, HeaderValue::from_static("memory.example.test"));
+        headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+        headers.insert(
+            ACCEPT,
+            HeaderValue::from_static("application/json, text/event-stream"),
+        );
+        headers.insert(
+            AUTHORIZATION,
+            HeaderValue::from_static("Bearer workspace-one"),
+        );
+
+        let dispatched = authorization
+            .authorize_and_dispatch_owned(&headers, tools_list_body(1), 1_000, &RecordingDispatcher)
+            .await
+            .expect("shared stateless request should authorize");
+        assert_eq!(dispatched.workspace, "workspace_01");
+        assert_eq!(
+            *observed_unlocked
+                .lock()
+                .expect("verification observation lock"),
+            [true]
         );
     }
 

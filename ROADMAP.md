@@ -509,6 +509,9 @@ This roadmap describes sequencing, not release dates.
           - [x] Provide shared concurrent Axum authorization that releases the
             bounded session-registry lock before every SDK initialization or
             compensating termination await.
+            - [x] Perform bearer verification and operation-scope
+              authorization before acquiring the session-registry lock,
+              including potentially remote token introspection.
             - [x] Apply the same two-phase locking to established-session POST
               and confirmed DELETE, denying requests after committed deletion.
             - [x] Release the shared gate lock before stateless POST and

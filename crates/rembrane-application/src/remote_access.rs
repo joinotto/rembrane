@@ -2,7 +2,8 @@ use std::error::Error;
 use std::fmt::{Display, Formatter};
 
 use rembrane_contracts::{
-    RemoteAccessScope, RemoteMcpOperation, RemoteTokenClaims, VerifiedRemoteAccess,
+    RemoteAccessScope, RemoteMcpOperation, RemoteMcpRequestAuthorization, RemoteTokenClaims,
+    VerifiedRemoteAccess,
 };
 
 use crate::ApplicationError;
@@ -232,6 +233,42 @@ where
             .map_err(|_| RemoteHttpAuthorizationError::Unauthorized)?;
         self.require_trusted_origin_for_http(origin_header)?;
         Ok(access)
+    }
+
+    /// Authorizes one classified MCP request without consulting transport
+    /// session state.
+    ///
+    /// This lets concurrent transports perform potentially remote token
+    /// verification before taking their short-lived session-registry lock.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Unauthorized` for invalid credentials and `Forbidden` for an
+    /// unsupported method/tool shape, untrusted origin, or insufficient tool
+    /// scope.
+    pub fn authorize_request_for_http(
+        &self,
+        authorization_header: Option<&str>,
+        origin_header: Option<&str>,
+        method: &str,
+        tool_name: Option<&str>,
+        now_epoch_seconds: u64,
+    ) -> Result<VerifiedRemoteAccess, RemoteHttpAuthorizationError> {
+        match RemoteMcpRequestAuthorization::classify(method, tool_name)
+            .ok_or(RemoteHttpAuthorizationError::Forbidden)?
+        {
+            RemoteMcpRequestAuthorization::Connection => self.authorize_connection_for_http(
+                authorization_header,
+                origin_header,
+                now_epoch_seconds,
+            ),
+            RemoteMcpRequestAuthorization::Tool(operation) => self.authorize_tool_for_http(
+                authorization_header,
+                origin_header,
+                operation.tool_name(),
+                now_epoch_seconds,
+            ),
+        }
     }
 
     fn require_trusted_origin_for_http(

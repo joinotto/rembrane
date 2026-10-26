@@ -236,25 +236,15 @@ impl RemoteSessionRegistry {
     where
         Verifier: RemoteTokenVerifier,
     {
-        let classified = RemoteMcpRequestAuthorization::classify(method, tool_name)
-            .ok_or(RemoteSessionHttpError::Forbidden)?;
-        let access = match classified {
-            RemoteMcpRequestAuthorization::Connection => authorization
-                .authorize_connection_for_http(
-                    authorization_header,
-                    origin_header,
-                    now_epoch_seconds,
-                )
-                .map_err(RemoteSessionHttpError::from)?,
-            RemoteMcpRequestAuthorization::Tool(operation) => authorization
-                .authorize_tool_for_http(
-                    authorization_header,
-                    origin_header,
-                    operation.tool_name(),
-                    now_epoch_seconds,
-                )
-                .map_err(RemoteSessionHttpError::from)?,
-        };
+        let access = authorization
+            .authorize_request_for_http(
+                authorization_header,
+                origin_header,
+                method,
+                tool_name,
+                now_epoch_seconds,
+            )
+            .map_err(RemoteSessionHttpError::from)?;
         self.revalidate(session_id, &access, now_epoch_seconds)
             .map_err(|_| RemoteSessionHttpError::Forbidden)?;
         Ok(access)
