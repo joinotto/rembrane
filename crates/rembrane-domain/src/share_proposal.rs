@@ -47,7 +47,7 @@ impl Error for ShareProposalError {}
 ///
 /// The source content is deliberately absent. It remains in the source
 /// workspace until the source subject approves an atomic cross-workspace copy.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct MemoryShareProposal {
     id: ShareProposalId,
     source_workspace_id: WorkspaceId,
@@ -58,6 +58,23 @@ pub struct MemoryShareProposal {
     target_scope: MemoryScope,
     proposed_by: PrincipalId,
     status: ShareProposalStatus,
+}
+
+impl fmt::Debug for MemoryShareProposal {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("MemoryShareProposal")
+            .field("id", &"<redacted>")
+            .field("source_workspace_id", &"<redacted>")
+            .field("source_memory_id", &"<redacted>")
+            .field("source_memory_version", &self.source_memory_version)
+            .field("source_subject_id", &"<redacted>")
+            .field("target_workspace_id", &"<redacted>")
+            .field("target_scope", &self.target_scope)
+            .field("proposed_by", &"<redacted>")
+            .field("status", &self.status)
+            .finish()
+    }
 }
 
 impl MemoryShareProposal {
@@ -277,5 +294,39 @@ mod tests {
             create(1, "personal_01"),
             Err(ShareProposalError::SameWorkspace)
         );
+    }
+
+    #[test]
+    fn debug_output_redacts_share_proposal_routing() {
+        let proposal = MemoryShareProposal::new(
+            ShareProposalId::new("private_proposal"),
+            WorkspaceId::new("private_source_workspace"),
+            MemoryId::new("private_memory"),
+            9,
+            PrincipalId::new("private_owner"),
+            WorkspaceId::new("private_target_workspace"),
+            MemoryScope::Entity {
+                id: EntityId::new("private_target_entity"),
+            },
+            PrincipalId::new("private_proposer"),
+        )
+        .expect("proposal should validate");
+
+        let diagnostic = format!("{proposal:?}");
+
+        for private_value in [
+            "private_proposal",
+            "private_source_workspace",
+            "private_memory",
+            "private_owner",
+            "private_target_workspace",
+            "private_target_entity",
+            "private_proposer",
+        ] {
+            assert!(!diagnostic.contains(private_value));
+        }
+        assert!(diagnostic.contains("source_memory_version: 9"));
+        assert!(diagnostic.contains("kind: \"entity\""));
+        assert!(diagnostic.contains("status: Pending"));
     }
 }

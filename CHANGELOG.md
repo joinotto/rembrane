@@ -119,6 +119,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Authorization scope, client grant, member scope, principal, workspace, and
   membership diagnostics now expose only safe kinds, counts, roles, and
   statuses while redacting tenant identities and exact privileges.
+- Canonical memory-scope, cross-workspace share-proposal, and invitation
+  diagnostics now expose only safe scope kinds, versions, roles, and statuses
+  while redacting selectors, routing identities, and collaboration timelines.
 - Canonical SQLite initialization and backup now require the path opened by
   SQLite to retain the exact protected file's device/inode identity, and
   failure cleanup refuses to remove a path replaced after preparation.

@@ -13,7 +13,7 @@ pub enum InvitationStatus {
     Expired,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct Invitation {
     id: InvitationId,
     workspace_id: WorkspaceId,
@@ -23,6 +23,22 @@ pub struct Invitation {
     status: InvitationStatus,
     created_at_epoch_seconds: u64,
     expires_at_epoch_seconds: u64,
+}
+
+impl fmt::Debug for Invitation {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("Invitation")
+            .field("id", &"<redacted>")
+            .field("workspace_id", &"<redacted>")
+            .field("invited_principal_id", &"<redacted>")
+            .field("invited_by", &"<redacted>")
+            .field("role", &self.role)
+            .field("status", &self.status)
+            .field("created_at_epoch_seconds", &"<redacted>")
+            .field("expires_at_epoch_seconds", &"<redacted>")
+            .finish()
+    }
 }
 
 impl Invitation {
@@ -234,5 +250,34 @@ mod tests {
             .expect("expiry boundary");
         assert_eq!(expired.status(), InvitationStatus::Expired);
         assert_eq!(expired.expire_at(2_000), Err(InvitationError::NotPending));
+    }
+
+    #[test]
+    fn debug_output_redacts_invitation_routing_and_timeline() {
+        let invitation = Invitation::new(
+            InvitationId::new("private_invitation"),
+            WorkspaceId::new("private_workspace"),
+            PrincipalId::new("private_guest"),
+            PrincipalId::new("private_inviter"),
+            WorkspaceRole::Member,
+            1_900_000_001,
+            1_900_000_999,
+        )
+        .expect("invitation should validate");
+
+        let diagnostic = format!("{invitation:?}");
+
+        for private_value in [
+            "private_invitation",
+            "private_workspace",
+            "private_guest",
+            "private_inviter",
+            "1900000001",
+            "1900000999",
+        ] {
+            assert!(!diagnostic.contains(private_value));
+        }
+        assert!(diagnostic.contains("role: Member"));
+        assert!(diagnostic.contains("status: Pending"));
     }
 }

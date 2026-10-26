@@ -1038,6 +1038,8 @@ This roadmap describes sequencing, not release dates.
 ## Phase 4 — Shared workspaces
 
 - [x] Shared-workspace invitations and role-bound acceptance.
+  - [x] Redact invitation and cross-workspace sharing routes, exact scope
+    selectors, and collaboration timelines from diagnostics.
   - [x] Bound invitation lifetime to 30 days and reject acceptance at or after
     expiry without creating membership.
     - [x] Atomically transition an expired pending invitation before creating
