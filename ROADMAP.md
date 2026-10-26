@@ -152,6 +152,8 @@ This roadmap describes sequencing, not release dates.
   - [x] Bound CLI recall to 100 items and 1 MiB before storage access.
   - [x] Return a generic JSON failure envelope without echoing query text,
     tenant routing, storage paths, or internal provider diagnostics.
+- [x] Version CLI checkpoint and resume output so fresh agent processes can
+  consume working-memory state through a stable protocol surface.
 - [x] Publish an executable local-alpha acceptance contract with independent
   static, Rust/E2E, and container CI gates.
 - [x] Add a secret-safe local installation doctor command.

@@ -680,7 +680,8 @@ first_resume=$(
         --state-fingerprint "git:cli123"
 )
 printf '%s\n' "$first_resume" | jq -e \
-    '.version == 1
+    '.schemaVersion == 1
+        and .version == 1
         and .summary == "Checkpoint creation works."
         and .nextSteps == ["Resume in another tool", "Run full tests"]
         and .stale == false
@@ -707,7 +708,8 @@ second_resume=$(
         --state-fingerprint "git:cli123"
 )
 printf '%s\n' "$second_resume" | jq -e \
-    '.version == 2
+    '.schemaVersion == 1
+        and .version == 2
         and .summary == "Checkpoint update works."
         and .stale == true
         and .disclosureId' >/dev/null

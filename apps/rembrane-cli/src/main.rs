@@ -2738,6 +2738,7 @@ fn print_checkpoint(
     disclosure_id: Option<&DisclosureId>,
 ) -> Result<(), String> {
     let output = serde_json::json!({
+        "schemaVersion": 1,
         "checkpointId": checkpoint.id().to_string(),
         "activityId": checkpoint.activity_id().to_string(),
         "entityId": checkpoint.entity_id().map(ToString::to_string),

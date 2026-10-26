@@ -9,6 +9,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Fixed
 
+- CLI checkpoint and resume results now carry `schemaVersion: 1`, allowing
+  fresh agent processes to consume project working-memory state through an
+  explicitly versioned output surface.
 - `rembrane recall --json` now emits versioned structured memory items plus
   context-pack and disclosure-receipt IDs for generic bots, launchers, and
   agent runtimes without requiring human-output parsing.
