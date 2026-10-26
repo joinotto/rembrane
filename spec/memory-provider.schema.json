@@ -843,13 +843,13 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 262144,
-              "pattern": "^[^\\u0000]+$"
+              "pattern": "^(?=.*\\S)[^\\u0000]+$"
             },
             "summary": {
               "type": "string",
               "minLength": 1,
               "maxLength": 262144,
-              "pattern": "^[^\\u0000]+$"
+              "pattern": "^(?=.*\\S)[^\\u0000]+$"
             },
             "nextSteps": {
               "$ref": "#/$defs/checkpointTextList"
@@ -861,7 +861,7 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 262144,
-              "pattern": "^[^\\u0000]+$"
+              "pattern": "^(?=.*\\S)[^\\u0000]+$"
             }
           }
         },
@@ -893,7 +893,7 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 262144,
-              "pattern": "^[^\\u0000]+$"
+              "pattern": "^(?=.*\\S)[^\\u0000]+$"
             },
             "nextSteps": {
               "$ref": "#/$defs/checkpointTextList"
@@ -905,7 +905,7 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 262144,
-              "pattern": "^[^\\u0000]+$"
+              "pattern": "^(?=.*\\S)[^\\u0000]+$"
             }
           }
         }

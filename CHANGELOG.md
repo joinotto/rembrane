@@ -24,6 +24,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   reject whitespace-only or NUL-containing next steps and blockers.
 - Canonical checkpoints now also reject NUL characters in goals, summaries,
   and state fingerprints, matching the external provider boundary.
+- CLI and Memory Provider schemas now encode the same non-whitespace,
+  NUL-free rule for checkpoint goals, summaries, and state fingerprints.
 - CLI checkpoint and resume output now has a versioned JSON Schema, canonical
   example, protocol drift checks, and cross-agent continuity documentation
   tied to the canonical payload and collection bounds.

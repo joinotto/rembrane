@@ -208,6 +208,7 @@ jq -e \
     .additionalProperties == false
     and .properties.schemaVersion.const == 1
     and .properties.version.minimum == 1
+    and ."$defs".requiredText.pattern == "^(?=.*\\S)[^\\u0000]+$"
     and ."$defs".textList.maxItems == 1024
     and ."$defs".textList.items.minLength == 1
     and ."$defs".textList.items.pattern == "^(?=.*\\S)[^\\u0000]+$"
@@ -237,6 +238,18 @@ jq -e '
     ."$defs".checkpointTextList.maxItems == 1024
     and ."$defs".checkpointTextList.items.pattern
         == "^(?=.*\\S)[^\\u0000]+$"
+    and all(
+        ."$defs".checkpointActivityPayload.oneOf[];
+        .properties.summary.pattern == "^(?=.*\\S)[^\\u0000]+$"
+        and (
+            (.properties.stateFingerprint.pattern // "^(?=.*\\S)[^\\u0000]+$")
+            == "^(?=.*\\S)[^\\u0000]+$"
+        )
+    )
+    and (
+        ."$defs".checkpointActivityPayload.oneOf[0].properties.goal.pattern
+        == "^(?=.*\\S)[^\\u0000]+$"
+    )
     and (
         ."$defs".checkpointActivityPayload.description
         | contains("at most 1024 combined items")

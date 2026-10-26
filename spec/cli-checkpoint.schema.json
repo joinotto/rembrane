@@ -59,7 +59,8 @@
     "requiredText": {
       "type": "string",
       "minLength": 1,
-      "maxLength": 262144
+      "maxLength": 262144,
+      "pattern": "^(?=.*\\S)[^\\u0000]+$"
     },
     "textList": {
       "type": "array",
