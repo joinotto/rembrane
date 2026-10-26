@@ -1934,6 +1934,46 @@ impl RemoteMcpHttpGate {
             .map_err(|error| self.rejection(error))
     }
 
+    /// Authorizes a protocol-correct initialize request before the official
+    /// SDK generates its session identifier.
+    ///
+    /// This path deliberately does not reserve local session capacity. The
+    /// downstream SDK response must be inspected and its generated identifier
+    /// committed through a later confirmed-session step.
+    ///
+    /// # Errors
+    ///
+    /// Rejects a supplied session header, malformed or non-initialize JSON-RPC,
+    /// invalid credentials, or an untrusted host/origin.
+    pub fn authorize_sessionless_initialize_owned_body<Verifier>(
+        &self,
+        authorization: &RemoteHttpAuthorization<'_, '_, Verifier>,
+        request: RemoteMcpHttpRequest<'_>,
+        body: Zeroizing<Vec<u8>>,
+        now_epoch_seconds: u64,
+    ) -> Result<AuthorizedRemoteMcpRequest, RemoteMcpHttpRejection>
+    where
+        Verifier: RemoteTokenVerifier,
+    {
+        self.require_allowed_host(request.host)?;
+        if request.session_id.is_some() {
+            return Err(Self::forbidden());
+        }
+        let invocation = classify_remote_mcp_request(body.as_slice())?;
+        if invocation.method() != "initialize" || invocation.tool_name().is_some() {
+            return Err(Self::forbidden());
+        }
+        let access = authorization
+            .authorize_connection_for_http(request.authorization, request.origin, now_epoch_seconds)
+            .map_err(|error| self.rejection(error.into()))?;
+        Ok(AuthorizedRemoteMcpRequest {
+            access,
+            invocation,
+            protocol_headers: RemoteMcpProtocolHeaders::transport_neutral(),
+            body,
+        })
+    }
+
     /// Classifies an exact `initialize` body before authenticating and
     /// allocating its session binding.
     ///
@@ -2757,6 +2797,69 @@ mod tests {
             1_200,
         )
         .expect("valid delete should terminate");
+    }
+
+    #[test]
+    fn sessionless_initialize_authorizes_without_reserving_client_supplied_id() {
+        let verifier = Verifier;
+        let authenticator = RemoteAccessAuthenticator::new(
+            &verifier,
+            "https://identity.example.test",
+            "https://memory.example.test/mcp",
+        );
+        let origins = ["https://agent.example.test"];
+        let authorization = RemoteHttpAuthorization::new(&authenticator, &origins);
+        let mut gate = RemoteMcpHttpGate::new(
+            1,
+            "https://memory.example.test/.well-known/oauth-protected-resource/mcp",
+            &["memory.example.test"],
+        )
+        .expect("gate should be valid");
+        let initialize = zeroize::Zeroizing::new(
+            br#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}"#
+                .to_vec(),
+        );
+        let authorized = gate
+            .authorize_sessionless_initialize_owned_body(
+                &authorization,
+                RemoteMcpHttpRequest {
+                    authorization: Some("Bearer workspace-one"),
+                    host: Some("memory.example.test"),
+                    origin: Some("https://agent.example.test"),
+                    session_id: None,
+                },
+                initialize,
+                1_000,
+            )
+            .expect("sessionless initialize should authorize");
+        assert_eq!(authorized.invocation().method(), "initialize");
+        assert_eq!(authorized.access().workspace_id().as_str(), "workspace_01");
+
+        gate.establish(
+            &authorization,
+            request("Bearer workspace-one", "session_sdk_generated_0123456789"),
+            1_000,
+        )
+        .expect("authorization proof must not consume session capacity");
+
+        let supplied_session = match gate.authorize_sessionless_initialize_owned_body(
+                &authorization,
+                RemoteMcpHttpRequest {
+                    authorization: Some("Bearer workspace-one"),
+                    host: Some("memory.example.test"),
+                    origin: Some("https://agent.example.test"),
+                    session_id: Some("session_attacker_supplied"),
+                },
+                zeroize::Zeroizing::new(
+                    br#"{"jsonrpc":"2.0","id":2,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}"#
+                        .to_vec(),
+                ),
+                1_000,
+            ) {
+            Ok(_) => panic!("client-supplied initialize session must fail"),
+            Err(error) => error,
+        };
+        assert_eq!(supplied_session.status, 403);
     }
 
     #[tokio::test]

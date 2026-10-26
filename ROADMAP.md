@@ -495,6 +495,8 @@ This roadmap describes sequencing, not release dates.
     - [x] Separate termination authorization from deletion commit so an HTTP
       transport can retain the local binding until downstream confirmation.
   - [ ] Serve Streamable HTTP through the official Rust MCP SDK.
+    - [x] Authorize protocol-correct sessionless initialize requests without
+      reserving a client-supplied ID before the official SDK response.
     - [x] Require every remote tool invocation to carry the exact verified
       subject, client, and workspace identity through the SDK request context,
       rejecting missing or substituted tenant extensions.
