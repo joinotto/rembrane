@@ -379,7 +379,8 @@ target/debug/rembrane recall \
 ```
 
 The result follows `spec/cli-recall.schema.json` and includes the persisted
-disclosure receipt identifier.
+disclosure receipt identifier. Failed JSON recalls exit non-zero with only the
+closed `recall_failed` code.
 
 The local REST server additionally requires `REMBRANE_DATABASE`,
 `REMBRANE_PRINCIPAL_ID`, `REMBRANE_WORKSPACE_ID`, `REMBRANE_CLIENT_ID`, and

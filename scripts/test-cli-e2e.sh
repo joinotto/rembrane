@@ -464,6 +464,32 @@ printf '%s\n' "$project_recall_json" | jq -e \
     and ((tostring | contains("principal_e2e")) | not)
 ' >/dev/null
 
+recall_failure="$test_directory/recall-failure.json"
+recall_failure_stderr="$test_directory/recall-failure.stderr"
+if "$rembrane_binary" recall \
+    --database "$test_directory/missing-recall.sqlite" \
+    --principal principal_private \
+    --workspace workspace_private \
+    --client client_private \
+    --purpose purpose_private \
+    --query "private recall query" \
+    --json >"$recall_failure" 2>"$recall_failure_stderr"
+then
+    echo "JSON recall unexpectedly accepted a missing database" >&2
+    exit 1
+fi
+jq -e '
+    . == {
+        "schemaVersion": 1,
+        "error": {"code": "recall_failed"}
+    }
+    and ((tostring | contains("missing-recall.sqlite")) | not)
+    and ((tostring | contains("principal_private")) | not)
+    and ((tostring | contains("workspace_private")) | not)
+    and ((tostring | contains("private recall query")) | not)
+' "$recall_failure" >/dev/null
+test ! -s "$recall_failure_stderr"
+
 layered_identity_recall=$(
     "$rembrane_binary" recall \
         --database "$database" \

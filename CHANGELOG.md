@@ -21,6 +21,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Failed `rembrane recall --json` runs now return a closed generic error code
   without exposing query text, tenant identities, database paths, key
   metadata, or arbitrary provider diagnostics.
+- The structured recall schema now defines mutually exclusive success and
+  generic failure results with canonical fixtures and protocol drift checks.
+- The encrypted CLI lifecycle now verifies failed structured recalls return
+  only the closed error envelope with no query, path, or tenant plaintext.
 - `rembrane doctor --json` now emits structured installation health, closed
   membership role, authenticated-record counts, and secret-source categories
   without principal or workspace identifiers; mixed JSON/privacy output is

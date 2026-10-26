@@ -4,7 +4,7 @@
   "title": "Rembrane CLI recall result",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "contextPackId", "disclosureId", "items"],
+  "required": ["schemaVersion"],
   "properties": {
     "schemaVersion": {
       "const": 1
@@ -20,6 +20,16 @@
       "maxItems": 100,
       "items": {
         "$ref": "#/$defs/item"
+      }
+    },
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code"],
+      "properties": {
+        "code": {
+          "const": "recall_failed"
+        }
       }
     }
   },
@@ -50,5 +60,23 @@
       }
     }
   },
+  "oneOf": [
+    {
+      "required": ["contextPackId", "disclosureId", "items"],
+      "not": {
+        "required": ["error"]
+      }
+    },
+    {
+      "required": ["error"],
+      "not": {
+        "anyOf": [
+          { "required": ["contextPackId"] },
+          { "required": ["disclosureId"] },
+          { "required": ["items"] }
+        ]
+      }
+    }
+  ],
   "x-rembrane-maximumContextBytes": 1048576
 }

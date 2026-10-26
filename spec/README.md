@@ -83,6 +83,8 @@ arbitrary internal diagnostic text.
 versions plus the context-pack and disclosure-receipt identifiers needed for
 auditing. The CLI enforces at most 100 items and 1 MiB of selected plaintext
 before storage-backed resolution.
+Failures use a mutually exclusive generic envelope that never carries query,
+tenant-routing, storage, key, or downstream-provider diagnostic text.
 
 ## Provider adapter manifest
 

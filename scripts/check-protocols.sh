@@ -106,6 +106,7 @@ jq empty \
     spec/examples/local-doctor.json \
     spec/examples/local-doctor-failure.json \
     spec/examples/cli-recall.json \
+    spec/examples/cli-recall-failure.json \
     spec/examples/memory-provider-discovery.json \
     spec/examples/memory-provider-context-request.json \
     spec/examples/memory-provider-context-response.json \
@@ -173,7 +174,9 @@ jq -e \
     and (.allOf | length) == 1
 ' spec/local-doctor.schema.json >/dev/null
 
-jq -e --slurpfile example spec/examples/cli-recall.json '
+jq -e \
+    --slurpfile example spec/examples/cli-recall.json \
+    --slurpfile failure spec/examples/cli-recall-failure.json '
     .additionalProperties == false
     and .properties.schemaVersion.const == 1
     and .properties.items.maxItems == 100
@@ -181,9 +184,15 @@ jq -e --slurpfile example spec/examples/cli-recall.json '
     and ."$defs".item.properties.version.minimum == 1
     and ."$defs".item.properties.content.maxLength == 262144
     and ."x-rembrane-maximumContextBytes" == 1048576
+    and .properties.error.properties.code.const == "recall_failed"
+    and (.oneOf | length) == 2
     and $example[0].schemaVersion == 1
     and ($example[0].items | length) == 1
     and $example[0].items[0].content == "Call me Hippo"
+    and $failure[0] == {
+        "schemaVersion": 1,
+        "error": {"code": "recall_failed"}
+    }
 ' spec/cli-recall.schema.json >/dev/null
 rg -q '^const MAX_CLI_RECALL_ITEMS: usize = 100;$' apps/rembrane-cli/src/main.rs
 rg -q '^const MAX_CLI_RECALL_BYTES: usize = 1_048_576;$' apps/rembrane-cli/src/main.rs
