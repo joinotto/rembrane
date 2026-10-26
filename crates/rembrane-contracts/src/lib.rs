@@ -2,7 +2,7 @@
 
 use std::collections::BTreeSet;
 use std::error::Error;
-use std::fmt::{Display, Formatter};
+use std::fmt::{self, Display, Formatter};
 
 use rembrane_domain::{
     ActivityId, ClientId, ContextPackId, DisclosureId, DisclosureReceipt, EntityId,
@@ -199,7 +199,7 @@ impl RemoteMcpOperation {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct RemoteTokenClaims {
     pub issuer: String,
     pub audience: Vec<String>,
@@ -211,7 +211,7 @@ pub struct RemoteTokenClaims {
     pub not_before_epoch_seconds: Option<u64>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct VerifiedRemoteAccess {
     issuer: String,
     resource: String,
@@ -222,7 +222,7 @@ pub struct VerifiedRemoteAccess {
     expires_at_epoch_seconds: u64,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct RemoteSessionBinding {
     issuer: String,
     resource: String,
@@ -233,8 +233,63 @@ pub struct RemoteSessionBinding {
     maximum_token_expiry_epoch_seconds: u64,
 }
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Eq, Ord, PartialEq, PartialOrd)]
 pub struct RemoteSessionId(String);
+
+impl fmt::Debug for RemoteTokenClaims {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("RemoteTokenClaims")
+            .field("issuer", &"[REDACTED]")
+            .field("audience_count", &self.audience.len())
+            .field("subject_id", &"[REDACTED]")
+            .field("client_id", &"[REDACTED]")
+            .field("workspace_id", &"[REDACTED]")
+            .field("scope_count", &self.scopes.len())
+            .field("expires_at_epoch_seconds", &self.expires_at_epoch_seconds)
+            .field("not_before_epoch_seconds", &self.not_before_epoch_seconds)
+            .finish()
+    }
+}
+
+impl fmt::Debug for VerifiedRemoteAccess {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("VerifiedRemoteAccess")
+            .field("issuer", &"[REDACTED]")
+            .field("resource", &"[REDACTED]")
+            .field("subject_id", &"[REDACTED]")
+            .field("client_id", &"[REDACTED]")
+            .field("workspace_id", &"[REDACTED]")
+            .field("scope_count", &self.scopes.len())
+            .field("expires_at_epoch_seconds", &self.expires_at_epoch_seconds)
+            .finish()
+    }
+}
+
+impl fmt::Debug for RemoteSessionBinding {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("RemoteSessionBinding")
+            .field("issuer", &"[REDACTED]")
+            .field("resource", &"[REDACTED]")
+            .field("subject_id", &"[REDACTED]")
+            .field("client_id", &"[REDACTED]")
+            .field("workspace_id", &"[REDACTED]")
+            .field("scope_count", &self.scopes.len())
+            .field(
+                "maximum_token_expiry_epoch_seconds",
+                &self.maximum_token_expiry_epoch_seconds,
+            )
+            .finish()
+    }
+}
+
+impl fmt::Debug for RemoteSessionId {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
+        formatter.write_str("RemoteSessionId([REDACTED])")
+    }
+}
 
 impl RemoteSessionId {
     /// Creates an opaque MCP session identifier.
@@ -537,6 +592,41 @@ mod tests {
         assert_eq!(access.workspace_id().as_str(), "workspace_01");
         assert!(access.allows(RemoteAccessScope::ContextRead));
         assert!(!access.allows(RemoteAccessScope::MemoryWrite));
+    }
+
+    #[test]
+    fn remote_access_diagnostics_redact_identity_and_session_capabilities() {
+        let claims = claims(&[RemoteAccessScope::ContextRead]);
+        let claims_debug = format!("{claims:?}");
+        let access = claims
+            .validate_connection(
+                "https://identity.example.test",
+                "https://memory.example.test/mcp",
+                1_000,
+            )
+            .expect("claims should validate");
+        let access_debug = format!("{access:?}");
+        let binding_debug = format!("{:?}", access.session_binding());
+        let session_id = RemoteSessionId::new("private-session-id").expect("session identifier");
+        let session_debug = format!("{session_id:?}");
+
+        for private in [
+            "https://identity.example.test",
+            "https://memory.example.test/mcp",
+            "principal_01",
+            "client_01",
+            "workspace_01",
+            "private-session-id",
+        ] {
+            assert!(!claims_debug.contains(private));
+            assert!(!access_debug.contains(private));
+            assert!(!binding_debug.contains(private));
+            assert!(!session_debug.contains(private));
+        }
+        assert!(claims_debug.contains("scope_count: 1"));
+        assert!(access_debug.contains("scope_count: 1"));
+        assert!(binding_debug.contains("scope_count: 1"));
+        assert!(session_debug.contains("[REDACTED]"));
     }
 
     #[test]

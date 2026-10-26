@@ -421,6 +421,8 @@ This roadmap describes sequencing, not release dates.
     reauthentication.
     - [x] Redact authorization, session, host, and origin values from
       remote-MCP HTTP request diagnostics.
+    - [x] Redact verified claims, tenant identity, and session routing
+      capabilities in shared remote-access contract diagnostics.
     - [x] Reject oversized bearer credentials before signature verification or
       authenticated introspection work.
     - [x] Authenticate initialize, discovery, event-stream, and session-delete

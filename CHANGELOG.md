@@ -72,6 +72,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   on MCP tool parameter types.
 - Remote-MCP HTTP request diagnostics now expose only header-presence flags,
   redacting bearer authorization, session IDs, hostnames, and browser origins.
+- Shared remote-access contracts now redact issuer, resource, audience,
+  principal, client, workspace, and session routing identities while retaining
+  safe scope counts and validity timestamps.
 - Canonical SQLite initialization and backup now require the path opened by
   SQLite to retain the exact protected file's device/inode identity, and
   failure cleanup refuses to remove a path replaced after preparation.
