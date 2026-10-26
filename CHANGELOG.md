@@ -104,6 +104,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   collection counts, temporal-bound presence, supersession presence, and
   version while redacting labels, aliases, relations, timelines, evidence,
   endpoints, and tenant identities.
+- Canonical event diagnostics now expose only closed event kind, applicable
+  resource versions, stream sequence, and subject presence while redacting
+  event, tenant, actor, subject, and payload resource identities.
 - Canonical SQLite initialization and backup now require the path opened by
   SQLite to retain the exact protected file's device/inode identity, and
   failure cleanup refuses to remove a path replaced after preparation.

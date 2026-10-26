@@ -34,6 +34,8 @@ This roadmap describes sequencing, not release dates.
 - [x] Configure bounded SQLite lock waiting and WAL concurrency.
 - [x] Serialize canonical memory records with a versioned format.
 - [x] Serialize canonical event records with a versioned format.
+  - [x] Redact event-stream and payload resource identities from diagnostics
+    while retaining closed event kinds and safe version metadata.
 - [x] Serialize canonical checkpoint records with a versioned format.
 - [x] Require an explicit cipher capability for encrypted SQLite memory APIs.
 - [x] Implement authenticated, tenant-scoped SQLite memory reads.
