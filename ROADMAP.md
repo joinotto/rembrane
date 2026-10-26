@@ -226,6 +226,8 @@ This roadmap describes sequencing, not release dates.
         restoring, or completing a workspace key rotation.
       - [x] Reject unsafe or unbounded workspace and recipient identities
         before dispatching an outbound provider rotation request.
+      - [x] Require bounded portable request identifiers for every
+        key-provider operation before transport dispatch.
     - [x] Bound untrusted manifest algorithm collections and require closed
       portable algorithm identifiers before capability negotiation.
     - [x] Bind rotation to the authenticated HTTP protocol and black-box

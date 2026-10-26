@@ -48,6 +48,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   unsafe or oversized rotation, workspace, and principal identities.
 - Outbound key-provider rotation requests now reject unsafe or oversized
   workspace and recipient identities before invoking provider transports.
+- All key-provider requests now require bounded portable request identifiers,
+  rejecting whitespace, controls, non-ASCII text, and delimiter-unsafe input
+  before transport dispatch.
 - Canonical SQLite initialization and backup now require the path opened by
   SQLite to retain the exact protected file's device/inode identity, and
   failure cleanup refuses to remove a path replaced after preparation.

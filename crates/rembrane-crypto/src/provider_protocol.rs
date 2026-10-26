@@ -297,7 +297,12 @@ impl OpenRequest {
 }
 
 fn validate_request_id(request_id: &str) -> Result<(), KeyProviderProtocolError> {
-    if request_id.trim().is_empty() || request_id.trim() != request_id || request_id.len() > 255 {
+    if request_id.is_empty()
+        || request_id.len() > 255
+        || !request_id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b':'))
+    {
         return Err(KeyProviderProtocolError::InvalidRequest);
     }
     Ok(())
@@ -600,6 +605,42 @@ mod tests {
         assert!(
             !format!("{request:?}").contains("secret"),
             "provider requests must not expose plaintext through debug output"
+        );
+    }
+
+    #[test]
+    fn rejects_nonportable_request_identifiers_before_transport() {
+        for request_id in [
+            "",
+            " request_01",
+            "request 01",
+            "request/01",
+            "request\n01",
+            "réquest_01",
+        ] {
+            assert_eq!(
+                SealRequest::new(request_id, context(), b"secret".to_vec(), 10),
+                Err(KeyProviderProtocolError::InvalidRequest)
+            );
+            assert_eq!(
+                OpenRequest::new(
+                    request_id,
+                    context(),
+                    EncryptedPayload::new(
+                        vec![1],
+                        "key_v1",
+                        "xchacha20poly1305-ietf",
+                        vec![2; 24],
+                    )
+                    .expect("valid envelope"),
+                ),
+                Err(KeyProviderProtocolError::InvalidRequest)
+            );
+        }
+
+        assert_eq!(
+            SealRequest::new("a".repeat(256), context(), b"secret".to_vec(), 10,),
+            Err(KeyProviderProtocolError::InvalidRequest)
         );
     }
 
