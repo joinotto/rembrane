@@ -1,4 +1,7 @@
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::{
+    fmt,
+    sync::atomic::{AtomicU64, Ordering},
+};
 
 use rembrane_domain::WorkspaceId;
 
@@ -19,8 +22,14 @@ pub enum GraphitiOperation {
     DeleteEdge,
 }
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Eq, Ord, PartialEq, PartialOrd)]
 pub struct GraphitiRequestId(String);
+
+impl fmt::Debug for GraphitiRequestId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("GraphitiRequestId(<redacted>)")
+    }
+}
 
 impl GraphitiRequestId {
     pub fn new(value: impl Into<String>) -> Result<Self, ProviderError> {
@@ -43,8 +52,14 @@ impl GraphitiRequestId {
     }
 }
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Eq, Ord, PartialEq, PartialOrd)]
 pub struct GraphitiIdempotencyKey(String);
+
+impl fmt::Debug for GraphitiIdempotencyKey {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("GraphitiIdempotencyKey(<redacted>)")
+    }
+}
 
 impl GraphitiIdempotencyKey {
     pub fn new(value: impl Into<String>) -> Result<Self, ProviderError> {
@@ -72,8 +87,14 @@ impl GraphitiIdempotencyKey {
 ///
 /// The constructor is intentionally not public. Adapters can never accept a
 /// caller-selected Graphiti `group_id` independently of a Rembrane workspace.
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Eq, Ord, PartialEq, PartialOrd)]
 pub struct GraphitiNamespace(String);
+
+impl fmt::Debug for GraphitiNamespace {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("GraphitiNamespace(<redacted>)")
+    }
+}
 
 impl GraphitiNamespace {
     pub fn for_workspace(workspace_id: &WorkspaceId) -> Result<Self, ProviderError> {
@@ -111,7 +132,7 @@ pub trait GraphitiPayload {
     fn validate(&self) -> Result<(), ProviderError>;
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct GraphitiRequest<Payload> {
     request_id: GraphitiRequestId,
     protocol_version: ProviderProtocolVersion,
@@ -119,6 +140,20 @@ pub struct GraphitiRequest<Payload> {
     namespace: GraphitiNamespace,
     idempotency_key: Option<GraphitiIdempotencyKey>,
     payload: Payload,
+}
+
+impl<Payload> fmt::Debug for GraphitiRequest<Payload> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("GraphitiRequest")
+            .field("request_id", &"<redacted>")
+            .field("protocol_version", &self.protocol_version)
+            .field("operation", &self.operation)
+            .field("namespace", &"<redacted>")
+            .field("idempotency_key_present", &self.idempotency_key.is_some())
+            .field("payload", &"<redacted>")
+            .finish()
+    }
 }
 
 impl<Payload: GraphitiPayload> GraphitiRequest<Payload> {
@@ -205,11 +240,28 @@ pub enum GraphitiErrorCode {
     Internal,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct GraphitiResponse<ResultPayload> {
     request_id: GraphitiRequestId,
     protocol_version: ProviderProtocolVersion,
     result: Result<ResultPayload, GraphitiErrorCode>,
+}
+
+impl<ResultPayload> fmt::Debug for GraphitiResponse<ResultPayload> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let (disposition, error) = match &self.result {
+            Ok(_) => ("success", None),
+            Err(error) => ("error", Some(error)),
+        };
+        formatter
+            .debug_struct("GraphitiResponse")
+            .field("request_id", &"<redacted>")
+            .field("protocol_version", &self.protocol_version)
+            .field("disposition", &disposition)
+            .field("error", &error)
+            .field("result_payload", &"<redacted>")
+            .finish()
+    }
 }
 
 impl<ResultPayload> GraphitiResponse<ResultPayload> {
@@ -252,10 +304,18 @@ impl<ResultPayload> GraphitiResponse<ResultPayload> {
     }
 }
 
-#[derive(Debug)]
 pub struct GraphitiConnection {
     request_prefix: String,
     next_request: AtomicU64,
+}
+
+impl fmt::Debug for GraphitiConnection {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("GraphitiConnection")
+            .field("request_prefix", &"<redacted>")
+            .finish_non_exhaustive()
+    }
 }
 
 impl GraphitiConnection {
@@ -313,8 +373,8 @@ mod tests {
     use rembrane_domain::WorkspaceId;
 
     use super::{
-        GraphitiConnection, GraphitiIdempotencyKey, GraphitiOperation, GraphitiPayload,
-        GraphitiResponse,
+        GraphitiConnection, GraphitiErrorCode, GraphitiIdempotencyKey, GraphitiOperation,
+        GraphitiPayload, GraphitiRequestId, GraphitiResponse,
     };
     use crate::ProviderError;
 
@@ -387,5 +447,56 @@ mod tests {
             connection.request(&workspace, Some(key()), Mutation),
             Err(ProviderError::Unavailable)
         );
+    }
+
+    #[test]
+    fn protocol_diagnostics_redact_routing_keys_namespaces_and_payloads() {
+        #[derive(Clone, Eq, PartialEq)]
+        struct PrivatePayload(&'static str);
+
+        impl GraphitiPayload for PrivatePayload {
+            type Result = &'static str;
+
+            const OPERATION: GraphitiOperation = GraphitiOperation::Neighbours;
+
+            fn validate(&self) -> Result<(), ProviderError> {
+                Ok(())
+            }
+        }
+
+        let connection = GraphitiConnection::new("private-prefix").expect("connection");
+        let request = connection
+            .request(
+                &WorkspaceId::new("private-workspace"),
+                Some(
+                    GraphitiIdempotencyKey::new("private.idempotency.key")
+                        .expect("idempotency key"),
+                ),
+                PrivatePayload("private request payload"),
+            )
+            .expect("request");
+        let response = GraphitiResponse::success(&request, "private response payload");
+        let error_response = GraphitiResponse::<&str>::error(&request, GraphitiErrorCode::Conflict);
+        let request_id =
+            GraphitiRequestId::new("private_request_0001").expect("request id should be valid");
+
+        let diagnostic =
+            format!("{connection:?} {request:?} {response:?} {error_response:?} {request_id:?}");
+
+        for private_value in [
+            "private-prefix",
+            "private-workspace",
+            "private.idempotency.key",
+            "private request payload",
+            "private response payload",
+            "private_request_0001",
+            request.namespace().as_str(),
+        ] {
+            assert!(!diagnostic.contains(private_value));
+        }
+        assert!(diagnostic.contains("operation: Neighbours"));
+        assert!(diagnostic.contains("idempotency_key_present: true"));
+        assert!(diagnostic.contains("disposition: \"success\""));
+        assert!(diagnostic.contains("error: Some(Conflict)"));
     }
 }

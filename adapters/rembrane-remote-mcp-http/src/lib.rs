@@ -39,10 +39,20 @@ const MCP_SESSION_HEADER_NAME: HeaderName = HeaderName::from_static("mcp-session
 const MCP_PROTOCOL_VERSION_HEADER_NAME: HeaderName =
     HeaderName::from_static("mcp-protocol-version");
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct RemoteMcpInvocation {
     method: String,
     tool_name: Option<String>,
+}
+
+impl fmt::Debug for RemoteMcpInvocation {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("RemoteMcpInvocation")
+            .field("method", &"<redacted>")
+            .field("tool_name_present", &self.tool_name.is_some())
+            .finish()
+    }
 }
 
 impl RemoteMcpInvocation {
@@ -1483,11 +1493,22 @@ impl fmt::Debug for RemoteMcpHttpRequest<'_> {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct RemoteMcpHttpRejection {
     pub status: u16,
     pub www_authenticate: Option<String>,
     pub retry_after_seconds: Option<u64>,
+}
+
+impl fmt::Debug for RemoteMcpHttpRejection {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("RemoteMcpHttpRejection")
+            .field("status", &self.status)
+            .field("www_authenticate_present", &self.www_authenticate.is_some())
+            .field("retry_after_seconds", &self.retry_after_seconds)
+            .finish()
+    }
 }
 
 impl IntoResponse for RemoteMcpHttpRejection {
@@ -4312,12 +4333,26 @@ mod tests {
             RemoteSessionId::new("private-session-id").expect("session identifier"),
         );
         let tenant_key = RemoteTenantServiceKey::from(&access);
+        let invocation = RemoteMcpInvocation {
+            method: "private/method".to_owned(),
+            tool_name: Some("private_tool_name".to_owned()),
+        };
+        let rejection = RemoteMcpHttpRejection {
+            status: 401,
+            www_authenticate: Some(
+                "Bearer resource_metadata=\"https://private-memory.example.test/metadata\""
+                    .to_owned(),
+            ),
+            retry_after_seconds: Some(10),
+        };
 
         for debug in [
             format!("{headers:?}"),
             format!("{event_stream:?}"),
             format!("{initialized:?}"),
             format!("{tenant_key:?}"),
+            format!("{invocation:?}"),
+            format!("{rejection:?}"),
         ] {
             for private in [
                 "private-workspace",
@@ -4325,10 +4360,14 @@ mod tests {
                 "private-agent.example.test",
                 "private-session-id",
                 "private SDK response",
+                "private/method",
+                "private_tool_name",
             ] {
                 assert!(!debug.contains(private));
             }
         }
+        assert!(format!("{invocation:?}").contains("tool_name_present: true"));
+        assert!(format!("{rejection:?}").contains("www_authenticate_present: true"));
     }
 
     #[test]

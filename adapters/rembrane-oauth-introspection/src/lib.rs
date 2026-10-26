@@ -7,7 +7,7 @@
 
 use std::collections::BTreeSet;
 use std::error::Error;
-use std::fmt::{Display, Formatter};
+use std::fmt::{self, Display, Formatter};
 
 use rembrane_application::{RemoteTokenVerificationError, RemoteTokenVerifier};
 pub use rembrane_contracts::{
@@ -34,7 +34,7 @@ pub trait IntrospectionTransport {
     -> Result<IntrospectionResponse, IntrospectionTransportError>;
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct IntrospectionResponse {
     pub active: bool,
     pub issuer: Option<String>,
@@ -47,8 +47,40 @@ pub struct IntrospectionResponse {
     pub not_before_epoch_seconds: Option<u64>,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+impl fmt::Debug for IntrospectionResponse {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("IntrospectionResponse")
+            .field("active", &self.active)
+            .field("issuer", &self.issuer.as_ref().map(|_| "<redacted>"))
+            .field("audience_count", &self.audience.len())
+            .field("subject", &self.subject.as_ref().map(|_| "<redacted>"))
+            .field("client_id", &self.client_id.as_ref().map(|_| "<redacted>"))
+            .field(
+                "workspace_id",
+                &self.workspace_id.as_ref().map(|_| "<redacted>"),
+            )
+            .field("scope", &self.scope.as_ref().map(|_| "<redacted>"))
+            .field(
+                "expires_at_epoch_seconds",
+                &self.expires_at_epoch_seconds.map(|_| "<redacted>"),
+            )
+            .field(
+                "not_before_epoch_seconds",
+                &self.not_before_epoch_seconds.map(|_| "<redacted>"),
+            )
+            .finish()
+    }
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
 pub struct IntrospectionTransportError;
+
+impl fmt::Debug for IntrospectionTransportError {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
+        formatter.write_str("IntrospectionTransportError")
+    }
+}
 
 impl Display for IntrospectionTransportError {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
@@ -295,5 +327,29 @@ mod tests {
         let mut control_scope = active_response();
         control_scope.scope = Some("rembrane:context:read\ninjected".to_owned());
         assert!(verify(control_scope).is_err());
+    }
+
+    #[test]
+    fn introspection_diagnostics_redact_identity_authority_scope_and_timeline() {
+        let response = active_response();
+
+        let diagnostic = format!("{response:?}");
+
+        for private_value in [
+            "identity.example.test",
+            "memory.example.test",
+            "principal_01",
+            "client_01",
+            "workspace_01",
+            "rembrane:context:read",
+            "2000",
+            "900",
+        ] {
+            assert!(!diagnostic.contains(private_value));
+        }
+        assert!(diagnostic.contains("active: true"));
+        assert!(diagnostic.contains("audience_count: 1"));
+        assert!(diagnostic.contains("issuer: Some(\"<redacted>\")"));
+        assert!(diagnostic.contains("scope: Some(\"<redacted>\")"));
     }
 }

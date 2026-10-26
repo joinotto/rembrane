@@ -1,11 +1,23 @@
+use std::fmt;
+
 use crate::{CandidateMemory, ProviderError};
 
 pub const CURRENT_PROVIDER_PROTOCOL: ProviderProtocolVersion = ProviderProtocolVersion::new(0, 1);
 
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ProviderProtocolVersion {
     pub major: u16,
     pub minor: u16,
+}
+
+impl fmt::Debug for ProviderProtocolVersion {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ProviderProtocolVersion")
+            .field("major", &self.major)
+            .field("minor", &self.minor)
+            .finish()
+    }
 }
 
 impl ProviderProtocolVersion {
@@ -33,14 +45,25 @@ pub enum Capability {
     GraphUpsert,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Eq, PartialEq)]
 pub struct ProviderLimits {
     pub maximum_batch_items: usize,
     pub maximum_content_bytes: usize,
     pub maximum_candidates: usize,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+impl fmt::Debug for ProviderLimits {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ProviderLimits")
+            .field("maximum_batch_items", &self.maximum_batch_items)
+            .field("maximum_content_bytes", &self.maximum_content_bytes)
+            .field("maximum_candidates", &self.maximum_candidates)
+            .finish()
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
 pub struct ProviderManifest {
     pub id: String,
     pub version: String,
@@ -48,6 +71,20 @@ pub struct ProviderManifest {
     pub capabilities: Vec<Capability>,
     pub plaintext_processing: bool,
     pub limits: ProviderLimits,
+}
+
+impl fmt::Debug for ProviderManifest {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ProviderManifest")
+            .field("id", &"<redacted>")
+            .field("version_bytes", &self.version.len())
+            .field("protocol_version", &self.protocol_version)
+            .field("capabilities", &self.capabilities)
+            .field("plaintext_processing", &self.plaintext_processing)
+            .field("limits", &self.limits)
+            .finish()
+    }
 }
 
 impl ProviderManifest {
@@ -140,11 +177,25 @@ impl ProviderManifest {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct ProviderPolicy {
     pub minimum_protocol_version: ProviderProtocolVersion,
     pub required_capabilities: Vec<Capability>,
     pub allow_plaintext_processing: bool,
+}
+
+impl fmt::Debug for ProviderPolicy {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ProviderPolicy")
+            .field("minimum_protocol_version", &self.minimum_protocol_version)
+            .field("required_capabilities", &self.required_capabilities)
+            .field(
+                "allow_plaintext_processing",
+                &self.allow_plaintext_processing,
+            )
+            .finish()
+    }
 }
 
 impl ProviderPolicy {
@@ -205,6 +256,29 @@ mod tests {
             vec![Capability::WorkspaceFilter]
         );
         assert!(!provider.supports_all(&[Capability::WorkspaceFilter]));
+    }
+
+    #[test]
+    fn manifest_diagnostics_redact_provider_identity_and_version() {
+        let provider = ProviderManifest {
+            id: "private.provider".to_owned(),
+            version: "private-version".to_owned(),
+            protocol_version: CURRENT_PROVIDER_PROTOCOL,
+            capabilities: vec![Capability::Search],
+            plaintext_processing: false,
+            limits: ProviderLimits {
+                maximum_batch_items: 10,
+                maximum_content_bytes: 1_024,
+                maximum_candidates: 5,
+            },
+        };
+
+        let diagnostic = format!("{provider:?}");
+
+        assert!(!diagnostic.contains("private.provider"));
+        assert!(!diagnostic.contains("private-version"));
+        assert!(diagnostic.contains("version_bytes: 15"));
+        assert!(diagnostic.contains("capabilities: [Search]"));
     }
 
     #[test]

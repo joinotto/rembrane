@@ -1,4 +1,7 @@
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::{
+    fmt,
+    sync::atomic::{AtomicU64, Ordering},
+};
 
 use crate::{ProviderError, ProviderProtocolVersion};
 
@@ -111,8 +114,14 @@ pub enum MemoryProviderOperation {
     SyncPush,
 }
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Eq, Ord, PartialEq, PartialOrd)]
 pub struct MemoryProviderRequestId(String);
+
+impl fmt::Debug for MemoryProviderRequestId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("MemoryProviderRequestId(<redacted>)")
+    }
+}
 
 impl MemoryProviderRequestId {
     /// Creates an opaque correlation identifier safe for logs and headers.
@@ -142,8 +151,14 @@ impl MemoryProviderRequestId {
     }
 }
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Eq, Ord, PartialEq, PartialOrd)]
 pub struct MemoryProviderIdempotencyKey(String);
+
+impl fmt::Debug for MemoryProviderIdempotencyKey {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("MemoryProviderIdempotencyKey(<redacted>)")
+    }
+}
 
 impl MemoryProviderIdempotencyKey {
     /// Creates a mutation idempotency key safe for protocol headers and logs.
@@ -173,12 +188,24 @@ impl MemoryProviderIdempotencyKey {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct MemoryProviderRequest<Payload> {
     request_id: MemoryProviderRequestId,
     protocol_version: ProviderProtocolVersion,
     operation: MemoryProviderOperation,
     payload: Payload,
+}
+
+impl<Payload> fmt::Debug for MemoryProviderRequest<Payload> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("MemoryProviderRequest")
+            .field("request_id", &"<redacted>")
+            .field("protocol_version", &self.protocol_version)
+            .field("operation", &self.operation)
+            .field("payload", &"<redacted>")
+            .finish()
+    }
 }
 
 impl<Payload: MemoryProviderPayload> MemoryProviderRequest<Payload> {
@@ -279,11 +306,20 @@ impl<Payload> MemoryProviderRequest<Payload> {
     }
 }
 
-#[derive(Debug)]
 pub struct MemoryProviderConnection {
     manifest: MemoryProviderManifest,
     request_prefix: String,
     next_request: AtomicU64,
+}
+
+impl fmt::Debug for MemoryProviderConnection {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("MemoryProviderConnection")
+            .field("manifest", &self.manifest)
+            .field("request_prefix", &"<redacted>")
+            .finish_non_exhaustive()
+    }
 }
 
 impl MemoryProviderConnection {
@@ -441,17 +477,40 @@ pub enum MemoryProviderErrorCode {
     Unavailable,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub enum MemoryProviderResponseBody<Payload> {
     Success(Payload),
     Error(MemoryProviderErrorCode),
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+impl<Payload> fmt::Debug for MemoryProviderResponseBody<Payload> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Success(_) => formatter
+                .debug_tuple("Success")
+                .field(&"<redacted>")
+                .finish(),
+            Self::Error(error) => formatter.debug_tuple("Error").field(error).finish(),
+        }
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
 pub struct MemoryProviderResponse<Payload> {
     request_id: MemoryProviderRequestId,
     protocol_version: ProviderProtocolVersion,
     body: MemoryProviderResponseBody<Payload>,
+}
+
+impl<Payload> fmt::Debug for MemoryProviderResponse<Payload> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("MemoryProviderResponse")
+            .field("request_id", &"<redacted>")
+            .field("protocol_version", &self.protocol_version)
+            .field("body", &self.body)
+            .finish()
+    }
 }
 
 impl<Payload> MemoryProviderResponse<Payload> {
@@ -567,7 +626,7 @@ pub enum MemoryProviderPrivacyMode {
     ProviderPlaintext,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Eq, PartialEq)]
 pub struct MemoryProviderLimits {
     pub maximum_context_items: usize,
     pub maximum_context_bytes: usize,
@@ -575,7 +634,19 @@ pub struct MemoryProviderLimits {
     pub maximum_sync_batch_items: usize,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+impl fmt::Debug for MemoryProviderLimits {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("MemoryProviderLimits")
+            .field("maximum_context_items", &self.maximum_context_items)
+            .field("maximum_context_bytes", &self.maximum_context_bytes)
+            .field("maximum_event_batch_items", &self.maximum_event_batch_items)
+            .field("maximum_sync_batch_items", &self.maximum_sync_batch_items)
+            .finish()
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
 pub struct MemoryProviderManifest {
     id: String,
     version: String,
@@ -587,13 +658,42 @@ pub struct MemoryProviderManifest {
     limits: MemoryProviderLimits,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+impl fmt::Debug for MemoryProviderManifest {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("MemoryProviderManifest")
+            .field("id", &"<redacted>")
+            .field("version_bytes", &self.version.len())
+            .field("protocol_version", &self.protocol_version)
+            .field("transports", &self.transports)
+            .field("capabilities", &self.capabilities)
+            .field("privacy_mode", &self.privacy_mode)
+            .field("supported_domain_count", &self.supported_domains.len())
+            .field("limits", &self.limits)
+            .finish()
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
 pub struct MemoryProviderPolicy {
     minimum_protocol_version: ProviderProtocolVersion,
     required_transport: MemoryProviderTransport,
     required_capabilities: Vec<MemoryProviderCapability>,
     allowed_privacy_modes: Vec<MemoryProviderPrivacyMode>,
     minimum_limits: MemoryProviderLimits,
+}
+
+impl fmt::Debug for MemoryProviderPolicy {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("MemoryProviderPolicy")
+            .field("minimum_protocol_version", &self.minimum_protocol_version)
+            .field("required_transport", &self.required_transport)
+            .field("required_capabilities", &self.required_capabilities)
+            .field("allowed_privacy_modes", &self.allowed_privacy_modes)
+            .field("minimum_limits", &self.minimum_limits)
+            .finish()
+    }
 }
 
 impl MemoryProviderPolicy {
@@ -864,10 +964,10 @@ mod tests {
     use super::{
         CURRENT_MEMORY_PROVIDER_PROTOCOL, MEMORY_PROVIDER_DISCOVERY_PATH, MemoryProviderCapability,
         MemoryProviderConnection, MemoryProviderErrorCode, MemoryProviderHttpMethod,
-        MemoryProviderLimits, MemoryProviderManifest, MemoryProviderOperation,
-        MemoryProviderPolicy, MemoryProviderPrivacyMode, MemoryProviderRequest,
-        MemoryProviderRequestId, MemoryProviderResponseBody, MemoryProviderScope,
-        MemoryProviderTransport,
+        MemoryProviderIdempotencyKey, MemoryProviderLimits, MemoryProviderManifest,
+        MemoryProviderOperation, MemoryProviderPolicy, MemoryProviderPrivacyMode,
+        MemoryProviderRequest, MemoryProviderRequestId, MemoryProviderResponseBody,
+        MemoryProviderScope, MemoryProviderTransport,
     };
     use crate::{
         MemoryProviderContextSelector, ProviderError, ProviderProtocolVersion,
@@ -880,6 +980,17 @@ mod tests {
     impl super::sealed::Sealed for TestPayload {}
 
     impl super::MemoryProviderPayload for TestPayload {
+        type Result = &'static str;
+
+        const OPERATION: MemoryProviderOperation = MemoryProviderOperation::ResolveContext;
+    }
+
+    #[derive(Clone, Eq, PartialEq)]
+    struct PrivatePayload(&'static str);
+
+    impl super::sealed::Sealed for PrivatePayload {}
+
+    impl super::MemoryProviderPayload for PrivatePayload {
         type Result = &'static str;
 
         const OPERATION: MemoryProviderOperation = MemoryProviderOperation::ResolveContext;
@@ -942,6 +1053,61 @@ mod tests {
             MemoryProviderPrivacyMode::EndToEndEncrypted
         );
         assert_eq!(manifest.supported_domains(), ["personal", "development"]);
+    }
+
+    #[test]
+    fn protocol_diagnostics_redact_correlation_provider_and_payload_material() {
+        let private_manifest = MemoryProviderManifest::new(
+            "private.provider".to_owned(),
+            "private-version".to_owned(),
+            CURRENT_MEMORY_PROVIDER_PROTOCOL,
+            vec![MemoryProviderTransport::Https],
+            vec![
+                MemoryProviderCapability::ResolveContext,
+                MemoryProviderCapability::ProposeMemory,
+            ],
+            MemoryProviderPrivacyMode::EndToEndEncrypted,
+            vec!["private-domain".to_owned()],
+            MemoryProviderLimits {
+                maximum_context_items: 20,
+                maximum_context_bytes: 65_536,
+                maximum_event_batch_items: 50,
+                maximum_sync_batch_items: 100,
+            },
+        )
+        .expect("manifest should validate");
+        let request_id = MemoryProviderRequestId::new("private_request_0001").expect("request id");
+        let request = MemoryProviderRequest::new(
+            request_id.clone(),
+            CURRENT_MEMORY_PROVIDER_PROTOCOL,
+            PrivatePayload("private request payload"),
+        )
+        .expect("request");
+        let response = request.success("private response payload");
+        let connection =
+            MemoryProviderConnection::connect(private_manifest, &policy(), "private-prefix")
+                .expect("connection");
+        let idempotency_key =
+            MemoryProviderIdempotencyKey::new("private_idempotency_01").expect("idempotency key");
+
+        let diagnostic =
+            format!("{request_id:?} {idempotency_key:?} {request:?} {response:?} {connection:?}");
+
+        for private_value in [
+            "private_request_0001",
+            "private_idempotency_01",
+            "private request payload",
+            "private response payload",
+            "private.provider",
+            "private-version",
+            "private-domain",
+            "private-prefix",
+        ] {
+            assert!(!diagnostic.contains(private_value));
+        }
+        assert!(diagnostic.contains("operation: ResolveContext"));
+        assert!(diagnostic.contains("Success(\"<redacted>\")"));
+        assert!(diagnostic.contains("supported_domain_count: 1"));
     }
 
     #[test]

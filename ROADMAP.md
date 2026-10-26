@@ -17,6 +17,18 @@ This roadmap describes sequencing, not release dates.
 - [x] Persist local user, workspace, and owner membership in SQLite.
 - [x] Expose local user and personal workspace initialization through the CLI.
 - [x] Model confirmed preferences with provenance.
+  - [x] Redact semantic-provider projections, queries, candidate identities,
+    and plaintext from diagnostics while retaining safe structural metadata.
+  - [x] Redact knowledge-graph provider tenant, resource, and temporal query
+    identities from diagnostics while retaining safe structural metadata.
+  - [x] Redact Graphiti routing, correlation, namespace, and payload material
+    from protocol diagnostics while retaining safe operation metadata.
+  - [x] Redact memory-provider routing, correlation, discovery identity, and
+    generic payload material from protocol diagnostics.
+  - [x] Redact arbitrary provider-error details and legacy semantic-provider
+    discovery identities from debug diagnostics.
+    - [x] Add a static regression gate requiring reviewed redacted debug
+      implementations for production provider SDK structs and generic errors.
   - [x] Redact canonical evidence identities from standalone provenance
     diagnostics while retaining the closed source class.
   - [x] Redact every canonical identifier newtype from debug output without
@@ -66,6 +78,8 @@ This roadmap describes sequencing, not release dates.
       environment and secret-file implementation.
       - [x] Resolve validated provider credential lists atomically from the
         caller's selected local or external resolver.
+      - [x] Require explicitly reviewed diagnostics for local secret resolver
+        implementations and enforce the boundary statically.
       - [x] Bind protected-file validation and bounded reads to one opened
         file identity, rejecting path replacement during resolution.
   - [x] Bound and deduplicate each provider profile's credential-reference
@@ -373,6 +387,8 @@ This roadmap describes sequencing, not release dates.
 - [x] Require a representable strict successor for every optimistic record
   version and canonical event sequence across services and storage adapters.
 - [x] Rank canonical context by deterministic local query relevance.
+  - [x] Restrict native semantic, native graph, and volatile store diagnostics
+    to collection counts and enforce the invariant statically.
 - [x] Enforce administrator-configured connection read-scope allowlists.
 - [x] Bind write permissions to exact administrator-configured scopes.
 - [x] Create, correct, and delete authorized preferences through local MCP.
@@ -409,6 +425,8 @@ This roadmap describes sequencing, not release dates.
     - [x] Validate and report that same complete profile through CLI privacy
       diagnostics without resolving or exposing its client credential.
   - [x] Add a fail-closed verified-token claims contract.
+    - [x] Redact all identity, authority, scope, and lifetime claims from
+      introspection diagnostics and enforce the boundary statically.
     - [x] Bound and reject ambiguous issuer, resource, audience, subject,
       client, and workspace claims in the transport-neutral verifier contract.
       - [x] Reject whitespace-bearing identity and authority claims before
@@ -441,6 +459,8 @@ This roadmap describes sequencing, not release dates.
       compensation errors at the remote-MCP adapter boundary.
     - [x] Redact validated transport metadata, initialized SDK output, and
       tenant-service cache identities from remote-MCP diagnostics.
+      - [x] Redact invocation methods, tool names, and bearer challenges and
+        statically reject derived debug output on remote-MCP HTTP structs.
     - [x] Reject oversized bearer credentials before signature verification or
       authenticated introspection work.
     - [x] Authenticate initialize, discovery, event-stream, and session-delete
@@ -801,6 +821,8 @@ This roadmap describes sequencing, not release dates.
         tenant-transaction display and debug output.
       - [x] Redact text and byte content from PostgreSQL parameter diagnostics
         before a concrete driver can log the adapter boundary.
+        - [x] Statically reject derived debug output on production PostgreSQL
+          adapter structs to preserve reviewed diagnostic boundaries.
       - [x] Resolve and validate the PostgreSQL URL through any deployment
         secret resolver into non-cloneable zeroizing adapter configuration.
         - [x] Reject missing, duplicate, or contradictory `sslmode` values
@@ -889,6 +911,8 @@ This roadmap describes sequencing, not release dates.
       - [x] Implement the in-memory transaction adapter.
       - [x] Implement the SQLite transaction adapter.
     - [x] Add Graphiti projection adapter.
+      - [x] Redact Graphiti mapping content, resource identities, timelines,
+        and deletion targets and enforce the invariant statically.
       - [x] Define a versioned, bounded sidecar protocol with workspace-derived
         namespaces, mutation idempotency, and response correlation.
       - [x] Implement the transport-injected Graphiti graph provider.
@@ -1346,6 +1370,8 @@ This roadmap describes sequencing, not release dates.
     - [x] Add cursor-bound bounded sync pull/push payloads with server-assigned
       ordering, optimistic atomic mutations, ciphertext-compatible content
       digests, and no caller-controlled tenant identity.
+      - [x] Redact provider sync cursors, payloads, digests, idempotency keys,
+        and resource, change, and mutation identities from diagnostics.
   - [x] Publish a serialization schema and HTTP binding.
     - [x] Publish strict canonical JSON primitives, discovery manifest, closed
       enums, selectors, and transport-neutral envelope schemas.
@@ -1723,6 +1749,8 @@ This roadmap describes sequencing, not release dates.
   - [x] Add a transport-injectable Mem0 OSS semantic mapping layer with
     pseudonymous workspace partitions, exact canonical ID/version metadata,
     replacement, bounded search, and version-aware deletion semantics.
+    - [x] Redact Mem0 provider IDs, canonical identities, and keyed binding
+      material from diagnostics and enforce the invariant statically.
     - [x] Add an authenticated, redirect-free, proxy-free, bounded HTTP
       transport for Mem0 OSS exact add, list, search, and deletion operations.
       - [x] Bound serialized requests and preserve zeroizing body ownership
@@ -1747,6 +1775,8 @@ This roadmap describes sequencing, not release dates.
   - [x] Add a Supermemory v5 semantic adapter with HMAC-derived namespaces,
     deterministic document identity, processing convergence, exact deletion,
     and shared disposable-provider conformance.
+    - [x] Redact Supermemory provider IDs, canonical identities, and keyed
+      binding material from diagnostics and enforce the invariant statically.
     - [x] Define the v5 API mapping, asynchronous replacement contract,
       plaintext boundary, and compatibility evidence requirements.
     - [x] Add a typed bring-your-own Supermemory connection profile using

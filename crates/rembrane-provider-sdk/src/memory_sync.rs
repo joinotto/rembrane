@@ -1,3 +1,5 @@
+use std::fmt;
+
 use crate::{MemoryProviderIdempotencyKey, MemoryProviderLimits, ProviderError};
 
 pub const MAX_SYNC_CURSOR_BYTES: usize = 512;
@@ -5,8 +7,17 @@ pub const MAX_SYNC_RESOURCE_ID_BYTES: usize = 255;
 pub const MAX_SYNC_PAYLOAD_BYTES: usize = 262_144;
 pub const MAX_SYNC_BATCH_BYTES: usize = 4_194_304;
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Eq, Ord, PartialEq, PartialOrd)]
 pub struct MemoryProviderSyncCursor(String);
+
+impl fmt::Debug for MemoryProviderSyncCursor {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_tuple("MemoryProviderSyncCursor")
+            .field(&"<redacted>")
+            .finish()
+    }
+}
 
 impl MemoryProviderSyncCursor {
     /// Creates an opaque server-issued synchronization cursor.
@@ -51,10 +62,20 @@ pub enum MemoryProviderSyncOperation {
     Delete,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct SyncPullPayload {
     cursor: Option<MemoryProviderSyncCursor>,
     maximum_items: usize,
+}
+
+impl fmt::Debug for SyncPullPayload {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("SyncPullPayload")
+            .field("cursor_present", &self.cursor.is_some())
+            .field("maximum_items", &self.maximum_items)
+            .finish()
+    }
 }
 
 impl SyncPullPayload {
@@ -96,7 +117,7 @@ impl SyncPullPayload {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct MemoryProviderPulledChange {
     change_id: String,
     sequence: u64,
@@ -106,6 +127,25 @@ pub struct MemoryProviderPulledChange {
     operation: MemoryProviderSyncOperation,
     payload: Option<String>,
     payload_sha256: Option<String>,
+}
+
+impl fmt::Debug for MemoryProviderPulledChange {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("MemoryProviderPulledChange")
+            .field("change_id", &"<redacted>")
+            .field("sequence", &self.sequence)
+            .field("resource", &self.resource)
+            .field("resource_id", &"<redacted>")
+            .field("version", &self.version)
+            .field("operation", &self.operation)
+            .field(
+                "payload_bytes",
+                &self.payload.as_deref().map_or(0, str::len),
+            )
+            .field("payload_sha256_present", &self.payload_sha256.is_some())
+            .finish()
+    }
 }
 
 impl MemoryProviderPulledChange {
@@ -194,11 +234,26 @@ impl MemoryProviderPulledChange {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct SyncPullResult {
     changes: Vec<MemoryProviderPulledChange>,
     next_cursor: MemoryProviderSyncCursor,
     has_more: bool,
+}
+
+impl fmt::Debug for SyncPullResult {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("SyncPullResult")
+            .field("change_count", &self.changes.len())
+            .field(
+                "payload_bytes",
+                &total_payload_bytes(self.changes.iter().map(|change| change.payload.as_deref())),
+            )
+            .field("next_cursor", &"<redacted>")
+            .field("has_more", &self.has_more)
+            .finish()
+    }
 }
 
 impl SyncPullResult {
@@ -263,7 +318,7 @@ impl SyncPullResult {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct MemoryProviderPushMutation {
     mutation_id: String,
     resource: MemoryProviderSyncResource,
@@ -272,6 +327,24 @@ pub struct MemoryProviderPushMutation {
     operation: MemoryProviderSyncOperation,
     payload: Option<String>,
     payload_sha256: Option<String>,
+}
+
+impl fmt::Debug for MemoryProviderPushMutation {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("MemoryProviderPushMutation")
+            .field("mutation_id", &"<redacted>")
+            .field("resource", &self.resource)
+            .field("resource_id", &"<redacted>")
+            .field("expected_version", &self.expected_version)
+            .field("operation", &self.operation)
+            .field(
+                "payload_bytes",
+                &self.payload.as_deref().map_or(0, str::len),
+            )
+            .field("payload_sha256_present", &self.payload_sha256.is_some())
+            .finish()
+    }
 }
 
 impl MemoryProviderPushMutation {
@@ -353,11 +426,30 @@ impl MemoryProviderPushMutation {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct SyncPushPayload {
     idempotency_key: MemoryProviderIdempotencyKey,
     base_cursor: MemoryProviderSyncCursor,
     mutations: Vec<MemoryProviderPushMutation>,
+}
+
+impl fmt::Debug for SyncPushPayload {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("SyncPushPayload")
+            .field("idempotency_key", &"<redacted>")
+            .field("base_cursor", &"<redacted>")
+            .field("mutation_count", &self.mutations.len())
+            .field(
+                "payload_bytes",
+                &total_payload_bytes(
+                    self.mutations
+                        .iter()
+                        .map(|mutation| mutation.payload.as_deref()),
+                ),
+            )
+            .finish()
+    }
 }
 
 impl SyncPushPayload {
@@ -418,11 +510,22 @@ impl SyncPushPayload {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct MemoryProviderAcceptedMutation {
     mutation_id: String,
     version: u64,
     sequence: u64,
+}
+
+impl fmt::Debug for MemoryProviderAcceptedMutation {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("MemoryProviderAcceptedMutation")
+            .field("mutation_id", &"<redacted>")
+            .field("version", &self.version)
+            .field("sequence", &self.sequence)
+            .finish()
+    }
 }
 
 impl MemoryProviderAcceptedMutation {
@@ -467,10 +570,20 @@ impl MemoryProviderAcceptedMutation {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct SyncPushResult {
     accepted: Vec<MemoryProviderAcceptedMutation>,
     next_cursor: MemoryProviderSyncCursor,
+}
+
+impl fmt::Debug for SyncPushResult {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("SyncPushResult")
+            .field("accepted_count", &self.accepted.len())
+            .field("next_cursor", &"<redacted>")
+            .finish()
+    }
 }
 
 impl SyncPushResult {
@@ -742,5 +855,88 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn sync_diagnostics_redact_cursors_payloads_digests_and_identities() {
+        let private_cursor = MemoryProviderSyncCursor::new("private_cursor_0123456789")
+            .expect("cursor should be valid");
+        let pull_request = SyncPullPayload::new(Some(private_cursor.clone()), 2, limits(2))
+            .expect("pull request should be valid");
+        let change = MemoryProviderPulledChange::new(
+            "private_change",
+            11,
+            MemoryProviderSyncResource::Memory,
+            "private_resource",
+            4,
+            MemoryProviderSyncOperation::Upsert,
+            Some("private_encrypted_payload".to_owned()),
+            Some(DIGEST.to_owned()),
+        )
+        .expect("change should be valid");
+        let pull_result = SyncPullResult::new(
+            vec![change.clone()],
+            MemoryProviderSyncCursor::new("private_next_cursor_012345")
+                .expect("cursor should be valid"),
+            false,
+            &pull_request,
+        )
+        .expect("pull result should be valid");
+        let mutation = MemoryProviderPushMutation::new(
+            "private_mutation",
+            MemoryProviderSyncResource::Memory,
+            "private_resource",
+            Some(4),
+            MemoryProviderSyncOperation::Upsert,
+            Some("private_encrypted_payload".to_owned()),
+            Some(DIGEST.to_owned()),
+        )
+        .expect("mutation should be valid");
+        let push_request = SyncPushPayload::new(
+            MemoryProviderIdempotencyKey::new("private_sync_push_key")
+                .expect("idempotency key should be valid"),
+            private_cursor.clone(),
+            vec![mutation.clone()],
+            limits(2),
+        )
+        .expect("push request should be valid");
+        let accepted = MemoryProviderAcceptedMutation::new("private_mutation", 5, 12)
+            .expect("accepted mutation should be valid");
+        let push_result = SyncPushResult::new(
+            vec![accepted.clone()],
+            MemoryProviderSyncCursor::new("private_final_cursor_0123")
+                .expect("cursor should be valid"),
+            &push_request,
+        )
+        .expect("push result should be valid");
+
+        let diagnostic = format!(
+            "{private_cursor:?} {pull_request:?} {change:?} {pull_result:?} \
+             {mutation:?} {push_request:?} {accepted:?} {push_result:?}"
+        );
+
+        for private_value in [
+            "private_cursor_0123456789",
+            "private_change",
+            "private_resource",
+            "private_encrypted_payload",
+            DIGEST,
+            "private_next_cursor_012345",
+            "private_mutation",
+            "private_sync_push_key",
+            "private_final_cursor_0123",
+        ] {
+            assert!(!diagnostic.contains(private_value));
+        }
+        assert!(diagnostic.contains("cursor_present: true"));
+        assert!(diagnostic.contains("sequence: 11"));
+        assert!(diagnostic.contains("resource: Memory"));
+        assert!(diagnostic.contains("version: 4"));
+        assert!(diagnostic.contains("operation: Upsert"));
+        assert!(diagnostic.contains("payload_bytes: 25"));
+        assert!(diagnostic.contains("payload_sha256_present: true"));
+        assert!(diagnostic.contains("change_count: 1"));
+        assert!(diagnostic.contains("mutation_count: 1"));
+        assert!(diagnostic.contains("accepted_count: 1"));
     }
 }

@@ -4,6 +4,7 @@
 //! Rembrane authorization or canonical identity to Mem0.
 
 use std::collections::BTreeMap;
+use std::fmt;
 use std::io::Read;
 use std::time::Duration;
 
@@ -29,13 +30,26 @@ const MAXIMUM_PROVIDER_ID_BYTES: usize = 512;
 const MAXIMUM_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
 const MEM0_API_KEY_HEADER: HeaderName = HeaderName::from_static("x-api-key");
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct Mem0Record {
     provider_id: String,
     canonical_memory_id: MemoryId,
     canonical_version: u64,
     canonical_binding: String,
     score_millionths: Option<u32>,
+}
+
+impl fmt::Debug for Mem0Record {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("Mem0Record")
+            .field("provider_id", &"<redacted>")
+            .field("canonical_memory_id", &"<redacted>")
+            .field("canonical_version", &self.canonical_version)
+            .field("canonical_binding", &"<redacted>")
+            .field("score_millionths", &self.score_millionths)
+            .finish()
+    }
 }
 
 impl Mem0Record {
@@ -1034,5 +1048,25 @@ mod tests {
         assert!(validate_api_key("test-key-123456").is_ok());
         assert!(validate_api_key("short").is_err());
         assert!(validate_api_key("key\ninjected").is_err());
+    }
+
+    #[test]
+    fn record_diagnostics_redact_provider_canonical_and_binding_identities() {
+        let record = Mem0Record::new(
+            "private-provider-id",
+            MemoryId::new("private-memory-id"),
+            7,
+            "a".repeat(64),
+            Some(875_000),
+        )
+        .expect("record should validate");
+
+        let diagnostic = format!("{record:?}");
+
+        for private_value in ["private-provider-id", "private-memory-id", &"a".repeat(64)] {
+            assert!(!diagnostic.contains(private_value));
+        }
+        assert!(diagnostic.contains("canonical_version: 7"));
+        assert!(diagnostic.contains("score_millionths: Some(875000)"));
     }
 }

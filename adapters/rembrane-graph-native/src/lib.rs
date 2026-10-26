@@ -3,6 +3,8 @@
 //! This is the inspectable local baseline and conformance reference for
 //! Graphiti and future graph adapters.
 
+use std::fmt;
+
 use rembrane_domain::{
     KnowledgeEdge, KnowledgeEdgeId, KnowledgeNode, KnowledgeNodeId, WorkspaceId,
 };
@@ -14,10 +16,20 @@ use rembrane_provider_sdk::{
 
 const MAXIMUM_CANDIDATES: usize = 100;
 
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct NativeGraphProvider {
     nodes: Vec<KnowledgeNode>,
     edges: Vec<KnowledgeEdge>,
+}
+
+impl fmt::Debug for NativeGraphProvider {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("NativeGraphProvider")
+            .field("nodes", &self.nodes.len())
+            .field("edges", &self.edges.len())
+            .finish()
+    }
 }
 
 impl NativeGraphProvider {
@@ -185,5 +197,14 @@ mod tests {
     fn passes_shared_graph_provider_conformance() {
         verify_knowledge_graph_provider(&mut NativeGraphProvider::new(), "native")
             .expect("native graph provider should conform");
+    }
+
+    #[test]
+    fn diagnostics_expose_only_graph_collection_counts() {
+        let provider = NativeGraphProvider::new();
+
+        let diagnostic = format!("{provider:?}");
+
+        assert_eq!(diagnostic, "NativeGraphProvider { nodes: 0, edges: 0 }");
     }
 }

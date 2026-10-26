@@ -3,6 +3,8 @@
 //! Rembrane derives the provider namespace, operation, and idempotency key.
 //! The transport receives no authority to select another workspace.
 
+use std::fmt;
+
 use rembrane_domain::{
     KnowledgeEdge, KnowledgeEdgeId, KnowledgeNode, KnowledgeNodeId, KnowledgeNodeKind, WorkspaceId,
 };
@@ -21,7 +23,7 @@ const REQUIRED_CAPABILITIES: &[Capability] = &[
     Capability::VersionedRecords,
 ];
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct GraphitiNode {
     pub node_id: String,
     pub kind: &'static str,
@@ -31,6 +33,28 @@ pub struct GraphitiNode {
     pub valid_until_epoch_seconds: Option<u64>,
     pub recorded_at_epoch_seconds: u64,
     pub version: u64,
+}
+
+impl fmt::Debug for GraphitiNode {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("GraphitiNode")
+            .field("node_id", &"<redacted>")
+            .field("kind", &self.kind)
+            .field("label_bytes", &self.label.len())
+            .field("alias_count", &self.aliases.len())
+            .field("valid_from_epoch_seconds", &"<redacted>")
+            .field(
+                "valid_until_epoch_seconds",
+                &self
+                    .valid_until_epoch_seconds
+                    .as_ref()
+                    .map(|_| "<redacted>"),
+            )
+            .field("recorded_at_epoch_seconds", &"<redacted>")
+            .field("version", &self.version)
+            .finish()
+    }
 }
 
 impl GraphitiPayload for GraphitiNode {
@@ -53,7 +77,7 @@ impl GraphitiPayload for GraphitiNode {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct GraphitiEdge {
     pub edge_id: String,
     pub source_id: String,
@@ -64,6 +88,32 @@ pub struct GraphitiEdge {
     pub recorded_at_epoch_seconds: u64,
     pub version: u64,
     pub supersedes_edge_id: Option<String>,
+}
+
+impl fmt::Debug for GraphitiEdge {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("GraphitiEdge")
+            .field("edge_id", &"<redacted>")
+            .field("source_id", &"<redacted>")
+            .field("target_id", &"<redacted>")
+            .field("relation_bytes", &self.relation.len())
+            .field("valid_from_epoch_seconds", &"<redacted>")
+            .field(
+                "valid_until_epoch_seconds",
+                &self
+                    .valid_until_epoch_seconds
+                    .as_ref()
+                    .map(|_| "<redacted>"),
+            )
+            .field("recorded_at_epoch_seconds", &"<redacted>")
+            .field("version", &self.version)
+            .field(
+                "supersedes_edge_id_present",
+                &self.supersedes_edge_id.is_some(),
+            )
+            .finish()
+    }
 }
 
 impl GraphitiPayload for GraphitiEdge {
@@ -89,12 +139,24 @@ impl GraphitiPayload for GraphitiEdge {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct GraphitiNeighbourLookup {
     pub node_id: String,
     pub direction: GraphDirection,
     pub valid_at_epoch_seconds: u64,
     pub maximum_candidates: usize,
+}
+
+impl fmt::Debug for GraphitiNeighbourLookup {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("GraphitiNeighbourLookup")
+            .field("node_id", &"<redacted>")
+            .field("direction", &self.direction)
+            .field("valid_at_epoch_seconds", &"<redacted>")
+            .field("maximum_candidates", &self.maximum_candidates)
+            .finish()
+    }
 }
 
 impl GraphitiPayload for GraphitiNeighbourLookup {
@@ -115,10 +177,20 @@ impl GraphitiPayload for GraphitiNeighbourLookup {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct GraphitiNodeDeletion {
     pub node_id: String,
     pub through_version: u64,
+}
+
+impl fmt::Debug for GraphitiNodeDeletion {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("GraphitiNodeDeletion")
+            .field("node_id", &"<redacted>")
+            .field("through_version", &self.through_version)
+            .finish()
+    }
 }
 
 impl GraphitiPayload for GraphitiNodeDeletion {
@@ -131,10 +203,20 @@ impl GraphitiPayload for GraphitiNodeDeletion {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct GraphitiEdgeDeletion {
     pub edge_id: String,
     pub through_version: u64,
+}
+
+impl fmt::Debug for GraphitiEdgeDeletion {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("GraphitiEdgeDeletion")
+            .field("edge_id", &"<redacted>")
+            .field("through_version", &self.through_version)
+            .finish()
+    }
 }
 
 impl GraphitiPayload for GraphitiEdgeDeletion {
@@ -588,5 +670,69 @@ mod tests {
         assert!(key.as_str().starts_with("rembrane.node."));
         assert!(!key.as_str().contains(':'));
         assert!(!key.as_str().contains("日本語"));
+    }
+
+    #[test]
+    fn graphiti_mapping_diagnostics_redact_content_identity_and_timelines() {
+        let node = GraphitiNode {
+            node_id: "private-node".to_owned(),
+            kind: "concept",
+            label: "private node label".to_owned(),
+            aliases: vec!["private alias".to_owned()],
+            valid_from_epoch_seconds: 1_900_000_001,
+            valid_until_epoch_seconds: Some(1_900_000_100),
+            recorded_at_epoch_seconds: 1_900_000_002,
+            version: 7,
+        };
+        let edge = GraphitiEdge {
+            edge_id: "private-edge".to_owned(),
+            source_id: "private-source".to_owned(),
+            target_id: "private-target".to_owned(),
+            relation: "private relation".to_owned(),
+            valid_from_epoch_seconds: 1_900_000_003,
+            valid_until_epoch_seconds: None,
+            recorded_at_epoch_seconds: 1_900_000_004,
+            version: 5,
+            supersedes_edge_id: Some("private-superseded-edge".to_owned()),
+        };
+        let lookup = GraphitiNeighbourLookup {
+            node_id: "private-lookup-node".to_owned(),
+            direction: GraphDirection::Both,
+            valid_at_epoch_seconds: 1_900_000_005,
+            maximum_candidates: 20,
+        };
+        let node_deletion = GraphitiNodeDeletion {
+            node_id: "private-delete-node".to_owned(),
+            through_version: 6,
+        };
+        let edge_deletion = GraphitiEdgeDeletion {
+            edge_id: "private-delete-edge".to_owned(),
+            through_version: 4,
+        };
+
+        let diagnostic =
+            format!("{node:?} {edge:?} {lookup:?} {node_deletion:?} {edge_deletion:?}");
+
+        for private_value in [
+            "private-node",
+            "private node label",
+            "private alias",
+            "private-edge",
+            "private-source",
+            "private-target",
+            "private relation",
+            "private-superseded-edge",
+            "private-lookup-node",
+            "private-delete-node",
+            "private-delete-edge",
+            "1900000",
+        ] {
+            assert!(!diagnostic.contains(private_value));
+        }
+        assert!(diagnostic.contains("label_bytes: 18"));
+        assert!(diagnostic.contains("alias_count: 1"));
+        assert!(diagnostic.contains("relation_bytes: 16"));
+        assert!(diagnostic.contains("direction: Both"));
+        assert!(diagnostic.contains("maximum_candidates: 20"));
     }
 }

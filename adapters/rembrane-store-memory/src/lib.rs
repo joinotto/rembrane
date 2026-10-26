@@ -1,5 +1,7 @@
 //! Volatile reference adapter used by tests, examples, and local prototypes.
 
+use std::fmt;
+
 use rembrane_application::{
     AdministrativeAuditRepository, ApplicationError, BookingResearchMutationRepository,
     BookingResearchRepository, CanonicalGraphMutationRepository, CanonicalMutationRepository,
@@ -28,7 +30,7 @@ use rembrane_domain::{
     WorkspaceRole,
 };
 
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct InMemoryStore {
     principals: Vec<Principal>,
     workspaces: Vec<Workspace>,
@@ -54,6 +56,38 @@ pub struct InMemoryStore {
     administrative_audit: Vec<AdministrativeAuditEvent>,
     retention_policies: Vec<WorkspaceRetentionPolicy>,
     legal_holds: Vec<WorkspaceLegalHold>,
+}
+
+impl fmt::Debug for InMemoryStore {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("InMemoryStore")
+            .field("principals", &self.principals.len())
+            .field("workspaces", &self.workspaces.len())
+            .field("memories", &self.memories.len())
+            .field("disclosures", &self.disclosures.len())
+            .field("checkpoint_disclosures", &self.checkpoint_disclosures.len())
+            .field("travel_disclosures", &self.travel_disclosures.len())
+            .field("graph_disclosures", &self.graph_disclosures.len())
+            .field("events", &self.events.len())
+            .field("checkpoints", &self.checkpoints.len())
+            .field("invitations", &self.invitations.len())
+            .field("member_scope_grants", &self.member_scope_grants.len())
+            .field("share_proposals", &self.share_proposals.len())
+            .field("memberships", &self.memberships.len())
+            .field("projections", &self.projections.len())
+            .field("graph_projections", &self.graph_projections.len())
+            .field("trips", &self.trips.len())
+            .field("booking_research", &self.booking_research.len())
+            .field("knowledge_nodes", &self.knowledge_nodes.len())
+            .field("knowledge_edges", &self.knowledge_edges.len())
+            .field("key_rotations", &self.key_rotations.len())
+            .field("key_rotation_receipts", &self.key_rotation_receipts.len())
+            .field("administrative_audit", &self.administrative_audit.len())
+            .field("retention_policies", &self.retention_policies.len())
+            .field("legal_holds", &self.legal_holds.len())
+            .finish()
+    }
 }
 
 impl RetentionRepository for InMemoryStore {

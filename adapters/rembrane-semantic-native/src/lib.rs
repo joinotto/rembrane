@@ -4,7 +4,7 @@
 //! inspectable control for provider benchmarks and local prototypes; it is not
 //! presented as state-of-the-art semantic retrieval.
 
-use std::collections::BTreeSet;
+use std::{collections::BTreeSet, fmt};
 
 use rembrane_domain::{MemoryId, WorkspaceId};
 use rembrane_provider_sdk::{
@@ -15,9 +15,18 @@ use rembrane_provider_sdk::{
 const MAXIMUM_CONTENT_BYTES: usize = 262_144;
 const MAXIMUM_CANDIDATES: usize = 1_000;
 
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct NativeSemanticProvider {
     projections: Vec<AuthorizedMemoryProjection>,
+}
+
+impl fmt::Debug for NativeSemanticProvider {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("NativeSemanticProvider")
+            .field("projections", &self.projections.len())
+            .finish()
+    }
 }
 
 impl NativeSemanticProvider {
@@ -245,5 +254,29 @@ mod tests {
             .expect("search should succeed");
 
         assert_eq!(results.len(), 0);
+    }
+
+    #[test]
+    fn diagnostics_expose_only_projection_count() {
+        let mut provider = NativeSemanticProvider::new();
+        provider
+            .index(projection(
+                "private_workspace",
+                "private_memory",
+                1,
+                "private memory content",
+            ))
+            .expect("projection should index");
+
+        let diagnostic = format!("{provider:?}");
+
+        for private_value in [
+            "private_workspace",
+            "private_memory",
+            "private memory content",
+        ] {
+            assert!(!diagnostic.contains(private_value));
+        }
+        assert!(diagnostic.contains("projections: 1"));
     }
 }

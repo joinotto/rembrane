@@ -1,7 +1,7 @@
 //! Local secret resolution without embedding credential values in configuration.
 
 use std::error::Error;
-use std::fmt::{Display, Formatter};
+use std::fmt::{self, Display, Formatter};
 use std::fs::{self, File, Metadata};
 use std::io::Read as _;
 
@@ -127,8 +127,14 @@ impl Display for SecretResolutionError {
 
 impl Error for SecretResolutionError {}
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Default)]
 pub struct LocalSecretResolver;
+
+impl fmt::Debug for LocalSecretResolver {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
+        formatter.write_str("LocalSecretResolver")
+    }
+}
 
 impl SecretResolver for LocalSecretResolver {
     fn resolve(
@@ -295,6 +301,11 @@ mod tests {
         SecretResolutionError, SecretResolver, ensure_same_file, resolve_postgres_connection,
         resolve_provider_credentials,
     };
+
+    #[test]
+    fn local_resolver_debug_is_structural_only() {
+        assert_eq!(format!("{LocalSecretResolver:?}"), "LocalSecretResolver");
+    }
 
     #[test]
     fn resolves_existing_environment_without_copying_it_into_configuration() {

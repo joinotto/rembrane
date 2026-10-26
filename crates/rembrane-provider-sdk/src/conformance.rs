@@ -21,12 +21,24 @@ pub const SEMANTIC_PROVIDER_CONFORMANCE_CASES: [&str; 6] = [
     "exact-delete.propagates",
 ];
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct SemanticProviderConformanceReport {
     provider_id: String,
     provider_version: String,
     protocol_version: ProviderProtocolVersion,
     namespace: String,
+}
+
+impl fmt::Debug for SemanticProviderConformanceReport {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("SemanticProviderConformanceReport")
+            .field("provider_id", &"<redacted>")
+            .field("provider_version_bytes", &self.provider_version.len())
+            .field("protocol_version", &self.protocol_version)
+            .field("namespace", &"<redacted>")
+            .finish()
+    }
 }
 
 impl SemanticProviderConformanceReport {
@@ -56,11 +68,21 @@ impl SemanticProviderConformanceReport {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub enum ConformanceFailure {
     Behavior(String),
     InvalidFixture,
     Provider(ProviderError),
+}
+
+impl fmt::Debug for ConformanceFailure {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Behavior(_) => formatter.write_str("Behavior(<redacted>)"),
+            Self::InvalidFixture => formatter.write_str("InvalidFixture"),
+            Self::Provider(error) => formatter.debug_tuple("Provider").field(error).finish(),
+        }
+    }
 }
 
 impl Display for ConformanceFailure {
@@ -311,7 +333,7 @@ pub fn verify_semantic_provider(
 
 #[cfg(test)]
 mod tests {
-    use super::{ConformanceFailure, verify_semantic_provider};
+    use super::{ConformanceFailure, SemanticProviderConformanceReport, verify_semantic_provider};
     use crate::{
         AuthorizedMemoryProjection, CURRENT_PROVIDER_PROTOCOL, CandidateMemory, Capability,
         ProviderError, ProviderLimits, ProviderManifest, SemanticMemoryProvider, SemanticQuery,
@@ -449,5 +471,34 @@ mod tests {
                 Err(ConformanceFailure::InvalidFixture)
             );
         }
+    }
+
+    #[test]
+    fn conformance_diagnostics_redact_provider_namespace_and_failure_details() {
+        let report = SemanticProviderConformanceReport {
+            provider_id: "private-provider".to_owned(),
+            provider_version: "private-version".to_owned(),
+            protocol_version: CURRENT_PROVIDER_PROTOCOL,
+            namespace: "private-namespace".to_owned(),
+        };
+        let behavior = ConformanceFailure::Behavior("private behavior detail".to_owned());
+        let provider = ConformanceFailure::Provider(ProviderError::Rejected(
+            "private provider rejection".to_owned(),
+        ));
+
+        let diagnostic = format!("{report:?} {behavior:?} {provider:?}");
+
+        for private_value in [
+            "private-provider",
+            "private-version",
+            "private-namespace",
+            "private behavior detail",
+            "private provider rejection",
+        ] {
+            assert!(!diagnostic.contains(private_value));
+        }
+        assert!(diagnostic.contains("provider_version_bytes: 15"));
+        assert!(diagnostic.contains("Behavior(<redacted>)"));
+        assert!(diagnostic.contains("Provider(Rejected(<redacted>))"));
     }
 }

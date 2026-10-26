@@ -9,6 +9,44 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Fixed
 
+- Semantic-provider diagnostics now redact memory content, retrieval queries,
+  tenant, scope, and memory identities while retaining safe sizes, versions,
+  limits, kinds, and approximate scores.
+- Knowledge-graph provider diagnostics now redact tenant, node, edge, and
+  temporal lookup identities while retaining safe direction, limit, and
+  version metadata.
+- Graphiti protocol diagnostics now redact request IDs, idempotency keys,
+  derived tenant namespaces, connection prefixes, and request/response
+  payloads while retaining safe operation and result metadata.
+- Memory-provider protocol diagnostics now redact correlation and idempotency
+  keys, connection prefixes, provider and domain identities, and generic
+  request/response payloads while retaining safe negotiated metadata.
+- Provider error and legacy semantic-manifest debug output now redact
+  arbitrary downstream details plus provider identity and version metadata.
+- Semantic conformance diagnostics now redact provider, namespace, and
+  arbitrary failure details, and the sensitive-file gate rejects derived
+  debug output on production provider SDK structs.
+- Remote-MCP invocation and HTTP-rejection diagnostics now redact method,
+  tool, and bearer-challenge metadata, with static enforcement for every
+  production struct in the HTTP authorization adapter.
+- The sensitive-file gate now prevents production PostgreSQL adapter structs
+  from regaining derived debug output that could expose tenant, SQL parameter,
+  encrypted-record, or driver context.
+- Graphiti mapping diagnostics now redact node and edge identities, labels,
+  aliases, relations, temporal data, and deletion targets, with static
+  enforcement across its production structs.
+- Mem0 and Supermemory record diagnostics now redact provider and canonical
+  identities plus keyed binding material, with static enforcement across
+  both external semantic adapters.
+- OAuth introspection response diagnostics now redact authority, audience,
+  principal, client, workspace, scope, and token-lifetime claims, with static
+  enforcement on the adapter boundary.
+- Native semantic, native graph, and volatile in-memory store diagnostics now
+  expose collection counts only instead of complete plaintext records, with
+  static enforcement across all three local adapters.
+- Local secret resolution now uses explicitly reviewed structural diagnostics,
+  and the sensitive-file gate prevents future resolver structs from deriving
+  unreviewed debug output.
 - Provider-independent key seal requests now retain copied plaintext in
   redacted zeroize-on-drop ownership instead of an ordinary byte vector.
 - Key-provider plaintext responses are now explicitly wiped before oversized
@@ -160,6 +198,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   kind, source-reference presence, batch count, and canonical sequence while
   redacting work traces, event types, provenance references, observation
   times, idempotency keys, and identities.
+- Memory-provider synchronization diagnostics now expose only resource and
+  operation kinds, versions, sequences, payload sizes, digest presence, batch
+  counts, and pagination state while redacting cursors, payloads, digests,
+  idempotency keys, and resource, change, and mutation identities.
 - Canonical SQLite initialization and backup now require the path opened by
   SQLite to retain the exact protected file's device/inode identity, and
   failure cleanup refuses to remove a path replaced after preparation.

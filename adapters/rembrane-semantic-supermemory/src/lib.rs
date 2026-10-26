@@ -31,13 +31,26 @@ const MAXIMUM_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
 const READINESS_ATTEMPTS: usize = 20;
 const READINESS_DELAY: Duration = Duration::from_millis(250);
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct SupermemoryRecord {
     provider_id: String,
     canonical_memory_id: MemoryId,
     canonical_version: u64,
     canonical_binding: String,
     score_millionths: Option<u32>,
+}
+
+impl fmt::Debug for SupermemoryRecord {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("SupermemoryRecord")
+            .field("provider_id", &"<redacted>")
+            .field("canonical_memory_id", &"<redacted>")
+            .field("canonical_version", &self.canonical_version)
+            .field("canonical_binding", &"<redacted>")
+            .field("score_millionths", &self.score_millionths)
+            .finish()
+    }
 }
 
 impl SupermemoryRecord {
@@ -1459,5 +1472,25 @@ mod tests {
                 .expect("exact lookup")
                 .is_none()
         );
+    }
+
+    #[test]
+    fn record_diagnostics_redact_provider_canonical_and_binding_identities() {
+        let record = SupermemoryRecord::new(
+            "private-provider-id",
+            rembrane_domain::MemoryId::new("private-memory-id"),
+            9,
+            "b".repeat(64),
+            Some(925_000),
+        )
+        .expect("record should validate");
+
+        let diagnostic = format!("{record:?}");
+
+        for private_value in ["private-provider-id", "private-memory-id", &"b".repeat(64)] {
+            assert!(!diagnostic.contains(private_value));
+        }
+        assert!(diagnostic.contains("canonical_version: 9"));
+        assert!(diagnostic.contains("score_millionths: Some(925000)"));
     }
 }

@@ -1,3 +1,5 @@
+use std::fmt;
+
 use rembrane_domain::{
     KnowledgeEdge, KnowledgeEdgeId, KnowledgeNode, KnowledgeNodeId, WorkspaceId,
 };
@@ -13,13 +15,26 @@ pub enum GraphDirection {
     Both,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct GraphNeighbourQuery {
     pub workspace_id: WorkspaceId,
     pub node_id: KnowledgeNodeId,
     pub direction: GraphDirection,
     pub valid_at_epoch_seconds: u64,
     pub maximum_candidates: usize,
+}
+
+impl fmt::Debug for GraphNeighbourQuery {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("GraphNeighbourQuery")
+            .field("workspace_id", &"<redacted>")
+            .field("node_id", &"<redacted>")
+            .field("direction", &self.direction)
+            .field("valid_at_epoch_seconds", &"<redacted>")
+            .field("maximum_candidates", &self.maximum_candidates)
+            .finish()
+    }
 }
 
 impl GraphNeighbourQuery {
@@ -38,10 +53,20 @@ impl GraphNeighbourQuery {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct CandidateKnowledgeEdge {
     pub edge_id: KnowledgeEdgeId,
     pub version: u64,
+}
+
+impl fmt::Debug for CandidateKnowledgeEdge {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("CandidateKnowledgeEdge")
+            .field("edge_id", &"<redacted>")
+            .field("version", &self.version)
+            .finish()
+    }
 }
 
 pub fn validate_graph_candidates(
@@ -124,5 +149,34 @@ mod tests {
         };
         assert!(validate_graph_candidates(std::slice::from_ref(&candidate), 1).is_ok());
         assert!(validate_graph_candidates(&[candidate.clone(), candidate], 2).is_err());
+    }
+
+    #[test]
+    fn graph_diagnostics_redact_tenant_resource_and_timeline_identities() {
+        let query = GraphNeighbourQuery {
+            workspace_id: WorkspaceId::new("private_workspace"),
+            node_id: KnowledgeNodeId::new("private_node"),
+            direction: GraphDirection::Incoming,
+            valid_at_epoch_seconds: 1_900_000_001,
+            maximum_candidates: 25,
+        };
+        let candidate = CandidateKnowledgeEdge {
+            edge_id: KnowledgeEdgeId::new("private_edge"),
+            version: 4,
+        };
+
+        let diagnostic = format!("{query:?} {candidate:?}");
+
+        for private_value in [
+            "private_workspace",
+            "private_node",
+            "1900000001",
+            "private_edge",
+        ] {
+            assert!(!diagnostic.contains(private_value));
+        }
+        assert!(diagnostic.contains("direction: Incoming"));
+        assert!(diagnostic.contains("maximum_candidates: 25"));
+        assert!(diagnostic.contains("version: 4"));
     }
 }
