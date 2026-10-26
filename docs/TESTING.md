@@ -48,6 +48,46 @@ foreign tenant routing, stale versions, and repeated confirmation must fail
 without modifying canonical memory, evidence, or audit events. The CLI
 lifecycle suite additionally rejects confirmation of a deleted observation.
 
+## REST blocking-worker boundary
+
+Run the no-listener REST runtime tests with:
+
+```sh
+cargo test -p rembrane-api --locked --offline
+```
+
+The REST executable constructs synchronous provider clients before entering its
+async runtime. Authenticated canonical handlers move storage, encryption,
+graph-provider calls, and their existing mutex acquisition onto blocking
+workers. One service state admits at most eight outstanding operations,
+including work waiting for the canonical runtime mutex. This is a resource
+ceiling, not a claim of eight concurrent SQLite transactions or measured
+throughput.
+
+Unauthenticated requests are rejected before worker admission. Saturation
+returns HTTP 503 with the closed `service_busy` JSON problem and `Retry-After: 1`;
+the canonical operation has not started on that path. Health and discovery
+remain lightweight async handlers.
+
+Cancellation **after admission** is different: a synchronous operation may
+continue and commit even after the caller stops waiting. Its admission permit
+stays with the worker until completion, preventing cancellation from bypassing
+the ceiling. Inspect the canonical version or event sequence after a lost
+mutation response; do not blindly retry it. Worker failures return the existing
+generic internal-error response without forwarding panic details to callers.
+
+Current-thread tests prove off-executor blocking HTTP-client construction,
+overload denial without execution, application-error/panic cleanup, capacity
+retention after cancellation, responsive health during a blocked worker,
+authentication-before-admission, tenant denial, and encrypted remember/recall.
+These tests do not replace listener/Postman, real-provider, container,
+resource-exhaustion, or load/recovery testing. The eight-job ceiling does not
+bound every connection or pre-handler request-body allocation; deployment
+limits and staging measurements remain required.
+
+The analogous MCP tool and OAuth execution boundary remains a separate open
+runtime task; passing these REST tests does not establish remote MCP support.
+
 Provider authors should also run the shared Rust conformance harness against a
 disposable provider tenant:
 

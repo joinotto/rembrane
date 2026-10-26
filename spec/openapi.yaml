@@ -6,6 +6,10 @@ info:
     Provider-independent API for user-owned AI memory. This pre-alpha
     contract currently covers capability discovery, scoped context resolution,
     resumable activity handoffs, and authorized travel continuity.
+    Authenticated canonical operations use bounded blocking-worker admission.
+    Saturation returns 503 service_busy with Retry-After: 1 before starting the
+    operation. Cancellation after admission does not prove that a mutation was
+    aborted; inspect its canonical version or event sequence before retrying.
   license:
     name: Apache-2.0
     identifier: Apache-2.0
@@ -57,6 +61,8 @@ paths:
           $ref: "#/components/responses/AccessDenied"
         "409":
           $ref: "#/components/responses/Conflict"
+        "503":
+          $ref: "#/components/responses/ServiceBusy"
   /graph/context/resolve:
     post:
       operationId: resolveGraphContext
@@ -87,6 +93,8 @@ paths:
           $ref: "#/components/responses/AccessDenied"
         "409":
           $ref: "#/components/responses/Conflict"
+        "503":
+          $ref: "#/components/responses/ServiceBusy"
   /activities/{activityId}/checkpoint:
     post:
       operationId: checkpointActivity
@@ -122,6 +130,8 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
+        "503":
+          $ref: "#/components/responses/ServiceBusy"
   /memories/preferences:
     post:
       operationId: rememberPreference
@@ -147,6 +157,8 @@ paths:
           $ref: "#/components/responses/AccessDenied"
         "409":
           $ref: "#/components/responses/Conflict"
+        "503":
+          $ref: "#/components/responses/ServiceBusy"
   /memories/work-traces:
     post:
       operationId: recordWorkTrace
@@ -172,6 +184,8 @@ paths:
           $ref: "#/components/responses/AccessDenied"
         "409":
           $ref: "#/components/responses/Conflict"
+        "503":
+          $ref: "#/components/responses/ServiceBusy"
   /exports:
     post:
       operationId: exportPortableData
@@ -225,6 +239,8 @@ paths:
           $ref: "#/components/responses/Unauthenticated"
         "403":
           $ref: "#/components/responses/AccessDenied"
+        "503":
+          $ref: "#/components/responses/ServiceBusy"
   /imports:
     post:
       operationId: importPortableMemories
@@ -273,6 +289,8 @@ paths:
           $ref: "#/components/responses/AccessDenied"
         "409":
           $ref: "#/components/responses/Conflict"
+        "503":
+          $ref: "#/components/responses/ServiceBusy"
   /memories/{memoryId}/correction:
     post:
       operationId: correctMemory
@@ -302,6 +320,8 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
+        "503":
+          $ref: "#/components/responses/ServiceBusy"
   /memories/{memoryId}/deletion:
     post:
       operationId: deleteMemory
@@ -331,6 +351,8 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
+        "503":
+          $ref: "#/components/responses/ServiceBusy"
   /activities/{activityId}/resume:
     get:
       operationId: resumeActivity
@@ -376,6 +398,8 @@ paths:
           $ref: "#/components/responses/AccessDenied"
         "404":
           $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/ServiceBusy"
   /workspaces/key-rotation:
     post:
       operationId: rotateWorkspaceKey
@@ -407,6 +431,8 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
+        "503":
+          $ref: "#/components/responses/ServiceBusy"
   /workspaces/invitations:
     get:
       operationId: listWorkspaceInvitations
@@ -441,6 +467,8 @@ paths:
           $ref: "#/components/responses/Unauthenticated"
         "403":
           $ref: "#/components/responses/AccessDenied"
+        "503":
+          $ref: "#/components/responses/ServiceBusy"
     post:
       operationId: createWorkspaceInvitation
       summary: Create a bounded role-specific shared-workspace invitation
@@ -467,6 +495,8 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
+        "503":
+          $ref: "#/components/responses/ServiceBusy"
   /workspaces/invitations/accept:
     post:
       operationId: acceptWorkspaceInvitation
@@ -499,6 +529,8 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
+        "503":
+          $ref: "#/components/responses/ServiceBusy"
   /workspaces/invitations/revoke:
     post:
       operationId: revokeWorkspaceInvitation
@@ -526,6 +558,8 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
+        "503":
+          $ref: "#/components/responses/ServiceBusy"
   /administrative-audit:
     get:
       operationId: listAdministrativeAudit
@@ -561,6 +595,8 @@ paths:
           $ref: "#/components/responses/Unauthenticated"
         "403":
           $ref: "#/components/responses/AccessDenied"
+        "503":
+          $ref: "#/components/responses/ServiceBusy"
   /retention/policy:
     post:
       operationId: setRetentionPolicy
@@ -586,6 +622,8 @@ paths:
           $ref: "#/components/responses/AccessDenied"
         "409":
           $ref: "#/components/responses/Conflict"
+        "503":
+          $ref: "#/components/responses/ServiceBusy"
   /retention/legal-holds:
     post:
       operationId: placeLegalHold
@@ -611,6 +649,8 @@ paths:
           $ref: "#/components/responses/AccessDenied"
         "409":
           $ref: "#/components/responses/Conflict"
+        "503":
+          $ref: "#/components/responses/ServiceBusy"
   /retention/legal-holds/release:
     post:
       operationId: releaseLegalHold
@@ -638,6 +678,8 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
+        "503":
+          $ref: "#/components/responses/ServiceBusy"
   /retention/purge:
     post:
       operationId: executeRetentionPurge
@@ -663,6 +705,8 @@ paths:
           $ref: "#/components/responses/AccessDenied"
         "404":
           $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/ServiceBusy"
   /travel/booking-research:
     post:
       operationId: captureBookingResearch
@@ -693,6 +737,8 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
+        "503":
+          $ref: "#/components/responses/ServiceBusy"
   /travel/trips:
     post:
       operationId: createTrip
@@ -721,6 +767,8 @@ paths:
           $ref: "#/components/responses/AccessDenied"
         "409":
           $ref: "#/components/responses/Conflict"
+        "503":
+          $ref: "#/components/responses/ServiceBusy"
   /travel/context/resolve:
     post:
       operationId: resolveTravelContext
@@ -753,6 +801,8 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
+        "503":
+          $ref: "#/components/responses/ServiceBusy"
   /travel/trip-participants:
     post:
       operationId: addTripParticipant
@@ -780,6 +830,8 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
+        "503":
+          $ref: "#/components/responses/ServiceBusy"
   /travel/trip-constraints:
     post:
       operationId: addTripConstraint
@@ -807,6 +859,8 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
+        "503":
+          $ref: "#/components/responses/ServiceBusy"
   /travel/trip-decisions:
     post:
       operationId: recordTripDecision
@@ -834,6 +888,8 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
+        "503":
+          $ref: "#/components/responses/ServiceBusy"
 components:
   securitySchemes:
     bearerAuth:
@@ -854,6 +910,23 @@ components:
       schema:
         $ref: "#/components/schemas/OpaqueId"
   responses:
+    ServiceBusy:
+      description: |
+        Synchronous operation capacity is temporarily unavailable. No canonical
+        operation was admitted for this request. Do not confuse an explicit 503
+        with a lost response or cancellation after worker admission.
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+            const: 1
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          example:
+            code: service_busy
+            message: synchronous operation capacity is temporarily unavailable
     InvalidRequest:
       description: Request validation failed
       content:

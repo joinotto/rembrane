@@ -9,6 +9,16 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Fixed
 
+- REST canonical handlers now run synchronous SQLite, cryptographic, and graph
+  provider work on bounded blocking workers instead of the async executor.
+  Provider construction and final ownership remain outside the executor.
+  Authentication precedes admission; saturation returns a closed 503
+  `service_busy` problem with `Retry-After: 1` without starting canonical work.
+- REST blocking-job capacity remains held until actual worker completion after
+  request cancellation. No-listener tests cover blocking HTTP-client creation,
+  overload, cancellation, worker failures, tenant denial, and encrypted
+  remember/recall; OpenAPI defines the overload response for every authenticated
+  canonical operation.
 - CLI plaintext import/export now reject malformed, repeated, and unsupported
   arguments before filesystem or database access. Unsupported scope selectors
   cannot silently turn an intended project-only export into a complete subject

@@ -21,8 +21,15 @@ rembrane-secret-local = { path = "../../adapters/rembrane-secret-local" }
 rembrane-store-sqlite = { path = "../../adapters/rembrane-store-sqlite" }
 serde = { version = "1", features = ["derive"] }
 subtle = "2"
-tokio = { version = "1", features = ["macros", "net", "rt-multi-thread"] }
+tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "sync"] }
 zeroize = "1"
+
+[dev-dependencies]
+rembrane-crypto-rustcrypto = { path = "../../adapters/rembrane-crypto-rustcrypto" }
+rembrane-graph-native = { path = "../../adapters/rembrane-graph-native" }
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
+serde_json = "1"
+tokio = { version = "1", features = ["time"] }
 
 [lints]
 workspace = true

@@ -54,6 +54,7 @@ use zeroize::Zeroizing;
 
 const MAXIMUM_API_TOKEN_BYTES: usize = 8_192;
 const MEMORY_IMPORT_CONTENT_TYPE: &str = "application/x-ndjson";
+const MAXIMUM_BLOCKING_OPERATIONS: usize = 8;
 
 #[derive(Clone)]
 struct AppState {
@@ -62,6 +63,7 @@ struct AppState {
 
 struct Inner {
     runtime: Mutex<Runtime>,
+    blocking_operations: Arc<tokio::sync::Semaphore>,
     bearer_token: Zeroizing<String>,
     discovery: MemoryDiscovery,
     oauth_resource_metadata: Option<OAuthProtectedResourceMetadata>,
@@ -722,14 +724,21 @@ struct ApiError {
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
-        (
+        let mut response = (
             self.status,
             Json(Problem {
                 code: self.code,
                 message: self.message,
             }),
         )
-            .into_response()
+            .into_response();
+        if self.status == StatusCode::SERVICE_UNAVAILABLE {
+            response.headers_mut().insert(
+                axum::http::header::RETRY_AFTER,
+                axum::http::HeaderValue::from_static("1"),
+            );
+        }
+        response
     }
 }
 
@@ -803,6 +812,9 @@ impl AppState {
 
         Ok(Self {
             inner: Arc::new(Inner {
+                blocking_operations: Arc::new(tokio::sync::Semaphore::new(
+                    MAXIMUM_BLOCKING_OPERATIONS,
+                )),
                 runtime: Mutex::new(Runtime {
                     store,
                     graph_provider,
@@ -817,6 +829,110 @@ impl AppState {
             }),
         })
     }
+}
+
+async fn run_blocking_operation<Output, Operation>(
+    capacity: Arc<tokio::sync::Semaphore>,
+    operation: Operation,
+) -> Result<Output, ApiError>
+where
+    Output: Send + 'static,
+    Operation: FnOnce() -> Result<Output, ApiError> + Send + 'static,
+{
+    let permit = capacity.try_acquire_owned().map_err(|_| ApiError::busy())?;
+    tokio::task::spawn_blocking(move || {
+        // Keep admission capacity until the synchronous operation really ends,
+        // even if its HTTP request is cancelled while waiting for the result.
+        let _permit = permit;
+        operation()
+    })
+    .await
+    .map_err(|_| ApiError::internal())?
+}
+
+macro_rules! blocking_handler {
+    ($handler:ident => $operation:ident ($state:ident, $headers:ident)
+        ($($argument:ident: $argument_type:ty),* $(,)?) -> $output:ty) => {
+        async fn $handler(
+            State($state): State<AppState>,
+            $headers: HeaderMap,
+            $($argument: $argument_type),*
+        ) -> Result<$output, ApiError> {
+            // Unauthenticated requests must not consume blocking-job capacity.
+            authorize_bearer(&$state, &$headers)?;
+            let capacity = Arc::clone(&$state.inner.blocking_operations);
+            run_blocking_operation(capacity, move || {
+                $operation(State($state), &$headers, $($argument),*)
+            })
+            .await
+        }
+    };
+}
+
+blocking_handler!(create_invitation => create_invitation_sync(state, headers)
+    (request: Json<CreateInvitationRequest>) -> (StatusCode, Json<InvitationResponse>));
+blocking_handler!(list_invitations => list_invitations_sync(state, headers)
+    (query: Query<InvitationListQuery>) -> Json<InvitationListResponse>);
+blocking_handler!(accept_invitation => accept_invitation_sync(state, headers)
+    (request: Json<InvitationTransitionRequest>) -> Json<InvitationResponse>);
+blocking_handler!(revoke_invitation => revoke_invitation_sync(state, headers)
+    (request: Json<InvitationTransitionRequest>) -> Json<InvitationResponse>);
+blocking_handler!(rotate_workspace_key => rotate_workspace_key_sync(state, headers)
+    (request: Json<RotateWorkspaceKeyRequest>) -> Json<RotateWorkspaceKeyResponse>);
+blocking_handler!(list_administrative_audit => list_administrative_audit_sync(state, headers)
+    (query: Query<AuditQuery>) -> Json<AdministrativeAuditResponse>);
+blocking_handler!(set_retention_policy => set_retention_policy_sync(state, headers)
+    (request: Json<SetRetentionPolicyRequest>) -> Json<RetentionPolicyResponse>);
+blocking_handler!(place_legal_hold => place_legal_hold_sync(state, headers)
+    (request: Json<LegalHoldRequest>) -> (StatusCode, Json<LegalHoldResponse>));
+blocking_handler!(release_legal_hold => release_legal_hold_sync(state, headers)
+    (request: Json<LegalHoldRequest>) -> Json<LegalHoldResponse>);
+blocking_handler!(execute_retention_purge => execute_retention_purge_sync(state, headers)
+    (request: Json<ExecuteRetentionPurgeRequest>) -> Json<RetentionPurgeResponse>);
+blocking_handler!(remember_preference => remember_preference_sync(state, headers)
+    (request: Json<RememberPreferenceRequest>) -> (StatusCode, Json<MemoryMutationResponse>));
+blocking_handler!(record_work_trace => record_work_trace_sync(state, headers)
+    (request: Json<RecordWorkTraceRequest>) -> (StatusCode, Json<MemoryMutationResponse>));
+blocking_handler!(export_portable_data => export_portable_data_sync(state, headers)
+    (query: Query<ExportQuery>) -> Response);
+blocking_handler!(correct_memory => correct_memory_sync(state, headers)
+    (memory_id: Path<String>, request: Json<CorrectMemoryRequest>) -> Json<MemoryMutationResponse>);
+blocking_handler!(delete_memory => delete_memory_sync(state, headers)
+    (memory_id: Path<String>, request: Json<DeleteMemoryRequest>) -> Json<MemoryMutationResponse>);
+blocking_handler!(checkpoint_activity => checkpoint_activity_sync(state, headers)
+    (activity_id: Path<String>, request: Json<CheckpointActivityRequest>)
+    -> (StatusCode, Json<ActivityCheckpointResponse>));
+blocking_handler!(resume_activity => resume_activity_sync(state, headers)
+    (activity_id: Path<String>, query: Query<ResumeActivityQuery>) -> Json<ActivityCheckpointResponse>);
+blocking_handler!(create_trip => create_trip_sync(state, headers)
+    (request: Json<CreateTripRequest>) -> (StatusCode, Json<TripResponse>));
+blocking_handler!(capture_booking_research => capture_booking_research_sync(state, headers)
+    (request: Json<CaptureBookingResearchRequest>) -> (StatusCode, Json<BookingResearchResponse>));
+blocking_handler!(add_trip_participant => add_trip_participant_sync(state, headers)
+    (request: Json<AddTripParticipantRequest>) -> (StatusCode, Json<TripParticipantResponse>));
+blocking_handler!(add_trip_constraint => add_trip_constraint_sync(state, headers)
+    (request: Json<AddTripConstraintRequest>) -> (StatusCode, Json<TripRevisionResponse>));
+blocking_handler!(record_trip_decision => record_trip_decision_sync(state, headers)
+    (request: Json<RecordTripDecisionRequest>) -> (StatusCode, Json<TripRevisionResponse>));
+blocking_handler!(resolve_travel_context => resolve_travel_context_sync(state, headers)
+    (request: Json<ResolveTravelContextRequest>) -> Json<TravelContextResponse>);
+blocking_handler!(resolve_context => resolve_context_sync(state, headers)
+    (request: Json<ResolveRequest>) -> Json<ResolveResponse>);
+blocking_handler!(resolve_graph_context => resolve_graph_context_sync(state, headers)
+    (request: Json<ResolveGraphRequest>) -> Json<ResolveGraphResponse>);
+
+async fn import_memories(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    query: Query<ImportMemoriesQuery>,
+    body: Bytes,
+) -> Result<(StatusCode, Json<ImportMemoriesResponse>), ApiError> {
+    authorize_bearer(&state, &headers)?;
+    let capacity = Arc::clone(&state.inner.blocking_operations);
+    run_blocking_operation(capacity, move || {
+        import_memories_sync(State(state), &headers, query, &body)
+    })
+    .await
 }
 
 fn resolve_api_token() -> Result<Zeroizing<String>> {
@@ -936,12 +1052,12 @@ fn invitation_only_grants<C>(
     })
 }
 
-async fn create_invitation(
+fn create_invitation_sync(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    headers: &HeaderMap,
     Json(request): Json<CreateInvitationRequest>,
 ) -> Result<(StatusCode, Json<InvitationResponse>), ApiError> {
-    authorize_bearer(&state, &headers)?;
+    authorize_bearer(&state, headers)?;
     let mut runtime = state
         .inner
         .runtime
@@ -970,12 +1086,12 @@ async fn create_invitation(
     Ok((StatusCode::CREATED, Json(invitation_response(&invitation))))
 }
 
-async fn list_invitations(
+fn list_invitations_sync(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    headers: &HeaderMap,
     Query(query): Query<InvitationListQuery>,
 ) -> Result<Json<InvitationListResponse>, ApiError> {
-    authorize_bearer(&state, &headers)?;
+    authorize_bearer(&state, headers)?;
     let mut runtime = state
         .inner
         .runtime
@@ -1007,12 +1123,12 @@ async fn list_invitations(
     }))
 }
 
-async fn accept_invitation(
+fn accept_invitation_sync(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    headers: &HeaderMap,
     Json(request): Json<InvitationTransitionRequest>,
 ) -> Result<Json<InvitationResponse>, ApiError> {
-    authorize_bearer(&state, &headers)?;
+    authorize_bearer(&state, headers)?;
     let mut runtime = state
         .inner
         .runtime
@@ -1041,12 +1157,12 @@ async fn accept_invitation(
     Ok(Json(invitation_response(&invitation)))
 }
 
-async fn revoke_invitation(
+fn revoke_invitation_sync(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    headers: &HeaderMap,
     Json(request): Json<InvitationTransitionRequest>,
 ) -> Result<Json<InvitationResponse>, ApiError> {
-    authorize_bearer(&state, &headers)?;
+    authorize_bearer(&state, headers)?;
     let mut runtime = state
         .inner
         .runtime
@@ -1136,12 +1252,12 @@ fn now_epoch_seconds() -> Result<u64, std::time::SystemTimeError> {
         .map(|duration| duration.as_secs())
 }
 
-async fn rotate_workspace_key(
+fn rotate_workspace_key_sync(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    headers: &HeaderMap,
     Json(request): Json<RotateWorkspaceKeyRequest>,
 ) -> Result<Json<RotateWorkspaceKeyResponse>, ApiError> {
-    authorize_bearer(&state, &headers)?;
+    authorize_bearer(&state, headers)?;
     let mut runtime = state
         .inner
         .runtime
@@ -1180,12 +1296,12 @@ async fn rotate_workspace_key(
     }))
 }
 
-async fn list_administrative_audit(
+fn list_administrative_audit_sync(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    headers: &HeaderMap,
     Query(query): Query<AuditQuery>,
 ) -> Result<Json<AdministrativeAuditResponse>, ApiError> {
-    authorize_bearer(&state, &headers)?;
+    authorize_bearer(&state, headers)?;
     let runtime = state
         .inner
         .runtime
@@ -1205,12 +1321,12 @@ async fn list_administrative_audit(
     }))
 }
 
-async fn set_retention_policy(
+fn set_retention_policy_sync(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    headers: &HeaderMap,
     Json(request): Json<SetRetentionPolicyRequest>,
 ) -> Result<Json<RetentionPolicyResponse>, ApiError> {
-    authorize_bearer(&state, &headers)?;
+    authorize_bearer(&state, headers)?;
     let mut runtime = state
         .inner
         .runtime
@@ -1249,12 +1365,12 @@ async fn set_retention_policy(
     }))
 }
 
-async fn place_legal_hold(
+fn place_legal_hold_sync(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    headers: &HeaderMap,
     Json(request): Json<LegalHoldRequest>,
 ) -> Result<(StatusCode, Json<LegalHoldResponse>), ApiError> {
-    authorize_bearer(&state, &headers)?;
+    authorize_bearer(&state, headers)?;
     let mut runtime = state
         .inner
         .runtime
@@ -1274,12 +1390,12 @@ async fn place_legal_hold(
     Ok((StatusCode::CREATED, Json(LegalHoldResponse::from(&hold))))
 }
 
-async fn release_legal_hold(
+fn release_legal_hold_sync(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    headers: &HeaderMap,
     Json(request): Json<LegalHoldRequest>,
 ) -> Result<Json<LegalHoldResponse>, ApiError> {
-    authorize_bearer(&state, &headers)?;
+    authorize_bearer(&state, headers)?;
     let mut runtime = state
         .inner
         .runtime
@@ -1299,12 +1415,12 @@ async fn release_legal_hold(
     Ok(Json(LegalHoldResponse::from(&hold)))
 }
 
-async fn execute_retention_purge(
+fn execute_retention_purge_sync(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    headers: &HeaderMap,
     Json(request): Json<ExecuteRetentionPurgeRequest>,
 ) -> Result<Json<RetentionPurgeResponse>, ApiError> {
-    authorize_bearer(&state, &headers)?;
+    authorize_bearer(&state, headers)?;
     let mut runtime = state
         .inner
         .runtime
@@ -1381,12 +1497,12 @@ fn advance_identifier(current: &mut u128) -> Option<u128> {
     Some(next)
 }
 
-async fn remember_preference(
+fn remember_preference_sync(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    headers: &HeaderMap,
     Json(request): Json<RememberPreferenceRequest>,
 ) -> Result<(StatusCode, Json<MemoryMutationResponse>), ApiError> {
-    authorize_bearer(&state, &headers)?;
+    authorize_bearer(&state, headers)?;
     if request.content.trim().is_empty() {
         return Err(ApiError::invalid_request());
     }
@@ -1428,12 +1544,12 @@ async fn remember_preference(
     ))
 }
 
-async fn record_work_trace(
+fn record_work_trace_sync(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    headers: &HeaderMap,
     Json(request): Json<RecordWorkTraceRequest>,
 ) -> Result<(StatusCode, Json<MemoryMutationResponse>), ApiError> {
-    authorize_bearer(&state, &headers)?;
+    authorize_bearer(&state, headers)?;
     if !valid_opaque_id(&request.activity_id)
         || request
             .entity_id
@@ -1485,13 +1601,13 @@ async fn record_work_trace(
     ))
 }
 
-async fn import_memories(
+fn import_memories_sync(
     State(state): State<AppState>,
+    headers: &HeaderMap,
     Query(query): Query<ImportMemoriesQuery>,
-    headers: HeaderMap,
-    body: Bytes,
+    body: &Bytes,
 ) -> Result<(StatusCode, Json<ImportMemoriesResponse>), ApiError> {
-    authorize_bearer(&state, &headers)?;
+    authorize_bearer(&state, headers)?;
     if headers
         .get(axum::http::header::CONTENT_TYPE)
         .and_then(|value| value.to_str().ok())
@@ -1500,7 +1616,7 @@ async fn import_memories(
         return Err(ApiError::invalid_request());
     }
     let source_records =
-        decode_memory_jsonl_archive(&body).map_err(|_| ApiError::invalid_request())?;
+        decode_memory_jsonl_archive(body).map_err(|_| ApiError::invalid_request())?;
     if source_records.is_empty()
         || source_records
             .iter()
@@ -1566,12 +1682,12 @@ async fn import_memories(
     ))
 }
 
-async fn export_portable_data(
+fn export_portable_data_sync(
     State(state): State<AppState>,
+    headers: &HeaderMap,
     Query(query): Query<ExportQuery>,
-    headers: HeaderMap,
 ) -> Result<Response, ApiError> {
-    authorize_bearer(&state, &headers)?;
+    authorize_bearer(&state, headers)?;
     if !matches!(query.format.as_str(), "jsonl" | "markdown" | "graph-json") {
         return Err(ApiError::invalid_request());
     }
@@ -1661,13 +1777,13 @@ fn memory_read_scope(scope: &MemoryScope) -> rembrane_domain::ReadScope {
     }
 }
 
-async fn correct_memory(
+fn correct_memory_sync(
     State(state): State<AppState>,
+    headers: &HeaderMap,
     Path(memory_id): Path<String>,
-    headers: HeaderMap,
     Json(request): Json<CorrectMemoryRequest>,
 ) -> Result<Json<MemoryMutationResponse>, ApiError> {
-    authorize_bearer(&state, &headers)?;
+    authorize_bearer(&state, headers)?;
     if !valid_opaque_id(&memory_id)
         || request.replacement.trim().is_empty()
         || request.expected_version == 0
@@ -1709,13 +1825,13 @@ async fn correct_memory(
     }))
 }
 
-async fn delete_memory(
+fn delete_memory_sync(
     State(state): State<AppState>,
+    headers: &HeaderMap,
     Path(memory_id): Path<String>,
-    headers: HeaderMap,
     Json(request): Json<DeleteMemoryRequest>,
 ) -> Result<Json<MemoryMutationResponse>, ApiError> {
-    authorize_bearer(&state, &headers)?;
+    authorize_bearer(&state, headers)?;
     if !valid_opaque_id(&memory_id)
         || request.reason.trim().is_empty()
         || request.expected_version == 0
@@ -1826,13 +1942,13 @@ fn scoped_memory_write_grant(
     })
 }
 
-async fn checkpoint_activity(
+fn checkpoint_activity_sync(
     State(state): State<AppState>,
+    headers: &HeaderMap,
     Path(activity_id): Path<String>,
-    headers: HeaderMap,
     Json(request): Json<CheckpointActivityRequest>,
 ) -> Result<(StatusCode, Json<ActivityCheckpointResponse>), ApiError> {
-    authorize_bearer(&state, &headers)?;
+    authorize_bearer(&state, headers)?;
     if !valid_opaque_id(&activity_id)
         || request.summary.trim().is_empty()
         || request.expected_version == Some(0)
@@ -1930,13 +2046,13 @@ async fn checkpoint_activity(
     ))
 }
 
-async fn resume_activity(
+fn resume_activity_sync(
     State(state): State<AppState>,
+    headers: &HeaderMap,
     Path(activity_id): Path<String>,
     Query(query): Query<ResumeActivityQuery>,
-    headers: HeaderMap,
 ) -> Result<Json<ActivityCheckpointResponse>, ApiError> {
-    authorize_bearer(&state, &headers)?;
+    authorize_bearer(&state, headers)?;
     if !valid_opaque_id(&activity_id) {
         return Err(ApiError::invalid_request());
     }
@@ -1997,12 +2113,12 @@ fn activity_checkpoint_response(
     }
 }
 
-async fn create_trip(
+fn create_trip_sync(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    headers: &HeaderMap,
     Json(request): Json<CreateTripRequest>,
 ) -> Result<(StatusCode, Json<TripResponse>), ApiError> {
-    authorize_bearer(&state, &headers)?;
+    authorize_bearer(&state, headers)?;
     let mut runtime = state
         .inner
         .runtime
@@ -2055,12 +2171,12 @@ async fn create_trip(
     ))
 }
 
-async fn capture_booking_research(
+fn capture_booking_research_sync(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    headers: &HeaderMap,
     Json(request): Json<CaptureBookingResearchRequest>,
 ) -> Result<(StatusCode, Json<BookingResearchResponse>), ApiError> {
-    authorize_bearer(&state, &headers)?;
+    authorize_bearer(&state, headers)?;
     if !valid_opaque_id(&request.trip_id) {
         return Err(ApiError::invalid_request());
     }
@@ -2117,12 +2233,12 @@ async fn capture_booking_research(
     ))
 }
 
-async fn add_trip_participant(
+fn add_trip_participant_sync(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    headers: &HeaderMap,
     Json(request): Json<AddTripParticipantRequest>,
 ) -> Result<(StatusCode, Json<TripParticipantResponse>), ApiError> {
-    authorize_bearer(&state, &headers)?;
+    authorize_bearer(&state, headers)?;
     if !valid_opaque_id(&request.trip_id) {
         return Err(ApiError::invalid_request());
     }
@@ -2167,12 +2283,12 @@ async fn add_trip_participant(
     ))
 }
 
-async fn add_trip_constraint(
+fn add_trip_constraint_sync(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    headers: &HeaderMap,
     Json(request): Json<AddTripConstraintRequest>,
 ) -> Result<(StatusCode, Json<TripRevisionResponse>), ApiError> {
-    authorize_bearer(&state, &headers)?;
+    authorize_bearer(&state, headers)?;
     if !valid_opaque_id(&request.trip_id)
         || request
             .participant_id
@@ -2228,12 +2344,12 @@ async fn add_trip_constraint(
     ))
 }
 
-async fn record_trip_decision(
+fn record_trip_decision_sync(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    headers: &HeaderMap,
     Json(request): Json<RecordTripDecisionRequest>,
 ) -> Result<(StatusCode, Json<TripRevisionResponse>), ApiError> {
-    authorize_bearer(&state, &headers)?;
+    authorize_bearer(&state, headers)?;
     if !valid_opaque_id(&request.trip_id) {
         return Err(ApiError::invalid_request());
     }
@@ -2285,12 +2401,12 @@ async fn record_trip_decision(
     ))
 }
 
-async fn resolve_travel_context(
+fn resolve_travel_context_sync(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    headers: &HeaderMap,
     Json(request): Json<ResolveTravelContextRequest>,
 ) -> Result<Json<TravelContextResponse>, ApiError> {
-    authorize_bearer(&state, &headers)?;
+    authorize_bearer(&state, headers)?;
     if !valid_opaque_id(&request.trip_id) {
         return Err(ApiError::invalid_request());
     }
@@ -2347,12 +2463,12 @@ async fn memory_discovery(State(state): State<AppState>) -> Json<MemoryDiscovery
     Json(state.inner.discovery.clone())
 }
 
-async fn resolve_context(
+fn resolve_context_sync(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    headers: &HeaderMap,
     Json(request): Json<ResolveRequest>,
 ) -> Result<Json<ResolveResponse>, ApiError> {
-    authorize_bearer(&state, &headers)?;
+    authorize_bearer(&state, headers)?;
     if request.purpose.trim().is_empty()
         || request.query.trim().is_empty()
         || !(1..=100).contains(&request.maximum_items)
@@ -2406,12 +2522,12 @@ async fn resolve_context(
     }))
 }
 
-async fn resolve_graph_context(
+fn resolve_graph_context_sync(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    headers: &HeaderMap,
     Json(request): Json<ResolveGraphRequest>,
 ) -> Result<Json<ResolveGraphResponse>, ApiError> {
-    authorize_bearer(&state, &headers)?;
+    authorize_bearer(&state, headers)?;
     let direction = match request.direction.as_str() {
         "incoming" => GraphDisclosureDirection::Incoming,
         "outgoing" => GraphDisclosureDirection::Outgoing,
@@ -2542,6 +2658,14 @@ fn token_matches(expected: &str, presented: &str) -> bool {
 }
 
 impl ApiError {
+    const fn busy() -> Self {
+        Self {
+            status: StatusCode::SERVICE_UNAVAILABLE,
+            code: "service_busy",
+            message: "synchronous operation capacity is temporarily unavailable",
+        }
+    }
+
     const fn invalid_request() -> Self {
         Self {
             status: StatusCode::BAD_REQUEST,
@@ -2999,9 +3123,18 @@ fn build_memory_discovery(api: String) -> Result<MemoryDiscovery> {
     })
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
+    // Blocking HTTP providers must be constructed outside an async executor.
+    // Retaining this owner also keeps final provider shutdown outside it.
     let state = AppState::from_environment()?;
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .context("failed to start API async runtime")?;
+    runtime.block_on(serve(state.clone()))
+}
+
+async fn serve(state: AppState) -> Result<()> {
     let configured_address =
         std::env::var("REMBRANE_LISTEN").unwrap_or_else(|_| "127.0.0.1:8787".to_owned());
     let address = configured_address
@@ -3070,12 +3203,26 @@ async fn main() -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::time::Duration;
+
+    use axum::Json;
+    use axum::extract::State;
+    use axum::http::{HeaderMap, StatusCode, header::AUTHORIZATION};
+    use axum::response::IntoResponse;
     use rembrane_application::WorkspaceRepository;
+    use rembrane_crypto_configured::ConfiguredRecordCipher;
+    use rembrane_crypto_rustcrypto::{RustCryptoKeyringCipher, RustCryptoRecordCipher};
     use rembrane_domain::{
         ClientId, EntityId, InvitationStatus, Membership, MemoryScope, Principal, PrincipalId,
         ReadGrant, ReadScope, Workspace, WorkspaceId, WorkspaceRole,
     };
+    use rembrane_graph_configured::ConfiguredGraphProvider;
+    use rembrane_graph_native::NativeGraphProvider;
     use rembrane_store_sqlite::SqliteStore;
+    use tokio::sync::{Semaphore, oneshot};
+    use zeroize::Zeroizing;
 
     use super::{
         ResolveGraphRequest, ResolveRequest, advance_identifier, build_memory_discovery,
@@ -3084,6 +3231,307 @@ mod tests {
         requested_memory_scope, selected_api_token_reference, token_matches, valid_api_token,
         valid_opaque_id,
     };
+
+    fn fixture_cipher() -> ConfiguredRecordCipher {
+        ConfiguredRecordCipher::Local(
+            RustCryptoKeyringCipher::new(
+                RustCryptoRecordCipher::new("api-test-key", [7; 32]).expect("fixture cipher"),
+                Vec::new(),
+            )
+            .expect("fixture keyring"),
+        )
+    }
+
+    fn fixture_state() -> super::AppState {
+        let principal = PrincipalId::new("principal_blocking");
+        let workspace = WorkspaceId::new("workspace_blocking");
+        let mut store = SqliteStore::open_in_memory().expect("fixture database");
+        store
+            .initialize_personal_workspace(
+                Principal::new(principal.clone()),
+                Workspace::personal(workspace.clone()),
+                Membership::new(workspace.clone(), principal.clone(), WorkspaceRole::Owner),
+            )
+            .expect("fixture workspace");
+        let store = store.with_cipher(fixture_cipher());
+        let grants = super::AuthorizeClientService::new(&store)
+            .execute(super::AuthorizeClientCommand {
+                client_id: ClientId::new("api_blocking"),
+                workspace_id: workspace,
+                principal_id: principal,
+                requested_read_scopes: vec![ReadScope::Global],
+                requested_read_permissions: Vec::new(),
+                requested_write_permissions: vec![super::WritePermission::CreateMemory],
+            })
+            .expect("fixture grants");
+        super::AppState {
+            inner: Arc::new(super::Inner {
+                runtime: std::sync::Mutex::new(super::Runtime {
+                    store,
+                    graph_provider: ConfiguredGraphProvider::Native(NativeGraphProvider::new()),
+                    rotation_provider: fixture_cipher(),
+                    read_grant: grants.read,
+                    write_grant: grants.write,
+                    next_id: 100,
+                }),
+                blocking_operations: Arc::new(Semaphore::new(super::MAXIMUM_BLOCKING_OPERATIONS)),
+                bearer_token: Zeroizing::new("api-test-token".to_owned()),
+                discovery: build_memory_discovery("http://127.0.0.1:8787/v1".to_owned())
+                    .expect("fixture discovery"),
+                oauth_resource_metadata: None,
+            }),
+        }
+    }
+
+    fn fixture_headers() -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            AUTHORIZATION,
+            "Bearer api-test-token".parse().expect("fixture bearer"),
+        );
+        headers
+    }
+
+    fn fixture_preference() -> super::RememberPreferenceRequest {
+        super::RememberPreferenceRequest {
+            workspace_id: "workspace_blocking".to_owned(),
+            subject_id: "principal_blocking".to_owned(),
+            content: "Call me Hippo".to_owned(),
+            domain: None,
+            entity_id: None,
+            activity_id: None,
+            expected_previous_sequence: 0,
+        }
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn busy_response_is_a_closed_json_problem_with_retry_advice() {
+        let response = super::ApiError::busy().into_response();
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(
+            response.headers().get(axum::http::header::RETRY_AFTER),
+            Some(&axum::http::HeaderValue::from_static("1"))
+        );
+        let bytes = axum::body::to_bytes(response.into_body(), 4096)
+            .await
+            .expect("bounded problem response");
+        let body: serde_json::Value =
+            serde_json::from_slice(&bytes).expect("JSON problem response");
+        assert_eq!(
+            body,
+            serde_json::json!({
+                "code": "service_busy",
+                "message": "synchronous operation capacity is temporarily unavailable"
+            })
+        );
+        assert!(
+            !super::ApiError::unauthenticated()
+                .into_response()
+                .headers()
+                .contains_key(axum::http::header::RETRY_AFTER)
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn blocking_operation_runs_off_executor_and_can_construct_blocking_http_client() {
+        let executor_thread = std::thread::current().id();
+        let capacity = Arc::new(Semaphore::new(1));
+        let worker_thread = super::run_blocking_operation(Arc::clone(&capacity), move || {
+            let client = reqwest::blocking::Client::builder()
+                .https_only(true)
+                .no_proxy()
+                .build()
+                .expect("blocking client construction must run outside async execution");
+            drop(client);
+            Ok(std::thread::current().id())
+        })
+        .await
+        .unwrap_or_else(|_| panic!("blocking operation failed"));
+        assert_ne!(executor_thread, worker_thread);
+        assert_eq!(capacity.available_permits(), 1);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn saturated_or_closed_blocking_capacity_rejects_before_starting_work() {
+        let capacity = Arc::new(Semaphore::new(1));
+        let permit = Arc::clone(&capacity)
+            .try_acquire_owned()
+            .expect("hold fixture capacity");
+        let executed = Arc::new(AtomicBool::new(false));
+        for closed in [false, true] {
+            if closed {
+                capacity.close();
+            }
+            let worker_executed = Arc::clone(&executed);
+            let error = super::run_blocking_operation(Arc::clone(&capacity), move || {
+                worker_executed.store(true, Ordering::SeqCst);
+                Ok(())
+            })
+            .await
+            .expect_err("capacity must fail closed");
+            assert_eq!(error.status, StatusCode::SERVICE_UNAVAILABLE);
+            assert_eq!(error.code, "service_busy");
+            assert!(!executed.load(Ordering::SeqCst));
+        }
+        drop(permit);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn failed_or_panicked_worker_releases_capacity_and_returns_closed_errors() {
+        let capacity = Arc::new(Semaphore::new(1));
+        let rejected = super::run_blocking_operation(Arc::clone(&capacity), || {
+            Err::<(), _>(super::ApiError::access_denied())
+        })
+        .await
+        .expect_err("application failure");
+        assert_eq!(rejected.status, StatusCode::FORBIDDEN);
+        assert_eq!(capacity.available_permits(), 1);
+
+        let panicked = super::run_blocking_operation(
+            Arc::clone(&capacity),
+            || -> Result<(), super::ApiError> {
+                panic!("fixture worker panic");
+            },
+        )
+        .await
+        .expect_err("worker panic must not escape its task");
+        assert_eq!(panicked.status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(panicked.code, "internal_error");
+        assert_eq!(capacity.available_permits(), 1);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn cancellation_does_not_release_capacity_before_the_worker_finishes() {
+        let capacity = Arc::new(Semaphore::new(1));
+        let (started_tx, started_rx) = oneshot::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let completed = Arc::new(AtomicBool::new(false));
+        let worker_completed = Arc::clone(&completed);
+        let worker = tokio::spawn(super::run_blocking_operation(
+            Arc::clone(&capacity),
+            move || {
+                let _ = started_tx.send(());
+                release_rx
+                    .recv_timeout(Duration::from_secs(5))
+                    .expect("release fixture worker");
+                worker_completed.store(true, Ordering::SeqCst);
+                Ok(())
+            },
+        ));
+        tokio::time::timeout(Duration::from_secs(5), started_rx)
+            .await
+            .expect("worker must start")
+            .expect("worker start notification");
+        let health = tokio::time::timeout(Duration::from_secs(1), super::health())
+            .await
+            .expect("health must not wait for a blocking worker");
+        assert_eq!(health.0.status, "ok");
+        worker.abort();
+        assert!(worker.await.err().expect("cancelled waiter").is_cancelled());
+        assert_eq!(capacity.available_permits(), 0);
+        assert!(!completed.load(Ordering::SeqCst));
+        let blocked = super::run_blocking_operation(Arc::clone(&capacity), || Ok(()))
+            .await
+            .expect_err("cancelled request must not free running capacity");
+        assert_eq!(blocked.status, StatusCode::SERVICE_UNAVAILABLE);
+        release_tx.send(()).expect("release running operation");
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while capacity.available_permits() == 0 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("finished worker must release admission capacity");
+        assert!(completed.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn handler_authentication_precedes_worker_admission_and_busy_writes_do_not_mutate() {
+        let state = fixture_state();
+        let permit = Arc::clone(&state.inner.blocking_operations)
+            .try_acquire_many_owned(
+                u32::try_from(super::MAXIMUM_BLOCKING_OPERATIONS).expect("bounded capacity"),
+            )
+            .expect("hold all worker capacity");
+        let unauthenticated = super::remember_preference(
+            State(state.clone()),
+            HeaderMap::new(),
+            Json(fixture_preference()),
+        )
+        .await
+        .err()
+        .expect("unauthenticated request");
+        assert_eq!(unauthenticated.status, StatusCode::UNAUTHORIZED);
+        let busy = super::remember_preference(
+            State(state.clone()),
+            fixture_headers(),
+            Json(fixture_preference()),
+        )
+        .await
+        .err()
+        .expect("saturated authenticated request");
+        assert_eq!(busy.status, StatusCode::SERVICE_UNAVAILABLE);
+        drop(permit);
+        let runtime = state.inner.runtime.lock().expect("fixture runtime");
+        assert_eq!(runtime.next_id, 100);
+        assert_eq!(
+            rembrane_application::EventRepository::list_events_since(
+                &runtime.store,
+                &WorkspaceId::new("workspace_blocking"),
+                0,
+            )
+            .expect("canonical events")
+            .len(),
+            0
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn worker_handlers_preserve_encrypted_memory_lifecycle_and_tenant_denial() {
+        let state = fixture_state();
+        let mut other_tenant = fixture_preference();
+        other_tenant.workspace_id = "workspace_other".to_owned();
+        let denied =
+            super::remember_preference(State(state.clone()), fixture_headers(), Json(other_tenant))
+                .await
+                .err()
+                .expect("wrong tenant");
+        assert_eq!(denied.status, StatusCode::FORBIDDEN);
+
+        let (status, Json(created)) = super::remember_preference(
+            State(state.clone()),
+            fixture_headers(),
+            Json(fixture_preference()),
+        )
+        .await
+        .unwrap_or_else(|_| panic!("authorized preference creation"));
+        assert_eq!(status, StatusCode::CREATED);
+        assert_eq!(created.version, 1);
+        let Json(recalled) = super::resolve_context(
+            State(state.clone()),
+            fixture_headers(),
+            Json(ResolveRequest {
+                workspace_id: "workspace_blocking".to_owned(),
+                subject_id: "principal_blocking".to_owned(),
+                domain: None,
+                entity_id: None,
+                activity_id: None,
+                purpose: "fresh-assistant".to_owned(),
+                query: "What should I call the user?".to_owned(),
+                maximum_items: 10,
+                maximum_bytes: None,
+            }),
+        )
+        .await
+        .unwrap_or_else(|_| panic!("authorized encrypted recall"));
+        assert_eq!(recalled.items.len(), 1);
+        assert_eq!(recalled.items[0].id, created.memory_id);
+        assert_eq!(recalled.items[0].content, "Call me Hippo");
+        assert_eq!(
+            state.inner.blocking_operations.available_permits(),
+            super::MAXIMUM_BLOCKING_OPERATIONS
+        );
+    }
 
     #[test]
     fn accepts_only_exact_bearer_token() {

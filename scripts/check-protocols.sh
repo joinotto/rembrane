@@ -588,6 +588,20 @@ jq -e --slurpfile schema spec/channel-processor-message.schema.json '
 
 ruby -ryaml -e '
 document = YAML.load_file(ARGV.fetch(0))
+busy = document.fetch("components").fetch("responses").fetch("ServiceBusy")
+abort("busy retry advice differs") unless busy.fetch("headers").fetch("Retry-After").fetch("schema").fetch("const") == 1
+busy_content = busy.fetch("content").fetch("application/json")
+abort("busy problem schema differs") unless busy_content.fetch("schema").fetch("$ref") == "#/components/schemas/Problem"
+abort("busy error code differs") unless busy_content.fetch("example").fetch("code") == "service_busy"
+document.fetch("paths").each_value do |path|
+  path.each do |method, endpoint|
+    next unless %w[get post].include?(method)
+    security = endpoint.fetch("security", document.fetch("security"))
+    next if security.empty?
+    response = endpoint.fetch("responses").fetch("503")
+    abort("authenticated operation lacks busy response") unless response.fetch("$ref") == "#/components/responses/ServiceBusy"
+  end
+end
 operation = document.fetch("paths").fetch("/graph/context/resolve").fetch("post")
 request_schema = operation
   .fetch("requestBody")

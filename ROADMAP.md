@@ -286,6 +286,15 @@ are in [First Production Release Plan](docs/PRODUCTION_PLAN.md).
       imported evidence, and contiguous event persistence.
 - [x] Package the local REST service for loopback-only Docker Compose
   self-hosting with persistent encrypted storage.
+  - [x] Construct synchronous provider clients outside the async executor and
+    dispatch every authenticated canonical REST operation through bounded
+    blocking workers without holding runtime locks on executor threads.
+  - [x] Authenticate before worker admission, return documented 503 overload
+    problems, and retain capacity until real completion after cancellation.
+  - [x] Prove no-listener worker isolation, overload/failure cleanup, tenant
+    denial, and encrypted remember/recall on a current-thread async runtime.
+  - [ ] Execute the refactored HTTP listener/Postman and load/recovery suites
+    in a socket-enabled staging environment.
   - [x] Resolve the REST bearer credential from validated environment or
     protected-file references and enforce bounded RFC bearer-token grammar.
   - [x] Mount the REST bearer credential and development workspace key as
@@ -671,6 +680,9 @@ are in [First Production Release Plan](docs/PRODUCTION_PLAN.md).
     - [x] Separate termination authorization from deletion commit so an HTTP
       transport can retain the local binding until downstream confirmation.
   - [ ] Serve Streamable HTTP through the official Rust MCP SDK.
+    - [ ] Isolate synchronous provider construction, tool execution, and OAuth
+      introspection from async executor threads with bounded admission and
+      cancellation-safe capacity ownership.
     - [x] Pin the reviewed official Rust MCP SDK release exactly so the
       transport API and dependency resolution cannot drift before remote
       transport enablement.

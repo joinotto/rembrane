@@ -21,6 +21,11 @@ evidence and the strict readiness command.
   preserved project scopes and fresh destination identities, and rejection
   of unsupported scope selectors before I/O. Imports are not trusted memory
   until explicit approval; exports are not project-filtered sharing APIs.
+- REST synchronous operations now use bounded blocking workers with
+  authentication-before-admission, explicit overload responses, and
+  cancellation-safe capacity ownership. No-listener tests cover encrypted
+  remember/recall and tenant denial, but real HTTP/provider/load verification
+  is still required.
 - The PostgreSQL boundary includes a fail-closed runtime-authority guard with
   74 passing adapter unit tests. Its new shared SQL fixtures still require
   live PostgreSQL execution; the concrete database driver remains missing.
@@ -78,6 +83,9 @@ No existing strict release gate is waived by this plan.
 
 - [ ] Wire the official pinned Rust MCP SDK Streamable HTTP service through
   the existing OAuth, tenant, session, and request-authorization boundaries.
+- [ ] Keep MCP tool/provider work and OAuth introspection off executor
+  threads, with bounded admission and capacity held through actual completion
+  after cancellation; the new REST boundary does not cover MCP.
 - [ ] Enable its actual transport feature and resolve/build the complete
   locked dependency graph; a protocol adapter alone is insufficient.
 - [ ] Implement a concrete PostgreSQL driver, pool, and runtime repository
