@@ -93,6 +93,8 @@ by both `rembrane checkpoint` and `rembrane resume`. It preserves activity and
 optional entity continuity, optimistic version, next steps, blockers, source
 state fingerprint, staleness, and the resume disclosure receipt. The canonical
 domain enforces a 256 KiB payload ceiling and 1,024 combined list items.
+Failures use mutually exclusive `checkpoint_failed` or `resume_failed`
+envelopes without arbitrary diagnostic text.
 
 ## Provider adapter manifest
 

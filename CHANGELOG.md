@@ -21,6 +21,11 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Failed CLI checkpoint and resume operations now emit closed generic error
   codes without serializing working state, fingerprints, tenant identities,
   database paths, key metadata, or arbitrary internal errors.
+- The working-memory schema now defines mutually exclusive success,
+  checkpoint-failure, and resume-failure documents with canonical fixtures and
+  protocol drift checks.
+- The encrypted CLI lifecycle now proves both working-memory failure envelopes
+  omit goals, summaries, fingerprints, tenant identities, and storage errors.
 - `rembrane recall --json` now emits versioned structured memory items plus
   context-pack and disclosure-receipt IDs for generic bots, launchers, and
   agent runtimes without requiring human-output parsing.

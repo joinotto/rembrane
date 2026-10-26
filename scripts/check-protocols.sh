@@ -109,6 +109,8 @@ jq empty \
     spec/examples/cli-recall.json \
     spec/examples/cli-recall-failure.json \
     spec/examples/cli-checkpoint.json \
+    spec/examples/cli-checkpoint-failure.json \
+    spec/examples/cli-resume-failure.json \
     spec/examples/memory-provider-discovery.json \
     spec/examples/memory-provider-context-request.json \
     spec/examples/memory-provider-context-response.json \
@@ -199,17 +201,31 @@ jq -e \
 rg -q '^const MAX_CLI_RECALL_ITEMS: usize = 100;$' apps/rembrane-cli/src/main.rs
 rg -q '^const MAX_CLI_RECALL_BYTES: usize = 1_048_576;$' apps/rembrane-cli/src/main.rs
 
-jq -e --slurpfile example spec/examples/cli-checkpoint.json '
+jq -e \
+    --slurpfile example spec/examples/cli-checkpoint.json \
+    --slurpfile checkpointFailure spec/examples/cli-checkpoint-failure.json \
+    --slurpfile resumeFailure spec/examples/cli-resume-failure.json '
     .additionalProperties == false
     and .properties.schemaVersion.const == 1
     and .properties.version.minimum == 1
     and ."$defs".textList.maxItems == 1024
     and ."x-rembrane-maximumCombinedListItems" == 1024
     and ."x-rembrane-maximumPayloadBytes" == 262144
+    and .properties.error.properties.code.enum
+        == ["checkpoint_failed", "resume_failed"]
+    and (.oneOf | length) == 2
     and $example[0].schemaVersion == 1
     and $example[0].version == 2
     and $example[0].stale == false
     and ($example[0].nextSteps | length) == 1
+    and $checkpointFailure[0] == {
+        "schemaVersion": 1,
+        "error": {"code": "checkpoint_failed"}
+    }
+    and $resumeFailure[0] == {
+        "schemaVersion": 1,
+        "error": {"code": "resume_failed"}
+    }
 ' spec/cli-checkpoint.schema.json >/dev/null
 rg -q '^pub const MAX_CHECKPOINT_LIST_ITEMS: usize = 1_024;$' \
     crates/rembrane-domain/src/activity.rs

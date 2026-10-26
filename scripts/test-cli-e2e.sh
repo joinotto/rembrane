@@ -660,6 +660,53 @@ trace_output=$(
 trace_id=$(printf '%s\n' "$trace_output" | awk '/^Proposed / { print $2 }')
 test -n "$trace_id"
 
+checkpoint_failure="$test_directory/checkpoint-failure.json"
+checkpoint_failure_stderr="$test_directory/checkpoint-failure.stderr"
+if "$rembrane_binary" checkpoint \
+    --database "$test_directory/missing-checkpoint.sqlite" \
+    --principal principal_private \
+    --workspace workspace_private \
+    --activity activity_private \
+    --goal "private goal" \
+    --summary "private summary" >"$checkpoint_failure" 2>"$checkpoint_failure_stderr"
+then
+    echo "checkpoint unexpectedly accepted a missing database" >&2
+    exit 1
+fi
+jq -e '
+    . == {
+        "schemaVersion": 1,
+        "error": {"code": "checkpoint_failed"}
+    }
+    and ((tostring | contains("private goal")) | not)
+    and ((tostring | contains("private summary")) | not)
+    and ((tostring | contains("workspace_private")) | not)
+' "$checkpoint_failure" >/dev/null
+test ! -s "$checkpoint_failure_stderr"
+
+resume_failure="$test_directory/resume-failure.json"
+resume_failure_stderr="$test_directory/resume-failure.stderr"
+if "$rembrane_binary" resume \
+    --database "$test_directory/missing-resume.sqlite" \
+    --principal principal_private \
+    --workspace workspace_private \
+    --activity activity_private \
+    --client client_private \
+    --state-fingerprint private_fingerprint >"$resume_failure" 2>"$resume_failure_stderr"
+then
+    echo "resume unexpectedly accepted a missing database" >&2
+    exit 1
+fi
+jq -e '
+    . == {
+        "schemaVersion": 1,
+        "error": {"code": "resume_failed"}
+    }
+    and ((tostring | contains("private_fingerprint")) | not)
+    and ((tostring | contains("workspace_private")) | not)
+' "$resume_failure" >/dev/null
+test ! -s "$resume_failure_stderr"
+
 "$rembrane_binary" checkpoint \
     --database "$database" \
     --principal principal_e2e \

@@ -4,20 +4,7 @@
   "title": "Rembrane CLI checkpoint and resume result",
   "type": "object",
   "additionalProperties": false,
-  "required": [
-    "schemaVersion",
-    "checkpointId",
-    "activityId",
-    "entityId",
-    "goal",
-    "summary",
-    "nextSteps",
-    "blockers",
-    "stateFingerprint",
-    "version",
-    "stale",
-    "disclosureId"
-  ],
+  "required": ["schemaVersion"],
   "properties": {
     "schemaVersion": { "const": 1 },
     "checkpointId": { "$ref": "#/$defs/opaqueId" },
@@ -50,6 +37,16 @@
         { "$ref": "#/$defs/opaqueId" },
         { "type": "null" }
       ]
+    },
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code"],
+      "properties": {
+        "code": {
+          "enum": ["checkpoint_failed", "resume_failed"]
+        }
+      }
     }
   },
   "$defs": {
@@ -73,6 +70,44 @@
       }
     }
   },
+  "oneOf": [
+    {
+      "required": [
+        "checkpointId",
+        "activityId",
+        "entityId",
+        "goal",
+        "summary",
+        "nextSteps",
+        "blockers",
+        "stateFingerprint",
+        "version",
+        "stale",
+        "disclosureId"
+      ],
+      "not": {
+        "required": ["error"]
+      }
+    },
+    {
+      "required": ["error"],
+      "not": {
+        "anyOf": [
+          { "required": ["checkpointId"] },
+          { "required": ["activityId"] },
+          { "required": ["entityId"] },
+          { "required": ["goal"] },
+          { "required": ["summary"] },
+          { "required": ["nextSteps"] },
+          { "required": ["blockers"] },
+          { "required": ["stateFingerprint"] },
+          { "required": ["version"] },
+          { "required": ["stale"] },
+          { "required": ["disclosureId"] }
+        ]
+      }
+    }
+  ],
   "x-rembrane-maximumPayloadBytes": 262144,
   "x-rembrane-maximumCombinedListItems": 1024
 }

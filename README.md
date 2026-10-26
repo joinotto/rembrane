@@ -385,7 +385,8 @@ closed `recall_failed` code.
 `rembrane checkpoint` and `rembrane resume` return the versioned
 `spec/cli-checkpoint.schema.json` working-memory document, allowing a new agent
 process to resume the exact activity, next steps, blockers, and state
-fingerprint while retaining the disclosure receipt.
+fingerprint while retaining the disclosure receipt. Failed operations return
+only the closed `checkpoint_failed` or `resume_failed` code.
 
 The local REST server additionally requires `REMBRANE_DATABASE`,
 `REMBRANE_PRINCIPAL_ID`, `REMBRANE_WORKSPACE_ID`, `REMBRANE_CLIENT_ID`, and
