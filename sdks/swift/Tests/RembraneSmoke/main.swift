@@ -335,6 +335,37 @@ private struct RembraneSmoke {
                 == "Bearer test-token"
         )
 
+        var administrationPaths: [String] = []
+        let _: InvitationResponse = try await client.rotateWorkspaceKey(
+            continuityRequest
+        )
+        administrationPaths.append(await transport.request?.url?.path ?? "")
+        let _: InvitationResponse = try await client.setRetentionPolicy(
+            continuityRequest
+        )
+        administrationPaths.append(await transport.request?.url?.path ?? "")
+        let _: InvitationResponse = try await client.placeLegalHold(
+            continuityRequest
+        )
+        administrationPaths.append(await transport.request?.url?.path ?? "")
+        let _: InvitationResponse = try await client.releaseLegalHold(
+            continuityRequest
+        )
+        administrationPaths.append(await transport.request?.url?.path ?? "")
+        let _: InvitationResponse = try await client.executeRetentionPurge(
+            continuityRequest
+        )
+        administrationPaths.append(await transport.request?.url?.path ?? "")
+        precondition(
+            administrationPaths == [
+                "/v1/workspaces/key-rotation",
+                "/v1/retention/policy",
+                "/v1/retention/legal-holds",
+                "/v1/retention/legal-holds/release",
+                "/v1/retention/purge",
+            ]
+        )
+
         let archive = try await client.exportPortableData(
             workspaceID: "team_workspace",
             subjectID: "principal-1",

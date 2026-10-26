@@ -62,6 +62,8 @@ against stale workspace state.
 
 Named travel methods cover trip creation, participants, constraints, decisions,
 time-sensitive booking research, and audited travel-context resolution.
+Workspace administration methods cover key rotation, retention policy,
+legal-hold placement/release, and bounded hold-aware purges.
 
 ## Verify
 

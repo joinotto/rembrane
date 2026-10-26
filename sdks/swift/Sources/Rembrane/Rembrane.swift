@@ -492,6 +492,53 @@ public struct RembraneClient<Transport: RembraneTransport>: Sendable {
         try await post("/workspaces/invitations/revoke", request: request, as: responseType)
     }
 
+    public func rotateWorkspaceKey<Request: Encodable, Response: Decodable>(
+        _ request: Request,
+        as responseType: Response.Type = Response.self
+    ) async throws -> Response {
+        try await post(
+            "/workspaces/key-rotation",
+            request: request,
+            as: responseType
+        )
+    }
+
+    public func setRetentionPolicy<Request: Encodable, Response: Decodable>(
+        _ request: Request,
+        as responseType: Response.Type = Response.self
+    ) async throws -> Response {
+        try await post("/retention/policy", request: request, as: responseType)
+    }
+
+    public func placeLegalHold<Request: Encodable, Response: Decodable>(
+        _ request: Request,
+        as responseType: Response.Type = Response.self
+    ) async throws -> Response {
+        try await post(
+            "/retention/legal-holds",
+            request: request,
+            as: responseType
+        )
+    }
+
+    public func releaseLegalHold<Request: Encodable, Response: Decodable>(
+        _ request: Request,
+        as responseType: Response.Type = Response.self
+    ) async throws -> Response {
+        try await post(
+            "/retention/legal-holds/release",
+            request: request,
+            as: responseType
+        )
+    }
+
+    public func executeRetentionPurge<Request: Encodable, Response: Decodable>(
+        _ request: Request,
+        as responseType: Response.Type = Response.self
+    ) async throws -> Response {
+        try await post("/retention/purge", request: request, as: responseType)
+    }
+
     public func listWorkspaceInvitations<Response: Decodable>(
         workspaceID: String,
         status: String? = nil,
