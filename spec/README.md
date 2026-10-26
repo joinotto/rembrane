@@ -96,6 +96,13 @@ domain enforces a 256 KiB payload ceiling and 1,024 combined list items.
 Failures use mutually exclusive `checkpoint_failed` or `resume_failed`
 envelopes without arbitrary diagnostic text.
 
+## CLI work-trace result
+
+`cli-trace.schema.json` defines the closed result emitted by
+`rembrane trace --json`. Success returns the canonical proposed-memory ID and
+version; failure returns only `trace_failed`. Neither shape exposes workspace,
+principal, activity, entity, client, storage, or trace-content metadata.
+
 ## Provider adapter manifest
 
 `provider-manifest.schema.json` defines capability negotiation between the

@@ -79,6 +79,7 @@ jq empty \
     spec/local-doctor.schema.json \
     spec/cli-recall.schema.json \
     spec/cli-checkpoint.schema.json \
+    spec/cli-trace.schema.json \
     spec/mcp-client-catalog.schema.json \
     spec/memory-provider-compatibility-lock.json \
     spec/key-provider-compatibility-lock.json \
@@ -111,6 +112,8 @@ jq empty \
     spec/examples/cli-checkpoint.json \
     spec/examples/cli-checkpoint-failure.json \
     spec/examples/cli-resume-failure.json \
+    spec/examples/cli-trace.json \
+    spec/examples/cli-trace-failure.json \
     spec/examples/memory-provider-discovery.json \
     spec/examples/memory-provider-context-request.json \
     spec/examples/memory-provider-context-response.json \
@@ -257,6 +260,28 @@ jq -e '
         | contains("at most 1024 combined items")
     )
 ' spec/memory-provider.schema.json >/dev/null
+
+jq -e \
+    --slurpfile example spec/examples/cli-trace.json \
+    --slurpfile failure spec/examples/cli-trace-failure.json '
+    .additionalProperties == false
+    and .properties.schemaVersion.const == 1
+    and .properties.memoryId.maxLength == 255
+    and .properties.version.minimum == 1
+    and .properties.status.const == "proposed"
+    and .properties.error.properties.code.const == "trace_failed"
+    and (.oneOf | length) == 2
+    and $example[0] == {
+        "schemaVersion": 1,
+        "memoryId": "trace_example_01",
+        "version": 1,
+        "status": "proposed"
+    }
+    and $failure[0] == {
+        "schemaVersion": 1,
+        "error": {"code": "trace_failed"}
+    }
+' spec/cli-trace.schema.json >/dev/null
 
 jq -e --slurpfile example spec/examples/customer-kms-conformance-evidence.json '
     .additionalProperties == false
