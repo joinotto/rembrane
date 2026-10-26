@@ -134,6 +134,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - The sensitive-file gate now rejects derived debug output on domain structs
   and canonical identifier newtypes, and requires the identifier macro's
   reviewed redacted implementation.
+- Memory-provider proposal diagnostics now expose only safe payload sizes,
+  scope kind, memory kind, provenance class, source-reference presence, and
+  result version while redacting content, references, timestamps, and
+  identities.
 - Canonical SQLite initialization and backup now require the path opened by
   SQLite to retain the exact protected file's device/inode identity, and
   failure cleanup refuses to remove a path replaced after preparation.

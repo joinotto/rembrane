@@ -1,10 +1,12 @@
+use std::fmt;
+
 use rembrane_domain::{EvidenceSource, MAX_MEMORY_CONTENT_BYTES, MemoryId, MemoryKind};
 
 use crate::{MemoryProviderContextSelector, MemoryProviderIdempotencyKey, ProviderError};
 
 pub const MAX_SOURCE_REFERENCE_BYTES: usize = 2_048;
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct ProposeMemoryPayload {
     idempotency_key: MemoryProviderIdempotencyKey,
     selector: MemoryProviderContextSelector,
@@ -13,6 +15,25 @@ pub struct ProposeMemoryPayload {
     evidence_source: EvidenceSource,
     source_reference: Option<String>,
     observed_at_epoch_seconds: u64,
+}
+
+impl fmt::Debug for ProposeMemoryPayload {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ProposeMemoryPayload")
+            .field("idempotency_key", &"<redacted>")
+            .field("selector", &self.selector)
+            .field("kind", &self.kind)
+            .field("content_bytes", &self.content.len())
+            .field("evidence_source", &self.evidence_source)
+            .field("source_reference_present", &self.source_reference.is_some())
+            .field(
+                "source_reference_bytes",
+                &self.source_reference.as_deref().map_or(0, str::len),
+            )
+            .field("observed_at_epoch_seconds", &"<redacted>")
+            .finish()
+    }
 }
 
 impl ProposeMemoryPayload {
@@ -109,10 +130,20 @@ impl ProposeMemoryPayload {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct ProposeMemoryResult {
     memory_id: MemoryId,
     version: u64,
+}
+
+impl fmt::Debug for ProposeMemoryResult {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ProposeMemoryResult")
+            .field("memory_id", &"<redacted>")
+            .field("version", &self.version)
+            .finish()
+    }
 }
 
 impl ProposeMemoryResult {
@@ -211,5 +242,43 @@ mod tests {
         assert!(build("content".to_owned(), None, 1_001).is_err());
         assert!(ProposeMemoryResult::new(MemoryId::new(""), 1).is_err());
         assert!(ProposeMemoryResult::new(MemoryId::new("memory_01"), 0).is_err());
+    }
+
+    #[test]
+    fn proposal_diagnostics_redact_content_references_time_and_identity() {
+        let payload = ProposeMemoryPayload::new(
+            MemoryProviderIdempotencyKey::new("private_proposal_key")
+                .expect("idempotency key should be valid"),
+            MemoryProviderContextSelector::domain("private_domain")
+                .expect("selector should be valid"),
+            MemoryKind::Preference,
+            "Private preference content",
+            EvidenceSource::UserStatement,
+            Some("private_source_reference".to_owned()),
+            1_900_000_001,
+            1_900_000_002,
+        )
+        .expect("proposal should be valid");
+        let result = ProposeMemoryResult::new(MemoryId::new("private_memory"), 4)
+            .expect("result should be valid");
+
+        let diagnostic = format!("{payload:?} {result:?}");
+
+        for private_value in [
+            "private_proposal_key",
+            "private_domain",
+            "Private preference content",
+            "private_source_reference",
+            "1900000001",
+            "private_memory",
+        ] {
+            assert!(!diagnostic.contains(private_value));
+        }
+        assert!(diagnostic.contains("kind: Preference"));
+        assert!(diagnostic.contains("content_bytes: 26"));
+        assert!(diagnostic.contains("evidence_source: UserStatement"));
+        assert!(diagnostic.contains("source_reference_present: true"));
+        assert!(diagnostic.contains("source_reference_bytes: 24"));
+        assert!(diagnostic.contains("version: 4"));
     }
 }
