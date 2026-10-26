@@ -448,6 +448,11 @@ The user deletes an entity. The platform removes or tombstones canonical records
 - Generate tool-specific configuration while keeping canonical memory provider-independent.
 - Export JSONL, Markdown, encrypted archive, and graph formats.
 - Import common chat exports and supported third-party memory formats.
+- Treat decrypted portability formats as deliberate disclosure operations:
+  require explicit plaintext confirmation, authenticate every canonical record,
+  enforce exact workspace and subject boundaries, bound record and byte counts,
+  create outputs exclusively with owner-only permissions, and remove partial
+  outputs without deleting attacker-installed path replacements.
 - Keep provider-specific identifiers out of canonical identity.
 - Separate channel adapters from agent adapters so that WhatsApp, iMessage, web, CLI, and IDE transports do not become the user identity or own canonical memory.
 - Classify every connection using verified compatibility tiers: native provider, MCP/tool/plugin, user-controlled gateway, explicit share/context card, import/export, or unsupported.
@@ -496,6 +501,20 @@ rembrane restore
 rembrane export
 rembrane import
 ```
+
+The initial implemented portability surface is:
+
+```text
+rembrane export --database <path> --principal <id> --workspace <id> \
+  --format jsonl --output <new-path> --allow-plaintext-export
+```
+
+It exports the authenticated current canonical records for that subject in
+deterministic memory-ID/version order. Each line carries a closed format
+identifier and version, tenant identity, lifecycle state, scope, content, and
+evidence references. The command never exports provider credentials or
+infrastructure secrets. JSONL is intentionally plaintext for interoperability;
+encrypted backup remains the safer choice for recovery and opaque transfer.
 
 `rembrane init` should:
 

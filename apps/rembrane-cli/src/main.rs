@@ -46,6 +46,10 @@ use zeroize::Zeroizing;
 
 const EXPORT_MAGIC: &[u8; 16] = b"REMBRANE-EXPORT\n";
 const EXPORT_VERSION: u32 = 1;
+const MEMORY_JSONL_FORMAT: &str = "rembrane-memory-jsonl";
+const MEMORY_JSONL_VERSION: u32 = 1;
+const MAX_MEMORY_JSONL_RECORDS: usize = 10_000;
+const MAX_MEMORY_JSONL_BYTES: usize = 67_108_864;
 const MAX_PROVIDER_REGISTRY_BYTES: u64 = 1_048_576;
 const MAX_PROVIDER_REGISTRY_PUBLIC_KEY_BYTES: u64 = 4_096;
 
@@ -73,6 +77,7 @@ fn run(arguments: &[String]) -> Result<(), String> {
         Some("doctor") => doctor(&arguments[1..]),
         Some("backup") => backup(&arguments[1..]),
         Some("restore") => restore(&arguments[1..]),
+        Some("export") => export_memories(&arguments[1..]),
         Some("fingerprint-git") => fingerprint_git(&arguments[1..]),
         Some("mcp-config") => print_mcp_config(&arguments[1..]),
         Some("providers") => providers(&arguments[1..]),
@@ -1450,6 +1455,178 @@ fn write_export(snapshot: &std::path::Path, destination: &std::path::Path) -> Re
     }
     remove_open_file_path(snapshot, &input)
         .map_err(|error| format!("cannot remove temporary snapshot: {error}"))
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MemoryJsonlRecord<'a> {
+    format: &'static str,
+    format_version: u32,
+    workspace_id: String,
+    subject_id: String,
+    memory_id: String,
+    version: u64,
+    scope: MemoryJsonlScope,
+    kind: &'static str,
+    status: &'static str,
+    content: &'a str,
+    evidence: Vec<MemoryJsonlEvidence>,
+}
+
+#[derive(Serialize)]
+#[serde(tag = "type", rename_all = "kebab-case")]
+enum MemoryJsonlScope {
+    Global,
+    Domain { name: String },
+    Entity { id: String },
+    Activity { id: String },
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MemoryJsonlEvidence {
+    id: String,
+    source: &'static str,
+}
+
+fn export_memories(arguments: &[String]) -> Result<(), String> {
+    if optional_option(arguments, "--format").unwrap_or("jsonl") != "jsonl" {
+        return Err("only --format jsonl is currently supported".to_owned());
+    }
+    if !arguments
+        .iter()
+        .any(|argument| argument == "--allow-plaintext-export")
+    {
+        return Err(
+            "JSONL contains decrypted memory; repeat with --allow-plaintext-export to confirm"
+                .to_owned(),
+        );
+    }
+    let output = std::path::Path::new(option(arguments, "--output")?);
+    create_parent_directory(output)?;
+    let (store, principal_id, workspace_id) = encrypted_store(arguments)?;
+    let membership = store
+        .find_membership(&workspace_id, &principal_id)
+        .map_err(|error| format!("cannot inspect workspace membership: {error}"))?
+        .ok_or_else(|| "principal is not a member of the configured workspace".to_owned())?;
+    if !membership.is_active() {
+        return Err("configured workspace membership is not active".to_owned());
+    }
+    let records = store
+        .list_for_subject(&workspace_id, &principal_id)
+        .map_err(|error| format!("cannot authenticate memories for export: {error}"))?;
+    let count = write_memory_jsonl_export(&records, &workspace_id, &principal_id, output)?;
+    println!("Exported {count} memories");
+    println!("Format: {MEMORY_JSONL_FORMAT}-v{MEMORY_JSONL_VERSION}");
+    println!("Warning: output contains decrypted memory plaintext");
+    println!("Output: {}", output.display());
+    Ok(())
+}
+
+fn write_memory_jsonl_export(
+    records: &[MemoryRecord],
+    workspace_id: &WorkspaceId,
+    principal_id: &PrincipalId,
+    destination: &std::path::Path,
+) -> Result<usize, String> {
+    use std::io::Write as _;
+
+    if records.len() > MAX_MEMORY_JSONL_RECORDS {
+        return Err(format!(
+            "memory export exceeds the {MAX_MEMORY_JSONL_RECORDS}-record limit"
+        ));
+    }
+    let mut records = records.iter().collect::<Vec<_>>();
+    records.sort_unstable_by(|left, right| {
+        left.id()
+            .to_string()
+            .cmp(&right.id().to_string())
+            .then_with(|| left.version().cmp(&right.version()))
+    });
+    let mut output = private_create_new_options()
+        .open(destination)
+        .map_err(|error| format!("cannot create memory export: {error}"))?;
+    let result = (|| {
+        let mut written = 0_usize;
+        for memory in &records {
+            if memory.workspace_id() != workspace_id || memory.subject_id() != principal_id {
+                return Err(
+                    "memory export contains a record outside the requested tenant".to_owned(),
+                );
+            }
+            let record = memory_jsonl_record(memory);
+            let mut line = serde_json::to_vec(&record)
+                .map_err(|error| format!("cannot encode memory export: {error}"))?;
+            line.push(b'\n');
+            written = written
+                .checked_add(line.len())
+                .ok_or_else(|| "memory export size overflowed".to_owned())?;
+            if written > MAX_MEMORY_JSONL_BYTES {
+                return Err(format!(
+                    "memory export exceeds the {MAX_MEMORY_JSONL_BYTES}-byte limit"
+                ));
+            }
+            output
+                .write_all(&line)
+                .map_err(|error| format!("cannot write memory export: {error}"))?;
+        }
+        output
+            .sync_all()
+            .map_err(|error| format!("cannot persist memory export: {error}"))?;
+        sync_parent_directory(destination)
+            .map_err(|error| format!("cannot persist memory export directory entry: {error}"))
+    })();
+    if let Err(error) = result {
+        remove_open_file_path(destination, &output)?;
+        return Err(error);
+    }
+    Ok(records.len())
+}
+
+fn memory_jsonl_record(memory: &MemoryRecord) -> MemoryJsonlRecord<'_> {
+    MemoryJsonlRecord {
+        format: MEMORY_JSONL_FORMAT,
+        format_version: MEMORY_JSONL_VERSION,
+        workspace_id: memory.workspace_id().to_string(),
+        subject_id: memory.subject_id().to_string(),
+        memory_id: memory.id().to_string(),
+        version: memory.version(),
+        scope: match memory.scope() {
+            MemoryScope::Global => MemoryJsonlScope::Global,
+            MemoryScope::Domain { name } => MemoryJsonlScope::Domain { name: name.clone() },
+            MemoryScope::Entity { id } => MemoryJsonlScope::Entity { id: id.to_string() },
+            MemoryScope::Activity { id } => MemoryJsonlScope::Activity { id: id.to_string() },
+        },
+        kind: match memory.kind() {
+            MemoryKind::Preference => "preference",
+            MemoryKind::Semantic => "semantic",
+            MemoryKind::Episodic => "episodic",
+            MemoryKind::Procedural => "procedural",
+            MemoryKind::Observation => "observation",
+            MemoryKind::Working => "working",
+        },
+        status: match memory.status() {
+            rembrane_domain::MemoryStatus::Proposed => "proposed",
+            rembrane_domain::MemoryStatus::Confirmed => "confirmed",
+            rembrane_domain::MemoryStatus::Superseded => "superseded",
+            rembrane_domain::MemoryStatus::Deleted => "deleted",
+        },
+        content: memory.content(),
+        evidence: memory
+            .evidence()
+            .iter()
+            .map(|evidence| MemoryJsonlEvidence {
+                id: evidence.id.to_string(),
+                source: match evidence.source {
+                    EvidenceSource::UserStatement => "user-statement",
+                    EvidenceSource::AgentObservation => "agent-observation",
+                    EvidenceSource::ToolResult => "tool-result",
+                    EvidenceSource::ImportedRecord => "imported-record",
+                    EvidenceSource::WorkspaceDecision => "workspace-decision",
+                },
+            })
+            .collect(),
+    }
 }
 
 fn read_export(
@@ -2877,6 +3054,8 @@ fn print_help() {
              --workspace <id> --output <path>\n\
            rembrane restore --input <path> --database <new-path> \
              --principal <id> --workspace <id>\n\
+           rembrane export --database <path> --principal <id> --workspace <id> \
+             --format jsonl --output <new-path> --allow-plaintext-export\n\
            rembrane fingerprint-git --repository <path>\n\
            rembrane providers list\n\
            rembrane providers check --provider <id> --adapter-version <version> \
@@ -2946,8 +3125,9 @@ mod tests {
     use rembrane_application::{AdministrativeAuditRepository, MembershipRepository};
     use rembrane_config::SecretReference;
     use rembrane_domain::{
-        AdministrativeAction, EntityId, Invitation, InvitationId, InvitationStatus, MemoryScope,
-        PrincipalId, ReadScope, WorkspaceId, WorkspaceRole,
+        AdministrativeAction, EntityId, EvidenceId, EvidenceReference, EvidenceSource, Invitation,
+        InvitationId, InvitationStatus, MemoryId, MemoryRecord, MemoryScope, PrincipalId,
+        ReadScope, WorkspaceId, WorkspaceRole,
     };
     use rembrane_store_sqlite::SqliteStore;
 
@@ -2961,7 +3141,7 @@ mod tests {
         read_export, recall_scope_context, redact_endpoint, render_mcp_config,
         requested_memory_privacy, requested_memory_scope, run, selected_secret_reference,
         test_provider, validate_external_conformance_namespace, validate_mcp_server_binary,
-        vscode_mcp_config, write_export, zed_mcp_config,
+        vscode_mcp_config, write_export, write_memory_jsonl_export, zed_mcp_config,
     };
 
     fn temporary_path(name: &str) -> std::path::PathBuf {
@@ -3781,6 +3961,109 @@ mod tests {
         }
         std::fs::remove_file(export).expect("export should be removed");
         std::fs::remove_file(restored).expect("restore should be removed");
+    }
+
+    #[test]
+    fn memory_jsonl_export_is_deterministic_private_and_tenant_scoped() {
+        let workspace = WorkspaceId::new("workspace_export");
+        let principal = PrincipalId::new("principal_export");
+        let later = MemoryRecord::confirmed_preference(
+            MemoryId::new("memory_z"),
+            workspace.clone(),
+            principal.clone(),
+            MemoryScope::Global,
+            "Call me Hippo",
+            EvidenceReference::new(EvidenceId::new("evidence_z"), EvidenceSource::UserStatement),
+        )
+        .expect("memory fixture");
+        let earlier = MemoryRecord::confirmed_preference(
+            MemoryId::new("memory_a"),
+            workspace.clone(),
+            principal.clone(),
+            MemoryScope::Entity {
+                id: EntityId::new("project_rembrane"),
+            },
+            "Prefer Rust",
+            EvidenceReference::new(
+                EvidenceId::new("evidence_a"),
+                EvidenceSource::WorkspaceDecision,
+            ),
+        )
+        .expect("memory fixture");
+        let export = temporary_path("memory-jsonl");
+
+        assert_eq!(
+            write_memory_jsonl_export(&[later, earlier], &workspace, &principal, &export)
+                .expect("JSONL export"),
+            2
+        );
+        let lines = std::fs::read_to_string(&export).expect("read JSONL export");
+        let records = lines
+            .lines()
+            .map(|line| serde_json::from_str::<serde_json::Value>(line).expect("valid JSON line"))
+            .collect::<Vec<_>>();
+        assert_eq!(records.len(), 2);
+        assert_eq!(records[0]["format"], "rembrane-memory-jsonl");
+        assert_eq!(records[0]["formatVersion"], 1);
+        assert_eq!(records[0]["memoryId"], "memory_a");
+        assert_eq!(records[0]["scope"]["type"], "entity");
+        assert_eq!(records[1]["memoryId"], "memory_z");
+        assert_eq!(records[1]["content"], "Call me Hippo");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+
+            assert_eq!(
+                std::fs::metadata(&export)
+                    .expect("export metadata")
+                    .permissions()
+                    .mode()
+                    & 0o777,
+                0o600
+            );
+        }
+        std::fs::remove_file(export).expect("fixture cleanup");
+    }
+
+    #[test]
+    fn memory_jsonl_export_removes_partial_cross_tenant_output() {
+        let workspace = WorkspaceId::new("workspace_export");
+        let principal = PrincipalId::new("principal_export");
+        let other_workspace = WorkspaceId::new("workspace_other");
+        let memory = MemoryRecord::confirmed_preference(
+            MemoryId::new("memory_other"),
+            other_workspace,
+            principal.clone(),
+            MemoryScope::Global,
+            "must not leak",
+            EvidenceReference::new(
+                EvidenceId::new("evidence_other"),
+                EvidenceSource::ImportedRecord,
+            ),
+        )
+        .expect("memory fixture");
+        let export = temporary_path("memory-jsonl-cross-tenant");
+
+        assert!(write_memory_jsonl_export(&[memory], &workspace, &principal, &export).is_err());
+        assert!(!export.exists());
+    }
+
+    #[test]
+    fn plaintext_memory_export_requires_explicit_confirmation() {
+        let error = request_run(&[
+            "export",
+            "--database",
+            "unused.sqlite",
+            "--principal",
+            "principal",
+            "--workspace",
+            "workspace",
+            "--output",
+            "unused.jsonl",
+        ])
+        .expect_err("plaintext export must require confirmation before opening storage");
+
+        assert!(error.contains("--allow-plaintext-export"));
     }
 
     #[cfg(unix)]

@@ -98,6 +98,11 @@ This roadmap describes sequencing, not release dates.
 - [x] Report local processing, connection scopes, endpoints, and secret sources
   through `rembrane doctor --privacy`.
 - [x] Add encrypted SQLite backup and verified restore commands.
+- [x] Add explicit plaintext JSONL export for authenticated canonical memories
+  with deterministic ordering, closed versioned records, tenant checks,
+  record/byte bounds, owner-only exclusive output, durable synchronization,
+  and replacement-safe partial-file cleanup.
+- [ ] Add authenticated import plus Markdown and graph portability formats.
 - [x] Package the local REST service for loopback-only Docker Compose
   self-hosting with persistent encrypted storage.
   - [x] Resolve the REST bearer credential from validated environment or

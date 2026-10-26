@@ -41,6 +41,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- CLI now exports authenticated canonical memories as deterministic, versioned
+  JSONL after explicit plaintext confirmation, with exact tenant validation,
+  bounded records and bytes, owner-only exclusive output, durable
+  synchronization, and replacement-safe failure cleanup.
 - Remote MCP now provides a bounded, non-evicting tenant Tower-service cache
   keyed by exact issuer, resource, principal, client, workspace, and OAuth
   scope set, preserving protocol sessions across token refresh while failing
