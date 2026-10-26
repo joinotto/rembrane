@@ -6547,6 +6547,80 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn shared_initialization_reservation_rejects_competing_dispatch_at_capacity() {
+        use std::future::Future;
+        use std::task::{Context, Poll, Wake, Waker};
+
+        struct NoopWake;
+
+        impl Wake for NoopWake {
+            fn wake(self: Arc<Self>) {}
+        }
+
+        let config = RemoteMcpConfig::new(
+            "https://memory.example.test/mcp".to_owned(),
+            "https://identity.example.test".to_owned(),
+            "https://identity.example.test/introspect".to_owned(),
+            "rembrane".to_owned(),
+            SecretReference::environment("OAUTH_SECRET").expect("reference should be valid"),
+            vec![],
+        )
+        .expect("remote profile should be valid");
+        let authorization = SharedRemoteMcpAxumAuthorization::from_config(1, &config, Verifier)
+            .expect("shared authorization should initialize");
+        let mut headers = HeaderMap::new();
+        headers.insert(HOST, HeaderValue::from_static("memory.example.test"));
+        headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+        headers.insert(
+            ACCEPT,
+            HeaderValue::from_static("application/json, text/event-stream"),
+        );
+        headers.insert(
+            AUTHORIZATION,
+            HeaderValue::from_static("Bearer workspace-one"),
+        );
+
+        let mut in_flight = Box::pin(authorization.initialize_and_commit_owned_session(
+            &headers,
+            initialize_body(),
+            1_000,
+            &PendingInitializationDispatcher,
+        ));
+        let waker = Waker::from(Arc::new(NoopWake));
+        let mut context = Context::from_waker(&waker);
+        assert_eq!(in_flight.as_mut().poll(&mut context), Poll::Pending);
+
+        let competing_calls = Arc::new(Mutex::new(0));
+        let competing = FailingInitializationDispatcher {
+            calls: Arc::clone(&competing_calls),
+        };
+        let rejection = authorization
+            .initialize_and_commit_owned_session(&headers, initialize_body(), 1_001, &competing)
+            .await
+            .expect_err("an in-flight reservation must consume configured capacity");
+        assert!(matches!(
+            rejection,
+            RemoteMcpInitializationError::Authorization(RemoteMcpHttpRejection { status: 503, .. })
+        ));
+        assert_eq!(
+            *competing_calls.lock().expect("competing call count"),
+            0,
+            "capacity must be rejected before the competing dispatcher is called"
+        );
+
+        drop(in_flight);
+        assert_eq!(
+            authorization
+                .gate
+                .lock()
+                .expect("shared gate lock")
+                .sessions
+                .pending_initializations(),
+            0
+        );
+    }
+
+    #[tokio::test]
     async fn owned_service_dispatches_exact_session_lifecycle_for_one_tenant() {
         let config = RemoteMcpConfig::new(
             "https://memory.example.test/mcp".to_owned(),
