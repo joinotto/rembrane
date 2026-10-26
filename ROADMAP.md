@@ -635,6 +635,8 @@ This roadmap describes sequencing, not release dates.
     - [x] Mount the remotely managed tunnel token as an owner-only file instead
       of exposing it through rendered process arguments.
 - [x] Persist a disclosure receipt for every SQLite context response.
+  - [x] Redact memory, checkpoint, travel, and graph disclosure routing,
+    purpose, resource, and timeline details from diagnostics.
 - [x] Require every future context storage adapter to implement disclosure
   persistence through compile-time composite repository capabilities.
 - [x] Prove cross-tenant denial across SQLite user-facing read paths.
