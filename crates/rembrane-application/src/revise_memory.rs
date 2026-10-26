@@ -1,3 +1,5 @@
+use std::fmt;
+
 use rembrane_domain::{
     CanonicalEvent, EventId, EventPayload, EvidenceReference, MemoryId, MemoryRecord, PrincipalId,
     ProjectionJob, WorkspaceId, WriteGrant, WritePermission,
@@ -5,7 +7,7 @@ use rembrane_domain::{
 
 use crate::{ApplicationError, CanonicalMutationRepository};
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct ReviseMemoryCommand {
     pub grant: WriteGrant,
     pub memory_id: MemoryId,
@@ -17,7 +19,22 @@ pub struct ReviseMemoryCommand {
     pub projections: Vec<ProjectionJob>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+impl fmt::Debug for ReviseMemoryCommand {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ReviseMemoryCommand")
+            .field("expected_version", &self.expected_version)
+            .field("content_bytes", &self.content.len())
+            .field(
+                "expected_previous_sequence",
+                &self.expected_previous_sequence,
+            )
+            .field("projection_count", &self.projections.len())
+            .finish_non_exhaustive()
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
 pub struct DeleteMemoryCommand {
     pub grant: WriteGrant,
     pub memory_id: MemoryId,
@@ -26,6 +43,20 @@ pub struct DeleteMemoryCommand {
     pub event_id: EventId,
     pub expected_previous_sequence: u64,
     pub projections: Vec<ProjectionJob>,
+}
+
+impl fmt::Debug for DeleteMemoryCommand {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("DeleteMemoryCommand")
+            .field("expected_version", &self.expected_version)
+            .field(
+                "expected_previous_sequence",
+                &self.expected_previous_sequence,
+            )
+            .field("projection_count", &self.projections.len())
+            .finish_non_exhaustive()
+    }
 }
 
 pub struct MemoryLifecycleService<'repository, Repository> {

@@ -56,6 +56,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Memory-import diagnostics now expose only item counts, memory kinds, content
   sizes, and sequence metadata instead of imported plaintext, identities,
   scopes, evidence, or client grants.
+- Preference creation, memory proposal, confirmation, revision, and deletion
+  command diagnostics now expose only safe content sizes, kinds, versions,
+  sequence metadata, and projection counts.
 - Provider-independent key seal requests now retain copied plaintext in
   redacted zeroize-on-drop ownership instead of an ordinary byte vector.
 - Key-provider plaintext responses are now explicitly wiped before oversized

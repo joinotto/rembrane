@@ -89,6 +89,19 @@ then
     exit 1
 fi
 
+for memory_command_source in \
+    crates/rembrane-application/src/remember_preference.rs \
+    crates/rembrane-application/src/propose_memory.rs \
+    crates/rembrane-application/src/revise_memory.rs
+do
+    if sed '/^#\[cfg(test)\]/,$d' "$memory_command_source" |
+        rg -n -U '#\[derive\([^]]*Debug[^]]*\)\]\n(?:pub )?struct '
+    then
+        echo "memory mutation commands must use explicitly reviewed redacted Debug implementations: $memory_command_source" >&2
+        exit 1
+    fi
+done
+
 if sed '/^#\[cfg(test)\]/,$d' adapters/rembrane-remote-mcp-http/src/lib.rs |
     rg -n -U '#\[derive\([^]]*Debug[^]]*\)\]\n(?:pub )?struct '
 then

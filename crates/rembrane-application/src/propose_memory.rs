@@ -1,3 +1,5 @@
+use std::fmt;
+
 use rembrane_domain::{
     CanonicalEvent, EventId, EventPayload, EvidenceReference, MemoryId, MemoryKind, MemoryRecord,
     MemoryScope, ProjectionJob, WriteGrant, WritePermission,
@@ -5,7 +7,7 @@ use rembrane_domain::{
 
 use crate::{ApplicationError, CanonicalMutationRepository};
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct ProposeMemoryCommand {
     pub grant: WriteGrant,
     pub memory_id: MemoryId,
@@ -18,7 +20,22 @@ pub struct ProposeMemoryCommand {
     pub projections: Vec<ProjectionJob>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+impl fmt::Debug for ProposeMemoryCommand {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ProposeMemoryCommand")
+            .field("kind", &self.kind)
+            .field("content_bytes", &self.content.len())
+            .field(
+                "expected_previous_sequence",
+                &self.expected_previous_sequence,
+            )
+            .field("projection_count", &self.projections.len())
+            .finish_non_exhaustive()
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
 pub struct ConfirmMemoryCommand {
     pub grant: WriteGrant,
     pub memory_id: MemoryId,
@@ -27,6 +44,20 @@ pub struct ConfirmMemoryCommand {
     pub event_id: EventId,
     pub expected_previous_sequence: u64,
     pub projections: Vec<ProjectionJob>,
+}
+
+impl fmt::Debug for ConfirmMemoryCommand {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ConfirmMemoryCommand")
+            .field("expected_version", &self.expected_version)
+            .field(
+                "expected_previous_sequence",
+                &self.expected_previous_sequence,
+            )
+            .field("projection_count", &self.projections.len())
+            .finish_non_exhaustive()
+    }
 }
 
 pub struct MemoryProposalService<'repository, Repository> {
