@@ -131,6 +131,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Every canonical identifier newtype now has redacted debug output while
   preserving explicit display and string access for validated protocol and
   persistence boundaries.
+- The sensitive-file gate now rejects derived debug output on domain structs
+  and canonical identifier newtypes, and requires the identifier macro's
+  reviewed redacted implementation.
 - Canonical SQLite initialization and backup now require the path opened by
   SQLite to retain the exact protected file's device/inode identity, and
   failure cleanup refuses to remove a path replaced after preparation.

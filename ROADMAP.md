@@ -21,6 +21,8 @@ This roadmap describes sequencing, not release dates.
     diagnostics while retaining the closed source class.
   - [x] Redact every canonical identifier newtype from debug output without
     changing explicit display or validated string access.
+    - [x] Add a static regression gate requiring reviewed redacted debug
+      implementations for canonical identifiers and domain structs.
   - [x] Redact canonical memory plaintext and identities from diagnostics while
     retaining safe structural lifecycle information.
 - [x] Authorize confirmed preference creation through an application use case.

@@ -29,4 +29,25 @@ then
     exit 1
 fi
 
+if rg -n -U '#\[derive\([^]]*Debug[^]]*\)\]\n(?:pub )?struct ' \
+    crates/rembrane-domain/src
+then
+    echo "domain structs must use an explicitly reviewed redacted Debug implementation" >&2
+    exit 1
+fi
+
+if rg -n '#\[derive\([^]]*Debug[^]]*\)\]' \
+    crates/rembrane-domain/src/identifier.rs
+then
+    echo "canonical identifier newtypes must not derive raw Debug output" >&2
+    exit 1
+fi
+
+if ! rg -F 'impl fmt::Debug for $name' \
+    crates/rembrane-domain/src/identifier.rs >/dev/null
+then
+    echo "canonical identifier macro must retain its redacted Debug implementation" >&2
+    exit 1
+fi
+
 echo "sensitive-file checks passed"
