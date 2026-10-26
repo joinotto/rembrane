@@ -62,6 +62,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Working-memory checkpoint creation, revision, and resume diagnostics now
   expose only safe versions, sequence metadata, and purpose sizes instead of
   checkpoint payloads, tenant routing, grants, or disclosure identities.
+- Booking-research capture diagnostics now expose only research kind, version,
+  and sequence metadata instead of provider results, itineraries, source
+  references, provenance, trip identities, tenant routing, or client grants.
 - Provider-independent key seal requests now retain copied plaintext in
   redacted zeroize-on-drop ownership instead of an ordinary byte vector.
 - Key-provider plaintext responses are now explicitly wiped before oversized
