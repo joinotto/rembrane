@@ -20,7 +20,14 @@
       "minimum": 1
     },
     "kind": {
-      "const": "preference"
+      "enum": [
+        "preference",
+        "semantic",
+        "episodic",
+        "procedural",
+        "observation",
+        "working"
+      ]
     },
     "status": {
       "enum": ["confirmed", "deleted"]
@@ -31,7 +38,7 @@
       "required": ["code"],
       "properties": {
         "code": {
-          "enum": ["correct_failed", "forget_failed"]
+          "enum": ["confirm_failed", "correct_failed", "forget_failed"]
         }
       }
     }

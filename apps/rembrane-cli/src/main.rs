@@ -2,16 +2,17 @@ use rembrane_application::{
     AcceptInvitationCommand, AdministrativeAuditRepository, ApplicationError,
     AuthorizeClientCommand, AuthorizeClientService, CanonicalMutationRepository,
     ChannelBindingService, ChannelInboxAdministrationService, CheckpointRepository,
-    CheckpointService, ClientGrantBundle, CreateChannelBindingCommand, CreateCheckpointCommand,
-    CreateInvitationCommand, DeleteMemoryCommand, EventRepository, ExecuteRetentionPurgeCommand,
-    ImportMemoryBatchCommand, ImportMemoryBatchService, ImportedMemoryProposal, InvitationService,
-    KnowledgeGraphExportRepository, ListInvitationsQuery, MemberLifecycleService,
-    MembershipRepository, MemoryLifecycleService, MemoryProposalService, MemoryRepository,
-    PlaceLegalHoldCommand, ProposeMemoryCommand, ReleaseLegalHoldCommand,
-    RememberPreferenceCommand, RememberPreferenceService, RequeueChannelMessageCommand,
-    ResolveContextCommand, ResolveContextService, ResumeActivityCommand, RetentionService,
-    ReviseMemoryCommand, RevokeChannelBindingCommand, RevokeInvitationCommand,
-    SetRetentionPolicyCommand, UpdateCheckpointCommand, WorkspaceRepository,
+    CheckpointService, ClientGrantBundle, ConfirmMemoryCommand, CreateChannelBindingCommand,
+    CreateCheckpointCommand, CreateInvitationCommand, DeleteMemoryCommand, EventRepository,
+    ExecuteRetentionPurgeCommand, ImportMemoryBatchCommand, ImportMemoryBatchService,
+    ImportedMemoryProposal, InvitationService, KnowledgeGraphExportRepository,
+    ListInvitationsQuery, MemberLifecycleService, MembershipRepository, MemoryLifecycleService,
+    MemoryProposalService, MemoryRepository, PlaceLegalHoldCommand, ProposeMemoryCommand,
+    ReleaseLegalHoldCommand, RememberPreferenceCommand, RememberPreferenceService,
+    RequeueChannelMessageCommand, ResolveContextCommand, ResolveContextService,
+    ResumeActivityCommand, RetentionService, ReviseMemoryCommand, RevokeChannelBindingCommand,
+    RevokeInvitationCommand, SetRetentionPolicyCommand, UpdateCheckpointCommand,
+    WorkspaceRepository,
 };
 use rembrane_channel_mobile_share::derive_binding_lookup_keys as derive_mobile_binding_lookup_keys;
 use rembrane_channel_whatsapp::derive_binding_lookup_keys as derive_whatsapp_binding_lookup_keys;
@@ -33,8 +34,9 @@ use rembrane_domain::{
     DisclosureId, EntityId, EventId, EventPayload, EvidenceId, EvidenceReference, EvidenceSource,
     Invitation, InvitationStatus, LegalHoldId, MAX_CHECKPOINT_LIST_ITEMS,
     MAX_CHECKPOINT_PAYLOAD_BYTES, MAX_MEMORY_CONTENT_BYTES, Membership, MemoryId, MemoryKind,
-    MemoryRecord, MemoryScope, Principal, PrincipalId, ReadGrant, ReadScope, RetentionPeriod,
-    Workspace, WorkspaceId, WorkspaceRetentionPolicy, WorkspaceRole, WritePermission,
+    MemoryRecord, MemoryScope, MemoryStatus, Principal, PrincipalId, ReadGrant, ReadScope,
+    RetentionPeriod, Workspace, WorkspaceId, WorkspaceRetentionPolicy, WorkspaceRole,
+    WritePermission,
 };
 use rembrane_memory_provider_configured::ConfiguredMemoryProvider;
 use rembrane_provider_registry::{ProviderSelectionPolicy, VerifiedProviderRegistry};
@@ -111,6 +113,7 @@ fn memory_lifecycle_failure_json(arguments: &[String]) -> Option<serde_json::Val
         return None;
     }
     let code = match arguments.first().map(String::as_str) {
+        Some("confirm") => "confirm_failed",
         Some("correct") => "correct_failed",
         Some("forget") => "forget_failed",
         _ => return None,
@@ -136,6 +139,7 @@ fn working_memory_failure_json(arguments: &[String]) -> Option<serde_json::Value
 }
 
 fn run(arguments: &[String]) -> Result<(), String> {
+    validate_memory_command_options(arguments)?;
     match arguments.first().map(String::as_str) {
         Some("version" | "--version" | "-V") => {
             println!("rembrane {}", env!("CARGO_PKG_VERSION"));
@@ -167,6 +171,7 @@ fn run(arguments: &[String]) -> Result<(), String> {
         Some("recall") => recall(&arguments[1..]),
         Some("checkpoint") => checkpoint(&arguments[1..]),
         Some("resume") => resume(&arguments[1..]),
+        Some("confirm") => confirm(&arguments[1..]),
         Some("correct") => correct(&arguments[1..]),
         Some("forget") => forget(&arguments[1..]),
         _ => {
@@ -174,6 +179,88 @@ fn run(arguments: &[String]) -> Result<(), String> {
             Ok(())
         }
     }
+}
+
+fn validate_memory_command_options(arguments: &[String]) -> Result<(), String> {
+    let options: &[&str] = match arguments.first().map(String::as_str) {
+        Some("remember") => &[
+            "--content",
+            "--client",
+            "--domain",
+            "--entity",
+            "--activity",
+        ],
+        Some("correct") => &[
+            "--memory",
+            "--version",
+            "--content",
+            "--client",
+            "--domain",
+            "--entity",
+            "--activity",
+        ],
+        Some("confirm" | "forget") => &[
+            "--memory",
+            "--version",
+            "--client",
+            "--domain",
+            "--entity",
+            "--activity",
+        ],
+        Some("recall") => &[
+            "--client",
+            "--purpose",
+            "--query",
+            "--limit",
+            "--max-bytes",
+            "--domain",
+            "--entity",
+            "--activity",
+        ],
+        Some("trace") => &["--activity", "--summary", "--entity", "--client"],
+        Some("checkpoint") => &[
+            "--activity",
+            "--summary",
+            "--goal",
+            "--version",
+            "--next-steps",
+            "--blockers",
+            "--state-fingerprint",
+            "--entity",
+            "--client",
+        ],
+        Some("resume") => &["--activity", "--client", "--purpose", "--state-fingerprint"],
+        _ => return Ok(()),
+    };
+    let values = &arguments[1..];
+    for name in options
+        .iter()
+        .chain(["--database", "--principal", "--workspace"].iter())
+    {
+        let count = values
+            .iter()
+            .filter(|value| value.as_str() == *name)
+            .count();
+        if count > 1 {
+            return Err(format!("{name} may only be supplied once"));
+        }
+        if count == 1 {
+            option(values, name)?;
+        }
+    }
+    let mut position = 0;
+    while let Some(argument) = values.get(position) {
+        if options.contains(&argument.as_str())
+            || ["--database", "--principal", "--workspace"].contains(&argument.as_str())
+        {
+            position += 2;
+        } else if argument == "--json" || (arguments[0] == "confirm" && argument == "--approve") {
+            position += 1;
+        } else {
+            return Err("unrecognized memory-command argument; run rembrane --help".to_owned());
+        }
+    }
+    Ok(())
 }
 
 fn channel(arguments: &[String]) -> Result<(), String> {
@@ -2473,6 +2560,58 @@ fn remember_failure_json() -> serde_json::Value {
     })
 }
 
+fn confirm(arguments: &[String]) -> Result<(), String> {
+    if arguments
+        .iter()
+        .filter(|argument| *argument == "--approve")
+        .count()
+        != 1
+    {
+        return Err(
+            "--approve must be supplied exactly once after reviewing the proposal".to_owned(),
+        );
+    }
+    let memory_id = MemoryId::new(option(arguments, "--memory")?);
+    let expected_version = positive_u64(arguments, "--version")?;
+    let scope = requested_memory_scope(arguments)?;
+    let client_id = optional_option(arguments, "--client").unwrap_or("rembrane-cli");
+    validate_cli_opaque_id("memory", memory_id.as_str())?;
+    validate_cli_opaque_id("client", client_id)?;
+    validate_cli_memory_scope(&scope)?;
+    let (mut store, principal_id, workspace_id) = encrypted_store(arguments)?;
+    let grants = authorize_client(
+        &store,
+        ClientId::new(client_id),
+        &workspace_id,
+        &principal_id,
+        vec![read_scope(&scope)],
+        vec![WritePermission::ConfirmMemory],
+    )?;
+    let previous_sequence = current_sequence(&store, &workspace_id)?;
+    let suffix = unique_suffix()?;
+    let memory = MemoryProposalService::new(&mut store)
+        .confirm(ConfirmMemoryCommand {
+            grant: grants.write,
+            memory_id,
+            expected_version,
+            evidence: EvidenceReference::new(
+                EvidenceId::new(format!("evidence_{suffix}")),
+                EvidenceSource::UserStatement,
+            ),
+            event_id: EventId::new(format!("event_{suffix}")),
+            expected_previous_sequence: previous_sequence,
+            projections: Vec::new(),
+        })
+        .map_err(|error| format!("cannot confirm memory: {error}"))?;
+
+    if arguments.iter().any(|argument| argument == "--json") {
+        println!("{}", memory_lifecycle_json(&memory));
+    } else {
+        println!("Confirmed {} at version {}", memory.id(), memory.version());
+    }
+    Ok(())
+}
+
 fn correct(arguments: &[String]) -> Result<(), String> {
     let memory_id = MemoryId::new(option(arguments, "--memory")?);
     let expected_version = positive_u64(arguments, "--version")?;
@@ -2520,10 +2659,7 @@ fn correct(arguments: &[String]) -> Result<(), String> {
         .map_err(|error| format!("cannot correct memory: {error}"))?;
 
     if arguments.iter().any(|argument| argument == "--json") {
-        println!(
-            "{}",
-            memory_lifecycle_json(&memory, "preference", "confirmed")
-        );
+        println!("{}", memory_lifecycle_json(&memory));
     } else {
         println!("Corrected {} to version {}", memory.id(), memory.version());
     }
@@ -2565,21 +2701,28 @@ fn forget(arguments: &[String]) -> Result<(), String> {
         .map_err(|error| format!("cannot forget memory: {error}"))?;
 
     if arguments.iter().any(|argument| argument == "--json") {
-        println!(
-            "{}",
-            memory_lifecycle_json(&memory, "preference", "deleted")
-        );
+        println!("{}", memory_lifecycle_json(&memory));
     } else {
         println!("Deleted {} at version {}", memory.id(), memory.version());
     }
     Ok(())
 }
 
-fn memory_lifecycle_json(
-    memory: &MemoryRecord,
-    kind: &'static str,
-    status: &'static str,
-) -> serde_json::Value {
+fn memory_lifecycle_json(memory: &MemoryRecord) -> serde_json::Value {
+    let kind = match memory.kind() {
+        MemoryKind::Preference => "preference",
+        MemoryKind::Semantic => "semantic",
+        MemoryKind::Episodic => "episodic",
+        MemoryKind::Procedural => "procedural",
+        MemoryKind::Observation => "observation",
+        MemoryKind::Working => "working",
+    };
+    let status = match memory.status() {
+        MemoryStatus::Proposed => "proposed",
+        MemoryStatus::Confirmed => "confirmed",
+        MemoryStatus::Superseded => "superseded",
+        MemoryStatus::Deleted => "deleted",
+    };
     serde_json::json!({
         "schemaVersion": 1,
         "memoryId": memory.id().to_string(),
@@ -3637,6 +3780,10 @@ fn print_help() {
            rembrane resume --database <path> --principal <id> \
              --workspace <id> --activity <id> --client <id> \
              [--purpose <purpose>] [--state-fingerprint <fingerprint>]\n\
+           rembrane confirm --database <path> --principal <id> \
+             --workspace <id> --memory <id> --version <n> --approve \
+             [--domain <name> | --entity <id> | --activity <id>] \
+             [--client <id>] [--json]\n\
            rembrane correct --database <path> --principal <id> \
              --workspace <id> --memory <id> --version <n> --content <text> \
              [--domain <name> | --entity <id> | --activity <id>] [--json]\n\
@@ -3652,8 +3799,8 @@ mod tests {
     use rembrane_config::SecretReference;
     use rembrane_domain::{
         AdministrativeAction, EntityId, EvidenceId, EvidenceReference, EvidenceSource, Invitation,
-        InvitationId, InvitationStatus, MemoryId, MemoryRecord, MemoryScope, PrincipalId,
-        ReadScope, WorkspaceId, WorkspaceRole,
+        InvitationId, InvitationStatus, MemoryId, MemoryKind, MemoryRecord, MemoryScope,
+        PrincipalId, ReadScope, WorkspaceId, WorkspaceRole,
     };
     use rembrane_store_sqlite::SqliteStore;
 
@@ -3666,16 +3813,17 @@ mod tests {
         cursor_mcp_config, doctor_failure_json, doctor_json, doctor_json_requested,
         format_read_scopes, gemini_mcp_config, generic_mcp_config, invitation_list_json,
         invitation_status, key_provider_secret_sources, mcp_client_catalog,
-        mcp_environment_variables, memory_lifecycle_failure_json, memory_privacy_mode_name,
-        memory_provider_check_policy, opencode_mcp_config, option, positive_u64, providers,
-        read_bounded_registry_file, read_export, recall_failure_json, recall_json_requested,
-        recall_scope_context, redact_endpoint, remember_failure_json, remember_json_requested,
-        render_mcp_config, requested_memory_privacy, requested_memory_scope, run,
-        selected_secret_reference, test_provider, trace_failure_json, trace_json_requested,
-        validate_checkpoint_cli_input, validate_cli_memory_scope, validate_cli_opaque_id,
-        validate_cli_text, validate_external_conformance_namespace, validate_mcp_server_binary,
-        vscode_mcp_config, working_memory_failure_json, write_export, write_knowledge_graph_export,
-        write_memory_jsonl_export, write_memory_markdown_export, zed_mcp_config,
+        mcp_environment_variables, memory_lifecycle_failure_json, memory_lifecycle_json,
+        memory_privacy_mode_name, memory_provider_check_policy, opencode_mcp_config, option,
+        positive_u64, providers, read_bounded_registry_file, read_export, recall_failure_json,
+        recall_json_requested, recall_scope_context, redact_endpoint, remember_failure_json,
+        remember_json_requested, render_mcp_config, requested_memory_privacy,
+        requested_memory_scope, run, selected_secret_reference, test_provider, trace_failure_json,
+        trace_json_requested, validate_checkpoint_cli_input, validate_cli_memory_scope,
+        validate_cli_opaque_id, validate_cli_text, validate_external_conformance_namespace,
+        validate_mcp_server_binary, vscode_mcp_config, working_memory_failure_json, write_export,
+        write_knowledge_graph_export, write_memory_jsonl_export, write_memory_markdown_export,
+        zed_mcp_config,
     };
 
     fn temporary_path(name: &str) -> std::path::PathBuf {
@@ -4109,8 +4257,89 @@ mod tests {
     }
 
     #[test]
+    fn malformed_optional_memory_arguments_never_fall_back_to_defaults() {
+        for (command, name) in [
+            ("remember", "--entity"),
+            ("confirm", "--activity"),
+            ("correct", "--domain"),
+            ("forget", "--activity"),
+            ("recall", "--limit"),
+            ("trace", "--entity"),
+            ("checkpoint", "--version"),
+            ("resume", "--purpose"),
+        ] {
+            for value in [None, Some(""), Some("   "), Some("--json")] {
+                let mut arguments = vec![command.to_owned(), name.to_owned()];
+                if let Some(value) = value {
+                    arguments.push(value.to_owned());
+                }
+                assert_eq!(
+                    run(&arguments),
+                    Err(format!("missing value for {name}")),
+                    "{command} must reject an invalid explicit {name}"
+                );
+            }
+        }
+        assert_eq!(
+            run(&[
+                "remember".to_owned(),
+                "--entity".to_owned(),
+                "project_01".to_owned(),
+                "--entity".to_owned(),
+                "project_02".to_owned(),
+            ]),
+            Err("--entity may only be supplied once".to_owned())
+        );
+        assert_eq!(
+            run(&[
+                "recall".to_owned(),
+                "--workspace".to_owned(),
+                "workspace_01".to_owned(),
+                "--workspace".to_owned(),
+                "workspace_02".to_owned(),
+            ]),
+            Err("--workspace may only be supplied once".to_owned())
+        );
+    }
+
+    #[test]
+    fn unknown_memory_arguments_fail_before_storage_and_never_broaden_scope() {
+        for command in [
+            "remember",
+            "confirm",
+            "correct",
+            "forget",
+            "recall",
+            "trace",
+            "checkpoint",
+            "resume",
+        ] {
+            for unknown in [
+                "--entty",
+                "--entity=private_project",
+                "private_positional_value",
+            ] {
+                let arguments = vec![command.to_owned(), "--json".to_owned(), unknown.to_owned()];
+                assert_eq!(
+                    run(&arguments),
+                    Err("unrecognized memory-command argument; run rembrane --help".to_owned()),
+                    "{command} must reject unknown arguments before using defaults"
+                );
+            }
+        }
+        assert_eq!(
+            run(&["remember".to_owned(), "--approve".to_owned()]),
+            Err("unrecognized memory-command argument; run rembrane --help".to_owned())
+        );
+    }
+
+    #[test]
     fn lifecycle_json_failures_are_closed_and_secret_safe() {
-        for (command, code) in [("correct", "correct_failed"), ("forget", "forget_failed")] {
+        for (command, code) in [
+            ("confirm", "confirm_failed"),
+            ("correct", "correct_failed"),
+            ("forget", "forget_failed"),
+        ] {
             let arguments = vec![
                 command.to_owned(),
                 "--memory".to_owned(),
@@ -4131,6 +4360,121 @@ mod tests {
             assert!(!result.to_string().contains("memory.sqlite"));
         }
         assert!(memory_lifecycle_failure_json(&["correct".to_owned()]).is_none());
+    }
+
+    #[test]
+    fn confirm_requires_explicit_approval_and_valid_input_before_storage() {
+        let arguments = vec![
+            "confirm".to_owned(),
+            "--memory".to_owned(),
+            "trace_01".to_owned(),
+            "--version".to_owned(),
+            "1".to_owned(),
+        ];
+        assert_eq!(
+            run(&arguments),
+            Err("--approve must be supplied exactly once after reviewing the proposal".to_owned())
+        );
+        let mut duplicate_approval = arguments.clone();
+        duplicate_approval.extend(["--approve".to_owned(), "--approve".to_owned()]);
+        assert_eq!(run(&duplicate_approval), run(&arguments));
+
+        for (name, value, expected_error) in [
+            (
+                "--memory",
+                "has spaces",
+                "memory must contain 1 to 255 safe ASCII characters",
+            ),
+            ("--version", "0", "--version must be a positive integer"),
+            (
+                "--activity",
+                "has spaces",
+                "activity must contain 1 to 255 safe ASCII characters",
+            ),
+            (
+                "--client",
+                "has spaces",
+                "client must contain 1 to 255 safe ASCII characters",
+            ),
+        ] {
+            let mut invalid = vec![
+                "confirm".to_owned(),
+                "--approve".to_owned(),
+                "--memory".to_owned(),
+                "trace_01".to_owned(),
+                "--version".to_owned(),
+                "1".to_owned(),
+            ];
+            if let Some(position) = invalid.iter().position(|argument| argument == name) {
+                invalid[position + 1] = value.to_owned();
+            } else {
+                invalid.extend([name.to_owned(), value.to_owned()]);
+            }
+            assert_eq!(run(&invalid), Err(expected_error.to_owned()));
+        }
+    }
+
+    #[test]
+    fn lifecycle_json_preserves_canonical_kind_and_transition_version() {
+        for (kind, kind_name) in [
+            (MemoryKind::Preference, "preference"),
+            (MemoryKind::Semantic, "semantic"),
+            (MemoryKind::Episodic, "episodic"),
+            (MemoryKind::Procedural, "procedural"),
+            (MemoryKind::Observation, "observation"),
+            (MemoryKind::Working, "working"),
+        ] {
+            let evidence =
+                |id| EvidenceReference::new(EvidenceId::new(id), EvidenceSource::UserStatement);
+            let confirmed = MemoryRecord::proposed(
+                MemoryId::new("memory_lifecycle"),
+                WorkspaceId::new("private_workspace"),
+                PrincipalId::new("private_subject"),
+                MemoryScope::Global,
+                kind,
+                "private original content",
+                evidence("evidence_01"),
+            )
+            .expect("valid proposal")
+            .confirm(evidence("evidence_02"))
+            .expect("confirmed proposal");
+            assert_eq!(
+                memory_lifecycle_json(&confirmed),
+                serde_json::json!({
+                    "schemaVersion": 1,
+                    "memoryId": "memory_lifecycle",
+                    "version": 2,
+                    "kind": kind_name,
+                    "status": "confirmed"
+                })
+            );
+            let memory = confirmed
+                .revise("private revised content", evidence("evidence_03"))
+                .expect("valid revision");
+            assert_eq!(
+                memory_lifecycle_json(&memory),
+                serde_json::json!({
+                    "schemaVersion": 1,
+                    "memoryId": "memory_lifecycle",
+                    "version": 3,
+                    "kind": kind_name,
+                    "status": "confirmed"
+                })
+            );
+            let deleted = memory
+                .delete(evidence("evidence_04"))
+                .expect("valid deletion");
+            assert_eq!(
+                memory_lifecycle_json(&deleted),
+                serde_json::json!({
+                    "schemaVersion": 1,
+                    "memoryId": "memory_lifecycle",
+                    "version": 4,
+                    "kind": kind_name,
+                    "status": "deleted"
+                })
+            );
+        }
     }
 
     #[test]

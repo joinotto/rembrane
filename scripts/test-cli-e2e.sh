@@ -73,6 +73,48 @@ jq -e '
 ' "$remember_failure" >/dev/null
 test ! -s "$remember_failure_stderr"
 
+memory_count_before=$(sqlite3 "$database" "SELECT count(*) FROM memories;")
+event_count_before=$(sqlite3 "$database" "SELECT count(*) FROM workspace_events;")
+if "$rembrane_binary" remember \
+    --database "$database" \
+    --principal principal_e2e \
+    --workspace workspace_e2e \
+    --content "Private project preference must not become global" \
+    --entity "" \
+    --json >"$remember_failure" 2>"$remember_failure_stderr"
+then
+    echo "JSON remember unexpectedly broadened an empty entity to global scope" >&2
+    exit 1
+fi
+jq -e '
+    . == {
+        "schemaVersion": 1,
+        "error": {"code": "remember_failed"}
+    }
+' "$remember_failure" >/dev/null
+test ! -s "$remember_failure_stderr"
+test "$(sqlite3 "$database" "SELECT count(*) FROM memories;")" = "$memory_count_before"
+test "$(sqlite3 "$database" "SELECT count(*) FROM workspace_events;")" = "$event_count_before"
+
+for unknown_scope in --entty --entity=project_private; do
+    if "$rembrane_binary" remember \
+        --database "$database" \
+        --principal principal_e2e \
+        --workspace workspace_e2e \
+        --content "Private project preference must not become global" \
+        "$unknown_scope" project_private \
+        --json >"$remember_failure" 2>"$remember_failure_stderr"
+    then
+        echo "JSON remember unexpectedly ignored an unknown scope argument" >&2
+        exit 1
+    fi
+    jq -e '. == {"schemaVersion": 1, "error": {"code": "remember_failed"}}' \
+        "$remember_failure" >/dev/null
+    test ! -s "$remember_failure_stderr"
+    test "$(sqlite3 "$database" "SELECT count(*) FROM memories;")" = "$memory_count_before"
+    test "$(sqlite3 "$database" "SELECT count(*) FROM workspace_events;")" = "$event_count_before"
+done
+
 "$rembrane_binary" backup \
     --database "$database" \
     --principal principal_e2e \
@@ -921,6 +963,52 @@ test "$disclosure_count" = "9"
 test "$checkpoint_disclosure_count" = "2"
 test "$trace_count" = "1"
 test "$plaintext_count" = "0"
+
+trace_forget_output=$(
+    "$rembrane_binary" forget \
+        --database "$database" \
+        --principal principal_e2e \
+        --workspace workspace_e2e \
+        --activity activity_cli_e2e \
+        --memory "$trace_id" \
+        --version 1 \
+        --json
+)
+printf '%s\n' "$trace_forget_output" | jq -e \
+    --arg memory_id "$trace_id" '
+    . == {
+        "schemaVersion": 1,
+        "memoryId": $memory_id,
+        "version": 2,
+        "kind": "observation",
+        "status": "deleted"
+    }
+' >/dev/null
+test "$(
+    sqlite3 "$database" \
+        "SELECT count(*) FROM memories WHERE workspace_id = 'workspace_e2e' AND id = '$trace_id' AND kind = 'observation' AND status = 'deleted' AND version = 2;"
+)" = "1"
+
+event_count_before=$(sqlite3 "$database" "SELECT count(*) FROM workspace_events;")
+if "$rembrane_binary" confirm \
+    --database "$database" \
+    --principal principal_e2e \
+    --workspace workspace_e2e \
+    --activity activity_cli_e2e \
+    --memory "$trace_id" \
+    --version 2 \
+    --approve \
+    --json >"$test_directory/confirm-deleted.json" \
+    2>"$test_directory/confirm-deleted.stderr"
+then
+    echo "confirmation unexpectedly restored a deleted work trace" >&2
+    exit 1
+fi
+jq -e '. == {"schemaVersion": 1, "error": {"code": "confirm_failed"}}' \
+    "$test_directory/confirm-deleted.json" >/dev/null
+test ! -s "$test_directory/confirm-deleted.stderr"
+test "$(sqlite3 "$database" "SELECT count(*) FROM workspace_events;")" = "$event_count_before"
+test "$(sqlite3 "$database" "SELECT status || ':' || version FROM memories WHERE id = '$trace_id';")" = "deleted:2"
 
 if REMBRANE_WORKSPACE_KEY_HEX="ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff" \
     "$rembrane_binary" recall \

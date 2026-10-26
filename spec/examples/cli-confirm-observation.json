@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "memoryId": "trace_example_01",
+  "version": 2,
+  "kind": "observation",
+  "status": "confirmed"
+}

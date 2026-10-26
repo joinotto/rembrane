@@ -111,9 +111,12 @@ jq empty \
     spec/examples/local-doctor-failure.json \
     spec/examples/cli-remember.json \
     spec/examples/cli-remember-failure.json \
+    spec/examples/cli-confirm-observation.json \
+    spec/examples/cli-confirm-failure.json \
     spec/examples/cli-correct.json \
     spec/examples/cli-correct-failure.json \
     spec/examples/cli-forget.json \
+    spec/examples/cli-forget-observation.json \
     spec/examples/cli-forget-failure.json \
     spec/examples/cli-recall.json \
     spec/examples/cli-recall-failure.json \
@@ -238,24 +241,46 @@ jq -e \
 ' spec/cli-remember.schema.json >/dev/null
 
 jq -e \
+    --slurpfile confirm spec/examples/cli-confirm-observation.json \
+    --slurpfile confirmFailure spec/examples/cli-confirm-failure.json \
     --slurpfile correct spec/examples/cli-correct.json \
     --slurpfile correctFailure spec/examples/cli-correct-failure.json \
     --slurpfile forget spec/examples/cli-forget.json \
+    --slurpfile observation spec/examples/cli-forget-observation.json \
     --slurpfile forgetFailure spec/examples/cli-forget-failure.json '
     .additionalProperties == false
     and .properties.schemaVersion.const == 1
     and .properties.memoryId.maxLength == 255
     and .properties.version.minimum == 1
-    and .properties.kind.const == "preference"
+    and .properties.kind.enum
+        == ["preference", "semantic", "episodic", "procedural", "observation", "working"]
     and .properties.status.enum == ["confirmed", "deleted"]
     and .properties.error.properties.code.enum
-        == ["correct_failed", "forget_failed"]
+        == ["confirm_failed", "correct_failed", "forget_failed"]
     and (.oneOf | length) == 2
+    and $confirm[0] == {
+        "schemaVersion": 1,
+        "memoryId": "trace_example_01",
+        "version": 2,
+        "kind": "observation",
+        "status": "confirmed"
+    }
+    and $confirmFailure[0] == {
+        "schemaVersion": 1,
+        "error": {"code": "confirm_failed"}
+    }
     and $correct[0].status == "confirmed"
     and $correct[0].version == 2
     and $correctFailure[0].error.code == "correct_failed"
     and $forget[0].status == "deleted"
     and $forget[0].version == 3
+    and $observation[0] == {
+        "schemaVersion": 1,
+        "memoryId": "trace_example_01",
+        "version": 2,
+        "kind": "observation",
+        "status": "deleted"
+    }
     and $forgetFailure[0].error.code == "forget_failed"
 ' spec/cli-memory-lifecycle.schema.json >/dev/null
 

@@ -3,9 +3,10 @@ import { createInterface } from "node:readline";
 
 const binary = process.env.REMBRANE_MCP_BIN;
 const memoryId = process.env.REMBRANE_HANDOFF_MEMORY_ID;
-if (!binary || !memoryId) {
+const traceId = process.env.REMBRANE_HANDOFF_TRACE_ID;
+if (!binary || !memoryId || !traceId) {
   throw new Error(
-    "REMBRANE_MCP_BIN and REMBRANE_HANDOFF_MEMORY_ID are required",
+    "REMBRANE_MCP_BIN, REMBRANE_HANDOFF_MEMORY_ID, and REMBRANE_HANDOFF_TRACE_ID are required",
   );
 }
 
@@ -175,5 +176,20 @@ if (
   !resumed.disclosureId
 ) {
   throw new Error("fresh MCP client did not resume the prior agent checkpoint");
+}
+const traceContext = await secondClient.callTool("rembrane_resolve_context", {
+  activityId: "activity_handoff",
+  purpose: "continue-approved-work",
+  query: "Verified encrypted work-trace handoff",
+  maximumItems: 10,
+});
+const approvedTrace = traceContext.items?.find((item) => item.memoryId === traceId);
+if (
+  !approvedTrace ||
+  approvedTrace.version !== 2 ||
+  !approvedTrace.content.includes("Verified encrypted work-trace handoff") ||
+  !traceContext.disclosureId
+) {
+  throw new Error("fresh MCP client did not recall the explicitly approved CLI work trace");
 }
 await secondClient.close();

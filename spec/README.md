@@ -96,11 +96,24 @@ storage, or key metadata.
 
 ## CLI memory lifecycle result
 
-`cli-memory-lifecycle.schema.json` defines correction and deletion results
-emitted by `rembrane correct --json` and `rembrane forget --json`. Successful
+`cli-memory-lifecycle.schema.json` defines confirmation, correction, and
+deletion results emitted by `rembrane confirm --json`,
+`rembrane correct --json`, and `rembrane forget --json`. Successful
 operations expose only the canonical memory identity, new optimistic version,
-kind, and lifecycle status. Failures use the closed `correct_failed` or
-`forget_failed` code without content, tenant routing, or storage diagnostics.
+kind, and lifecycle status. Results preserve all six canonical memory kinds;
+deleting a proposed work trace reports an observation tombstone rather than
+relabelling it as a preference. Failures use the closed `confirm_failed`,
+`correct_failed`, or `forget_failed` code without content, tenant routing, or
+storage diagnostics.
+
+Confirmation is an explicit local approval operation. It requires `--approve`,
+the proposal's exact `--version`, its matching scope selector (or no selector
+for global memory), and an active owner/admin membership for the proposal's
+subject. It appends user-statement evidence and a canonical confirmation event
+atomically, advancing the version before confirmed-only recall can return it.
+The approval flag is the caller's attestation of review, not proof of human
+presence. Do not pass it automatically from untrusted agent output. This
+command does not add a confirmation tool to MCP or a remote API endpoint.
 
 ## CLI checkpoint and resume result
 
