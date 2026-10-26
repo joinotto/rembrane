@@ -158,7 +158,7 @@ impl fmt::Debug for EncryptedPayload {
             .debug_struct("EncryptedPayload")
             .field("ciphertext_bytes", &self.ciphertext.len())
             .field("key_id", &"[REDACTED]")
-            .field("algorithm", &self.algorithm)
+            .field("algorithm", &"[REDACTED]")
             .field("nonce_bytes", &self.nonce.len())
             .finish()
     }

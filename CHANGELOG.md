@@ -98,6 +98,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Key-provider protocol diagnostics now redact seal plaintext, open envelopes,
   encryption contexts, request IDs, provider identities, versions, and
   algorithm names while retaining safe sizes and capability metadata.
+- Encrypted-envelope diagnostics now redact algorithm identifiers, and the
+  sensitive-file gate enforces reviewed debug output across the complete
+  cryptographic struct surface.
 - Provider-independent key seal requests now retain copied plaintext in
   redacted zeroize-on-drop ownership instead of an ordinary byte vector.
 - Key-provider plaintext responses are now explicitly wiped before oversized

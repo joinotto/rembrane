@@ -64,6 +64,15 @@ then
     exit 1
 fi
 
+for crypto_source in crates/rembrane-crypto/src/*.rs; do
+    if sed '/^#\[cfg(test)\]/,$d' "$crypto_source" |
+        rg -n -U '#\[derive\([^]]*Debug[^]]*\)\]\n(?:pub )?struct '
+    then
+        echo "cryptographic structs must use explicitly reviewed redacted Debug implementations: $crypto_source" >&2
+        exit 1
+    fi
+done
+
 for provider_source in crates/rembrane-provider-sdk/src/*.rs; do
     if sed '/^#\[cfg(test)\]/,$d' "$provider_source" |
         rg -n -U '#\[derive\([^]]*Debug[^]]*\)\]\n(?:pub )?struct '

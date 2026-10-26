@@ -61,6 +61,8 @@ This roadmap describes sequencing, not release dates.
     - [x] Redact plaintext seal buffers, encrypted envelopes, request context,
       provider identity, versions, and algorithms from key-provider protocol
       diagnostics.
+    - [x] Redact algorithm identifiers from encrypted-envelope diagnostics and
+      enforce reviewed debug output across every cryptographic struct.
 - [x] Define and verify the tenant-isolated SQLite schema.
 - [x] Add versioned, idempotent SQLite schema initialization.
 - [x] Configure bounded SQLite lock waiting and WAL concurrency.
