@@ -3,6 +3,7 @@ use std::fmt::{self, Display};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use rembrane_domain::{KeyRotationReceipt, MAX_KEY_ROTATION_RECIPIENTS, PrincipalId, WorkspaceId};
+use zeroize::Zeroizing;
 
 use crate::{CryptoError, EncryptedPayload, EncryptionContext, RecordCipher};
 
@@ -177,7 +178,7 @@ impl RotateKeyRequest {
 pub struct SealRequest {
     request_id: String,
     context: EncryptionContext,
-    plaintext: Vec<u8>,
+    plaintext: Zeroizing<Vec<u8>>,
 }
 
 impl SealRequest {
@@ -193,7 +194,7 @@ impl SealRequest {
         Ok(Self {
             request_id,
             context,
-            plaintext,
+            plaintext: Zeroizing::new(plaintext),
         })
     }
 
@@ -534,6 +535,10 @@ mod tests {
         assert_eq!(request.context().record_version(), 1);
         assert_eq!(request.context().purpose(), PayloadPurpose::MemoryContent);
         assert_eq!(request.plaintext(), b"secret");
+        assert!(
+            !format!("{request:?}").contains("secret"),
+            "provider requests must not expose plaintext through debug output"
+        );
     }
 
     struct FakeTransport {

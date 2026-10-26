@@ -206,6 +206,8 @@ This roadmap describes sequencing, not release dates.
       generation, and recipient correlation.
     - [x] Bind rotation to the authenticated HTTP protocol and black-box
       provider conformance runner without exposing key material.
+      - [x] Keep provider-bound seal-request plaintext in redacted,
+        zeroize-on-drop ownership throughout protocol dispatch.
       - [x] Zeroize bounded raw key-provider responses after strict typed
         decoding.
       - [x] Emit a strict portable conformance result with provider identity

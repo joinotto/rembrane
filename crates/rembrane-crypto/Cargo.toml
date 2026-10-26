@@ -9,6 +9,7 @@ rust-version.workspace = true
 
 [dependencies]
 rembrane-domain = { path = "../rembrane-domain" }
+zeroize = "1"
 
 [lints]
 workspace = true
