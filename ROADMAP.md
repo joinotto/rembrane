@@ -396,6 +396,8 @@ This roadmap describes sequencing, not release dates.
     - [x] Select or construct the Tower MCP service only after OAuth
       authorization using the exact verified tenant, without forwarding the
       bearer credential into the protocol service.
+      - [x] Prove per-tenant service selection for authorized POST,
+        stateless event-stream GET, and confirmed session DELETE dispatch.
     - [x] Add a consuming Tower dispatcher that reconstructs only validated
       MCP protocol headers, strips the bearer credential at the OAuth boundary,
       and injects verified tenant access into request extensions for the

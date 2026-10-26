@@ -2331,10 +2331,11 @@ mod tests {
 
     use super::{
         AuthorizedRemoteMcpDispatcher, AuthorizedRemoteMcpEventStreamDispatcher,
-        AuthorizedTowerMcpDispatcher, MAX_REMOTE_MCP_HEADER_BYTES,
-        MCP_PROTOCOL_VERSION_HEADER_NAME, MCP_SESSION_HEADER_NAME, RemoteMcpAxumAuthorization,
-        RemoteMcpDispatchError, RemoteMcpHttpGate, RemoteMcpHttpRejection, RemoteMcpHttpRequest,
-        RemoteMcpInvocation, TenantAwareTowerMcpDispatcher, authorize_axum_session_body,
+        AuthorizedRemoteMcpSessionDeletionDispatcher, AuthorizedTowerMcpDispatcher,
+        MAX_REMOTE_MCP_HEADER_BYTES, MCP_PROTOCOL_VERSION_HEADER_NAME, MCP_SESSION_HEADER_NAME,
+        RemoteMcpAxumAuthorization, RemoteMcpDispatchError, RemoteMcpHttpGate,
+        RemoteMcpHttpRejection, RemoteMcpHttpRequest, RemoteMcpInvocation,
+        TenantAwareTowerMcpDispatcher, authorize_axum_session_body,
         authorize_axum_session_deletion, authorize_axum_stateless_body,
         authorize_axum_stateless_owned_body, classify_remote_mcp_request,
         establish_and_dispatch_axum_session, establish_axum_session_body,
@@ -3324,6 +3325,94 @@ mod tests {
             assert_eq!(outcome.1, workspace);
             assert!(!outcome.2, "bearer must not cross the OAuth boundary");
         }
+
+        assert_eq!(
+            *selected.lock().expect("selection log"),
+            ["workspace_01", "workspace_02"]
+        );
+    }
+
+    #[tokio::test]
+    async fn tenant_aware_tower_factory_selects_get_and_delete_services_per_tenant() {
+        let verifier = Verifier;
+        let authenticator = RemoteAccessAuthenticator::new(
+            &verifier,
+            "https://identity.example.test",
+            "https://memory.example.test/mcp",
+        );
+        let selected = Arc::new(Mutex::new(Vec::new()));
+        let selected_by_factory = Arc::clone(&selected);
+        let dispatcher = TenantAwareTowerMcpDispatcher::new(
+            move |access: &rembrane_contracts::VerifiedRemoteAccess| {
+                let selected_workspace = access.workspace_id().to_string();
+                selected_by_factory
+                    .lock()
+                    .expect("selection log")
+                    .push(selected_workspace.clone());
+                Ok::<_, std::convert::Infallible>(tower::service_fn(
+                    move |mut request: axum::http::Request<Body>| {
+                        let selected_workspace = selected_workspace.clone();
+                        async move {
+                            let dispatched_workspace = request
+                                .extensions_mut()
+                                .remove::<rembrane_contracts::VerifiedRemoteAccess>()
+                                .expect("verified access extension")
+                                .workspace_id()
+                                .to_string();
+                            let method = request.method().clone();
+                            let session = request
+                                .headers()
+                                .get(MCP_SESSION_HEADER_NAME)
+                                .and_then(|value| value.to_str().ok())
+                                .map(str::to_owned);
+                            Ok::<_, std::convert::Infallible>((
+                                selected_workspace,
+                                dispatched_workspace,
+                                method,
+                                session,
+                            ))
+                        }
+                    },
+                ))
+            },
+        );
+        let workspace_one = authenticator
+            .authenticate("workspace-one", 1_000, RemoteAccessScope::ContextRead)
+            .expect("workspace one access");
+        let workspace_two = authenticator
+            .authenticate("workspace-two", 1_000, RemoteAccessScope::ContextRead)
+            .expect("workspace two access");
+
+        let event_stream = dispatcher
+            .open(
+                workspace_one,
+                "text/event-stream".to_owned(),
+                Some("2025-03-26".to_owned()),
+                Some("memory.example.test".to_owned()),
+                None,
+            )
+            .await
+            .expect("tenant event stream dispatch");
+        assert_eq!(event_stream.0, "workspace_01");
+        assert_eq!(event_stream.1, "workspace_01");
+        assert_eq!(event_stream.2, Method::GET);
+        assert_eq!(event_stream.3, None);
+
+        let deletion = dispatcher
+            .terminate(
+                workspace_two,
+                rembrane_contracts::RemoteSessionId::new("session_0123456789abcdef")
+                    .expect("session id"),
+                Some("2025-03-26".to_owned()),
+                "memory.example.test".to_owned(),
+                None,
+            )
+            .await
+            .expect("tenant deletion dispatch");
+        assert_eq!(deletion.0, "workspace_02");
+        assert_eq!(deletion.1, "workspace_02");
+        assert_eq!(deletion.2, Method::DELETE);
+        assert_eq!(deletion.3.as_deref(), Some("session_0123456789abcdef"));
 
         assert_eq!(
             *selected.lock().expect("selection log"),
