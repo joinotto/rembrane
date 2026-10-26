@@ -1,3 +1,5 @@
+use std::fmt;
+
 use rembrane_domain::{
     CanonicalEvent, EventId, EventPayload, EvidenceReference, MemoryId, MemoryRecord, MemoryScope,
     MemoryShareProposal, MemoryStatus, ProjectionJob, ShareProposalId, ShareProposalStatus,
@@ -6,7 +8,7 @@ use rembrane_domain::{
 
 use crate::{ApplicationError, ShareProposalMutationRepository};
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct CreateShareProposalCommand {
     pub source_grant: WriteGrant,
     pub target_grant: WriteGrant,
@@ -18,7 +20,21 @@ pub struct CreateShareProposalCommand {
     pub expected_source_sequence: u64,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+impl fmt::Debug for CreateShareProposalCommand {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("CreateShareProposalCommand")
+            .field("source_memory_version", &self.source_memory_version)
+            .field("target_scope_kind", &scope_kind(&self.target_scope))
+            .field(
+                "expected_source_sequence",
+                &self.expected_source_sequence,
+            )
+            .finish_non_exhaustive()
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
 pub struct ApproveShareProposalCommand {
     pub source_grant: WriteGrant,
     pub target_grant: WriteGrant,
@@ -30,6 +46,23 @@ pub struct ApproveShareProposalCommand {
     pub expected_source_sequence: u64,
     pub expected_target_sequence: u64,
     pub projections: Vec<ProjectionJob>,
+}
+
+impl fmt::Debug for ApproveShareProposalCommand {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ApproveShareProposalCommand")
+            .field(
+                "expected_source_sequence",
+                &self.expected_source_sequence,
+            )
+            .field(
+                "expected_target_sequence",
+                &self.expected_target_sequence,
+            )
+            .field("projection_count", &self.projections.len())
+            .finish_non_exhaustive()
+    }
 }
 
 pub struct MemoryShareService<'repository, Repository> {
@@ -227,4 +260,64 @@ fn next_sequence(previous: u64) -> Result<u64, ApplicationError> {
     previous
         .checked_add(1)
         .ok_or(ApplicationError::SequenceConflict)
+}
+
+const fn scope_kind(scope: &MemoryScope) -> &'static str {
+    match scope {
+        MemoryScope::Global => "global",
+        MemoryScope::Domain { .. } => "domain",
+        MemoryScope::Entity { .. } => "entity",
+        MemoryScope::Activity { .. } => "activity",
+    }
+}
+
+#[cfg(test)]
+mod diagnostic_tests {
+    use rembrane_domain::{
+        ClientId, EventId, MemoryId, MemoryScope, PrincipalId, ShareProposalId, WorkspaceId,
+        WriteGrant,
+    };
+
+    use super::CreateShareProposalCommand;
+
+    fn grant(workspace: &str) -> WriteGrant {
+        WriteGrant {
+            client_id: ClientId::new("private-client"),
+            workspace_id: WorkspaceId::new(workspace),
+            subject_id: PrincipalId::new("private-subject"),
+            scopes: Vec::new(),
+            permissions: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn share_proposal_diagnostics_redact_cross_workspace_routing() {
+        let command = CreateShareProposalCommand {
+            source_grant: grant("private-source-workspace"),
+            target_grant: grant("private-target-workspace"),
+            proposal_id: ShareProposalId::new("private-proposal"),
+            source_memory_id: MemoryId::new("private-memory"),
+            source_memory_version: 7,
+            target_scope: MemoryScope::Domain {
+                name: "private-domain".to_owned(),
+            },
+            source_event_id: EventId::new("private-event"),
+            expected_source_sequence: 11,
+        };
+
+        let diagnostic = format!("{command:?}");
+        for secret in [
+            "private-client",
+            "private-subject",
+            "private-source-workspace",
+            "private-target-workspace",
+            "private-proposal",
+            "private-memory",
+            "private-domain",
+            "private-event",
+        ] {
+            assert!(!diagnostic.contains(secret), "diagnostic exposed {secret}");
+        }
+        assert!(diagnostic.contains("domain"));
+    }
 }

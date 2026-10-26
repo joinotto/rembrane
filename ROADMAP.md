@@ -43,6 +43,9 @@ This roadmap describes sequencing, not release dates.
   - [x] Redact plaintext, identities, scopes, grants, provenance, and provider
     routing from preference and memory-lifecycle command diagnostics.
 - [x] Model correction and deletion lifecycle operations.
+- [x] Redact source and target tenant routing, principals, clients, memory and
+  proposal identities, target scope values, provenance, and event identities
+  from cross-workspace sharing command diagnostics.
 - [x] Define atomic memory, event, and projection mutations.
 - [x] Define an opaque record-encryption boundary.
   - [x] Bound canonical ciphertext, key identifier, algorithm, and nonce
