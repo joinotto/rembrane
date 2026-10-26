@@ -62,6 +62,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - PostgreSQL store and tenant-transaction errors now redact underlying driver
   diagnostics from both display and debug output, preventing SQL, connection,
   credential, and tenant metadata from crossing the adapter boundary.
+- PostgreSQL parameter diagnostics now redact all text values and expose only
+  byte-buffer lengths, preventing accidental logging of tenant identifiers,
+  canonical metadata, ciphertext, or other parameter content.
 - Canonical SQLite initialization and backup now require the path opened by
   SQLite to retain the exact protected file's device/inode identity, and
   failure cleanup refuses to remove a path replaced after preparation.

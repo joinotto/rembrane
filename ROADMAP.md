@@ -773,6 +773,8 @@ This roadmap describes sequencing, not release dates.
       - [x] Prevent derived debug logging of the database secret locator.
       - [x] Redact concrete driver diagnostics from PostgreSQL store and
         tenant-transaction display and debug output.
+      - [x] Redact text and byte content from PostgreSQL parameter diagnostics
+        before a concrete driver can log the adapter boundary.
       - [x] Resolve and validate the PostgreSQL URL through any deployment
         secret resolver into non-cloneable zeroizing adapter configuration.
         - [x] Reject missing, duplicate, or contradictory `sslmode` values

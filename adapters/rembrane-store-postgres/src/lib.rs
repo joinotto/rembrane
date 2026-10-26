@@ -375,7 +375,7 @@ pub const FIND_GRAPH_PROJECTION_SQL: &str = "SELECT id, workspace_id, resource_t
     FROM graph_projection_outbox WHERE workspace_id = $1 AND id = $2 \
     ORDER BY workspace_id, id LIMIT 2";
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Eq, PartialEq)]
 pub enum PostgresParameter<'value> {
     Text(&'value str),
     OptionalText(Option<&'value str>),
@@ -383,6 +383,23 @@ pub enum PostgresParameter<'value> {
     OptionalI64(Option<i64>),
     Bool(bool),
     Bytes(&'value [u8]),
+}
+
+impl fmt::Debug for PostgresParameter<'_> {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Text(_) => formatter.write_str("Text([REDACTED])"),
+            Self::OptionalText(Some(_)) => formatter.write_str("OptionalText(Some([REDACTED]))"),
+            Self::OptionalText(None) => formatter.write_str("OptionalText(None)"),
+            Self::I64(value) => formatter.debug_tuple("I64").field(value).finish(),
+            Self::OptionalI64(value) => formatter.debug_tuple("OptionalI64").field(value).finish(),
+            Self::Bool(value) => formatter.debug_tuple("Bool").field(value).finish(),
+            Self::Bytes(value) => formatter
+                .debug_struct("Bytes")
+                .field("length", &value.len())
+                .finish(),
+        }
+    }
 }
 
 pub trait PostgresRow {
@@ -7854,6 +7871,27 @@ mod tests {
             assert!(!debug.contains(private));
             assert!(debug.contains("[REDACTED]"));
         }
+    }
+
+    #[test]
+    fn postgres_parameters_redact_text_and_bytes_from_debug_output() {
+        let private = "workspace_01 secret database value";
+        let bytes = private.as_bytes();
+        let parameters = [
+            PostgresParameter::Text(private),
+            PostgresParameter::OptionalText(Some(private)),
+            PostgresParameter::Bytes(bytes),
+        ];
+
+        for parameter in parameters {
+            let debug = format!("{parameter:?}");
+            assert!(!debug.contains(private));
+            assert!(!debug.contains("workspace_01"));
+        }
+        assert!(format!("{:?}", PostgresParameter::Text(private)).contains("[REDACTED]"));
+        assert!(
+            format!("{:?}", PostgresParameter::Bytes(bytes)).contains(&bytes.len().to_string())
+        );
     }
 
     fn fake(
