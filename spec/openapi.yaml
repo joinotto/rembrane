@@ -172,6 +172,59 @@ paths:
           $ref: "#/components/responses/AccessDenied"
         "409":
           $ref: "#/components/responses/Conflict"
+  /exports:
+    post:
+      operationId: exportPortableData
+      summary: Export authenticated canonical memory or knowledge-graph data
+      description: |
+        Returns a bounded plaintext portability archive. JSONL and Markdown
+        contain only the authenticated subject's memories. Graph JSON is a
+        whole-workspace export restricted to active owners and administrators.
+        Responses are marked no-store and use fixed attachment filenames.
+      parameters:
+        - in: query
+          name: workspaceId
+          required: true
+          schema:
+            $ref: "#/components/schemas/OpaqueId"
+        - in: query
+          name: subjectId
+          required: true
+          schema:
+            $ref: "#/components/schemas/OpaqueId"
+        - in: query
+          name: format
+          required: true
+          schema:
+            type: string
+            enum: [jsonl, markdown, graph-json]
+      responses:
+        "200":
+          description: Portable plaintext archive
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+            Content-Disposition:
+              schema:
+                type: string
+          content:
+            application/x-ndjson:
+              schema:
+                type: string
+            text/markdown:
+              schema:
+                type: string
+            application/vnd.rembrane.knowledge-graph+json:
+              schema:
+                type: object
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/AccessDenied"
   /imports:
     post:
       operationId: importPortableMemories

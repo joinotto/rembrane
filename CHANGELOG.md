@@ -71,6 +71,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   plaintext archives with explicit consent.
 - Capability discovery now advertises all implemented export formats: JSONL,
   Markdown, graph JSON, and encrypted archive.
+- The authenticated REST API now exports subject-scoped JSONL or Markdown and
+  owner/admin-only workspace graph JSON at `/v1/exports`, with fixed attachment
+  names, no-store/nosniff headers, OpenAPI, and black-box isolation coverage.
 - The application layer now defines a bounded, authorized memory-import batch
   that re-admits external content as destination-scoped proposals with fresh
   identities and contiguous canonical events through an atomic repository

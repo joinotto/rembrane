@@ -103,6 +103,9 @@ This roadmap describes sequencing, not release dates.
   record/byte bounds, owner-only exclusive output, durable synchronization,
   and replacement-safe partial-file cleanup.
 - [x] Add authenticated import plus Markdown and graph portability formats.
+  - [x] Expose authenticated REST exports for JSONL, Markdown, and owner/admin
+    graph JSON with tenant binding, fixed attachment names, no-store and
+    nosniff response policy, OpenAPI, and black-box protocol coverage.
   - [x] Define a deterministic, bounded, provider-independent Markdown export
     with tenant/revision validation, stable ordering, provenance metadata, and
     content fences that remain safe when memories contain Markdown backticks.

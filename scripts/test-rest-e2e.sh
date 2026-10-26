@@ -362,6 +362,77 @@ cross_workspace_list_status=$(
 test "$cross_workspace_list_status" = "403"
 test "$(jq -r '.code' "$cross_workspace_list_response")" = "access_denied"
 
+unauthenticated_export_response="$test_directory/unauthenticated-export-response.json"
+unauthenticated_export_status=$(
+    curl -sS \
+        -o "$unauthenticated_export_response" \
+        -w '%{http_code}' \
+        -X POST "$base_url/v1/exports?workspaceId=$REMBRANE_WORKSPACE_ID&subjectId=$REMBRANE_PRINCIPAL_ID&format=jsonl"
+)
+test "$unauthenticated_export_status" = "401"
+test "$(jq -r '.code' "$unauthenticated_export_response")" = "unauthorized"
+
+cross_workspace_export_response="$test_directory/cross-workspace-export-response.json"
+cross_workspace_export_status=$(
+    curl -sS \
+        -o "$cross_workspace_export_response" \
+        -w '%{http_code}' \
+        -X POST "$base_url/v1/exports?workspaceId=workspace_other&subjectId=$REMBRANE_PRINCIPAL_ID&format=jsonl" \
+        -H "Authorization: Bearer $REMBRANE_API_TOKEN"
+)
+test "$cross_workspace_export_status" = "403"
+test "$(jq -r '.code' "$cross_workspace_export_response")" = "access_denied"
+
+jsonl_export="$test_directory/rest-export.jsonl"
+jsonl_export_headers="$test_directory/rest-export-jsonl.headers"
+jsonl_export_status=$(
+    curl -sS \
+        -D "$jsonl_export_headers" \
+        -o "$jsonl_export" \
+        -w '%{http_code}' \
+        -X POST "$base_url/v1/exports?workspaceId=$REMBRANE_WORKSPACE_ID&subjectId=$REMBRANE_PRINCIPAL_ID&format=jsonl" \
+        -H "Authorization: Bearer $REMBRANE_API_TOKEN"
+)
+test "$jsonl_export_status" = "200"
+rg -i '^content-type: application/x-ndjson\r?$' "$jsonl_export_headers" >/dev/null
+rg -i '^cache-control: no-store\r?$' "$jsonl_export_headers" >/dev/null
+rg -i '^x-content-type-options: nosniff\r?$' "$jsonl_export_headers" >/dev/null
+rg -i '^content-disposition: attachment; filename="rembrane-memories.jsonl"\r?$' \
+    "$jsonl_export_headers" >/dev/null
+head -n 1 "$jsonl_export" | jq -e \
+    '.format == "rembrane-memory-jsonl"
+        and .workspaceId == "'"$REMBRANE_WORKSPACE_ID"'"
+        and .subjectId == "'"$REMBRANE_PRINCIPAL_ID"'"' >/dev/null
+
+markdown_export="$test_directory/rest-export.md"
+markdown_export_status=$(
+    curl -sS \
+        -o "$markdown_export" \
+        -w '%{http_code}' \
+        -X POST "$base_url/v1/exports?workspaceId=$REMBRANE_WORKSPACE_ID&subjectId=$REMBRANE_PRINCIPAL_ID&format=markdown" \
+        -H "Authorization: Bearer $REMBRANE_API_TOKEN"
+)
+test "$markdown_export_status" = "200"
+rg -F '<!-- rembrane-memory-markdown-v1 -->' "$markdown_export" >/dev/null
+rg -F "# Rembrane memory export" "$markdown_export" >/dev/null
+
+graph_export="$test_directory/rest-graph-export.json"
+graph_export_status=$(
+    curl -sS \
+        -o "$graph_export" \
+        -w '%{http_code}' \
+        -X POST "$base_url/v1/exports?workspaceId=$REMBRANE_WORKSPACE_ID&subjectId=$REMBRANE_PRINCIPAL_ID&format=graph-json" \
+        -H "Authorization: Bearer $REMBRANE_API_TOKEN"
+)
+test "$graph_export_status" = "200"
+jq -e \
+    '.format == "rembrane.knowledge-graph"
+        and .version == 1
+        and .workspace_id == "'"$REMBRANE_WORKSPACE_ID"'"
+        and (.nodes | type == "array")
+        and (.edges | type == "array")' \
+    "$graph_export" >/dev/null
+
 portable_import="$test_directory/portable-import.jsonl"
 printf '%s\n' \
     '{"format":"rembrane-memory-jsonl","formatVersion":1,"workspaceId":"workspace_portable_source","subjectId":"principal_portable_source","memoryId":"memory_portable_source","version":1,"scope":{"type":"global"},"kind":"preference","status":"confirmed","content":"Call me Hippo across assistants","evidence":[{"id":"evidence_portable_source","source":"user-statement"}]}' \

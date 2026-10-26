@@ -16,16 +16,20 @@ use rembrane_application::{
     CheckpointService, ClientGrantBundle, CreateCheckpointCommand, CreateInvitationCommand,
     CreateTripCommand, DeleteMemoryCommand, ExecuteRetentionPurgeCommand, GraphContextService,
     ImportMemoryBatchCommand, ImportMemoryBatchService, ImportedMemoryProposal,
-    InvitationRepository, InvitationService, KeyRotationRepository, ListInvitationsQuery,
-    MemberLifecycleService, MembershipRepository, MemoryLifecycleService, MemoryProposalService,
-    PlaceLegalHoldCommand, ProposeMemoryCommand, RecordTripDecisionCommand,
-    ReleaseLegalHoldCommand, RememberPreferenceCommand, RememberPreferenceService,
-    ResolveContextCommand, ResolveContextService, ResolveTravelContextCommand,
-    ResumeActivityCommand, RetentionService, ReviseMemoryCommand, RevokeInvitationCommand,
-    SetRetentionPolicyCommand, TravelContextResearch, TravelContextService, TravelContextTrip,
-    TravelSensitiveProfile, TripService, UpdateCheckpointCommand, WorkspaceRepository,
+    InvitationRepository, InvitationService, KeyRotationRepository, KnowledgeGraphExportRepository,
+    ListInvitationsQuery, MemberLifecycleService, MembershipRepository, MemoryLifecycleService,
+    MemoryProposalService, MemoryRepository, PlaceLegalHoldCommand, ProposeMemoryCommand,
+    RecordTripDecisionCommand, ReleaseLegalHoldCommand, RememberPreferenceCommand,
+    RememberPreferenceService, ResolveContextCommand, ResolveContextService,
+    ResolveTravelContextCommand, ResumeActivityCommand, RetentionService, ReviseMemoryCommand,
+    RevokeInvitationCommand, SetRetentionPolicyCommand, TravelContextResearch,
+    TravelContextService, TravelContextTrip, TravelSensitiveProfile, TripService,
+    UpdateCheckpointCommand, WorkspaceRepository,
 };
-use rembrane_codec::{MAX_MEMORY_JSONL_ARCHIVE_BYTES, decode_memory_jsonl_archive};
+use rembrane_codec::{
+    MAX_MEMORY_JSONL_ARCHIVE_BYTES, MAX_MEMORY_JSONL_ARCHIVE_RECORDS, decode_memory_jsonl_archive,
+    encode_knowledge_graph_archive, encode_memory_jsonl_record, encode_memory_markdown_archive,
+};
 use rembrane_config::{
     RemoteMcpConfig, SecretReference, parse_read_permissions, parse_read_scopes,
 };
@@ -137,6 +141,14 @@ struct ImportMemoriesQuery {
 struct ImportMemoriesResponse {
     imported: usize,
     status: &'static str,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct ExportQuery {
+    workspace_id: String,
+    subject_id: String,
+    format: String,
 }
 
 #[derive(Deserialize)]
@@ -1554,6 +1566,92 @@ async fn import_memories(
     ))
 }
 
+async fn export_portable_data(
+    State(state): State<AppState>,
+    Query(query): Query<ExportQuery>,
+    headers: HeaderMap,
+) -> Result<Response, ApiError> {
+    authorize_bearer(&state, &headers)?;
+    if !matches!(query.format.as_str(), "jsonl" | "markdown" | "graph-json") {
+        return Err(ApiError::invalid_request());
+    }
+    let runtime = state
+        .inner
+        .runtime
+        .lock()
+        .map_err(|_| ApiError::internal())?;
+    authorize_memory_identity(&runtime, &query.workspace_id, &query.subject_id)?;
+    let workspace_id = WorkspaceId::new(query.workspace_id);
+    let subject_id = PrincipalId::new(query.subject_id);
+    let membership = runtime
+        .store
+        .find_membership(&workspace_id, &subject_id)
+        .map_err(ApiError::from_application)?
+        .filter(rembrane_domain::Membership::is_active)
+        .ok_or_else(ApiError::access_denied)?;
+
+    let (payload, content_type, filename) = match query.format.as_str() {
+        "jsonl" | "markdown" => {
+            let records = runtime
+                .store
+                .list_for_subject(&workspace_id, &subject_id)
+                .map_err(ApiError::from_application)?;
+            if records.len() > MAX_MEMORY_JSONL_ARCHIVE_RECORDS {
+                return Err(ApiError::invalid_request());
+            }
+            if query.format == "jsonl" {
+                let mut payload = Vec::new();
+                for record in &records {
+                    let encoded =
+                        encode_memory_jsonl_record(record).map_err(|_| ApiError::internal())?;
+                    if payload
+                        .len()
+                        .checked_add(encoded.len())
+                        .is_none_or(|length| length > MAX_MEMORY_JSONL_ARCHIVE_BYTES)
+                    {
+                        return Err(ApiError::invalid_request());
+                    }
+                    payload.extend_from_slice(&encoded);
+                }
+                (payload, "application/x-ndjson", "rembrane-memories.jsonl")
+            } else {
+                (
+                    encode_memory_markdown_archive(&records).map_err(|_| ApiError::internal())?,
+                    "text/markdown; charset=utf-8",
+                    "rembrane-memories.md",
+                )
+            }
+        }
+        "graph-json" => {
+            if !membership.can_manage_members() {
+                return Err(ApiError::access_denied());
+            }
+            let (nodes, edges) = runtime
+                .store
+                .list_knowledge_graph_snapshot(&workspace_id)
+                .map_err(ApiError::from_application)?;
+            (
+                encode_knowledge_graph_archive(&workspace_id, &nodes, &edges)
+                    .map_err(|_| ApiError::internal())?,
+                "application/vnd.rembrane.knowledge-graph+json",
+                "rembrane-knowledge-graph.json",
+            )
+        }
+        _ => unreachable!("validated export format"),
+    };
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(axum::http::header::CONTENT_TYPE, content_type)
+        .header(
+            axum::http::header::CONTENT_DISPOSITION,
+            format!("attachment; filename=\"{filename}\""),
+        )
+        .header(axum::http::header::CACHE_CONTROL, "no-store")
+        .header("x-content-type-options", "nosniff")
+        .body(axum::body::Body::from(payload))
+        .map_err(|_| ApiError::internal())
+}
+
 fn memory_read_scope(scope: &MemoryScope) -> rembrane_domain::ReadScope {
     match scope {
         MemoryScope::Global => rembrane_domain::ReadScope::Global,
@@ -2932,6 +3030,7 @@ async fn main() -> Result<()> {
             "/v1/imports",
             post(import_memories).layer(DefaultBodyLimit::max(MAX_MEMORY_JSONL_ARCHIVE_BYTES)),
         )
+        .route("/v1/exports", post(export_portable_data))
         .route("/v1/memories/{memory_id}/correction", post(correct_memory))
         .route("/v1/memories/{memory_id}/deletion", post(delete_memory))
         .route(
