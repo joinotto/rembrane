@@ -1974,6 +1974,40 @@ impl RemoteMcpHttpGate {
         })
     }
 
+    /// Commits the session identifier returned by a successfully dispatched
+    /// official SDK initialize response.
+    ///
+    /// Callers must invoke this only after validating the downstream response
+    /// and extracting its canonical `Mcp-Session-Id`. The binding uses the
+    /// exact verified access carried by the preceding sessionless initialize
+    /// proof; bearer credentials are not accepted or retained here.
+    ///
+    /// # Errors
+    ///
+    /// Returns conflict for a duplicate generated identifier, capacity
+    /// exhaustion when the bounded registry is full, and an opaque forbidden
+    /// response for any other invalid state.
+    pub fn commit_sdk_generated_session(
+        &mut self,
+        session_id: RemoteSessionId,
+        access: &VerifiedRemoteAccess,
+        now_epoch_seconds: u64,
+    ) -> Result<(), RemoteMcpHttpRejection> {
+        self.sessions
+            .establish(session_id, access, now_epoch_seconds)
+            .map_err(|error| {
+                self.rejection(match error {
+                    rembrane_application::ApplicationError::AlreadyExists => {
+                        RemoteSessionHttpError::Conflict
+                    }
+                    rembrane_application::ApplicationError::StorageUnavailable => {
+                        RemoteSessionHttpError::CapacityExceeded
+                    }
+                    _ => RemoteSessionHttpError::Forbidden,
+                })
+            })
+    }
+
     /// Classifies an exact `initialize` body before authenticating and
     /// allocating its session binding.
     ///
@@ -2513,7 +2547,7 @@ mod tests {
         RemoteTokenVerifier,
     };
     use rembrane_config::{RemoteMcpConfig, SecretReference};
-    use rembrane_contracts::{RemoteAccessScope, RemoteTokenClaims};
+    use rembrane_contracts::{RemoteAccessScope, RemoteSessionId, RemoteTokenClaims};
     use rembrane_domain::{ClientId, PrincipalId, WorkspaceId};
     use rembrane_oauth_introspection::{
         IntrospectionResponse, IntrospectionTokenVerifier, IntrospectionTransport,
@@ -2835,12 +2869,25 @@ mod tests {
         assert_eq!(authorized.invocation().method(), "initialize");
         assert_eq!(authorized.access().workspace_id().as_str(), "workspace_01");
 
-        gate.establish(
-            &authorization,
-            request("Bearer workspace-one", "session_sdk_generated_0123456789"),
-            1_000,
-        )
-        .expect("authorization proof must not consume session capacity");
+        let generated = RemoteSessionId::new("session_sdk_generated_0123456789")
+            .expect("generated session fixture should validate");
+        gate.commit_sdk_generated_session(generated.clone(), authorized.access(), 1_000)
+            .expect("official SDK session should commit");
+        let authorized_tool = gate
+            .authorize(
+                &authorization,
+                request("Bearer workspace-one", generated.as_str()),
+                "tools/list",
+                None,
+                1_001,
+            )
+            .expect("committed SDK session should authorize");
+        assert_eq!(authorized_tool.workspace_id().as_str(), "workspace_01");
+
+        let duplicate = gate
+            .commit_sdk_generated_session(generated, authorized.access(), 1_001)
+            .expect_err("duplicate generated session must fail");
+        assert_eq!(duplicate.status, 409);
 
         let supplied_session = match gate.authorize_sessionless_initialize_owned_body(
                 &authorization,
@@ -2860,6 +2907,63 @@ mod tests {
             Err(error) => error,
         };
         assert_eq!(supplied_session.status, 403);
+    }
+
+    #[test]
+    fn generated_session_binding_preserves_exact_tenant_and_capacity() {
+        let verifier = Verifier;
+        let authenticator = RemoteAccessAuthenticator::new(
+            &verifier,
+            "https://identity.example.test",
+            "https://memory.example.test/mcp",
+        );
+        let origins = ["https://agent.example.test"];
+        let authorization = RemoteHttpAuthorization::new(&authenticator, &origins);
+        let mut gate = RemoteMcpHttpGate::new(
+            1,
+            "https://memory.example.test/.well-known/oauth-protected-resource/mcp",
+            &["memory.example.test"],
+        )
+        .expect("gate should be valid");
+        let access = authorization
+            .authorize_connection(
+                Some("Bearer workspace-one"),
+                Some("https://agent.example.test"),
+                1_000,
+            )
+            .expect("fixture access should authorize");
+        let session = RemoteSessionId::new("session_sdk_generated_abcdefghij")
+            .expect("generated session fixture should validate");
+        gate.commit_sdk_generated_session(session.clone(), &access, 1_000)
+            .expect("generated session should bind");
+
+        let cross_tenant = gate
+            .authorize(
+                &authorization,
+                request("Bearer workspace-two", session.as_str()),
+                "tools/list",
+                None,
+                1_001,
+            )
+            .expect_err("generated session must reject another tenant");
+        assert_eq!(cross_tenant.status, 403);
+
+        let other_access = authorization
+            .authorize_connection(
+                Some("Bearer workspace-two"),
+                Some("https://agent.example.test"),
+                1_001,
+            )
+            .expect("second tenant fixture should authorize");
+        let capacity = gate
+            .commit_sdk_generated_session(
+                RemoteSessionId::new("session_sdk_generated_klmnopqrst")
+                    .expect("generated session fixture should validate"),
+                &other_access,
+                1_001,
+            )
+            .expect_err("second generated session must respect capacity");
+        assert_eq!(capacity.status, 503);
     }
 
     #[tokio::test]

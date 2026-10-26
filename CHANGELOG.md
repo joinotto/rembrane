@@ -44,6 +44,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - The remote MCP OAuth gate can now issue a consuming sessionless initialize
   proof without reserving a client-supplied session ID, preparing the official
   SDK-generated response ID for confirmed binding.
+- The remote MCP gate can now commit a validated official-SDK response session
+  ID to the exact verified tenant with duplicate, capacity, and replay denial.
 
 - CLI now exports authenticated canonical memories as deterministic, versioned
   JSONL after explicit plaintext confirmation, with exact tenant validation,
