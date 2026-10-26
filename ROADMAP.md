@@ -234,6 +234,8 @@ This roadmap describes sequencing, not release dates.
         protocol for every transport implementation.
       - [x] Keep the normative OpenAPI schema aligned with all enforced
         provider manifest, request, context, envelope, and rotation bounds.
+        - [x] Fail the static protocol gate when those normative bounds drift
+          from the reviewed key-provider contract.
     - [x] Bind rotation to the authenticated HTTP protocol and black-box
       provider conformance runner without exposing key material.
       - [x] Keep provider-bound seal-request plaintext in redacted,

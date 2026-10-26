@@ -24,6 +24,53 @@ ruby -e 'require "yaml"; YAML.load_file(ARGV.fetch(0))' spec/provider-openapi.ya
 ruby -e 'require "yaml"; YAML.load_file(ARGV.fetch(0))' spec/key-provider-openapi.yaml
 ruby -e 'require "yaml"; YAML.load_file(ARGV.fetch(0))' spec/memory-provider-openapi.yaml
 ruby -e 'require "yaml"; YAML.load_file(ARGV.fetch(0))' spec/mobile-share-openapi.yaml
+ruby -ryaml -e '
+schemas = YAML.load_file(ARGV.fetch(0)).fetch("components").fetch("schemas")
+manifest = schemas.fetch("Manifest").fetch("properties")
+abort("key-provider identity bounds differ") unless
+  manifest.fetch("providerId").values_at("minLength", "maxLength") == [2, 255]
+abort("key-provider algorithm count differs") unless
+  schemas.fetch("Manifest").fetch("properties").fetch("algorithms")
+    .values_at("minItems", "maxItems", "uniqueItems") == [1, 32, true]
+abort("key-provider algorithm bounds differ") unless
+  manifest.fetch("algorithms").fetch("items").values_at("minLength", "maxLength") == [1, 100]
+abort("key-provider plaintext ceiling differs") unless
+  manifest.fetch("maximumPlaintextBytes").values_at("minimum", "maximum") == [1, 1_048_576]
+
+context = schemas.fetch("EncryptionContext").fetch("properties")
+abort("key-provider workspace context bound differs") unless
+  context.fetch("workspaceId").fetch("maxLength") == 255
+abort("key-provider record context bound differs") unless
+  context.fetch("recordId").fetch("maxLength") == 1_024
+expected_purposes = %w[
+  activity-checkpoint booking-research canonical-event channel-message
+  knowledge-edge knowledge-node memory-content trip-entity
+]
+abort("key-provider payload purposes differ") unless
+  context.fetch("purpose").fetch("enum") == expected_purposes
+
+%w[SealRequest OpenRequest RotateKeyRequest].each do |name|
+  request_id = schemas.fetch(name).fetch("properties").fetch("requestId")
+  abort("#{name} request identifier bounds differ") unless
+    request_id.values_at("minLength", "maxLength", "pattern") ==
+      [1, 255, "^[A-Za-z0-9._:-]+$"]
+end
+
+rotation = schemas.fetch("RotateKeyRequest").fetch("properties")
+receipt = schemas.fetch("KeyRotationReceipt").fetch("properties")
+[rotation.fetch("workspaceId"), rotation.fetch("recipientIds").fetch("items"),
+ receipt.fetch("workspaceId"), receipt.fetch("recipientIds").fetch("items")].each do |identity|
+  abort("key-provider rotation identity bounds differ") unless
+    identity.values_at("minLength", "maxLength", "pattern") ==
+      [1, 255, "^[A-Za-z0-9._:-]+$"]
+end
+abort("key-provider rotation recipient ceiling differs") unless
+  rotation.fetch("recipientIds").values_at("minItems", "maxItems", "uniqueItems") ==
+    [1, 10_000, true]
+abort("key-provider receipt key identifier bounds differ") unless
+  receipt.fetch("keyId").values_at("minLength", "maxLength", "pattern") ==
+    [1, 200, "^[A-Za-z0-9._:-]+$"]
+' spec/key-provider-openapi.yaml
 jq empty \
     spec/discovery.schema.json \
     spec/channel-processor-message.schema.json \
