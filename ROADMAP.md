@@ -109,6 +109,9 @@ This roadmap describes sequencing, not release dates.
   - [x] Expose Markdown through the authenticated CLI export path with explicit
     plaintext consent, exclusive owner-only output, durable persistence, and
     tenant-scope enforcement.
+  - [x] Define a deterministic, bounded, provider-independent graph archive
+    preserving nodes, edges, temporal validity, evidence, revisions, and
+    supersession while rejecting mixed workspaces and dangling endpoints.
   - [x] Move the JSONL record contract into the provider-independent codec and
     add strict decoding with closed fields, exact format/version checks, domain
     invariant restoration, and a per-record byte ceiling.

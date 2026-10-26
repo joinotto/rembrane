@@ -20,7 +20,10 @@ pub use booking_research::{decode_booking_research, encode_booking_research};
 pub use checkpoint::{decode_checkpoint, encode_checkpoint};
 pub use event::{decode_event, encode_event};
 pub use knowledge_graph::{
-    decode_knowledge_edge, decode_knowledge_node, encode_knowledge_edge, encode_knowledge_node,
+    KNOWLEDGE_GRAPH_ARCHIVE_FORMAT, KNOWLEDGE_GRAPH_ARCHIVE_VERSION,
+    MAX_KNOWLEDGE_GRAPH_ARCHIVE_BYTES, MAX_KNOWLEDGE_GRAPH_ARCHIVE_RECORDS, decode_knowledge_edge,
+    decode_knowledge_graph_archive, decode_knowledge_node, encode_knowledge_edge,
+    encode_knowledge_graph_archive, encode_knowledge_node,
 };
 pub use portability::{
     MAX_MEMORY_JSONL_ARCHIVE_BYTES, MAX_MEMORY_JSONL_ARCHIVE_RECORDS, MAX_MEMORY_JSONL_LINE_BYTES,

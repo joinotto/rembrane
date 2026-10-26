@@ -57,6 +57,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - CLI memory export now accepts `--format markdown` through the same
   authenticated, explicit-plaintext, private-file, durable-write boundary as
   JSONL.
+- The provider-independent codec now supports deterministic bounded knowledge
+  graph archives with temporal provenance, revision identity, workspace
+  isolation, and endpoint-integrity validation.
 - The application layer now defines a bounded, authorized memory-import batch
   that re-admits external content as destination-scoped proposals with fresh
   identities and contiguous canonical events through an atomic repository
