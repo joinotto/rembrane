@@ -528,6 +528,7 @@ pub enum TowerMcpDispatchError<ServiceError> {
 #[derive(Debug)]
 pub enum TenantAwareTowerMcpDispatchError<FactoryError, ServiceError> {
     InvalidAuthorizedMetadata,
+    InvalidSdkResponse,
     Factory(FactoryError),
     Service(ServiceError),
 }
@@ -880,6 +881,147 @@ where
                 .oneshot(request)
                 .await
                 .map_err(TenantAwareTowerMcpDispatchError::Service)
+        })
+    }
+}
+
+impl<Factory> AuthorizedRemoteMcpInitializationDispatcher for TenantAwareTowerMcpDispatcher<Factory>
+where
+    Factory: AuthorizedTowerMcpServiceFactory,
+    Factory::Service: tower::Service<Request<Body>, Response = Response> + Clone + Send + 'static,
+    <Factory::Service as tower::Service<Request<Body>>>::Future: Send + 'static,
+    <Factory::Service as tower::Service<Request<Body>>>::Error: Send + 'static,
+    Factory::Error: Send + 'static,
+{
+    type Output = Response;
+    type InitializeError = TenantAwareTowerMcpDispatchError<
+        Factory::Error,
+        <Factory::Service as tower::Service<Request<Body>>>::Error,
+    >;
+    type TerminationError = Self::InitializeError;
+    type InitializeFuture = Pin<
+        Box<
+            dyn Future<
+                    Output = Result<
+                        InitializedRemoteMcpSession<Self::Output>,
+                        Self::InitializeError,
+                    >,
+                > + Send
+                + 'static,
+        >,
+    >;
+    type TerminationFuture =
+        Pin<Box<dyn Future<Output = Result<(), Self::TerminationError>> + Send + 'static>>;
+
+    fn initialize(
+        &self,
+        access: VerifiedRemoteAccess,
+        invocation: RemoteMcpInvocation,
+        protocol_headers: RemoteMcpProtocolHeaders,
+        body: Zeroizing<Vec<u8>>,
+    ) -> Self::InitializeFuture {
+        let factory = self.factory.clone();
+        Box::pin(async move {
+            let service = factory
+                .create(&access)
+                .map_err(TenantAwareTowerMcpDispatchError::Factory)?;
+            let mut request = Request::builder()
+                .method(Method::POST)
+                .body(Body::from(bytes::Bytes::from_owner(body)))
+                .map_err(|_| TenantAwareTowerMcpDispatchError::InvalidAuthorizedMetadata)?;
+            insert_tenant_validated_header(
+                request.headers_mut(),
+                CONTENT_TYPE,
+                protocol_headers.content_type(),
+            )?;
+            insert_tenant_validated_header(
+                request.headers_mut(),
+                ACCEPT,
+                protocol_headers.accept(),
+            )?;
+            insert_optional_tenant_validated_header(
+                request.headers_mut(),
+                MCP_PROTOCOL_VERSION_HEADER_NAME,
+                protocol_headers.protocol_version(),
+            )?;
+            insert_optional_tenant_validated_header(
+                request.headers_mut(),
+                HOST,
+                protocol_headers.validated_host(),
+            )?;
+            insert_optional_tenant_validated_header(
+                request.headers_mut(),
+                ORIGIN,
+                protocol_headers.validated_origin(),
+            )?;
+            request.extensions_mut().insert(access);
+            request.extensions_mut().insert(invocation);
+            let response = service
+                .oneshot(request)
+                .await
+                .map_err(TenantAwareTowerMcpDispatchError::Service)?;
+            if !response.status().is_success() {
+                return Err(TenantAwareTowerMcpDispatchError::InvalidSdkResponse);
+            }
+            let mut session_headers = response.headers().get_all(MCP_SESSION_HEADER_NAME).iter();
+            let session_header = session_headers
+                .next()
+                .ok_or(TenantAwareTowerMcpDispatchError::InvalidSdkResponse)?;
+            if session_headers.next().is_some() {
+                return Err(TenantAwareTowerMcpDispatchError::InvalidSdkResponse);
+            }
+            let session_id = session_header
+                .to_str()
+                .ok()
+                .and_then(|value| RemoteSessionId::new(value.to_owned()).ok())
+                .ok_or(TenantAwareTowerMcpDispatchError::InvalidSdkResponse)?;
+            Ok(InitializedRemoteMcpSession::new(response, session_id))
+        })
+    }
+
+    fn terminate(
+        &self,
+        access: VerifiedRemoteAccess,
+        session_id: RemoteSessionId,
+        protocol_headers: RemoteMcpProtocolHeaders,
+    ) -> Self::TerminationFuture {
+        let factory = self.factory.clone();
+        Box::pin(async move {
+            let validated_host = protocol_headers
+                .validated_host()
+                .ok_or(TenantAwareTowerMcpDispatchError::InvalidAuthorizedMetadata)?;
+            let service = factory
+                .create(&access)
+                .map_err(TenantAwareTowerMcpDispatchError::Factory)?;
+            let mut request = Request::builder()
+                .method(Method::DELETE)
+                .body(Body::empty())
+                .map_err(|_| TenantAwareTowerMcpDispatchError::InvalidAuthorizedMetadata)?;
+            insert_tenant_validated_header(
+                request.headers_mut(),
+                MCP_SESSION_HEADER_NAME,
+                session_id.as_str(),
+            )?;
+            insert_optional_tenant_validated_header(
+                request.headers_mut(),
+                MCP_PROTOCOL_VERSION_HEADER_NAME,
+                protocol_headers.protocol_version(),
+            )?;
+            insert_tenant_validated_header(request.headers_mut(), HOST, validated_host)?;
+            insert_optional_tenant_validated_header(
+                request.headers_mut(),
+                ORIGIN,
+                protocol_headers.validated_origin(),
+            )?;
+            request.extensions_mut().insert(access);
+            let response = service
+                .oneshot(request)
+                .await
+                .map_err(TenantAwareTowerMcpDispatchError::Service)?;
+            if !response.status().is_success() {
+                return Err(TenantAwareTowerMcpDispatchError::InvalidSdkResponse);
+            }
+            Ok(())
         })
     }
 }
@@ -3229,6 +3371,13 @@ mod tests {
         }
     }
 
+    fn initialize_body() -> zeroize::Zeroizing<Vec<u8>> {
+        zeroize::Zeroizing::new(
+            br#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}"#
+                .to_vec(),
+        )
+    }
+
     fn verified_access(
         workspace: &str,
         expiry: u64,
@@ -4723,6 +4872,109 @@ mod tests {
         assert_eq!(deletion.2, Method::DELETE);
         assert_eq!(deletion.3.as_deref(), Some("session_0123456789abcdef"));
 
+        assert_eq!(
+            *selected.lock().expect("selection log"),
+            ["workspace_01", "workspace_02"]
+        );
+    }
+
+    #[tokio::test]
+    async fn tenant_aware_initialization_binds_distinct_sdk_sessions() {
+        let verifier = Verifier;
+        let authenticator = RemoteAccessAuthenticator::new(
+            &verifier,
+            "https://identity.example.test",
+            "https://memory.example.test/mcp",
+        );
+        let authorization = RemoteHttpAuthorization::new(&authenticator, &[]);
+        let mut gate = RemoteMcpHttpGate::new(
+            2,
+            "https://memory.example.test/.well-known/oauth-protected-resource/mcp",
+            &["memory.example.test"],
+        )
+        .expect("gate should be valid");
+        let selected = Arc::new(Mutex::new(Vec::new()));
+        let selected_by_factory = Arc::clone(&selected);
+        let factory = BoundedTenantTowerMcpServiceCache::new(
+            2,
+            move |access: &rembrane_contracts::VerifiedRemoteAccess| {
+                let workspace = access.workspace_id().to_string();
+                selected_by_factory
+                    .lock()
+                    .expect("selection log")
+                    .push(workspace.clone());
+                Ok::<_, std::convert::Infallible>(tower::service_fn(
+                    move |mut request: Request<Body>| {
+                        let workspace = workspace.clone();
+                        async move {
+                            let dispatched_workspace = request
+                                .extensions_mut()
+                                .remove::<rembrane_contracts::VerifiedRemoteAccess>()
+                                .expect("verified access extension")
+                                .workspace_id()
+                                .to_string();
+                            assert_eq!(workspace, dispatched_workspace);
+                            assert!(!request.headers().contains_key(AUTHORIZATION));
+                            let session = format!("session_{workspace}_0123456789");
+                            Ok::<_, std::convert::Infallible>(
+                                Response::builder()
+                                    .status(StatusCode::OK)
+                                    .header(MCP_SESSION_HEADER_NAME, session)
+                                    .body(Body::empty())
+                                    .expect("SDK response should build"),
+                            )
+                        }
+                    },
+                ))
+            },
+        )
+        .expect("tenant cache should be valid");
+        let dispatcher = TenantAwareTowerMcpDispatcher::new(factory);
+        let mut sessions = Vec::new();
+        for (token, expected_workspace) in [
+            ("Bearer workspace-one", "workspace_01"),
+            ("Bearer workspace-two", "workspace_02"),
+        ] {
+            let initialized = gate
+                .initialize_and_commit_sdk_session(
+                    &authorization,
+                    RemoteMcpHttpRequest {
+                        authorization: Some(token),
+                        host: Some("memory.example.test"),
+                        origin: None,
+                        session_id: None,
+                    },
+                    super::RemoteMcpProtocolHeaders::transport_neutral(),
+                    initialize_body(),
+                    1_000,
+                    &dispatcher,
+                )
+                .await
+                .expect("tenant SDK initialization should commit");
+            assert_eq!(
+                initialized.session_id().as_str(),
+                format!("session_{expected_workspace}_0123456789")
+            );
+            sessions.push((token, initialized.session_id().clone(), expected_workspace));
+        }
+
+        for (token, session, expected_workspace) in sessions {
+            let access = gate
+                .authorize(
+                    &authorization,
+                    RemoteMcpHttpRequest {
+                        authorization: Some(token),
+                        host: Some("memory.example.test"),
+                        origin: None,
+                        session_id: Some(session.as_str()),
+                    },
+                    "tools/list",
+                    None,
+                    1_001,
+                )
+                .expect("generated tenant session should authorize");
+            assert_eq!(access.workspace_id().as_str(), expected_workspace);
+        }
         assert_eq!(
             *selected.lock().expect("selection log"),
             ["workspace_01", "workspace_02"]

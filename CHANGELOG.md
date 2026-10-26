@@ -55,6 +55,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - The concrete Tower initializer now accepts only successful SDK responses
   carrying exactly one valid `Mcp-Session-Id`, and performs compensation DELETE
   with the original validated host, origin, protocol version, and tenant.
+- Tenant-aware Tower services now support the same confirmed initialization
+  lifecycle, with two-workspace evidence for distinct generated session
+  bindings, exact service selection, and bearer stripping.
 
 - CLI now exports authenticated canonical memories as deterministic, versioned
   JSONL after explicit plaintext confirmation, with exact tenant validation,
