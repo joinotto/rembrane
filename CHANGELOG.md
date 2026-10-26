@@ -24,6 +24,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Local record ciphers now reject unsafe or oversized key identifiers at
   construction, and OS-backed historical keyrings enforce a 1,024-generation
   ceiling before resolving key material.
+- Cryptographic debug output now redacts workspace, record, and key
+  identifiers plus ciphertext and nonce bytes while retaining safe structural
+  diagnostics.
 - Canonical SQLite initialization and backup now require the path opened by
   SQLite to retain the exact protected file's device/inode identity, and
   failure cleanup refuses to remove a path replaced after preparation.

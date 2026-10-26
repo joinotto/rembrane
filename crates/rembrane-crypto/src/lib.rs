@@ -51,12 +51,24 @@ impl PayloadPurpose {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct EncryptionContext {
     workspace_id: WorkspaceId,
     record_id: String,
     record_version: u64,
     purpose: PayloadPurpose,
+}
+
+impl fmt::Debug for EncryptionContext {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("EncryptionContext")
+            .field("workspace_id", &"[REDACTED]")
+            .field("record_id", &"[REDACTED]")
+            .field("record_version", &self.record_version)
+            .field("purpose", &self.purpose)
+            .finish()
+    }
 }
 
 impl EncryptionContext {
@@ -131,12 +143,24 @@ impl EncryptionContext {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct EncryptedPayload {
     ciphertext: Vec<u8>,
     key_id: String,
     algorithm: String,
     nonce: Vec<u8>,
+}
+
+impl fmt::Debug for EncryptedPayload {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("EncryptedPayload")
+            .field("ciphertext_bytes", &self.ciphertext.len())
+            .field("key_id", &"[REDACTED]")
+            .field("algorithm", &self.algorithm)
+            .field("nonce_bytes", &self.nonce.len())
+            .finish()
+    }
 }
 
 impl EncryptedPayload {
@@ -261,6 +285,9 @@ mod tests {
         .expect("valid context");
 
         assert_ne!(first.associated_data(), second.associated_data());
+        let debug = format!("{first:?}");
+        assert!(!debug.contains("workspace_01"));
+        assert!(!debug.contains("memory_01"));
     }
 
     #[test]
@@ -275,7 +302,11 @@ mod tests {
     fn rejects_unbounded_or_unsafe_encryption_envelope_metadata() {
         let valid =
             || EncryptedPayload::new(vec![1], "key_01", "xchacha20poly1305-ietf", vec![0; 24]);
-        assert!(valid().is_ok());
+        let valid = valid().expect("valid envelope");
+        let debug = format!("{valid:?}");
+        assert!(!debug.contains("key_01"));
+        assert!(!debug.contains("[1]"));
+        assert!(!debug.contains("[0, 0"));
         assert_eq!(
             EncryptedPayload::new(
                 vec![0; MAX_ENCRYPTED_CIPHERTEXT_BYTES + 1],
