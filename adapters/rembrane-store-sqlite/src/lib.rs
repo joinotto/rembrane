@@ -685,10 +685,24 @@ impl SqliteStore<MissingCipher> {
             validate_prepared_database_file(path, &prepared)?;
             initialize(connection)
         })();
-        if result.is_err() && prepared.created {
-            remove_prepared_sqlite_files(path, &prepared);
+        match result {
+            Ok(store) => {
+                if prepared.created
+                    && let Err(error) = sync_prepared_database_file(path, &prepared)
+                {
+                    drop(store);
+                    remove_prepared_sqlite_files(path, &prepared);
+                    return Err(error);
+                }
+                Ok(store)
+            }
+            Err(error) => {
+                if prepared.created {
+                    remove_prepared_sqlite_files(path, &prepared);
+                }
+                Err(error)
+            }
         }
-        result
     }
 
     pub fn open_in_memory() -> Result<Self, ApplicationError> {
@@ -981,7 +995,8 @@ impl<C> SqliteStore<C> {
             validate_prepared_database_file(&canonical_destination, &prepared)?;
             copy_database(&self.connection, &mut destination_connection)?;
             drop(destination_connection);
-            validate_prepared_database_file(&canonical_destination, &prepared)
+            validate_prepared_database_file(&canonical_destination, &prepared)?;
+            sync_prepared_database_file(&canonical_destination, &prepared)
         })();
         if let Err(error) = result {
             remove_prepared_sqlite_files(destination, &prepared);
@@ -1023,6 +1038,8 @@ fn remove_prepared_sqlite_files(path: &Path, prepared: &PreparedDatabaseFile) {
 
 struct PreparedDatabaseFile {
     created: bool,
+    #[cfg(unix)]
+    file: std::fs::File,
     #[cfg(unix)]
     device: u64,
     #[cfg(unix)]
@@ -1083,6 +1100,7 @@ fn prepare_private_database_file(
     validate_private_metadata(&metadata)?;
     Ok(PreparedDatabaseFile {
         created,
+        file,
         device: metadata.dev(),
         inode: metadata.ino(),
     })
@@ -1141,6 +1159,33 @@ fn validate_prepared_database_file(
     } else {
         Err(ApplicationError::StorageUnavailable)
     }
+}
+
+#[cfg(unix)]
+fn sync_prepared_database_file(
+    path: &Path,
+    prepared: &PreparedDatabaseFile,
+) -> Result<(), ApplicationError> {
+    validate_prepared_database_file(path, prepared)?;
+    prepared
+        .file
+        .sync_all()
+        .map_err(|_| ApplicationError::StorageUnavailable)?;
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    std::fs::File::open(parent)
+        .and_then(|directory| directory.sync_all())
+        .map_err(|_| ApplicationError::StorageUnavailable)
+}
+
+#[cfg(not(unix))]
+fn sync_prepared_database_file(
+    path: &Path,
+    prepared: &PreparedDatabaseFile,
+) -> Result<(), ApplicationError> {
+    validate_prepared_database_file(path, prepared)
 }
 
 #[cfg(test)]

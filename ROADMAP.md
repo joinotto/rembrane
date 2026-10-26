@@ -63,6 +63,8 @@ This roadmap describes sequencing, not release dates.
       and clean up destinations rejected by the platform path encoding.
     - [x] Bind protected-file preparation and SQLite opens to one device/inode
       identity, and preserve attacker-installed replacements during cleanup.
+    - [x] Retain and synchronize the exact prepared database handle plus its
+      parent directory before reporting initialization or backup success.
     - [x] Remove partial files after failed initialization of a new database
       while preserving every pre-existing database on startup failure.
 - [x] Add development-key encrypted CLI remember and recall commands.

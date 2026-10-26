@@ -27,6 +27,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - CLI export and restore now synchronize containing Unix directories after
   durable file writes and protected removals, closing the crash window between
   file synchronization and persistence of the directory entry.
+- Canonical SQLite initialization and backup now retain the originally
+  prepared database handle and synchronize that exact file plus its containing
+  Unix directory before reporting success.
 - Remote MCP JSON-RPC request-ID classification now satisfies the
   warnings-as-errors production Clippy gate.
 - Protocol script syntax checks now select ES-module parsing explicitly,
