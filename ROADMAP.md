@@ -220,6 +220,8 @@ This roadmap describes sequencing, not release dates.
         protocol diagnostics while retaining generation and recipient count.
       - [x] Apply the same redaction to persisted rotation receipts and
         workspace rotation lifecycle state.
+      - [x] Reject unbounded or unsafe provider, workspace, and recipient
+        identities before accepting a rotation receipt.
     - [x] Bound untrusted manifest algorithm collections and require closed
       portable algorithm identifiers before capability negotiation.
     - [x] Bind rotation to the authenticated HTTP protocol and black-box

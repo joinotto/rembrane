@@ -4,6 +4,7 @@ use std::fmt::{self, Display};
 use crate::{KeyRotationId, PrincipalId, ProviderId, WorkspaceId};
 
 pub const MAX_KEY_ROTATION_RECIPIENTS: usize = 10_000;
+pub const MAX_KEY_ROTATION_IDENTITY_BYTES: usize = 255;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum KeyRotationStatus {
@@ -73,20 +74,19 @@ impl KeyRotationReceipt {
     ) -> Result<Self, KeyRotationError> {
         let request_id = request_id.into();
         let key_id = key_id.into();
-        if provider_id.as_str().is_empty()
-            || provider_id.as_str().len() > 255
+        if !safe_identity(provider_id.as_str())
             || request_id.is_empty()
             || request_id.len() > 255
             || !request_id.bytes().all(|byte| {
                 byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b':')
             })
-            || workspace_id.as_str().is_empty()
+            || !safe_identity(workspace_id.as_str())
             || generation == 0
             || recipient_ids.is_empty()
             || recipient_ids.len() > MAX_KEY_ROTATION_RECIPIENTS
             || recipient_ids
                 .iter()
-                .any(|recipient| recipient.as_str().is_empty())
+                .any(|recipient| !safe_identity(recipient.as_str()))
         {
             return Err(KeyRotationError::InvalidProviderReceipt);
         }
@@ -294,6 +294,14 @@ impl WorkspaceKeyRotation {
     }
 }
 
+fn safe_identity(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= MAX_KEY_ROTATION_IDENTITY_BYTES
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b':'))
+}
+
 fn validate_key_id(key_id: &str) -> Result<(), KeyRotationError> {
     if key_id.is_empty()
         || key_id.len() > 200
@@ -430,6 +438,29 @@ mod tests {
         );
         assert_eq!(
             receipt(vec![PrincipalId::new("alice"), PrincipalId::new("alice")]),
+            Err(KeyRotationError::InvalidProviderReceipt)
+        );
+
+        for recipients in [
+            vec![PrincipalId::new("member\nunsafe")],
+            vec![PrincipalId::new(
+                "m".repeat(super::MAX_KEY_ROTATION_IDENTITY_BYTES + 1),
+            )],
+        ] {
+            assert_eq!(
+                receipt(recipients),
+                Err(KeyRotationError::InvalidProviderReceipt)
+            );
+        }
+        assert_eq!(
+            KeyRotationReceipt::new(
+                ProviderId::new("customer.kms"),
+                "rotate-request-01",
+                WorkspaceId::new("workspace\nunsafe"),
+                2,
+                "workspace-key:v2",
+                vec![PrincipalId::new("alice")],
+            ),
             Err(KeyRotationError::InvalidProviderReceipt)
         );
     }

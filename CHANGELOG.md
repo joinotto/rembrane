@@ -42,6 +42,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   recipient identities while retaining generation and recipient count.
 - Persisted key-rotation receipts and lifecycle diagnostics now redact
   provider, request, workspace, key, and member identities.
+- Key-rotation receipts now reject oversized or non-portable provider,
+  workspace, and recipient identities before entering canonical storage.
 - Canonical SQLite initialization and backup now require the path opened by
   SQLite to retain the exact protected file's device/inode identity, and
   failure cleanup refuses to remove a path replaced after preparation.

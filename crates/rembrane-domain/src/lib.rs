@@ -50,8 +50,8 @@ pub use invitation::{
     Invitation, InvitationError, InvitationStatus, MAX_INVITATION_LIFETIME_SECONDS,
 };
 pub use key_rotation::{
-    KeyRotationError, KeyRotationReceipt, KeyRotationStatus, MAX_KEY_ROTATION_RECIPIENTS,
-    WorkspaceKeyRotation,
+    KeyRotationError, KeyRotationReceipt, KeyRotationStatus, MAX_KEY_ROTATION_IDENTITY_BYTES,
+    MAX_KEY_ROTATION_RECIPIENTS, WorkspaceKeyRotation,
 };
 pub use knowledge_graph::{
     KnowledgeEdge, KnowledgeGraphError, KnowledgeNode, KnowledgeNodeKind, KnowledgeRelationType,
