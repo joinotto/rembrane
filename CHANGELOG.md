@@ -59,6 +59,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Static protocol checks now assert the exact key-provider identity, algorithm,
   plaintext, context, request, rotation, and payload-purpose limits rather
   than only checking that the OpenAPI document parses.
+- PostgreSQL store and tenant-transaction errors now redact underlying driver
+  diagnostics from both display and debug output, preventing SQL, connection,
+  credential, and tenant metadata from crossing the adapter boundary.
 - Canonical SQLite initialization and backup now require the path opened by
   SQLite to retain the exact protected file's device/inode identity, and
   failure cleanup refuses to remove a path replaced after preparation.

@@ -676,7 +676,7 @@ impl<Transaction: PostgresTransaction> Drop for ProvisioningTransaction<Transact
     }
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Eq, PartialEq)]
 pub enum TenantTransactionError<DriverError> {
     Driver(DriverError),
     MissingTenant,
@@ -684,10 +684,21 @@ pub enum TenantTransactionError<DriverError> {
     Closed,
 }
 
-impl<DriverError: Display> Display for TenantTransactionError<DriverError> {
+impl<DriverError> fmt::Debug for TenantTransactionError<DriverError> {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::Driver(_) => "Driver([REDACTED])",
+            Self::MissingTenant => "MissingTenant",
+            Self::TenantMismatch => "TenantMismatch",
+            Self::Closed => "Closed",
+        })
+    }
+}
+
+impl<DriverError> Display for TenantTransactionError<DriverError> {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Driver(error) => write!(formatter, "PostgreSQL transaction failed: {error}"),
+            Self::Driver(_) => formatter.write_str("PostgreSQL transaction failed"),
             Self::MissingTenant => {
                 formatter.write_str("PostgreSQL tenant context was not established")
             }
@@ -700,7 +711,7 @@ impl<DriverError: Display> Display for TenantTransactionError<DriverError> {
 
 impl<DriverError> Error for TenantTransactionError<DriverError> where DriverError: Error + 'static {}
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Eq, PartialEq)]
 pub enum PostgresStoreError<DriverError> {
     Begin(DriverError),
     Tenant(TenantTransactionError<DriverError>),
@@ -713,14 +724,31 @@ pub enum PostgresStoreError<DriverError> {
     UnexpectedCardinality,
 }
 
-impl<DriverError: Display> Display for PostgresStoreError<DriverError> {
+impl<DriverError> fmt::Debug for PostgresStoreError<DriverError> {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::Begin(_) => "Begin([REDACTED])",
+            Self::Tenant(TenantTransactionError::Driver(_)) => "Tenant(Driver([REDACTED]))",
+            Self::Tenant(TenantTransactionError::MissingTenant) => "Tenant(MissingTenant)",
+            Self::Tenant(TenantTransactionError::TenantMismatch) => "Tenant(TenantMismatch)",
+            Self::Tenant(TenantTransactionError::Closed) => "Tenant(Closed)",
+            Self::Row(_) => "Row([REDACTED])",
+            Self::InvalidRow => "InvalidRow",
+            Self::InvalidInput => "InvalidInput",
+            Self::InvalidLimit => "InvalidLimit",
+            Self::MissingRow => "MissingRow",
+            Self::VersionConflict => "VersionConflict",
+            Self::UnexpectedCardinality => "UnexpectedCardinality",
+        })
+    }
+}
+
+impl<DriverError> Display for PostgresStoreError<DriverError> {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Begin(error) => {
-                write!(formatter, "could not begin PostgreSQL transaction: {error}")
-            }
+            Self::Begin(_) => formatter.write_str("could not begin PostgreSQL transaction"),
             Self::Tenant(error) => Display::fmt(error, formatter),
-            Self::Row(error) => write!(formatter, "could not decode PostgreSQL row: {error}"),
+            Self::Row(_) => formatter.write_str("could not decode PostgreSQL row"),
             Self::InvalidRow => formatter.write_str("PostgreSQL returned an invalid canonical row"),
             Self::InvalidInput => formatter.write_str("PostgreSQL mutation input is invalid"),
             Self::InvalidLimit => formatter.write_str("PostgreSQL query limit is invalid"),
@@ -7808,6 +7836,24 @@ mod tests {
                 PostgresParameter::Bytes(value) => format!("bytes:{}", value.len()),
             })
             .collect()
+    }
+
+    #[test]
+    fn postgres_errors_do_not_render_driver_diagnostics() {
+        let private = "postgresql://user:secret@db.example/private tenant workspace_01";
+        let errors = [
+            PostgresStoreError::Begin(private),
+            PostgresStoreError::Tenant(TenantTransactionError::Driver(private)),
+            PostgresStoreError::Row(private),
+        ];
+
+        for error in errors {
+            let display = error.to_string();
+            let debug = format!("{error:?}");
+            assert!(!display.contains(private));
+            assert!(!debug.contains(private));
+            assert!(debug.contains("[REDACTED]"));
+        }
     }
 
     fn fake(
