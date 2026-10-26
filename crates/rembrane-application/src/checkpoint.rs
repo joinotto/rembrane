@@ -1,3 +1,5 @@
+use std::fmt;
+
 use rembrane_domain::{
     ActivityCheckpoint, ActivityId, CanonicalEvent, CheckpointDisclosureReceipt, DisclosureId,
     EventId, EventPayload, MemoryScope, ReadGrant, WriteGrant, WritePermission,
@@ -5,7 +7,7 @@ use rembrane_domain::{
 
 use crate::{ApplicationError, CheckpointReadRepository};
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct CreateCheckpointCommand {
     pub grant: WriteGrant,
     pub checkpoint: ActivityCheckpoint,
@@ -13,7 +15,19 @@ pub struct CreateCheckpointCommand {
     pub expected_previous_sequence: u64,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+impl fmt::Debug for CreateCheckpointCommand {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("CreateCheckpointCommand")
+            .field(
+                "expected_previous_sequence",
+                &self.expected_previous_sequence,
+            )
+            .finish_non_exhaustive()
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
 pub struct UpdateCheckpointCommand {
     pub grant: WriteGrant,
     pub checkpoint: ActivityCheckpoint,
@@ -22,12 +36,34 @@ pub struct UpdateCheckpointCommand {
     pub expected_previous_sequence: u64,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+impl fmt::Debug for UpdateCheckpointCommand {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("UpdateCheckpointCommand")
+            .field("expected_version", &self.expected_version)
+            .field(
+                "expected_previous_sequence",
+                &self.expected_previous_sequence,
+            )
+            .finish_non_exhaustive()
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
 pub struct ResumeActivityCommand {
     pub grant: ReadGrant,
     pub activity_id: ActivityId,
     pub disclosure_id: DisclosureId,
     pub purpose: String,
+}
+
+impl fmt::Debug for ResumeActivityCommand {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ResumeActivityCommand")
+            .field("purpose_bytes", &self.purpose.len())
+            .finish_non_exhaustive()
+    }
 }
 
 pub struct CheckpointService<'repository, Repository> {
@@ -170,4 +206,41 @@ fn authorize_write(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod diagnostic_tests {
+    use rembrane_domain::{
+        ActivityId, ClientId, DisclosureId, PrincipalId, ReadGrant, WorkspaceId,
+    };
+
+    use super::ResumeActivityCommand;
+
+    #[test]
+    fn checkpoint_resume_diagnostics_redact_purpose_and_identity() {
+        let command = ResumeActivityCommand {
+            grant: ReadGrant {
+                client_id: ClientId::new("private-client"),
+                workspace_id: WorkspaceId::new("private-workspace"),
+                subject_id: PrincipalId::new("private-subject"),
+                scopes: Vec::new(),
+                permissions: Vec::new(),
+            },
+            activity_id: ActivityId::new("private-activity"),
+            disclosure_id: DisclosureId::new("private-disclosure"),
+            purpose: "continue private implementation".to_owned(),
+        };
+
+        let diagnostic = format!("{command:?}");
+        for secret in [
+            "private-client",
+            "private-workspace",
+            "private-subject",
+            "private-activity",
+            "private-disclosure",
+            "continue private implementation",
+        ] {
+            assert!(!diagnostic.contains(secret), "diagnostic exposed {secret}");
+        }
+    }
 }

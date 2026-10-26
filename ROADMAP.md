@@ -66,6 +66,9 @@ This roadmap describes sequencing, not release dates.
   - [x] Redact semantic and graph projection job, tenant, resource, and
     provider identities from diagnostics.
 - [x] Persist encrypted activity checkpoints with their audit events.
+- [x] Redact checkpoint payloads, tenant and activity identities, client
+  grants, disclosure purposes, and event identities from application command
+  diagnostics.
 - [x] Audit every externally resumed checkpoint revision with a tenant-scoped
   disclosure receipt.
 - [x] Atomically persist exact-version disclosure receipts in SQLite.

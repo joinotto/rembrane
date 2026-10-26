@@ -59,6 +59,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Preference creation, memory proposal, confirmation, revision, and deletion
   command diagnostics now expose only safe content sizes, kinds, versions,
   sequence metadata, and projection counts.
+- Working-memory checkpoint creation, revision, and resume diagnostics now
+  expose only safe versions, sequence metadata, and purpose sizes instead of
+  checkpoint payloads, tenant routing, grants, or disclosure identities.
 - Provider-independent key seal requests now retain copied plaintext in
   redacted zeroize-on-drop ownership instead of an ordinary byte vector.
 - Key-provider plaintext responses are now explicitly wiped before oversized
