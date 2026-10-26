@@ -124,6 +124,8 @@ This roadmap describes sequencing, not release dates.
     - [x] Remove partial files after failed initialization of a new database
       while preserving every pre-existing database on startup failure.
 - [x] Add development-key encrypted CLI remember and recall commands.
+  - [x] Validate preference content, scope selectors, and client identities
+    before opening tenant storage.
 - [x] Add encrypted CLI correction and deletion commands.
 - [x] Create new local database, backup, and restore directory components with
   owner-only Unix permissions without modifying existing parent directories.

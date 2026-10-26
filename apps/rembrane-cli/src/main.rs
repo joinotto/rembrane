@@ -2387,8 +2387,20 @@ where
 fn remember(arguments: &[String]) -> Result<(), String> {
     let content = option(arguments, "--content")?;
     let scope = requested_memory_scope(arguments)?;
-    let read_scope = read_scope(&scope);
     let client_id = optional_option(arguments, "--client").unwrap_or("rembrane-cli");
+    validate_cli_opaque_id("client", client_id)?;
+    validate_cli_memory_scope(&scope)?;
+    if content.trim().is_empty() || content.contains('\0') {
+        return Err(
+            "preference content must be non-empty and contain no null characters".to_owned(),
+        );
+    }
+    if content.len() > MAX_MEMORY_CONTENT_BYTES {
+        return Err(format!(
+            "preference content must not exceed {MAX_MEMORY_CONTENT_BYTES} bytes"
+        ));
+    }
+    let read_scope = read_scope(&scope);
     let (mut store, principal_id, workspace_id) = encrypted_store(arguments)?;
     let grants = authorize_client(
         &store,
@@ -2683,6 +2695,15 @@ fn validate_cli_opaque_id(label: &str, value: &str) -> Result<(), String> {
         ))
     } else {
         Ok(())
+    }
+}
+
+fn validate_cli_memory_scope(scope: &MemoryScope) -> Result<(), String> {
+    match scope {
+        MemoryScope::Global => Ok(()),
+        MemoryScope::Domain { name } => validate_cli_opaque_id("domain", name),
+        MemoryScope::Entity { id } => validate_cli_opaque_id("entity", id.as_str()),
+        MemoryScope::Activity { id } => validate_cli_opaque_id("activity", id.as_str()),
     }
 }
 
@@ -3501,7 +3522,7 @@ mod tests {
         redact_endpoint, remember_failure_json, remember_json_requested, render_mcp_config,
         requested_memory_privacy, requested_memory_scope, run, selected_secret_reference,
         test_provider, trace_failure_json, trace_json_requested,
-        validate_cli_opaque_id, validate_external_conformance_namespace,
+        validate_cli_memory_scope, validate_cli_opaque_id, validate_external_conformance_namespace,
         validate_mcp_server_binary, vscode_mcp_config, working_memory_failure_json, write_export,
         write_knowledge_graph_export, write_memory_jsonl_export, write_memory_markdown_export,
         zed_mcp_config,
@@ -3688,6 +3709,69 @@ mod tests {
         );
         assert!(!result.to_string().contains("Private Name"));
         assert!(!result.to_string().contains("preferences.sqlite"));
+    }
+
+    #[test]
+    fn remember_rejects_invalid_input_before_storage_access() {
+        assert!(validate_cli_memory_scope(&MemoryScope::Global).is_ok());
+        assert!(validate_cli_memory_scope(&MemoryScope::Domain {
+            name: "travel".to_owned(),
+        })
+        .is_ok());
+        assert!(validate_cli_memory_scope(&MemoryScope::Entity {
+            id: EntityId::new("has spaces"),
+        })
+        .is_err());
+
+        for content in [
+            "Call me\0Hippo".to_owned(),
+            "x".repeat(MAX_MEMORY_CONTENT_BYTES + 1),
+        ] {
+            let arguments = vec![
+                "remember".to_owned(),
+                "--database".to_owned(),
+                "/path/that/does/not/exist.sqlite".to_owned(),
+                "--principal".to_owned(),
+                "principal_01".to_owned(),
+                "--workspace".to_owned(),
+                "workspace_01".to_owned(),
+                "--content".to_owned(),
+                content,
+            ];
+            let error = run(&arguments).expect_err("invalid preference must fail");
+            assert!(
+                error.starts_with("preference content"),
+                "unexpected error: {error}"
+            );
+        }
+
+        let whitespace_content = vec![
+            "remember".to_owned(),
+            "--content".to_owned(),
+            "   ".to_owned(),
+        ];
+        assert_eq!(
+            run(&whitespace_content),
+            Err("missing value for --content".to_owned())
+        );
+
+        let unsafe_scope = vec![
+            "remember".to_owned(),
+            "--database".to_owned(),
+            "/path/that/does/not/exist.sqlite".to_owned(),
+            "--principal".to_owned(),
+            "principal_01".to_owned(),
+            "--workspace".to_owned(),
+            "workspace_01".to_owned(),
+            "--content".to_owned(),
+            "Call me Hippo".to_owned(),
+            "--entity".to_owned(),
+            "has spaces".to_owned(),
+        ];
+        assert_eq!(
+            run(&unsafe_scope),
+            Err("entity must contain 1 to 255 safe ASCII characters".to_owned())
+        );
     }
 
     #[test]
