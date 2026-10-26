@@ -47,6 +47,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Local secret resolution now uses explicitly reviewed structural diagnostics,
   and the sensitive-file gate prevents future resolver structs from deriving
   unreviewed debug output.
+- The sensitive-file gate now scans every production adapter source, preventing
+  newly added adapters from deriving raw struct diagnostics outside the
+  explicitly audited adapter list.
 - Provider-independent key seal requests now retain copied plaintext in
   redacted zeroize-on-drop ownership instead of an ordinary byte vector.
 - Key-provider plaintext responses are now explicitly wiped before oversized

@@ -66,6 +66,15 @@ then
     exit 1
 fi
 
+for adapter_source in adapters/*/src/*.rs; do
+    if sed '/^#\[cfg(test)\]/,$d' "$adapter_source" |
+        rg -n -U '#\[derive\([^]]*Debug[^]]*\)\]\n(?:pub )?struct '
+    then
+        echo "adapter structs must use explicitly reviewed Debug implementations: $adapter_source" >&2
+        exit 1
+    fi
+done
+
 if sed '/^#\[cfg(test)\]/,$d' adapters/rembrane-remote-mcp-http/src/lib.rs |
     rg -n -U '#\[derive\([^]]*Debug[^]]*\)\]\n(?:pub )?struct '
 then

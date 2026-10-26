@@ -37,6 +37,8 @@ This roadmap describes sequencing, not release dates.
       implementations for canonical identifiers and domain structs.
   - [x] Redact canonical memory plaintext and identities from diagnostics while
     retaining safe structural lifecycle information.
+  - [x] Enforce explicitly reviewed debug output for every production adapter
+    struct, including adapters added after the initial security audit.
 - [x] Authorize confirmed preference creation through an application use case.
 - [x] Model correction and deletion lifecycle operations.
 - [x] Define atomic memory, event, and projection mutations.
