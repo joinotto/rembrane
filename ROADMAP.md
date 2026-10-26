@@ -1338,6 +1338,9 @@ This roadmap describes sequencing, not release dates.
         diagnostics.
     - [x] Add idempotent bounded event-batch payloads with exact scope,
       provenance references, observation time, and canonical ordered results.
+      - [x] Redact provider work traces, event types, provenance references,
+        observation times, idempotency keys, and canonical identities from
+        diagnostics.
     - [x] Add bounded scoped question payloads and answers grounded in exact
       memory revisions with context-pack and disclosure receipt identity.
     - [x] Add cursor-bound bounded sync pull/push payloads with server-assigned

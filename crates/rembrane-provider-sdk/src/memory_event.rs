@@ -1,3 +1,5 @@
+use std::fmt;
+
 use rembrane_domain::EventId;
 
 use crate::{
@@ -9,13 +11,30 @@ pub const MAX_EVENT_TYPE_BYTES: usize = 100;
 pub const MAX_EVENT_DATA_BYTES: usize = 262_144;
 pub const MAX_EVENT_SOURCE_REFERENCE_BYTES: usize = 2_048;
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct MemoryProviderEvent {
     event_type: String,
     selector: MemoryProviderContextSelector,
     data: String,
     source_reference: Option<String>,
     observed_at_epoch_seconds: u64,
+}
+
+impl fmt::Debug for MemoryProviderEvent {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("MemoryProviderEvent")
+            .field("event_type_bytes", &self.event_type.len())
+            .field("selector", &self.selector)
+            .field("data_bytes", &self.data.len())
+            .field("source_reference_present", &self.source_reference.is_some())
+            .field(
+                "source_reference_bytes",
+                &self.source_reference.as_deref().map_or(0, str::len),
+            )
+            .field("observed_at_epoch_seconds", &"<redacted>")
+            .finish()
+    }
 }
 
 impl MemoryProviderEvent {
@@ -108,10 +127,28 @@ impl MemoryProviderEvent {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct RecordEventPayload {
     idempotency_key: MemoryProviderIdempotencyKey,
     events: Vec<MemoryProviderEvent>,
+}
+
+impl fmt::Debug for RecordEventPayload {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("RecordEventPayload")
+            .field("idempotency_key", &"<redacted>")
+            .field("event_count", &self.events.len())
+            .field(
+                "data_bytes",
+                &self
+                    .events
+                    .iter()
+                    .map(|event| event.data.len())
+                    .sum::<usize>(),
+            )
+            .finish()
+    }
 }
 
 impl RecordEventPayload {
@@ -149,10 +186,20 @@ impl RecordEventPayload {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct MemoryProviderRecordedEvent {
     event_id: EventId,
     sequence: u64,
+}
+
+impl fmt::Debug for MemoryProviderRecordedEvent {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("MemoryProviderRecordedEvent")
+            .field("event_id", &"<redacted>")
+            .field("sequence", &self.sequence)
+            .finish()
+    }
 }
 
 impl MemoryProviderRecordedEvent {
@@ -183,9 +230,18 @@ impl MemoryProviderRecordedEvent {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct RecordEventResult {
     events: Vec<MemoryProviderRecordedEvent>,
+}
+
+impl fmt::Debug for RecordEventResult {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("RecordEventResult")
+            .field("event_count", &self.events.len())
+            .finish()
+    }
 }
 
 impl RecordEventResult {
@@ -366,5 +422,50 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn event_diagnostics_redact_work_trace_provenance_time_and_identities() {
+        let event = MemoryProviderEvent::new(
+            "private.work-trace",
+            MemoryProviderContextSelector::entity(EntityId::new("private_entity"))
+                .expect("selector should be valid"),
+            r#"{"summary":"private implementation detail"}"#,
+            Some("private_source_reference".to_owned()),
+            1_900_000_001,
+            1_900_000_002,
+        )
+        .expect("event should be valid");
+        let payload = RecordEventPayload::new(
+            MemoryProviderIdempotencyKey::new("private_event_batch_key")
+                .expect("idempotency key should be valid"),
+            vec![event.clone()],
+            limits(2),
+        )
+        .expect("payload should be valid");
+        let recorded = MemoryProviderRecordedEvent::new(EventId::new("private_event"), 9)
+            .expect("recorded event should be valid");
+        let result = RecordEventResult::new(vec![recorded.clone()], limits(2))
+            .expect("result should be valid");
+
+        let diagnostic = format!("{event:?} {payload:?} {recorded:?} {result:?}");
+
+        for private_value in [
+            "private.work-trace",
+            "private_entity",
+            "private implementation detail",
+            "private_source_reference",
+            "1900000001",
+            "private_event_batch_key",
+            "private_event",
+        ] {
+            assert!(!diagnostic.contains(private_value));
+        }
+        assert!(diagnostic.contains("event_type_bytes: 18"));
+        assert!(diagnostic.contains("data_bytes: 43"));
+        assert!(diagnostic.contains("source_reference_present: true"));
+        assert!(diagnostic.contains("source_reference_bytes: 24"));
+        assert!(diagnostic.contains("event_count: 1"));
+        assert!(diagnostic.contains("sequence: 9"));
     }
 }

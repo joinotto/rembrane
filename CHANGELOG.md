@@ -156,6 +156,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Memory-provider disclosure diagnostics now expose only revision versions,
   purpose size, and item count while redacting memory and receipt identities,
   purposes, idempotency keys, and disclosure timestamps.
+- Memory-provider event diagnostics now expose only payload sizes, selector
+  kind, source-reference presence, batch count, and canonical sequence while
+  redacting work traces, event types, provenance references, observation
+  times, idempotency keys, and identities.
 - Canonical SQLite initialization and backup now require the path opened by
   SQLite to retain the exact protected file's device/inode identity, and
   failure cleanup refuses to remove a path replaced after preparation.
