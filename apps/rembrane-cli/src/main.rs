@@ -41,6 +41,7 @@ use rembrane_provider_registry::{ProviderSelectionPolicy, VerifiedProviderRegist
 use rembrane_provider_sdk::{
     CURRENT_MEMORY_PROVIDER_PROTOCOL, MemoryProviderCapability, MemoryProviderLimits,
     MemoryProviderPolicy, MemoryProviderPrivacyMode, MemoryProviderTransport,
+    MAX_CONTEXT_PURPOSE_BYTES, MAX_CONTEXT_QUERY_BYTES,
     SEMANTIC_PROVIDER_CONFORMANCE_PROFILE_SHA256, SEMANTIC_PROVIDER_CONFORMANCE_SUITE_ID,
     SEMANTIC_PROVIDER_CONFORMANCE_SUITE_VERSION, SemanticProviderConformanceReport,
     verify_semantic_provider,
@@ -2592,6 +2593,9 @@ fn recall(arguments: &[String]) -> Result<(), String> {
     let client_id = option(arguments, "--client")?;
     let purpose = option(arguments, "--purpose")?;
     let query = option(arguments, "--query")?;
+    validate_cli_opaque_id("client", client_id)?;
+    validate_cli_text("recall purpose", purpose, MAX_CONTEXT_PURPOSE_BYTES)?;
+    validate_cli_text("recall query", query, MAX_CONTEXT_QUERY_BYTES)?;
     let maximum_items = optional_option(arguments, "--limit")
         .map(str::parse::<usize>)
         .transpose()
@@ -2613,6 +2617,15 @@ fn recall(arguments: &[String]) -> Result<(), String> {
         ));
     }
     let (domain, entity_id, activity_id, read_scopes) = recall_scope_context(arguments);
+    if let Some(domain) = &domain {
+        validate_cli_opaque_id("domain", domain)?;
+    }
+    if let Some(entity_id) = &entity_id {
+        validate_cli_opaque_id("entity", entity_id.as_str())?;
+    }
+    if let Some(activity_id) = &activity_id {
+        validate_cli_opaque_id("activity", activity_id.as_str())?;
+    }
     let (mut store, principal_id, workspace_id) = encrypted_store(arguments)?;
     let grants = authorize_client(
         &store,
@@ -2766,6 +2779,18 @@ fn validate_cli_memory_scope(scope: &MemoryScope) -> Result<(), String> {
         MemoryScope::Entity { id } => validate_cli_opaque_id("entity", id.as_str()),
         MemoryScope::Activity { id } => validate_cli_opaque_id("activity", id.as_str()),
     }
+}
+
+fn validate_cli_text(label: &str, value: &str, maximum_bytes: usize) -> Result<(), String> {
+    if value.trim().is_empty() || value.contains('\0') {
+        return Err(format!(
+            "{label} must be non-empty and contain no null characters"
+        ));
+    }
+    if value.len() > maximum_bytes {
+        return Err(format!("{label} must not exceed {maximum_bytes} bytes"));
+    }
+    Ok(())
 }
 
 fn trace_json(memory: &MemoryRecord) -> serde_json::Value {
@@ -3571,7 +3596,8 @@ mod tests {
     use rembrane_store_sqlite::SqliteStore;
 
     use super::{
-        EXPORT_MAGIC, MAX_CLI_RECALL_BYTES, MAX_CLI_RECALL_ITEMS, MAX_MEMORY_CONTENT_BYTES,
+        EXPORT_MAGIC, MAX_CLI_RECALL_BYTES, MAX_CLI_RECALL_ITEMS, MAX_CONTEXT_PURPOSE_BYTES,
+        MAX_CONTEXT_QUERY_BYTES, MAX_MEMORY_CONTENT_BYTES,
         SEMANTIC_PROVIDER_CONFORMANCE_PROFILE_SHA256, build_remote_mcp_profile,
         check_provider_registry, claude_mcp_config, codex_mcp_config, create_parent_directory,
         cursor_mcp_config, doctor_failure_json, doctor_json, doctor_json_requested,
@@ -3583,10 +3609,10 @@ mod tests {
         recall_scope_context, redact_endpoint, remember_failure_json, remember_json_requested,
         render_mcp_config, requested_memory_privacy, requested_memory_scope, run,
         selected_secret_reference, test_provider, trace_failure_json, trace_json_requested,
-        validate_cli_memory_scope, validate_cli_opaque_id, validate_external_conformance_namespace,
-        validate_mcp_server_binary, vscode_mcp_config, working_memory_failure_json, write_export,
-        write_knowledge_graph_export, write_memory_jsonl_export, write_memory_markdown_export,
-        zed_mcp_config,
+        validate_cli_memory_scope, validate_cli_opaque_id, validate_cli_text,
+        validate_external_conformance_namespace, validate_mcp_server_binary, vscode_mcp_config,
+        working_memory_failure_json, write_export, write_knowledge_graph_export,
+        write_memory_jsonl_export, write_memory_markdown_export, zed_mcp_config,
     };
 
     fn temporary_path(name: &str) -> std::path::PathBuf {
@@ -3671,6 +3697,71 @@ mod tests {
             run(&excessive_bytes),
             Err(format!(
                 "--max-bytes must be between 1 and {MAX_CLI_RECALL_BYTES}"
+            ))
+        );
+    }
+
+    #[test]
+    fn recall_rejects_invalid_agent_input_before_storage_access() {
+        assert!(validate_cli_text("recall purpose", "continue-project", 32).is_ok());
+        assert!(validate_cli_text("recall query", "\0secret", 32).is_err());
+
+        for arguments in [
+            vec![
+                "recall",
+                "--client",
+                "has spaces",
+                "--purpose",
+                "continue",
+                "--query",
+                "next",
+            ],
+            vec![
+                "recall",
+                "--client",
+                "agent_01",
+                "--purpose",
+                "continue",
+                "--query",
+                "next",
+                "--entity",
+                "has spaces",
+            ],
+        ] {
+            let arguments = arguments.into_iter().map(str::to_owned).collect::<Vec<_>>();
+            let error = run(&arguments).expect_err("unsafe recall input must fail");
+            assert!(error.contains("safe ASCII characters"), "{error}");
+        }
+
+        let oversized_purpose = vec![
+            "recall".to_owned(),
+            "--client".to_owned(),
+            "agent_01".to_owned(),
+            "--purpose".to_owned(),
+            "x".repeat(MAX_CONTEXT_PURPOSE_BYTES + 1),
+            "--query".to_owned(),
+            "next".to_owned(),
+        ];
+        assert_eq!(
+            run(&oversized_purpose),
+            Err(format!(
+                "recall purpose must not exceed {MAX_CONTEXT_PURPOSE_BYTES} bytes"
+            ))
+        );
+
+        let oversized_query = vec![
+            "recall".to_owned(),
+            "--client".to_owned(),
+            "agent_01".to_owned(),
+            "--purpose".to_owned(),
+            "continue".to_owned(),
+            "--query".to_owned(),
+            "x".repeat(MAX_CONTEXT_QUERY_BYTES + 1),
+        ];
+        assert_eq!(
+            run(&oversized_query),
+            Err(format!(
+                "recall query must not exceed {MAX_CONTEXT_QUERY_BYTES} bytes"
             ))
         );
     }

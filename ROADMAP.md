@@ -126,6 +126,8 @@ This roadmap describes sequencing, not release dates.
 - [x] Add development-key encrypted CLI remember and recall commands.
   - [x] Validate preference content, scope selectors, and client identities
     before opening tenant storage.
+  - [x] Validate recall purpose, query, scope selectors, and client identity
+    against provider-compatible bounds before opening tenant storage.
 - [x] Add encrypted CLI correction and deletion commands.
   - [x] Add structured, secret-safe correction and deletion results for
     cross-agent lifecycle synchronization.

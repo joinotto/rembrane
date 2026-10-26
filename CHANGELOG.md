@@ -9,6 +9,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Fixed
 
+- CLI recall now rejects unsafe client and scope identifiers, empty or
+  NUL-containing purpose/query text, purposes above 4 KiB, and queries above
+  32 KiB before opening tenant storage, matching Memory Provider bounds.
 - CLI end-to-end coverage now proves structured preference correction and
   deletion advance optimistic versions, reject stale writers, suppress updated
   content from success output, and emit no internal diagnostics on failure.
