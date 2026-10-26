@@ -57,6 +57,8 @@ This roadmap describes sequencing, not release dates.
 - [x] Add encrypted CLI correction and deletion commands.
 - [x] Create encrypted backup exports and restored databases atomically with
   owner-only permissions and durable file synchronization.
+- [x] Enforce provider-registry input bounds while streaming file contents,
+  including files that change after metadata validation.
 - [x] Add an executable encrypted CLI lifecycle smoke test.
 - [x] Add Postman REST authentication and tenant-isolation smoke tests.
 - [x] Add an MCP initialize/list/call protocol smoke test.

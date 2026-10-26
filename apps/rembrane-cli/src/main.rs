@@ -767,14 +767,23 @@ fn read_bounded_registry_file(
     maximum_bytes: u64,
     label: &str,
 ) -> Result<Vec<u8>, String> {
-    let metadata = std::fs::metadata(path)
+    use std::io::Read as _;
+
+    let file = std::fs::File::open(path)
+        .map_err(|_| format!("provider registry {label} file is unavailable"))?;
+    let metadata = file
+        .metadata()
         .map_err(|_| format!("provider registry {label} file is unavailable"))?;
     if !metadata.is_file() || metadata.len() == 0 || metadata.len() > maximum_bytes {
         return Err(format!("provider registry {label} file size is invalid"));
     }
-    let bytes = std::fs::read(path)
+    let capacity = usize::try_from(metadata.len())
+        .map_err(|_| format!("provider registry {label} file size is invalid"))?;
+    let mut bytes = Vec::with_capacity(capacity);
+    file.take(maximum_bytes.saturating_add(1))
+        .read_to_end(&mut bytes)
         .map_err(|_| format!("provider registry {label} file could not be read"))?;
-    if u64::try_from(bytes.len()).ok() != Some(metadata.len()) {
+    if bytes.is_empty() || u64::try_from(bytes.len()).ok() != Some(metadata.len()) {
         return Err(format!(
             "provider registry {label} file changed while reading"
         ));
@@ -2860,10 +2869,11 @@ mod tests {
         format_read_scopes, gemini_mcp_config, generic_mcp_config, invitation_list_json,
         invitation_status, key_provider_secret_sources, mcp_client_catalog,
         mcp_environment_variables, memory_privacy_mode_name, memory_provider_check_policy,
-        opencode_mcp_config, option, positive_u64, providers, read_export, recall_scope_context,
-        redact_endpoint, render_mcp_config, requested_memory_privacy, requested_memory_scope, run,
-        selected_secret_reference, test_provider, validate_external_conformance_namespace,
-        validate_mcp_server_binary, vscode_mcp_config, write_export, zed_mcp_config,
+        opencode_mcp_config, option, positive_u64, providers, read_bounded_registry_file,
+        read_export, recall_scope_context, redact_endpoint, render_mcp_config,
+        requested_memory_privacy, requested_memory_scope, run, selected_secret_reference,
+        test_provider, validate_external_conformance_namespace, validate_mcp_server_binary,
+        vscode_mcp_config, write_export, zed_mcp_config,
     };
 
     fn temporary_path(name: &str) -> std::path::PathBuf {
@@ -3697,6 +3707,32 @@ mod tests {
         assert!(read_export(&export, &restored).is_err());
         assert!(!restored.exists());
         std::fs::remove_file(export).expect("fixture should be removed");
+    }
+
+    #[test]
+    fn provider_registry_file_reader_enforces_the_streaming_bound() {
+        let file = temporary_path("bounded-registry");
+        std::fs::write(&file, b"12345").expect("fixture should be written");
+
+        assert_eq!(
+            read_bounded_registry_file(
+                file.to_str().expect("temporary path should be UTF-8"),
+                4,
+                "fixture"
+            ),
+            Err("provider registry fixture file size is invalid".to_owned())
+        );
+        assert_eq!(
+            read_bounded_registry_file(
+                file.to_str().expect("temporary path should be UTF-8"),
+                5,
+                "fixture"
+            )
+            .expect("bounded file should be read"),
+            b"12345"
+        );
+
+        std::fs::remove_file(file).expect("fixture should be removed");
     }
 
     #[test]

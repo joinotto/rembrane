@@ -981,6 +981,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   while reading instead of trusting an earlier size check.
 - CLI encrypted exports and restored databases are now created exclusively
   with owner-only Unix permissions and synchronized before success is reported.
+- CLI provider-registry, signature, and public-key inputs now enforce their
+  byte ceilings during the read itself and reject files that change size.
 - Ordered all-or-error provider credential resolution through any secret
   resolver, zeroizing already resolved values when a later reference fails.
 - A transport-injectable Mem0 OSS semantic adapter mapping authorized
