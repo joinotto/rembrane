@@ -208,6 +208,8 @@ jq -e \
     .additionalProperties == false
     and .properties.schemaVersion.const == 1
     and .properties.version.minimum == 1
+    and ."$defs".opaqueId.maxLength == 255
+    and ."$defs".opaqueId.pattern == "^[\\u0021-\\u007E]+$"
     and ."$defs".requiredText.pattern == "^(?=.*\\S)[^\\u0000]+$"
     and ."$defs".textList.maxItems == 1024
     and ."$defs".textList.items.minLength == 1

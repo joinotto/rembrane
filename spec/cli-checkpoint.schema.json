@@ -53,8 +53,8 @@
     "opaqueId": {
       "type": "string",
       "minLength": 1,
-      "maxLength": 4096,
-      "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+      "maxLength": 255,
+      "pattern": "^[\\u0021-\\u007E]+$"
     },
     "requiredText": {
       "type": "string",

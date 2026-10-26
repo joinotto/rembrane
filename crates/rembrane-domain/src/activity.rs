@@ -13,6 +13,7 @@ pub enum CheckpointError {
     InvalidListItem,
     EmptyStateFingerprint,
     InvalidText,
+    InvalidIdentifier,
     PayloadTooLarge,
     InvalidVersion,
     VersionOverflow,
@@ -33,6 +34,9 @@ impl Display for CheckpointError {
             }
             Self::InvalidText => {
                 formatter.write_str("checkpoint text must not contain null characters")
+            }
+            Self::InvalidIdentifier => {
+                formatter.write_str("checkpoint identifiers must contain 1 to 255 safe ASCII characters")
             }
             Self::PayloadTooLarge => {
                 formatter.write_str("checkpoint exceeds the canonical byte limit")
@@ -101,6 +105,13 @@ impl ActivityCheckpoint {
         state_fingerprint: Option<String>,
         version: u64,
     ) -> Result<Self, CheckpointError> {
+        validate_identifiers(
+            &id,
+            &workspace_id,
+            &subject_id,
+            &activity_id,
+            entity_id.as_ref(),
+        )?;
         let goal = goal.into();
         validate_required_text(&goal, CheckpointError::EmptyGoal)?;
 
@@ -144,6 +155,13 @@ impl ActivityCheckpoint {
         next_steps: Vec<String>,
         blockers: Vec<String>,
     ) -> Result<Self, CheckpointError> {
+        validate_identifiers(
+            &id,
+            &workspace_id,
+            &subject_id,
+            &activity_id,
+            entity_id.as_ref(),
+        )?;
         let goal = goal.into();
         validate_required_text(&goal, CheckpointError::EmptyGoal)?;
 
@@ -269,6 +287,31 @@ impl ActivityCheckpoint {
     #[must_use]
     pub const fn version(&self) -> u64 {
         self.version
+    }
+}
+
+fn validate_identifiers(
+    id: &CheckpointId,
+    workspace_id: &WorkspaceId,
+    subject_id: &PrincipalId,
+    activity_id: &ActivityId,
+    entity_id: Option<&EntityId>,
+) -> Result<(), CheckpointError> {
+    let valid = [id.as_str(), workspace_id.as_str(), subject_id.as_str(), activity_id.as_str()]
+        .into_iter()
+        .chain(entity_id.map(EntityId::as_str))
+        .all(|value| {
+            !value.is_empty()
+                && value.len() <= 255
+                && value.is_ascii()
+                && !value
+                    .bytes()
+                    .any(|byte| byte.is_ascii_control() || byte.is_ascii_whitespace())
+        });
+    if valid {
+        Ok(())
+    } else {
+        Err(CheckpointError::InvalidIdentifier)
     }
 }
 
@@ -464,6 +507,37 @@ mod tests {
             .with_state_fingerprint("git:abc\0hidden")
             .expect_err("null fingerprint should fail");
         assert_eq!(fingerprint_error, super::CheckpointError::InvalidText);
+    }
+
+    #[test]
+    fn rejects_unsafe_or_unbounded_checkpoint_identifiers() {
+        let unsafe_activity = ActivityCheckpoint::new(
+            CheckpointId::new("checkpoint_unsafe_id"),
+            WorkspaceId::new("workspace_01"),
+            PrincipalId::new("principal_01"),
+            ActivityId::new("activity with spaces"),
+            None,
+            "Goal",
+            "Summary",
+            Vec::new(),
+            Vec::new(),
+        )
+        .expect_err("unsafe activity identity should fail");
+        assert_eq!(unsafe_activity, super::CheckpointError::InvalidIdentifier);
+
+        let oversized_entity = ActivityCheckpoint::new(
+            CheckpointId::new("checkpoint_oversized_id"),
+            WorkspaceId::new("workspace_01"),
+            PrincipalId::new("principal_01"),
+            ActivityId::new("activity_01"),
+            Some(EntityId::new("x".repeat(256))),
+            "Goal",
+            "Summary",
+            Vec::new(),
+            Vec::new(),
+        )
+        .expect_err("oversized entity identity should fail");
+        assert_eq!(oversized_entity, super::CheckpointError::InvalidIdentifier);
     }
 
     #[test]

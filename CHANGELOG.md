@@ -26,6 +26,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   and state fingerprints, matching the external provider boundary.
 - CLI and Memory Provider schemas now encode the same non-whitespace,
   NUL-free rule for checkpoint goals, summaries, and state fingerprints.
+- Canonical checkpoints now reject empty, whitespace-bearing, control-byte,
+  non-ASCII, or longer-than-255 routing identifiers, aligning local
+  working-memory state with the external provider protocol and CLI schema.
 - CLI checkpoint and resume output now has a versioned JSON Schema, canonical
   example, protocol drift checks, and cross-agent continuity documentation
   tied to the canonical payload and collection bounds.
