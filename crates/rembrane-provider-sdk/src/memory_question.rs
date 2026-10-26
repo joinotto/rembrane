@@ -1,3 +1,5 @@
+use std::fmt;
+
 use rembrane_domain::{ContextPackId, DisclosureId};
 
 use crate::{
@@ -8,13 +10,26 @@ use crate::{
 pub const MAX_QUESTION_PURPOSE_BYTES: usize = 4_096;
 pub const MAX_QUESTION_BYTES: usize = 32_768;
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct ResolveQuestionPayload {
     purpose: String,
     question: String,
     selector: MemoryProviderContextSelector,
     maximum_supporting_items: usize,
     maximum_answer_bytes: usize,
+}
+
+impl fmt::Debug for ResolveQuestionPayload {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ResolveQuestionPayload")
+            .field("purpose_bytes", &self.purpose.len())
+            .field("question_bytes", &self.question.len())
+            .field("selector", &self.selector)
+            .field("maximum_supporting_items", &self.maximum_supporting_items)
+            .field("maximum_answer_bytes", &self.maximum_answer_bytes)
+            .finish()
+    }
 }
 
 impl ResolveQuestionPayload {
@@ -85,12 +100,24 @@ impl ResolveQuestionPayload {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct ResolveQuestionResult {
     answer: String,
     supporting_memories: Vec<MemoryProviderDisclosedMemory>,
     context_pack_id: ContextPackId,
     disclosure_id: DisclosureId,
+}
+
+impl fmt::Debug for ResolveQuestionResult {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ResolveQuestionResult")
+            .field("answer_bytes", &self.answer.len())
+            .field("supporting_memory_count", &self.supporting_memories.len())
+            .field("context_pack_id", &"<redacted>")
+            .field("disclosure_id", &"<redacted>")
+            .finish()
+    }
 }
 
 impl ResolveQuestionResult {
@@ -315,5 +342,46 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn question_diagnostics_redact_prompt_answer_support_and_receipts() {
+        let request = ResolveQuestionPayload::new(
+            "private question purpose",
+            "What private work should continue?",
+            MemoryProviderContextSelector::domain("private_domain")
+                .expect("selector should be valid"),
+            2,
+            500,
+            limits(),
+        )
+        .expect("question request should be valid");
+        let result = ResolveQuestionResult::new(
+            "Private grounded answer",
+            vec![support("private_memory", 3)],
+            ContextPackId::new("private_context_pack"),
+            DisclosureId::new("private_disclosure"),
+            &request,
+        )
+        .expect("question result should be valid");
+
+        let diagnostic = format!("{request:?} {result:?}");
+
+        for private_value in [
+            "private question purpose",
+            "What private work should continue?",
+            "private_domain",
+            "Private grounded answer",
+            "private_memory",
+            "private_context_pack",
+            "private_disclosure",
+        ] {
+            assert!(!diagnostic.contains(private_value));
+        }
+        assert!(diagnostic.contains("purpose_bytes: 24"));
+        assert!(diagnostic.contains("question_bytes: 34"));
+        assert!(diagnostic.contains("maximum_supporting_items: 2"));
+        assert!(diagnostic.contains("answer_bytes: 23"));
+        assert!(diagnostic.contains("supporting_memory_count: 1"));
     }
 }

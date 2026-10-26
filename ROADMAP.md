@@ -1307,6 +1307,8 @@ This roadmap describes sequencing, not release dates.
       and activity selectors constrained by provider-advertised limits.
       - [x] Seal selector representation so callers cannot bypass domain and
         opaque-ID validation through direct enum construction.
+      - [x] Redact provider question prompts, answers, supporting memory
+        revisions, and receipt identities from diagnostics.
     - [x] Add bounded context responses carrying canonical IDs, versions,
       scopes, kinds, evidence, confidence, validity, sensitivity, disclosure
       constraints, and disclosure receipts.

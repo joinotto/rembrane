@@ -146,6 +146,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   collection counts, optional-field presence, expected version, and result
   version while redacting working memory, fingerprints, idempotency keys, and
   canonical identities.
+- Memory-provider question diagnostics now expose only prompt and answer
+  sizes, output limits, selector kind, and support count while redacting user
+  questions, generated answers, supporting revisions, and receipt identities.
 - Canonical SQLite initialization and backup now require the path opened by
   SQLite to retain the exact protected file's device/inode identity, and
   failure cleanup refuses to remove a path replaced after preparation.
