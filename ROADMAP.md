@@ -199,6 +199,8 @@ This roadmap describes sequencing, not release dates.
     - [x] Publish the complete macOS Keychain lookup profile in the canonical
       environment template for local and Mac mini self-hosting.
   - [x] Add Windows DPAPI and Linux Secret Service adapters.
+    - [x] Redact OS key identifiers, service/account lookup metadata, and
+      protected DPAPI blob paths from debug output.
     - [x] Resolve active and historical Linux Secret Service keys through the
       fixed `secret-tool` client with lookup metadata only and zeroized output.
       - [x] Bind each lookup to service, account, and expected key ID to avoid

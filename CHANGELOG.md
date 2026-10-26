@@ -33,6 +33,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Customer-KMS diagnostics now redact workspace context, provider key
   locators, wrapped-key bytes, and authenticated data while retaining safe
   generation and size information.
+- macOS Keychain, Linux Secret Service, and Windows DPAPI reference diagnostics
+  now redact key identifiers, service/account lookup metadata, and protected
+  blob paths.
 - Canonical SQLite initialization and backup now require the path opened by
   SQLite to retain the exact protected file's device/inode identity, and
   failure cleanup refuses to remove a path replaced after preparation.

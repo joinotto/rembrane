@@ -13,6 +13,7 @@ use rembrane_domain::WorkspaceId;
 use rembrane_provider_sdk::{
     CustomerKmsAdapter, CustomerKmsGeneratedKey, CustomerKmsKeyReference, CustomerKmsKeyring,
 };
+use std::fmt;
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 use std::process::Command;
 use zeroize::Zeroizing;
@@ -26,24 +27,56 @@ pub struct RustCryptoRecordCipher {
     key: Zeroizing<[u8; 32]>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct MacosKeychainKeyReference {
     key_id: String,
     service: String,
     account: String,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct LinuxSecretServiceKeyReference {
     key_id: String,
     service: String,
     account: String,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct WindowsDpapiKeyReference {
     key_id: String,
     blob_path: String,
+}
+
+impl fmt::Debug for MacosKeychainKeyReference {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("MacosKeychainKeyReference")
+            .field("key_id", &"[REDACTED]")
+            .field("service", &"[REDACTED]")
+            .field("account", &"[REDACTED]")
+            .finish()
+    }
+}
+
+impl fmt::Debug for LinuxSecretServiceKeyReference {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("LinuxSecretServiceKeyReference")
+            .field("key_id", &"[REDACTED]")
+            .field("service", &"[REDACTED]")
+            .field("account", &"[REDACTED]")
+            .finish()
+    }
+}
+
+impl fmt::Debug for WindowsDpapiKeyReference {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("WindowsDpapiKeyReference")
+            .field("key_id", &"[REDACTED]")
+            .field("blob_path", &"[REDACTED]")
+            .finish()
+    }
 }
 
 impl MacosKeychainKeyReference {
@@ -867,6 +900,9 @@ mod tests {
             reference.blob_path(),
             r"C:\Rembrane\workspace_01-key_v2.dpapi"
         );
+        let debug = format!("{reference:?}");
+        assert!(!debug.contains("key_v2"));
+        assert!(!debug.contains(r"C:\Rembrane"));
         let history = parse_windows_dpapi_history(r"key_v1=C:\Rembrane\workspace_01-key_v1.dpapi")
             .expect("history should parse");
         assert_eq!(history[0].key_id(), "key_v1");
@@ -1135,6 +1171,10 @@ mod tests {
             validate_key_references(&active, &[active.clone()]),
             Err(CryptoError::KeyUnavailable)
         );
+        let debug = format!("{active:?}");
+        assert!(!debug.contains("key_v2"));
+        assert!(!debug.contains("org.rembrane.workspace"));
+        assert!(!debug.contains("workspace:key_v2"));
     }
 
     #[test]
