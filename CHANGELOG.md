@@ -46,6 +46,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   SDK-generated response ID for confirmed binding.
 - The remote MCP gate can now commit a validated official-SDK response session
   ID to the exact verified tenant with duplicate, capacity, and replay denial.
+- Confirmed remote MCP initialization now compensates duplicate or capacity
+  commit rejection by terminating the generated downstream SDK session, with
+  typed propagation when that cleanup itself fails.
 
 - CLI now exports authenticated canonical memories as deterministic, versioned
   JSONL after explicit plaintext confirmation, with exact tenant validation,

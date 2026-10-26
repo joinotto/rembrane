@@ -244,6 +244,74 @@ pub trait AuthorizedRemoteMcpDispatcher {
     ) -> Self::DispatchFuture;
 }
 
+/// Successful official-SDK initialization output paired with the validated
+/// session identifier returned in the downstream HTTP response.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct InitializedRemoteMcpSession<Output> {
+    output: Output,
+    session_id: RemoteSessionId,
+}
+
+impl<Output> InitializedRemoteMcpSession<Output> {
+    #[must_use]
+    pub const fn new(output: Output, session_id: RemoteSessionId) -> Self {
+        Self { output, session_id }
+    }
+
+    #[must_use]
+    pub const fn output(&self) -> &Output {
+        &self.output
+    }
+
+    #[must_use]
+    pub const fn session_id(&self) -> &RemoteSessionId {
+        &self.session_id
+    }
+
+    #[must_use]
+    pub fn into_parts(self) -> (Output, RemoteSessionId) {
+        (self.output, self.session_id)
+    }
+}
+
+/// Transport port for confirmed official-SDK session initialization.
+///
+/// Implementations must validate and extract the canonical session identifier
+/// from the successful SDK response. `terminate` compensates a downstream
+/// session when the bounded local tenant binding cannot be committed.
+pub trait AuthorizedRemoteMcpInitializationDispatcher {
+    type Output;
+    type InitializeError;
+    type TerminationError;
+    type InitializeFuture: Future<Output = Result<InitializedRemoteMcpSession<Self::Output>, Self::InitializeError>>
+        + Send;
+    type TerminationFuture: Future<Output = Result<(), Self::TerminationError>> + Send;
+
+    fn initialize(
+        &self,
+        access: VerifiedRemoteAccess,
+        invocation: RemoteMcpInvocation,
+        protocol_headers: RemoteMcpProtocolHeaders,
+        body: Zeroizing<Vec<u8>>,
+    ) -> Self::InitializeFuture;
+
+    fn terminate(
+        &self,
+        access: VerifiedRemoteAccess,
+        session_id: RemoteSessionId,
+    ) -> Self::TerminationFuture;
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RemoteMcpInitializationError<InitializeError, TerminationError> {
+    Authorization(RemoteMcpHttpRejection),
+    Initialize(InitializeError),
+    Commit {
+        rejection: RemoteMcpHttpRejection,
+        termination_error: Option<TerminationError>,
+    },
+}
+
 /// Adapts authorized POST requests to a cloneable Tower MCP service.
 ///
 /// The official Rust MCP SDK's `StreamableHttpService` implements this Tower
@@ -2008,6 +2076,64 @@ impl RemoteMcpHttpGate {
             })
     }
 
+    /// Authorizes and dispatches one sessionless initialization, then commits
+    /// only the session identifier confirmed by the official SDK response.
+    ///
+    /// If local duplicate or capacity enforcement rejects the generated
+    /// identifier, the downstream session is terminated before this operation
+    /// returns. A termination failure is preserved in the typed commit error
+    /// so the transport can fail closed and surface an operational alert.
+    ///
+    /// # Errors
+    ///
+    /// Distinguishes authorization, downstream initialization, and local
+    /// commit failures. Commit failures include any compensating downstream
+    /// termination failure.
+    pub async fn initialize_and_commit_sdk_session<Verifier, Dispatcher>(
+        &mut self,
+        authorization: &RemoteHttpAuthorization<'_, '_, Verifier>,
+        request: RemoteMcpHttpRequest<'_>,
+        mut protocol_headers: RemoteMcpProtocolHeaders,
+        body: Zeroizing<Vec<u8>>,
+        now_epoch_seconds: u64,
+        dispatcher: &Dispatcher,
+    ) -> Result<
+        InitializedRemoteMcpSession<Dispatcher::Output>,
+        RemoteMcpInitializationError<Dispatcher::InitializeError, Dispatcher::TerminationError>,
+    >
+    where
+        Verifier: RemoteTokenVerifier,
+        Dispatcher: AuthorizedRemoteMcpInitializationDispatcher,
+    {
+        protocol_headers.validated_host = request.host.map(str::to_owned);
+        protocol_headers.validated_origin = request.origin.map(str::to_owned);
+        let authorized = self
+            .authorize_sessionless_initialize_owned_body(
+                authorization,
+                request,
+                body,
+                now_epoch_seconds,
+            )
+            .map_err(RemoteMcpInitializationError::Authorization)?;
+        let access = authorized.access().clone();
+        let (access_for_dispatch, invocation, _, body) = authorized.into_dispatch_parts();
+        let initialized = dispatcher
+            .initialize(access_for_dispatch, invocation, protocol_headers, body)
+            .await
+            .map_err(RemoteMcpInitializationError::Initialize)?;
+        let session_id = initialized.session_id().clone();
+        if let Err(rejection) =
+            self.commit_sdk_generated_session(session_id.clone(), &access, now_epoch_seconds)
+        {
+            let termination_error = dispatcher.terminate(access, session_id).await.err();
+            return Err(RemoteMcpInitializationError::Commit {
+                rejection,
+                termination_error,
+            });
+        }
+        Ok(initialized)
+    }
+
     /// Classifies an exact `initialize` body before authenticating and
     /// allocating its session binding.
     ///
@@ -2557,13 +2683,14 @@ mod tests {
 
     use super::{
         AuthorizedRemoteMcpDispatcher, AuthorizedRemoteMcpEventStreamDispatcher,
-        AuthorizedRemoteMcpSessionDeletionDispatcher, AuthorizedTowerMcpDispatcher,
-        AuthorizedTowerMcpServiceFactory, BoundedTenantTowerMcpServiceCache,
+        AuthorizedRemoteMcpInitializationDispatcher, AuthorizedRemoteMcpSessionDeletionDispatcher,
+        AuthorizedTowerMcpDispatcher, AuthorizedTowerMcpServiceFactory,
+        BoundedTenantTowerMcpServiceCache, InitializedRemoteMcpSession,
         MAX_REMOTE_MCP_HEADER_BYTES, MCP_PROTOCOL_VERSION_HEADER_NAME, MCP_SESSION_HEADER_NAME,
         RemoteMcpAxumAuthorization, RemoteMcpDispatchError, RemoteMcpHttpGate,
-        RemoteMcpHttpRejection, RemoteMcpHttpRequest, RemoteMcpInvocation,
-        TenantAwareTowerMcpDispatchError, TenantAwareTowerMcpDispatcher, TenantServiceCacheError,
-        authorize_axum_session_body, authorize_axum_session_deletion,
+        RemoteMcpHttpRejection, RemoteMcpHttpRequest, RemoteMcpInitializationError,
+        RemoteMcpInvocation, TenantAwareTowerMcpDispatchError, TenantAwareTowerMcpDispatcher,
+        TenantServiceCacheError, authorize_axum_session_body, authorize_axum_session_deletion,
         authorize_axum_stateless_body, authorize_axum_stateless_owned_body,
         classify_remote_mcp_request, establish_and_dispatch_axum_session,
         establish_axum_session_body, request_from_axum_headers,
@@ -2575,6 +2702,54 @@ mod tests {
     struct RecordingDispatcher;
     struct RecordingEventStreamDispatcher;
     struct AllocationRecordingDispatcher;
+
+    struct ConfirmedInitializationDispatcher {
+        session_id: RemoteSessionId,
+        terminated: Arc<Mutex<Vec<(String, String)>>>,
+        fail_termination: bool,
+    }
+
+    impl AuthorizedRemoteMcpInitializationDispatcher for ConfirmedInitializationDispatcher {
+        type Output = (String, Vec<u8>);
+        type InitializeError = &'static str;
+        type TerminationError = &'static str;
+        type InitializeFuture = std::future::Ready<
+            Result<InitializedRemoteMcpSession<Self::Output>, Self::InitializeError>,
+        >;
+        type TerminationFuture = std::future::Ready<Result<(), Self::TerminationError>>;
+
+        fn initialize(
+            &self,
+            access: rembrane_contracts::VerifiedRemoteAccess,
+            _invocation: RemoteMcpInvocation,
+            _protocol_headers: super::RemoteMcpProtocolHeaders,
+            body: zeroize::Zeroizing<Vec<u8>>,
+        ) -> Self::InitializeFuture {
+            std::future::ready(Ok(InitializedRemoteMcpSession::new(
+                (access.workspace_id().to_string(), body.as_slice().to_vec()),
+                self.session_id.clone(),
+            )))
+        }
+
+        fn terminate(
+            &self,
+            access: rembrane_contracts::VerifiedRemoteAccess,
+            session_id: RemoteSessionId,
+        ) -> Self::TerminationFuture {
+            self.terminated
+                .lock()
+                .expect("termination recording lock should remain available")
+                .push((
+                    access.workspace_id().to_string(),
+                    session_id.as_str().to_owned(),
+                ));
+            std::future::ready(if self.fail_termination {
+                Err("termination failed")
+            } else {
+                Ok(())
+            })
+        }
+    }
 
     impl AuthorizedRemoteMcpDispatcher for AllocationRecordingDispatcher {
         type Output = (usize, Vec<u8>);
@@ -2964,6 +3139,151 @@ mod tests {
             )
             .expect_err("second generated session must respect capacity");
         assert_eq!(capacity.status, 503);
+    }
+
+    #[tokio::test]
+    async fn confirmed_sdk_initialization_commits_generated_session() {
+        let verifier = Verifier;
+        let authenticator = RemoteAccessAuthenticator::new(
+            &verifier,
+            "https://identity.example.test",
+            "https://memory.example.test/mcp",
+        );
+        let origins = ["https://agent.example.test"];
+        let authorization = RemoteHttpAuthorization::new(&authenticator, &origins);
+        let mut gate = RemoteMcpHttpGate::new(
+            1,
+            "https://memory.example.test/.well-known/oauth-protected-resource/mcp",
+            &["memory.example.test"],
+        )
+        .expect("gate should be valid");
+        let session_id = RemoteSessionId::new("session_sdk_confirmed_0123456789")
+            .expect("generated session fixture should validate");
+        let terminated = Arc::new(Mutex::new(Vec::new()));
+        let dispatcher = ConfirmedInitializationDispatcher {
+            session_id: session_id.clone(),
+            terminated: Arc::clone(&terminated),
+            fail_termination: false,
+        };
+        let body = zeroize::Zeroizing::new(
+            br#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}"#
+                .to_vec(),
+        );
+        let initialized = gate
+            .initialize_and_commit_sdk_session(
+                &authorization,
+                RemoteMcpHttpRequest {
+                    authorization: Some("Bearer workspace-one"),
+                    host: Some("memory.example.test"),
+                    origin: Some("https://agent.example.test"),
+                    session_id: None,
+                },
+                super::RemoteMcpProtocolHeaders::transport_neutral(),
+                body,
+                1_000,
+                &dispatcher,
+            )
+            .await
+            .expect("confirmed SDK initialization should commit");
+        assert_eq!(initialized.session_id(), &session_id);
+        assert_eq!(initialized.output().0, "workspace_01");
+        assert!(
+            terminated
+                .lock()
+                .expect("termination recording lock should remain available")
+                .is_empty()
+        );
+
+        let authorized = gate
+            .authorize(
+                &authorization,
+                request("Bearer workspace-one", session_id.as_str()),
+                "tools/list",
+                None,
+                1_001,
+            )
+            .expect("confirmed generated session should authorize");
+        assert_eq!(authorized.workspace_id().as_str(), "workspace_01");
+    }
+
+    #[tokio::test]
+    async fn failed_generated_session_commit_terminates_downstream_session() {
+        let verifier = Verifier;
+        let authenticator = RemoteAccessAuthenticator::new(
+            &verifier,
+            "https://identity.example.test",
+            "https://memory.example.test/mcp",
+        );
+        let origins = ["https://agent.example.test"];
+        let authorization = RemoteHttpAuthorization::new(&authenticator, &origins);
+        let mut gate = RemoteMcpHttpGate::new(
+            1,
+            "https://memory.example.test/.well-known/oauth-protected-resource/mcp",
+            &["memory.example.test"],
+        )
+        .expect("gate should be valid");
+        let existing_access = authorization
+            .authorize_connection(
+                Some("Bearer workspace-one"),
+                Some("https://agent.example.test"),
+                1_000,
+            )
+            .expect("fixture access should authorize");
+        gate.commit_sdk_generated_session(
+            RemoteSessionId::new("session_existing_0123456789")
+                .expect("existing session fixture should validate"),
+            &existing_access,
+            1_000,
+        )
+        .expect("existing session should fill capacity");
+
+        let generated = RemoteSessionId::new("session_orphan_candidate_0123456789")
+            .expect("generated session fixture should validate");
+        let terminated = Arc::new(Mutex::new(Vec::new()));
+        let dispatcher = ConfirmedInitializationDispatcher {
+            session_id: generated.clone(),
+            terminated: Arc::clone(&terminated),
+            fail_termination: true,
+        };
+        let error = gate
+            .initialize_and_commit_sdk_session(
+                &authorization,
+                RemoteMcpHttpRequest {
+                    authorization: Some("Bearer workspace-two"),
+                    host: Some("memory.example.test"),
+                    origin: Some("https://agent.example.test"),
+                    session_id: None,
+                },
+                super::RemoteMcpProtocolHeaders::transport_neutral(),
+                zeroize::Zeroizing::new(
+                    br#"{"jsonrpc":"2.0","id":2,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}"#
+                        .to_vec(),
+                ),
+                1_001,
+                &dispatcher,
+            )
+            .await
+            .expect_err("capacity rejection must compensate downstream state");
+        assert_eq!(
+            error,
+            RemoteMcpInitializationError::Commit {
+                rejection: RemoteMcpHttpRejection {
+                    status: 503,
+                    www_authenticate: None,
+                    retry_after_seconds: Some(1),
+                },
+                termination_error: Some("termination failed"),
+            }
+        );
+        assert_eq!(
+            *terminated
+                .lock()
+                .expect("termination recording lock should remain available"),
+            vec![(
+                "workspace_02".to_owned(),
+                "session_orphan_candidate_0123456789".to_owned()
+            )]
+        );
     }
 
     #[tokio::test]

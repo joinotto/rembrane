@@ -499,6 +499,9 @@ This roadmap describes sequencing, not release dates.
       reserving a client-supplied ID before the official SDK response.
       - [x] Commit only the official SDK response session ID against the exact
         verified tenant with bounded duplicate and capacity enforcement.
+        - [x] Compensate a rejected local session commit by terminating the
+          downstream SDK session, preserving any termination failure for
+          fail-closed operational handling.
     - [x] Require every remote tool invocation to carry the exact verified
       subject, client, and workspace identity through the SDK request context,
       rejecting missing or substituted tenant extensions.
