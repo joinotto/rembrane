@@ -22,4 +22,11 @@ then
     exit 1
 fi
 
+if rg -n '^#\[derive\([^]]*Debug[^]]*,[[:space:]]*Deserialize' \
+    apps/rembrane-mcp/src/lib.rs
+then
+    echo "MCP tool parameters must not derive plaintext-bearing Debug output" >&2
+    exit 1
+fi
+
 echo "sensitive-file checks passed"

@@ -33,7 +33,7 @@ use rmcp::{
 };
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct ResolveContextParameters {
     purpose: String,
@@ -61,7 +61,7 @@ struct ResolveContextOutput {
     items: Vec<ContextItem>,
 }
 
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct ResolveGraphContextParameters {
     node_id: String,
@@ -94,7 +94,7 @@ struct ResolveGraphContextOutput {
     edges: Vec<GraphEdgeOutput>,
 }
 
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct RememberPreferenceParameters {
     content: String,
@@ -103,7 +103,7 @@ struct RememberPreferenceParameters {
     activity_id: Option<String>,
 }
 
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct CorrectMemoryParameters {
     memory_id: String,
@@ -114,7 +114,7 @@ struct CorrectMemoryParameters {
     activity_id: Option<String>,
 }
 
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct ForgetMemoryParameters {
     memory_id: String,
@@ -125,7 +125,7 @@ struct ForgetMemoryParameters {
     activity_id: Option<String>,
 }
 
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct WorkTraceParameters {
     activity_id: String,
@@ -141,7 +141,7 @@ struct MutationOutput {
     status: &'static str,
 }
 
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct CheckpointParameters {
     activity_id: String,
@@ -154,14 +154,14 @@ struct CheckpointParameters {
     state_fingerprint: Option<String>,
 }
 
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct ResumeActivityParameters {
     activity_id: String,
     current_state_fingerprint: Option<String>,
 }
 
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct CaptureBookingResearchParameters {
     trip_id: String,
@@ -174,7 +174,7 @@ struct CaptureBookingResearchParameters {
     expires_at: String,
 }
 
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct CreateTripParameters {
     title: String,
@@ -184,7 +184,7 @@ struct CreateTripParameters {
     return_not_after: String,
 }
 
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct AddTripParticipantParameters {
     trip_id: String,
@@ -192,7 +192,7 @@ struct AddTripParticipantParameters {
     expected_trip_version: u64,
 }
 
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct AddTripConstraintParameters {
     trip_id: String,
@@ -203,7 +203,7 @@ struct AddTripConstraintParameters {
     expected_trip_version: u64,
 }
 
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct RecordTripDecisionParameters {
     trip_id: String,
@@ -214,7 +214,7 @@ struct RecordTripDecisionParameters {
     expected_trip_version: u64,
 }
 
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct ResolveTravelContextParameters {
     trip_id: String,

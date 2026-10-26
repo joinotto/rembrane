@@ -65,6 +65,11 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - PostgreSQL parameter diagnostics now redact all text values and expose only
   byte-buffer lengths, preventing accidental logging of tenant identifiers,
   canonical metadata, ciphertext, or other parameter content.
+- Inbound MCP tool parameter types no longer implement derived debug output,
+  preventing preferences, work traces, checkpoints, travel plans, research,
+  and correction/deletion reasons from being rendered into diagnostics.
+- The sensitive-file gate now rejects reintroduction of derived debug output
+  on MCP tool parameter types.
 - Canonical SQLite initialization and backup now require the path opened by
   SQLite to retain the exact protected file's device/inode identity, and
   failure cleanup refuses to remove a path replaced after preparation.

@@ -352,6 +352,8 @@ This roadmap describes sequencing, not release dates.
   - [x] Wire configured cipher selection through CLI, REST, MCP, generated
     agent configuration, and privacy diagnostics.
 - [x] Retrieve minimal context through local stdio MCP.
+  - [x] Prevent inbound MCP tool arguments from deriving plaintext-bearing
+    debug output and enforce that invariant in the static security gate.
 - [x] Fail closed when REST or local MCP generated-identifier sequences are
   exhausted instead of reusing saturated memory, event, or disclosure IDs.
 - [x] Require a representable strict successor for every optimistic record
