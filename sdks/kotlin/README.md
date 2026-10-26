@@ -24,3 +24,7 @@ Portable JSONL, Markdown, and graph exports are available through
 `exportPortableData`. They are plaintext and must be written to a private file.
 `importPortableMemories` accepts a bounded JSONL byte array and an optimistic
 workspace event sequence; imported records remain reviewable proposals.
+
+Named methods cover preference capture, work traces, memory correction and
+deletion, and activity checkpoint/resume handoff. Path identifiers are
+validated before transport so malformed IDs cannot alter REST routing.

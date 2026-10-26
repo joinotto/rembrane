@@ -93,6 +93,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   handling, and the root documentation links every application SDK guide.
 - The Swift SDK now exposes named preference, work-trace, memory lifecycle,
   and activity handoff operations with pre-network opaque-ID validation.
+- The Kotlin SDK now exposes named preference, work-trace, memory lifecycle,
+  and activity handoff operations with pre-network opaque-ID validation.
 - The application layer now defines a bounded, authorized memory-import batch
   that re-admits external content as destination-scoped proposals with fresh
   identities and contiguous canonical events through an atomic repository

@@ -210,6 +210,43 @@ fun main() {
             conflict.code == "sequence_conflict",
     )
 
+    val continuityBody =
+        """{"workspaceId":"team","subjectId":"principal-1","content":"Call me Hippo"}"""
+    val continuityStart = captured.size
+    client.rememberPreference(continuityBody)
+    client.recordWorkTrace(continuityBody)
+    client.correctMemory("memory:preference-1", continuityBody)
+    client.deleteMemory("memory:preference-1", continuityBody)
+    client.checkpointActivity("activity:project-1", continuityBody)
+    client.resumeActivity(
+        "activity:project-1",
+        "team",
+        "principal-1",
+        "continue development",
+        "git:abc/123",
+    )
+    check(
+        captured.drop(continuityStart).map { it.uri.toString() } == listOf(
+            "http://127.0.0.1:8787/v1/memories/preferences",
+            "http://127.0.0.1:8787/v1/memories/work-traces",
+            "http://127.0.0.1:8787/v1/memories/memory:preference-1/correction",
+            "http://127.0.0.1:8787/v1/memories/memory:preference-1/deletion",
+            "http://127.0.0.1:8787/v1/activities/activity:project-1/checkpoint",
+            "http://127.0.0.1:8787/v1/activities/activity:project-1/resume" +
+                "?workspaceId=team&subjectId=principal-1" +
+                "&purpose=continue%20development&stateFingerprint=git%3Aabc%2F123",
+        ),
+    )
+    check(captured.last().method == "GET")
+    check(captured.last().body == null)
+    val callsBeforeInvalidMemory = captured.size
+    check(
+        runCatching {
+            client.correctMemory("../memory", continuityBody)
+        }.isFailure,
+    )
+    check(captured.size == callsBeforeInvalidMemory)
+
     check(
         runCatching {
             RembraneClient(

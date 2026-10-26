@@ -125,6 +125,46 @@ class RembraneClient(
     fun resolveGraphContext(jsonBody: String): String =
         request("POST", "/graph/context/resolve", jsonBody)
 
+    fun rememberPreference(jsonBody: String): String =
+        request("POST", "/memories/preferences", jsonBody)
+
+    fun recordWorkTrace(jsonBody: String): String =
+        request("POST", "/memories/work-traces", jsonBody)
+
+    fun correctMemory(memoryId: String, jsonBody: String): String {
+        requireOpaqueId(memoryId, "memoryId")
+        return request("POST", "/memories/$memoryId/correction", jsonBody)
+    }
+
+    fun deleteMemory(memoryId: String, jsonBody: String): String {
+        requireOpaqueId(memoryId, "memoryId")
+        return request("POST", "/memories/$memoryId/deletion", jsonBody)
+    }
+
+    fun checkpointActivity(activityId: String, jsonBody: String): String {
+        requireOpaqueId(activityId, "activityId")
+        return request("POST", "/activities/$activityId/checkpoint", jsonBody)
+    }
+
+    fun resumeActivity(
+        activityId: String,
+        workspaceId: String,
+        subjectId: String,
+        purpose: String? = null,
+        stateFingerprint: String? = null,
+    ): String {
+        requireOpaqueId(activityId, "activityId")
+        requireOpaqueId(workspaceId, "workspaceId")
+        requireOpaqueId(subjectId, "subjectId")
+        val query = buildList {
+            add("workspaceId=${encode(workspaceId)}")
+            add("subjectId=${encode(subjectId)}")
+            purpose?.let { add("purpose=${encode(it)}") }
+            stateFingerprint?.let { add("stateFingerprint=${encode(it)}") }
+        }.joinToString("&")
+        return request("GET", "/activities/$activityId/resume?$query", null)
+    }
+
     fun rotateWorkspaceKey(jsonBody: String): String =
         request("POST", "/workspaces/key-rotation", jsonBody)
 

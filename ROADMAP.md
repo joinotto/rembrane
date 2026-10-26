@@ -1341,6 +1341,8 @@ This roadmap describes sequencing, not release dates.
     transport and a redirect-rejecting URLSession implementation.
     - [x] Add authenticated raw-byte portable exports and bounded atomic JSONL
       imports with strict metadata, opaque-ID, and response validation.
+    - [x] Add named Kotlin preference, work-trace, correction, deletion,
+      checkpoint, and resume operations with path-safe opaque identifiers.
     - [x] Document protected plaintext handling and sequence-safe imports for
       Swift adopters, and link all application SDK guides from the project root.
     - [x] Add named Swift preference, work-trace, correction, deletion,
