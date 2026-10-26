@@ -667,6 +667,8 @@ This roadmap describes sequencing, not release dates.
 - [x] Persist a disclosure receipt for every SQLite context response.
   - [x] Redact memory, checkpoint, travel, and graph disclosure routing,
     purpose, resource, and timeline details from diagnostics.
+  - [x] Redact plaintext, identities, providers, source references, and
+    timelines from application travel-context command and response diagnostics.
 - [x] Require every future context storage adapter to implement disclosure
   persistence through compile-time composite repository capabilities.
 - [x] Prove cross-tenant denial across SQLite user-facing read paths.

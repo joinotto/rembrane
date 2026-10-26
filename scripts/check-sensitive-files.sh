@@ -75,6 +75,13 @@ for adapter_source in adapters/*/src/*.rs; do
     fi
 done
 
+if sed '/^#\[cfg(test)\]/,$d' crates/rembrane-application/src/travel_context.rs |
+    rg -n -U '#\[derive\([^]]*Debug[^]]*\)\]\n(?:pub )?struct '
+then
+    echo "travel context structs must use explicitly reviewed redacted Debug implementations" >&2
+    exit 1
+fi
+
 if sed '/^#\[cfg(test)\]/,$d' adapters/rembrane-remote-mcp-http/src/lib.rs |
     rg -n -U '#\[derive\([^]]*Debug[^]]*\)\]\n(?:pub )?struct '
 then

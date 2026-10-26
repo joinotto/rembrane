@@ -50,6 +50,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - The sensitive-file gate now scans every production adapter source, preventing
   newly added adapters from deriving raw struct diagnostics outside the
   explicitly audited adapter list.
+- Application travel-context diagnostics now expose only safe sizes, counts,
+  flags, kinds, and versions instead of trip, traveler, provider, research,
+  source-reference, or timeline plaintext.
 - Provider-independent key seal requests now retain copied plaintext in
   redacted zeroize-on-drop ownership instead of an ordinary byte vector.
 - Key-provider plaintext responses are now explicitly wiped before oversized
