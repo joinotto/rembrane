@@ -60,6 +60,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - The provider-independent codec now supports deterministic bounded knowledge
   graph archives with temporal provenance, revision identity, workspace
   isolation, and endpoint-integrity validation.
+- The application boundary now exposes bounded canonical graph snapshots;
+  in-memory and encrypted SQLite adapters implement tenant-filtered reads
+  without leaking storage-specific queries into export clients.
 - The application layer now defines a bounded, authorized memory-import batch
   that re-admits external content as destination-scoped proposals with fresh
   identities and contiguous canonical events through an atomic repository

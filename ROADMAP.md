@@ -112,6 +112,8 @@ This roadmap describes sequencing, not release dates.
   - [x] Define a deterministic, bounded, provider-independent graph archive
     preserving nodes, edges, temporal validity, evidence, revisions, and
     supersession while rejecting mixed workspaces and dangling endpoints.
+  - [x] Add a bounded canonical graph-snapshot repository port with
+    tenant-filtered in-memory and authenticated encrypted-SQLite adapters.
   - [x] Move the JSONL record contract into the provider-independent codec and
     add strict decoding with closed fields, exact format/version checks, domain
     invariant restoration, and a per-record byte ceiling.

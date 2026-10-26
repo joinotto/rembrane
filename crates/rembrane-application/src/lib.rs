@@ -70,13 +70,14 @@ pub use ports::{
     CheckpointRepository, ContextReadRepository, DisclosureRepository,
     DurableChannelIngressRepository, EventRepository, GraphContextRepository,
     GraphDisclosureRepository, GraphProjectionOutboxRepository, InvitationRepository,
-    KeyRotationRepository, KnowledgeDirection, KnowledgeGraphMutationRepository,
-    KnowledgeGraphRepository, MAX_ADMINISTRATIVE_AUDIT_PAGE, MAX_CHANNEL_INBOX_PAGE,
-    MAX_KNOWLEDGE_NEIGHBOURS, MemberLifecycleRepository, MemberScopeGrantRepository,
-    MembershipRepository, MemoryImportRepository, MemoryRepository, ProjectionOutboxRepository,
-    RetentionPurgeRepository, RetentionRepository, ShareProposalMutationRepository,
-    ShareProposalRepository, TravelContextRepository, TravelDisclosureRepository,
-    TripMutationRepository, TripRepository, WorkspaceReadRepository, WorkspaceRepository,
+    KeyRotationRepository, KnowledgeDirection, KnowledgeGraphExportRepository,
+    KnowledgeGraphMutationRepository, KnowledgeGraphRepository, MAX_ADMINISTRATIVE_AUDIT_PAGE,
+    MAX_CHANNEL_INBOX_PAGE, MAX_KNOWLEDGE_GRAPH_EXPORT_RECORDS, MAX_KNOWLEDGE_NEIGHBOURS,
+    MemberLifecycleRepository, MemberScopeGrantRepository, MembershipRepository,
+    MemoryImportRepository, MemoryRepository, ProjectionOutboxRepository, RetentionPurgeRepository,
+    RetentionRepository, ShareProposalMutationRepository, ShareProposalRepository,
+    TravelContextRepository, TravelDisclosureRepository, TripMutationRepository, TripRepository,
+    WorkspaceReadRepository, WorkspaceRepository,
 };
 pub use projection_worker::{ProjectionOutcome, ProjectionWorker};
 pub use propose_memory::{ConfirmMemoryCommand, MemoryProposalService, ProposeMemoryCommand};

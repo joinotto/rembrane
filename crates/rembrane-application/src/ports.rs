@@ -231,6 +231,7 @@ pub trait MemoryRepository {
 }
 
 pub const MAX_KNOWLEDGE_NEIGHBOURS: usize = 100;
+pub const MAX_KNOWLEDGE_GRAPH_EXPORT_RECORDS: usize = 20_000;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum KnowledgeDirection {
@@ -260,6 +261,13 @@ pub trait KnowledgeGraphRepository {
         valid_at_epoch_seconds: u64,
         limit: usize,
     ) -> Result<Vec<KnowledgeEdge>, ApplicationError>;
+}
+
+pub trait KnowledgeGraphExportRepository {
+    fn list_knowledge_graph_snapshot(
+        &self,
+        workspace_id: &WorkspaceId,
+    ) -> Result<(Vec<KnowledgeNode>, Vec<KnowledgeEdge>), ApplicationError>;
 }
 
 pub trait KnowledgeGraphMutationRepository: KnowledgeGraphRepository {

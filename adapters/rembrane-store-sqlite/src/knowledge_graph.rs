@@ -1,6 +1,7 @@
 use rembrane_application::{
     ApplicationError, CanonicalGraphMutationRepository, KnowledgeDirection,
-    KnowledgeGraphMutationRepository, KnowledgeGraphRepository, MAX_KNOWLEDGE_NEIGHBOURS,
+    KnowledgeGraphExportRepository, KnowledgeGraphMutationRepository, KnowledgeGraphRepository,
+    MAX_KNOWLEDGE_GRAPH_EXPORT_RECORDS, MAX_KNOWLEDGE_NEIGHBOURS,
 };
 use rembrane_codec::{
     decode_knowledge_edge, decode_knowledge_node, encode_knowledge_edge, encode_knowledge_node,
@@ -129,6 +130,84 @@ impl<C: RecordCipher> KnowledgeGraphRepository for SqliteStore<C> {
             )?);
         }
         Ok(edges)
+    }
+}
+
+impl<C: RecordCipher> KnowledgeGraphExportRepository for SqliteStore<C> {
+    fn list_knowledge_graph_snapshot(
+        &self,
+        workspace_id: &WorkspaceId,
+    ) -> Result<(Vec<KnowledgeNode>, Vec<KnowledgeEdge>), ApplicationError> {
+        let row_limit = i64::try_from(MAX_KNOWLEDGE_GRAPH_EXPORT_RECORDS)
+            .map_err(|_| ApplicationError::StorageUnavailable)?
+            .saturating_add(1);
+        let mut node_statement = self
+            .connection
+            .prepare(
+                "SELECT id, version, node_ciphertext, encryption_key_id,
+                        encryption_algorithm, encryption_nonce
+                 FROM knowledge_nodes
+                 WHERE workspace_id = ?1
+                 ORDER BY id, version
+                 LIMIT ?2",
+            )
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        let node_rows = node_statement
+            .query_map(
+                params![workspace_id.as_str(), row_limit],
+                encrypted_node_row,
+            )
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        let mut nodes = Vec::new();
+        for row in node_rows {
+            nodes.push(self.decrypt_node(
+                workspace_id,
+                None,
+                row.map_err(|_| ApplicationError::StorageUnavailable)?,
+            )?);
+        }
+        if nodes.len() > MAX_KNOWLEDGE_GRAPH_EXPORT_RECORDS {
+            return Err(ApplicationError::Validation(
+                "knowledge graph export exceeds canonical record bounds".to_owned(),
+            ));
+        }
+
+        let remaining = MAX_KNOWLEDGE_GRAPH_EXPORT_RECORDS.saturating_sub(nodes.len());
+        let edge_limit = i64::try_from(remaining)
+            .map_err(|_| ApplicationError::StorageUnavailable)?
+            .saturating_add(1);
+        let mut edge_statement = self
+            .connection
+            .prepare(
+                "SELECT id, source_id, target_id, supersedes_id, version,
+                        edge_ciphertext, encryption_key_id,
+                        encryption_algorithm, encryption_nonce
+                 FROM knowledge_edges
+                 WHERE workspace_id = ?1
+                 ORDER BY id, version
+                 LIMIT ?2",
+            )
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        let edge_rows = edge_statement
+            .query_map(
+                params![workspace_id.as_str(), edge_limit],
+                encrypted_edge_row,
+            )
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        let mut edges = Vec::new();
+        for row in edge_rows {
+            edges.push(self.decrypt_edge(
+                workspace_id,
+                None,
+                row.map_err(|_| ApplicationError::StorageUnavailable)?,
+            )?);
+        }
+        if edges.len() > remaining {
+            return Err(ApplicationError::Validation(
+                "knowledge graph export exceeds canonical record bounds".to_owned(),
+            ));
+        }
+        Ok((nodes, edges))
     }
 }
 

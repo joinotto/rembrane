@@ -1,15 +1,17 @@
 use rembrane_application::{
     CanonicalMutationRepository, CheckpointMutationRepository, CheckpointRepository,
-    DisclosureRepository, EventRepository, MemoryImportRepository, MemoryRepository,
+    DisclosureRepository, EventRepository, KnowledgeGraphExportRepository,
+    KnowledgeGraphMutationRepository, MemoryImportRepository, MemoryRepository,
     ProjectionOutboxRepository, WorkspaceRepository,
 };
 use rembrane_crypto_rustcrypto::RustCryptoRecordCipher;
 use rembrane_domain::{
     ActivityCheckpoint, ActivityId, CanonicalEvent, CheckpointId, ClientId, ContextPackId,
     DisclosedMemory, DisclosureId, DisclosureReceipt, EntityId, EventId, EventPayload, EvidenceId,
-    EvidenceReference, EvidenceSource, Membership, MemoryId, MemoryRecord, MemoryScope, Principal,
-    PrincipalId, ProjectionJob, ProjectionJobId, ProjectionOperation, ProjectionStatus, ProviderId,
-    Workspace, WorkspaceId, WorkspaceRole,
+    EvidenceReference, EvidenceSource, KnowledgeEdge, KnowledgeEdgeId, KnowledgeNode,
+    KnowledgeNodeId, KnowledgeNodeKind, KnowledgeRelationType, Membership, MemoryId, MemoryRecord,
+    MemoryScope, Principal, PrincipalId, ProjectionJob, ProjectionJobId, ProjectionOperation,
+    ProjectionStatus, ProviderId, TemporalValidity, Workspace, WorkspaceId, WorkspaceRole,
 };
 use rembrane_store_sqlite::SqliteStore;
 
@@ -77,6 +79,41 @@ fn event() -> CanonicalEvent {
         },
     )
     .expect("fixture is valid")
+}
+
+fn knowledge_node(id: &str) -> KnowledgeNode {
+    KnowledgeNode::new(
+        KnowledgeNodeId::new(id),
+        WorkspaceId::new("workspace_01"),
+        KnowledgeNodeKind::Project,
+        id.to_owned(),
+        Vec::new(),
+        vec![EvidenceReference::new(
+            EvidenceId::new(format!("evidence_{id}")),
+            EvidenceSource::UserStatement,
+        )],
+        TemporalValidity::new(100, None, 100).expect("validity"),
+        1,
+    )
+    .expect("knowledge node")
+}
+
+fn knowledge_edge() -> KnowledgeEdge {
+    KnowledgeEdge::new(
+        KnowledgeEdgeId::new("edge_uses"),
+        WorkspaceId::new("workspace_01"),
+        KnowledgeNodeId::new("node_project"),
+        KnowledgeNodeId::new("node_rust"),
+        KnowledgeRelationType::new("uses").expect("relation"),
+        vec![EvidenceReference::new(
+            EvidenceId::new("evidence_edge"),
+            EvidenceSource::UserStatement,
+        )],
+        TemporalValidity::new(100, None, 100).expect("validity"),
+        1,
+        None,
+    )
+    .expect("knowledge edge")
 }
 
 fn imported_proposal(id: &str) -> MemoryRecord {
@@ -540,5 +577,37 @@ fn rejects_ciphertext_substituted_between_workspaces() {
     assert_eq!(
         error,
         rembrane_application::ApplicationError::StorageUnavailable
+    );
+}
+
+#[test]
+fn graph_snapshot_decrypts_complete_tenant_scoped_records() {
+    let mut store = initialized_store();
+    store
+        .insert_knowledge_node(knowledge_node("node_rust"))
+        .expect("Rust node persists");
+    store
+        .insert_knowledge_node(knowledge_node("node_project"))
+        .expect("project node persists");
+    store
+        .insert_knowledge_edge(knowledge_edge())
+        .expect("edge persists");
+
+    let (nodes, edges) = store
+        .list_knowledge_graph_snapshot(&WorkspaceId::new("workspace_01"))
+        .expect("graph snapshot");
+    assert_eq!(
+        nodes
+            .iter()
+            .map(|node| node.id().as_str())
+            .collect::<Vec<_>>(),
+        vec!["node_project", "node_rust"]
+    );
+    assert_eq!(edges, vec![knowledge_edge()]);
+    assert_eq!(
+        store
+            .list_knowledge_graph_snapshot(&WorkspaceId::new("workspace_other"))
+            .expect("other tenant snapshot"),
+        (Vec::new(), Vec::new())
     );
 }

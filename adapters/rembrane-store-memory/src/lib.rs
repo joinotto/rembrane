@@ -6,12 +6,13 @@ use rembrane_application::{
     CheckpointDisclosureRepository, CheckpointMutationRepository, CheckpointRepository,
     DisclosureRepository, EventRepository, GraphDisclosureRepository,
     GraphProjectionOutboxRepository, InvitationRepository, KeyRotationRepository,
-    KnowledgeDirection, KnowledgeGraphMutationRepository, KnowledgeGraphRepository,
-    MAX_ADMINISTRATIVE_AUDIT_PAGE, MAX_KNOWLEDGE_NEIGHBOURS, MemberLifecycleRepository,
-    MemberScopeGrantRepository, MembershipRepository, MemoryImportRepository, MemoryRepository,
-    ProjectionOutboxRepository, RetentionRepository, ShareProposalMutationRepository,
-    ShareProposalRepository, TravelDisclosureRepository, TripMutationRepository, TripRepository,
-    WorkspaceReadRepository, WorkspaceRepository, is_strict_successor,
+    KnowledgeDirection, KnowledgeGraphExportRepository, KnowledgeGraphMutationRepository,
+    KnowledgeGraphRepository, MAX_ADMINISTRATIVE_AUDIT_PAGE, MAX_KNOWLEDGE_GRAPH_EXPORT_RECORDS,
+    MAX_KNOWLEDGE_NEIGHBOURS, MemberLifecycleRepository, MemberScopeGrantRepository,
+    MembershipRepository, MemoryImportRepository, MemoryRepository, ProjectionOutboxRepository,
+    RetentionRepository, ShareProposalMutationRepository, ShareProposalRepository,
+    TravelDisclosureRepository, TripMutationRepository, TripRepository, WorkspaceReadRepository,
+    WorkspaceRepository, is_strict_successor,
 };
 use rembrane_domain::{
     ActivityCheckpoint, ActivityId, AdministrativeAction, AdministrativeAuditEvent,
@@ -348,6 +349,36 @@ impl KnowledgeGraphRepository for InMemoryStore {
             .take(limit)
             .cloned()
             .collect())
+    }
+}
+
+impl KnowledgeGraphExportRepository for InMemoryStore {
+    fn list_knowledge_graph_snapshot(
+        &self,
+        workspace_id: &WorkspaceId,
+    ) -> Result<(Vec<KnowledgeNode>, Vec<KnowledgeEdge>), ApplicationError> {
+        let nodes = self
+            .knowledge_nodes
+            .iter()
+            .filter(|node| node.workspace_id() == workspace_id)
+            .cloned()
+            .collect::<Vec<_>>();
+        let edges = self
+            .knowledge_edges
+            .iter()
+            .filter(|edge| edge.workspace_id() == workspace_id)
+            .cloned()
+            .collect::<Vec<_>>();
+        if nodes
+            .len()
+            .checked_add(edges.len())
+            .is_none_or(|count| count > MAX_KNOWLEDGE_GRAPH_EXPORT_RECORDS)
+        {
+            return Err(ApplicationError::Validation(
+                "knowledge graph export exceeds canonical record bounds".to_owned(),
+            ));
+        }
+        Ok((nodes, edges))
     }
 }
 
@@ -2288,8 +2319,8 @@ mod tests {
     use rembrane_application::{
         AdministrativeAuditRepository, ApplicationError, CanonicalGraphMutationRepository,
         CanonicalMutationRepository, EventRepository, GraphDisclosureRepository,
-        GraphProjectionOutboxRepository, KnowledgeDirection, KnowledgeGraphMutationRepository,
-        KnowledgeGraphRepository, MemoryRepository,
+        GraphProjectionOutboxRepository, KnowledgeDirection, KnowledgeGraphExportRepository,
+        KnowledgeGraphMutationRepository, KnowledgeGraphRepository, MemoryRepository,
     };
     use rembrane_domain::{
         AdministrativeAction, AdministrativeAuditEvent, AdministrativeAuditEventId,
@@ -2379,6 +2410,40 @@ mod tests {
             None,
         )
         .expect("knowledge edge should be valid")
+    }
+
+    #[test]
+    fn knowledge_graph_snapshot_is_complete_and_tenant_scoped() {
+        let mut store = InMemoryStore::new();
+        store
+            .insert_knowledge_node(knowledge_node("node_project", "workspace_one", 1))
+            .expect("project node");
+        store
+            .insert_knowledge_node(knowledge_node("node_rust", "workspace_one", 1))
+            .expect("Rust node");
+        store
+            .insert_knowledge_edge(knowledge_edge("edge_uses", "workspace_one"))
+            .expect("edge");
+        store
+            .insert_knowledge_node(knowledge_node("node_other", "workspace_two", 1))
+            .expect("other tenant node");
+
+        let (nodes, edges) = store
+            .list_knowledge_graph_snapshot(&WorkspaceId::new("workspace_one"))
+            .expect("snapshot");
+        assert_eq!(nodes.len(), 2);
+        assert_eq!(edges.len(), 1);
+        assert!(
+            nodes
+                .iter()
+                .all(|node| node.workspace_id().as_str() == "workspace_one")
+        );
+        assert_eq!(
+            store
+                .list_knowledge_graph_snapshot(&WorkspaceId::new("workspace_missing"))
+                .expect("empty snapshot"),
+            (Vec::new(), Vec::new())
+        );
     }
 
     fn graph_projection(id: &str, workspace_id: &str, node_id: &str) -> GraphProjectionJob {
