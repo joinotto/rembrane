@@ -1328,6 +1328,9 @@ This roadmap describes sequencing, not release dates.
     - [x] Add append-only disclosure receipt payloads containing exact memory
       revisions while deriving workspace, subject, and client identity solely
       from authenticated connection context.
+      - [x] Redact provider disclosure purposes, timestamps, idempotency keys,
+        memory revisions, context packs, and receipt identities from
+        diagnostics.
     - [x] Add exact-version idempotent deletion and bounded provenance
       explanation payloads without caller-controlled authorization identity.
       - [x] Redact provider deletion reasons, explanation purposes and text,

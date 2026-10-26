@@ -1,3 +1,5 @@
+use std::fmt;
+
 use rembrane_domain::{ContextPackId, DisclosureId, MemoryId};
 
 use crate::{MemoryProviderIdempotencyKey, ProviderError};
@@ -5,10 +7,20 @@ use crate::{MemoryProviderIdempotencyKey, ProviderError};
 pub const MAX_DISCLOSURE_PURPOSE_BYTES: usize = 4_096;
 pub const MAX_DISCLOSED_MEMORIES: usize = 1_000;
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct MemoryProviderDisclosedMemory {
     memory_id: MemoryId,
     version: u64,
+}
+
+impl fmt::Debug for MemoryProviderDisclosedMemory {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("MemoryProviderDisclosedMemory")
+            .field("memory_id", &"<redacted>")
+            .field("version", &self.version)
+            .finish()
+    }
 }
 
 impl MemoryProviderDisclosedMemory {
@@ -39,13 +51,26 @@ impl MemoryProviderDisclosedMemory {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct RecordDisclosurePayload {
     idempotency_key: MemoryProviderIdempotencyKey,
     context_pack_id: ContextPackId,
     purpose: String,
     memories: Vec<MemoryProviderDisclosedMemory>,
     disclosed_at_epoch_seconds: u64,
+}
+
+impl fmt::Debug for RecordDisclosurePayload {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("RecordDisclosurePayload")
+            .field("idempotency_key", &"<redacted>")
+            .field("context_pack_id", &"<redacted>")
+            .field("purpose_bytes", &self.purpose.len())
+            .field("memory_count", &self.memories.len())
+            .field("disclosed_at_epoch_seconds", &"<redacted>")
+            .finish()
+    }
 }
 
 impl RecordDisclosurePayload {
@@ -132,9 +157,18 @@ impl RecordDisclosurePayload {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct RecordDisclosureResult {
     disclosure_id: DisclosureId,
+}
+
+impl fmt::Debug for RecordDisclosureResult {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("RecordDisclosureResult")
+            .field("disclosure_id", &"<redacted>")
+            .finish()
+    }
 }
 
 impl RecordDisclosureResult {
@@ -258,5 +292,39 @@ mod tests {
             .is_err()
         );
         assert!(RecordDisclosureResult::new(DisclosureId::new("")).is_err());
+    }
+
+    #[test]
+    fn disclosure_diagnostics_redact_purpose_time_and_identities() {
+        let revision = MemoryProviderDisclosedMemory::new(MemoryId::new("private_memory"), 7)
+            .expect("revision should be valid");
+        let payload = RecordDisclosurePayload::new(
+            MemoryProviderIdempotencyKey::new("private_disclosure_key")
+                .expect("idempotency key should be valid"),
+            ContextPackId::new("private_context_pack"),
+            "Private disclosure purpose",
+            vec![revision.clone()],
+            1_900_000_001,
+            1_900_000_002,
+        )
+        .expect("payload should be valid");
+        let result = RecordDisclosureResult::new(DisclosureId::new("private_disclosure"))
+            .expect("result should be valid");
+
+        let diagnostic = format!("{revision:?} {payload:?} {result:?}");
+
+        for private_value in [
+            "private_memory",
+            "private_disclosure_key",
+            "private_context_pack",
+            "Private disclosure purpose",
+            "1900000001",
+            "private_disclosure",
+        ] {
+            assert!(!diagnostic.contains(private_value));
+        }
+        assert!(diagnostic.contains("version: 7"));
+        assert!(diagnostic.contains("purpose_bytes: 26"));
+        assert!(diagnostic.contains("memory_count: 1"));
     }
 }
