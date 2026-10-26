@@ -100,6 +100,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Trip diagnostics now expose only safe payload sizes, collection counts,
   closed kinds and statuses, and version while redacting itineraries, dates,
   participant details, constraints, decisions, evidence, and identities.
+- Knowledge-graph diagnostics now expose only node kind, payload sizes,
+  collection counts, temporal-bound presence, supersession presence, and
+  version while redacting labels, aliases, relations, timelines, evidence,
+  endpoints, and tenant identities.
 - Canonical SQLite initialization and backup now require the path opened by
   SQLite to retain the exact protected file's device/inode identity, and
   failure cleanup refuses to remove a path replaced after preparation.

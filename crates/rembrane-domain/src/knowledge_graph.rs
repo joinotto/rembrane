@@ -18,8 +18,17 @@ pub enum KnowledgeNodeKind {
     Event,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct KnowledgeRelationType(String);
+
+impl fmt::Debug for KnowledgeRelationType {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_tuple("KnowledgeRelationType")
+            .field(&"<redacted>")
+            .finish()
+    }
+}
 
 impl KnowledgeRelationType {
     /// Creates a portable namespaced or built-in relationship type.
@@ -52,11 +61,22 @@ impl KnowledgeRelationType {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Eq, PartialEq)]
 pub struct TemporalValidity {
     valid_from: u64,
     valid_until: Option<u64>,
     recorded_at: u64,
+}
+
+impl fmt::Debug for TemporalValidity {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("TemporalValidity")
+            .field("valid_from", &"<redacted>")
+            .field("valid_until_present", &self.valid_until.is_some())
+            .field("recorded_at", &"<redacted>")
+            .finish()
+    }
 }
 
 impl TemporalValidity {
@@ -109,7 +129,7 @@ impl TemporalValidity {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct KnowledgeNode {
     id: KnowledgeNodeId,
     workspace_id: WorkspaceId,
@@ -119,6 +139,26 @@ pub struct KnowledgeNode {
     evidence: Vec<EvidenceReference>,
     validity: TemporalValidity,
     version: u64,
+}
+
+impl fmt::Debug for KnowledgeNode {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("KnowledgeNode")
+            .field("id", &"<redacted>")
+            .field("workspace_id", &"<redacted>")
+            .field("kind", &self.kind)
+            .field("label_bytes", &self.label.len())
+            .field("alias_count", &self.aliases.len())
+            .field(
+                "alias_bytes",
+                &self.aliases.iter().map(String::len).sum::<usize>(),
+            )
+            .field("evidence_count", &self.evidence.len())
+            .field("validity", &self.validity)
+            .field("version", &self.version)
+            .finish()
+    }
 }
 
 impl KnowledgeNode {
@@ -208,7 +248,7 @@ impl KnowledgeNode {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct KnowledgeEdge {
     id: KnowledgeEdgeId,
     workspace_id: WorkspaceId,
@@ -219,6 +259,23 @@ pub struct KnowledgeEdge {
     validity: TemporalValidity,
     version: u64,
     supersedes: Option<KnowledgeEdgeId>,
+}
+
+impl fmt::Debug for KnowledgeEdge {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("KnowledgeEdge")
+            .field("id", &"<redacted>")
+            .field("workspace_id", &"<redacted>")
+            .field("source_id", &"<redacted>")
+            .field("target_id", &"<redacted>")
+            .field("relation", &self.relation)
+            .field("evidence_count", &self.evidence.len())
+            .field("validity", &self.validity)
+            .field("version", &self.version)
+            .field("supersedes_present", &self.supersedes.is_some())
+            .finish()
+    }
 }
 
 impl KnowledgeEdge {
@@ -491,5 +548,65 @@ mod tests {
             ),
             Err(KnowledgeGraphError::InvalidSupersession)
         );
+    }
+
+    #[test]
+    fn debug_output_redacts_graph_semantics_timeline_and_identities() {
+        let validity = TemporalValidity::new(1_900_000_001, Some(1_900_000_999), 1_900_000_123)
+            .expect("validity should be valid");
+        let node = KnowledgeNode::new(
+            KnowledgeNodeId::new("private_node"),
+            WorkspaceId::new("private_workspace"),
+            KnowledgeNodeKind::Project,
+            "Private project label".to_owned(),
+            vec!["Private project alias".to_owned()],
+            vec![evidence("private_node_evidence")],
+            validity,
+            2,
+        )
+        .expect("node should validate");
+        let relation =
+            KnowledgeRelationType::new("private:depends_on").expect("relation should validate");
+        let edge = KnowledgeEdge::new(
+            KnowledgeEdgeId::new("private_edge"),
+            WorkspaceId::new("private_workspace"),
+            KnowledgeNodeId::new("private_source"),
+            KnowledgeNodeId::new("private_target"),
+            relation.clone(),
+            vec![evidence("private_edge_evidence")],
+            validity,
+            3,
+            Some(KnowledgeEdgeId::new("private_superseded_edge")),
+        )
+        .expect("edge should validate");
+
+        let diagnostic = format!("{validity:?} {relation:?} {node:?} {edge:?}");
+
+        for private_value in [
+            "1900000001",
+            "1900000999",
+            "1900000123",
+            "private_node",
+            "private_workspace",
+            "Private project label",
+            "Private project alias",
+            "private_node_evidence",
+            "private:depends_on",
+            "private_edge",
+            "private_source",
+            "private_target",
+            "private_edge_evidence",
+            "private_superseded_edge",
+        ] {
+            assert!(!diagnostic.contains(private_value));
+        }
+        assert!(diagnostic.contains("valid_until_present: true"));
+        assert!(diagnostic.contains("kind: Project"));
+        assert!(diagnostic.contains("label_bytes: 21"));
+        assert!(diagnostic.contains("alias_count: 1"));
+        assert!(diagnostic.contains("evidence_count: 1"));
+        assert!(diagnostic.contains("version: 2"));
+        assert!(diagnostic.contains("version: 3"));
+        assert!(diagnostic.contains("supersedes_present: true"));
     }
 }

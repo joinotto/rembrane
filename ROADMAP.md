@@ -800,6 +800,9 @@ This roadmap describes sequencing, not release dates.
   - [x] Define engine-neutral, typed workspace-scoped nodes and relationships
     with separate event/system time, validity windows, provenance, bounded
     aliases, and explicit supersession references.
+    - [x] Redact graph semantics, labels, aliases, timelines, provenance,
+      endpoints, supersession identities, and tenant identities from
+      diagnostics.
   - [x] Add tenant-isolated mutation and neighbourhood repository contracts
     with bounded temporal traversal and optimistic version checks.
   - [x] Re-authorize untrusted graph-provider candidates against exact
