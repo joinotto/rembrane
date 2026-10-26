@@ -69,6 +69,8 @@ fn main() {
             println!("{}", doctor_failure_json());
         } else if recall_json_requested(&arguments) {
             println!("{}", recall_failure_json());
+        } else if trace_json_requested(&arguments) {
+            println!("{}", trace_failure_json());
         } else if let Some(failure) = working_memory_failure_json(&arguments) {
             println!("{failure}");
         } else {
@@ -85,6 +87,11 @@ fn doctor_json_requested(arguments: &[String]) -> bool {
 
 fn recall_json_requested(arguments: &[String]) -> bool {
     arguments.first().map(String::as_str) == Some("recall")
+        && arguments.iter().any(|argument| argument == "--json")
+}
+
+fn trace_json_requested(arguments: &[String]) -> bool {
+    arguments.first().map(String::as_str) == Some("trace")
         && arguments.iter().any(|argument| argument == "--json")
 }
 
@@ -2611,8 +2618,30 @@ fn trace(arguments: &[String]) -> Result<(), String> {
             projections: Vec::new(),
         })
         .map_err(|error| format!("cannot record work trace: {error}"))?;
-    println!("Proposed {}", memory.id());
+    if arguments.iter().any(|argument| argument == "--json") {
+        println!("{}", trace_json(&memory));
+    } else {
+        println!("Proposed {}", memory.id());
+    }
     Ok(())
+}
+
+fn trace_json(memory: &MemoryRecord) -> serde_json::Value {
+    serde_json::json!({
+        "schemaVersion": 1,
+        "memoryId": memory.id().to_string(),
+        "version": memory.version(),
+        "status": "proposed"
+    })
+}
+
+fn trace_failure_json() -> serde_json::Value {
+    serde_json::json!({
+        "schemaVersion": 1,
+        "error": {
+            "code": "trace_failed"
+        }
+    })
 }
 
 fn checkpoint(arguments: &[String]) -> Result<(), String> {
@@ -3366,7 +3395,7 @@ fn print_help() {
              [--domain <name> | --entity <id> | --activity <id>]\n\
            rembrane trace --database <path> --principal <id> \
              --workspace <id> --activity <id> --summary <text> \
-             [--entity <id>] [--client <id>]\n\
+             [--entity <id>] [--client <id>] [--json]\n\
            rembrane recall --database <path> --principal <id> \
              --workspace <id> --client <id> --purpose <purpose> --query <query> \
              [--limit <items>] [--max-bytes <bytes>] \
@@ -3411,8 +3440,9 @@ mod tests {
         read_export, recall_failure_json, recall_json_requested, recall_scope_context,
         redact_endpoint, render_mcp_config,
         requested_memory_privacy, requested_memory_scope, run, selected_secret_reference,
-        test_provider, validate_external_conformance_namespace, validate_mcp_server_binary,
-        vscode_mcp_config, working_memory_failure_json, write_export,
+        test_provider, trace_failure_json, trace_json_requested,
+        validate_external_conformance_namespace, validate_mcp_server_binary, vscode_mcp_config,
+        working_memory_failure_json, write_export,
         write_knowledge_graph_export, write_memory_jsonl_export, write_memory_markdown_export,
         zed_mcp_config,
     };
@@ -3552,6 +3582,29 @@ mod tests {
         ] {
             assert!(!diagnostics.contains(private_value));
         }
+    }
+
+    #[test]
+    fn trace_json_failure_is_generic_and_secret_safe() {
+        let arguments = vec![
+            "trace".to_owned(),
+            "--summary".to_owned(),
+            "private work trace".to_owned(),
+            "--database".to_owned(),
+            "/private/project.sqlite".to_owned(),
+            "--json".to_owned(),
+        ];
+        assert!(trace_json_requested(&arguments));
+        let result = trace_failure_json();
+        assert_eq!(
+            result,
+            serde_json::json!({
+                "schemaVersion": 1,
+                "error": {"code": "trace_failed"}
+            })
+        );
+        assert!(!result.to_string().contains("private work trace"));
+        assert!(!result.to_string().contains("project.sqlite"));
     }
 
     fn request_run(arguments: &[&str]) -> Result<(), String> {

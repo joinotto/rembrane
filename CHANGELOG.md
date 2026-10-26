@@ -9,6 +9,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Fixed
 
+- `rembrane trace --json` now returns the canonical proposed-memory identity
+  and version for generic agents, with a closed failure code that omits trace
+  content, tenant routing, database paths, keys, and internal errors.
 - CLI checkpoint and resume results now carry `schemaVersion: 1`, allowing
   fresh agent processes to consume project working-memory state through an
   explicitly versioned output surface.

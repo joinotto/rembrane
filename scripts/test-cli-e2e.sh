@@ -655,10 +655,41 @@ trace_output=$(
         --workspace workspace_e2e \
         --activity activity_cli_e2e \
         --entity project_e2e \
-        --summary "Completed the CLI memory lifecycle."
+        --summary "Completed the CLI memory lifecycle." \
+        --json
 )
-trace_id=$(printf '%s\n' "$trace_output" | awk '/^Proposed / { print $2 }')
+trace_id=$(printf '%s\n' "$trace_output" | jq -r '
+    select(
+        .schemaVersion == 1
+        and .version == 1
+        and .status == "proposed"
+    )
+    | .memoryId
+')
 test -n "$trace_id"
+
+trace_failure="$test_directory/trace-failure.json"
+trace_failure_stderr="$test_directory/trace-failure.stderr"
+if "$rembrane_binary" trace \
+    --database "$test_directory/missing-trace.sqlite" \
+    --principal principal_private \
+    --workspace workspace_private \
+    --activity activity_private \
+    --summary "private work trace" \
+    --json >"$trace_failure" 2>"$trace_failure_stderr"
+then
+    echo "JSON trace unexpectedly accepted a missing database" >&2
+    exit 1
+fi
+jq -e '
+    . == {
+        "schemaVersion": 1,
+        "error": {"code": "trace_failed"}
+    }
+    and ((tostring | contains("private work trace")) | not)
+    and ((tostring | contains("workspace_private")) | not)
+' "$trace_failure" >/dev/null
+test ! -s "$trace_failure_stderr"
 
 checkpoint_failure="$test_directory/checkpoint-failure.json"
 checkpoint_failure_stderr="$test_directory/checkpoint-failure.stderr"
