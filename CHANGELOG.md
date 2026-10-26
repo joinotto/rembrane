@@ -70,6 +70,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   imports at `/v1/imports`, derives destination identity from its configured
   connection grant, authorizes every represented scope, and atomically admits
   only reviewable proposals. Discovery and OpenAPI now advertise this surface.
+- REST end-to-end coverage now exercises JSONL import authentication, exact
+  media-type enforcement, malformed input rejection, tenant isolation, and
+  successful proposal-only persistence with imported evidence and a contiguous
+  canonical event.
 - Remote MCP now provides a bounded, non-evicting tenant Tower-service cache
   keyed by exact issuer, resource, principal, client, workspace, and OAuth
   scope set, preserving protocol sessions across token refresh while failing

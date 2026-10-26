@@ -771,6 +771,8 @@ done
 if ! rg -F '/context/resolve:' spec/openapi.yaml >/dev/null ||
     ! rg -F '"/.well-known/oauth-protected-resource/mcp"' apps/rembrane-api/src/main.rs >/dev/null ||
     ! rg -F '"/v1/context/resolve"' apps/rembrane-api/src/main.rs >/dev/null ||
+    ! rg -F '/imports:' spec/openapi.yaml >/dev/null ||
+    ! rg -F '"/v1/imports"' apps/rembrane-api/src/main.rs >/dev/null ||
     ! rg -F '/workspaces/key-rotation:' spec/openapi.yaml >/dev/null ||
     ! rg -F '"/v1/workspaces/key-rotation"' apps/rembrane-api/src/main.rs >/dev/null ||
     ! rg -F '/travel/trips:' spec/openapi.yaml >/dev/null ||

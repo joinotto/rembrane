@@ -131,6 +131,9 @@ This roadmap describes sequencing, not release dates.
       proposal-only service.
     - [x] Publish JSONL import capability through discovery and the portable
       OpenAPI contract.
+    - [x] Prove the REST import boundary black-box: authentication, exact media
+      type, malformed archives, tenant isolation, proposal-only admission,
+      imported evidence, and contiguous event persistence.
 - [x] Package the local REST service for loopback-only Docker Compose
   self-hosting with persistent encrypted storage.
   - [x] Resolve the REST bearer credential from validated environment or

@@ -110,6 +110,7 @@ jq -e \
         and .capabilities.activityCheckpoint == true
         and .capabilities.disclosureReceipt == true
         and .capabilities.memoryProposal == true
+        and .capabilities.imports == ["jsonl"]
         and .privacy.processingModes == ["local-only"]
         and .privacy.plaintextProcessingLocation == "user-device"' \
     "$discovery_response" >/dev/null
@@ -359,6 +360,100 @@ cross_workspace_list_status=$(
 )
 test "$cross_workspace_list_status" = "403"
 test "$(jq -r '.code' "$cross_workspace_list_response")" = "access_denied"
+
+portable_import="$test_directory/portable-import.jsonl"
+printf '%s\n' \
+    '{"format":"rembrane-memory-jsonl","formatVersion":1,"workspaceId":"workspace_portable_source","subjectId":"principal_portable_source","memoryId":"memory_portable_source","version":1,"scope":{"type":"global"},"kind":"preference","status":"confirmed","content":"Call me Hippo across assistants","evidence":[{"id":"evidence_portable_source","source":"user-statement"}]}' \
+    >"$portable_import"
+import_sequence=$(
+    sqlite3 "$database" \
+        "SELECT COALESCE(MAX(sequence), 0) FROM workspace_events WHERE workspace_id = '$REMBRANE_WORKSPACE_ID';"
+)
+proposals_before=$(
+    sqlite3 "$database" \
+        "SELECT count(*) FROM memories WHERE workspace_id = '$REMBRANE_WORKSPACE_ID' AND subject_id = '$REMBRANE_PRINCIPAL_ID' AND kind = 'preference' AND status = 'proposed' AND scope_type = 'global';"
+)
+imported_evidence_before=$(
+    sqlite3 "$database" \
+        "SELECT count(*) FROM memory_evidence WHERE workspace_id = '$REMBRANE_WORKSPACE_ID' AND source_type = 'imported-record';"
+)
+
+unauthenticated_import_response="$test_directory/unauthenticated-import-response.json"
+unauthenticated_import_status=$(
+    curl -sS \
+        -o "$unauthenticated_import_response" \
+        -w '%{http_code}' \
+        -X POST "$base_url/v1/imports?workspaceId=$REMBRANE_WORKSPACE_ID&subjectId=$REMBRANE_PRINCIPAL_ID&expectedPreviousSequence=$import_sequence" \
+        -H "Content-Type: application/x-ndjson" \
+        --data-binary "@$portable_import"
+)
+test "$unauthenticated_import_status" = "401"
+test "$(jq -r '.code' "$unauthenticated_import_response")" = "unauthorized"
+
+invalid_import_media_response="$test_directory/invalid-import-media-response.json"
+invalid_import_media_status=$(
+    curl -sS \
+        -o "$invalid_import_media_response" \
+        -w '%{http_code}' \
+        -X POST "$base_url/v1/imports?workspaceId=$REMBRANE_WORKSPACE_ID&subjectId=$REMBRANE_PRINCIPAL_ID&expectedPreviousSequence=$import_sequence" \
+        -H "Authorization: Bearer $REMBRANE_API_TOKEN" \
+        -H "Content-Type: application/json" \
+        --data-binary "@$portable_import"
+)
+test "$invalid_import_media_status" = "400"
+test "$(jq -r '.code' "$invalid_import_media_response")" = "invalid_request"
+
+invalid_import_response="$test_directory/invalid-import-response.json"
+invalid_import_status=$(
+    curl -sS \
+        -o "$invalid_import_response" \
+        -w '%{http_code}' \
+        -X POST "$base_url/v1/imports?workspaceId=$REMBRANE_WORKSPACE_ID&subjectId=$REMBRANE_PRINCIPAL_ID&expectedPreviousSequence=$import_sequence" \
+        -H "Authorization: Bearer $REMBRANE_API_TOKEN" \
+        -H "Content-Type: application/x-ndjson" \
+        --data-binary '{"not":"portable-memory"}'
+)
+test "$invalid_import_status" = "400"
+test "$(jq -r '.code' "$invalid_import_response")" = "invalid_request"
+
+cross_workspace_import_response="$test_directory/cross-workspace-import-response.json"
+cross_workspace_import_status=$(
+    curl -sS \
+        -o "$cross_workspace_import_response" \
+        -w '%{http_code}' \
+        -X POST "$base_url/v1/imports?workspaceId=workspace_other&subjectId=$REMBRANE_PRINCIPAL_ID&expectedPreviousSequence=$import_sequence" \
+        -H "Authorization: Bearer $REMBRANE_API_TOKEN" \
+        -H "Content-Type: application/x-ndjson" \
+        --data-binary "@$portable_import"
+)
+test "$cross_workspace_import_status" = "403"
+test "$(jq -r '.code' "$cross_workspace_import_response")" = "access_denied"
+
+import_response="$test_directory/import-response.json"
+import_status=$(
+    curl -sS \
+        -o "$import_response" \
+        -w '%{http_code}' \
+        -X POST "$base_url/v1/imports?workspaceId=$REMBRANE_WORKSPACE_ID&subjectId=$REMBRANE_PRINCIPAL_ID&expectedPreviousSequence=$import_sequence" \
+        -H "Authorization: Bearer $REMBRANE_API_TOKEN" \
+        -H "Content-Type: application/x-ndjson" \
+        --data-binary "@$portable_import"
+)
+test "$import_status" = "201"
+test "$(jq -r '.imported' "$import_response")" = "1"
+test "$(jq -r '.status' "$import_response")" = "proposed"
+test "$(
+    sqlite3 "$database" \
+        "SELECT count(*) FROM memories WHERE workspace_id = '$REMBRANE_WORKSPACE_ID' AND subject_id = '$REMBRANE_PRINCIPAL_ID' AND kind = 'preference' AND status = 'proposed' AND scope_type = 'global';"
+)" = "$((proposals_before + 1))"
+test "$(
+    sqlite3 "$database" \
+        "SELECT count(*) FROM memory_evidence WHERE workspace_id = '$REMBRANE_WORKSPACE_ID' AND source_type = 'imported-record';"
+)" = "$((imported_evidence_before + 1))"
+test "$(
+    sqlite3 "$database" \
+        "SELECT COALESCE(MAX(sequence), 0) FROM workspace_events WHERE workspace_id = '$REMBRANE_WORKSPACE_ID';"
+)" = "$((import_sequence + 1))"
 
 kill "$api_pid"
 wait "$api_pid" 2>/dev/null || true
