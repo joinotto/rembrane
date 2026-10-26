@@ -17,6 +17,11 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- MCP connection identity is now encapsulated independently from storage and
+  provider state, preparing the official Streamable HTTP handler to source
+  tenant identity only from verified request extensions.
+- Static TypeScript SDK syntax validation now selects ES-module parsing
+  explicitly across supported Node.js versions.
 - OAuth introspection now applies canonical audience-cardinality,
   audience-size, and scope-size ceilings while decoding provider claims.
 - Customer key-provider rotation receipts now reject recipient collections

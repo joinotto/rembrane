@@ -347,12 +347,27 @@ struct CheckpointOutput {
 struct State {
     store: SqliteStore<ConfiguredRecordCipher>,
     graph_provider: ConfiguredGraphProvider,
-    principal_id: PrincipalId,
-    workspace_id: WorkspaceId,
-    client_id: ClientId,
+    identity: ConnectionIdentity,
     read_scopes: Vec<ReadScope>,
     read_permissions: Vec<ReadPermission>,
     next_id: u128,
+}
+
+#[derive(Clone)]
+struct ConnectionIdentity {
+    principal: PrincipalId,
+    workspace: WorkspaceId,
+    client: ClientId,
+}
+
+impl ConnectionIdentity {
+    fn from_verified_remote_access(access: &VerifiedRemoteAccess) -> Self {
+        Self {
+            principal: access.subject_id().clone(),
+            workspace: access.workspace_id().clone(),
+            client: access.client_id().clone(),
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -366,7 +381,14 @@ impl RembraneMcp {
         let principal_id = PrincipalId::new(required_environment("REMBRANE_PRINCIPAL_ID")?);
         let workspace_id = WorkspaceId::new(required_environment("REMBRANE_WORKSPACE_ID")?);
         let client_id = ClientId::new(required_environment("REMBRANE_CLIENT_ID")?);
-        Self::from_connection(database, principal_id, workspace_id, client_id)
+        Self::from_connection(
+            database,
+            ConnectionIdentity {
+                principal: principal_id,
+                workspace: workspace_id,
+                client: client_id,
+            },
+        )
     }
 
     /// Builds an MCP service whose canonical identity comes exclusively from
@@ -379,18 +401,11 @@ impl RembraneMcp {
     pub fn from_verified_remote_access(access: &VerifiedRemoteAccess) -> Result<Self> {
         Self::from_connection(
             required_environment("REMBRANE_DATABASE")?,
-            access.subject_id().clone(),
-            access.workspace_id().clone(),
-            access.client_id().clone(),
+            ConnectionIdentity::from_verified_remote_access(access),
         )
     }
 
-    fn from_connection(
-        database: String,
-        principal_id: PrincipalId,
-        workspace_id: WorkspaceId,
-        client_id: ClientId,
-    ) -> Result<Self> {
+    fn from_connection(database: String, identity: ConnectionIdentity) -> Result<Self> {
         let cipher = ConfiguredRecordCipher::from_environment()
             .context("failed to load workspace cipher")?;
         let read_scopes = parse_read_scopes(
@@ -407,9 +422,9 @@ impl RembraneMcp {
             .context("failed to configure graph provider")?;
         AuthorizeClientService::new(&store)
             .execute(AuthorizeClientCommand {
-                client_id: client_id.clone(),
-                workspace_id: workspace_id.clone(),
-                principal_id: principal_id.clone(),
+                client_id: identity.client.clone(),
+                workspace_id: identity.workspace.clone(),
+                principal_id: identity.principal.clone(),
                 requested_read_scopes: read_scopes.clone(),
                 requested_read_permissions: read_permissions.clone(),
                 requested_write_permissions: Vec::new(),
@@ -424,9 +439,7 @@ impl RembraneMcp {
             state: Arc::new(Mutex::new(State {
                 store,
                 graph_provider,
-                principal_id,
-                workspace_id,
-                client_id,
+                identity,
                 read_scopes,
                 read_permissions,
                 next_id,
@@ -849,8 +862,8 @@ impl RembraneMcp {
                 })?;
             let mut checkpoint = ActivityCheckpoint::new(
                 CheckpointId::new(format!("checkpoint_{suffix}")),
-                state.workspace_id.clone(),
-                state.principal_id.clone(),
+                state.identity.workspace.clone(),
+                state.identity.principal.clone(),
                 activity_id,
                 parameters.entity_id.map(EntityId::new),
                 goal,
@@ -900,8 +913,8 @@ impl RembraneMcp {
                 .map_err(|_| McpError::invalid_params("invalid trip date window", None))?;
         let trip = Trip::new(
             EntityId::new(format!("trip_{suffix}")),
-            state.workspace_id.clone(),
-            state.principal_id.clone(),
+            state.identity.workspace.clone(),
+            state.identity.principal.clone(),
             parameters.title,
             parameters.origin,
             parameters.destinations,
@@ -958,9 +971,9 @@ impl RembraneMcp {
         let suffix = next_id(&mut state)?;
         let research = BookingResearch::new(
             BookingResearchId::new(format!("research_{suffix}")),
-            state.workspace_id.clone(),
+            state.identity.workspace.clone(),
             trip_id,
-            state.principal_id.clone(),
+            state.identity.principal.clone(),
             kind,
             parameters.provider,
             parameters.summary,
@@ -1118,7 +1131,7 @@ impl RembraneMcp {
             status,
             parameters.summary,
             parameters.rationale,
-            state.principal_id.clone(),
+            state.identity.principal.clone(),
             EvidenceReference::new(
                 EvidenceId::new(format!("evidence_{suffix}")),
                 evidence_source,
@@ -1404,9 +1417,9 @@ fn authorize(
     }
     AuthorizeClientService::new(&state.store)
         .execute(AuthorizeClientCommand {
-            client_id: state.client_id.clone(),
-            workspace_id: state.workspace_id.clone(),
-            principal_id: state.principal_id.clone(),
+            client_id: state.identity.client.clone(),
+            workspace_id: state.identity.workspace.clone(),
+            principal_id: state.identity.principal.clone(),
             requested_read_scopes: read_scopes,
             requested_read_permissions: state.read_permissions.clone(),
             requested_write_permissions: write_permissions,
@@ -1486,7 +1499,7 @@ fn read_scope(scope: &MemoryScope) -> ReadScope {
 fn current_sequence(state: &State) -> Result<u64, McpError> {
     state
         .store
-        .list_events_since(&state.workspace_id, 0)
+        .list_events_since(&state.identity.workspace, 0)
         .map(|events| {
             events
                 .last()

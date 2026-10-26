@@ -49,7 +49,7 @@ node ./scripts/test-memory-provider-discovery.mjs
 ./scripts/test-sqlite-schema.sh
 ./scripts/test-sqlite-atomicity.sh
 node sdks/typescript/test.mjs
-node --check sdks/typescript/index.js
+node --input-type=module --check < sdks/typescript/index.js
 PYTHONPATH=sdks/python "$python_command" -m unittest sdks/python/test_rembrane.py
 "$python_command" -m py_compile sdks/python/rembrane.py sdks/python/test_rembrane.py
 if command -v swiftc >/dev/null 2>&1; then
