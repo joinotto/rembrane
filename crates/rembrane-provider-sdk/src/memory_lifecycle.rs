@@ -1,3 +1,5 @@
+use std::fmt;
+
 use rembrane_domain::{EvidenceReference, MemoryId};
 
 use crate::{MemoryProviderIdempotencyKey, ProviderError};
@@ -7,12 +9,24 @@ pub const MAX_EXPLAIN_PURPOSE_BYTES: usize = 4_096;
 pub const MAX_EXPLANATION_BYTES: usize = 32_768;
 pub const MAX_EXPLANATION_EVIDENCE: usize = 1_000;
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct DeleteMemoryPayload {
     idempotency_key: MemoryProviderIdempotencyKey,
     memory_id: MemoryId,
     expected_version: u64,
     reason: String,
+}
+
+impl fmt::Debug for DeleteMemoryPayload {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("DeleteMemoryPayload")
+            .field("idempotency_key", &"<redacted>")
+            .field("memory_id", &"<redacted>")
+            .field("expected_version", &self.expected_version)
+            .field("reason_bytes", &self.reason.len())
+            .finish()
+    }
 }
 
 impl DeleteMemoryPayload {
@@ -69,11 +83,22 @@ impl DeleteMemoryPayload {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct DeleteMemoryResult {
     memory_id: MemoryId,
     deleted_version: u64,
     tombstone_version: u64,
+}
+
+impl fmt::Debug for DeleteMemoryResult {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("DeleteMemoryResult")
+            .field("memory_id", &"<redacted>")
+            .field("deleted_version", &self.deleted_version)
+            .field("tombstone_version", &self.tombstone_version)
+            .finish()
+    }
 }
 
 impl DeleteMemoryResult {
@@ -121,11 +146,22 @@ impl DeleteMemoryResult {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct ExplainMemoryPayload {
     memory_id: MemoryId,
     version: u64,
     purpose: String,
+}
+
+impl fmt::Debug for ExplainMemoryPayload {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ExplainMemoryPayload")
+            .field("memory_id", &"<redacted>")
+            .field("version", &self.version)
+            .field("purpose_bytes", &self.purpose.len())
+            .finish()
+    }
 }
 
 impl ExplainMemoryPayload {
@@ -175,12 +211,24 @@ impl ExplainMemoryPayload {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct ExplainMemoryResult {
     memory_id: MemoryId,
     version: u64,
     explanation: String,
     evidence: Vec<EvidenceReference>,
+}
+
+impl fmt::Debug for ExplainMemoryResult {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ExplainMemoryResult")
+            .field("memory_id", &"<redacted>")
+            .field("version", &self.version)
+            .field("explanation_bytes", &self.explanation.len())
+            .field("evidence_count", &self.evidence.len())
+            .finish()
+    }
 }
 
 impl ExplainMemoryResult {
@@ -373,5 +421,55 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn lifecycle_diagnostics_redact_reasons_explanations_and_identities() {
+        let deletion = DeleteMemoryPayload::new(
+            MemoryProviderIdempotencyKey::new("private_deletion_key")
+                .expect("idempotency key should be valid"),
+            MemoryId::new("private_deleted_memory"),
+            4,
+            "Private deletion reason",
+        )
+        .expect("deletion should be valid");
+        let deletion_result =
+            DeleteMemoryResult::new(MemoryId::new("private_deleted_memory"), 4, 5)
+                .expect("result should be valid");
+        let explanation = ExplainMemoryPayload::new(
+            MemoryId::new("private_explained_memory"),
+            6,
+            "Private explanation purpose",
+        )
+        .expect("explanation request should be valid");
+        let explanation_result = ExplainMemoryResult::new(
+            MemoryId::new("private_explained_memory"),
+            6,
+            "Private memory explanation",
+            vec![evidence("private_evidence")],
+        )
+        .expect("explanation result should be valid");
+
+        let diagnostic =
+            format!("{deletion:?} {deletion_result:?} {explanation:?} {explanation_result:?}");
+
+        for private_value in [
+            "private_deletion_key",
+            "private_deleted_memory",
+            "Private deletion reason",
+            "private_explained_memory",
+            "Private explanation purpose",
+            "Private memory explanation",
+            "private_evidence",
+        ] {
+            assert!(!diagnostic.contains(private_value));
+        }
+        assert!(diagnostic.contains("expected_version: 4"));
+        assert!(diagnostic.contains("reason_bytes: 23"));
+        assert!(diagnostic.contains("deleted_version: 4"));
+        assert!(diagnostic.contains("tombstone_version: 5"));
+        assert!(diagnostic.contains("purpose_bytes: 27"));
+        assert!(diagnostic.contains("explanation_bytes: 26"));
+        assert!(diagnostic.contains("evidence_count: 1"));
     }
 }

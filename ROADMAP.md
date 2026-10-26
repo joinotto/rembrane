@@ -1330,6 +1330,9 @@ This roadmap describes sequencing, not release dates.
       from authenticated connection context.
     - [x] Add exact-version idempotent deletion and bounded provenance
       explanation payloads without caller-controlled authorization identity.
+      - [x] Redact provider deletion reasons, explanation purposes and text,
+        idempotency keys, evidence identities, and memory identities from
+        diagnostics.
     - [x] Add idempotent bounded event-batch payloads with exact scope,
       provenance references, observation time, and canonical ordered results.
     - [x] Add bounded scoped question payloads and answers grounded in exact

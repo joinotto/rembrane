@@ -149,6 +149,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Memory-provider question diagnostics now expose only prompt and answer
   sizes, output limits, selector kind, and support count while redacting user
   questions, generated answers, supporting revisions, and receipt identities.
+- Memory-provider lifecycle diagnostics now expose only payload sizes,
+  versions, and evidence count while redacting deletion reasons, explanation
+  purposes and text, idempotency keys, evidence identities, and memory
+  identities.
 - Canonical SQLite initialization and backup now require the path opened by
   SQLite to retain the exact protected file's device/inode identity, and
   failure cleanup refuses to remove a path replaced after preparation.
