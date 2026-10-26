@@ -9,6 +9,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Fixed
 
+- Official Streamable HTTP production readiness now inspects offline Cargo
+  metadata for the exact pinned SDK feature and remote authorization adapter,
+  and rejects comment-only service-instantiation markers.
 - CLI checkpoint creation and update now validate activity/entity/client
   routing, required create goals, scalar and list text, the 1,024-item ceiling,
   and the 256 KiB aggregate payload bound before opening tenant storage.

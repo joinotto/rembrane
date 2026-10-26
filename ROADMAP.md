@@ -650,6 +650,8 @@ This roadmap describes sequencing, not release dates.
     - [x] Make production readiness fail closed until the official SDK server
       feature, remote authorization adapter, and concrete Streamable HTTP
       service are all wired into the MCP application.
+      - [x] Derive pinned SDK features and adapter dependencies from offline
+        Cargo metadata and reject comment-only service-instantiation markers.
     - [x] Authorize protocol-correct sessionless initialize requests without
       reserving a client-supplied ID before the official SDK response.
       - [x] Bound concurrent downstream initialization with anonymous,
