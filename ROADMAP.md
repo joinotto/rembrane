@@ -402,6 +402,8 @@ This roadmap describes sequencing, not release dates.
   OpenAPI, and path-safe TypeScript and Python SDK methods.
 - [x] Record evidence-backed activity work traces as proposed observations
   through REST, OpenAPI, and the TypeScript and Python SDKs.
+- [x] Redact imported memory plaintext, identities, scopes, provenance, and
+  grants from application import diagnostics.
 - [x] Serve unauthenticated, credential-free REST capability discovery with
   deployment-accurate API location, privacy mode, limits, and handoff support.
 - [x] Fetch public capability discovery through the TypeScript and Python SDKs

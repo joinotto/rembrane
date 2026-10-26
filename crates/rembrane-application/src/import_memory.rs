@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::fmt;
 
 use rembrane_domain::{
     CanonicalEvent, EventId, EventPayload, EvidenceReference, MemoryId, MemoryKind, MemoryRecord,
@@ -9,7 +10,7 @@ use crate::{ApplicationError, MemoryImportRepository};
 
 pub const MAXIMUM_MEMORY_IMPORT_ITEMS: usize = 10_000;
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct ImportedMemoryProposal {
     pub memory_id: MemoryId,
     pub event_id: EventId,
@@ -19,11 +20,34 @@ pub struct ImportedMemoryProposal {
     pub evidence: EvidenceReference,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+impl fmt::Debug for ImportedMemoryProposal {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ImportedMemoryProposal")
+            .field("kind", &self.kind)
+            .field("content_bytes", &self.content.len())
+            .finish_non_exhaustive()
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
 pub struct ImportMemoryBatchCommand {
     pub grant: WriteGrant,
     pub items: Vec<ImportedMemoryProposal>,
     pub expected_previous_sequence: u64,
+}
+
+impl fmt::Debug for ImportMemoryBatchCommand {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ImportMemoryBatchCommand")
+            .field("item_count", &self.items.len())
+            .field(
+                "expected_previous_sequence",
+                &self.expected_previous_sequence,
+            )
+            .finish_non_exhaustive()
+    }
 }
 
 pub struct ImportMemoryBatchService<'repository, Repository> {
@@ -118,6 +142,34 @@ mod tests {
             rembrane_domain::MemoryRecord,
             rembrane_domain::CanonicalEvent,
         )>,
+    }
+
+    #[test]
+    fn import_diagnostics_redact_plaintext_and_identity() {
+        let proposal = ImportedMemoryProposal {
+            memory_id: MemoryId::new("private-memory"),
+            event_id: EventId::new("private-event"),
+            scope: MemoryScope::Domain {
+                name: "private-domain".to_owned(),
+            },
+            kind: MemoryKind::Semantic,
+            content: "private imported memory".to_owned(),
+            evidence: EvidenceReference {
+                id: EvidenceId::new("private-evidence"),
+                source: EvidenceSource::UserStatement,
+            },
+        };
+
+        let diagnostic = format!("{proposal:?}");
+        for secret in [
+            "private-memory",
+            "private-event",
+            "private-domain",
+            "private imported memory",
+            "private-evidence",
+        ] {
+            assert!(!diagnostic.contains(secret), "diagnostic exposed {secret}");
+        }
     }
 
     impl MemoryImportRepository for ImportRepository {

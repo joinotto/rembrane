@@ -53,6 +53,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Application travel-context diagnostics now expose only safe sizes, counts,
   flags, kinds, and versions instead of trip, traveler, provider, research,
   source-reference, or timeline plaintext.
+- Memory-import diagnostics now expose only item counts, memory kinds, content
+  sizes, and sequence metadata instead of imported plaintext, identities,
+  scopes, evidence, or client grants.
 - Provider-independent key seal requests now retain copied plaintext in
   redacted zeroize-on-drop ownership instead of an ordinary byte vector.
 - Key-provider plaintext responses are now explicitly wiped before oversized
