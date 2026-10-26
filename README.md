@@ -53,6 +53,8 @@ The platform owns identity, workspaces, encryption orchestration, canonical even
 - [Portable Memory Provider Client](docs/MEMORY_PROVIDER_CLIENT.md)
 - [TypeScript SDK](sdks/typescript/README.md)
 - [Python SDK](sdks/python/README.md)
+- [Swift SDK](sdks/swift/README.md)
+- [Kotlin SDK](sdks/kotlin/README.md)
 - [Product Requirements and Architecture](docs/PRODUCT_REQUIREMENTS_AND_ARCHITECTURE.md)
 - [Rust Architecture Research](docs/RUST_ARCHITECTURE_RESEARCH.md)
 - [Bot and Platform Integration Architecture](docs/BOT_AND_PLATFORM_INTEGRATION_ARCHITECTURE.md)
