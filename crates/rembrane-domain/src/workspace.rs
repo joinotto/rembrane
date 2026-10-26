@@ -1,8 +1,19 @@
+use std::fmt;
+
 use crate::{PrincipalId, WorkspaceId};
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct Principal {
     id: PrincipalId,
+}
+
+impl fmt::Debug for Principal {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("Principal")
+            .field("id", &"<redacted>")
+            .finish()
+    }
 }
 
 impl Principal {
@@ -23,10 +34,20 @@ pub enum WorkspaceKind {
     Shared,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct Workspace {
     id: WorkspaceId,
     kind: WorkspaceKind,
+}
+
+impl fmt::Debug for Workspace {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("Workspace")
+            .field("id", &"<redacted>")
+            .field("kind", &self.kind)
+            .finish()
+    }
 }
 
 impl Workspace {
@@ -72,12 +93,24 @@ pub enum MembershipStatus {
     Removed,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct Membership {
     workspace_id: WorkspaceId,
     principal_id: PrincipalId,
     role: WorkspaceRole,
     status: MembershipStatus,
+}
+
+impl fmt::Debug for Membership {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("Membership")
+            .field("workspace_id", &"<redacted>")
+            .field("principal_id", &"<redacted>")
+            .field("role", &self.role)
+            .field("status", &self.status)
+            .finish()
+    }
 }
 
 impl Membership {
@@ -180,5 +213,24 @@ mod tests {
 
         assert_eq!(principal.id().as_str(), "principal_01");
         assert_eq!(workspace.kind(), WorkspaceKind::Personal);
+    }
+
+    #[test]
+    fn debug_output_redacts_workspace_and_membership_identities() {
+        let principal = Principal::new(PrincipalId::new("private_principal"));
+        let workspace = Workspace::shared(WorkspaceId::new("private_workspace"));
+        let membership = Membership::new(
+            WorkspaceId::new("private_workspace"),
+            PrincipalId::new("private_principal"),
+            WorkspaceRole::Admin,
+        );
+
+        let diagnostic = format!("{principal:?} {workspace:?} {membership:?}");
+
+        assert!(!diagnostic.contains("private_principal"));
+        assert!(!diagnostic.contains("private_workspace"));
+        assert!(diagnostic.contains("kind: Shared"));
+        assert!(diagnostic.contains("role: Admin"));
+        assert!(diagnostic.contains("status: Active"));
     }
 }

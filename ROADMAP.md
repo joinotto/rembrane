@@ -1109,6 +1109,8 @@ This roadmap describes sequencing, not release dates.
       - [x] Prove unauthorized callers cannot trigger provider side effects
         and removed members are excluded from the provider recipient set.
 - [x] Organizational audit and retention controls.
+  - [x] Redact workspace, principal, membership, grant, and exact scope
+    identities from authorization diagnostics.
   - [x] Define an immutable bounded content-free administrative audit event
     contract with tenant, actor, closed action, opaque target, request
     correlation, and occurrence time.

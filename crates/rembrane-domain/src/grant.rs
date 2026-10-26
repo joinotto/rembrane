@@ -1,8 +1,10 @@
+use std::fmt;
+
 use crate::{ActivityId, ClientId, EntityId, MemoryScope, PrincipalId, WorkspaceId};
 
 /// A scope a client may read. Global means global memories only; it is not a
 /// wildcard over every entity and activity.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub enum ReadScope {
     Global,
     Domain { name: String },
@@ -10,13 +12,41 @@ pub enum ReadScope {
     Activity { id: ActivityId },
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+impl fmt::Debug for ReadScope {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let kind = match self {
+            Self::Global => "global",
+            Self::Domain { .. } => "domain",
+            Self::Entity { .. } => "entity",
+            Self::Activity { .. } => "activity",
+        };
+        formatter
+            .debug_struct("ReadScope")
+            .field("kind", &kind)
+            .finish()
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
 pub struct ReadGrant {
     pub client_id: ClientId,
     pub workspace_id: WorkspaceId,
     pub subject_id: PrincipalId,
     pub scopes: Vec<ReadScope>,
     pub permissions: Vec<ReadPermission>,
+}
+
+impl fmt::Debug for ReadGrant {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ReadGrant")
+            .field("client_id", &"<redacted>")
+            .field("workspace_id", &"<redacted>")
+            .field("subject_id", &"<redacted>")
+            .field("scope_count", &self.scopes.len())
+            .field("permission_count", &self.permissions.len())
+            .finish()
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -39,13 +69,26 @@ pub enum WritePermission {
     CaptureBookingResearch,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct WriteGrant {
     pub client_id: ClientId,
     pub workspace_id: WorkspaceId,
     pub subject_id: PrincipalId,
     pub scopes: Vec<ReadScope>,
     pub permissions: Vec<WritePermission>,
+}
+
+impl fmt::Debug for WriteGrant {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("WriteGrant")
+            .field("client_id", &"<redacted>")
+            .field("workspace_id", &"<redacted>")
+            .field("subject_id", &"<redacted>")
+            .field("scope_count", &self.scopes.len())
+            .field("permission_count", &self.permissions.len())
+            .finish()
+    }
 }
 
 impl WriteGrant {
@@ -125,5 +168,43 @@ mod tests {
         assert!(!grant.allows_scope(&MemoryScope::Entity {
             id: EntityId::new("project_01"),
         }));
+    }
+
+    #[test]
+    fn debug_output_redacts_grant_identities_scopes_and_permissions() {
+        let scope = ReadScope::Domain {
+            name: "private_domain".to_owned(),
+        };
+        let read_grant = ReadGrant {
+            client_id: ClientId::new("private_read_client"),
+            workspace_id: WorkspaceId::new("private_workspace"),
+            subject_id: PrincipalId::new("private_subject"),
+            scopes: vec![scope.clone()],
+            permissions: vec![ReadPermission::RevealTravelSensitiveProfile],
+        };
+        let write_grant = WriteGrant {
+            client_id: ClientId::new("private_write_client"),
+            workspace_id: WorkspaceId::new("private_workspace"),
+            subject_id: PrincipalId::new("private_subject"),
+            scopes: vec![scope.clone()],
+            permissions: vec![WritePermission::DeleteMemory],
+        };
+
+        let diagnostic = format!("{scope:?} {read_grant:?} {write_grant:?}");
+
+        for private_value in [
+            "private_domain",
+            "private_read_client",
+            "private_write_client",
+            "private_workspace",
+            "private_subject",
+            "RevealTravelSensitiveProfile",
+            "DeleteMemory",
+        ] {
+            assert!(!diagnostic.contains(private_value));
+        }
+        assert!(diagnostic.contains("kind: \"domain\""));
+        assert!(diagnostic.contains("scope_count: 1"));
+        assert!(diagnostic.contains("permission_count: 1"));
     }
 }

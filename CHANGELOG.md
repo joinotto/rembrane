@@ -116,6 +116,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   timelines.
 - Evidence-reference diagnostics now expose only the closed provenance source
   while redacting the canonical evidence identity.
+- Authorization scope, client grant, member scope, principal, workspace, and
+  membership diagnostics now expose only safe kinds, counts, roles, and
+  statuses while redacting tenant identities and exact privileges.
 - Canonical SQLite initialization and backup now require the path opened by
   SQLite to retain the exact protected file's device/inode identity, and
   failure cleanup refuses to remove a path replaced after preparation.
