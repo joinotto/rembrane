@@ -18,6 +18,10 @@ test "$label_count" -gt 0 || {
 }
 
 maximum_labels=$(jq -r '.properties.missing.maxItems' "$schema")
+rg -q "^maximum_missing_gates=${maximum_labels}$" "$script" || {
+    echo "production readiness runtime gate ceiling differs from its schema" >&2
+    exit 1
+}
 test "$label_count" -le "$maximum_labels" || {
     echo "production readiness exceeds its schema gate-count ceiling" >&2
     exit 1
@@ -30,6 +34,10 @@ test "$duplicate_count" -eq 0 || {
 }
 
 maximum_label_bytes=$(jq -r '.properties.missing.items.maxLength' "$schema")
+rg -q "^maximum_gate_label_bytes=${maximum_label_bytes}$" "$script" || {
+    echo "production readiness runtime label bound differs from its schema" >&2
+    exit 1
+}
 LC_ALL=C awk -v maximum="$maximum_label_bytes" '
     length($0) == 0 || length($0) > maximum {
         exit 1

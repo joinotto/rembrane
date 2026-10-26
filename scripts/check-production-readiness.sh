@@ -31,9 +31,35 @@ fi
 
 missing=
 missing_json=
+missing_labels=
+missing_count=0
+maximum_missing_gates=64
+maximum_gate_label_bytes=128
 record_missing() {
     label=$1
+    case "$label" in
+        ""|*[!\ -~]*)
+            echo "invalid production-readiness gate label" >&2
+            exit 1
+            ;;
+    esac
+    label_bytes=$(LC_ALL=C printf '%s' "$label" | wc -c | tr -d ' ')
+    test "$label_bytes" -le "$maximum_gate_label_bytes" || {
+        echo "oversized production-readiness gate label" >&2
+        exit 1
+    }
+    if printf '%s\n' "$missing_labels" | grep -Fqx -e "$label"; then
+        echo "duplicate production-readiness gate label" >&2
+        exit 1
+    fi
+    missing_count=$((missing_count + 1))
+    test "$missing_count" -le "$maximum_missing_gates" || {
+        echo "too many production-readiness gate labels" >&2
+        exit 1
+    }
     missing="${missing}${missing:+, }${label}"
+    missing_labels="${missing_labels}${missing_labels:+
+}${label}"
     escaped_label=$(printf '%s' "$label" | sed 's/\\/\\\\/g; s/"/\\"/g')
     missing_json="${missing_json}${missing_json:+,}\"${escaped_label}\""
 }

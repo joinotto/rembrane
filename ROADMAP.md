@@ -1312,6 +1312,8 @@ This roadmap describes sequencing, not release dates.
         - [x] Fail static verification when emitted gate labels exceed schema
           bounds, collide, contain non-printable bytes, or drift from the
           declared readiness schema version.
+        - [x] Enforce the same label size, count, uniqueness, and printable-byte
+          invariants while constructing runtime readiness results.
       - [x] Package exact two-provider release evidence through a
         non-overwriting, symlink-rejecting, self-verifying local tool.
       - [x] Replace self-asserted external provenance with a detached provider

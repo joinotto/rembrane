@@ -17,6 +17,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   missing-gate collection for CI, installers, bots, and hosted control planes.
 - Static verification now rejects duplicate, empty, oversized, non-printable,
   or over-capacity readiness labels and detects readiness schema-version drift.
+- Readiness result construction now also rejects invalid, duplicate,
+  oversized, or over-capacity gate labels at runtime before emitting text or
+  JSON.
 - Production readiness now distinguishes the live PostgreSQL schema/RLS proof
   from a usable hosted-storage implementation and fails closed until a
   concrete Rust driver plus public runtime pool or repository are present.
