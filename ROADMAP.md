@@ -186,6 +186,8 @@ This roadmap describes sequencing, not release dates.
     REST API, and MCP server, including historical-key reads.
   - [x] Support active-key writes and historical-key reads through a
     duplicate-safe versioned record-cipher keyring.
+    - [x] Bound local OS-backed keyrings to 1,024 total generations and reject
+      unsafe key identifiers before cipher construction.
   - [x] Resolve a single active key from macOS Keychain without environment
     key material.
   - [x] Resolve active and historical rotating keyrings from macOS Keychain

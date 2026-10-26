@@ -6,7 +6,9 @@
 
 use chacha20poly1305::aead::{Aead, KeyInit, Payload};
 use chacha20poly1305::{Key, XChaCha20Poly1305, XNonce};
-use rembrane_crypto::{CryptoError, EncryptedPayload, EncryptionContext, RecordCipher};
+use rembrane_crypto::{
+    CryptoError, EncryptedPayload, EncryptionContext, MAX_ENCRYPTION_KEY_ID_BYTES, RecordCipher,
+};
 use rembrane_domain::WorkspaceId;
 use rembrane_provider_sdk::{
     CustomerKmsAdapter, CustomerKmsGeneratedKey, CustomerKmsKeyReference, CustomerKmsKeyring,
@@ -17,6 +19,7 @@ use zeroize::Zeroizing;
 
 const ALGORITHM: &str = "xchacha20poly1305-ietf";
 const NONCE_LENGTH: usize = 24;
+pub const MAX_LOCAL_KEYRING_GENERATIONS: usize = 1_024;
 
 pub struct RustCryptoRecordCipher {
     key_id: String,
@@ -126,7 +129,11 @@ impl WindowsDpapiKeyReference {
 impl RustCryptoRecordCipher {
     pub fn new(key_id: impl Into<String>, key: [u8; 32]) -> Result<Self, CryptoError> {
         let key_id = key_id.into();
-        if key_id.trim().is_empty() || key_id.trim() != key_id {
+        if key_id.trim().is_empty()
+            || key_id.trim() != key_id
+            || key_id.len() > MAX_ENCRYPTION_KEY_ID_BYTES
+            || key_id.chars().any(char::is_control)
+        {
             return Err(CryptoError::KeyUnavailable);
         }
         Ok(Self {
@@ -382,9 +389,10 @@ impl RustCryptoKeyringCipher {
         active: RustCryptoRecordCipher,
         historical: Vec<RustCryptoRecordCipher>,
     ) -> Result<Self, CryptoError> {
-        if historical
-            .iter()
-            .any(|candidate| candidate.key_id() == active.key_id())
+        if historical.len() >= MAX_LOCAL_KEYRING_GENERATIONS
+            || historical
+                .iter()
+                .any(|candidate| candidate.key_id() == active.key_id())
         {
             return Err(CryptoError::KeyUnavailable);
         }
@@ -541,6 +549,7 @@ fn parse_linux_key_history(
     service: &str,
     value: &str,
 ) -> Result<Vec<LinuxSecretServiceKeyReference>, CryptoError> {
+    validate_history_size(value)?;
     value
         .split(',')
         .map(str::trim)
@@ -555,6 +564,7 @@ fn parse_linux_key_history(
 }
 
 fn parse_windows_dpapi_history(value: &str) -> Result<Vec<WindowsDpapiKeyReference>, CryptoError> {
+    validate_history_size(value)?;
     value
         .split(',')
         .map(str::trim)
@@ -569,6 +579,7 @@ fn parse_keychain_history(
     service: &str,
     value: &str,
 ) -> Result<Vec<MacosKeychainKeyReference>, CryptoError> {
+    validate_history_size(value)?;
     value
         .split(',')
         .map(str::trim)
@@ -580,6 +591,16 @@ fn parse_keychain_history(
             MacosKeychainKeyReference::new(key_id, service, account)
         })
         .collect()
+}
+
+fn validate_history_size(value: &str) -> Result<(), CryptoError> {
+    if value.is_empty()
+        || value.split(',').take(MAX_LOCAL_KEYRING_GENERATIONS).count()
+            >= MAX_LOCAL_KEYRING_GENERATIONS
+    {
+        return Err(CryptoError::KeyUnavailable);
+    }
+    Ok(())
 }
 
 fn validate_key_references(
@@ -763,10 +784,10 @@ mod tests {
     use zeroize::Zeroizing;
 
     use super::{
-        LinuxSecretServiceKeyReference, MacosKeychainKeyReference, RustCryptoKeyringCipher,
-        RustCryptoRecordCipher, WindowsDpapiKeyReference, parse_keychain_history,
-        parse_linux_key_history, parse_windows_dpapi_history, validate_key_references,
-        validate_linux_key_references, validate_windows_key_references,
+        LinuxSecretServiceKeyReference, MAX_LOCAL_KEYRING_GENERATIONS, MacosKeychainKeyReference,
+        RustCryptoKeyringCipher, RustCryptoRecordCipher, WindowsDpapiKeyReference,
+        parse_keychain_history, parse_linux_key_history, parse_windows_dpapi_history,
+        validate_key_references, validate_linux_key_references, validate_windows_key_references,
     };
 
     fn context(workspace: &str) -> EncryptionContext {
@@ -1081,6 +1102,20 @@ mod tests {
             keyring.open(&context("workspace_01"), &foreign),
             Err(CryptoError::KeyUnavailable)
         );
+
+        let excessive = (0..MAX_LOCAL_KEYRING_GENERATIONS)
+            .map(|generation| {
+                RustCryptoRecordCipher::new(format!("key_v{generation}"), [3; 32])
+                    .expect("historical key should validate")
+            })
+            .collect();
+        assert!(matches!(
+            RustCryptoKeyringCipher::new(
+                RustCryptoRecordCipher::new("active", [2; 32]).expect("active key"),
+                excessive,
+            ),
+            Err(CryptoError::KeyUnavailable)
+        ));
     }
 
     #[test]
@@ -1114,5 +1149,10 @@ mod tests {
         assert_eq!(references[0].key_id(), "key_v1");
         assert!(parse_keychain_history("org.rembrane.workspace", "invalid").is_err());
         assert!(parse_keychain_history("org.rembrane.workspace", "key=account=extra").is_err());
+        let excessive = (0..MAX_LOCAL_KEYRING_GENERATIONS)
+            .map(|generation| format!("key_v{generation}=account_v{generation}"))
+            .collect::<Vec<_>>()
+            .join(",");
+        assert!(parse_keychain_history("org.rembrane.workspace", &excessive).is_err());
     }
 }
