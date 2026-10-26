@@ -1,4 +1,8 @@
-use rembrane_application::{ApplicationError, CanonicalMutationRepository, EventRepository};
+use std::collections::HashSet;
+
+use rembrane_application::{
+    ApplicationError, CanonicalMutationRepository, EventRepository, MemoryImportRepository,
+};
 use rembrane_codec::{decode_event, encode_event, encode_memory};
 use rembrane_crypto::{EncryptedPayload, EncryptionContext, PayloadPurpose, RecordCipher};
 use rembrane_domain::{
@@ -79,6 +83,63 @@ impl<C: RecordCipher> CanonicalMutationRepository for SqliteStore<C> {
         insert_evidence(&transaction, &memory)?;
         insert_event(&transaction, &event, &encrypted_event)?;
         insert_projections(&transaction, &projections)?;
+        transaction.commit().map_err(map_write_error)
+    }
+}
+
+impl<C: RecordCipher> MemoryImportRepository for SqliteStore<C> {
+    fn insert_imported_memory_batch(
+        &mut self,
+        mutations: &[(MemoryRecord, CanonicalEvent)],
+        expected_previous_sequence: u64,
+    ) -> Result<(), ApplicationError> {
+        if mutations.is_empty() {
+            return Ok(());
+        }
+        let workspace_id = mutations[0].0.workspace_id();
+        let mut memory_ids = HashSet::new();
+        let mut event_ids = HashSet::new();
+        let mut sealed = Vec::with_capacity(mutations.len());
+        for (offset, (memory, event)) in mutations.iter().enumerate() {
+            validate_mutation(memory, event, &[])?;
+            let increment = u64::try_from(offset)
+                .ok()
+                .and_then(|offset| offset.checked_add(1))
+                .ok_or(ApplicationError::SequenceConflict)?;
+            let expected_sequence = expected_previous_sequence
+                .checked_add(increment)
+                .ok_or(ApplicationError::SequenceConflict)?;
+            if memory.workspace_id() != workspace_id
+                || event.sequence() != expected_sequence
+                || !memory_ids.insert(memory.id().clone())
+                || !event_ids.insert(event.id().clone())
+            {
+                return Err(ApplicationError::Validation(
+                    "invalid imported memory batch".to_owned(),
+                ));
+            }
+            sealed.push((
+                seal_memory(&self.cipher, memory)?,
+                seal_event(&self.cipher, event)?,
+            ));
+        }
+
+        let transaction = self
+            .connection
+            .transaction()
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        require_event_sequence(
+            &transaction,
+            workspace_id,
+            mutations[0].1.sequence(),
+            expected_previous_sequence,
+        )?;
+        for ((memory, event), (encrypted_memory, encrypted_event)) in mutations.iter().zip(&sealed)
+        {
+            insert_memory(&transaction, memory, encrypted_memory)?;
+            insert_evidence(&transaction, memory)?;
+            insert_event(&transaction, event, encrypted_event)?;
+        }
         transaction.commit().map_err(map_write_error)
     }
 }

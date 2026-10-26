@@ -55,6 +55,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   that re-admits external content as destination-scoped proposals with fresh
   identities and contiguous canonical events through an atomic repository
   port; the in-memory reference adapter implements all-or-nothing admission.
+- Encrypted SQLite now admits validated memory-import batches in one
+  transaction after sealing every proposal and event, with repository-level
+  tenant, identity, and sequence validation plus verified rollback when a
+  later record conflicts.
 - Remote MCP now provides a bounded, non-evicting tenant Tower-service cache
   keyed by exact issuer, resource, principal, client, workspace, and OAuth
   scope set, preserving protocol sessions across token refresh while failing

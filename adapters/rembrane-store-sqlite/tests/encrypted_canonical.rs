@@ -1,7 +1,7 @@
 use rembrane_application::{
     CanonicalMutationRepository, CheckpointMutationRepository, CheckpointRepository,
-    DisclosureRepository, EventRepository, MemoryRepository, ProjectionOutboxRepository,
-    WorkspaceRepository,
+    DisclosureRepository, EventRepository, MemoryImportRepository, MemoryRepository,
+    ProjectionOutboxRepository, WorkspaceRepository,
 };
 use rembrane_crypto_rustcrypto::RustCryptoRecordCipher;
 use rembrane_domain::{
@@ -79,6 +79,37 @@ fn event() -> CanonicalEvent {
     .expect("fixture is valid")
 }
 
+fn imported_proposal(id: &str) -> MemoryRecord {
+    MemoryRecord::proposed(
+        MemoryId::new(id),
+        WorkspaceId::new("workspace_01"),
+        PrincipalId::new("principal_01"),
+        MemoryScope::Global,
+        rembrane_domain::MemoryKind::Preference,
+        format!("imported {id}"),
+        EvidenceReference::new(
+            EvidenceId::new(format!("evidence_{id}")),
+            EvidenceSource::ImportedRecord,
+        ),
+    )
+    .expect("import proposal fixture is valid")
+}
+
+fn imported_event(id: &str, sequence: u64) -> CanonicalEvent {
+    CanonicalEvent::new(
+        EventId::new(format!("event_{id}")),
+        WorkspaceId::new("workspace_01"),
+        PrincipalId::new("principal_01"),
+        Some(PrincipalId::new("principal_01")),
+        sequence,
+        EventPayload::MemoryProposed {
+            memory_id: MemoryId::new(id),
+            version: 1,
+        },
+    )
+    .expect("import event fixture is valid")
+}
+
 fn projection() -> ProjectionJob {
     ProjectionJob::new(
         ProjectionJobId::new("projection_01"),
@@ -89,6 +120,77 @@ fn projection() -> ProjectionJob {
         ProjectionOperation::Upsert,
     )
     .expect("fixture is valid")
+}
+
+#[test]
+fn imported_memory_batch_commits_encrypted_records_and_contiguous_events() {
+    let mut store = initialized_store();
+    let mutations = vec![
+        (imported_proposal("import_a"), imported_event("import_a", 1)),
+        (imported_proposal("import_b"), imported_event("import_b", 2)),
+    ];
+
+    store
+        .insert_imported_memory_batch(&mutations, 0)
+        .expect("atomic import should commit");
+
+    let records = store
+        .list_for_subject(
+            &WorkspaceId::new("workspace_01"),
+            &PrincipalId::new("principal_01"),
+        )
+        .expect("imported records should decrypt");
+    assert_eq!(records.len(), 2);
+    assert!(records.iter().all(|record| {
+        record.status() == rembrane_domain::MemoryStatus::Proposed
+            && record.evidence()[0].source == EvidenceSource::ImportedRecord
+    }));
+    let events = store
+        .list_events_since(&WorkspaceId::new("workspace_01"), 0)
+        .expect("events should decrypt");
+    assert_eq!(
+        events
+            .iter()
+            .map(CanonicalEvent::sequence)
+            .collect::<Vec<_>>(),
+        vec![1, 2]
+    );
+}
+
+#[test]
+fn imported_memory_batch_rolls_back_when_a_late_record_conflicts() {
+    let mut store = initialized_store();
+    store
+        .insert_memory_with_event(memory(), event(), Vec::new(), 0)
+        .expect("existing memory fixture");
+    let mutations = vec![
+        (
+            imported_proposal("import_new"),
+            imported_event("import_new", 2),
+        ),
+        (
+            imported_proposal("memory_01"),
+            imported_event("memory_01", 3),
+        ),
+    ];
+
+    assert!(store.insert_imported_memory_batch(&mutations, 1).is_err());
+    assert!(
+        store
+            .find(
+                &WorkspaceId::new("workspace_01"),
+                &MemoryId::new("import_new"),
+            )
+            .expect("lookup")
+            .is_none()
+    );
+    assert_eq!(
+        store
+            .list_events_since(&WorkspaceId::new("workspace_01"), 0)
+            .expect("events")
+            .len(),
+        1
+    );
 }
 
 fn checkpoint() -> ActivityCheckpoint {

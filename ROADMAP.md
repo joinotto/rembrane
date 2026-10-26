@@ -114,7 +114,9 @@ This roadmap describes sequencing, not release dates.
       repository port with destination scope authorization, fresh target
       identity checks, and contiguous canonical event construction.
     - [x] Implement the atomic port in the in-memory reference adapter.
-    - [ ] Implement and verify the atomic port in encrypted SQLite.
+    - [x] Implement the atomic port in encrypted SQLite, sealing every memory
+      and event before one transaction and rolling back all earlier inserts
+      when a later record conflicts.
 - [x] Package the local REST service for loopback-only Docker Compose
   self-hosting with persistent encrypted storage.
   - [x] Resolve the REST bearer credential from validated environment or
