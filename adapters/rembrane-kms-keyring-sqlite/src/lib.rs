@@ -1,12 +1,10 @@
 //! Durable wrapped-key metadata for a customer-controlled KMS sidecar.
 
+use std::fs::OpenOptions;
+#[cfg(unix)]
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::Path;
 use std::sync::Mutex;
-#[cfg(unix)]
-use std::{
-    fs::OpenOptions,
-    os::unix::fs::{OpenOptionsExt, PermissionsExt},
-};
 
 use rembrane_domain::WorkspaceId;
 use rembrane_provider_sdk::{
@@ -85,10 +83,22 @@ impl CustomerKmsRecoveryFloor {
 
 impl SqliteCustomerKmsKeyReferenceStore {
     pub fn open(path: impl AsRef<Path>) -> Result<Self, ProviderError> {
-        let path = path.as_ref();
-        prepare_private_database_file(path)?;
-        let connection = open_private_database(path, true)?;
-        Self::initialize(connection)
+        Self::open_with_initializer(path.as_ref(), Self::initialize)
+    }
+
+    fn open_with_initializer<Initialize>(
+        path: &Path,
+        initialize: Initialize,
+    ) -> Result<Self, ProviderError>
+    where
+        Initialize: FnOnce(Connection) -> Result<Self, ProviderError>,
+    {
+        let created = prepare_private_database_file(path, false)?;
+        let result = open_private_database(path, true).and_then(initialize);
+        if result.is_err() && created {
+            remove_sqlite_files(path);
+        }
+        result
     }
 
     pub fn in_memory() -> Result<Self, ProviderError> {
@@ -212,12 +222,7 @@ impl SqliteCustomerKmsKeyReferenceStore {
     /// integrity and required schema before returning.
     pub fn backup_to(&self, destination: impl AsRef<Path>) -> Result<(), ProviderError> {
         let destination = destination.as_ref();
-        if destination.exists() {
-            return Err(ProviderError::Rejected(
-                "customer KMS backup destination already exists".to_owned(),
-            ));
-        }
-        prepare_private_database_file(destination)?;
+        prepare_private_database_file(destination, true)?;
         let result = self
             .connection
             .lock()
@@ -226,7 +231,7 @@ impl SqliteCustomerKmsKeyReferenceStore {
             .map_err(|_| ProviderError::Unavailable)
             .and_then(|()| verify_backup(destination));
         if result.is_err() {
-            let _ = std::fs::remove_file(destination);
+            remove_sqlite_files(destination);
         }
         result
     }
@@ -242,12 +247,7 @@ impl SqliteCustomerKmsKeyReferenceStore {
         validate_private_database_file(source)?;
         verify_backup(source)?;
         validate_recovery_floors(recovery_floors)?;
-        if destination.exists() {
-            return Err(ProviderError::Rejected(
-                "customer KMS restore destination already exists".to_owned(),
-            ));
-        }
-        prepare_private_database_file(destination)?;
+        prepare_private_database_file(destination, true)?;
         let result = (|| {
             let mut connection = open_private_database(destination, true)?;
             connection
@@ -259,9 +259,18 @@ impl SqliteCustomerKmsKeyReferenceStore {
             Self::open(destination)
         })();
         if result.is_err() {
-            let _ = std::fs::remove_file(destination);
+            remove_sqlite_files(destination);
         }
         result
+    }
+}
+
+fn remove_sqlite_files(path: &Path) {
+    let _ = std::fs::remove_file(path);
+    for suffix in ["-wal", "-shm", "-journal"] {
+        let mut sidecar = path.as_os_str().to_os_string();
+        sidecar.push(suffix);
+        let _ = std::fs::remove_file(sidecar);
     }
 }
 
@@ -402,7 +411,7 @@ fn canonical_database_path(path: &Path) -> Result<std::path::PathBuf, ProviderEr
 }
 
 #[cfg(unix)]
-fn prepare_private_database_file(path: &Path) -> Result<(), ProviderError> {
+fn prepare_private_database_file(path: &Path, create_new: bool) -> Result<bool, ProviderError> {
     if path.as_os_str().is_empty() {
         return Err(ProviderError::InvalidConfiguration(
             "customer KMS database path is empty".to_owned(),
@@ -416,17 +425,31 @@ fn prepare_private_database_file(path: &Path) -> Result<(), ProviderError> {
             "customer KMS database path must not be a symbolic link".to_owned(),
         ));
     }
-    let file = OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create(true)
-        .truncate(false)
-        .mode(0o600)
-        .open(path)
-        .map_err(|_| ProviderError::Unavailable)?;
+    let open_new = || {
+        let mut options = OpenOptions::new();
+        options.read(true).write(true).create_new(true).mode(0o600);
+        options.open(path)
+    };
+    let (file, created) = match open_new() {
+        Ok(file) => (file, true),
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists && !create_new => {
+            let file = OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(path)
+                .map_err(|_| ProviderError::Unavailable)?;
+            (file, false)
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+            return Err(ProviderError::Rejected(
+                "customer KMS destination already exists".to_owned(),
+            ));
+        }
+        Err(_) => return Err(ProviderError::Unavailable),
+    };
     let metadata = file.metadata().map_err(|_| ProviderError::Unavailable)?;
     validate_private_metadata(&metadata)?;
-    Ok(())
+    Ok(created)
 }
 
 #[cfg(unix)]
@@ -453,13 +476,27 @@ fn validate_private_metadata(metadata: &std::fs::Metadata) -> Result<(), Provide
 }
 
 #[cfg(not(unix))]
-fn prepare_private_database_file(path: &Path) -> Result<(), ProviderError> {
+fn prepare_private_database_file(path: &Path, create_new: bool) -> Result<bool, ProviderError> {
     if path.as_os_str().is_empty() {
         return Err(ProviderError::InvalidConfiguration(
             "customer KMS database path is empty".to_owned(),
         ));
     }
-    Ok(())
+    let open_new = || {
+        OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create_new(true)
+            .open(path)
+    };
+    match open_new() {
+        Ok(_) => Ok(true),
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists && !create_new => Ok(false),
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => Err(
+            ProviderError::Rejected("customer KMS destination already exists".to_owned()),
+        ),
+        Err(_) => Err(ProviderError::Unavailable),
+    }
 }
 
 #[cfg(not(unix))]
@@ -768,6 +805,46 @@ mod tests {
 
         let mode = fs::metadata(&path).unwrap().permissions().mode();
         assert_eq!(mode & 0o077, 0);
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn failed_new_keyring_initialization_removes_partial_files() {
+        let path = temporary_database_path("failed-initialization");
+        let _ = fs::remove_file(&path);
+        let mut wal = path.as_os_str().to_os_string();
+        wal.push("-wal");
+
+        let result =
+            SqliteCustomerKmsKeyReferenceStore::open_with_initializer(&path, |connection| {
+                connection
+                    .execute_batch(
+                        "PRAGMA journal_mode = WAL;
+                         CREATE TABLE partial_keyring (id INTEGER);",
+                    )
+                    .map_err(|_| ProviderError::Unavailable)?;
+                Err(ProviderError::Unavailable)
+            });
+
+        assert!(result.is_err());
+        assert!(!path.exists());
+        assert!(!std::path::Path::new(&wal).exists());
+    }
+
+    #[test]
+    fn failed_existing_keyring_initialization_preserves_database() {
+        let path = temporary_database_path("preserved-initialization");
+        let _ = fs::remove_file(&path);
+        let store = SqliteCustomerKmsKeyReferenceStore::open(&path).unwrap();
+        drop(store);
+
+        let result =
+            SqliteCustomerKmsKeyReferenceStore::open_with_initializer(&path, |_connection| {
+                Err(ProviderError::Unavailable)
+            });
+
+        assert!(result.is_err());
+        assert!(path.exists());
         fs::remove_file(path).unwrap();
     }
 

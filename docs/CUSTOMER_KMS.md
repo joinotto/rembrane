@@ -66,6 +66,9 @@ group/world-accessible, non-regular, or symbolic-link targets are rejected.
 Every operational, backup-verification, and restore connection canonicalizes
 only the parent directory and enables SQLite's native no-follow flag for the
 final database path.
+Backup and restore destinations use atomic exclusive creation instead of a
+separate existence check. Failed initialization of a new keyring removes its
+database and journal sidecars; an existing keyring is never deleted.
 Workspace identity, provider key identifiers, and wrapped ciphertext are
 bounded in both the provider contract and SQLite schema. Existing databases
 receive enforcement triggers, and bounded projections reject corrupt rows

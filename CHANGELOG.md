@@ -993,6 +993,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Customer-KMS keyring opens, backup verification, recovery-floor validation,
   and restores now share SQLite native no-follow protection with canonical
   parent resolution for macOS-compatible symbolic path components.
+- Customer-KMS keyring creation now distinguishes new and existing databases,
+  atomically refuses backup or restore overwrites, and removes partial database
+  and journal files after failed first-time initialization.
 - CLI initialization, backup, and restore now create new local storage
   directory components with owner-only Unix permissions.
 - Available-mode production readiness now reports exact missing prerequisites
