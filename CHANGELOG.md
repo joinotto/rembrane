@@ -988,6 +988,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   overwrites, and enables SQLite's native no-follow open flag.
 - Failed SQLite snapshot attempts now remove their newly created destination
   across path encoding, database write, and post-write validation failures.
+- Failed initialization of a newly created SQLite database now removes its
+  database and journal sidecars, while existing databases remain untouched.
 - CLI initialization, backup, and restore now create new local storage
   directory components with owner-only Unix permissions.
 - Available-mode production readiness now reports exact missing prerequisites

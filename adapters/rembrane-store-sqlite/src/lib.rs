@@ -660,19 +660,34 @@ fn parse_administrative_target_kind(
 
 impl SqliteStore<MissingCipher> {
     pub fn open(path: impl AsRef<Path>) -> Result<Self, ApplicationError> {
-        let path = path.as_ref();
-        prepare_private_database_file(path, false)?;
-        let opened_path = canonical_database_path(path)?;
-        let connection = Connection::open_with_flags(
-            opened_path,
-            OpenFlags::SQLITE_OPEN_READ_WRITE
-                | OpenFlags::SQLITE_OPEN_CREATE
-                | OpenFlags::SQLITE_OPEN_NO_MUTEX
-                | OpenFlags::SQLITE_OPEN_NOFOLLOW,
-        )
-        .map_err(|_| ApplicationError::StorageUnavailable)?;
-        validate_private_database_file(path)?;
-        Self::initialize(connection)
+        Self::open_with_initializer(path.as_ref(), Self::initialize)
+    }
+
+    fn open_with_initializer<Initialize>(
+        path: &Path,
+        initialize: Initialize,
+    ) -> Result<Self, ApplicationError>
+    where
+        Initialize: FnOnce(Connection) -> Result<Self, ApplicationError>,
+    {
+        let created = prepare_private_database_file(path, false)?;
+        let result = (|| {
+            let opened_path = canonical_database_path(path)?;
+            let connection = Connection::open_with_flags(
+                opened_path,
+                OpenFlags::SQLITE_OPEN_READ_WRITE
+                    | OpenFlags::SQLITE_OPEN_CREATE
+                    | OpenFlags::SQLITE_OPEN_NO_MUTEX
+                    | OpenFlags::SQLITE_OPEN_NOFOLLOW,
+            )
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+            validate_private_database_file(path)?;
+            initialize(connection)
+        })();
+        if result.is_err() && created {
+            remove_sqlite_files(path);
+        }
+        result
     }
 
     pub fn open_in_memory() -> Result<Self, ApplicationError> {
@@ -971,6 +986,15 @@ impl<C> SqliteStore<C> {
     }
 }
 
+fn remove_sqlite_files(path: &Path) {
+    let _ = std::fs::remove_file(path);
+    for suffix in ["-wal", "-shm", "-journal"] {
+        let mut sidecar = path.as_os_str().to_os_string();
+        sidecar.push(suffix);
+        let _ = std::fs::remove_file(sidecar);
+    }
+}
+
 fn canonical_database_path(path: &Path) -> Result<std::path::PathBuf, ApplicationError> {
     let file_name = path
         .file_name()
@@ -988,7 +1012,7 @@ fn canonical_database_path(path: &Path) -> Result<std::path::PathBuf, Applicatio
 }
 
 #[cfg(unix)]
-fn prepare_private_database_file(path: &Path, create_new: bool) -> Result<(), ApplicationError> {
+fn prepare_private_database_file(path: &Path, create_new: bool) -> Result<bool, ApplicationError> {
     if path.as_os_str().is_empty()
         || path
             .symlink_metadata()
@@ -996,23 +1020,32 @@ fn prepare_private_database_file(path: &Path, create_new: bool) -> Result<(), Ap
     {
         return Err(ApplicationError::StorageUnavailable);
     }
-    let mut options = OpenOptions::new();
-    options
-        .read(true)
-        .write(true)
-        .create(!create_new)
-        .create_new(create_new)
-        .truncate(false)
-        .mode(0o600);
-    let file = options.open(path).map_err(|error| match error.kind() {
-        std::io::ErrorKind::AlreadyExists => ApplicationError::AlreadyExists,
-        _ => ApplicationError::StorageUnavailable,
-    })?;
+    let open_new = || {
+        let mut options = OpenOptions::new();
+        options.read(true).write(true).create_new(true).mode(0o600);
+        options.open(path)
+    };
+    let (file, created) = match open_new() {
+        Ok(file) => (file, true),
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists && !create_new => {
+            let file = OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(path)
+                .map_err(|_| ApplicationError::StorageUnavailable)?;
+            (file, false)
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+            return Err(ApplicationError::AlreadyExists);
+        }
+        Err(_) => return Err(ApplicationError::StorageUnavailable),
+    };
     validate_private_metadata(
         &file
             .metadata()
             .map_err(|_| ApplicationError::StorageUnavailable)?,
-    )
+    )?;
+    Ok(created)
 }
 
 #[cfg(unix)]
@@ -1035,7 +1068,7 @@ fn validate_private_metadata(metadata: &std::fs::Metadata) -> Result<(), Applica
 }
 
 #[cfg(not(unix))]
-fn prepare_private_database_file(path: &Path, create_new: bool) -> Result<(), ApplicationError> {
+fn prepare_private_database_file(path: &Path, create_new: bool) -> Result<bool, ApplicationError> {
     if path.as_os_str().is_empty() || (create_new && path.exists()) {
         return Err(if create_new && path.exists() {
             ApplicationError::AlreadyExists
@@ -1043,7 +1076,7 @@ fn prepare_private_database_file(path: &Path, create_new: bool) -> Result<(), Ap
             ApplicationError::StorageUnavailable
         });
     }
-    Ok(())
+    Ok(!path.exists())
 }
 
 #[cfg(not(unix))]
@@ -1182,6 +1215,38 @@ mod migration_tests {
         assert!(!destination.exists());
 
         fs::remove_file(source).expect("database cleanup");
+    }
+
+    #[test]
+    fn failed_new_database_initialization_removes_partial_files() {
+        let database = database_path("failed-initialization");
+        let mut wal = database.as_os_str().to_os_string();
+        wal.push("-wal");
+
+        let result = SqliteStore::open_with_initializer(&database, |connection| {
+            connection
+                .execute_batch("PRAGMA journal_mode = WAL; CREATE TABLE partial (id INTEGER);")
+                .map_err(|_| rembrane_application::ApplicationError::StorageUnavailable)?;
+            Err(rembrane_application::ApplicationError::StorageUnavailable)
+        });
+
+        assert!(result.is_err());
+        assert!(!database.exists());
+        assert!(!std::path::Path::new(&wal).exists());
+    }
+
+    #[test]
+    fn failed_existing_database_initialization_preserves_the_database() {
+        let database = database_path("preserved-initialization");
+        SqliteStore::open(&database).expect("database should initialize");
+
+        let result = SqliteStore::open_with_initializer(&database, |_connection| {
+            Err(rembrane_application::ApplicationError::StorageUnavailable)
+        });
+
+        assert!(result.is_err());
+        assert!(database.exists());
+        fs::remove_file(database).expect("database cleanup");
     }
 
     #[test]
