@@ -30,8 +30,10 @@ evidence and the strict readiness command.
   synchronous storage/provider work to process-shared bounded workers.
   Stdio startup and bounded async service constructors isolate provider
   initialization. Actual in-memory SDK tests cover encrypted preference
-  continuity and verified per-request proof, but OAuth executor isolation
-  and the real remote HTTP service remain required.
+  continuity and verified per-request proof. Owned/shared remote authorization
+  services now isolate synchronous OAuth verification on a separate bounded
+  worker budget; the real remote HTTP service and HTTPS/staging tests remain
+  required.
 - The PostgreSQL boundary includes a fail-closed runtime-authority guard with
   74 passing adapter unit tests. Its new shared SQL fixtures still require
   live PostgreSQL execution; the concrete database driver remains missing.
@@ -54,8 +56,7 @@ conformance, a deployed PostgreSQL proof, or production release approval.
 
 ## Immediate execution queue
 
-1. Finish bounded OAuth executor isolation, resolve and lock the official MCP
-   transport dependencies, then implement
+1. Resolve and lock the official MCP transport dependencies, then implement
    the actual remote service behind the existing verified authorization
    boundary. Do not enable an unbuildable feature or count scaffolding as a
    supported integration.
@@ -93,8 +94,11 @@ No existing strict release gate is waived by this plan.
 - [x] Keep MCP tool/provider work and async service initialization off executor
   threads, with bounded admission and capacity held through actual completion
   after cancellation.
-- [ ] Apply the same executor isolation and bounded ownership to synchronous
-  OAuth introspection in the remote transport.
+- [x] Isolate synchronous OAuth verification on bounded workers in the
+  owned/shared remote authorization-service async entrypoints.
+- [ ] Exercise that boundary with the actual official SDK remote listener
+  and real HTTPS introspection; do not route blocking verifier clients through
+  the lower-level borrowing compatibility helpers on an executor.
 - [ ] Enable its actual transport feature and resolve/build the complete
   locked dependency graph; a protocol adapter alone is insufficient.
 - [ ] Implement a concrete PostgreSQL driver, pool, and runtime repository

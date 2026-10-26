@@ -9,6 +9,22 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Fixed
 
+- Owned/shared remote MCP authorization-service async routes now perform fresh
+  synchronous token verification on process-shared bounded workers, including
+  initialization, stateless calls, event streams, session requests, and deletion.
+  Verification runs outside registry locks; overload and worker failures return
+  generic 503/Retry-After responses and abandoned requests retain worker capacity.
+- Owned async authorization now delegates to the shared implementation while
+  preserving exact zeroizing request bodies, 401/403 policy, tenant/session
+  binding, and initialization/deletion compensation. Elapsed worker/provider
+  time cannot extend token expiry; overflow fails closed.
+- Remote authorization tests cover off-executor blocking-client construction,
+  per-request verification, process-shared constructor budgets, all-route
+  overload, worker failure cleanup, and cancellation-safe capacity. Existing
+  initialization cancellation tests now synchronize with actual SDK dispatch.
+  Live official-SDK transport and real HTTPS introspection remain unverified;
+  lower-level borrowing compatibility helpers still execute verifiers
+  synchronously and require caller-managed executor isolation.
 - All fourteen MCP tools now preserve their complete SDK request context while
   moving synchronous storage/provider work and mutex waits onto bounded
   blocking workers. Production service constructors share an eight-operation

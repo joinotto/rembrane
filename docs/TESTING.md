@@ -125,10 +125,49 @@ capacity retention after abandoned requests, and cancellation while waiting
 for storage. No listening socket, uncached SDK client feature, or fake peer
 constructor is required.
 
-Synchronous OAuth introspection in the remote transport remains a separate
-open runtime task. Neither these tests nor the REST tests establish live
-Streamable HTTP support, cloud-provider conformance, measured load limits, or
-production readiness.
+## Remote OAuth authorization workers
+
+```sh
+cargo test -p rembrane-remote-mcp-http --locked --offline
+```
+
+The owned and shared authorization-service async entrypoints now use one
+process-shared eight-worker authorization budget, separate from MCP tool work.
+Initialize, compatibility initialization, stateless calls, event streams,
+established-session calls, and deletion all use it. Verification remains fresh
+on every request, runs outside the registry lock, and is followed by the
+existing exact-body, method/scope, origin, session, and tenant policies.
+Owned entrypoints delegate to the shared implementation.
+
+Admission has no wait queue; saturation rejects with HTTP 503 and
+`Retry-After: 1` before invoking the verifier or SDK. Panic/join failures return
+the same generic rejection. Worker ownership lasts until actual completion,
+even if its caller stops waiting. A running provider call is not forcibly
+interrupted: transport timeouts remain essential. Scheduling and verification
+time advance the trusted request-time snapshot by elapsed monotonic whole
+seconds; expired claims and timestamp overflow fail closed. This does not
+provide a trusted wall clock if the embedding caller supplies an incorrect one.
+
+The worker-owned authorization header copy is zeroizing and never forwarded
+to the downstream SDK. Canonical plaintext body ownership and verified
+per-request extensions retain their previous security boundaries.
+
+Tests cover actual async service dispatch, off-executor blocking-client
+construction, per-request verification, shared production constructor budgets,
+all-route overload with no verifier/SDK invocation, error/panic cleanup,
+capacity retention after abandoned verification, and elapsed-expiry checks.
+Initialization cancellation tests now wait for actual dispatch notification
+instead of assuming one poll crosses worker initialization.
+
+Synchronous service methods and borrowing gate/free-function helpers remain
+lower-level compatibility APIs. Their verifier execution is not automatically
+offloaded; do not use blocking network clients through them on an executor.
+Build blocking provider clients outside the executor and prefer the
+owned/shared async service routes when embedding HTTP.
+
+These tests do not establish live Streamable HTTP support, real HTTPS
+introspection, cloud-provider conformance, measured load limits, or production
+readiness. Actual SDK listener and staging verification remain required.
 
 Provider authors should also run the shared Rust conformance harness against a
 disposable provider tenant:

@@ -528,8 +528,19 @@ are in [First Production Release Plan](docs/PRODUCTION_PLAN.md).
   - [x] Prove actual in-memory SDK handshake/tool execution, encrypted
     preference continuity, verified proof preservation, overload/failure
     cleanup, and cancellation while waiting for canonical storage.
-  - [ ] Isolate synchronous OAuth introspection in the remote async transport
-    with bounded admission and cancellation-safe worker ownership.
+  - [x] Isolate synchronous OAuth verification in all owned/shared remote
+    authorization-service async routes with process-shared bounded admission
+    and capacity retained until real completion after abandonment.
+    - [x] Keep registry locks out of verification and SDK awaits, preserve
+      request-owned zeroizing bodies and 401/403 outcomes, and reject overload
+      with a closed 503/Retry-After response before verifier/SDK execution.
+    - [x] Advance the trusted request-time snapshot by monotonic elapsed whole
+      seconds so worker scheduling or introspection cannot extend token expiry.
+    - [x] Verify blocking-client executor isolation, per-request verification,
+      shared budgets, all-route overload, failure cleanup, and cancellation.
+    - [ ] Exercise the boundary with the actual official SDK remote listener
+      and real HTTPS introspection in staging; low-level borrowing compatibility
+      helpers still require caller-managed synchronous verifier execution.
   - [x] Define HTTPS endpoints, RFC 9728 discovery metadata, bearer challenges,
     verified connection identity, scope ceilings, and session security rules.
   - [x] Serve opt-in RFC 9728 protected-resource metadata from the HTTP
