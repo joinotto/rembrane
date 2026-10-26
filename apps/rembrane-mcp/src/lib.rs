@@ -1637,7 +1637,8 @@ fn application_error(error: rembrane_application::ApplicationError) -> McpError 
             )
         }
         ApplicationError::Validation(message) => {
-            McpError::invalid_params(format!("operation validation failed: {message}"), None)
+            drop(message);
+            McpError::invalid_params("operation validation failed", None)
         }
         ApplicationError::StorageUnavailable => {
             McpError::internal_error("memory storage is temporarily unavailable", None)

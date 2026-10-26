@@ -83,6 +83,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Cross-workspace memory-sharing diagnostics now expose only safe scope kinds,
   versions, sequence metadata, and projection counts instead of source or
   destination tenants, principals, clients, proposal, memory, or event IDs.
+- Application validation-error diagnostics now redact arbitrary details, and
+  MCP clients receive a stable generic validation failure instead of internal
+  or user-controlled validation text.
 - Provider-independent key seal requests now retain copied plaintext in
   redacted zeroize-on-drop ownership instead of an ordinary byte vector.
 - Key-provider plaintext responses are now explicitly wiped before oversized

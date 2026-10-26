@@ -66,6 +66,19 @@ then
     exit 1
 fi
 
+if rg -n '#\[derive\([^]]*Debug[^]]*\)\]' \
+    crates/rembrane-application/src/error.rs
+then
+    echo "application errors must retain explicitly reviewed redacted Debug output" >&2
+    exit 1
+fi
+
+if rg -n 'operation validation failed: \{' apps/rembrane-mcp/src/lib.rs
+then
+    echo "MCP errors must not expose application validation detail" >&2
+    exit 1
+fi
+
 for adapter_source in adapters/*/src/*.rs; do
     if sed '/^#\[cfg(test)\]/,$d' "$adapter_source" |
         rg -n -U '#\[derive\([^]]*Debug[^]]*\)\]\n(?:pub )?struct '

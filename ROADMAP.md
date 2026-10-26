@@ -42,6 +42,8 @@ This roadmap describes sequencing, not release dates.
 - [x] Authorize confirmed preference creation through an application use case.
   - [x] Redact plaintext, identities, scopes, grants, provenance, and provider
     routing from preference and memory-lifecycle command diagnostics.
+  - [x] Redact arbitrary application validation details from debug output and
+    interoperable MCP error responses.
 - [x] Model correction and deletion lifecycle operations.
 - [x] Redact source and target tenant routing, principals, clients, memory and
   proposal identities, target scope values, provenance, and event identities
