@@ -500,6 +500,9 @@ This roadmap describes sequencing, not release dates.
       - [x] Bound concurrent downstream initialization with anonymous,
         move-only capacity reservations that never trust a client-supplied
         session identifier.
+        - [x] Hold each shared initialization reservation across SDK dispatch
+          with cancellation-safe cleanup, release it on transport failure, and
+          reject exhausted capacity before invoking the downstream service.
       - [x] Commit only the official SDK response session ID against the exact
         verified tenant with bounded duplicate and capacity enforcement.
         - [x] Compensate a capacity-rejected local session commit by

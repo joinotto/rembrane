@@ -22,7 +22,7 @@ use axum::{
 };
 use rembrane_application::{
     RemoteAccessAuthenticator, RemoteHttpAuthorization, RemoteHttpAuthorizationError,
-    RemoteSessionHttpError, RemoteSessionRegistry, RemoteTokenVerifier,
+    RemoteSessionHttpError, RemoteSessionRegistry, RemoteSessionReservation, RemoteTokenVerifier,
 };
 use rembrane_config::RemoteMcpConfig;
 use rembrane_contracts::{RemoteMcpRequestAuthorization, RemoteSessionId, VerifiedRemoteAccess};
@@ -1930,6 +1930,68 @@ pub struct SharedRemoteMcpAxumAuthorization<Verifier> {
     trusted_origins: Vec<String>,
 }
 
+struct SharedInitializationReservation<'gate> {
+    gate: &'gate Mutex<RemoteMcpHttpGate>,
+    reservation: Option<RemoteSessionReservation>,
+}
+
+impl<'gate> SharedInitializationReservation<'gate> {
+    fn reserve(
+        gate: &'gate Mutex<RemoteMcpHttpGate>,
+        now_epoch_seconds: u64,
+    ) -> Result<Self, RemoteMcpHttpRejection> {
+        let reservation = gate
+            .lock()
+            .map_err(|_| lock_rejection())?
+            .sessions
+            .reserve_initialization(now_epoch_seconds)
+            .map_err(|error| match error {
+                rembrane_application::ApplicationError::StorageUnavailable => lock_rejection(),
+                _ => RemoteMcpHttpGate::forbidden(),
+            })?;
+        Ok(Self {
+            gate,
+            reservation: Some(reservation),
+        })
+    }
+
+    fn commit(
+        mut self,
+        session_id: RemoteSessionId,
+        access: &VerifiedRemoteAccess,
+        now_epoch_seconds: u64,
+    ) -> Result<(), RemoteMcpHttpRejection> {
+        let reservation = self
+            .reservation
+            .take()
+            .ok_or_else(RemoteMcpHttpGate::forbidden)?;
+        self.gate
+            .lock()
+            .map_err(|_| lock_rejection())?
+            .sessions
+            .commit_reservation(reservation, session_id, access, now_epoch_seconds)
+            .map_err(|error| match error {
+                rembrane_application::ApplicationError::AlreadyExists => RemoteMcpHttpRejection {
+                    status: 409,
+                    www_authenticate: None,
+                    retry_after_seconds: None,
+                },
+                rembrane_application::ApplicationError::StorageUnavailable => lock_rejection(),
+                _ => RemoteMcpHttpGate::forbidden(),
+            })
+    }
+}
+
+impl Drop for SharedInitializationReservation<'_> {
+    fn drop(&mut self) {
+        if let Some(reservation) = self.reservation.take() {
+            if let Ok(mut gate) = self.gate.lock() {
+                let _ = gate.sessions.cancel_reservation(reservation);
+            }
+        }
+    }
+}
+
 impl<Verifier> SharedRemoteMcpAxumAuthorization<Verifier>
 where
     Verifier: RemoteTokenVerifier,
@@ -2021,17 +2083,15 @@ where
             .map_err(|error| {
                 RemoteMcpInitializationError::Authorization(self.authorization_rejection(error))
             })?;
+        let reservation = SharedInitializationReservation::reserve(&self.gate, now_epoch_seconds)
+            .map_err(RemoteMcpInitializationError::Authorization)?;
         let termination_headers = protocol_headers.clone();
         let initialized = dispatcher
             .initialize(access.clone(), invocation, protocol_headers, body)
             .await
             .map_err(RemoteMcpInitializationError::Initialize)?;
         let session_id = initialized.session_id().clone();
-        let commit = self
-            .gate
-            .lock()
-            .map_err(|_| RemoteMcpInitializationError::Authorization(lock_rejection()))?
-            .commit_sdk_generated_session(session_id.clone(), &access, now_epoch_seconds);
+        let commit = reservation.commit(session_id.clone(), &access, now_epoch_seconds);
         if let Err(rejection) = commit {
             let termination_error = if rejection.status == 409 {
                 None
@@ -3616,6 +3676,71 @@ mod tests {
         gate: &'gate Mutex<RemoteMcpHttpGate>,
         session_id: RemoteSessionId,
         observed_unlocked: Arc<Mutex<Vec<bool>>>,
+    }
+
+    struct FailingInitializationDispatcher {
+        calls: Arc<Mutex<u64>>,
+    }
+
+    struct PendingInitializationDispatcher;
+
+    impl AuthorizedRemoteMcpInitializationDispatcher for PendingInitializationDispatcher {
+        type Output = ();
+        type InitializeError = std::convert::Infallible;
+        type TerminationError = std::convert::Infallible;
+        type InitializeFuture = std::future::Pending<
+            Result<InitializedRemoteMcpSession<Self::Output>, Self::InitializeError>,
+        >;
+        type TerminationFuture = std::future::Ready<Result<(), Self::TerminationError>>;
+
+        fn initialize(
+            &self,
+            _access: rembrane_contracts::VerifiedRemoteAccess,
+            _invocation: RemoteMcpInvocation,
+            _protocol_headers: super::RemoteMcpProtocolHeaders,
+            _body: zeroize::Zeroizing<Vec<u8>>,
+        ) -> Self::InitializeFuture {
+            std::future::pending()
+        }
+
+        fn terminate(
+            &self,
+            _access: rembrane_contracts::VerifiedRemoteAccess,
+            _session_id: RemoteSessionId,
+            _protocol_headers: super::RemoteMcpProtocolHeaders,
+        ) -> Self::TerminationFuture {
+            std::future::ready(Ok(()))
+        }
+    }
+
+    impl AuthorizedRemoteMcpInitializationDispatcher for FailingInitializationDispatcher {
+        type Output = ();
+        type InitializeError = &'static str;
+        type TerminationError = std::convert::Infallible;
+        type InitializeFuture = std::future::Ready<
+            Result<InitializedRemoteMcpSession<Self::Output>, Self::InitializeError>,
+        >;
+        type TerminationFuture = std::future::Ready<Result<(), Self::TerminationError>>;
+
+        fn initialize(
+            &self,
+            _access: rembrane_contracts::VerifiedRemoteAccess,
+            _invocation: RemoteMcpInvocation,
+            _protocol_headers: super::RemoteMcpProtocolHeaders,
+            _body: zeroize::Zeroizing<Vec<u8>>,
+        ) -> Self::InitializeFuture {
+            *self.calls.lock().expect("failure call count") += 1;
+            std::future::ready(Err("initialization failed"))
+        }
+
+        fn terminate(
+            &self,
+            _access: rembrane_contracts::VerifiedRemoteAccess,
+            _session_id: RemoteSessionId,
+            _protocol_headers: super::RemoteMcpProtocolHeaders,
+        ) -> Self::TerminationFuture {
+            std::future::ready(Ok(()))
+        }
     }
 
     impl AuthorizedRemoteMcpInitializationDispatcher for LockProbeInitializationDispatcher<'_> {
@@ -6276,6 +6401,148 @@ mod tests {
                 .lock()
                 .expect("verification observation lock"),
             [true]
+        );
+    }
+
+    #[tokio::test]
+    async fn shared_initialization_reservation_releases_on_failure_and_stops_at_capacity() {
+        let config = RemoteMcpConfig::new(
+            "https://memory.example.test/mcp".to_owned(),
+            "https://identity.example.test".to_owned(),
+            "https://identity.example.test/introspect".to_owned(),
+            "rembrane".to_owned(),
+            SecretReference::environment("OAUTH_SECRET").expect("reference should be valid"),
+            vec![],
+        )
+        .expect("remote profile should be valid");
+        let authorization = SharedRemoteMcpAxumAuthorization::from_config(1, &config, Verifier)
+            .expect("shared authorization should initialize");
+        let mut headers = HeaderMap::new();
+        headers.insert(HOST, HeaderValue::from_static("memory.example.test"));
+        headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+        headers.insert(
+            ACCEPT,
+            HeaderValue::from_static("application/json, text/event-stream"),
+        );
+        headers.insert(
+            AUTHORIZATION,
+            HeaderValue::from_static("Bearer workspace-one"),
+        );
+        let failed_calls = Arc::new(Mutex::new(0));
+        let failing = FailingInitializationDispatcher {
+            calls: Arc::clone(&failed_calls),
+        };
+        let failure = authorization
+            .initialize_and_commit_owned_session(&headers, initialize_body(), 1_000, &failing)
+            .await
+            .expect_err("failed SDK initialization should return its transport error");
+        assert_eq!(
+            failure,
+            RemoteMcpInitializationError::Initialize("initialization failed")
+        );
+        assert_eq!(*failed_calls.lock().expect("failure call count"), 1);
+        assert_eq!(
+            authorization
+                .gate
+                .lock()
+                .expect("shared gate lock")
+                .sessions
+                .pending_initializations(),
+            0,
+            "failed initialization must release its anonymous reservation"
+        );
+
+        let successful_calls = Arc::new(Mutex::new(Vec::new()));
+        let successful = LockProbeInitializationDispatcher {
+            gate: &authorization.gate,
+            session_id: RemoteSessionId::new("session_reserved_shared_0123456789")
+                .expect("session fixture should validate"),
+            observed_unlocked: Arc::clone(&successful_calls),
+        };
+        authorization
+            .initialize_and_commit_owned_session(&headers, initialize_body(), 1_001, &successful)
+            .await
+            .expect("released reservation should permit a later initialization");
+        let capacity = authorization
+            .initialize_and_commit_owned_session(&headers, initialize_body(), 1_002, &successful)
+            .await
+            .expect_err("full live-session capacity must reject before SDK dispatch");
+        assert!(matches!(
+            capacity,
+            RemoteMcpInitializationError::Authorization(RemoteMcpHttpRejection { status: 503, .. })
+        ));
+        assert_eq!(
+            *successful_calls.lock().expect("successful call log"),
+            [true],
+            "capacity rejection must occur before a second SDK initialization"
+        );
+    }
+
+    #[tokio::test]
+    async fn shared_initialization_reservation_releases_when_request_is_cancelled() {
+        use std::future::Future;
+        use std::task::{Context, Poll, Wake, Waker};
+
+        struct NoopWake;
+
+        impl Wake for NoopWake {
+            fn wake(self: Arc<Self>) {}
+        }
+
+        let config = RemoteMcpConfig::new(
+            "https://memory.example.test/mcp".to_owned(),
+            "https://identity.example.test".to_owned(),
+            "https://identity.example.test/introspect".to_owned(),
+            "rembrane".to_owned(),
+            SecretReference::environment("OAUTH_SECRET").expect("reference should be valid"),
+            vec![],
+        )
+        .expect("remote profile should be valid");
+        let authorization = SharedRemoteMcpAxumAuthorization::from_config(1, &config, Verifier)
+            .expect("shared authorization should initialize");
+        let mut headers = HeaderMap::new();
+        headers.insert(HOST, HeaderValue::from_static("memory.example.test"));
+        headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+        headers.insert(
+            ACCEPT,
+            HeaderValue::from_static("application/json, text/event-stream"),
+        );
+        headers.insert(
+            AUTHORIZATION,
+            HeaderValue::from_static("Bearer workspace-one"),
+        );
+
+        let mut initialization = Box::pin(authorization.initialize_and_commit_owned_session(
+            &headers,
+            initialize_body(),
+            1_000,
+            &PendingInitializationDispatcher,
+        ));
+        let waker = Waker::from(Arc::new(NoopWake));
+        let mut context = Context::from_waker(&waker);
+        assert_eq!(initialization.as_mut().poll(&mut context), Poll::Pending);
+        assert_eq!(
+            authorization
+                .gate
+                .lock()
+                .expect("shared gate lock")
+                .sessions
+                .pending_initializations(),
+            1,
+            "in-flight SDK initialization must retain its reservation"
+        );
+
+        drop(initialization);
+
+        assert_eq!(
+            authorization
+                .gate
+                .lock()
+                .expect("shared gate lock")
+                .sessions
+                .pending_initializations(),
+            0,
+            "cancelling initialization must release its reservation"
         );
     }
 

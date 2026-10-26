@@ -47,6 +47,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - The bounded session registry now supports anonymous move-only initialization
   reservations, preventing concurrent SDK work from exceeding configured
   capacity before generated session identifiers exist.
+- Shared MCP initialization now holds anonymous capacity through SDK dispatch
+  with RAII cleanup on failure or request cancellation, and rejects exhausted
+  capacity before any downstream initialization call.
 - The remote MCP gate can now commit a validated official-SDK response session
   ID to the exact verified tenant with duplicate, capacity, and replay denial.
 - Confirmed remote MCP initialization now compensates capacity rejection by
