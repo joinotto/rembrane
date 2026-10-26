@@ -9,6 +9,16 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Fixed
 
+- CLI plaintext import/export now reject malformed, repeated, and unsupported
+  arguments before filesystem or database access. Unsupported scope selectors
+  cannot silently turn an intended project-only export into a complete subject
+  export; import client identifiers are validated before archive reads.
+  Export directories are created only after membership, format-specific
+  authority, and encrypted-record authentication succeed.
+- CLI portability coverage now proves private JSONL/Markdown/graph outputs,
+  proposal-only encrypted imports with preserved scopes and fresh destination
+  identities, exclusion from recall before approval, and mutation-free rejection
+  of malformed options.
 - PostgreSQL tenant transactions now require restricted runtime authority
   before tenant initialization and each repository read/write. Unproven
   authority or role drift fails closed, rolls back, and prevents further SQL.

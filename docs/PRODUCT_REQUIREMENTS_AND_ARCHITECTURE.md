@@ -520,6 +520,15 @@ JSON preserves the workspace knowledge graph, temporal validity, evidence, and
 revision lineage. All three formats are intentionally plaintext; encrypted
 backup remains the safer choice for recovery and opaque transfer.
 
+JSONL and Markdown export **all current records for the authenticated subject**,
+not just a project or read-scope allowlist. Graph JSON exports the entire
+workspace graph after owner/admin authorization. These CLI commands do not
+support domain/entity/activity filters; such selectors, unknown arguments,
+duplicate options, and malformed explicit values are rejected before I/O.
+Do not use a whole-subject export to share only one project's memory.
+Output directories are created only after the relevant authorization and
+encrypted-record authentication succeed.
+
 The matching implemented import surface is:
 
 ```text
@@ -533,6 +542,14 @@ scope, replaces all source-controlled target identifiers, and commits the
 batch atomically with contiguous canonical events. Imported content is always
 stored as a proposal requiring review and confirmation; an external archive
 cannot directly establish trusted memory.
+
+Source scopes are preserved, not remapped by CLI selectors. Missing `--format`
+defaults to JSONL and missing `--client` defaults to `rembrane-cli`; explicitly
+blank, missing-value, repeated, or unsafe options are errors rather than requests
+for defaults. Import/export each require their own single plaintext-consent
+flag, accept separate `--option value` tokens only, and do not support `--json`
+result envelopes. Protect and delete plaintext archives according to the user's
+retention policy; they are outside the encrypted canonical database.
 
 Authenticated API deployments expose the same behavior at
 `POST /v1/imports` with `application/x-ndjson`. The destination workspace,

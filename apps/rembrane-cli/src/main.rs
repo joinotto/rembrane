@@ -182,7 +182,10 @@ fn run(arguments: &[String]) -> Result<(), String> {
 }
 
 fn validate_memory_command_options(arguments: &[String]) -> Result<(), String> {
-    let options: &[&str] = match arguments.first().map(String::as_str) {
+    let command = arguments.first().map(String::as_str);
+    let options: &[&str] = match command {
+        Some("export") => &["--format", "--output"],
+        Some("import") => &["--format", "--input", "--client"],
         Some("remember") => &[
             "--content",
             "--client",
@@ -232,6 +235,12 @@ fn validate_memory_command_options(arguments: &[String]) -> Result<(), String> {
         Some("resume") => &["--activity", "--client", "--purpose", "--state-fingerprint"],
         _ => return Ok(()),
     };
+    let switches: &[&str] = match command {
+        Some("export") => &["--allow-plaintext-export"],
+        Some("import") => &["--allow-plaintext-import"],
+        Some("confirm") => &["--json", "--approve"],
+        _ => &["--json"],
+    };
     let values = &arguments[1..];
     for name in options
         .iter()
@@ -248,13 +257,23 @@ fn validate_memory_command_options(arguments: &[String]) -> Result<(), String> {
             option(values, name)?;
         }
     }
+    for name in switches {
+        if values
+            .iter()
+            .filter(|value| value.as_str() == *name)
+            .count()
+            > 1
+        {
+            return Err(format!("{name} may only be supplied once"));
+        }
+    }
     let mut position = 0;
     while let Some(argument) = values.get(position) {
         if options.contains(&argument.as_str())
             || ["--database", "--principal", "--workspace"].contains(&argument.as_str())
         {
             position += 2;
-        } else if argument == "--json" || (arguments[0] == "confirm" && argument == "--approve") {
+        } else if switches.contains(&argument.as_str()) {
             position += 1;
         } else {
             return Err("unrecognized memory-command argument; run rembrane --help".to_owned());
@@ -1636,7 +1655,6 @@ fn export_memories(arguments: &[String]) -> Result<(), String> {
         );
     }
     let output = std::path::Path::new(option(arguments, "--output")?);
-    create_parent_directory(output)?;
     let (store, principal_id, workspace_id) = encrypted_store(arguments)?;
     let membership = store
         .find_membership(&workspace_id, &principal_id)
@@ -1650,6 +1668,7 @@ fn export_memories(arguments: &[String]) -> Result<(), String> {
             let records = store
                 .list_for_subject(&workspace_id, &principal_id)
                 .map_err(|error| format!("cannot authenticate memories for export: {error}"))?;
+            create_parent_directory(output)?;
             match format {
                 "jsonl" => {
                     write_memory_jsonl_export(&records, &workspace_id, &principal_id, output)?
@@ -1673,6 +1692,7 @@ fn export_memories(arguments: &[String]) -> Result<(), String> {
                     .map_err(|error| {
                         format!("cannot authenticate knowledge graph for export: {error}")
                     })?;
+            create_parent_directory(output)?;
             write_knowledge_graph_export(&nodes, &edges, &workspace_id, output)?
         }
         _ => unreachable!("validated export format"),
@@ -1704,6 +1724,8 @@ fn import_memories(arguments: &[String]) -> Result<(), String> {
                 .to_owned(),
         );
     }
+    let client_id = optional_option(arguments, "--client").unwrap_or("rembrane-cli");
+    validate_cli_opaque_id("client", client_id)?;
     let input = option(arguments, "--input")?;
     let bytes = read_bounded_memory_import(input)?;
     let source_records = decode_memory_jsonl_archive(&bytes)
@@ -1724,7 +1746,6 @@ fn import_memories(arguments: &[String]) -> Result<(), String> {
             requested_scopes.push(scope);
         }
     }
-    let client_id = optional_option(arguments, "--client").unwrap_or("rembrane-cli");
     let (mut store, principal_id, workspace_id) = encrypted_store(arguments)?;
     let grants = authorize_client(
         &store,
@@ -4377,7 +4398,10 @@ mod tests {
         );
         let mut duplicate_approval = arguments.clone();
         duplicate_approval.extend(["--approve".to_owned(), "--approve".to_owned()]);
-        assert_eq!(run(&duplicate_approval), run(&arguments));
+        assert_eq!(
+            run(&duplicate_approval),
+            Err("--approve may only be supplied once".to_owned())
+        );
 
         for (name, value, expected_error) in [
             (
@@ -5522,6 +5546,183 @@ mod tests {
         .expect_err("plaintext import must require confirmation before reading input");
 
         assert!(error.contains("--allow-plaintext-import"));
+    }
+
+    #[test]
+    fn portability_rejects_unknown_arguments_before_filesystem_or_storage_access() {
+        let root = temporary_path("portability-invalid-arguments");
+        let database = root.join("unused.sqlite").to_string_lossy().into_owned();
+        let archive = root
+            .join("nested/archive.jsonl")
+            .to_string_lossy()
+            .into_owned();
+        for (command, path_option, consent) in [
+            ("export", "--output", "--allow-plaintext-export"),
+            ("import", "--input", "--allow-plaintext-import"),
+        ] {
+            for unknown in [
+                "--entity",
+                "--domain",
+                "--activity",
+                "--scope",
+                "--entty",
+                "--format=jsonl",
+                "--json",
+                "--approve",
+                "private_positional_value",
+            ] {
+                assert_eq!(
+                    request_run(&[
+                        command,
+                        "--database",
+                        &database,
+                        "--principal",
+                        "principal",
+                        "--workspace",
+                        "workspace",
+                        path_option,
+                        &archive,
+                        consent,
+                        unknown,
+                    ]),
+                    Err("unrecognized memory-command argument; run rembrane --help".to_owned()),
+                    "{command} must not ignore {unknown}"
+                );
+                assert!(!root.exists(), "invalid arguments must not create paths");
+            }
+        }
+    }
+
+    #[test]
+    fn portability_rejects_malformed_and_repeated_value_options() {
+        for (command, name) in [
+            ("export", "--format"),
+            ("export", "--output"),
+            ("export", "--database"),
+            ("export", "--principal"),
+            ("export", "--workspace"),
+            ("import", "--format"),
+            ("import", "--input"),
+            ("import", "--client"),
+            ("import", "--database"),
+            ("import", "--principal"),
+            ("import", "--workspace"),
+        ] {
+            for value in [
+                None,
+                Some(""),
+                Some("   "),
+                Some("--allow-plaintext-import"),
+            ] {
+                let mut arguments = vec![command.to_owned(), name.to_owned()];
+                if let Some(value) = value {
+                    arguments.push(value.to_owned());
+                }
+                assert_eq!(
+                    run(&arguments),
+                    Err(format!("missing value for {name}")),
+                    "{command} must not default an invalid explicit {name}"
+                );
+            }
+            assert_eq!(
+                request_run(&[command, name, "first", name, "second"]),
+                Err(format!("{name} may only be supplied once"))
+            );
+        }
+    }
+
+    #[test]
+    fn portability_requires_single_command_specific_consent() {
+        for (command, consent, other_consent) in [
+            (
+                "export",
+                "--allow-plaintext-export",
+                "--allow-plaintext-import",
+            ),
+            (
+                "import",
+                "--allow-plaintext-import",
+                "--allow-plaintext-export",
+            ),
+        ] {
+            assert_eq!(
+                request_run(&[command, consent, consent]),
+                Err(format!("{consent} may only be supplied once"))
+            );
+            assert_eq!(
+                request_run(&[command, other_consent]),
+                Err("unrecognized memory-command argument; run rembrane --help".to_owned())
+            );
+        }
+        assert_eq!(
+            request_run(&["recall", "--json", "--json"]),
+            Err("--json may only be supplied once".to_owned())
+        );
+    }
+
+    #[test]
+    fn portability_accepts_documented_options_in_any_order() {
+        for (command, path_option, consent, formats) in [
+            (
+                "export",
+                "--output",
+                "--allow-plaintext-export",
+                &["jsonl", "markdown", "graph-json"][..],
+            ),
+            (
+                "import",
+                "--input",
+                "--allow-plaintext-import",
+                &["jsonl"][..],
+            ),
+        ] {
+            for format in formats {
+                let mut arguments = [
+                    command,
+                    consent,
+                    path_option,
+                    "archive.jsonl",
+                    "--workspace",
+                    "workspace",
+                    "--format",
+                    format,
+                    "--principal",
+                    "principal",
+                    "--database",
+                    "unused.sqlite",
+                ]
+                .map(str::to_owned)
+                .to_vec();
+                if command == "import" {
+                    arguments.extend(["--client".to_owned(), "importer_01".to_owned()]);
+                }
+                assert!(super::validate_memory_command_options(&arguments).is_ok());
+            }
+        }
+    }
+
+    #[test]
+    fn import_rejects_invalid_client_identity_before_reading_archive() {
+        let input = temporary_path("import-missing-archive");
+        for invalid_client in [
+            "has spaces".to_owned(),
+            "é".to_owned(),
+            "x".repeat(256),
+            "client\0private".to_owned(),
+        ] {
+            assert_eq!(
+                request_run(&[
+                    "import",
+                    "--input",
+                    input.to_str().expect("UTF-8 temporary path"),
+                    "--allow-plaintext-import",
+                    "--client",
+                    &invalid_client,
+                ]),
+                Err("client must contain 1 to 255 safe ASCII characters".to_owned())
+            );
+        }
+        assert!(!input.exists());
     }
 
     #[cfg(unix)]

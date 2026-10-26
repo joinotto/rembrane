@@ -497,6 +497,195 @@ project_memory_id=$(
 )
 test -n "$project_memory_id"
 
+portability_archive="$test_directory/portability/memories.jsonl"
+portability_markdown="$test_directory/portability/memories.md"
+portability_graph="$test_directory/portability/graph.json"
+portability_database="$test_directory/portability-destination.sqlite"
+portability_rejected="$test_directory/portability-rejected/archive.jsonl"
+
+portability_export() {
+    "$rembrane_binary" export \
+        --database "$database" \
+        --principal principal_e2e \
+        --workspace workspace_e2e \
+        --allow-plaintext-export "$@"
+}
+
+portability_import() {
+    "$rembrane_binary" import \
+        --database "$portability_database" \
+        --principal principal_portability \
+        --workspace workspace_portability \
+        --input "$portability_archive" \
+        --allow-plaintext-import "$@"
+}
+
+portability_export --output "$portability_archive" --format jsonl >/dev/null
+jq -s -e --arg personal_id "$memory_id" --arg project_id "$project_memory_id" '
+    length == 2
+    and all(.[];
+        .format == "rembrane-memory-jsonl"
+        and .formatVersion == 1
+        and .workspaceId == "workspace_e2e"
+        and .subjectId == "principal_e2e"
+        and .status == "confirmed"
+    )
+    and any(.[]; .memoryId == $personal_id and .scope == {"type": "global"})
+    and any(.[]; .memoryId == $project_id
+        and .scope == {"type": "entity", "id": "project_e2e"})
+' "$portability_archive" >/dev/null
+portability_export --output "$portability_markdown" --format markdown >/dev/null
+rg -F "Call me Hippo" "$portability_markdown" >/dev/null
+rg -F "Use Rust for the Rembrane core" "$portability_markdown" >/dev/null
+portability_export --output "$portability_graph" --format graph-json >/dev/null
+jq -e '
+    .format == "rembrane.knowledge-graph"
+    and .version == 1
+    and .workspace_id == "workspace_e2e"
+' "$portability_graph" >/dev/null
+ruby -e '
+  ARGV.each do |path|
+    abort "portability export permissions are not owner-only" \
+      unless File.stat(path).mode & 0777 == 0600
+  end
+' "$portability_archive" "$portability_markdown" "$portability_graph"
+
+memory_count_before=$(sqlite3 "$database" "SELECT count(*) FROM memories;")
+event_count_before=$(sqlite3 "$database" "SELECT count(*) FROM workspace_events;")
+for unsupported_selector in --entity --domain --activity --entty --entity=project_e2e; do
+    if portability_export --output "$portability_rejected" \
+        "$unsupported_selector" project_e2e >/dev/null 2>&1
+    then
+        echo "export unexpectedly ignored an unsupported scope selector" >&2
+        exit 1
+    fi
+    test ! -e "$test_directory/portability-rejected"
+done
+for malformed_format in "" "   "; do
+    if portability_export --output "$portability_rejected" \
+        --format "$malformed_format" >/dev/null 2>&1
+    then
+        echo "export unexpectedly defaulted an invalid explicit format" >&2
+        exit 1
+    fi
+    test ! -e "$test_directory/portability-rejected"
+done
+for unsupported_argument in --format=jsonl --json private_positional_value \
+    --allow-plaintext-export --allow-plaintext-import; do
+    if portability_export --output "$portability_rejected" \
+        "$unsupported_argument" >/dev/null 2>&1
+    then
+        echo "export unexpectedly accepted an ambiguous or unsupported argument" >&2
+        exit 1
+    fi
+    test ! -e "$test_directory/portability-rejected"
+done
+if portability_export --output "$portability_rejected" \
+    --format jsonl --format markdown >/dev/null 2>&1
+then
+    echo "export unexpectedly selected the first of repeated format options" >&2
+    exit 1
+fi
+test ! -e "$test_directory/portability-rejected"
+if "$rembrane_binary" export \
+    --database "$database" \
+    --principal principal_not_a_member \
+    --workspace workspace_e2e \
+    --output "$portability_rejected" \
+    --allow-plaintext-export >/dev/null 2>&1
+then
+    echo "export unexpectedly accepted a non-member" >&2
+    exit 1
+fi
+test ! -e "$test_directory/portability-rejected"
+test "$(sqlite3 "$database" "SELECT count(*) FROM memories;")" = "$memory_count_before"
+test "$(sqlite3 "$database" "SELECT count(*) FROM workspace_events;")" = "$event_count_before"
+
+"$rembrane_binary" init \
+    --database "$portability_database" \
+    --principal principal_portability \
+    --workspace workspace_portability >/dev/null
+portability_import --format jsonl --client importer_e2e >/dev/null
+test "$(sqlite3 "$portability_database" "SELECT count(*) FROM memories;")" = 2
+test "$(sqlite3 "$portability_database" "SELECT count(*) FROM workspace_events;")" = 2
+
+portability_imported_archive="$test_directory/portability/imported.jsonl"
+"$rembrane_binary" export \
+    --database "$portability_database" \
+    --principal principal_portability \
+    --workspace workspace_portability \
+    --output "$portability_imported_archive" \
+    --allow-plaintext-export >/dev/null
+jq -s -e --arg personal_id "$memory_id" --arg project_id "$project_memory_id" '
+    length == 2
+    and all(.[];
+        .workspaceId == "workspace_portability"
+        and .subjectId == "principal_portability"
+        and .memoryId != $personal_id
+        and .memoryId != $project_id
+        and .version == 1
+        and .status == "proposed"
+        and (.evidence | length) == 1
+        and .evidence[0].source == "imported-record"
+    )
+    and any(.[]; .content == "Call me Hippo" and .scope == {"type": "global"})
+    and any(.[]; .content == "Use Rust for the Rembrane core"
+        and .scope == {"type": "entity", "id": "project_e2e"})
+' "$portability_imported_archive" >/dev/null
+portability_unapproved=$(
+    "$rembrane_binary" recall \
+        --database "$portability_database" \
+        --principal principal_portability \
+        --workspace workspace_portability \
+        --client importer_recall_e2e \
+        --entity project_e2e \
+        --purpose verify-import-proposals \
+        --query "What preferences have been approved?" \
+        --json
+)
+printf '%s\n' "$portability_unapproved" | jq -e '.items == []' >/dev/null
+
+portability_events_before=$(sqlite3 "$portability_database" \
+    "SELECT count(*) FROM workspace_events;")
+for malformed_format in "" "   "; do
+    if portability_import --format "$malformed_format" >/dev/null 2>&1
+    then
+        echo "import unexpectedly defaulted an invalid explicit format" >&2
+        exit 1
+    fi
+done
+for malformed_client in "" "   " "has spaces"; do
+    if portability_import --client "$malformed_client" >/dev/null 2>&1
+    then
+        echo "import unexpectedly accepted an invalid explicit client" >&2
+        exit 1
+    fi
+done
+for unsupported_argument in --entity --domain --activity --format=jsonl --json \
+    private_positional_value --allow-plaintext-import --allow-plaintext-export; do
+    if portability_import "$unsupported_argument" >/dev/null 2>&1
+    then
+        echo "import unexpectedly accepted an ambiguous or unsupported argument" >&2
+        exit 1
+    fi
+done
+if portability_import --format jsonl --format markdown >/dev/null 2>&1; then
+    echo "import unexpectedly selected the first of repeated format options" >&2
+    exit 1
+fi
+test "$(sqlite3 "$portability_database" "SELECT count(*) FROM memories;")" = 2
+test "$(sqlite3 "$portability_database" "SELECT count(*) FROM workspace_events;")" \
+    = "$portability_events_before"
+portability_plaintext_count=$(sqlite3 "$portability_database" "
+    SELECT count(*) FROM memories
+    WHERE instr(content_ciphertext, CAST('Call me Hippo' AS BLOB)) > 0
+       OR instr(content_ciphertext, CAST('Use Rust' AS BLOB)) > 0;
+")
+if test "$portability_plaintext_count" != 0; then
+    echo "imported preferences appeared in plaintext canonical storage" >&2
+    exit 1
+fi
+
 project_recall=$(
     "$rembrane_binary" recall \
         --database "$database" \

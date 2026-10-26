@@ -218,6 +218,10 @@ are in [First Production Release Plan](docs/PRODUCTION_PLAN.md).
   with deterministic ordering, closed versioned records, tenant checks,
   record/byte bounds, owner-only exclusive output, durable synchronization,
   and replacement-safe partial-file cleanup.
+  - [x] Reject unsupported scope selectors and malformed/repeated portability
+    options before I/O rather than silently exporting broader plaintext.
+  - [x] Defer export directory creation until membership, format-specific
+    authority, and encrypted-record authentication succeed.
 - [x] Add authenticated import plus Markdown and graph portability formats.
   - [x] Expose authenticated REST exports for JSONL, Markdown, and owner/admin
     graph JSON with tenant binding, fixed attachment names, no-store and
@@ -266,6 +270,11 @@ are in [First Production Release Plan](docs/PRODUCTION_PLAN.md).
     - [x] Expose protected-file JSONL import through the CLI with explicit
       plaintext acknowledgement, complete pre-mutation validation,
       destination scope authorization, and fresh target identities.
+      - [x] Validate import client identifiers before reading archives and
+        reject unsupported scope remapping rather than ignoring arguments.
+      - [x] Prove encrypted CLI round-trip portability preserves source scopes
+        as proposed records with imported provenance and fresh destination
+        identities; malformed inputs leave memory and events unchanged.
     - [x] Expose authenticated JSONL import through the REST API using a
       route-specific bounded NDJSON body, exact content type, connection-bound
       destination identity, scope authorization, and the same atomic
