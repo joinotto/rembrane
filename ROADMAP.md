@@ -449,6 +449,8 @@ This roadmap describes sequencing, not release dates.
         preserve SDK sessions without cross-tenant reuse.
         - [x] Bound cached tenant services without eviction, failing closed
           rather than silently discarding live protocol session state.
+        - [x] Serialize concurrent first construction per tenant and leave
+          capacity reusable after a failed service build.
     - [x] Add a consuming Tower dispatcher that reconstructs only validated
       MCP protocol headers, strips the bearer credential at the OAuth boundary,
       and injects verified tenant access into request extensions for the

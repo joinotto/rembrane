@@ -48,6 +48,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Verified remote access exposes its validated OAuth scopes as a read-only
   iterator so transport adapters can derive exact tenant service identity
   without copying or weakening authorization state.
+- Tenant MCP service caching now constructs at most one service during
+  concurrent first access and does not consume bounded capacity when service
+  construction fails.
 - MCP connection identity is now encapsulated independently from storage and
   provider state, preparing the official Streamable HTTP handler to source
   tenant identity only from verified request extensions.

@@ -3543,6 +3543,83 @@ mod tests {
         );
     }
 
+    #[test]
+    fn tenant_service_cache_constructs_once_under_concurrent_first_access() {
+        let builds = Arc::new(Mutex::new(0_u64));
+        let builds_from_factory = Arc::clone(&builds);
+        let cache = BoundedTenantTowerMcpServiceCache::new(
+            1,
+            move |_access: &rembrane_contracts::VerifiedRemoteAccess| {
+                let mut builds = builds_from_factory.lock().expect("build count");
+                *builds += 1;
+                Ok::<_, std::convert::Infallible>(*builds)
+            },
+        )
+        .expect("cache capacity");
+        let access = verified_access(
+            "workspace_01",
+            2_000,
+            BTreeSet::from([RemoteAccessScope::ContextRead]),
+        );
+        let barrier = Arc::new(std::sync::Barrier::new(3));
+        let mut workers = Vec::new();
+        for _ in 0..2 {
+            let cache = cache.clone();
+            let access = access.clone();
+            let barrier = Arc::clone(&barrier);
+            workers.push(std::thread::spawn(move || {
+                barrier.wait();
+                cache.create(&access).expect("cached service")
+            }));
+        }
+        barrier.wait();
+        let services = workers
+            .into_iter()
+            .map(|worker| worker.join().expect("worker"))
+            .collect::<Vec<_>>();
+
+        assert_eq!(services, [1, 1]);
+        assert_eq!(*builds.lock().expect("build count"), 1);
+        assert_eq!(cache.len(), 1);
+    }
+
+    #[test]
+    fn failed_tenant_service_construction_does_not_consume_capacity() {
+        let attempts = Arc::new(Mutex::new(0_u64));
+        let attempts_from_factory = Arc::clone(&attempts);
+        let cache = BoundedTenantTowerMcpServiceCache::new(
+            1,
+            move |access: &rembrane_contracts::VerifiedRemoteAccess| {
+                let mut attempts = attempts_from_factory.lock().expect("attempt count");
+                *attempts += 1;
+                if *attempts == 1 {
+                    Err("temporary construction failure")
+                } else {
+                    Ok(access.workspace_id().to_string())
+                }
+            },
+        )
+        .expect("cache capacity");
+        let access = verified_access(
+            "workspace_01",
+            2_000,
+            BTreeSet::from([RemoteAccessScope::ContextRead]),
+        );
+
+        assert!(matches!(
+            cache.create(&access),
+            Err(TenantServiceCacheError::Factory(
+                "temporary construction failure"
+            ))
+        ));
+        assert!(cache.is_empty());
+        assert_eq!(
+            cache.create(&access).expect("retry should construct"),
+            "workspace_01"
+        );
+        assert_eq!(cache.len(), 1);
+    }
+
     #[tokio::test]
     async fn tenant_aware_tower_factory_selects_get_and_delete_services_per_tenant() {
         let verifier = Verifier;
