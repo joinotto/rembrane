@@ -986,6 +986,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - The canonical SQLite store now creates owner-only database and snapshot
   files, rejects permissive and symbolic-link paths, refuses snapshot
   overwrites, and enables SQLite's native no-follow open flag.
+- Failed SQLite snapshot attempts now remove their newly created destination
+  across path encoding, database write, and post-write validation failures.
 - Ordered all-or-error provider credential resolution through any secret
   resolver, zeroizing already resolved values when a later reference fails.
 - A transport-injectable Mem0 OSS semantic adapter mapping authorized

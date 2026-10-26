@@ -953,19 +953,20 @@ impl<C> SqliteStore<C> {
     pub fn backup_to(&self, destination: impl AsRef<Path>) -> Result<(), ApplicationError> {
         let destination = destination.as_ref();
         prepare_private_database_file(destination, true)?;
-        let canonical_destination = canonical_database_path(destination)?;
-        let destination = canonical_destination
-            .to_str()
-            .ok_or(ApplicationError::StorageUnavailable)?;
-        if let Err(error) = self
-            .connection
-            .execute("VACUUM INTO ?1", [destination])
-            .map_err(map_write_error)
-        {
+        let result = (|| {
+            let canonical_destination = canonical_database_path(destination)?;
+            let destination = canonical_destination
+                .to_str()
+                .ok_or(ApplicationError::StorageUnavailable)?;
+            self.connection
+                .execute("VACUUM INTO ?1", [destination])
+                .map_err(map_write_error)?;
+            validate_private_database_file(&canonical_destination)
+        })();
+        if let Err(error) = result {
             let _ = std::fs::remove_file(destination);
             return Err(error);
         }
-        validate_private_database_file(Path::new(destination))?;
         Ok(())
     }
 }
@@ -1154,6 +1155,32 @@ mod migration_tests {
         );
 
         fs::remove_file(backup).expect("backup cleanup");
+        fs::remove_file(source).expect("database cleanup");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn failed_database_backup_removes_its_new_destination() {
+        use std::ffi::OsString;
+        use std::os::unix::ffi::{OsStrExt as _, OsStringExt as _};
+
+        let source = database_path("failed-backup-source");
+        let candidate = database_path("failed-backup");
+        let mut invalid_name = candidate
+            .file_name()
+            .expect("fixture file name")
+            .as_bytes()
+            .to_vec();
+        invalid_name.push(0xff);
+        let destination = candidate.with_file_name(OsString::from_vec(invalid_name));
+        let store = SqliteStore::open(&source).expect("database should initialize");
+
+        assert_eq!(
+            store.backup_to(&destination),
+            Err(rembrane_application::ApplicationError::StorageUnavailable)
+        );
+        assert!(!destination.exists());
+
         fs::remove_file(source).expect("database cleanup");
     }
 
