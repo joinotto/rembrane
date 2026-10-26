@@ -279,6 +279,12 @@ target/debug/rembrane doctor \
   --workspace "$REMBRANE_WORKSPACE_ID" \
   --privacy
 
+target/debug/rembrane doctor \
+  --database "$REMBRANE_DATABASE" \
+  --principal "$REMBRANE_PRINCIPAL_ID" \
+  --workspace "$REMBRANE_WORKSPACE_ID" \
+  --json
+
 target/debug/rembrane backup \
   --database "$REMBRANE_DATABASE" \
   --principal "$REMBRANE_PRINCIPAL_ID" \
@@ -340,6 +346,10 @@ target/debug/rembrane recall \
   --purpose continue-trip-planning \
   --query "What are my flight preferences and trip constraints?"
 ```
+
+The JSON doctor result validates against `spec/local-doctor.schema.json` and
+omits principal and workspace identifiers so installers, launchers, agents,
+and bots can consume health without receiving tenant-routing metadata.
 
 ## MCP client profile
 

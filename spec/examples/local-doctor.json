@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "ready": true,
+  "databaseSchema": "compatible",
+  "membership": {
+    "active": true,
+    "role": "owner"
+  },
+  "workspaceKey": {
+    "loaded": true
+  },
+  "authenticatedRecords": {
+    "memories": 3,
+    "events": 7,
+    "checkpoints": 2
+  },
+  "secretSources": [
+    "workspace key: protected file reference"
+  ]
+}

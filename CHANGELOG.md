@@ -13,6 +13,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   membership role, authenticated-record counts, and secret-source categories
   without principal or workspace identifiers; mixed JSON/privacy output is
   rejected to preserve a single parseable document.
+- The identity-minimizing local doctor result now has a versioned JSON Schema,
+  canonical example, and protocol drift checks.
 - Remote MCP initialization tests now use the standard no-op waker and current
   idiomatic control flow, restoring strict Clippy compatibility on the latest
   supported Rust toolchain without changing authorization semantics.

@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rembrane.dev/spec/local-doctor.schema.json",
+  "title": "Rembrane local doctor result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "ready",
+    "databaseSchema",
+    "membership",
+    "workspaceKey",
+    "authenticatedRecords",
+    "secretSources"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "ready": { "const": true },
+    "databaseSchema": { "const": "compatible" },
+    "membership": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["active", "role"],
+      "properties": {
+        "active": { "const": true },
+        "role": { "enum": ["owner", "admin", "member", "viewer"] }
+      }
+    },
+    "workspaceKey": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["loaded"],
+      "properties": {
+        "loaded": { "const": true }
+      }
+    },
+    "authenticatedRecords": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["memories", "events", "checkpoints"],
+      "properties": {
+        "memories": { "type": "integer", "minimum": 0 },
+        "events": { "type": "integer", "minimum": 0 },
+        "checkpoints": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "secretSources": {
+      "type": "array",
+      "maxItems": 32,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128
+      }
+    }
+  }
+}

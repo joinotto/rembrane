@@ -67,6 +67,13 @@ missing gates; a non-ready result lists bounded, unique operator-facing gate
 labels. Operational progress remains outside the JSON document so automation
 can parse stdout directly.
 
+## Local doctor result
+
+`local-doctor.schema.json` defines the identity-minimizing result emitted by
+`rembrane doctor --json`. It reports authenticated local installation health,
+record counts, membership role, and secret-source categories without exposing
+the principal ID, workspace ID, key material, database path, or record content.
+
 ## Provider adapter manifest
 
 `provider-manifest.schema.json` defines capability negotiation between the
