@@ -530,6 +530,13 @@ batch atomically with contiguous canonical events. Imported content is always
 stored as a proposal requiring review and confirmation; an external archive
 cannot directly establish trusted memory.
 
+Authenticated API deployments expose the same behavior at
+`POST /v1/imports` with `application/x-ndjson`. The destination workspace,
+subject, and expected event sequence are query parameters checked against the
+connection-bound identity; they do not grant authority by themselves. The
+route has a dedicated 64 MiB body ceiling while ordinary API routes retain
+their smaller default limit.
+
 `rembrane init` should:
 
 1. Select local, Docker, Cloudflare, Kubernetes, or custom deployment.

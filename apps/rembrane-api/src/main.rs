@@ -2,6 +2,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
+use axum::body::Bytes;
 use axum::extract::DefaultBodyLimit;
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
@@ -14,6 +15,7 @@ use rembrane_application::{
     AuthorizeClientService, CaptureBookingResearchCommand, CaptureBookingResearchService,
     CheckpointService, ClientGrantBundle, CreateCheckpointCommand, CreateInvitationCommand,
     CreateTripCommand, DeleteMemoryCommand, ExecuteRetentionPurgeCommand, GraphContextService,
+    ImportMemoryBatchCommand, ImportMemoryBatchService, ImportedMemoryProposal,
     InvitationRepository, InvitationService, KeyRotationRepository, ListInvitationsQuery,
     MemberLifecycleService, MembershipRepository, MemoryLifecycleService, MemoryProposalService,
     PlaceLegalHoldCommand, ProposeMemoryCommand, RecordTripDecisionCommand,
@@ -23,6 +25,7 @@ use rembrane_application::{
     SetRetentionPolicyCommand, TravelContextResearch, TravelContextService, TravelContextTrip,
     TravelSensitiveProfile, TripService, UpdateCheckpointCommand, WorkspaceRepository,
 };
+use rembrane_codec::{MAX_MEMORY_JSONL_ARCHIVE_BYTES, decode_memory_jsonl_archive};
 use rembrane_config::{
     RemoteMcpConfig, SecretReference, parse_read_permissions, parse_read_scopes,
 };
@@ -46,6 +49,7 @@ use subtle::ConstantTimeEq;
 use zeroize::Zeroizing;
 
 const MAXIMUM_API_TOKEN_BYTES: usize = 8_192;
+const MEMORY_IMPORT_CONTENT_TYPE: &str = "application/x-ndjson";
 
 #[derive(Clone)]
 struct AppState {
@@ -118,6 +122,21 @@ struct RecordWorkTraceRequest {
     entity_id: Option<String>,
     summary: String,
     expected_previous_sequence: u64,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct ImportMemoriesQuery {
+    workspace_id: String,
+    subject_id: String,
+    expected_previous_sequence: u64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ImportMemoriesResponse {
+    imported: usize,
+    status: &'static str,
 }
 
 #[derive(Deserialize)]
@@ -1454,6 +1473,96 @@ async fn record_work_trace(
     ))
 }
 
+async fn import_memories(
+    State(state): State<AppState>,
+    Query(query): Query<ImportMemoriesQuery>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<(StatusCode, Json<ImportMemoriesResponse>), ApiError> {
+    authorize_bearer(&state, &headers)?;
+    if headers
+        .get(axum::http::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        != Some(MEMORY_IMPORT_CONTENT_TYPE)
+    {
+        return Err(ApiError::invalid_request());
+    }
+    let source_records =
+        decode_memory_jsonl_archive(&body).map_err(|_| ApiError::invalid_request())?;
+    if source_records.is_empty()
+        || source_records
+            .iter()
+            .any(|record| record.status() == MemoryStatus::Deleted)
+    {
+        return Err(ApiError::invalid_request());
+    }
+    let mut runtime = state
+        .inner
+        .runtime
+        .lock()
+        .map_err(|_| ApiError::internal())?;
+    authorize_memory_identity(&runtime, &query.workspace_id, &query.subject_id)?;
+    if !runtime.write_grant.allows(WritePermission::ProposeMemory) {
+        return Err(ApiError::access_denied());
+    }
+    let mut scopes = Vec::new();
+    for record in &source_records {
+        if !runtime.write_grant.allows_scope(record.scope()) {
+            return Err(ApiError::access_denied());
+        }
+        let scope = memory_read_scope(record.scope());
+        if !scopes.contains(&scope) {
+            scopes.push(scope);
+        }
+    }
+    let grant = WriteGrant {
+        client_id: runtime.write_grant.client_id.clone(),
+        workspace_id: runtime.write_grant.workspace_id.clone(),
+        subject_id: runtime.write_grant.subject_id.clone(),
+        scopes,
+        permissions: vec![WritePermission::ProposeMemory],
+    };
+    let suffix = next_id(&mut runtime)?;
+    let items = source_records
+        .into_iter()
+        .enumerate()
+        .map(|(index, record)| ImportedMemoryProposal {
+            memory_id: MemoryId::new(format!("import_{suffix}_{index}")),
+            event_id: EventId::new(format!("event_import_{suffix}_{index}")),
+            scope: record.scope().clone(),
+            kind: record.kind(),
+            content: record.content().to_owned(),
+            evidence: EvidenceReference::new(
+                EvidenceId::new(format!("evidence_import_{suffix}_{index}")),
+                EvidenceSource::ImportedRecord,
+            ),
+        })
+        .collect();
+    let imported = ImportMemoryBatchService::new(&mut runtime.store)
+        .execute(ImportMemoryBatchCommand {
+            grant,
+            items,
+            expected_previous_sequence: query.expected_previous_sequence,
+        })
+        .map_err(ApiError::from_application)?;
+    Ok((
+        StatusCode::CREATED,
+        Json(ImportMemoriesResponse {
+            imported: imported.len(),
+            status: "proposed",
+        }),
+    ))
+}
+
+fn memory_read_scope(scope: &MemoryScope) -> rembrane_domain::ReadScope {
+    match scope {
+        MemoryScope::Global => rembrane_domain::ReadScope::Global,
+        MemoryScope::Domain { name } => rembrane_domain::ReadScope::Domain { name: name.clone() },
+        MemoryScope::Entity { id } => rembrane_domain::ReadScope::Entity { id: id.clone() },
+        MemoryScope::Activity { id } => rembrane_domain::ReadScope::Activity { id: id.clone() },
+    }
+}
+
 async fn correct_memory(
     State(state): State<AppState>,
     Path(memory_id): Path<String>,
@@ -2776,7 +2885,7 @@ fn build_memory_discovery(api: String) -> Result<MemoryDiscovery> {
             disclosure_receipt: true,
             deletion_propagation: false,
             sync: false,
-            imports: Vec::new(),
+            imports: vec!["jsonl"],
             exports: vec!["encrypted-archive"],
         },
         limits: DiscoveryLimits {
@@ -2819,6 +2928,10 @@ async fn main() -> Result<()> {
         .route("/v1/graph/context/resolve", post(resolve_graph_context))
         .route("/v1/memories/preferences", post(remember_preference))
         .route("/v1/memories/work-traces", post(record_work_trace))
+        .route(
+            "/v1/imports",
+            post(import_memories).layer(DefaultBodyLimit::max(MAX_MEMORY_JSONL_ARCHIVE_BYTES)),
+        )
         .route("/v1/memories/{memory_id}/correction", post(correct_memory))
         .route("/v1/memories/{memory_id}/deletion", post(delete_memory))
         .route(
@@ -3007,6 +3120,7 @@ mod tests {
         assert_eq!(local.endpoints.api, "http://127.0.0.1:8787/v1");
         assert_eq!(local.privacy.processing_modes, ["local-only"]);
         assert_eq!(local.privacy.plaintext_processing_location, "user-device");
+        assert_eq!(local.capabilities.imports, ["jsonl"]);
 
         let public = build_memory_discovery("https://memory.example.test/v1".to_owned())
             .expect("public HTTPS discovery");

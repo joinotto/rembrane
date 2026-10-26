@@ -66,6 +66,10 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - The tenant-bound PostgreSQL adapter now implements atomic encrypted memory
   imports, validating and sealing the complete batch before a single
   RLS-scoped transaction and final commit.
+- The authenticated REST API now accepts bounded `application/x-ndjson`
+  imports at `/v1/imports`, derives destination identity from its configured
+  connection grant, authorizes every represented scope, and atomically admits
+  only reviewable proposals. Discovery and OpenAPI now advertise this surface.
 - Remote MCP now provides a bounded, non-evicting tenant Tower-service cache
   keyed by exact issuer, resource, principal, client, workspace, and OAuth
   scope set, preserving protocol sessions across token refresh while failing

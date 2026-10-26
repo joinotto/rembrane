@@ -172,6 +172,54 @@ paths:
           $ref: "#/components/responses/AccessDenied"
         "409":
           $ref: "#/components/responses/Conflict"
+  /imports:
+    post:
+      operationId: importPortableMemories
+      summary: Atomically import portable JSONL as reviewable memory proposals
+      description: |
+        Validates the complete bounded single-source archive before any
+        canonical mutation. Source-controlled identifiers are replaced and
+        imported content cannot directly become confirmed memory.
+      parameters:
+        - in: query
+          name: workspaceId
+          required: true
+          schema:
+            $ref: "#/components/schemas/OpaqueId"
+        - in: query
+          name: subjectId
+          required: true
+          schema:
+            $ref: "#/components/schemas/OpaqueId"
+        - in: query
+          name: expectedPreviousSequence
+          required: true
+          schema:
+            type: integer
+            minimum: 0
+      requestBody:
+        required: true
+        content:
+          application/x-ndjson:
+            schema:
+              type: string
+              contentMediaType: application/x-ndjson
+              maxLength: 67108864
+      responses:
+        "201":
+          description: All records atomically admitted as proposals
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImportMemoriesResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/AccessDenied"
+        "409":
+          $ref: "#/components/responses/Conflict"
   /memories/{memoryId}/correction:
     post:
       operationId: correctMemory
@@ -923,6 +971,18 @@ components:
           minimum: 1
         status:
           enum: [proposed, confirmed, deleted]
+    ImportMemoriesResponse:
+      type: object
+      additionalProperties: false
+      required: [imported, status]
+      properties:
+        imported:
+          type: integer
+          minimum: 1
+          maximum: 10000
+        status:
+          type: string
+          const: proposed
     CheckpointActivityRequest:
       type: object
       additionalProperties: false

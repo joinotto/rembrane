@@ -125,6 +125,12 @@ This roadmap describes sequencing, not release dates.
     - [x] Expose protected-file JSONL import through the CLI with explicit
       plaintext acknowledgement, complete pre-mutation validation,
       destination scope authorization, and fresh target identities.
+    - [x] Expose authenticated JSONL import through the REST API using a
+      route-specific bounded NDJSON body, exact content type, connection-bound
+      destination identity, scope authorization, and the same atomic
+      proposal-only service.
+    - [x] Publish JSONL import capability through discovery and the portable
+      OpenAPI contract.
 - [x] Package the local REST service for loopback-only Docker Compose
   self-hosting with persistent encrypted storage.
   - [x] Resolve the REST bearer credential from validated environment or

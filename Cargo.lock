@@ -1047,6 +1047,7 @@ dependencies = [
  "anyhow",
  "axum",
  "rembrane-application",
+ "rembrane-codec",
  "rembrane-config",
  "rembrane-contracts",
  "rembrane-crypto-configured",
