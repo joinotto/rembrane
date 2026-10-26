@@ -511,6 +511,9 @@ This roadmap describes sequencing, not release dates.
             compensating termination await.
             - [x] Apply the same two-phase locking to established-session POST
               and confirmed DELETE, denying requests after committed deletion.
+            - [x] Release the shared gate lock before stateless POST and
+              event-stream GET dispatch so every supported HTTP route permits
+              concurrent downstream execution.
         - [x] Validate successful Tower SDK responses with exactly one
           canonical session ID and reuse the validated host, origin, and
           protocol metadata for compensating DELETE requests.

@@ -59,6 +59,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Shared established-session POST and confirmed DELETE now use the same
   lock-minimizing flow, retain bindings after failed deletion dispatch, and
   deny replay after a successful local deletion commit.
+- Shared stateless POST and event-stream GET authorization now also release
+  the gate lock before downstream dispatch, completing the concurrent remote
+  MCP HTTP surface.
 - The concrete Tower initializer now accepts only successful SDK responses
   carrying exactly one valid `Mcp-Session-Id`, and performs compensation DELETE
   with the original validated host, origin, protocol version, and tenant.

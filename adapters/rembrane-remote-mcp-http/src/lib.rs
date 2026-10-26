@@ -2030,6 +2030,100 @@ where
         Ok(initialized)
     }
 
+    /// Consumes and dispatches one stateless request while holding the shared
+    /// gate lock only for synchronous header, token, and scope authorization.
+    ///
+    /// # Errors
+    ///
+    /// Distinguishes fail-closed HTTP authorization from downstream protocol
+    /// dispatch failure.
+    pub async fn authorize_and_dispatch_owned<Dispatcher>(
+        &self,
+        headers: &HeaderMap,
+        body: Zeroizing<Vec<u8>>,
+        now_epoch_seconds: u64,
+        dispatcher: &Dispatcher,
+    ) -> Result<Dispatcher::Output, RemoteMcpDispatchError<Dispatcher::Error>>
+    where
+        Dispatcher: AuthorizedRemoteMcpDispatcher,
+    {
+        let mut protocol_headers =
+            protocol_headers_from_axum(headers).map_err(RemoteMcpDispatchError::Authorization)?;
+        let request =
+            request_from_axum_headers(headers).map_err(RemoteMcpDispatchError::Authorization)?;
+        protocol_headers.validated_host = request.host.map(str::to_owned);
+        protocol_headers.validated_origin = request.origin.map(str::to_owned);
+        let authenticator =
+            RemoteAccessAuthenticator::new(&self.verifier, &self.issuer, &self.resource);
+        let trusted_origins = self
+            .trusted_origins
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>();
+        let authorization = RemoteHttpAuthorization::new(&authenticator, &trusted_origins);
+        let mut authorized = {
+            let gate = self
+                .gate
+                .lock()
+                .map_err(|_| RemoteMcpDispatchError::Authorization(lock_rejection()))?;
+            gate.authorize_stateless_owned_body(&authorization, request, body, now_epoch_seconds)
+                .map_err(RemoteMcpDispatchError::Authorization)?
+        };
+        authorized.protocol_headers = protocol_headers;
+        authorized
+            .dispatch_with(dispatcher)
+            .await
+            .map_err(RemoteMcpDispatchError::Dispatch)
+    }
+
+    /// Authorizes and opens one stateless server event stream without holding
+    /// the shared gate lock across downstream execution.
+    ///
+    /// # Errors
+    ///
+    /// Distinguishes fail-closed HTTP authorization from downstream
+    /// event-stream dispatch failure.
+    pub async fn authorize_and_dispatch_event_stream<Dispatcher>(
+        &self,
+        headers: &HeaderMap,
+        now_epoch_seconds: u64,
+        dispatcher: &Dispatcher,
+    ) -> Result<Dispatcher::Output, RemoteMcpDispatchError<Dispatcher::Error>>
+    where
+        Dispatcher: AuthorizedRemoteMcpEventStreamDispatcher,
+    {
+        let (accept, protocol_version) = event_stream_headers_from_axum(headers)
+            .map_err(RemoteMcpDispatchError::Authorization)?;
+        let request = security_request_from_axum_headers(headers)
+            .map_err(RemoteMcpDispatchError::Authorization)?;
+        let authenticator =
+            RemoteAccessAuthenticator::new(&self.verifier, &self.issuer, &self.resource);
+        let trusted_origins = self
+            .trusted_origins
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>();
+        let authorization = RemoteHttpAuthorization::new(&authenticator, &trusted_origins);
+        let access = {
+            let gate = self
+                .gate
+                .lock()
+                .map_err(|_| RemoteMcpDispatchError::Authorization(lock_rejection()))?;
+            gate.authorize_stateless_connection(&authorization, request, now_epoch_seconds)
+                .map_err(RemoteMcpDispatchError::Authorization)?
+        };
+        AuthorizedRemoteMcpEventStream {
+            access,
+            accept,
+            protocol_version,
+            validated_host: request.host.map(str::to_owned),
+            validated_origin: request.origin.map(str::to_owned),
+        }
+        .dispatch_with(dispatcher)
+        .await
+        .map_err(RemoteMcpDispatchError::Dispatch)
+    }
+
     /// Consumes and dispatches one established-session request while holding
     /// the registry lock only for local reauthentication and tenant binding.
     ///
@@ -3487,6 +3581,27 @@ mod tests {
         }
     }
 
+    impl AuthorizedRemoteMcpEventStreamDispatcher for LockProbeInitializationDispatcher<'_> {
+        type Output = ();
+        type Error = std::convert::Infallible;
+        type DispatchFuture = std::future::Ready<Result<Self::Output, Self::Error>>;
+
+        fn open(
+            &self,
+            _access: rembrane_contracts::VerifiedRemoteAccess,
+            _accept: String,
+            _protocol_version: Option<String>,
+            _validated_host: Option<String>,
+            _validated_origin: Option<String>,
+        ) -> Self::DispatchFuture {
+            self.observed_unlocked
+                .lock()
+                .expect("probe log")
+                .push(self.gate.try_lock().is_ok());
+            std::future::ready(Ok(()))
+        }
+    }
+
     impl AuthorizedRemoteMcpSessionDeletionDispatcher for LockProbeInitializationDispatcher<'_> {
         type Output = ();
         type Error = std::convert::Infallible;
@@ -3728,6 +3843,12 @@ mod tests {
         zeroize::Zeroizing::new(
             br#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}"#
                 .to_vec(),
+        )
+    }
+
+    fn tools_list_body(id: u8) -> zeroize::Zeroizing<Vec<u8>> {
+        zeroize::Zeroizing::new(
+            format!(r#"{{"jsonrpc":"2.0","id":{id},"method":"tools/list"}}"#).into_bytes(),
         )
     }
 
@@ -5943,6 +6064,14 @@ mod tests {
         };
 
         authorization
+            .authorize_and_dispatch_owned(&headers, tools_list_body(0), 999, &dispatcher)
+            .await
+            .expect("shared stateless request should dispatch");
+        authorization
+            .authorize_and_dispatch_event_stream(&headers, 999, &dispatcher)
+            .await
+            .expect("shared event stream should dispatch");
+        authorization
             .initialize_and_commit_owned_session(&headers, initialize_body(), 1_000, &dispatcher)
             .await
             .expect("first shared initialization should commit");
@@ -5962,14 +6091,7 @@ mod tests {
             HeaderValue::from_static("session_shared_probe_0123456789"),
         );
         authorization
-            .authorize_and_dispatch_owned_session(
-                &headers,
-                zeroize::Zeroizing::new(
-                    br#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#.to_vec(),
-                ),
-                1_002,
-                &dispatcher,
-            )
+            .authorize_and_dispatch_owned_session(&headers, tools_list_body(2), 1_002, &dispatcher)
             .await
             .expect("shared established session should dispatch");
         authorization
@@ -5977,14 +6099,7 @@ mod tests {
             .await
             .expect("shared session deletion should commit after dispatch");
         let deleted = authorization
-            .authorize_and_dispatch_owned_session(
-                &headers,
-                zeroize::Zeroizing::new(
-                    br#"{"jsonrpc":"2.0","id":3,"method":"tools/list"}"#.to_vec(),
-                ),
-                1_004,
-                &dispatcher,
-            )
+            .authorize_and_dispatch_owned_session(&headers, tools_list_body(3), 1_004, &dispatcher)
             .await
             .expect_err("deleted shared session must no longer authorize");
         assert!(matches!(
@@ -5993,8 +6108,8 @@ mod tests {
         ));
         assert_eq!(
             *observed_unlocked.lock().expect("probe log"),
-            [true, true, true, true],
-            "duplicate conflict must not compensate, and SDK awaits must run outside the lock"
+            [true, true, true, true, true, true],
+            "all SDK dispatch must run outside the lock and duplicate conflicts must not compensate"
         );
     }
 
