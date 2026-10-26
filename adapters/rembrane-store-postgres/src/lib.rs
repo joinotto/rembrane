@@ -16,10 +16,10 @@ use rembrane_application::{
     GraphProjectionOutboxRepository, InvitationRepository, KeyRotationRepository,
     KnowledgeDirection, KnowledgeGraphMutationRepository, KnowledgeGraphRepository,
     MAX_ADMINISTRATIVE_AUDIT_PAGE, MAX_KNOWLEDGE_NEIGHBOURS, MAXIMUM_INVITATION_LIST_ITEMS,
-    MemberLifecycleRepository, MemberScopeGrantRepository, MembershipRepository, MemoryRepository,
-    ProjectionOutboxRepository, RetentionRepository, TravelDisclosureRepository,
-    TripMutationRepository, TripRepository, WorkspaceReadRepository, WorkspaceRepository,
-    is_strict_successor,
+    MemberLifecycleRepository, MemberScopeGrantRepository, MembershipRepository,
+    MemoryImportRepository, MemoryRepository, ProjectionOutboxRepository, RetentionRepository,
+    TravelDisclosureRepository, TripMutationRepository, TripRepository, WorkspaceReadRepository,
+    WorkspaceRepository, is_strict_successor,
 };
 use rembrane_codec::{
     decode_booking_research, decode_checkpoint, decode_event, decode_knowledge_edge,
@@ -4744,6 +4744,97 @@ where
     }
 }
 
+impl<Pool, Cipher> MemoryImportRepository for PostgresTenantMemoryStore<'_, '_, Pool, Cipher>
+where
+    Pool: PostgresPool,
+    Pool::Error: ClassifiedPostgresError,
+    <Pool::Transaction as PostgresTransaction>::Row: PostgresRow<Error = Pool::Error>,
+    Cipher: RecordCipher,
+{
+    fn insert_imported_memory_batch(
+        &mut self,
+        mutations: &[(MemoryRecord, CanonicalEvent)],
+        expected_previous_sequence: u64,
+    ) -> Result<(), ApplicationError> {
+        if mutations.is_empty() {
+            return Ok(());
+        }
+        let mut memory_ids = BTreeSet::new();
+        let mut event_ids = BTreeSet::new();
+        let mut sealed = Vec::with_capacity(mutations.len());
+        for (offset, (memory, event)) in mutations.iter().enumerate() {
+            if memory.workspace_id() != &self.workspace_id
+                || event.workspace_id() != &self.workspace_id
+            {
+                return Err(ApplicationError::AccessDenied);
+            }
+            validate_memory_mutation(memory, event, &[])?;
+            let increment = u64::try_from(offset)
+                .ok()
+                .and_then(|offset| offset.checked_add(1))
+                .ok_or(ApplicationError::SequenceConflict)?;
+            if event.sequence()
+                != expected_previous_sequence
+                    .checked_add(increment)
+                    .ok_or(ApplicationError::SequenceConflict)?
+                || !memory_ids.insert(memory.id().clone())
+                || !event_ids.insert(event.id().clone())
+            {
+                return Err(ApplicationError::Validation(
+                    "invalid imported memory batch".to_owned(),
+                ));
+            }
+            let memory_plaintext =
+                encode_memory(memory).map_err(|_| ApplicationError::StorageUnavailable)?;
+            let memory_context = EncryptionContext::new(
+                memory.workspace_id().clone(),
+                memory.id().as_str(),
+                memory.version(),
+                PayloadPurpose::MemoryContent,
+            )
+            .map_err(|_| ApplicationError::Validation("invalid memory context".to_owned()))?;
+            let encrypted_memory = self
+                .cipher
+                .seal(&memory_context, &memory_plaintext)
+                .map_err(|_| ApplicationError::StorageUnavailable)?;
+            let event_plaintext =
+                encode_event(event).map_err(|_| ApplicationError::StorageUnavailable)?;
+            let event_context = EncryptionContext::new(
+                event.workspace_id().clone(),
+                event.id().as_str(),
+                event.sequence(),
+                PayloadPurpose::CanonicalEvent,
+            )
+            .map_err(|_| ApplicationError::Validation("invalid event context".to_owned()))?;
+            let encrypted_event = self
+                .cipher
+                .seal(&event_context, &event_plaintext)
+                .map_err(|_| ApplicationError::StorageUnavailable)?;
+            sealed.push((encrypted_memory, encrypted_event));
+        }
+
+        let mut transaction = self
+            .store
+            .begin_tenant(self.workspace_id.clone())
+            .map_err(map_event_application_error)?;
+        require_event_sequence(
+            &mut transaction,
+            &self.workspace_id,
+            expected_previous_sequence,
+        )?;
+        for ((memory, event), (encrypted_memory, encrypted_event)) in mutations.iter().zip(&sealed)
+        {
+            write_memory(&mut transaction, memory, None, encrypted_memory)?;
+            insert_memory_evidence(&mut transaction, memory)?;
+            insert_canonical_event(&mut transaction, event, encrypted_event)?;
+        }
+        transaction
+            .commit()
+            .map_err(PostgresStoreError::Tenant)
+            .map_err(map_event_application_error)
+    }
+}
+
 fn persist_memory_mutation<Pool, Cipher>(
     store: &PostgresTenantMemoryStore<'_, '_, Pool, Cipher>,
     memory: &MemoryRecord,
@@ -7004,7 +7095,7 @@ mod tests {
         GraphDisclosureRepository, GraphProjectionOutboxRepository, GraphProjectionWorker,
         InvitationRepository, InvitationService, KeyRotationRepository, KnowledgeDirection,
         KnowledgeGraphMutationRepository, KnowledgeGraphRepository, MemberLifecycleRepository,
-        MemberScopeGrantRepository, MembershipRepository, MemoryRepository,
+        MemberScopeGrantRepository, MembershipRepository, MemoryImportRepository, MemoryRepository,
         ProjectionOutboxRepository, ProjectionOutcome, ProjectionWorker, ResolveContextCommand,
         ResolveContextService, ResolveTravelContextCommand, ResumeActivityCommand,
         RetentionRepository, TravelContextService, TravelDisclosureRepository,
@@ -7026,8 +7117,8 @@ mod tests {
         GraphProjectionJob, GraphProjectionResource, Invitation, InvitationId, InvitationStatus,
         KeyRotationId, KeyRotationReceipt, KeyRotationStatus, KnowledgeEdge, KnowledgeEdgeId,
         KnowledgeNode, KnowledgeNodeId, KnowledgeNodeKind, KnowledgeRelationType, LegalHoldId,
-        LegalHoldStatus, MemberScopeGrant, MembershipStatus, MemoryId, MemoryRecord, MemoryScope,
-        Principal, PrincipalId, ProjectionJob, ProjectionJobId, ProjectionOperation,
+        LegalHoldStatus, MemberScopeGrant, MembershipStatus, MemoryId, MemoryKind, MemoryRecord,
+        MemoryScope, Principal, PrincipalId, ProjectionJob, ProjectionJobId, ProjectionOperation,
         ProjectionStatus, ProviderId, ReadGrant, ReadScope, ResearchFreshness, RetentionPeriod,
         RetentionResource, TemporalValidity, TravelDateWindow, TravelDisclosureReceipt, Trip,
         Workspace, WorkspaceId, WorkspaceKeyRotation, WorkspaceRetentionPolicy, WorkspaceRole,
@@ -11120,6 +11211,79 @@ mod tests {
             );
         }
         assert_eq!(calls.last(), Some(&Call::Commit));
+    }
+
+    #[test]
+    fn postgres_memory_import_commits_one_tenant_transaction_for_the_whole_batch() {
+        let mutation = |suffix: &str, sequence: u64| {
+            let memory_id = MemoryId::new(format!("import_{suffix}"));
+            let memory = MemoryRecord::proposed(
+                memory_id.clone(),
+                WorkspaceId::new("workspace_01"),
+                PrincipalId::new("principal_01"),
+                MemoryScope::Global,
+                MemoryKind::Preference,
+                format!("Imported {suffix}"),
+                EvidenceReference::new(
+                    EvidenceId::new(format!("evidence_{suffix}")),
+                    EvidenceSource::ImportedRecord,
+                ),
+            )
+            .expect("imported proposal");
+            let event = CanonicalEvent::new(
+                EventId::new(format!("event_{suffix}")),
+                WorkspaceId::new("workspace_01"),
+                PrincipalId::new("principal_01"),
+                Some(PrincipalId::new("principal_01")),
+                sequence,
+                EventPayload::MemoryProposed {
+                    memory_id,
+                    version: 1,
+                },
+            )
+            .expect("import event");
+            (memory, event)
+        };
+        let mutations = vec![mutation("a", 1), mutation("b", 2)];
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let store = PostgresStore::new(FakePool {
+            calls: Rc::clone(&calls),
+            tenant_batches: RefCell::new(
+                [VecDeque::from(
+                    std::iter::repeat_n(Ok(Some("workspace_01".to_owned())), 8).collect::<Vec<_>>(),
+                )]
+                .into(),
+            ),
+            row_batches: RefCell::new([vec![FakeRow::current_event_sequence(0)]].into()),
+        });
+        let tenant = store.for_workspace(WorkspaceId::new("workspace_01"));
+        let cipher = IdentityCipher;
+        let mut memories = tenant.with_cipher(&cipher);
+
+        MemoryImportRepository::insert_imported_memory_batch(&mut memories, &mutations, 0)
+            .expect("atomic PostgreSQL import");
+
+        let calls = calls.borrow();
+        assert_eq!(
+            calls
+                .iter()
+                .filter(|call| {
+                    matches!(call, Call::Execute(statement, _) if statement == INSERT_MEMORY_SQL)
+                })
+                .count(),
+            2
+        );
+        assert_eq!(
+            calls
+                .iter()
+                .filter(|call| {
+                    matches!(call, Call::Execute(statement, _) if statement == INSERT_EVENT_SQL)
+                })
+                .count(),
+            2
+        );
+        assert_eq!(calls.last(), Some(&Call::Commit));
+        assert!(!calls.contains(&Call::Rollback));
     }
 
     #[test]

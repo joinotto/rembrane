@@ -119,6 +119,9 @@ This roadmap describes sequencing, not release dates.
     - [x] Implement the atomic port in encrypted SQLite, sealing every memory
       and event before one transaction and rolling back all earlier inserts
       when a later record conflicts.
+    - [x] Implement the atomic port in the tenant-bound PostgreSQL adapter,
+      validating and sealing the complete batch before one RLS-scoped
+      transaction with one final commit.
     - [x] Expose protected-file JSONL import through the CLI with explicit
       plaintext acknowledgement, complete pre-mutation validation,
       destination scope authorization, and fresh target identities.

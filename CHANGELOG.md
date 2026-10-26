@@ -63,6 +63,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   complete archive before opening destination storage, requires explicit
   plaintext acknowledgement, authorizes every destination scope, assigns
   fresh identities, and atomically stores imported content as proposals.
+- The tenant-bound PostgreSQL adapter now implements atomic encrypted memory
+  imports, validating and sealing the complete batch before a single
+  RLS-scoped transaction and final commit.
 - Remote MCP now provides a bounded, non-evicting tenant Tower-service cache
   keyed by exact issuer, resource, principal, client, workspace, and OAuth
   scope set, preserving protocol sessions across token refresh while failing
