@@ -15,10 +15,20 @@ pub const CURRENT_KEY_PROVIDER_PROTOCOL: KeyProviderProtocolVersion =
 pub const MAX_KEY_PROVIDER_ALGORITHMS: usize = 32;
 pub const MAX_KEY_PROVIDER_PLAINTEXT_BYTES: usize = 1_048_576;
 
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
 pub struct KeyProviderProtocolVersion {
     pub major: u16,
     pub minor: u16,
+}
+
+impl fmt::Debug for KeyProviderProtocolVersion {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("KeyProviderProtocolVersion")
+            .field("major", &self.major)
+            .field("minor", &self.minor)
+            .finish()
+    }
 }
 
 impl KeyProviderProtocolVersion {
@@ -33,7 +43,7 @@ impl KeyProviderProtocolVersion {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct KeyProviderManifest {
     pub provider_id: String,
     pub provider_version: String,
@@ -42,6 +52,21 @@ pub struct KeyProviderManifest {
     pub maximum_plaintext_bytes: usize,
     pub supports_historical_keys: bool,
     pub supports_rotation: bool,
+}
+
+impl fmt::Debug for KeyProviderManifest {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("KeyProviderManifest")
+            .field("provider_id", &"<redacted>")
+            .field("provider_version", &"<redacted>")
+            .field("protocol_version", &self.protocol_version)
+            .field("algorithm_count", &self.algorithms.len())
+            .field("maximum_plaintext_bytes", &self.maximum_plaintext_bytes)
+            .field("supports_historical_keys", &self.supports_historical_keys)
+            .field("supports_rotation", &self.supports_rotation)
+            .finish()
+    }
 }
 
 impl KeyProviderManifest {
@@ -83,13 +108,26 @@ impl KeyProviderManifest {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct KeyProviderPolicy {
     pub minimum_protocol_version: KeyProviderProtocolVersion,
     pub required_algorithm: String,
     pub minimum_plaintext_bytes: usize,
     pub require_historical_keys: bool,
     pub require_rotation: bool,
+}
+
+impl fmt::Debug for KeyProviderPolicy {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("KeyProviderPolicy")
+            .field("minimum_protocol_version", &self.minimum_protocol_version)
+            .field("required_algorithm", &"<redacted>")
+            .field("minimum_plaintext_bytes", &self.minimum_plaintext_bytes)
+            .field("require_historical_keys", &self.require_historical_keys)
+            .field("require_rotation", &self.require_rotation)
+            .finish()
+    }
 }
 
 impl KeyProviderPolicy {
@@ -212,11 +250,22 @@ fn valid_rotation_identity(value: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b':'))
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct SealRequest {
     request_id: String,
     context: EncryptionContext,
     plaintext: Zeroizing<Vec<u8>>,
+}
+
+impl fmt::Debug for SealRequest {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("SealRequest")
+            .field("request_id", &"<redacted>")
+            .field("context", &"<redacted>")
+            .field("plaintext_bytes", &self.plaintext.len())
+            .finish()
+    }
 }
 
 impl SealRequest {
@@ -252,11 +301,22 @@ impl SealRequest {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct OpenRequest {
     request_id: String,
     context: EncryptionContext,
     envelope: EncryptedPayload,
+}
+
+impl fmt::Debug for OpenRequest {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("OpenRequest")
+            .field("request_id", &"<redacted>")
+            .field("context", &"<redacted>")
+            .field("envelope", &"<redacted>")
+            .finish()
+    }
 }
 
 impl OpenRequest {
@@ -536,6 +596,27 @@ mod tests {
             PayloadPurpose::MemoryContent,
         )
         .expect("context should be valid")
+    }
+
+    #[test]
+    fn key_provider_request_diagnostics_redact_plaintext_and_context() {
+        let plaintext = b"private memory plaintext".to_vec();
+        let request = SealRequest::new("private-request", context(), plaintext, 1024)
+            .expect("seal request should be valid");
+
+        let diagnostic = format!("{request:?}");
+        for private in [
+            "private memory plaintext",
+            "private-request",
+            "workspace_01",
+            "memory_01",
+        ] {
+            assert!(
+                !diagnostic.contains(private),
+                "key-provider diagnostic exposed {private}"
+            );
+        }
+        assert!(diagnostic.contains("plaintext_bytes"));
     }
 
     #[test]

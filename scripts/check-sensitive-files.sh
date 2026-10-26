@@ -57,6 +57,13 @@ then
     exit 1
 fi
 
+if sed '/^#\[cfg(test)\]/,$d' crates/rembrane-crypto/src/provider_protocol.rs |
+    rg -n -U '#\[derive\([^]]*Debug[^]]*\)\]\n(?:pub )?struct '
+then
+    echo "key-provider protocol structs must use explicitly reviewed redacted Debug implementations" >&2
+    exit 1
+fi
+
 for provider_source in crates/rembrane-provider-sdk/src/*.rs; do
     if sed '/^#\[cfg(test)\]/,$d' "$provider_source" |
         rg -n -U '#\[derive\([^]]*Debug[^]]*\)\]\n(?:pub )?struct '

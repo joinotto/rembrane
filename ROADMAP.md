@@ -58,6 +58,9 @@ This roadmap describes sequencing, not release dates.
     become encryption associated data or customer-provider request metadata.
   - [x] Redact tenant identifiers, record identifiers, key identifiers,
     ciphertext, and nonce bytes from cryptographic debug output.
+    - [x] Redact plaintext seal buffers, encrypted envelopes, request context,
+      provider identity, versions, and algorithms from key-provider protocol
+      diagnostics.
 - [x] Define and verify the tenant-isolated SQLite schema.
 - [x] Add versioned, idempotent SQLite schema initialization.
 - [x] Configure bounded SQLite lock waiting and WAL concurrency.

@@ -95,6 +95,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Provider connection and remote MCP deployment diagnostics now redact
   endpoints, resources, authorities, issuers, OAuth metadata, client IDs,
   secret locators, and trusted origins while retaining safe kinds and counts.
+- Key-provider protocol diagnostics now redact seal plaintext, open envelopes,
+  encryption contexts, request IDs, provider identities, versions, and
+  algorithm names while retaining safe sizes and capability metadata.
 - Provider-independent key seal requests now retain copied plaintext in
   redacted zeroize-on-drop ownership instead of an ordinary byte vector.
 - Key-provider plaintext responses are now explicitly wiped before oversized
