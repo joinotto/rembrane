@@ -258,9 +258,55 @@ impl<Service> AuthorizedTowerMcpDispatcher<Service> {
     }
 }
 
+/// Builds a tenant-pinned MCP Tower service only after OAuth authorization.
+///
+/// A multi-tenant remote endpoint must not reuse a handler whose canonical
+/// identity was initialized for another tenant. Implementations should create
+/// or select a service using the exact verified access supplied here.
+pub trait AuthorizedTowerMcpServiceFactory: Clone + Send + Sync + 'static {
+    type Service;
+    type Error;
+
+    fn create(&self, access: &VerifiedRemoteAccess) -> Result<Self::Service, Self::Error>;
+}
+
+impl<Factory, Service, FactoryError> AuthorizedTowerMcpServiceFactory for Factory
+where
+    Factory:
+        Fn(&VerifiedRemoteAccess) -> Result<Service, FactoryError> + Clone + Send + Sync + 'static,
+{
+    type Service = Service;
+    type Error = FactoryError;
+
+    fn create(&self, access: &VerifiedRemoteAccess) -> Result<Self::Service, Self::Error> {
+        self(access)
+    }
+}
+
+/// Dispatches authorized traffic through a service selected for that exact
+/// verified tenant.
+#[derive(Clone)]
+pub struct TenantAwareTowerMcpDispatcher<Factory> {
+    factory: Factory,
+}
+
+impl<Factory> TenantAwareTowerMcpDispatcher<Factory> {
+    #[must_use]
+    pub const fn new(factory: Factory) -> Self {
+        Self { factory }
+    }
+}
+
 #[derive(Debug)]
 pub enum TowerMcpDispatchError<ServiceError> {
     InvalidAuthorizedMetadata,
+    Service(ServiceError),
+}
+
+#[derive(Debug)]
+pub enum TenantAwareTowerMcpDispatchError<FactoryError, ServiceError> {
+    InvalidAuthorizedMetadata,
+    Factory(FactoryError),
     Service(ServiceError),
 }
 
@@ -420,6 +466,215 @@ where
                 .map_err(TowerMcpDispatchError::Service)
         })
     }
+}
+
+impl<Factory> AuthorizedRemoteMcpDispatcher for TenantAwareTowerMcpDispatcher<Factory>
+where
+    Factory: AuthorizedTowerMcpServiceFactory,
+    Factory::Service: tower::Service<Request<Body>> + Send + 'static,
+    <Factory::Service as tower::Service<Request<Body>>>::Future: Send + 'static,
+    <Factory::Service as tower::Service<Request<Body>>>::Response: Send + 'static,
+    <Factory::Service as tower::Service<Request<Body>>>::Error: Send + 'static,
+    Factory::Error: Send + 'static,
+{
+    type Output = <Factory::Service as tower::Service<Request<Body>>>::Response;
+    type Error = TenantAwareTowerMcpDispatchError<
+        Factory::Error,
+        <Factory::Service as tower::Service<Request<Body>>>::Error,
+    >;
+    type DispatchFuture =
+        Pin<Box<dyn Future<Output = Result<Self::Output, Self::Error>> + Send + 'static>>;
+
+    fn dispatch(
+        &self,
+        access: VerifiedRemoteAccess,
+        invocation: RemoteMcpInvocation,
+        protocol_headers: RemoteMcpProtocolHeaders,
+        body: Zeroizing<Vec<u8>>,
+    ) -> Self::DispatchFuture {
+        let factory = self.factory.clone();
+        Box::pin(async move {
+            let service = factory
+                .create(&access)
+                .map_err(TenantAwareTowerMcpDispatchError::Factory)?;
+            let mut request = Request::builder()
+                .method(Method::POST)
+                .body(Body::from(bytes::Bytes::from_owner(body)))
+                .map_err(|_| TenantAwareTowerMcpDispatchError::InvalidAuthorizedMetadata)?;
+            insert_tenant_validated_header(
+                request.headers_mut(),
+                CONTENT_TYPE,
+                protocol_headers.content_type(),
+            )?;
+            insert_tenant_validated_header(
+                request.headers_mut(),
+                ACCEPT,
+                protocol_headers.accept(),
+            )?;
+            insert_optional_tenant_validated_header(
+                request.headers_mut(),
+                MCP_PROTOCOL_VERSION_HEADER_NAME,
+                protocol_headers.protocol_version(),
+            )?;
+            insert_optional_tenant_validated_header(
+                request.headers_mut(),
+                HOST,
+                protocol_headers.validated_host(),
+            )?;
+            insert_optional_tenant_validated_header(
+                request.headers_mut(),
+                ORIGIN,
+                protocol_headers.validated_origin(),
+            )?;
+            request.extensions_mut().insert(access);
+            request.extensions_mut().insert(invocation);
+            service
+                .oneshot(request)
+                .await
+                .map_err(TenantAwareTowerMcpDispatchError::Service)
+        })
+    }
+}
+
+impl<Factory> AuthorizedRemoteMcpEventStreamDispatcher for TenantAwareTowerMcpDispatcher<Factory>
+where
+    Factory: AuthorizedTowerMcpServiceFactory,
+    Factory::Service: tower::Service<Request<Body>> + Send + 'static,
+    <Factory::Service as tower::Service<Request<Body>>>::Future: Send + 'static,
+    <Factory::Service as tower::Service<Request<Body>>>::Response: Send + 'static,
+    <Factory::Service as tower::Service<Request<Body>>>::Error: Send + 'static,
+    Factory::Error: Send + 'static,
+{
+    type Output = <Factory::Service as tower::Service<Request<Body>>>::Response;
+    type Error = TenantAwareTowerMcpDispatchError<
+        Factory::Error,
+        <Factory::Service as tower::Service<Request<Body>>>::Error,
+    >;
+    type DispatchFuture =
+        Pin<Box<dyn Future<Output = Result<Self::Output, Self::Error>> + Send + 'static>>;
+
+    fn open(
+        &self,
+        access: VerifiedRemoteAccess,
+        accept: String,
+        protocol_version: Option<String>,
+        validated_host: Option<String>,
+        validated_origin: Option<String>,
+    ) -> Self::DispatchFuture {
+        let factory = self.factory.clone();
+        Box::pin(async move {
+            let service = factory
+                .create(&access)
+                .map_err(TenantAwareTowerMcpDispatchError::Factory)?;
+            let mut request = Request::builder()
+                .method(Method::GET)
+                .body(Body::empty())
+                .map_err(|_| TenantAwareTowerMcpDispatchError::InvalidAuthorizedMetadata)?;
+            insert_tenant_validated_header(request.headers_mut(), ACCEPT, &accept)?;
+            insert_optional_tenant_validated_header(
+                request.headers_mut(),
+                MCP_PROTOCOL_VERSION_HEADER_NAME,
+                protocol_version.as_deref(),
+            )?;
+            insert_optional_tenant_validated_header(
+                request.headers_mut(),
+                HOST,
+                validated_host.as_deref(),
+            )?;
+            insert_optional_tenant_validated_header(
+                request.headers_mut(),
+                ORIGIN,
+                validated_origin.as_deref(),
+            )?;
+            request.extensions_mut().insert(access);
+            service
+                .oneshot(request)
+                .await
+                .map_err(TenantAwareTowerMcpDispatchError::Service)
+        })
+    }
+}
+
+impl<Factory> AuthorizedRemoteMcpSessionDeletionDispatcher
+    for TenantAwareTowerMcpDispatcher<Factory>
+where
+    Factory: AuthorizedTowerMcpServiceFactory,
+    Factory::Service: tower::Service<Request<Body>> + Send + 'static,
+    <Factory::Service as tower::Service<Request<Body>>>::Future: Send + 'static,
+    <Factory::Service as tower::Service<Request<Body>>>::Response: Send + 'static,
+    <Factory::Service as tower::Service<Request<Body>>>::Error: Send + 'static,
+    Factory::Error: Send + 'static,
+{
+    type Output = <Factory::Service as tower::Service<Request<Body>>>::Response;
+    type Error = TenantAwareTowerMcpDispatchError<
+        Factory::Error,
+        <Factory::Service as tower::Service<Request<Body>>>::Error,
+    >;
+    type DispatchFuture =
+        Pin<Box<dyn Future<Output = Result<Self::Output, Self::Error>> + Send + 'static>>;
+
+    fn terminate(
+        &self,
+        access: VerifiedRemoteAccess,
+        session_id: RemoteSessionId,
+        protocol_version: Option<String>,
+        validated_host: String,
+        validated_origin: Option<String>,
+    ) -> Self::DispatchFuture {
+        let factory = self.factory.clone();
+        Box::pin(async move {
+            let service = factory
+                .create(&access)
+                .map_err(TenantAwareTowerMcpDispatchError::Factory)?;
+            let mut request = Request::builder()
+                .method(Method::DELETE)
+                .body(Body::empty())
+                .map_err(|_| TenantAwareTowerMcpDispatchError::InvalidAuthorizedMetadata)?;
+            insert_tenant_validated_header(
+                request.headers_mut(),
+                MCP_SESSION_HEADER_NAME,
+                session_id.as_str(),
+            )?;
+            insert_optional_tenant_validated_header(
+                request.headers_mut(),
+                MCP_PROTOCOL_VERSION_HEADER_NAME,
+                protocol_version.as_deref(),
+            )?;
+            insert_tenant_validated_header(request.headers_mut(), HOST, &validated_host)?;
+            insert_optional_tenant_validated_header(
+                request.headers_mut(),
+                ORIGIN,
+                validated_origin.as_deref(),
+            )?;
+            request.extensions_mut().insert(access);
+            service
+                .oneshot(request)
+                .await
+                .map_err(TenantAwareTowerMcpDispatchError::Service)
+        })
+    }
+}
+
+fn insert_tenant_validated_header<FactoryError, ServiceError>(
+    headers: &mut HeaderMap,
+    name: HeaderName,
+    value: &str,
+) -> Result<(), TenantAwareTowerMcpDispatchError<FactoryError, ServiceError>> {
+    let value = HeaderValue::from_str(value)
+        .map_err(|_| TenantAwareTowerMcpDispatchError::InvalidAuthorizedMetadata)?;
+    headers.insert(name, value);
+    Ok(())
+}
+
+fn insert_optional_tenant_validated_header<FactoryError, ServiceError>(
+    headers: &mut HeaderMap,
+    name: HeaderName,
+    value: Option<&str>,
+) -> Result<(), TenantAwareTowerMcpDispatchError<FactoryError, ServiceError>> {
+    if let Some(value) = value {
+        insert_tenant_validated_header(headers, name, value)?;
+    }
+    Ok(())
 }
 
 fn insert_validated_header<ServiceError>(
@@ -2043,7 +2298,10 @@ impl RemoteMcpHttpGate {
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::BTreeSet, sync::Arc};
+    use std::{
+        collections::BTreeSet,
+        sync::{Arc, Mutex},
+    };
 
     use axum::{
         Router,
@@ -2076,10 +2334,11 @@ mod tests {
         AuthorizedTowerMcpDispatcher, MAX_REMOTE_MCP_HEADER_BYTES,
         MCP_PROTOCOL_VERSION_HEADER_NAME, MCP_SESSION_HEADER_NAME, RemoteMcpAxumAuthorization,
         RemoteMcpDispatchError, RemoteMcpHttpGate, RemoteMcpHttpRejection, RemoteMcpHttpRequest,
-        RemoteMcpInvocation, authorize_axum_session_body, authorize_axum_session_deletion,
-        authorize_axum_stateless_body, authorize_axum_stateless_owned_body,
-        classify_remote_mcp_request, establish_and_dispatch_axum_session,
-        establish_axum_session_body, request_from_axum_headers,
+        RemoteMcpInvocation, TenantAwareTowerMcpDispatcher, authorize_axum_session_body,
+        authorize_axum_session_deletion, authorize_axum_stateless_body,
+        authorize_axum_stateless_owned_body, classify_remote_mcp_request,
+        establish_and_dispatch_axum_session, establish_axum_session_body,
+        request_from_axum_headers,
     };
 
     struct Verifier;
@@ -2996,6 +3255,80 @@ mod tests {
             "bearer credential must stop at OAuth boundary"
         );
         assert_eq!(dispatched.4, body);
+    }
+
+    #[tokio::test]
+    async fn tenant_aware_tower_factory_selects_service_after_exact_authorization() {
+        let verifier = Verifier;
+        let authenticator = RemoteAccessAuthenticator::new(
+            &verifier,
+            "https://identity.example.test",
+            "https://memory.example.test/mcp",
+        );
+        let authorization = RemoteHttpAuthorization::new(&authenticator, &[]);
+        let gate = RemoteMcpHttpGate::new(
+            1,
+            "https://memory.example.test/.well-known/oauth-protected-resource/mcp",
+            &["memory.example.test"],
+        )
+        .expect("gate should be valid");
+        let selected = Arc::new(Mutex::new(Vec::new()));
+        let selected_by_factory = Arc::clone(&selected);
+        let dispatcher = TenantAwareTowerMcpDispatcher::new(
+            move |access: &rembrane_contracts::VerifiedRemoteAccess| {
+                let selected_workspace = access.workspace_id().to_string();
+                selected_by_factory
+                    .lock()
+                    .expect("selection log")
+                    .push(selected_workspace.clone());
+                Ok::<_, std::convert::Infallible>(tower::service_fn(
+                    move |mut request: axum::http::Request<Body>| {
+                        let selected_workspace = selected_workspace.clone();
+                        async move {
+                            let dispatched_workspace = request
+                                .extensions_mut()
+                                .remove::<rembrane_contracts::VerifiedRemoteAccess>()
+                                .expect("verified access extension")
+                                .workspace_id()
+                                .to_string();
+                            Ok::<_, std::convert::Infallible>((
+                                selected_workspace,
+                                dispatched_workspace,
+                                request.headers().contains_key(AUTHORIZATION),
+                            ))
+                        }
+                    },
+                ))
+            },
+        );
+        let body = br#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"rembrane_resolve_context","arguments":{}}}"#;
+
+        for (token, workspace) in [
+            ("Bearer workspace-one", "workspace_01"),
+            ("Bearer workspace-two", "workspace_02"),
+        ] {
+            let request = RemoteMcpHttpRequest {
+                authorization: Some(token),
+                host: Some("memory.example.test"),
+                origin: None,
+                session_id: None,
+            };
+            let authorized = gate
+                .authorize_stateless_body(&authorization, request, body, 1_000)
+                .expect("tenant request should authorize");
+            let outcome = authorized
+                .dispatch_with(&dispatcher)
+                .await
+                .expect("tenant service dispatch");
+            assert_eq!(outcome.0, workspace);
+            assert_eq!(outcome.1, workspace);
+            assert!(!outcome.2, "bearer must not cross the OAuth boundary");
+        }
+
+        assert_eq!(
+            *selected.lock().expect("selection log"),
+            ["workspace_01", "workspace_02"]
+        );
     }
 
     #[tokio::test]

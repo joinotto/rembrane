@@ -23,6 +23,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Remote MCP handlers now require every SDK tool context to contain verified
   request identity exactly matching the handler's subject, client, and
   workspace, rejecting missing or cross-tenant substitutions.
+- Remote MCP dispatch can now construct or select a distinct Tower protocol
+  service after exact tenant authorization, preventing cross-workspace handler
+  reuse while keeping bearer credentials outside the service boundary.
 - Static TypeScript SDK syntax validation now selects ES-module parsing
   explicitly across supported Node.js versions.
 - OAuth introspection now applies canonical audience-cardinality,

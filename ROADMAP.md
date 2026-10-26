@@ -393,6 +393,9 @@ This roadmap describes sequencing, not release dates.
     - [x] Require every remote tool invocation to carry the exact verified
       subject, client, and workspace identity through the SDK request context,
       rejecting missing or substituted tenant extensions.
+    - [x] Select or construct the Tower MCP service only after OAuth
+      authorization using the exact verified tenant, without forwarding the
+      bearer credential into the protocol service.
     - [x] Add a consuming Tower dispatcher that reconstructs only validated
       MCP protocol headers, strips the bearer credential at the OAuth boundary,
       and injects verified tenant access into request extensions for the
