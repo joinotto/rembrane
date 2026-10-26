@@ -122,6 +122,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Canonical memory-scope, cross-workspace share-proposal, and invitation
   diagnostics now expose only safe scope kinds, versions, roles, and statuses
   while redacting selectors, routing identities, and collaboration timelines.
+- Semantic-memory and knowledge-graph projection diagnostics now expose only
+  resource kind, canonical version, operation, status, and attempt count while
+  redacting tenant, resource, job, and provider identities.
 - Canonical SQLite initialization and backup now require the path opened by
   SQLite to retain the exact protected file's device/inode identity, and
   failure cleanup refuses to remove a path replaced after preparation.

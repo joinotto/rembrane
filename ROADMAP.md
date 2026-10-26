@@ -43,6 +43,8 @@ This roadmap describes sequencing, not release dates.
 - [x] Implement authenticated, tenant-scoped SQLite memory reads.
 - [x] Atomically persist encrypted memories, events, evidence, and projections.
 - [x] Persist and optimistically update the SQLite provider projection outbox.
+  - [x] Redact semantic and graph projection job, tenant, resource, and
+    provider identities from diagnostics.
 - [x] Persist encrypted activity checkpoints with their audit events.
 - [x] Audit every externally resumed checkpoint revision with a tenant-scoped
   disclosure receipt.

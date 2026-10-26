@@ -39,7 +39,7 @@ impl Display for ProjectionJobError {
 impl Error for ProjectionJobError {}
 
 /// Durable work for updating one derived provider from canonical state.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct ProjectionJob {
     id: ProjectionJobId,
     workspace_id: WorkspaceId,
@@ -49,6 +49,22 @@ pub struct ProjectionJob {
     operation: ProjectionOperation,
     status: ProjectionStatus,
     attempts: u32,
+}
+
+impl fmt::Debug for ProjectionJob {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ProjectionJob")
+            .field("id", &"<redacted>")
+            .field("workspace_id", &"<redacted>")
+            .field("memory_id", &"<redacted>")
+            .field("memory_version", &self.memory_version)
+            .field("provider_id", &"<redacted>")
+            .field("operation", &self.operation)
+            .field("status", &self.status)
+            .field("attempts", &self.attempts)
+            .finish()
+    }
 }
 
 impl ProjectionJob {
@@ -214,5 +230,35 @@ mod tests {
     #[test]
     fn cannot_complete_job_that_never_started() {
         assert_eq!(job().complete(), Err(ProjectionJobError::InvalidTransition));
+    }
+
+    #[test]
+    fn debug_output_redacts_projection_routing() {
+        let job = ProjectionJob::new(
+            ProjectionJobId::new("private_projection"),
+            WorkspaceId::new("private_workspace"),
+            MemoryId::new("private_memory"),
+            7,
+            ProviderId::new("private.provider"),
+            ProjectionOperation::Delete,
+        )
+        .expect("job should validate")
+        .begin()
+        .expect("job should begin");
+
+        let diagnostic = format!("{job:?}");
+
+        for private_value in [
+            "private_projection",
+            "private_workspace",
+            "private_memory",
+            "private.provider",
+        ] {
+            assert!(!diagnostic.contains(private_value));
+        }
+        assert!(diagnostic.contains("memory_version: 7"));
+        assert!(diagnostic.contains("operation: Delete"));
+        assert!(diagnostic.contains("status: Processing"));
+        assert!(diagnostic.contains("attempts: 1"));
     }
 }

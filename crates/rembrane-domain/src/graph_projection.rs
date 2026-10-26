@@ -6,10 +6,23 @@ use crate::{
     ProviderId, WorkspaceId,
 };
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub enum GraphProjectionResource {
     Node(KnowledgeNodeId),
     Edge(KnowledgeEdgeId),
+}
+
+impl fmt::Debug for GraphProjectionResource {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let kind = match self {
+            Self::Node(_) => "node",
+            Self::Edge(_) => "edge",
+        };
+        formatter
+            .debug_struct("GraphProjectionResource")
+            .field("kind", &kind)
+            .finish()
+    }
 }
 
 impl GraphProjectionResource {
@@ -45,7 +58,7 @@ impl Error for GraphProjectionJobError {}
 
 /// Durable work for synchronizing one canonical graph aggregate to one
 /// replaceable derived engine.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct GraphProjectionJob {
     id: ProjectionJobId,
     workspace_id: WorkspaceId,
@@ -55,6 +68,22 @@ pub struct GraphProjectionJob {
     operation: ProjectionOperation,
     status: ProjectionStatus,
     attempts: u32,
+}
+
+impl fmt::Debug for GraphProjectionJob {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("GraphProjectionJob")
+            .field("id", &"<redacted>")
+            .field("workspace_id", &"<redacted>")
+            .field("resource", &self.resource)
+            .field("resource_version", &self.resource_version)
+            .field("provider_id", &"<redacted>")
+            .field("operation", &self.operation)
+            .field("status", &self.status)
+            .field("attempts", &self.attempts)
+            .finish()
+    }
 }
 
 impl GraphProjectionJob {
@@ -209,8 +238,9 @@ fn validate(
 #[cfg(test)]
 mod tests {
     use crate::{
-        GraphProjectionJob, GraphProjectionJobError, GraphProjectionResource, KnowledgeNodeId,
-        ProjectionJobId, ProjectionOperation, ProjectionStatus, ProviderId, WorkspaceId,
+        GraphProjectionJob, GraphProjectionJobError, GraphProjectionResource, KnowledgeEdgeId,
+        KnowledgeNodeId, ProjectionJobId, ProjectionOperation, ProjectionStatus, ProviderId,
+        WorkspaceId,
     };
 
     fn job() -> GraphProjectionJob {
@@ -238,5 +268,37 @@ mod tests {
             job().complete(),
             Err(GraphProjectionJobError::InvalidTransition)
         );
+    }
+
+    #[test]
+    fn debug_output_redacts_graph_projection_routing() {
+        let resource = GraphProjectionResource::Edge(KnowledgeEdgeId::new("private_edge"));
+        let job = GraphProjectionJob::new(
+            ProjectionJobId::new("private_graph_projection"),
+            WorkspaceId::new("private_workspace"),
+            resource.clone(),
+            8,
+            ProviderId::new("private.graph.provider"),
+            ProjectionOperation::Upsert,
+        )
+        .expect("job should validate")
+        .begin()
+        .expect("job should begin");
+
+        let diagnostic = format!("{resource:?} {job:?}");
+
+        for private_value in [
+            "private_edge",
+            "private_graph_projection",
+            "private_workspace",
+            "private.graph.provider",
+        ] {
+            assert!(!diagnostic.contains(private_value));
+        }
+        assert!(diagnostic.contains("kind: \"edge\""));
+        assert!(diagnostic.contains("resource_version: 8"));
+        assert!(diagnostic.contains("operation: Upsert"));
+        assert!(diagnostic.contains("status: Processing"));
+        assert!(diagnostic.contains("attempts: 1"));
     }
 }
