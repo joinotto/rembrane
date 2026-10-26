@@ -3,7 +3,7 @@
 mod selection;
 
 use std::error::Error;
-use std::fmt::{Display, Formatter};
+use std::fmt::{self, Display, Formatter};
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
@@ -18,17 +18,37 @@ const ED25519_SPKI_PREFIX: &[u8] = &[
     0x30, 0x2a, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x03, 0x21, 0x00,
 ];
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub enum RegistryTrust {
     Embedded,
     Ed25519 { public_key_sha256: String },
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+impl fmt::Debug for RegistryTrust {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::Embedded => "Embedded",
+            Self::Ed25519 { .. } => "Ed25519 { public_key_sha256: <redacted> }",
+        })
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
 pub struct VerifiedProviderRegistry {
     bytes: Vec<u8>,
     sha256: String,
     trust: RegistryTrust,
+}
+
+impl fmt::Debug for VerifiedProviderRegistry {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("VerifiedProviderRegistry")
+            .field("byte_count", &self.bytes.len())
+            .field("sha256", &"<redacted>")
+            .field("trust", &self.trust)
+            .finish()
+    }
 }
 
 impl VerifiedProviderRegistry {
@@ -104,8 +124,14 @@ impl VerifiedProviderRegistry {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Eq, PartialEq)]
 pub struct RegistryVerificationError;
+
+impl fmt::Debug for RegistryVerificationError {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
+        formatter.write_str("RegistryVerificationError")
+    }
+}
 
 impl Display for RegistryVerificationError {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
@@ -180,6 +206,16 @@ mod tests {
             RegistryTrust::Ed25519 { public_key_sha256 }
                 if public_key_sha256.len() == 64
         ));
+        let registry_sha256 = verified.sha256().to_owned();
+        let public_key_sha256 = match verified.trust() {
+            RegistryTrust::Ed25519 { public_key_sha256 } => public_key_sha256.clone(),
+            RegistryTrust::Embedded => unreachable!("fixture uses detached signing"),
+        };
+        let diagnostic = format!("{verified:?}");
+        assert!(!diagnostic.contains(r#"{"schemaVersion":1}"#));
+        assert!(!diagnostic.contains(&registry_sha256));
+        assert!(!diagnostic.contains(&public_key_sha256));
+        assert!(diagnostic.contains("byte_count"));
     }
 
     #[test]

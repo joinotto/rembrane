@@ -82,6 +82,15 @@ for provider_source in crates/rembrane-provider-sdk/src/*.rs; do
     fi
 done
 
+for registry_source in crates/rembrane-provider-registry/src/*.rs; do
+    if sed '/^#\[cfg(test)\]/,$d' "$registry_source" |
+        rg -n -U '#\[derive\([^]]*Debug[^]]*\)\]\n(?:pub )?struct '
+    then
+        echo "provider registry structs must use explicitly reviewed redacted Debug implementations: $registry_source" >&2
+        exit 1
+    fi
+done
+
 if rg -n -U '#\[derive\([^]]*Debug[^]]*\)\]\npub enum (ProviderError|ConformanceFailure|MemoryProviderResponseBody)' \
     crates/rembrane-provider-sdk/src
 then

@@ -1625,6 +1625,9 @@ This roadmap describes sequencing, not release dates.
               operator-managed and automated integration workflows.
 - [x] Run installed native-provider conformance through the CLI.
 - [x] Automated external-provider registry verification and release signing.
+  - [x] Redact signed registry bytes, trust-anchor fingerprints, provider and
+    adapter identities, evidence revisions, hashes, and timestamps from
+    registry verification and selection diagnostics.
   - [x] Verify registry identity, timestamps, conformance status, and pinned
     native Git evidence in the repository static gate.
     - [x] Represent provider revocation as a signed, timestamped, closed-reason

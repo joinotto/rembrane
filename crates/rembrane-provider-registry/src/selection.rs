@@ -1,5 +1,5 @@
 use std::error::Error;
-use std::fmt::{Display, Formatter};
+use std::fmt::{self, Display, Formatter};
 
 use rembrane_provider_sdk::{
     SEMANTIC_PROVIDER_CONFORMANCE_CASES, SEMANTIC_PROVIDER_CONFORMANCE_PROFILE_SHA256,
@@ -9,7 +9,7 @@ use serde::Serialize;
 
 use crate::{RegistryTrust, VerifiedProviderRegistry};
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Eq, PartialEq)]
 pub struct ProviderSelectionPolicy<'value> {
     pub provider_id: &'value str,
     pub adapter_version: &'value str,
@@ -20,7 +20,27 @@ pub struct ProviderSelectionPolicy<'value> {
     pub expected_registry_sha256: Option<&'value str>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+impl fmt::Debug for ProviderSelectionPolicy<'_> {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ProviderSelectionPolicy")
+            .field("provider_id", &"<redacted>")
+            .field("adapter_version", &"<redacted>")
+            .field("allow_experimental", &self.allow_experimental)
+            .field("allow_provider_plaintext", &self.allow_provider_plaintext)
+            .field(
+                "minimum_registry_generated_at_present",
+                &self.minimum_registry_generated_at_epoch_seconds.is_some(),
+            )
+            .field(
+                "expected_registry_sha256_present",
+                &self.expected_registry_sha256.is_some(),
+            )
+            .finish_non_exhaustive()
+    }
+}
+
+#[derive(Clone, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProviderSelectionReceipt {
     pub schema_version: u8,
@@ -36,6 +56,20 @@ pub struct ProviderSelectionReceipt {
     pub plaintext_processing: bool,
     pub approvals: ProviderSelectionApprovals,
     pub evidence: ProviderSelectionEvidence,
+}
+
+impl fmt::Debug for ProviderSelectionReceipt {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ProviderSelectionReceipt")
+            .field("schema_version", &self.schema_version)
+            .field("registry_trust", &self.registry_trust)
+            .field("eligibility", &self.eligibility)
+            .field("deployment_mode_count", &self.deployment_modes.len())
+            .field("plaintext_processing", &self.plaintext_processing)
+            .field("approvals", &self.approvals)
+            .finish_non_exhaustive()
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -55,14 +89,24 @@ pub enum ProviderEligibility {
     ExperimentalOptIn,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProviderSelectionApprovals {
     pub experimental: bool,
     pub provider_plaintext: bool,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+impl fmt::Debug for ProviderSelectionApprovals {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ProviderSelectionApprovals")
+            .field("experimental", &self.experimental)
+            .field("provider_plaintext", &self.provider_plaintext)
+            .finish()
+    }
+}
+
+#[derive(Clone, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProviderSelectionEvidence {
     pub suite_id: String,
@@ -72,8 +116,27 @@ pub struct ProviderSelectionEvidence {
     pub source_revision: String,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+impl fmt::Debug for ProviderSelectionEvidence {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ProviderSelectionEvidence")
+            .field("suite_id", &"<redacted>")
+            .field("suite_version", &"<redacted>")
+            .field("profile_sha256", &"<redacted>")
+            .field("tested_at", &"<redacted>")
+            .field("source_revision", &"<redacted>")
+            .finish()
+    }
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
 pub struct ProviderRegistrySelectionError(&'static str);
+
+impl fmt::Debug for ProviderRegistrySelectionError {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
+        formatter.write_str("ProviderRegistrySelectionError(<redacted>)")
+    }
+}
 
 impl Display for ProviderRegistrySelectionError {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
