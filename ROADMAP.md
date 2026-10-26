@@ -127,6 +127,8 @@ This roadmap describes sequencing, not release dates.
   - [x] Validate preference content, scope selectors, and client identities
     before opening tenant storage.
 - [x] Add encrypted CLI correction and deletion commands.
+  - [x] Add structured, secret-safe correction and deletion results for
+    cross-agent lifecycle synchronization.
 - [x] Create new local database, backup, and restore directory components with
   owner-only Unix permissions without modifying existing parent directories.
 - [x] Create encrypted backup exports and restored databases atomically with

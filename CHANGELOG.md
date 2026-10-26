@@ -9,6 +9,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Fixed
 
+- `rembrane correct --json` and `rembrane forget --json` now return canonical
+  memory IDs and versions with closed, secret-safe failure codes; both paths
+  validate identifiers, scope, and corrected content before storage access.
 - CLI preference capture now rejects unsafe domain/entity/activity/client
   identifiers, empty or NUL-containing content, and content above 256 KiB
   before opening tenant storage.

@@ -31,10 +31,10 @@ use rembrane_crypto_configured::ConfiguredRecordCipher;
 use rembrane_domain::{
     ActivityCheckpoint, ActivityId, CanonicalEvent, CheckpointId, ClientId, ContextPackId,
     DisclosureId, EntityId, EventId, EventPayload, EvidenceId, EvidenceReference, EvidenceSource,
-    Invitation, InvitationStatus, LegalHoldId, Membership, MemoryId, MemoryKind, MemoryRecord,
-    MemoryScope, Principal, PrincipalId, ReadGrant, ReadScope, RetentionPeriod, Workspace,
-    WorkspaceId, WorkspaceRetentionPolicy, WorkspaceRole, WritePermission,
-    MAX_MEMORY_CONTENT_BYTES,
+    Invitation, InvitationStatus, LegalHoldId, MAX_MEMORY_CONTENT_BYTES, Membership, MemoryId,
+    MemoryKind, MemoryRecord, MemoryScope, Principal, PrincipalId, ReadGrant, ReadScope,
+    RetentionPeriod, Workspace, WorkspaceId, WorkspaceRetentionPolicy, WorkspaceRole,
+    WritePermission,
 };
 use rembrane_memory_provider_configured::ConfiguredMemoryProvider;
 use rembrane_provider_registry::{ProviderSelectionPolicy, VerifiedProviderRegistry};
@@ -74,6 +74,8 @@ fn main() {
             println!("{}", trace_failure_json());
         } else if remember_json_requested(&arguments) {
             println!("{}", remember_failure_json());
+        } else if let Some(failure) = memory_lifecycle_failure_json(&arguments) {
+            println!("{failure}");
         } else if let Some(failure) = working_memory_failure_json(&arguments) {
             println!("{failure}");
         } else {
@@ -101,6 +103,21 @@ fn trace_json_requested(arguments: &[String]) -> bool {
 fn remember_json_requested(arguments: &[String]) -> bool {
     arguments.first().map(String::as_str) == Some("remember")
         && arguments.iter().any(|argument| argument == "--json")
+}
+
+fn memory_lifecycle_failure_json(arguments: &[String]) -> Option<serde_json::Value> {
+    if !arguments.iter().any(|argument| argument == "--json") {
+        return None;
+    }
+    let code = match arguments.first().map(String::as_str) {
+        Some("correct") => "correct_failed",
+        Some("forget") => "forget_failed",
+        _ => return None,
+    };
+    Some(serde_json::json!({
+        "schemaVersion": 1,
+        "error": {"code": code}
+    }))
 }
 
 fn working_memory_failure_json(arguments: &[String]) -> Option<serde_json::Value> {
@@ -2461,6 +2478,19 @@ fn correct(arguments: &[String]) -> Result<(), String> {
     let content = option(arguments, "--content")?;
     let scope = requested_memory_scope(arguments)?;
     let client_id = optional_option(arguments, "--client").unwrap_or("rembrane-cli");
+    validate_cli_opaque_id("memory", memory_id.as_str())?;
+    validate_cli_opaque_id("client", client_id)?;
+    validate_cli_memory_scope(&scope)?;
+    if content.trim().is_empty() || content.contains('\0') {
+        return Err(
+            "corrected content must be non-empty and contain no null characters".to_owned(),
+        );
+    }
+    if content.len() > MAX_MEMORY_CONTENT_BYTES {
+        return Err(format!(
+            "corrected content must not exceed {MAX_MEMORY_CONTENT_BYTES} bytes"
+        ));
+    }
     let (mut store, principal_id, workspace_id) = encrypted_store(arguments)?;
     let grants = authorize_client(
         &store,
@@ -2488,7 +2518,14 @@ fn correct(arguments: &[String]) -> Result<(), String> {
         })
         .map_err(|error| format!("cannot correct memory: {error}"))?;
 
-    println!("Corrected {} to version {}", memory.id(), memory.version());
+    if arguments.iter().any(|argument| argument == "--json") {
+        println!(
+            "{}",
+            memory_lifecycle_json(&memory, "preference", "confirmed")
+        );
+    } else {
+        println!("Corrected {} to version {}", memory.id(), memory.version());
+    }
     Ok(())
 }
 
@@ -2497,6 +2534,9 @@ fn forget(arguments: &[String]) -> Result<(), String> {
     let expected_version = positive_u64(arguments, "--version")?;
     let scope = requested_memory_scope(arguments)?;
     let client_id = optional_option(arguments, "--client").unwrap_or("rembrane-cli");
+    validate_cli_opaque_id("memory", memory_id.as_str())?;
+    validate_cli_opaque_id("client", client_id)?;
+    validate_cli_memory_scope(&scope)?;
     let (mut store, principal_id, workspace_id) = encrypted_store(arguments)?;
     let grants = authorize_client(
         &store,
@@ -2523,8 +2563,29 @@ fn forget(arguments: &[String]) -> Result<(), String> {
         })
         .map_err(|error| format!("cannot forget memory: {error}"))?;
 
-    println!("Deleted {} at version {}", memory.id(), memory.version());
+    if arguments.iter().any(|argument| argument == "--json") {
+        println!(
+            "{}",
+            memory_lifecycle_json(&memory, "preference", "deleted")
+        );
+    } else {
+        println!("Deleted {} at version {}", memory.id(), memory.version());
+    }
     Ok(())
+}
+
+fn memory_lifecycle_json(
+    memory: &MemoryRecord,
+    kind: &'static str,
+    status: &'static str,
+) -> serde_json::Value {
+    serde_json::json!({
+        "schemaVersion": 1,
+        "memoryId": memory.id().to_string(),
+        "version": memory.version(),
+        "kind": kind,
+        "status": status
+    })
 }
 
 fn recall(arguments: &[String]) -> Result<(), String> {
@@ -3516,12 +3577,12 @@ mod tests {
         cursor_mcp_config, doctor_failure_json, doctor_json, doctor_json_requested,
         format_read_scopes, gemini_mcp_config, generic_mcp_config, invitation_list_json,
         invitation_status, key_provider_secret_sources, mcp_client_catalog,
-        mcp_environment_variables, memory_privacy_mode_name, memory_provider_check_policy,
-        opencode_mcp_config, option, positive_u64, providers, read_bounded_registry_file,
-        read_export, recall_failure_json, recall_json_requested, recall_scope_context,
-        redact_endpoint, remember_failure_json, remember_json_requested, render_mcp_config,
-        requested_memory_privacy, requested_memory_scope, run, selected_secret_reference,
-        test_provider, trace_failure_json, trace_json_requested,
+        mcp_environment_variables, memory_lifecycle_failure_json, memory_privacy_mode_name,
+        memory_provider_check_policy, opencode_mcp_config, option, positive_u64, providers,
+        read_bounded_registry_file, read_export, recall_failure_json, recall_json_requested,
+        recall_scope_context, redact_endpoint, remember_failure_json, remember_json_requested,
+        render_mcp_config, requested_memory_privacy, requested_memory_scope, run,
+        selected_secret_reference, test_provider, trace_failure_json, trace_json_requested,
         validate_cli_memory_scope, validate_cli_opaque_id, validate_external_conformance_namespace,
         validate_mcp_server_binary, vscode_mcp_config, working_memory_failure_json, write_export,
         write_knowledge_graph_export, write_memory_jsonl_export, write_memory_markdown_export,
@@ -3714,14 +3775,18 @@ mod tests {
     #[test]
     fn remember_rejects_invalid_input_before_storage_access() {
         assert!(validate_cli_memory_scope(&MemoryScope::Global).is_ok());
-        assert!(validate_cli_memory_scope(&MemoryScope::Domain {
-            name: "travel".to_owned(),
-        })
-        .is_ok());
-        assert!(validate_cli_memory_scope(&MemoryScope::Entity {
-            id: EntityId::new("has spaces"),
-        })
-        .is_err());
+        assert!(
+            validate_cli_memory_scope(&MemoryScope::Domain {
+                name: "travel".to_owned(),
+            })
+            .is_ok()
+        );
+        assert!(
+            validate_cli_memory_scope(&MemoryScope::Entity {
+                id: EntityId::new("has spaces"),
+            })
+            .is_err()
+        );
 
         for content in [
             "Call me\0Hippo".to_owned(),
@@ -3772,6 +3837,31 @@ mod tests {
             run(&unsafe_scope),
             Err("entity must contain 1 to 255 safe ASCII characters".to_owned())
         );
+    }
+
+    #[test]
+    fn lifecycle_json_failures_are_closed_and_secret_safe() {
+        for (command, code) in [("correct", "correct_failed"), ("forget", "forget_failed")] {
+            let arguments = vec![
+                command.to_owned(),
+                "--memory".to_owned(),
+                "private_memory".to_owned(),
+                "--database".to_owned(),
+                "/private/memory.sqlite".to_owned(),
+                "--json".to_owned(),
+            ];
+            let result = memory_lifecycle_failure_json(&arguments).expect("JSON lifecycle failure");
+            assert_eq!(
+                result,
+                serde_json::json!({
+                    "schemaVersion": 1,
+                    "error": {"code": code}
+                })
+            );
+            assert!(!result.to_string().contains("private_memory"));
+            assert!(!result.to_string().contains("memory.sqlite"));
+        }
+        assert!(memory_lifecycle_failure_json(&["correct".to_owned()]).is_none());
     }
 
     #[test]
