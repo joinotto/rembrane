@@ -1534,6 +1534,76 @@ where
     .await
 }
 
+/// Authorizes and dispatches one sessionless Axum initialization, then commits
+/// only the official SDK response session identifier.
+///
+/// # Errors
+///
+/// Distinguishes HTTP/OAuth authorization, downstream initialization, local
+/// binding, and compensating termination failures.
+pub async fn initialize_and_commit_axum_session<Verifier, Dispatcher>(
+    gate: &mut RemoteMcpHttpGate,
+    authorization: &RemoteHttpAuthorization<'_, '_, Verifier>,
+    headers: &HeaderMap,
+    body: &[u8],
+    now_epoch_seconds: u64,
+    dispatcher: &Dispatcher,
+) -> Result<
+    InitializedRemoteMcpSession<Dispatcher::Output>,
+    RemoteMcpInitializationError<Dispatcher::InitializeError, Dispatcher::TerminationError>,
+>
+where
+    Verifier: RemoteTokenVerifier,
+    Dispatcher: AuthorizedRemoteMcpInitializationDispatcher,
+{
+    initialize_and_commit_axum_owned_session(
+        gate,
+        authorization,
+        headers,
+        Zeroizing::new(body.to_vec()),
+        now_epoch_seconds,
+        dispatcher,
+    )
+    .await
+}
+
+/// Consumes one sessionless Axum initialization body and preserves its single
+/// zeroizing allocation through official SDK dispatch and confirmed binding.
+///
+/// # Errors
+///
+/// Distinguishes HTTP/OAuth authorization, downstream initialization, local
+/// binding, and compensating termination failures.
+pub async fn initialize_and_commit_axum_owned_session<Verifier, Dispatcher>(
+    gate: &mut RemoteMcpHttpGate,
+    authorization: &RemoteHttpAuthorization<'_, '_, Verifier>,
+    headers: &HeaderMap,
+    body: Zeroizing<Vec<u8>>,
+    now_epoch_seconds: u64,
+    dispatcher: &Dispatcher,
+) -> Result<
+    InitializedRemoteMcpSession<Dispatcher::Output>,
+    RemoteMcpInitializationError<Dispatcher::InitializeError, Dispatcher::TerminationError>,
+>
+where
+    Verifier: RemoteTokenVerifier,
+    Dispatcher: AuthorizedRemoteMcpInitializationDispatcher,
+{
+    let protocol_headers =
+        protocol_headers_from_axum(headers).map_err(RemoteMcpInitializationError::Authorization)?;
+    let request =
+        request_from_axum_headers(headers).map_err(RemoteMcpInitializationError::Authorization)?;
+    gate.initialize_and_commit_sdk_session(
+        authorization,
+        request,
+        protocol_headers,
+        body,
+        now_epoch_seconds,
+        dispatcher,
+    )
+    .await
+}
+
 /// Reauthenticates an Axum session DELETE, dispatches it to the protocol
 /// service, and commits local deletion only after downstream success.
 ///
@@ -1744,6 +1814,75 @@ where
         .dispatch_with(dispatcher)
         .await
         .map_err(RemoteMcpDispatchError::Dispatch)
+    }
+
+    /// Authorizes and dispatches one sessionless initialization through the
+    /// owned deployment verifier, committing only the official SDK response
+    /// session identifier.
+    ///
+    /// # Errors
+    ///
+    /// Distinguishes authorization, initialization, binding, and compensating
+    /// downstream termination failures.
+    pub async fn initialize_and_commit_session<Dispatcher>(
+        &mut self,
+        headers: &HeaderMap,
+        body: &[u8],
+        now_epoch_seconds: u64,
+        dispatcher: &Dispatcher,
+    ) -> Result<
+        InitializedRemoteMcpSession<Dispatcher::Output>,
+        RemoteMcpInitializationError<Dispatcher::InitializeError, Dispatcher::TerminationError>,
+    >
+    where
+        Dispatcher: AuthorizedRemoteMcpInitializationDispatcher,
+    {
+        self.initialize_and_commit_owned_session(
+            headers,
+            Zeroizing::new(body.to_vec()),
+            now_epoch_seconds,
+            dispatcher,
+        )
+        .await
+    }
+
+    /// Consumes one sessionless initialization through the owned deployment
+    /// verifier without creating a second plaintext request allocation.
+    ///
+    /// # Errors
+    ///
+    /// Distinguishes authorization, initialization, binding, and compensating
+    /// downstream termination failures.
+    pub async fn initialize_and_commit_owned_session<Dispatcher>(
+        &mut self,
+        headers: &HeaderMap,
+        body: Zeroizing<Vec<u8>>,
+        now_epoch_seconds: u64,
+        dispatcher: &Dispatcher,
+    ) -> Result<
+        InitializedRemoteMcpSession<Dispatcher::Output>,
+        RemoteMcpInitializationError<Dispatcher::InitializeError, Dispatcher::TerminationError>,
+    >
+    where
+        Dispatcher: AuthorizedRemoteMcpInitializationDispatcher,
+    {
+        let authenticator =
+            RemoteAccessAuthenticator::new(&self.verifier, &self.issuer, &self.resource);
+        let trusted_origins = self
+            .trusted_origins
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>();
+        let authorization = RemoteHttpAuthorization::new(&authenticator, &trusted_origins);
+        initialize_and_commit_axum_owned_session(
+            &mut self.gate,
+            &authorization,
+            headers,
+            body,
+            now_epoch_seconds,
+            dispatcher,
+        )
+        .await
     }
 
     /// Establishes and dispatches one exact session initialization through
@@ -4681,6 +4820,76 @@ mod tests {
             .await
             .expect("in-memory router should respond");
         assert_eq!(denied.status(), 403);
+    }
+
+    #[tokio::test]
+    async fn owned_axum_service_confirms_sdk_generated_session() {
+        let config = RemoteMcpConfig::new(
+            "https://memory.example.test/mcp".to_owned(),
+            "https://identity.example.test".to_owned(),
+            "https://identity.example.test/introspect".to_owned(),
+            "rembrane".to_owned(),
+            SecretReference::environment("OAUTH_SECRET").expect("reference should be valid"),
+            vec!["https://agent.example.test".to_owned()],
+        )
+        .expect("remote profile should be valid");
+        let mut authorization = RemoteMcpAxumAuthorization::from_config(16, &config, Verifier)
+            .expect("owned authorization service should initialize");
+        let mut headers = HeaderMap::new();
+        headers.insert(HOST, HeaderValue::from_static("memory.example.test"));
+        headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+        headers.insert(
+            ACCEPT,
+            HeaderValue::from_static("application/json, text/event-stream"),
+        );
+        headers.insert(
+            AUTHORIZATION,
+            HeaderValue::from_static("Bearer workspace-one"),
+        );
+        headers.insert(
+            ORIGIN,
+            HeaderValue::from_static("https://agent.example.test"),
+        );
+        let generated = RemoteSessionId::new("session_owned_sdk_0123456789")
+            .expect("generated session fixture should validate");
+        let terminated = Arc::new(Mutex::new(Vec::new()));
+        let dispatcher = ConfirmedInitializationDispatcher {
+            session_id: generated.clone(),
+            terminated: Arc::clone(&terminated),
+            fail_termination: false,
+        };
+        let initialize = zeroize::Zeroizing::new(
+            br#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}"#
+                .to_vec(),
+        );
+        let initialized = authorization
+            .initialize_and_commit_owned_session(&headers, initialize, 1_000, &dispatcher)
+            .await
+            .expect("owned service should commit the SDK-generated session");
+        assert_eq!(initialized.session_id(), &generated);
+        assert_eq!(initialized.output().0, "workspace_01");
+
+        headers.insert(
+            MCP_SESSION_HEADER_NAME,
+            HeaderValue::from_str(generated.as_str()).expect("session header should validate"),
+        );
+        let tool_result = authorization
+            .authorize_and_dispatch_session(
+                &headers,
+                br#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#,
+                1_001,
+                &RecordingDispatcher,
+            )
+            .await
+            .expect("committed generated session should authorize later requests");
+        assert_eq!(tool_result.workspace, "workspace_01");
+        assert_eq!(tool_result.method, "tools/list");
+        assert!(
+            terminated
+                .lock()
+                .expect("termination recording lock should remain available")
+                .is_empty()
+        );
     }
 
     #[tokio::test]

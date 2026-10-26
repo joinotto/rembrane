@@ -49,6 +49,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Confirmed remote MCP initialization now compensates duplicate or capacity
   commit rejection by terminating the generated downstream SDK session, with
   typed propagation when that cleanup itself fails.
+- Borrowed and owned Axum authorization surfaces now expose confirmed
+  official-SDK initialization without duplicating the zeroizing plaintext
+  request body or reimplementing header validation.
 
 - CLI now exports authenticated canonical memories as deterministic, versioned
   JSONL after explicit plaintext confirmation, with exact tenant validation,

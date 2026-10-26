@@ -502,6 +502,8 @@ This roadmap describes sequencing, not release dates.
         - [x] Compensate a rejected local session commit by terminating the
           downstream SDK session, preserving any termination failure for
           fail-closed operational handling.
+        - [x] Expose confirmed initialization through borrowed and owned Axum
+          boundaries while preserving one zeroizing request-body allocation.
     - [x] Require every remote tool invocation to carry the exact verified
       subject, client, and workspace identity through the SDK request context,
       rejecting missing or substituted tenant extensions.
