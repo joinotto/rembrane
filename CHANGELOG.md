@@ -20,6 +20,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - MCP connection identity is now encapsulated independently from storage and
   provider state, preparing the official Streamable HTTP handler to source
   tenant identity only from verified request extensions.
+- Remote MCP handlers now require every SDK tool context to contain verified
+  request identity exactly matching the handler's subject, client, and
+  workspace, rejecting missing or cross-tenant substitutions.
 - Static TypeScript SDK syntax validation now selects ES-module parsing
   explicitly across supported Node.js versions.
 - OAuth introspection now applies canonical audience-cardinality,

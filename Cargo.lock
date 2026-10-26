@@ -1309,6 +1309,7 @@ name = "rembrane-mcp"
 version = "0.1.0-alpha.1"
 dependencies = [
  "anyhow",
+ "http",
  "rembrane-application",
  "rembrane-config",
  "rembrane-contracts",

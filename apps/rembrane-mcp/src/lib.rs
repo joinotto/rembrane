@@ -27,7 +27,10 @@ use rembrane_domain::{
 use rembrane_graph_configured::ConfiguredGraphProvider;
 use rembrane_store_sqlite::SqliteStore;
 use rmcp::handler::server::wrapper::Parameters;
-use rmcp::{ErrorData as McpError, ServiceExt, schemars, tool, tool_router, transport::stdio};
+use rmcp::{
+    ErrorData as McpError, RoleServer, ServiceExt, schemars, service::RequestContext, tool,
+    tool_router, transport::stdio,
+};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -348,12 +351,13 @@ struct State {
     store: SqliteStore<ConfiguredRecordCipher>,
     graph_provider: ConfiguredGraphProvider,
     identity: ConnectionIdentity,
+    require_verified_request_identity: bool,
     read_scopes: Vec<ReadScope>,
     read_permissions: Vec<ReadPermission>,
     next_id: u128,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Eq, PartialEq)]
 struct ConnectionIdentity {
     principal: PrincipalId,
     workspace: WorkspaceId,
@@ -388,6 +392,7 @@ impl RembraneMcp {
                 workspace: workspace_id,
                 client: client_id,
             },
+            false,
         )
     }
 
@@ -402,10 +407,15 @@ impl RembraneMcp {
         Self::from_connection(
             required_environment("REMBRANE_DATABASE")?,
             ConnectionIdentity::from_verified_remote_access(access),
+            true,
         )
     }
 
-    fn from_connection(database: String, identity: ConnectionIdentity) -> Result<Self> {
+    fn from_connection(
+        database: String,
+        identity: ConnectionIdentity,
+        require_verified_request_identity: bool,
+    ) -> Result<Self> {
         let cipher = ConfiguredRecordCipher::from_environment()
             .context("failed to load workspace cipher")?;
         let read_scopes = parse_read_scopes(
@@ -440,6 +450,7 @@ impl RembraneMcp {
                 store,
                 graph_provider,
                 identity,
+                require_verified_request_identity,
                 read_scopes,
                 read_permissions,
                 next_id,
@@ -448,6 +459,7 @@ impl RembraneMcp {
     }
 }
 
+#[allow(clippy::needless_pass_by_value, clippy::similar_names)]
 #[tool_router(server_handler)]
 impl RembraneMcp {
     #[tool(
@@ -456,6 +468,7 @@ impl RembraneMcp {
     )]
     fn resolve_context(
         &self,
+        context: RequestContext<RoleServer>,
         Parameters(parameters): Parameters<ResolveContextParameters>,
     ) -> Result<String, McpError> {
         if parameters.purpose.trim().is_empty() || parameters.query.trim().is_empty() {
@@ -490,7 +503,7 @@ impl RembraneMcp {
             parameters.entity_id.as_deref(),
             parameters.activity_id.as_deref(),
         );
-        let grants = authorize(&state, requested_scopes, Vec::new())?;
+        let grants = authorize(&state, &context, requested_scopes, Vec::new())?;
         let principal_id = grants.read.subject_id.clone();
         let workspace_id = grants.read.workspace_id.clone();
         let response = ResolveContextService::new(&mut state.store)
@@ -537,6 +550,7 @@ impl RembraneMcp {
     )]
     fn resolve_graph_context(
         &self,
+        context: RequestContext<RoleServer>,
         Parameters(parameters): Parameters<ResolveGraphContextParameters>,
     ) -> Result<String, McpError> {
         let direction = match parameters.direction.as_str() {
@@ -563,7 +577,7 @@ impl RembraneMcp {
             parameters.activity_id.as_deref(),
         )?;
         let mut state = lock_state(&self.state)?;
-        let grants = authorize(&state, vec![read_scope(&scope)], Vec::new())?;
+        let grants = authorize(&state, &context, vec![read_scope(&scope)], Vec::new())?;
         let disclosure_id = DisclosureId::new(format!("disclosure_{}", next_id(&mut state)?));
         let request = ResolveGraphContextRequest {
             workspace_id: grants.read.workspace_id.clone(),
@@ -612,6 +626,7 @@ impl RembraneMcp {
     )]
     fn remember_preference(
         &self,
+        context: RequestContext<RoleServer>,
         Parameters(parameters): Parameters<RememberPreferenceParameters>,
     ) -> Result<String, McpError> {
         if parameters.content.trim().is_empty() {
@@ -625,6 +640,7 @@ impl RembraneMcp {
         )?;
         let grants = authorize(
             &state,
+            &context,
             vec![read_scope(&scope)],
             vec![WritePermission::CreateMemory],
         )?;
@@ -654,6 +670,7 @@ impl RembraneMcp {
     )]
     fn correct_memory(
         &self,
+        context: RequestContext<RoleServer>,
         Parameters(parameters): Parameters<CorrectMemoryParameters>,
     ) -> Result<String, McpError> {
         if parameters.memory_id.trim().is_empty()
@@ -673,6 +690,7 @@ impl RembraneMcp {
         )?;
         let grants = authorize(
             &state,
+            &context,
             vec![read_scope(&scope)],
             vec![WritePermission::ReviseMemory],
         )?;
@@ -702,6 +720,7 @@ impl RembraneMcp {
     )]
     fn forget_memory(
         &self,
+        context: RequestContext<RoleServer>,
         Parameters(parameters): Parameters<ForgetMemoryParameters>,
     ) -> Result<String, McpError> {
         if parameters.memory_id.trim().is_empty()
@@ -721,6 +740,7 @@ impl RembraneMcp {
         )?;
         let grants = authorize(
             &state,
+            &context,
             vec![read_scope(&scope)],
             vec![WritePermission::DeleteMemory],
         )?;
@@ -749,6 +769,7 @@ impl RembraneMcp {
     )]
     fn record_work_trace(
         &self,
+        context: RequestContext<RoleServer>,
         Parameters(parameters): Parameters<WorkTraceParameters>,
     ) -> Result<String, McpError> {
         if parameters.activity_id.trim().is_empty() || parameters.summary.trim().is_empty() {
@@ -764,6 +785,7 @@ impl RembraneMcp {
         };
         let grants = authorize(
             &state,
+            &context,
             vec![ReadScope::Activity { id: activity_id }],
             vec![WritePermission::ProposeMemory],
         )?;
@@ -799,6 +821,7 @@ impl RembraneMcp {
     )]
     fn checkpoint_activity(
         &self,
+        context: RequestContext<RoleServer>,
         Parameters(parameters): Parameters<CheckpointParameters>,
     ) -> Result<String, McpError> {
         if parameters.activity_id.trim().is_empty()
@@ -814,6 +837,7 @@ impl RembraneMcp {
         let activity_id = ActivityId::new(parameters.activity_id);
         let grants = authorize(
             &state,
+            &context,
             vec![ReadScope::Activity {
                 id: activity_id.clone(),
             }],
@@ -896,11 +920,13 @@ impl RembraneMcp {
     )]
     fn create_trip(
         &self,
+        context: RequestContext<RoleServer>,
         Parameters(parameters): Parameters<CreateTripParameters>,
     ) -> Result<String, McpError> {
         let mut state = lock_state(&self.state)?;
         let grants = authorize(
             &state,
+            &context,
             vec![ReadScope::Domain {
                 name: "travel".to_owned(),
             }],
@@ -948,6 +974,7 @@ impl RembraneMcp {
     )]
     fn capture_booking_research(
         &self,
+        context: RequestContext<RoleServer>,
         Parameters(parameters): Parameters<CaptureBookingResearchParameters>,
     ) -> Result<String, McpError> {
         let kind = parse_research_kind(&parameters.kind).ok_or_else(|| {
@@ -962,6 +989,7 @@ impl RembraneMcp {
         let trip_id = EntityId::new(parameters.trip_id);
         let grants = authorize(
             &state,
+            &context,
             vec![ReadScope::Entity {
                 id: trip_id.clone(),
             }],
@@ -1009,12 +1037,14 @@ impl RembraneMcp {
     )]
     fn add_trip_participant(
         &self,
+        context: RequestContext<RoleServer>,
         Parameters(parameters): Parameters<AddTripParticipantParameters>,
     ) -> Result<String, McpError> {
         let mut state = lock_state(&self.state)?;
         let trip_id = EntityId::new(parameters.trip_id);
         let grants = authorize(
             &state,
+            &context,
             vec![ReadScope::Entity {
                 id: trip_id.clone(),
             }],
@@ -1055,6 +1085,7 @@ impl RembraneMcp {
     )]
     fn add_trip_constraint(
         &self,
+        context: RequestContext<RoleServer>,
         Parameters(parameters): Parameters<AddTripConstraintParameters>,
     ) -> Result<String, McpError> {
         let kind = parse_constraint_kind(&parameters.kind)
@@ -1065,6 +1096,7 @@ impl RembraneMcp {
         let trip_id = EntityId::new(parameters.trip_id);
         let grants = authorize(
             &state,
+            &context,
             vec![ReadScope::Entity {
                 id: trip_id.clone(),
             }],
@@ -1108,6 +1140,7 @@ impl RembraneMcp {
     )]
     fn record_trip_decision(
         &self,
+        context: RequestContext<RoleServer>,
         Parameters(parameters): Parameters<RecordTripDecisionParameters>,
     ) -> Result<String, McpError> {
         let status = parse_decision_status(&parameters.status)
@@ -1118,6 +1151,7 @@ impl RembraneMcp {
         let trip_id = EntityId::new(parameters.trip_id);
         let grants = authorize(
             &state,
+            &context,
             vec![ReadScope::Entity {
                 id: trip_id.clone(),
             }],
@@ -1162,12 +1196,14 @@ impl RembraneMcp {
     )]
     fn resolve_travel_context(
         &self,
+        context: RequestContext<RoleServer>,
         Parameters(parameters): Parameters<ResolveTravelContextParameters>,
     ) -> Result<String, McpError> {
         let mut state = lock_state(&self.state)?;
         let trip_id = EntityId::new(parameters.trip_id);
         let grants = authorize(
             &state,
+            &context,
             vec![ReadScope::Entity {
                 id: trip_id.clone(),
             }],
@@ -1208,6 +1244,7 @@ impl RembraneMcp {
     )]
     fn resume_activity(
         &self,
+        context: RequestContext<RoleServer>,
         Parameters(parameters): Parameters<ResumeActivityParameters>,
     ) -> Result<String, McpError> {
         if parameters.activity_id.trim().is_empty() {
@@ -1220,6 +1257,7 @@ impl RembraneMcp {
         let activity_id = ActivityId::new(parameters.activity_id);
         let grants = authorize(
             &state,
+            &context,
             vec![ReadScope::Activity {
                 id: activity_id.clone(),
             }],
@@ -1403,9 +1441,24 @@ fn lock_state(state: &Arc<Mutex<State>>) -> Result<std::sync::MutexGuard<'_, Sta
 
 fn authorize(
     state: &State,
+    context: &RequestContext<RoleServer>,
     read_scopes: Vec<ReadScope>,
     write_permissions: Vec<WritePermission>,
 ) -> Result<ClientGrantBundle, McpError> {
+    let verified_access = context
+        .extensions
+        .get::<http::request::Parts>()
+        .and_then(|parts| parts.extensions.get::<VerifiedRemoteAccess>());
+    if !request_identity_matches(
+        &state.identity,
+        state.require_verified_request_identity,
+        verified_access,
+    ) {
+        return Err(McpError::invalid_params(
+            "operation is not authorized or available",
+            None,
+        ));
+    }
     if read_scopes
         .iter()
         .any(|scope| !state.read_scopes.contains(scope))
@@ -1425,6 +1478,18 @@ fn authorize(
             requested_write_permissions: write_permissions,
         })
         .map_err(application_error)
+}
+
+fn request_identity_matches(
+    expected: &ConnectionIdentity,
+    required: bool,
+    access: Option<&VerifiedRemoteAccess>,
+) -> bool {
+    if !required {
+        return true;
+    }
+    access
+        .is_some_and(|access| ConnectionIdentity::from_verified_remote_access(access) == *expected)
 }
 
 fn request_scopes(
@@ -1593,9 +1658,12 @@ pub async fn run_stdio() -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use rembrane_domain::{EntityId, ReadScope};
+    use std::collections::BTreeSet;
 
-    use super::{advance_identifier, request_scopes};
+    use rembrane_contracts::{RemoteAccessScope, RemoteTokenClaims};
+    use rembrane_domain::{ClientId, EntityId, PrincipalId, ReadScope, WorkspaceId};
+
+    use super::{ConnectionIdentity, advance_identifier, request_identity_matches, request_scopes};
 
     #[test]
     fn context_requests_do_not_gain_unconfigured_global_access() {
@@ -1616,5 +1684,44 @@ mod tests {
         assert_eq!(advance_identifier(&mut current), None);
         assert_eq!(advance_identifier(&mut current), None);
         assert_eq!(current, u128::MAX);
+    }
+
+    #[test]
+    fn remote_handler_requires_exact_verified_request_identity() {
+        let expected = ConnectionIdentity {
+            principal: PrincipalId::new("principal_01"),
+            workspace: WorkspaceId::new("workspace_01"),
+            client: ClientId::new("client_01"),
+        };
+        let access = remote_access("principal_01", "workspace_01", "client_01");
+        let other_tenant = remote_access("principal_01", "workspace_02", "client_01");
+
+        assert!(request_identity_matches(&expected, true, Some(&access)));
+        assert!(!request_identity_matches(&expected, true, None));
+        assert!(!request_identity_matches(
+            &expected,
+            true,
+            Some(&other_tenant)
+        ));
+        assert!(request_identity_matches(&expected, false, None));
+    }
+
+    fn remote_access(
+        principal: &str,
+        workspace: &str,
+        client: &str,
+    ) -> rembrane_contracts::VerifiedRemoteAccess {
+        RemoteTokenClaims {
+            issuer: "https://issuer.example".to_owned(),
+            audience: vec!["https://memory.example/mcp".to_owned()],
+            subject_id: PrincipalId::new(principal),
+            client_id: ClientId::new(client),
+            workspace_id: WorkspaceId::new(workspace),
+            scopes: BTreeSet::from([RemoteAccessScope::ContextRead]),
+            expires_at_epoch_seconds: 200,
+            not_before_epoch_seconds: None,
+        }
+        .validate_connection("https://issuer.example", "https://memory.example/mcp", 100)
+        .expect("valid remote access")
     }
 }
