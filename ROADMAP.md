@@ -1331,6 +1331,8 @@ This roadmap describes sequencing, not release dates.
     authenticated REST surface.
   - [x] Publish and test a standard-library-only Python client package for the
     authenticated REST surface.
+  - [x] Document secure TypeScript and Python client setup, portable
+    export/import handling, plaintext risk, and optimistic import sequencing.
   - [x] Publish the transport-neutral Rust provider SDK and authenticated HTTP
     implementation.
   - [x] Publish and compile-test a Swift Package with injectable async
