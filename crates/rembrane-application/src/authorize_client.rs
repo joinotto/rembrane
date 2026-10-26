@@ -1,3 +1,5 @@
+use std::fmt;
+
 use rembrane_domain::{
     ClientId, KeyRotationStatus, ReadGrant, ReadPermission, ReadScope, WorkspaceRole, WriteGrant,
     WritePermission,
@@ -7,7 +9,7 @@ use crate::{
     ApplicationError, KeyRotationRepository, MemberScopeGrantRepository, MembershipRepository,
 };
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct AuthorizeClientCommand {
     pub client_id: ClientId,
     pub workspace_id: rembrane_domain::WorkspaceId,
@@ -17,10 +19,42 @@ pub struct AuthorizeClientCommand {
     pub requested_write_permissions: Vec<WritePermission>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+impl fmt::Debug for AuthorizeClientCommand {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("AuthorizeClientCommand")
+            .field("requested_read_scope_count", &self.requested_read_scopes.len())
+            .field(
+                "requested_read_permission_count",
+                &self.requested_read_permissions.len(),
+            )
+            .field(
+                "requested_write_permission_count",
+                &self.requested_write_permissions.len(),
+            )
+            .finish_non_exhaustive()
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
 pub struct ClientGrantBundle {
     pub read: ReadGrant,
     pub write: WriteGrant,
+}
+
+impl fmt::Debug for ClientGrantBundle {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ClientGrantBundle")
+            .field("read_scope_count", &self.read.scopes.len())
+            .field("read_permission_count", &self.read.permissions.len())
+            .field("write_scope_count", &self.write.scopes.len())
+            .field(
+                "write_permission_count",
+                &self.write.permissions.len(),
+            )
+            .finish()
+    }
 }
 
 pub struct AuthorizeClientService<'repository, Repository> {
@@ -136,6 +170,30 @@ mod tests {
         membership: Membership,
         scopes: Vec<MemberScopeGrant>,
         rotation: Option<WorkspaceKeyRotation>,
+    }
+
+    #[test]
+    fn authorization_command_diagnostics_redact_connection_identity() {
+        let command = AuthorizeClientCommand {
+            client_id: rembrane_domain::ClientId::new("private-client"),
+            workspace_id: WorkspaceId::new("private-workspace"),
+            principal_id: PrincipalId::new("private-principal"),
+            requested_read_scopes: vec![ReadScope::Entity {
+                id: EntityId::new("private-entity"),
+            }],
+            requested_read_permissions: vec![ReadPermission::RevealTravelSensitiveProfile],
+            requested_write_permissions: vec![WritePermission::ReviseTrip],
+        };
+
+        let diagnostic = format!("{command:?}");
+        for secret in [
+            "private-client",
+            "private-workspace",
+            "private-principal",
+            "private-entity",
+        ] {
+            assert!(!diagnostic.contains(secret), "diagnostic exposed {secret}");
+        }
     }
 
     impl MemberScopeGrantRepository for Memberships {
