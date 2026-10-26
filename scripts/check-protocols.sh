@@ -15,6 +15,10 @@ for command in jq node ruby rg; do
     require_command "$command"
 done
 
+check_node_module() {
+    node --input-type=module --check < "$1"
+}
+
 ruby -e 'require "yaml"; YAML.load_file(ARGV.fetch(0))' spec/openapi.yaml
 ruby -e 'require "yaml"; YAML.load_file(ARGV.fetch(0))' spec/provider-openapi.yaml
 ruby -e 'require "yaml"; YAML.load_file(ARGV.fetch(0))' spec/key-provider-openapi.yaml
@@ -536,7 +540,7 @@ jq -e --slurpfile example spec/examples/memory-provider-mixed-version-evidence.j
     and [$example[0].runs[].result] == ["pass", "pass", "rejected"]
 ' spec/memory-provider-mixed-version-evidence.schema.json >/dev/null
 
-node --check scripts/verify-memory-provider-mixed-version-evidence.mjs
+check_node_module scripts/verify-memory-provider-mixed-version-evidence.mjs
 
 jq -e --slurpfile example spec/examples/memory-provider-release-evidence.json '
     .additionalProperties == false
@@ -548,7 +552,7 @@ jq -e --slurpfile example spec/examples/memory-provider-release-evidence.json '
     and any($example[0].providers[]; .origin == "external")
 ' spec/memory-provider-release-evidence.schema.json >/dev/null
 
-node --check scripts/verify-memory-provider-release-evidence.mjs
+check_node_module scripts/verify-memory-provider-release-evidence.mjs
 
 jq -e '
     (.resource | startswith("https://"))
@@ -570,43 +574,43 @@ do
         exit 1
     fi
 done
-node --check scripts/test-mcp-e2e.mjs
-node --check scripts/test-cross-tool-continuity.mjs
-node --check scripts/derive-ed25519-public-key.mjs
-node --check scripts/ed25519-signing.mjs
-node --check scripts/ed25519-verification.mjs
-node --check scripts/sign-ed25519-document.mjs
-node --check scripts/sha256-bounded-file.mjs
-node --check scripts/verify-security-review-correlation.mjs
-node --check scripts/customer-kms-evidence.mjs
-node --check scripts/generate-customer-kms-evidence.mjs
-node --check scripts/verify-customer-kms-evidence.mjs
-node --check scripts/verify-customer-kms-provider-set.mjs
-node --check scripts/generate-security-review-manifest.mjs
-node --check scripts/verify-security-review-manifest.mjs
-node --check scripts/verify-security-review-attestation.mjs
-node --check scripts/verify-security-review-signature.mjs
-node --check scripts/security-review-evidence.mjs
-node --check scripts/verify-security-review-bundle.mjs
-node --check scripts/verify-provider-registry-signature.mjs
-node --check scripts/provider-registry-evidence.mjs
-node --check scripts/verify-provider-registry-bundle.mjs
-node --check scripts/verify-provider-registry.mjs
+check_node_module scripts/test-mcp-e2e.mjs
+check_node_module scripts/test-cross-tool-continuity.mjs
+check_node_module scripts/derive-ed25519-public-key.mjs
+check_node_module scripts/ed25519-signing.mjs
+check_node_module scripts/ed25519-verification.mjs
+check_node_module scripts/sign-ed25519-document.mjs
+check_node_module scripts/sha256-bounded-file.mjs
+check_node_module scripts/verify-security-review-correlation.mjs
+check_node_module scripts/customer-kms-evidence.mjs
+check_node_module scripts/generate-customer-kms-evidence.mjs
+check_node_module scripts/verify-customer-kms-evidence.mjs
+check_node_module scripts/verify-customer-kms-provider-set.mjs
+check_node_module scripts/generate-security-review-manifest.mjs
+check_node_module scripts/verify-security-review-manifest.mjs
+check_node_module scripts/verify-security-review-attestation.mjs
+check_node_module scripts/verify-security-review-signature.mjs
+check_node_module scripts/security-review-evidence.mjs
+check_node_module scripts/verify-security-review-bundle.mjs
+check_node_module scripts/verify-provider-registry-signature.mjs
+check_node_module scripts/provider-registry-evidence.mjs
+check_node_module scripts/verify-provider-registry-bundle.mjs
+check_node_module scripts/verify-provider-registry.mjs
 sh -n scripts/test-provider-http.sh
-node --check scripts/test-provider-http-runner.mjs
+check_node_module scripts/test-provider-http-runner.mjs
 sh -n scripts/test-key-provider-http.sh
-node --check scripts/test-key-provider-http-runner.mjs
+check_node_module scripts/test-key-provider-http-runner.mjs
 sh -n scripts/test-memory-provider-http.sh
-node --check scripts/test-memory-provider-http-runner.mjs
-node --check scripts/run-memory-provider-conformance.mjs
-node --check scripts/read-bounded-regular-file.mjs
-node --check scripts/memory-provider-external-provenance.mjs
-node --check scripts/memory-provider-mixed-version-evidence.mjs
-node --check scripts/generate-memory-provider-external-provenance.mjs
-node --check scripts/verify-memory-provider-external-provenance.mjs
-node --check scripts/verify-memory-provider-mixed-version-evidence.mjs
-node --check scripts/package-memory-provider-release-evidence.mjs
-node --check scripts/verify-memory-provider-release-evidence.mjs
+check_node_module scripts/test-memory-provider-http-runner.mjs
+check_node_module scripts/run-memory-provider-conformance.mjs
+check_node_module scripts/read-bounded-regular-file.mjs
+check_node_module scripts/memory-provider-external-provenance.mjs
+check_node_module scripts/memory-provider-mixed-version-evidence.mjs
+check_node_module scripts/generate-memory-provider-external-provenance.mjs
+check_node_module scripts/verify-memory-provider-external-provenance.mjs
+check_node_module scripts/verify-memory-provider-mixed-version-evidence.mjs
+check_node_module scripts/package-memory-provider-release-evidence.mjs
+check_node_module scripts/verify-memory-provider-release-evidence.mjs
 if [ "${REMBRANE_RUN_LOOPBACK_TESTS:-0}" = "1" ]; then
     node scripts/test-provider-http-runner.mjs
     node scripts/test-key-provider-http-runner.mjs

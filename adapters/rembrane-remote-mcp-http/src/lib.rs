@@ -549,10 +549,9 @@ impl JsonRpcId {
 
     fn is_sdk_request_id(&self) -> bool {
         match self {
-            Self::Missing => false,
             Self::Present(serde_json::Value::Number(value)) => value.as_i64().is_some(),
             Self::Present(serde_json::Value::String(_)) => true,
-            Self::Present(_) => false,
+            Self::Missing | Self::Present(_) => false,
         }
     }
 }

@@ -7,6 +7,14 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ## [Unreleased]
 
+### Fixed
+
+- Remote MCP JSON-RPC request-ID classification now satisfies the
+  warnings-as-errors production Clippy gate.
+- Protocol script syntax checks now select ES-module parsing explicitly,
+  including on supported Node.js versions where `--check` misclassifies
+  `.mjs` files.
+
 ### Added
 
 - OAuth introspection now applies canonical audience-cardinality,
