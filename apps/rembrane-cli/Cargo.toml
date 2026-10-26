@@ -9,6 +9,7 @@ rust-version.workspace = true
 
 [dependencies]
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
+libc = "0.2"
 rembrane-channel-mobile-share = { path = "../../adapters/rembrane-channel-mobile-share" }
 rembrane-channel-whatsapp = { path = "../../adapters/rembrane-channel-whatsapp" }
 rembrane-application = { path = "../../crates/rembrane-application" }

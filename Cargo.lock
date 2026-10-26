@@ -1134,6 +1134,7 @@ name = "rembrane-cli"
 version = "0.1.0-alpha.1"
 dependencies = [
  "chrono",
+ "libc",
  "rembrane-application",
  "rembrane-channel-mobile-share",
  "rembrane-channel-whatsapp",

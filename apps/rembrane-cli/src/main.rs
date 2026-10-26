@@ -769,7 +769,7 @@ fn read_bounded_registry_file(
 ) -> Result<Vec<u8>, String> {
     use std::io::Read as _;
 
-    let file = std::fs::File::open(path)
+    let file = open_regular_file_for_read(std::path::Path::new(path))
         .map_err(|_| format!("provider registry {label} file is unavailable"))?;
     let metadata = file
         .metadata()
@@ -1416,8 +1416,8 @@ fn restore(arguments: &[String]) -> Result<(), String> {
 fn write_export(snapshot: &std::path::Path, destination: &std::path::Path) -> Result<(), String> {
     use std::io::Write;
 
-    let mut input =
-        std::fs::File::open(snapshot).map_err(|error| format!("cannot open snapshot: {error}"))?;
+    let mut input = open_regular_file_for_read(snapshot)
+        .map_err(|error| format!("cannot open snapshot: {error}"))?;
     let payload_length = input
         .metadata()
         .map_err(|error| format!("cannot inspect snapshot: {error}"))?
@@ -1456,8 +1456,8 @@ fn read_export(
 ) -> Result<std::fs::File, String> {
     use std::io::Read;
 
-    let mut input =
-        std::fs::File::open(source).map_err(|error| format!("cannot open export: {error}"))?;
+    let mut input = open_regular_file_for_read(source)
+        .map_err(|error| format!("cannot open export: {error}"))?;
     let mut magic = [0_u8; EXPORT_MAGIC.len()];
     input
         .read_exact(&mut magic)
@@ -1551,6 +1551,25 @@ fn validate_open_file_path(path: &std::path::Path, _file: &std::fs::File) -> Res
 fn remove_open_file_path(path: &std::path::Path, file: &std::fs::File) -> Result<(), String> {
     validate_open_file_path(path, file)?;
     std::fs::remove_file(path).map_err(|error| format!("cannot remove protected file: {error}"))
+}
+
+fn open_regular_file_for_read(path: &std::path::Path) -> std::io::Result<std::fs::File> {
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt as _;
+
+        options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
+    }
+    let file = options.open(path)?;
+    if !file.metadata()?.is_file() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "input must be a regular file",
+        ));
+    }
+    Ok(file)
 }
 
 fn private_create_new_options() -> std::fs::OpenOptions {
@@ -3763,6 +3782,27 @@ mod tests {
         );
 
         std::fs::remove_file(original).expect("fixture cleanup");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn encrypted_export_rejects_symlinked_and_non_regular_inputs() {
+        use std::os::unix::fs::symlink;
+
+        let snapshot = temporary_path("symlink-snapshot");
+        let snapshot_link = temporary_path("symlink-snapshot-link");
+        let export = temporary_path("symlink-export");
+        let restored = temporary_path("directory-restored");
+        std::fs::write(&snapshot, b"encrypted fixture").expect("snapshot fixture");
+        symlink(&snapshot, &snapshot_link).expect("snapshot symlink");
+
+        assert!(write_export(&snapshot_link, &export).is_err());
+        assert!(!export.exists());
+        assert!(read_export(std::env::temp_dir().as_path(), &restored).is_err());
+        assert!(!restored.exists());
+
+        std::fs::remove_file(snapshot_link).expect("symlink cleanup");
+        std::fs::remove_file(snapshot).expect("snapshot cleanup");
     }
 
     #[test]
