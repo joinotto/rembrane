@@ -9,6 +9,23 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Fixed
 
+- All fourteen MCP tools now preserve their complete SDK request context while
+  moving synchronous storage/provider work and mutex waits onto bounded
+  blocking workers. Production service constructors share an eight-operation
+  process budget, including async initialization.
+- Stdio provider construction and final executable ownership remain outside
+  the async executor. New bounded async constructors support embedded stdio
+  and verified-identity remote services without synchronous initialization
+  on executor threads.
+- MCP verified request identity is checked before worker admission, with
+  canonical authorization retained inside the worker. Cancellation is checked
+  again after storage-lock acquisition; abandoned responses retain capacity
+  until actual completion. Overload and worker panic responses are generic.
+- Actual in-memory pinned-SDK tests now cover encrypted preference continuity,
+  verified proof preservation, overload, panic/error cleanup, worker capacity
+  after cancellation, and cancellation while waiting for canonical storage.
+  Remote OAuth isolation and real HTTP/staging evidence remain pending.
+
 - REST canonical handlers now run synchronous SQLite, cryptographic, and graph
   provider work on bounded blocking workers instead of the async executor.
   Provider construction and final ownership remain outside the executor.

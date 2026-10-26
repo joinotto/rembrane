@@ -518,6 +518,18 @@ are in [First Production Release Plan](docs/PRODUCTION_PLAN.md).
 - [x] Prove both SDKs accept the canonical full discovery fixture without
   transmitting bearer credentials.
 - [ ] Add remote Streamable HTTP MCP with OAuth.
+  - [x] Move all MCP tool storage/provider work and mutex acquisition onto
+    process-shared bounded blocking workers, preserving the complete SDK
+    request context and canonical authorization.
+  - [x] Check immutable verified request identity before admission and retain
+    worker capacity through real completion after abandoned requests.
+  - [x] Construct stdio providers outside the executor and expose bounded
+    async constructors for stdio and verified remote service initialization.
+  - [x] Prove actual in-memory SDK handshake/tool execution, encrypted
+    preference continuity, verified proof preservation, overload/failure
+    cleanup, and cancellation while waiting for canonical storage.
+  - [ ] Isolate synchronous OAuth introspection in the remote async transport
+    with bounded admission and cancellation-safe worker ownership.
   - [x] Define HTTPS endpoints, RFC 9728 discovery metadata, bearer challenges,
     verified connection identity, scope ceilings, and session security rules.
   - [x] Serve opt-in RFC 9728 protected-resource metadata from the HTTP

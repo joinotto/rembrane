@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
@@ -32,6 +32,10 @@ use rmcp::{
     tool_router, transport::stdio,
 };
 use serde::{Deserialize, Serialize};
+use tokio::sync::Semaphore;
+
+const MAXIMUM_BLOCKING_OPERATIONS: usize = 8;
+static BLOCKING_OPERATIONS: OnceLock<Arc<Semaphore>> = OnceLock::new();
 
 #[derive(Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
@@ -350,8 +354,7 @@ struct CheckpointOutput {
 struct State {
     store: SqliteStore<ConfiguredRecordCipher>,
     graph_provider: ConfiguredGraphProvider,
-    identity: ConnectionIdentity,
-    require_verified_request_identity: bool,
+    policy: Arc<ConnectionPolicy>,
     read_scopes: Vec<ReadScope>,
     read_permissions: Vec<ReadPermission>,
     next_id: u128,
@@ -362,6 +365,11 @@ struct ConnectionIdentity {
     principal: PrincipalId,
     workspace: WorkspaceId,
     client: ClientId,
+}
+
+struct ConnectionPolicy {
+    identity: ConnectionIdentity,
+    require_verified_request_identity: bool,
 }
 
 impl ConnectionIdentity {
@@ -377,9 +385,14 @@ impl ConnectionIdentity {
 #[derive(Clone)]
 pub struct RembraneMcp {
     state: Arc<Mutex<State>>,
+    policy: Arc<ConnectionPolicy>,
+    blocking_operations: Arc<Semaphore>,
 }
 
 impl RembraneMcp {
+    /// Initializes storage and providers synchronously.
+    ///
+    /// Call outside an async executor, or use [`Self::from_environment_async`].
     pub fn from_environment() -> Result<Self> {
         let database = required_environment("REMBRANE_DATABASE")?;
         let principal_id = PrincipalId::new(required_environment("REMBRANE_PRINCIPAL_ID")?);
@@ -399,6 +412,9 @@ impl RembraneMcp {
     /// Builds an MCP service whose canonical identity comes exclusively from
     /// verified remote access claims.
     ///
+    /// This is synchronous provider initialization. Async callers should use
+    /// [`Self::from_verified_remote_access_async`] instead.
+    ///
     /// # Errors
     ///
     /// Returns an error when storage, encryption, configured scope policy, or
@@ -409,6 +425,26 @@ impl RembraneMcp {
             ConnectionIdentity::from_verified_remote_access(access),
             true,
         )
+    }
+
+    /// Initializes the stdio service on a bounded blocking worker.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if capacity is unavailable or initialization fails.
+    pub async fn from_environment_async() -> Result<Self> {
+        initialize_on_worker(Self::from_environment).await
+    }
+
+    /// Initializes a remote service on a bounded blocking worker using only
+    /// verified claims. Its tools still require matching per-request proof.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if capacity is unavailable or initialization fails.
+    pub async fn from_verified_remote_access_async(access: &VerifiedRemoteAccess) -> Result<Self> {
+        let access = access.clone();
+        initialize_on_worker(move || Self::from_verified_remote_access(&access)).await
     }
 
     fn from_connection(
@@ -445,18 +481,89 @@ impl RembraneMcp {
             .context("system clock is before the Unix epoch")?
             .as_nanos();
 
+        let policy = Arc::new(ConnectionPolicy {
+            identity,
+            require_verified_request_identity,
+        });
         Ok(Self {
             state: Arc::new(Mutex::new(State {
                 store,
                 graph_provider,
-                identity,
-                require_verified_request_identity,
+                policy: Arc::clone(&policy),
                 read_scopes,
                 read_permissions,
                 next_id,
             })),
+            policy,
+            blocking_operations: blocking_capacity(),
         })
     }
+
+    async fn run_tool<T, F>(
+        &self,
+        context: RequestContext<RoleServer>,
+        operation: F,
+    ) -> Result<T, McpError>
+    where
+        T: Send + 'static,
+        F: FnOnce(Self, RequestContext<RoleServer>) -> Result<T, McpError> + Send + 'static,
+    {
+        // Check immutable identity before admission without taking the store mutex.
+        // The worker still reauthorizes current canonical membership and scopes.
+        authorize_request_identity(&self.policy, &context)?;
+        ensure_not_cancelled(&context)?;
+        let server = self.clone();
+        run_blocking_operation(Arc::clone(&self.blocking_operations), move || {
+            ensure_not_cancelled(&context)?;
+            operation(server, context)
+        })
+        .await
+    }
+}
+
+fn blocking_capacity() -> Arc<Semaphore> {
+    Arc::clone(
+        BLOCKING_OPERATIONS.get_or_init(|| Arc::new(Semaphore::new(MAXIMUM_BLOCKING_OPERATIONS))),
+    )
+}
+
+async fn initialize_on_worker<F>(initialize: F) -> Result<RembraneMcp>
+where
+    F: FnOnce() -> Result<RembraneMcp> + Send + 'static,
+{
+    run_blocking_operation(blocking_capacity(), move || Ok(initialize()))
+        .await
+        .map_err(|_| anyhow::anyhow!("MCP initialization worker unavailable or failed"))?
+}
+
+async fn run_blocking_operation<T, F>(capacity: Arc<Semaphore>, operation: F) -> Result<T, McpError>
+where
+    T: Send + 'static,
+    F: FnOnce() -> Result<T, McpError> + Send + 'static,
+{
+    let permit = capacity.try_acquire_owned().map_err(|_| {
+        McpError::internal_error(
+            "synchronous operation capacity is temporarily unavailable",
+            None,
+        )
+    })?;
+    tokio::task::spawn_blocking(move || {
+        // An abandoned request must not free capacity while its work is running.
+        let _permit = permit;
+        operation()
+    })
+    .await
+    .map_err(|_| McpError::internal_error("synchronous operation failed", None))?
+}
+
+fn ensure_not_cancelled(context: &RequestContext<RoleServer>) -> Result<(), McpError> {
+    if context.ct.is_cancelled() {
+        return Err(McpError::internal_error(
+            "operation cancelled before execution",
+            None,
+        ));
+    }
+    Ok(())
 }
 
 #[allow(clippy::needless_pass_by_value, clippy::similar_names)]
@@ -466,10 +573,284 @@ impl RembraneMcp {
         name = "rembrane_resolve_context",
         description = "Retrieve minimal confirmed memory authorized for this connection. A disclosure receipt is recorded."
     )]
-    fn resolve_context(
+    async fn resolve_context(
         &self,
         context: RequestContext<RoleServer>,
         Parameters(parameters): Parameters<ResolveContextParameters>,
+    ) -> Result<String, McpError> {
+        self.run_tool(context, move |server, context| {
+            server.resolve_context_sync(context, parameters)
+        })
+        .await
+    }
+
+    #[tool(
+        name = "rembrane_resolve_graph_context",
+        description = "Retrieve one authorized temporal graph neighbourhood. Canonical edge revisions are reauthorized and recorded in a disclosure receipt."
+    )]
+    async fn resolve_graph_context(
+        &self,
+        context: RequestContext<RoleServer>,
+        Parameters(parameters): Parameters<ResolveGraphContextParameters>,
+    ) -> Result<String, McpError> {
+        self.run_tool(context, move |server, context| {
+            server.resolve_graph_context_sync(context, parameters)
+        })
+        .await
+    }
+
+    #[tool(
+        name = "rembrane_remember_preference",
+        description = "Store a confirmed global preference when this connection has direct memory creation permission."
+    )]
+    async fn remember_preference(
+        &self,
+        context: RequestContext<RoleServer>,
+        Parameters(parameters): Parameters<RememberPreferenceParameters>,
+    ) -> Result<String, McpError> {
+        self.run_tool(context, move |server, context| {
+            server.remember_preference_sync(context, parameters)
+        })
+        .await
+    }
+
+    #[tool(
+        name = "rembrane_request_correction",
+        description = "Directly correct a memory when this connection has revision permission."
+    )]
+    async fn correct_memory(
+        &self,
+        context: RequestContext<RoleServer>,
+        Parameters(parameters): Parameters<CorrectMemoryParameters>,
+    ) -> Result<String, McpError> {
+        self.run_tool(context, move |server, context| {
+            server.correct_memory_sync(context, parameters)
+        })
+        .await
+    }
+
+    #[tool(
+        name = "rembrane_forget_memory",
+        description = "Create an encrypted deletion tombstone when this connection has deletion permission."
+    )]
+    async fn forget_memory(
+        &self,
+        context: RequestContext<RoleServer>,
+        Parameters(parameters): Parameters<ForgetMemoryParameters>,
+    ) -> Result<String, McpError> {
+        self.run_tool(context, move |server, context| {
+            server.forget_memory_sync(context, parameters)
+        })
+        .await
+    }
+
+    #[tool(
+        name = "rembrane_record_work_trace",
+        description = "Record an activity-scoped agent observation as proposed memory. It is not promoted to confirmed user truth."
+    )]
+    async fn record_work_trace(
+        &self,
+        context: RequestContext<RoleServer>,
+        Parameters(parameters): Parameters<WorkTraceParameters>,
+    ) -> Result<String, McpError> {
+        self.run_tool(context, move |server, context| {
+            server.record_work_trace_sync(context, parameters)
+        })
+        .await
+    }
+
+    #[tool(
+        name = "rembrane_checkpoint_activity",
+        description = "Create or update an encrypted activity checkpoint for cross-agent continuation."
+    )]
+    async fn checkpoint_activity(
+        &self,
+        context: RequestContext<RoleServer>,
+        Parameters(parameters): Parameters<CheckpointParameters>,
+    ) -> Result<String, McpError> {
+        self.run_tool(context, move |server, context| {
+            server.checkpoint_activity_sync(context, parameters)
+        })
+        .await
+    }
+
+    #[tool(
+        name = "rembrane_create_trip",
+        description = "Create a new encrypted trip under the connection's travel-domain capability."
+    )]
+    async fn create_trip(
+        &self,
+        context: RequestContext<RoleServer>,
+        Parameters(parameters): Parameters<CreateTripParameters>,
+    ) -> Result<String, McpError> {
+        self.run_tool(context, move |server, context| {
+            server.create_trip_sync(context, parameters)
+        })
+        .await
+    }
+
+    #[tool(
+        name = "rembrane_capture_booking_research",
+        description = "Capture one encrypted, expiring, evidence-backed observation for an authorized trip."
+    )]
+    async fn capture_booking_research(
+        &self,
+        context: RequestContext<RoleServer>,
+        Parameters(parameters): Parameters<CaptureBookingResearchParameters>,
+    ) -> Result<String, McpError> {
+        self.run_tool(context, move |server, context| {
+            server.capture_booking_research_sync(context, parameters)
+        })
+        .await
+    }
+
+    #[tool(
+        name = "rembrane_add_trip_participant",
+        description = "Atomically add one participant to an authorized trip without replacing unrelated trip state."
+    )]
+    async fn add_trip_participant(
+        &self,
+        context: RequestContext<RoleServer>,
+        Parameters(parameters): Parameters<AddTripParticipantParameters>,
+    ) -> Result<String, McpError> {
+        self.run_tool(context, move |server, context| {
+            server.add_trip_participant_sync(context, parameters)
+        })
+        .await
+    }
+
+    #[tool(
+        name = "rembrane_add_trip_constraint",
+        description = "Atomically add one evidence-backed constraint to an authorized trip."
+    )]
+    async fn add_trip_constraint(
+        &self,
+        context: RequestContext<RoleServer>,
+        Parameters(parameters): Parameters<AddTripConstraintParameters>,
+    ) -> Result<String, McpError> {
+        self.run_tool(context, move |server, context| {
+            server.add_trip_constraint_sync(context, parameters)
+        })
+        .await
+    }
+
+    #[tool(
+        name = "rembrane_record_trip_decision",
+        description = "Atomically record one evidence-backed decision attributed to the authenticated principal."
+    )]
+    async fn record_trip_decision(
+        &self,
+        context: RequestContext<RoleServer>,
+        Parameters(parameters): Parameters<RecordTripDecisionParameters>,
+    ) -> Result<String, McpError> {
+        self.run_tool(context, move |server, context| {
+            server.record_trip_decision_sync(context, parameters)
+        })
+        .await
+    }
+
+    #[tool(
+        name = "rembrane_resolve_travel_context",
+        description = "Retrieve one authorized trip with fresh and expired research, recording an exact-version disclosure receipt."
+    )]
+    async fn resolve_travel_context(
+        &self,
+        context: RequestContext<RoleServer>,
+        Parameters(parameters): Parameters<ResolveTravelContextParameters>,
+    ) -> Result<String, McpError> {
+        self.run_tool(context, move |server, context| {
+            server.resolve_travel_context_sync(context, parameters)
+        })
+        .await
+    }
+
+    #[tool(
+        name = "rembrane_resume_activity",
+        description = "Retrieve the latest encrypted checkpoint for one authorized activity."
+    )]
+    async fn resume_activity(
+        &self,
+        context: RequestContext<RoleServer>,
+        Parameters(parameters): Parameters<ResumeActivityParameters>,
+    ) -> Result<String, McpError> {
+        self.run_tool(context, move |server, context| {
+            server.resume_activity_sync(context, parameters)
+        })
+        .await
+    }
+}
+
+fn parse_research_kind(value: &str) -> Option<BookingResearchKind> {
+    match value {
+        "flight" => Some(BookingResearchKind::Flight),
+        "lodging" => Some(BookingResearchKind::Lodging),
+        "ground-transport" => Some(BookingResearchKind::GroundTransport),
+        "activity" => Some(BookingResearchKind::Activity),
+        "other" => Some(BookingResearchKind::Other),
+        _ => None,
+    }
+}
+
+fn parse_constraint_kind(value: &str) -> Option<TripConstraintKind> {
+    match value {
+        "accessibility" => Some(TripConstraintKind::Accessibility),
+        "accommodation" => Some(TripConstraintKind::Accommodation),
+        "budget" => Some(TripConstraintKind::Budget),
+        "dietary" => Some(TripConstraintKind::Dietary),
+        "documentation" => Some(TripConstraintKind::Documentation),
+        "schedule" => Some(TripConstraintKind::Schedule),
+        "transport" => Some(TripConstraintKind::Transport),
+        "other" => Some(TripConstraintKind::Other),
+        _ => None,
+    }
+}
+
+fn parse_decision_status(value: &str) -> Option<DecisionStatus> {
+    match value {
+        "proposed" => Some(DecisionStatus::Proposed),
+        "selected" => Some(DecisionStatus::Selected),
+        "rejected" => Some(DecisionStatus::Rejected),
+        _ => None,
+    }
+}
+
+const fn constraint_kind_name(kind: TripConstraintKind) -> &'static str {
+    match kind {
+        TripConstraintKind::Accessibility => "accessibility",
+        TripConstraintKind::Accommodation => "accommodation",
+        TripConstraintKind::Budget => "budget",
+        TripConstraintKind::Dietary => "dietary",
+        TripConstraintKind::Documentation => "documentation",
+        TripConstraintKind::Schedule => "schedule",
+        TripConstraintKind::Transport => "transport",
+        TripConstraintKind::Other => "other",
+    }
+}
+
+const fn decision_status_name(status: DecisionStatus) -> &'static str {
+    match status {
+        DecisionStatus::Proposed => "proposed",
+        DecisionStatus::Selected => "selected",
+        DecisionStatus::Rejected => "rejected",
+    }
+}
+
+fn research_kind_name(kind: BookingResearchKind) -> &'static str {
+    match kind {
+        BookingResearchKind::Flight => "flight",
+        BookingResearchKind::Lodging => "lodging",
+        BookingResearchKind::GroundTransport => "ground-transport",
+        BookingResearchKind::Activity => "activity",
+        BookingResearchKind::Other => "other",
+    }
+}
+
+#[allow(clippy::needless_pass_by_value, clippy::similar_names)]
+impl RembraneMcp {
+    fn resolve_context_sync(
+        &self,
+        context: RequestContext<RoleServer>,
+        parameters: ResolveContextParameters,
     ) -> Result<String, McpError> {
         if parameters.purpose.trim().is_empty() || parameters.query.trim().is_empty() {
             return Err(McpError::invalid_params(
@@ -544,14 +925,10 @@ impl RembraneMcp {
             .map_err(|_| McpError::internal_error("response serialization failed", None))
     }
 
-    #[tool(
-        name = "rembrane_resolve_graph_context",
-        description = "Retrieve one authorized temporal graph neighbourhood. Canonical edge revisions are reauthorized and recorded in a disclosure receipt."
-    )]
-    fn resolve_graph_context(
+    fn resolve_graph_context_sync(
         &self,
         context: RequestContext<RoleServer>,
-        Parameters(parameters): Parameters<ResolveGraphContextParameters>,
+        parameters: ResolveGraphContextParameters,
     ) -> Result<String, McpError> {
         let direction = match parameters.direction.as_str() {
             "incoming" => GraphDisclosureDirection::Incoming,
@@ -620,14 +997,10 @@ impl RembraneMcp {
         .map_err(|_| McpError::internal_error("response serialization failed", None))
     }
 
-    #[tool(
-        name = "rembrane_remember_preference",
-        description = "Store a confirmed global preference when this connection has direct memory creation permission."
-    )]
-    fn remember_preference(
+    fn remember_preference_sync(
         &self,
         context: RequestContext<RoleServer>,
-        Parameters(parameters): Parameters<RememberPreferenceParameters>,
+        parameters: RememberPreferenceParameters,
     ) -> Result<String, McpError> {
         if parameters.content.trim().is_empty() {
             return Err(McpError::invalid_params("content must not be empty", None));
@@ -664,14 +1037,10 @@ impl RembraneMcp {
         mutation_response(memory.id().to_string(), memory.version(), "confirmed")
     }
 
-    #[tool(
-        name = "rembrane_request_correction",
-        description = "Directly correct a memory when this connection has revision permission."
-    )]
-    fn correct_memory(
+    fn correct_memory_sync(
         &self,
         context: RequestContext<RoleServer>,
-        Parameters(parameters): Parameters<CorrectMemoryParameters>,
+        parameters: CorrectMemoryParameters,
     ) -> Result<String, McpError> {
         if parameters.memory_id.trim().is_empty()
             || parameters.replacement.trim().is_empty()
@@ -714,14 +1083,10 @@ impl RembraneMcp {
         mutation_response(memory.id().to_string(), memory.version(), "confirmed")
     }
 
-    #[tool(
-        name = "rembrane_forget_memory",
-        description = "Create an encrypted deletion tombstone when this connection has deletion permission."
-    )]
-    fn forget_memory(
+    fn forget_memory_sync(
         &self,
         context: RequestContext<RoleServer>,
-        Parameters(parameters): Parameters<ForgetMemoryParameters>,
+        parameters: ForgetMemoryParameters,
     ) -> Result<String, McpError> {
         if parameters.memory_id.trim().is_empty()
             || parameters.reason.trim().is_empty()
@@ -763,14 +1128,10 @@ impl RembraneMcp {
         mutation_response(memory.id().to_string(), memory.version(), "deleted")
     }
 
-    #[tool(
-        name = "rembrane_record_work_trace",
-        description = "Record an activity-scoped agent observation as proposed memory. It is not promoted to confirmed user truth."
-    )]
-    fn record_work_trace(
+    fn record_work_trace_sync(
         &self,
         context: RequestContext<RoleServer>,
-        Parameters(parameters): Parameters<WorkTraceParameters>,
+        parameters: WorkTraceParameters,
     ) -> Result<String, McpError> {
         if parameters.activity_id.trim().is_empty() || parameters.summary.trim().is_empty() {
             return Err(McpError::invalid_params(
@@ -815,14 +1176,10 @@ impl RembraneMcp {
         mutation_response(memory.id().to_string(), memory.version(), "proposed")
     }
 
-    #[tool(
-        name = "rembrane_checkpoint_activity",
-        description = "Create or update an encrypted activity checkpoint for cross-agent continuation."
-    )]
-    fn checkpoint_activity(
+    fn checkpoint_activity_sync(
         &self,
         context: RequestContext<RoleServer>,
-        Parameters(parameters): Parameters<CheckpointParameters>,
+        parameters: CheckpointParameters,
     ) -> Result<String, McpError> {
         if parameters.activity_id.trim().is_empty()
             || parameters.summary.trim().is_empty()
@@ -886,8 +1243,8 @@ impl RembraneMcp {
                 })?;
             let mut checkpoint = ActivityCheckpoint::new(
                 CheckpointId::new(format!("checkpoint_{suffix}")),
-                state.identity.workspace.clone(),
-                state.identity.principal.clone(),
+                state.policy.identity.workspace.clone(),
+                state.policy.identity.principal.clone(),
                 activity_id,
                 parameters.entity_id.map(EntityId::new),
                 goal,
@@ -914,14 +1271,10 @@ impl RembraneMcp {
         checkpoint_response(&checkpoint, None, None)
     }
 
-    #[tool(
-        name = "rembrane_create_trip",
-        description = "Create a new encrypted trip under the connection's travel-domain capability."
-    )]
-    fn create_trip(
+    fn create_trip_sync(
         &self,
         context: RequestContext<RoleServer>,
-        Parameters(parameters): Parameters<CreateTripParameters>,
+        parameters: CreateTripParameters,
     ) -> Result<String, McpError> {
         let mut state = lock_state(&self.state)?;
         let grants = authorize(
@@ -939,8 +1292,8 @@ impl RembraneMcp {
                 .map_err(|_| McpError::invalid_params("invalid trip date window", None))?;
         let trip = Trip::new(
             EntityId::new(format!("trip_{suffix}")),
-            state.identity.workspace.clone(),
-            state.identity.principal.clone(),
+            state.policy.identity.workspace.clone(),
+            state.policy.identity.principal.clone(),
             parameters.title,
             parameters.origin,
             parameters.destinations,
@@ -968,14 +1321,10 @@ impl RembraneMcp {
         .map_err(|_| McpError::internal_error("response serialization failed", None))
     }
 
-    #[tool(
-        name = "rembrane_capture_booking_research",
-        description = "Capture one encrypted, expiring, evidence-backed observation for an authorized trip."
-    )]
-    fn capture_booking_research(
+    fn capture_booking_research_sync(
         &self,
         context: RequestContext<RoleServer>,
-        Parameters(parameters): Parameters<CaptureBookingResearchParameters>,
+        parameters: CaptureBookingResearchParameters,
     ) -> Result<String, McpError> {
         let kind = parse_research_kind(&parameters.kind).ok_or_else(|| {
             McpError::invalid_params(
@@ -999,9 +1348,9 @@ impl RembraneMcp {
         let suffix = next_id(&mut state)?;
         let research = BookingResearch::new(
             BookingResearchId::new(format!("research_{suffix}")),
-            state.identity.workspace.clone(),
+            state.policy.identity.workspace.clone(),
             trip_id,
-            state.identity.principal.clone(),
+            state.policy.identity.principal.clone(),
             kind,
             parameters.provider,
             parameters.summary,
@@ -1031,14 +1380,10 @@ impl RembraneMcp {
         .map_err(|_| McpError::internal_error("response serialization failed", None))
     }
 
-    #[tool(
-        name = "rembrane_add_trip_participant",
-        description = "Atomically add one participant to an authorized trip without replacing unrelated trip state."
-    )]
-    fn add_trip_participant(
+    fn add_trip_participant_sync(
         &self,
         context: RequestContext<RoleServer>,
-        Parameters(parameters): Parameters<AddTripParticipantParameters>,
+        parameters: AddTripParticipantParameters,
     ) -> Result<String, McpError> {
         let mut state = lock_state(&self.state)?;
         let trip_id = EntityId::new(parameters.trip_id);
@@ -1079,14 +1424,10 @@ impl RembraneMcp {
         .map_err(|_| McpError::internal_error("response serialization failed", None))
     }
 
-    #[tool(
-        name = "rembrane_add_trip_constraint",
-        description = "Atomically add one evidence-backed constraint to an authorized trip."
-    )]
-    fn add_trip_constraint(
+    fn add_trip_constraint_sync(
         &self,
         context: RequestContext<RoleServer>,
-        Parameters(parameters): Parameters<AddTripConstraintParameters>,
+        parameters: AddTripConstraintParameters,
     ) -> Result<String, McpError> {
         let kind = parse_constraint_kind(&parameters.kind)
             .ok_or_else(|| McpError::invalid_params("unsupported constraint kind", None))?;
@@ -1134,14 +1475,10 @@ impl RembraneMcp {
         .map_err(|_| McpError::internal_error("response serialization failed", None))
     }
 
-    #[tool(
-        name = "rembrane_record_trip_decision",
-        description = "Atomically record one evidence-backed decision attributed to the authenticated principal."
-    )]
-    fn record_trip_decision(
+    fn record_trip_decision_sync(
         &self,
         context: RequestContext<RoleServer>,
-        Parameters(parameters): Parameters<RecordTripDecisionParameters>,
+        parameters: RecordTripDecisionParameters,
     ) -> Result<String, McpError> {
         let status = parse_decision_status(&parameters.status)
             .ok_or_else(|| McpError::invalid_params("unsupported decision status", None))?;
@@ -1165,7 +1502,7 @@ impl RembraneMcp {
             status,
             parameters.summary,
             parameters.rationale,
-            state.identity.principal.clone(),
+            state.policy.identity.principal.clone(),
             EvidenceReference::new(
                 EvidenceId::new(format!("evidence_{suffix}")),
                 evidence_source,
@@ -1190,14 +1527,10 @@ impl RembraneMcp {
         .map_err(|_| McpError::internal_error("response serialization failed", None))
     }
 
-    #[tool(
-        name = "rembrane_resolve_travel_context",
-        description = "Retrieve one authorized trip with fresh and expired research, recording an exact-version disclosure receipt."
-    )]
-    fn resolve_travel_context(
+    fn resolve_travel_context_sync(
         &self,
         context: RequestContext<RoleServer>,
-        Parameters(parameters): Parameters<ResolveTravelContextParameters>,
+        parameters: ResolveTravelContextParameters,
     ) -> Result<String, McpError> {
         let mut state = lock_state(&self.state)?;
         let trip_id = EntityId::new(parameters.trip_id);
@@ -1238,14 +1571,10 @@ impl RembraneMcp {
         .map_err(|_| McpError::internal_error("response serialization failed", None))
     }
 
-    #[tool(
-        name = "rembrane_resume_activity",
-        description = "Retrieve the latest encrypted checkpoint for one authorized activity."
-    )]
-    fn resume_activity(
+    fn resume_activity_sync(
         &self,
         context: RequestContext<RoleServer>,
-        Parameters(parameters): Parameters<ResumeActivityParameters>,
+        parameters: ResumeActivityParameters,
     ) -> Result<String, McpError> {
         if parameters.activity_id.trim().is_empty() {
             return Err(McpError::invalid_params(
@@ -1282,71 +1611,6 @@ impl RembraneMcp {
                 )
             },
         )
-    }
-}
-
-fn parse_research_kind(value: &str) -> Option<BookingResearchKind> {
-    match value {
-        "flight" => Some(BookingResearchKind::Flight),
-        "lodging" => Some(BookingResearchKind::Lodging),
-        "ground-transport" => Some(BookingResearchKind::GroundTransport),
-        "activity" => Some(BookingResearchKind::Activity),
-        "other" => Some(BookingResearchKind::Other),
-        _ => None,
-    }
-}
-
-fn parse_constraint_kind(value: &str) -> Option<TripConstraintKind> {
-    match value {
-        "accessibility" => Some(TripConstraintKind::Accessibility),
-        "accommodation" => Some(TripConstraintKind::Accommodation),
-        "budget" => Some(TripConstraintKind::Budget),
-        "dietary" => Some(TripConstraintKind::Dietary),
-        "documentation" => Some(TripConstraintKind::Documentation),
-        "schedule" => Some(TripConstraintKind::Schedule),
-        "transport" => Some(TripConstraintKind::Transport),
-        "other" => Some(TripConstraintKind::Other),
-        _ => None,
-    }
-}
-
-fn parse_decision_status(value: &str) -> Option<DecisionStatus> {
-    match value {
-        "proposed" => Some(DecisionStatus::Proposed),
-        "selected" => Some(DecisionStatus::Selected),
-        "rejected" => Some(DecisionStatus::Rejected),
-        _ => None,
-    }
-}
-
-const fn constraint_kind_name(kind: TripConstraintKind) -> &'static str {
-    match kind {
-        TripConstraintKind::Accessibility => "accessibility",
-        TripConstraintKind::Accommodation => "accommodation",
-        TripConstraintKind::Budget => "budget",
-        TripConstraintKind::Dietary => "dietary",
-        TripConstraintKind::Documentation => "documentation",
-        TripConstraintKind::Schedule => "schedule",
-        TripConstraintKind::Transport => "transport",
-        TripConstraintKind::Other => "other",
-    }
-}
-
-const fn decision_status_name(status: DecisionStatus) -> &'static str {
-    match status {
-        DecisionStatus::Proposed => "proposed",
-        DecisionStatus::Selected => "selected",
-        DecisionStatus::Rejected => "rejected",
-    }
-}
-
-fn research_kind_name(kind: BookingResearchKind) -> &'static str {
-    match kind {
-        BookingResearchKind::Flight => "flight",
-        BookingResearchKind::Lodging => "lodging",
-        BookingResearchKind::GroundTransport => "ground-transport",
-        BookingResearchKind::Activity => "activity",
-        BookingResearchKind::Other => "other",
     }
 }
 
@@ -1445,20 +1709,10 @@ fn authorize(
     read_scopes: Vec<ReadScope>,
     write_permissions: Vec<WritePermission>,
 ) -> Result<ClientGrantBundle, McpError> {
-    let verified_access = context
-        .extensions
-        .get::<http::request::Parts>()
-        .and_then(|parts| parts.extensions.get::<VerifiedRemoteAccess>());
-    if !request_identity_matches(
-        &state.identity,
-        state.require_verified_request_identity,
-        verified_access,
-    ) {
-        return Err(McpError::invalid_params(
-            "operation is not authorized or available",
-            None,
-        ));
-    }
+    // Cancellation may arrive while this worker waits for the store mutex.
+    // Check again before canonical authorization and any application mutation.
+    ensure_not_cancelled(context)?;
+    authorize_request_identity(&state.policy, context)?;
     if read_scopes
         .iter()
         .any(|scope| !state.read_scopes.contains(scope))
@@ -1470,14 +1724,35 @@ fn authorize(
     }
     AuthorizeClientService::new(&state.store)
         .execute(AuthorizeClientCommand {
-            client_id: state.identity.client.clone(),
-            workspace_id: state.identity.workspace.clone(),
-            principal_id: state.identity.principal.clone(),
+            client_id: state.policy.identity.client.clone(),
+            workspace_id: state.policy.identity.workspace.clone(),
+            principal_id: state.policy.identity.principal.clone(),
             requested_read_scopes: read_scopes,
             requested_read_permissions: state.read_permissions.clone(),
             requested_write_permissions: write_permissions,
         })
         .map_err(application_error)
+}
+
+fn authorize_request_identity(
+    policy: &ConnectionPolicy,
+    context: &RequestContext<RoleServer>,
+) -> Result<(), McpError> {
+    let verified_access = context
+        .extensions
+        .get::<http::request::Parts>()
+        .and_then(|parts| parts.extensions.get::<VerifiedRemoteAccess>());
+    if !request_identity_matches(
+        &policy.identity,
+        policy.require_verified_request_identity,
+        verified_access,
+    ) {
+        return Err(McpError::invalid_params(
+            "operation is not authorized or available",
+            None,
+        ));
+    }
+    Ok(())
 }
 
 fn request_identity_matches(
@@ -1564,7 +1839,7 @@ fn read_scope(scope: &MemoryScope) -> ReadScope {
 fn current_sequence(state: &State) -> Result<u64, McpError> {
     state
         .store
-        .list_events_since(&state.identity.workspace, 0)
+        .list_events_since(&state.policy.identity.workspace, 0)
         .map(|events| {
             events
                 .last()
@@ -1651,7 +1926,18 @@ fn required_environment(name: &str) -> Result<String> {
 }
 
 pub async fn run_stdio() -> Result<()> {
-    let server = RembraneMcp::from_environment()?;
+    let server = RembraneMcp::from_environment_async().await?;
+    serve_stdio(server).await
+}
+
+/// Serves an already initialized service without constructing blocking providers
+/// on the async executor. Synchronous constructors must be called outside it.
+///
+/// # Errors
+///
+/// Returns an error if the stdio service fails to initialize or terminates with
+/// a transport error.
+pub async fn serve_stdio(server: RembraneMcp) -> Result<()> {
     let service = server.serve(stdio()).await?;
     service.waiting().await?;
     Ok(())
@@ -1660,11 +1946,463 @@ pub async fn run_stdio() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;
+    use std::sync::{Arc, Mutex};
+    use std::time::Duration;
 
+    use rembrane_application::{EventRepository, WorkspaceRepository};
     use rembrane_contracts::{RemoteAccessScope, RemoteTokenClaims};
-    use rembrane_domain::{ClientId, EntityId, PrincipalId, ReadScope, WorkspaceId};
+    use rembrane_crypto_configured::ConfiguredRecordCipher;
+    use rembrane_crypto_rustcrypto::{RustCryptoKeyringCipher, RustCryptoRecordCipher};
+    use rembrane_domain::{
+        ClientId, EntityId, Membership, Principal, PrincipalId, ReadScope, Workspace, WorkspaceId,
+        WorkspaceRole,
+    };
+    use rembrane_graph_configured::ConfiguredGraphProvider;
+    use rembrane_graph_native::NativeGraphProvider;
+    use rembrane_store_sqlite::SqliteStore;
+    use rmcp::{
+        RoleServer, ServiceExt,
+        model::RequestId,
+        service::{RequestContext, RunningService},
+    };
+    use tokio::{
+        io::{AsyncBufReadExt, AsyncWriteExt, BufReader, DuplexStream},
+        sync::{Semaphore, oneshot},
+        time::timeout,
+    };
 
-    use super::{ConnectionIdentity, advance_identifier, request_identity_matches, request_scopes};
+    use super::{
+        ConnectionIdentity, ConnectionPolicy, RembraneMcp, State, advance_identifier,
+        request_identity_matches, request_scopes, run_blocking_operation,
+    };
+
+    fn fixture_server(require_verified_request_identity: bool) -> RembraneMcp {
+        let identity = ConnectionIdentity {
+            principal: PrincipalId::new("principal_01"),
+            workspace: WorkspaceId::new("workspace_01"),
+            client: ClientId::new("client_01"),
+        };
+        let mut store = SqliteStore::open_in_memory().expect("fixture store");
+        store
+            .initialize_personal_workspace(
+                Principal::new(identity.principal.clone()),
+                Workspace::personal(identity.workspace.clone()),
+                Membership::new(
+                    identity.workspace.clone(),
+                    identity.principal.clone(),
+                    WorkspaceRole::Owner,
+                ),
+            )
+            .expect("fixture workspace");
+        let cipher = ConfiguredRecordCipher::Local(
+            RustCryptoKeyringCipher::new(
+                RustCryptoRecordCipher::new("mcp-test-key", [7; 32]).expect("fixture cipher"),
+                Vec::new(),
+            )
+            .expect("fixture keyring"),
+        );
+        let policy = Arc::new(ConnectionPolicy {
+            identity,
+            require_verified_request_identity,
+        });
+        RembraneMcp {
+            state: Arc::new(Mutex::new(State {
+                store: store.with_cipher(cipher),
+                graph_provider: ConfiguredGraphProvider::Native(NativeGraphProvider::new()),
+                policy: Arc::clone(&policy),
+                read_scopes: vec![ReadScope::Global],
+                read_permissions: Vec::new(),
+                next_id: 100,
+            })),
+            policy,
+            blocking_operations: Arc::new(Semaphore::new(8)),
+        }
+    }
+
+    async fn read_wire(client: &mut BufReader<DuplexStream>) -> serde_json::Value {
+        let mut line = String::new();
+        let bytes = timeout(Duration::from_secs(5), client.read_line(&mut line))
+            .await
+            .expect("bounded protocol response")
+            .expect("protocol response");
+        assert_ne!(bytes, 0, "unexpected transport closure");
+        serde_json::from_str(&line).expect("protocol JSON")
+    }
+
+    async fn write_wire(client: &mut BufReader<DuplexStream>, value: serde_json::Value) {
+        let mut bytes = serde_json::to_vec(&value).expect("protocol JSON");
+        bytes.push(b'\n');
+        timeout(Duration::from_secs(5), client.get_mut().write_all(&bytes))
+            .await
+            .expect("bounded protocol write")
+            .expect("protocol write");
+    }
+
+    // Use the actual SDK transport and handshake, without a TCP listener or
+    // uncached client transport dependencies. This also supplies a real peer
+    // for RequestContext tests rather than constructing SDK internals.
+    async fn fixture_connection(
+        server: RembraneMcp,
+    ) -> (
+        RunningService<RoleServer, RembraneMcp>,
+        BufReader<DuplexStream>,
+    ) {
+        let (server_transport, client_transport) = tokio::io::duplex(65_536);
+        let pending = tokio::spawn(server.serve(server_transport));
+        let mut client = BufReader::new(client_transport);
+        write_wire(
+            &mut client,
+            serde_json::json!({
+                "jsonrpc": "2.0", "id": 1, "method": "initialize",
+                "params": {
+                    "protocolVersion": "2025-11-25", "capabilities": {},
+                    "clientInfo": {"name": "rembrane-runtime-test", "version": "1"}
+                }
+            }),
+        )
+        .await;
+        let initialized = read_wire(&mut client).await;
+        assert!(initialized.get("result").is_some(), "{initialized}");
+        write_wire(
+            &mut client,
+            serde_json::json!({"jsonrpc": "2.0", "method": "notifications/initialized"}),
+        )
+        .await;
+        let service = timeout(Duration::from_secs(5), pending)
+            .await
+            .expect("bounded handshake")
+            .expect("server task")
+            .expect("server handshake");
+        (service, client)
+    }
+
+    fn request_context(
+        service: &RunningService<RoleServer, RembraneMcp>,
+        access: Option<rembrane_contracts::VerifiedRemoteAccess>,
+    ) -> RequestContext<RoleServer> {
+        let mut context = RequestContext::new(RequestId::Number(99), service.peer().clone());
+        if let Some(access) = access {
+            let (mut parts, ()) = http::Request::new(()).into_parts();
+            parts.extensions.insert(access);
+            context.extensions.insert(parts);
+        }
+        context
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn blocking_worker_runs_outside_executor_and_supports_blocking_providers() {
+        let executor_thread = std::thread::current().id();
+        let capacity = Arc::new(Semaphore::new(1));
+        let worker_thread = run_blocking_operation(Arc::clone(&capacity), || {
+            let _client = reqwest::blocking::Client::builder()
+                .build()
+                .expect("blocking provider construction");
+            Ok(std::thread::current().id())
+        })
+        .await
+        .expect("worker response");
+        assert_ne!(worker_thread, executor_thread);
+        assert_eq!(capacity.available_permits(), 1);
+    }
+
+    #[tokio::test]
+    async fn saturated_or_closed_capacity_never_executes_operation() {
+        let capacity = Arc::new(Semaphore::new(1));
+        let permit = capacity.try_acquire().expect("saturate capacity");
+        let error =
+            run_blocking_operation(Arc::clone(&capacity), || -> Result<(), rmcp::ErrorData> {
+                panic!("rejected work must not execute")
+            })
+            .await
+            .expect_err("saturated");
+        assert_eq!(
+            error.message,
+            "synchronous operation capacity is temporarily unavailable"
+        );
+        drop(permit);
+        capacity.close();
+        assert!(
+            run_blocking_operation(capacity, || -> Result<(), rmcp::ErrorData> {
+                panic!("closed work must not execute")
+            })
+            .await
+            .is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn failed_or_panicked_workers_release_capacity_without_disclosing_panic() {
+        let capacity = Arc::new(Semaphore::new(1));
+        assert!(
+            run_blocking_operation(Arc::clone(&capacity), || -> Result<(), rmcp::ErrorData> {
+                Err(rmcp::ErrorData::invalid_params("fixture failure", None))
+            })
+            .await
+            .is_err()
+        );
+        assert_eq!(capacity.available_permits(), 1);
+        let error =
+            run_blocking_operation(Arc::clone(&capacity), || -> Result<(), rmcp::ErrorData> {
+                panic!("private panic detail")
+            })
+            .await
+            .expect_err("worker panic");
+        assert_eq!(error.message, "synchronous operation failed");
+        assert_eq!(capacity.available_permits(), 1);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn cancelled_waiter_retains_capacity_until_running_work_finishes() {
+        let capacity = Arc::new(Semaphore::new(1));
+        let (started, worker_started) = oneshot::channel();
+        let (release, wait_for_release) = std::sync::mpsc::channel();
+        let (finished, worker_finished) = oneshot::channel();
+        let worker_capacity = Arc::clone(&capacity);
+        let waiter = tokio::spawn(run_blocking_operation(worker_capacity, move || {
+            started.send(()).expect("start signal");
+            wait_for_release
+                .recv_timeout(Duration::from_secs(5))
+                .expect("bounded release wait");
+            finished.send(()).expect("finish signal");
+            Ok(())
+        }));
+        timeout(Duration::from_secs(5), worker_started)
+            .await
+            .expect("bounded worker start")
+            .expect("worker started");
+        // A single-thread executor remains responsive while synchronous work waits.
+        tokio::task::yield_now().await;
+        waiter.abort();
+        assert!(waiter.await.expect_err("abandoned waiter").is_cancelled());
+        assert_eq!(capacity.available_permits(), 0);
+        assert!(
+            run_blocking_operation(Arc::clone(&capacity), || -> Result<(), rmcp::ErrorData> {
+                panic!("abandoned running work still owns capacity")
+            })
+            .await
+            .is_err()
+        );
+        release.send(()).expect("release worker");
+        timeout(Duration::from_secs(5), worker_finished)
+            .await
+            .expect("bounded worker completion")
+            .expect("worker finished");
+        let permit = timeout(Duration::from_secs(5), capacity.acquire())
+            .await
+            .expect("capacity eventually released")
+            .expect("available capacity");
+        drop(permit);
+        assert_eq!(capacity.available_permits(), 1);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn verified_identity_is_checked_before_admission_without_locking_store() {
+        let server = fixture_server(true);
+        let (service, _client) = fixture_connection(server.clone()).await;
+        let capacity = Arc::clone(&server.blocking_operations);
+        let _permits = capacity.try_acquire_many(8).expect("saturate capacity");
+        // A wrong/missing proof must not inspect mutable state or report overload.
+        let (locked, wait_for_lock) = oneshot::channel();
+        let (release, wait_for_release) = std::sync::mpsc::channel();
+        let state = Arc::clone(&server.state);
+        let lock_holder = tokio::task::spawn_blocking(move || {
+            let guard = state.lock().expect("hold store lock");
+            locked.send(()).expect("lock signal");
+            wait_for_release
+                .recv_timeout(Duration::from_secs(5))
+                .expect("bounded lock release");
+            assert_eq!(guard.next_id, 100);
+        });
+        timeout(Duration::from_secs(5), wait_for_lock)
+            .await
+            .expect("bounded store lock")
+            .expect("locked store");
+        for access in [
+            None,
+            Some(remote_access("principal_01", "workspace_02", "client_01")),
+            Some(remote_access("principal_02", "workspace_01", "client_01")),
+            Some(remote_access("principal_01", "workspace_01", "client_02")),
+        ] {
+            let error = server
+                .run_tool(
+                    request_context(&service, access),
+                    |_, _| -> Result<(), rmcp::ErrorData> {
+                        panic!("invalid identity must not start work");
+                    },
+                )
+                .await
+                .expect_err("identity denial");
+            assert_eq!(error.message, "operation is not authorized or available");
+        }
+        release.send(()).expect("release store lock");
+        lock_holder.await.expect("store lock holder");
+        let context = request_context(
+            &service,
+            Some(remote_access("principal_01", "workspace_01", "client_01")),
+        );
+        let error = server
+            .run_tool(context.clone(), |_, _| Ok(()))
+            .await
+            .expect_err("verified identity reaches admission");
+        assert_eq!(
+            error.message,
+            "synchronous operation capacity is temporarily unavailable"
+        );
+        context.ct.cancel();
+        let error = server
+            .run_tool(context, |_, _| Ok(()))
+            .await
+            .expect_err("cancelled request");
+        assert_eq!(error.message, "operation cancelled before execution");
+        service.cancel().await.expect("service shutdown");
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn real_mcp_transport_executes_encrypted_memory_tools_on_workers() {
+        let server = fixture_server(false);
+        let (service, mut client) = fixture_connection(server.clone()).await;
+        for (id, name, arguments) in [
+            (
+                2,
+                "rembrane_remember_preference",
+                serde_json::json!({"content": "Call me Hippo"}),
+            ),
+            (
+                3,
+                "rembrane_resolve_context",
+                serde_json::json!({"purpose": "greeting", "query": "Hippo"}),
+            ),
+        ] {
+            write_wire(
+                &mut client,
+                serde_json::json!({
+                    "jsonrpc": "2.0", "id": id, "method": "tools/call",
+                    "params": {"name": name, "arguments": arguments}
+                }),
+            )
+            .await;
+            let response = read_wire(&mut client).await;
+            assert!(response.get("error").is_none(), "{response}");
+            assert_ne!(response["result"]["isError"], true, "{response}");
+            if id == 3 {
+                let output: serde_json::Value = serde_json::from_str(
+                    response["result"]["content"][0]["text"]
+                        .as_str()
+                        .expect("tool text"),
+                )
+                .expect("context response JSON");
+                assert_eq!(output["items"][0]["content"], "Call me Hippo");
+                assert!(output["disclosureId"].as_str().is_some());
+            }
+        }
+        service.cancel().await.expect("service shutdown");
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn real_tool_preserves_verified_proof_through_worker_authorization() {
+        let server = fixture_server(true);
+        let (service, _client) = fixture_connection(server.clone()).await;
+        let output = server
+            .remember_preference(
+                request_context(
+                    &service,
+                    Some(remote_access("principal_01", "workspace_01", "client_01")),
+                ),
+                super::Parameters(super::RememberPreferenceParameters {
+                    content: "Call me Hippo".to_owned(),
+                    domain: None,
+                    entity_id: None,
+                    activity_id: None,
+                }),
+            )
+            .await
+            .expect("verified write");
+        assert!(serde_json::from_str::<serde_json::Value>(&output).is_ok());
+        let output = server
+            .resolve_context(
+                request_context(
+                    &service,
+                    Some(remote_access("principal_01", "workspace_01", "client_01")),
+                ),
+                super::Parameters(super::ResolveContextParameters {
+                    purpose: "greeting".to_owned(),
+                    query: "Hippo".to_owned(),
+                    maximum_items: None,
+                    maximum_bytes: None,
+                    domain: None,
+                    entity_id: None,
+                    activity_id: None,
+                }),
+            )
+            .await
+            .expect("verified read");
+        let output: serde_json::Value = serde_json::from_str(&output).expect("context JSON");
+        assert_eq!(output["items"][0]["content"], "Call me Hippo");
+        service.cancel().await.expect("service shutdown");
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn cancellation_while_waiting_for_store_prevents_memory_mutation() {
+        let server = fixture_server(false);
+        let (service, _client) = fixture_connection(server.clone()).await;
+        let (locked, wait_for_lock) = oneshot::channel();
+        let (release, wait_for_release) = std::sync::mpsc::channel();
+        let state = Arc::clone(&server.state);
+        let lock_holder = tokio::task::spawn_blocking(move || {
+            let _guard = state.lock().expect("hold store lock");
+            locked.send(()).expect("lock signal");
+            wait_for_release
+                .recv_timeout(Duration::from_secs(5))
+                .expect("bounded lock release");
+        });
+        timeout(Duration::from_secs(5), wait_for_lock)
+            .await
+            .expect("bounded store lock")
+            .expect("locked store");
+        let context = request_context(&service, None);
+        let cancellation = context.ct.clone();
+        let worker_server = server.clone();
+        let pending = tokio::spawn(async move {
+            worker_server
+                .remember_preference(
+                    context,
+                    super::Parameters(super::RememberPreferenceParameters {
+                        content: "Must not persist".to_owned(),
+                        domain: None,
+                        entity_id: None,
+                        activity_id: None,
+                    }),
+                )
+                .await
+        });
+        timeout(Duration::from_secs(5), async {
+            while server.blocking_operations.available_permits() == 8 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("operation admitted");
+        cancellation.cancel();
+        release.send(()).expect("release store lock");
+        lock_holder.await.expect("lock holder finished");
+        let error = timeout(Duration::from_secs(5), pending)
+            .await
+            .expect("bounded tool completion")
+            .expect("tool task")
+            .expect_err("cancelled write");
+        assert_eq!(error.message, "operation cancelled before execution");
+        {
+            let state = server.state.lock().expect("fixture state");
+            assert!(
+                state
+                    .store
+                    .list_events_since(&state.policy.identity.workspace, 0)
+                    .expect("fixture events")
+                    .is_empty()
+            );
+        }
+        service.cancel().await.expect("service shutdown");
+    }
 
     #[test]
     fn context_requests_do_not_gain_unconfigured_global_access() {

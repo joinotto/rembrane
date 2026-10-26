@@ -85,8 +85,50 @@ resource-exhaustion, or load/recovery testing. The eight-job ceiling does not
 bound every connection or pre-handler request-body allocation; deployment
 limits and staging measurements remain required.
 
-The analogous MCP tool and OAuth execution boundary remains a separate open
-runtime task; passing these REST tests does not establish remote MCP support.
+## MCP blocking-worker boundary
+
+Run the no-listener MCP runtime tests with:
+
+```sh
+cargo test -p rembrane-mcp --locked --offline
+```
+
+All fourteen tools dispatch synchronous provider/storage work and canonical
+mutex acquisition onto blocking workers. Production service constructors use
+one process-shared eight-operation budget, including async initialization and
+workers waiting for storage. This is not a fairness policy, connection limit,
+eight parallel SQLite transactions, or a throughput guarantee.
+
+The executable initializes providers before entering the executor. Async
+embedders should use `RembraneMcp::from_environment_async` or
+`RembraneMcp::from_verified_remote_access_async`, not the synchronous
+constructors. Initialized service clones share state and capacity.
+
+Remote-mode tools check immutable per-request verified identity before
+admission without locking mutable state. The complete SDK `RequestContext`
+then reaches the worker, where current canonical membership, scopes, and
+permissions are still reauthorized. A cached connection is not authorization.
+Overload rejects without executing the operation and returns a generic MCP
+internal error; worker panics do not expose their details in responses.
+
+Cancellation is checked before admission, at worker entry, and again after
+storage-lock acquisition before application mutations. Cancellation arriving
+after those checks may still leave a committed mutation. Abandoning the
+response does not free admission capacity until actual worker completion.
+Inspect canonical versions/events before retrying a lost mutation response.
+
+Tests use the actual pinned SDK handshake and JSON-RPC tools over an in-memory
+duplex transport. They prove encrypted remember/recall, verified request-proof
+preservation, identity denial before admission without locking storage,
+off-executor blocking HTTP-client construction, overload/failure cleanup,
+capacity retention after abandoned requests, and cancellation while waiting
+for storage. No listening socket, uncached SDK client feature, or fake peer
+constructor is required.
+
+Synchronous OAuth introspection in the remote transport remains a separate
+open runtime task. Neither these tests nor the REST tests establish live
+Streamable HTTP support, cloud-provider conformance, measured load limits, or
+production readiness.
 
 Provider authors should also run the shared Rust conformance harness against a
 disposable provider tenant:
