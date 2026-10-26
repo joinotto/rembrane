@@ -65,6 +65,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Booking-research capture diagnostics now expose only research kind, version,
   and sequence metadata instead of provider results, itineraries, source
   references, provenance, trip identities, tenant routing, or client grants.
+- Trip creation, replacement, participant, constraint, and decision command
+  diagnostics now expose only safe sizes, closed kinds and statuses, versions,
+  and sequence metadata instead of itinerary or traveler details.
 - Provider-independent key seal requests now retain copied plaintext in
   redacted zeroize-on-drop ownership instead of an ordinary byte vector.
 - Key-provider plaintext responses are now explicitly wiped before oversized

@@ -790,6 +790,8 @@ This roadmap describes sequencing, not release dates.
         reads for cross-assistant travel continuity.
         - [x] Atomically insert and revise encrypted PostgreSQL trips with
           strict versions, owner correlation, and canonical event sequencing.
+        - [x] Redact itinerary, traveler, constraint, decision, provenance,
+          tenant, and event details from application trip-mutation diagnostics.
         - [x] Add authenticated PostgreSQL exact and bounded per-trip booking
           research reads with researcher and version correlation.
           - [x] Atomically capture encrypted PostgreSQL booking research with

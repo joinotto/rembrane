@@ -1,3 +1,5 @@
+use std::fmt;
+
 use rembrane_domain::{
     CanonicalEvent, EntityId, EventId, EventPayload, MemoryScope, Trip, TripConstraint,
     TripDecision, TripParticipant, WriteGrant, WritePermission,
@@ -5,7 +7,7 @@ use rembrane_domain::{
 
 use crate::{ApplicationError, TripMutationRepository};
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct CreateTripCommand {
     pub grant: WriteGrant,
     pub trip: Trip,
@@ -13,7 +15,20 @@ pub struct CreateTripCommand {
     pub expected_previous_sequence: u64,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+impl fmt::Debug for CreateTripCommand {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("CreateTripCommand")
+            .field("trip_version", &self.trip.version())
+            .field(
+                "expected_previous_sequence",
+                &self.expected_previous_sequence,
+            )
+            .finish_non_exhaustive()
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
 pub struct ReplaceTripCommand {
     pub grant: WriteGrant,
     pub trip: Trip,
@@ -22,7 +37,21 @@ pub struct ReplaceTripCommand {
     pub expected_previous_sequence: u64,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+impl fmt::Debug for ReplaceTripCommand {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ReplaceTripCommand")
+            .field("trip_version", &self.trip.version())
+            .field("expected_trip_version", &self.expected_trip_version)
+            .field(
+                "expected_previous_sequence",
+                &self.expected_previous_sequence,
+            )
+            .finish_non_exhaustive()
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
 pub struct AddTripParticipantCommand {
     pub grant: WriteGrant,
     pub trip_id: EntityId,
@@ -32,7 +61,21 @@ pub struct AddTripParticipantCommand {
     pub expected_previous_sequence: u64,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+impl fmt::Debug for AddTripParticipantCommand {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("AddTripParticipantCommand")
+            .field("participant_label_bytes", &self.participant.label().len())
+            .field("expected_trip_version", &self.expected_trip_version)
+            .field(
+                "expected_previous_sequence",
+                &self.expected_previous_sequence,
+            )
+            .finish_non_exhaustive()
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
 pub struct AddTripConstraintCommand {
     pub grant: WriteGrant,
     pub trip_id: EntityId,
@@ -42,7 +85,29 @@ pub struct AddTripConstraintCommand {
     pub expected_previous_sequence: u64,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+impl fmt::Debug for AddTripConstraintCommand {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("AddTripConstraintCommand")
+            .field("constraint_kind", &self.constraint.kind())
+            .field(
+                "constraint_statement_bytes",
+                &self.constraint.statement().len(),
+            )
+            .field(
+                "participant_specific",
+                &self.constraint.participant_id().is_some(),
+            )
+            .field("expected_trip_version", &self.expected_trip_version)
+            .field(
+                "expected_previous_sequence",
+                &self.expected_previous_sequence,
+            )
+            .finish_non_exhaustive()
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
 pub struct RecordTripDecisionCommand {
     pub grant: WriteGrant,
     pub trip_id: EntityId,
@@ -50,6 +115,25 @@ pub struct RecordTripDecisionCommand {
     pub expected_trip_version: u64,
     pub event_id: EventId,
     pub expected_previous_sequence: u64,
+}
+
+impl fmt::Debug for RecordTripDecisionCommand {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("RecordTripDecisionCommand")
+            .field("decision_status", &self.decision.status())
+            .field("decision_summary_bytes", &self.decision.summary().len())
+            .field(
+                "decision_rationale_bytes",
+                &self.decision.rationale().map_or(0, str::len),
+            )
+            .field("expected_trip_version", &self.expected_trip_version)
+            .field(
+                "expected_previous_sequence",
+                &self.expected_previous_sequence,
+            )
+            .finish_non_exhaustive()
+    }
 }
 
 pub struct TripService<'repository, Repository> {
