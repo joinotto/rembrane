@@ -57,13 +57,32 @@ impl RemoteMcpInvocation {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct RemoteMcpProtocolHeaders {
     content_type: String,
     accept: String,
     protocol_version: Option<String>,
     validated_host: Option<String>,
     validated_origin: Option<String>,
+}
+
+impl fmt::Debug for RemoteMcpProtocolHeaders {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("RemoteMcpProtocolHeaders")
+            .field("content_type", &self.content_type)
+            .field("accept", &self.accept)
+            .field("protocol_version", &self.protocol_version)
+            .field(
+                "validated_host",
+                &self.validated_host.as_ref().map(|_| "[REDACTED]"),
+            )
+            .field(
+                "validated_origin",
+                &self.validated_origin.as_ref().map(|_| "[REDACTED]"),
+            )
+            .finish()
+    }
 }
 
 impl RemoteMcpProtocolHeaders {
@@ -106,13 +125,32 @@ impl RemoteMcpProtocolHeaders {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct AuthorizedRemoteMcpEventStream {
     access: VerifiedRemoteAccess,
     accept: String,
     protocol_version: Option<String>,
     validated_host: Option<String>,
     validated_origin: Option<String>,
+}
+
+impl fmt::Debug for AuthorizedRemoteMcpEventStream {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("AuthorizedRemoteMcpEventStream")
+            .field("access", &self.access)
+            .field("accept", &self.accept)
+            .field("protocol_version", &self.protocol_version)
+            .field(
+                "validated_host",
+                &self.validated_host.as_ref().map(|_| "[REDACTED]"),
+            )
+            .field(
+                "validated_origin",
+                &self.validated_origin.as_ref().map(|_| "[REDACTED]"),
+            )
+            .finish()
+    }
 }
 
 pub trait AuthorizedRemoteMcpEventStreamDispatcher {
@@ -247,10 +285,20 @@ pub trait AuthorizedRemoteMcpDispatcher {
 
 /// Successful official-SDK initialization output paired with the validated
 /// session identifier returned in the downstream HTTP response.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct InitializedRemoteMcpSession<Output> {
     output: Output,
     session_id: RemoteSessionId,
+}
+
+impl<Output> fmt::Debug for InitializedRemoteMcpSession<Output> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("InitializedRemoteMcpSession")
+            .field("output", &"[REDACTED]")
+            .field("session_id", &self.session_id)
+            .finish()
+    }
 }
 
 impl<Output> InitializedRemoteMcpSession<Output> {
@@ -355,7 +403,7 @@ pub trait AuthorizedTowerMcpServiceFactory: Clone + Send + Sync + 'static {
     fn create(&self, access: &VerifiedRemoteAccess) -> Result<Self::Service, Self::Error>;
 }
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Eq, Ord, PartialEq, PartialOrd)]
 struct RemoteTenantServiceKey {
     issuer: String,
     resource: String,
@@ -363,6 +411,20 @@ struct RemoteTenantServiceKey {
     client_id: String,
     workspace_id: String,
     scopes: Vec<&'static str>,
+}
+
+impl fmt::Debug for RemoteTenantServiceKey {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("RemoteTenantServiceKey")
+            .field("issuer", &"[REDACTED]")
+            .field("resource", &"[REDACTED]")
+            .field("subject_id", &"[REDACTED]")
+            .field("client_id", &"[REDACTED]")
+            .field("workspace_id", &"[REDACTED]")
+            .field("scope_count", &self.scopes.len())
+            .finish()
+    }
 }
 
 impl From<&VerifiedRemoteAccess> for RemoteTenantServiceKey {
@@ -3645,14 +3707,15 @@ mod tests {
     use tower::ServiceExt;
 
     use super::{
-        AuthorizedRemoteMcpDispatcher, AuthorizedRemoteMcpEventStreamDispatcher,
-        AuthorizedRemoteMcpInitializationDispatcher, AuthorizedRemoteMcpSessionDeletionDispatcher,
-        AuthorizedTowerMcpDispatcher, AuthorizedTowerMcpServiceFactory,
-        BoundedTenantTowerMcpServiceCache, InitializedRemoteMcpSession,
-        MAX_REMOTE_MCP_HEADER_BYTES, MCP_PROTOCOL_VERSION_HEADER_NAME, MCP_SESSION_HEADER_NAME,
-        RemoteMcpAxumAuthorization, RemoteMcpDispatchError, RemoteMcpHttpGate,
-        RemoteMcpHttpRejection, RemoteMcpHttpRequest, RemoteMcpInitializationError,
-        RemoteMcpInvocation, SharedRemoteMcpAxumAuthorization, TenantAwareTowerMcpDispatchError,
+        AuthorizedRemoteMcpDispatcher, AuthorizedRemoteMcpEventStream,
+        AuthorizedRemoteMcpEventStreamDispatcher, AuthorizedRemoteMcpInitializationDispatcher,
+        AuthorizedRemoteMcpSessionDeletionDispatcher, AuthorizedTowerMcpDispatcher,
+        AuthorizedTowerMcpServiceFactory, BoundedTenantTowerMcpServiceCache,
+        InitializedRemoteMcpSession, MAX_REMOTE_MCP_HEADER_BYTES, MCP_PROTOCOL_VERSION_HEADER_NAME,
+        MCP_SESSION_HEADER_NAME, RemoteMcpAxumAuthorization, RemoteMcpDispatchError,
+        RemoteMcpHttpGate, RemoteMcpHttpRejection, RemoteMcpHttpRequest,
+        RemoteMcpInitializationError, RemoteMcpInvocation, RemoteMcpProtocolHeaders,
+        RemoteTenantServiceKey, SharedRemoteMcpAxumAuthorization, TenantAwareTowerMcpDispatchError,
         TenantAwareTowerMcpDispatcher, TenantServiceCacheError, TowerMcpDispatchError,
         authorize_axum_session_body, authorize_axum_session_deletion,
         authorize_axum_stateless_body, authorize_axum_stateless_owned_body,
@@ -4220,6 +4283,51 @@ mod tests {
             assert!(!debug.contains(private));
             assert!(!debug.contains("workspace_01"));
             assert!(debug.contains("[REDACTED]"));
+        }
+    }
+
+    #[test]
+    fn transport_and_tenant_state_debug_redacts_private_metadata() {
+        let access = verified_access(
+            "private-workspace",
+            2_000,
+            BTreeSet::from([RemoteAccessScope::ContextRead]),
+        );
+        let headers = RemoteMcpProtocolHeaders {
+            content_type: "application/json".to_owned(),
+            accept: "application/json, text/event-stream".to_owned(),
+            protocol_version: Some("2025-03-26".to_owned()),
+            validated_host: Some("private-memory.example.test".to_owned()),
+            validated_origin: Some("https://private-agent.example.test".to_owned()),
+        };
+        let event_stream = AuthorizedRemoteMcpEventStream {
+            access: access.clone(),
+            accept: "text/event-stream".to_owned(),
+            protocol_version: Some("2025-03-26".to_owned()),
+            validated_host: Some("private-memory.example.test".to_owned()),
+            validated_origin: Some("https://private-agent.example.test".to_owned()),
+        };
+        let initialized = InitializedRemoteMcpSession::new(
+            "private SDK response",
+            RemoteSessionId::new("private-session-id").expect("session identifier"),
+        );
+        let tenant_key = RemoteTenantServiceKey::from(&access);
+
+        for debug in [
+            format!("{headers:?}"),
+            format!("{event_stream:?}"),
+            format!("{initialized:?}"),
+            format!("{tenant_key:?}"),
+        ] {
+            for private in [
+                "private-workspace",
+                "private-memory.example.test",
+                "private-agent.example.test",
+                "private-session-id",
+                "private SDK response",
+            ] {
+                assert!(!debug.contains(private));
+            }
         }
     }
 

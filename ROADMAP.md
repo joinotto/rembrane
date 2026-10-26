@@ -425,6 +425,8 @@ This roadmap describes sequencing, not release dates.
       capabilities in shared remote-access contract diagnostics.
     - [x] Redact arbitrary factory, SDK, dispatch, initialization, and
       compensation errors at the remote-MCP adapter boundary.
+    - [x] Redact validated transport metadata, initialized SDK output, and
+      tenant-service cache identities from remote-MCP diagnostics.
     - [x] Reject oversized bearer credentials before signature verification or
       authenticated introspection work.
     - [x] Authenticate initialize, discovery, event-stream, and session-delete
