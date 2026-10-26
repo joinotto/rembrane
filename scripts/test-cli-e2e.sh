@@ -355,6 +355,39 @@ printf '%s\n' "$doctor_output" |
         "Configured read scopes: global,domain:development,entity:project_e2e" \
         >/dev/null
 
+doctor_json=$(
+    "$rembrane_binary" doctor \
+        --database "$database" \
+        --principal principal_e2e \
+        --workspace workspace_e2e \
+        --json
+)
+printf '%s\n' "$doctor_json" | jq -e '
+    .schemaVersion == 1
+    and .ready == true
+    and .databaseSchema == "compatible"
+    and .membership == {"active": true, "role": "owner"}
+    and .workspaceKey == {"loaded": true}
+    and (.authenticatedRecords.memories == 1)
+    and (.authenticatedRecords.events | type) == "number"
+    and (.authenticatedRecords.checkpoints | type) == "number"
+    and (.secretSources | type) == "array"
+    and (has("workspaceId") | not)
+    and (has("principalId") | not)
+    and ((tostring | contains("workspace_e2e")) | not)
+    and ((tostring | contains("principal_e2e")) | not)
+' >/dev/null
+if "$rembrane_binary" doctor \
+    --database "$database" \
+    --principal principal_e2e \
+    --workspace workspace_e2e \
+    --json \
+    --privacy >/dev/null 2>&1
+then
+    echo "doctor unexpectedly mixed JSON and privacy diagnostics" >&2
+    exit 1
+fi
+
 project_remember_output=$(
     "$rembrane_binary" remember \
         --database "$database" \

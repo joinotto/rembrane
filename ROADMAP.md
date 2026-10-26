@@ -151,6 +151,8 @@ This roadmap describes sequencing, not release dates.
 - [x] Add a secret-safe local installation doctor command.
   - [x] Provide identity-minimizing structured doctor output for launchers,
     installers, agents, and bots without exposing principal or workspace IDs.
+    - [x] Enforce the structured output and mixed-mode rejection in the
+      canonical encrypted CLI lifecycle suite.
 - [x] Report production-readiness prerequisites individually, including
   dependency resolution, loopback binding, PostgreSQL, and Docker capabilities.
 - [x] Report local processing, connection scopes, endpoints, and secret sources
