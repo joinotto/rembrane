@@ -50,6 +50,13 @@ then
     exit 1
 fi
 
+if rg -n -U '#\[derive\([^]]*Debug[^]]*\)\]\npub struct (ProviderConnection|RemoteMcpConfig)' \
+    crates/rembrane-config/src/lib.rs
+then
+    echo "provider and remote MCP configuration must retain redacted Debug implementations" >&2
+    exit 1
+fi
+
 for provider_source in crates/rembrane-provider-sdk/src/*.rs; do
     if sed '/^#\[cfg(test)\]/,$d' "$provider_source" |
         rg -n -U '#\[derive\([^]]*Debug[^]]*\)\]\n(?:pub )?struct '

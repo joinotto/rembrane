@@ -106,12 +106,24 @@ impl PostgresConnection {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct ProviderConnection {
     kind: ProviderKind,
     endpoint: Option<String>,
     credentials: Vec<SecretReference>,
     placement: ProviderPlacement,
+}
+
+impl fmt::Debug for ProviderConnection {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ProviderConnection")
+            .field("kind", &self.kind)
+            .field("endpoint", &self.endpoint.as_ref().map(|_| "[REDACTED]"))
+            .field("credential_count", &self.credentials.len())
+            .field("placement", &self.placement)
+            .finish()
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -434,7 +446,7 @@ impl FromStr for SecretReference {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct RemoteMcpConfig {
     resource: String,
     resource_authority: String,
@@ -443,6 +455,24 @@ pub struct RemoteMcpConfig {
     introspection_client_id: String,
     introspection_client_secret: SecretReference,
     trusted_origins: Vec<String>,
+}
+
+impl fmt::Debug for RemoteMcpConfig {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("RemoteMcpConfig")
+            .field("resource", &"[REDACTED]")
+            .field("resource_authority", &"[REDACTED]")
+            .field("issuer", &"[REDACTED]")
+            .field("introspection_endpoint", &"[REDACTED]")
+            .field("introspection_client_id", &"[REDACTED]")
+            .field(
+                "introspection_client_secret_source",
+                &self.introspection_client_secret.source(),
+            )
+            .field("trusted_origin_count", &self.trusted_origins.len())
+            .finish()
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1153,6 +1183,21 @@ mod tests {
             profile.bearer_challenge(),
             "Bearer resource_metadata=\"https://memory.example/.well-known/oauth-protected-resource/mcp\""
         );
+        let diagnostic = format!("{profile:?}");
+        for private in [
+            "memory.example",
+            "identity.example",
+            "rembrane-resource-server",
+            "REMBRANE_OAUTH_CLIENT_SECRET",
+            "app.example",
+        ] {
+            assert!(
+                !diagnostic.contains(private),
+                "configuration diagnostic exposed {private}"
+            );
+        }
+        assert!(diagnostic.contains("trusted_origin_count"));
+        assert!(diagnostic.contains("Environment"));
         assert_eq!(
             RemoteMcpConfig::new(
                 "http://memory.example/mcp".to_owned(),

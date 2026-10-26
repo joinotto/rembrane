@@ -92,6 +92,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Every production application struct now requires explicitly reviewed debug
   output; channel dispatch reports retain safe counts, token-verification
   errors remain opaque, and remote session reservation IDs are redacted.
+- Provider connection and remote MCP deployment diagnostics now redact
+  endpoints, resources, authorities, issuers, OAuth metadata, client IDs,
+  secret locators, and trusted origins while retaining safe kinds and counts.
 - Provider-independent key seal requests now retain copied plaintext in
   redacted zeroize-on-drop ownership instead of an ordinary byte vector.
 - Key-provider plaintext responses are now explicitly wiped before oversized

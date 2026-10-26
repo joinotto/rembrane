@@ -88,6 +88,9 @@ This roadmap describes sequencing, not release dates.
       accessors so integrations cannot construct unvalidated variants.
       - [x] Redact environment names, protected file paths, and external vault
         keys from standalone and composed configuration debug output.
+      - [x] Redact provider endpoints and remote MCP resource, issuer, OAuth,
+        client, authority, and trusted-origin values from composed deployment
+        configuration diagnostics.
     - [x] Add a pluggable zeroizing resolver port plus a protected local
       environment and secret-file implementation.
       - [x] Resolve validated provider credential lists atomically from the
