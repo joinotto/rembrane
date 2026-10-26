@@ -20,7 +20,7 @@ pub enum ResearchFreshness {
     Expired,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct BookingResearch {
     id: BookingResearchId,
     workspace_id: WorkspaceId,
@@ -34,6 +34,26 @@ pub struct BookingResearch {
     observed_at: String,
     expires_at: String,
     version: u64,
+}
+
+impl fmt::Debug for BookingResearch {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("BookingResearch")
+            .field("id", &"<redacted>")
+            .field("workspace_id", &"<redacted>")
+            .field("trip_id", &"<redacted>")
+            .field("observed_by", &"<redacted>")
+            .field("kind", &self.kind)
+            .field("provider_bytes", &self.provider.len())
+            .field("summary_bytes", &self.summary.len())
+            .field("source_reference_bytes", &self.source_reference.len())
+            .field("evidence", &"<redacted>")
+            .field("observed_at", &"<redacted>")
+            .field("expires_at", &"<redacted>")
+            .field("version", &self.version)
+            .finish()
+    }
 }
 
 impl BookingResearch {
@@ -338,5 +358,48 @@ mod tests {
             ),
             Err(BookingResearchError::InvalidVersion)
         );
+    }
+
+    #[test]
+    fn debug_output_redacts_research_content_and_travel_identity() {
+        let research = BookingResearch::new(
+            BookingResearchId::new("private_research"),
+            WorkspaceId::new("private_workspace"),
+            EntityId::new("private_trip"),
+            PrincipalId::new("private_observer"),
+            BookingResearchKind::Flight,
+            "private_provider",
+            "Private flight option",
+            "private_source_reference",
+            EvidenceReference::new(
+                EvidenceId::new("private_evidence"),
+                EvidenceSource::ToolResult,
+            ),
+            "2026-10-24T10:00:00Z",
+            "2026-10-24T10:30:00Z",
+        )
+        .expect("research should be valid");
+
+        let diagnostic = format!("{research:?}");
+
+        for private_value in [
+            "private_research",
+            "private_workspace",
+            "private_trip",
+            "private_observer",
+            "private_provider",
+            "Private flight option",
+            "private_source_reference",
+            "private_evidence",
+            "2026-10-24T10:00:00Z",
+            "2026-10-24T10:30:00Z",
+        ] {
+            assert!(!diagnostic.contains(private_value));
+        }
+        assert!(diagnostic.contains("kind: Flight"));
+        assert!(diagnostic.contains("provider_bytes: 16"));
+        assert!(diagnostic.contains("summary_bytes: 21"));
+        assert!(diagnostic.contains("source_reference_bytes: 24"));
+        assert!(diagnostic.contains("version: 1"));
     }
 }

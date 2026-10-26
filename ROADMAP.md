@@ -986,6 +986,8 @@ This roadmap describes sequencing, not release dates.
 - [x] Booking-research evidence and expiry.
   - [x] Canonical evidence-backed booking-research record with strict UTC
     observation and expiry semantics.
+  - [x] Redact booking-research content, travel identities, provider and source
+    details, evidence, and timelines from diagnostics.
   - [x] Versioned provider-independent booking-research codec.
   - [x] Exact trip-scoped capture authorization and atomic in-memory reference
     repository.

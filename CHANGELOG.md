@@ -94,6 +94,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Activity-checkpoint diagnostics now expose only payload sizes, collection
   counts, state-fingerprint presence, and version while redacting working
   memory, external-state fingerprints, and every checkpoint identity.
+- Booking-research diagnostics now expose only research kind, payload sizes,
+  and version while redacting travel identities, provider and source details,
+  evidence references, summaries, and observation timelines.
 - Canonical SQLite initialization and backup now require the path opened by
   SQLite to retain the exact protected file's device/inode identity, and
   failure cleanup refuses to remove a path replaced after preparation.
