@@ -1438,7 +1438,9 @@ fn write_export(snapshot: &std::path::Path, destination: &std::path::Path) -> Re
         }
         output
             .sync_all()
-            .map_err(|error| format!("cannot persist export: {error}"))
+            .map_err(|error| format!("cannot persist export: {error}"))?;
+        sync_parent_directory(destination)
+            .map_err(|error| format!("cannot persist export directory entry: {error}"))
     })();
     if let Err(error) = result {
         let cleanup = remove_open_file_path(destination, &output);
@@ -1511,7 +1513,9 @@ fn read_export(
         }
         output
             .sync_all()
-            .map_err(|error| format!("cannot persist restored database: {error}"))
+            .map_err(|error| format!("cannot persist restored database: {error}"))?;
+        sync_parent_directory(destination)
+            .map_err(|error| format!("cannot persist restore directory entry: {error}"))
     })();
     if let Err(error) = result {
         remove_open_file_path(destination, &output)?;
@@ -1550,7 +1554,23 @@ fn validate_open_file_path(path: &std::path::Path, _file: &std::fs::File) -> Res
 
 fn remove_open_file_path(path: &std::path::Path, file: &std::fs::File) -> Result<(), String> {
     validate_open_file_path(path, file)?;
-    std::fs::remove_file(path).map_err(|error| format!("cannot remove protected file: {error}"))
+    std::fs::remove_file(path).map_err(|error| format!("cannot remove protected file: {error}"))?;
+    sync_parent_directory(path)
+        .map_err(|error| format!("cannot persist protected-file removal: {error}"))
+}
+
+#[cfg(unix)]
+fn sync_parent_directory(path: &std::path::Path) -> std::io::Result<()> {
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| std::path::Path::new("."));
+    std::fs::File::open(parent)?.sync_all()
+}
+
+#[cfg(not(unix))]
+fn sync_parent_directory(_path: &std::path::Path) -> std::io::Result<()> {
+    Ok(())
 }
 
 fn open_regular_file_for_read(path: &std::path::Path) -> std::io::Result<std::fs::File> {

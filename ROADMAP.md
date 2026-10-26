@@ -77,6 +77,8 @@ This roadmap describes sequencing, not release dates.
     and remove only that exact snapshot identity after export.
   - [x] Reject symbolic-link and non-regular export inputs, using no-follow
     nonblocking reads on Unix so special files cannot stall backup or restore.
+  - [x] Synchronize Unix parent directories after export/restore creation and
+    protected temporary-file removal before reporting durable completion.
 - [x] Enforce provider-registry input bounds while streaming file contents,
   including files that change after metadata validation.
 - [x] Add an executable encrypted CLI lifecycle smoke test.
