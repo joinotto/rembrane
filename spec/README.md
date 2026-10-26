@@ -86,6 +86,14 @@ before storage-backed resolution.
 Failures use a mutually exclusive generic envelope that never carries query,
 tenant-routing, storage, key, or downstream-provider diagnostic text.
 
+## CLI preference result
+
+`cli-remember.schema.json` defines the closed result emitted by
+`rembrane remember --json`. Success returns the canonical confirmed preference
+memory ID and version; failure returns only `remember_failed`. Neither shape
+exposes preference content, scope selectors, tenant routing, client identity,
+storage, or key metadata.
+
 ## CLI checkpoint and resume result
 
 `cli-checkpoint.schema.json` defines the versioned working-memory state emitted

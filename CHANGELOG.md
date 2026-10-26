@@ -9,6 +9,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Fixed
 
+- Structured preference results now have a versioned JSON Schema, canonical
+  success/failure examples, protocol drift checks, and integration
+  documentation.
 - `rembrane remember --json` now returns the confirmed preference memory ID
   and version for arbitrary assistants, with a closed failure code that omits
   preference content, tenant routing, storage paths, keys, and internal errors.

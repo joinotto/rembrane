@@ -77,6 +77,7 @@ jq empty \
     spec/channel-processor-acknowledgement.schema.json \
     spec/production-readiness.schema.json \
     spec/local-doctor.schema.json \
+    spec/cli-remember.schema.json \
     spec/cli-recall.schema.json \
     spec/cli-checkpoint.schema.json \
     spec/cli-trace.schema.json \
@@ -107,6 +108,8 @@ jq empty \
     spec/examples/production-readiness.json \
     spec/examples/local-doctor.json \
     spec/examples/local-doctor-failure.json \
+    spec/examples/cli-remember.json \
+    spec/examples/cli-remember-failure.json \
     spec/examples/cli-recall.json \
     spec/examples/cli-recall-failure.json \
     spec/examples/cli-checkpoint.json \
@@ -203,6 +206,31 @@ jq -e \
 ' spec/cli-recall.schema.json >/dev/null
 rg -q '^const MAX_CLI_RECALL_ITEMS: usize = 100;$' apps/rembrane-cli/src/main.rs
 rg -q '^const MAX_CLI_RECALL_BYTES: usize = 1_048_576;$' apps/rembrane-cli/src/main.rs
+
+jq -e \
+    --slurpfile example spec/examples/cli-remember.json \
+    --slurpfile failure spec/examples/cli-remember-failure.json '
+    .additionalProperties == false
+    and .properties.schemaVersion.const == 1
+    and .properties.memoryId.maxLength == 255
+    and .properties.memoryId.pattern == "^[\\u0021-\\u007E]+$"
+    and .properties.version.minimum == 1
+    and .properties.kind.const == "preference"
+    and .properties.status.const == "confirmed"
+    and .properties.error.properties.code.const == "remember_failed"
+    and (.oneOf | length) == 2
+    and $example[0] == {
+        "schemaVersion": 1,
+        "memoryId": "memory_example_01",
+        "version": 1,
+        "kind": "preference",
+        "status": "confirmed"
+    }
+    and $failure[0] == {
+        "schemaVersion": 1,
+        "error": {"code": "remember_failed"}
+    }
+' spec/cli-remember.schema.json >/dev/null
 
 jq -e \
     --slurpfile example spec/examples/cli-checkpoint.json \
