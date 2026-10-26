@@ -63,7 +63,7 @@ impl Error for MemoryLifecycleError {}
 ///
 /// Time, provenance, evidence, and encryption metadata will be introduced as
 /// explicit value objects before persistence is implemented.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct MemoryRecord {
     id: MemoryId,
     workspace_id: WorkspaceId,
@@ -74,6 +74,23 @@ pub struct MemoryRecord {
     content: String,
     version: u64,
     evidence: Vec<EvidenceReference>,
+}
+
+impl fmt::Debug for MemoryRecord {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("MemoryRecord")
+            .field("id", &"[REDACTED]")
+            .field("workspace_id", &"[REDACTED]")
+            .field("subject_id", &"[REDACTED]")
+            .field("scope_specificity", &self.scope.specificity())
+            .field("kind", &self.kind)
+            .field("status", &self.status)
+            .field("content_bytes", &self.content.len())
+            .field("version", &self.version)
+            .field("evidence_count", &self.evidence.len())
+            .finish()
+    }
 }
 
 impl MemoryRecord {
@@ -340,6 +357,39 @@ mod tests {
         assert_eq!(memory.status, MemoryStatus::Confirmed);
         assert_eq!(memory.version, 1);
         assert_eq!(memory.evidence.len(), 1);
+    }
+
+    #[test]
+    fn canonical_memory_debug_redacts_content_and_identity() {
+        let memory = MemoryRecord::confirmed_preference(
+            MemoryId::new("private-memory"),
+            WorkspaceId::new("private-workspace"),
+            PrincipalId::new("private-principal"),
+            MemoryScope::Entity {
+                id: crate::EntityId::new("private-entity"),
+            },
+            "Call me Hippo in private",
+            EvidenceReference::new(
+                EvidenceId::new("private-evidence"),
+                EvidenceSource::UserStatement,
+            ),
+        )
+        .expect("memory fixture");
+
+        let debug = format!("{memory:?}");
+        for private in [
+            "private-memory",
+            "private-workspace",
+            "private-principal",
+            "private-entity",
+            "Call me Hippo in private",
+            "private-evidence",
+        ] {
+            assert!(!debug.contains(private));
+        }
+        assert!(debug.contains("content_bytes: 24"));
+        assert!(debug.contains("evidence_count: 1"));
+        assert!(debug.contains("scope_specificity: 2"));
     }
 
     #[test]
