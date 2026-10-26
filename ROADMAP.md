@@ -934,6 +934,9 @@ This roadmap describes sequencing, not release dates.
 - [x] Expose activity work-trace capture through the local CLI without
   promoting agent observations to confirmed user truth.
 - [x] Model activity checkpoints and resumable handoffs.
+  - [x] Redact checkpoint identities, working-memory plaintext, and external
+    state fingerprints from diagnostics while retaining safe structural
+    metadata.
 - [x] Expose encrypted checkpoint create, optimistic update, and audited resume
   operations through the local CLI.
 - [x] Deterministic local Git state fingerprints for coding-agent handoffs.

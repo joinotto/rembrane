@@ -39,7 +39,7 @@ impl Display for CheckpointError {
 impl Error for CheckpointError {}
 
 /// The resumable state of an activity at a meaningful boundary.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct ActivityCheckpoint {
     id: CheckpointId,
     workspace_id: WorkspaceId,
@@ -52,6 +52,28 @@ pub struct ActivityCheckpoint {
     blockers: Vec<String>,
     state_fingerprint: Option<String>,
     version: u64,
+}
+
+impl fmt::Debug for ActivityCheckpoint {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ActivityCheckpoint")
+            .field("id", &"<redacted>")
+            .field("workspace_id", &"<redacted>")
+            .field("subject_id", &"<redacted>")
+            .field("activity_id", &"<redacted>")
+            .field("entity_id_present", &self.entity_id.is_some())
+            .field("goal_bytes", &self.goal.len())
+            .field("summary_bytes", &self.summary.len())
+            .field("next_step_count", &self.next_steps.len())
+            .field("blocker_count", &self.blockers.len())
+            .field(
+                "state_fingerprint_present",
+                &self.state_fingerprint.is_some(),
+            )
+            .field("version", &self.version)
+            .finish()
+    }
 }
 
 impl ActivityCheckpoint {
@@ -340,5 +362,46 @@ mod tests {
         .expect_err("oversized checkpoint should fail");
 
         assert_eq!(error, super::CheckpointError::PayloadTooLarge);
+    }
+
+    #[test]
+    fn debug_output_redacts_working_memory_and_identities() {
+        let checkpoint = ActivityCheckpoint::new(
+            CheckpointId::new("private_checkpoint"),
+            WorkspaceId::new("private_workspace"),
+            PrincipalId::new("private_subject"),
+            ActivityId::new("private_activity"),
+            Some(EntityId::new("private_project")),
+            "Private implementation goal",
+            "Private working-state summary",
+            vec!["Private next step".to_owned()],
+            vec!["Private blocker".to_owned()],
+        )
+        .expect("test checkpoint should be valid")
+        .with_state_fingerprint("private_state_fingerprint")
+        .expect("fingerprint should be valid");
+
+        let diagnostic = format!("{checkpoint:?}");
+
+        for private_value in [
+            "private_checkpoint",
+            "private_workspace",
+            "private_subject",
+            "private_activity",
+            "private_project",
+            "Private implementation goal",
+            "Private working-state summary",
+            "Private next step",
+            "Private blocker",
+            "private_state_fingerprint",
+        ] {
+            assert!(!diagnostic.contains(private_value));
+        }
+        assert!(diagnostic.contains("goal_bytes: 27"));
+        assert!(diagnostic.contains("summary_bytes: 29"));
+        assert!(diagnostic.contains("next_step_count: 1"));
+        assert!(diagnostic.contains("blocker_count: 1"));
+        assert!(diagnostic.contains("state_fingerprint_present: true"));
+        assert!(diagnostic.contains("version: 1"));
     }
 }

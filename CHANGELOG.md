@@ -91,6 +91,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   version, scope specificity, content length, and evidence count while
   redacting plaintext and every memory, tenant, subject, scope, and evidence
   identity.
+- Activity-checkpoint diagnostics now expose only payload sizes, collection
+  counts, state-fingerprint presence, and version while redacting working
+  memory, external-state fingerprints, and every checkpoint identity.
 - Canonical SQLite initialization and backup now require the path opened by
   SQLite to retain the exact protected file's device/inode identity, and
   failure cleanup refuses to remove a path replaced after preparation.
