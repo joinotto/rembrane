@@ -271,6 +271,61 @@ SQL
 psql "$REMBRANE_POSTGRES_URL" -v ON_ERROR_STOP=1 \
     -f migrations/postgres/9999_tenant_rls.sql
 
+runtime_guard=adapters/rembrane-store-postgres/src/runtime-role.sql
+runtime_proof=$(
+    psql "$REMBRANE_POSTGRES_URL" -v ON_ERROR_STOP=1 -qAt \
+        -c 'SET SESSION AUTHORIZATION rembrane_runtime_test;' \
+        -f "$runtime_guard"
+)
+test "$runtime_proof" = "restricted-runtime"
+
+owner_proof=$(
+    psql "$REMBRANE_POSTGRES_URL" -v ON_ERROR_STOP=1 -qAt \
+        -c 'BEGIN; GRANT CREATE ON SCHEMA public TO rembrane_runtime_test;
+            ALTER TABLE public.memories OWNER TO rembrane_runtime_test;
+            SET SESSION AUTHORIZATION rembrane_runtime_test;' \
+        -f "$runtime_guard" \
+        -c 'RESET SESSION AUTHORIZATION; ROLLBACK;'
+)
+test -z "$owner_proof"
+
+bypass_proof=$(
+    psql "$REMBRANE_POSTGRES_URL" -v ON_ERROR_STOP=1 -qAt \
+        -c 'BEGIN; ALTER ROLE rembrane_runtime_test BYPASSRLS;
+            SET SESSION AUTHORIZATION rembrane_runtime_test;' \
+        -f "$runtime_guard" \
+        -c 'RESET SESSION AUTHORIZATION; ROLLBACK;'
+)
+test -z "$bypass_proof"
+
+unforced_proof=$(
+    psql "$REMBRANE_POSTGRES_URL" -v ON_ERROR_STOP=1 -qAt \
+        -c 'BEGIN; ALTER TABLE public.memories NO FORCE ROW LEVEL SECURITY;
+            SET SESSION AUTHORIZATION rembrane_runtime_test;' \
+        -f "$runtime_guard" \
+        -c 'RESET SESSION AUTHORIZATION; ROLLBACK;'
+)
+test -z "$unforced_proof"
+
+shadowed_proof=$(
+    psql "$REMBRANE_POSTGRES_URL" -v ON_ERROR_STOP=1 -qAt \
+        -c 'BEGIN; SET SESSION AUTHORIZATION rembrane_runtime_test;
+            CREATE TEMP TABLE memories (workspace_id text);' \
+        -f "$runtime_guard" \
+        -c 'RESET SESSION AUTHORIZATION; ROLLBACK;'
+)
+test -z "$shadowed_proof"
+
+view_proof=$(
+    psql "$REMBRANE_POSTGRES_URL" -v ON_ERROR_STOP=1 -qAt \
+        -c 'BEGIN; CREATE VIEW public.runtime_guard_unsupported_view
+                AS SELECT workspace_id FROM public.memories;
+            SET SESSION AUTHORIZATION rembrane_runtime_test;' \
+        -f "$runtime_guard" \
+        -c 'RESET SESSION AUTHORIZATION; ROLLBACK;'
+)
+test -z "$view_proof"
+
 unprotected_tables=$(
     psql "$REMBRANE_POSTGRES_URL" -v ON_ERROR_STOP=1 -qAt <<'SQL'
 SELECT count(*)

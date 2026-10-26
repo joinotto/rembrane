@@ -38,6 +38,34 @@ matches no row. The runtime database role must be non-superuser, must not own
 tenant tables, and must not have `BYPASSRLS`; migration ownership belongs to a
 separate role.
 
+The Rust tenant transaction now executes the shared
+`adapters/rembrane-store-postgres/src/runtime-role.sql` guard before setting
+tenant state and before each repository read/write. It accepts only the
+`restricted-runtime` marker. Missing, unexpected, or failed proof rolls back
+the transaction, and authority drift poisons the transaction for further use.
+The guard checks both effective and session roles, rejects membership in
+superuser/BYPASSRLS or canonical table-owner roles, requires enabled/forced
+RLS and `row_security=on`, and rejects search-path shadowing of protected
+relations. Membership rejection is deliberately conservative even where a
+role grant cannot currently be inherited or assumed.
+
+The current schema is `public`; protected relations are its tables with
+`workspace_id` plus `principals`, `workspaces`, and `memory_share_proposals`.
+Protected views, materialized views, and foreign tables are rejected rather
+than treated as forced-RLS tables. Use a dedicated database/role for Rembrane.
+This guard does not verify the
+contents of every policy or protect against a malicious database administrator.
+It complements migrations and live isolation testing; it is not a substitute
+for either. The live RLS suite exercises allowed roles, owner/BYPASSRLS denial,
+unforced policies, and temporary-table shadowing using rollback-only fixtures.
+The guard's local Rust tests do not prove that its SQL ran against PostgreSQL.
+The catalog checks follow PostgreSQL's documented row-security and role
+inquiry interfaces:
+
+- [PostgreSQL row security](https://www.postgresql.org/docs/16/ddl-rowsecurity.html)
+- [Role and schema inquiry functions](https://www.postgresql.org/docs/16/functions-info.html)
+- [Relation catalog attributes](https://www.postgresql.org/docs/16/catalog-pg-class.html)
+
 Workspace bootstrap is a separate control-plane operation because the first
 workspace and owner membership do not exist yet and therefore cannot pass the
 ordinary forced-RLS policies. Configure a distinct, narrowly held provisioning

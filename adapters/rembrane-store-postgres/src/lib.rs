@@ -46,6 +46,8 @@ use rembrane_domain::{
 
 pub const SET_TENANT_SQL: &str = "SELECT set_config('rembrane.workspace_id', $1, true);";
 pub const READ_TENANT_SQL: &str = "SELECT rembrane.current_workspace_id();";
+pub const VERIFY_RUNTIME_ROLE_SQL: &str = include_str!("runtime-role.sql");
+const RESTRICTED_RUNTIME_PROOF: &str = "restricted-runtime";
 pub const FIND_WORKSPACE_SQL: &str =
     "SELECT id, kind FROM workspaces WHERE id = $1 ORDER BY id LIMIT 2";
 pub const FIND_PRINCIPAL_SQL: &str = "SELECT id FROM principals WHERE id = $1 ORDER BY id LIMIT 2";
@@ -696,6 +698,7 @@ impl<Transaction: PostgresTransaction> Drop for ProvisioningTransaction<Transact
 #[derive(Eq, PartialEq)]
 pub enum TenantTransactionError<DriverError> {
     Driver(DriverError),
+    UnsafeRuntimeRole,
     MissingTenant,
     TenantMismatch,
     Closed,
@@ -705,6 +708,7 @@ impl<DriverError> fmt::Debug for TenantTransactionError<DriverError> {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
         formatter.write_str(match self {
             Self::Driver(_) => "Driver([REDACTED])",
+            Self::UnsafeRuntimeRole => "UnsafeRuntimeRole",
             Self::MissingTenant => "MissingTenant",
             Self::TenantMismatch => "TenantMismatch",
             Self::Closed => "Closed",
@@ -716,6 +720,7 @@ impl<DriverError> Display for TenantTransactionError<DriverError> {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
         match self {
             Self::Driver(_) => formatter.write_str("PostgreSQL transaction failed"),
+            Self::UnsafeRuntimeRole => formatter.write_str("PostgreSQL runtime role is unsafe"),
             Self::MissingTenant => {
                 formatter.write_str("PostgreSQL tenant context was not established")
             }
@@ -746,6 +751,7 @@ impl<DriverError> fmt::Debug for PostgresStoreError<DriverError> {
         formatter.write_str(match self {
             Self::Begin(_) => "Begin([REDACTED])",
             Self::Tenant(TenantTransactionError::Driver(_)) => "Tenant(Driver([REDACTED]))",
+            Self::Tenant(TenantTransactionError::UnsafeRuntimeRole) => "Tenant(UnsafeRuntimeRole)",
             Self::Tenant(TenantTransactionError::MissingTenant) => "Tenant(MissingTenant)",
             Self::Tenant(TenantTransactionError::TenantMismatch) => "Tenant(TenantMismatch)",
             Self::Tenant(TenantTransactionError::Closed) => "Tenant(Closed)",
@@ -5120,6 +5126,9 @@ where
     DriverError: ClassifiedPostgresError,
 {
     match error {
+        PostgresStoreError::Tenant(TenantTransactionError::UnsafeRuntimeRole) => {
+            ApplicationError::AccessDenied
+        }
         PostgresStoreError::MissingRow => ApplicationError::NotFound,
         PostgresStoreError::Begin(error)
         | PostgresStoreError::Row(error)
@@ -7083,13 +7092,16 @@ pub struct TenantTransaction<Transaction: PostgresTransaction> {
 }
 
 impl<Transaction: PostgresTransaction> TenantTransaction<Transaction> {
-    /// Establishes transaction-local tenant state with one bound parameter and
-    /// verifies the canonical database read-back before returning a queryable
-    /// transaction.
+    /// Verifies restricted runtime authority before establishing transaction-local
+    /// tenant state with one bound parameter and requiring exact database read-back.
     pub fn verify(
         mut transaction: Transaction,
         workspace_id: WorkspaceId,
     ) -> Result<Self, TenantTransactionError<Transaction::Error>> {
+        if let Err(error) = Self::verify_runtime_role(&mut transaction) {
+            let _ = transaction.rollback();
+            return Err(error);
+        }
         let parameter = PostgresParameter::Text(workspace_id.as_str());
         if let Err(error) = transaction.execute(SET_TENANT_SQL, &[parameter]) {
             let _ = transaction.rollback();
@@ -7158,6 +7170,10 @@ impl<Transaction: PostgresTransaction> TenantTransaction<Transaction> {
     }
 
     fn revalidate(&mut self) -> Result<(), TenantTransactionError<Transaction::Error>> {
+        if let Err(error) = Self::verify_runtime_role(self.transaction_mut()?) {
+            self.rollback_open();
+            return Err(error);
+        }
         let tenant = self
             .transaction_mut()?
             .query_optional_text(READ_TENANT_SQL, &[])
@@ -7176,6 +7192,16 @@ impl<Transaction: PostgresTransaction> TenantTransaction<Transaction> {
                 self.rollback_open();
                 Err(error)
             }
+        }
+    }
+
+    fn verify_runtime_role(
+        transaction: &mut Transaction,
+    ) -> Result<(), TenantTransactionError<Transaction::Error>> {
+        match transaction.query_optional_text(VERIFY_RUNTIME_ROLE_SQL, &[]) {
+            Ok(Some(proof)) if proof == RESTRICTED_RUNTIME_PROOF => Ok(()),
+            Ok(_) => Err(TenantTransactionError::UnsafeRuntimeRole),
+            Err(error) => Err(TenantTransactionError::Driver(error)),
         }
     }
 
@@ -7291,9 +7317,10 @@ mod tests {
         REMOVE_MEMBERSHIP_SQL, REPLACE_CHECKPOINT_SQL, REPLACE_GRAPH_PROJECTION_SQL,
         REPLACE_INVITATION_SQL, REPLACE_KNOWLEDGE_EDGE_SQL, REPLACE_KNOWLEDGE_NODE_SQL,
         REPLACE_LEGAL_HOLD_SQL, REPLACE_MEMBERSHIP_SQL, REPLACE_PROJECTION_SQL,
-        REPLACE_RETENTION_POLICY_SQL, REPLACE_TRIP_SQL, SET_TENANT_SQL, TenantTransaction,
-        TenantTransactionError, insert_disclosed_booking_research, map_application_error,
-        map_invitation_application_error, verify_disclosed_booking_research,
+        REPLACE_RETENTION_POLICY_SQL, REPLACE_TRIP_SQL, RESTRICTED_RUNTIME_PROOF, SET_TENANT_SQL,
+        TenantTransaction, TenantTransactionError, VERIFY_RUNTIME_ROLE_SQL,
+        insert_disclosed_booking_research, map_application_error, map_invitation_application_error,
+        verify_disclosed_booking_research,
     };
 
     #[derive(Clone, Debug, Eq, PartialEq)]
@@ -7741,6 +7768,7 @@ mod tests {
 
     struct FakeTransaction {
         calls: Rc<RefCell<Vec<Call>>>,
+        roles: TenantReadBatch,
         tenants: TenantReadBatch,
         rows: Vec<FakeRow>,
     }
@@ -7779,6 +7807,7 @@ mod tests {
                 .ok_or("unexpected row batch")?;
             Ok(FakeTransaction {
                 calls: Rc::clone(&self.calls),
+                roles: VecDeque::new(),
                 tenants,
                 rows,
             })
@@ -7819,6 +7848,12 @@ mod tests {
             self.calls
                 .borrow_mut()
                 .push(Call::QueryText(statement.to_owned()));
+            if statement == VERIFY_RUNTIME_ROLE_SQL {
+                return self
+                    .roles
+                    .pop_front()
+                    .unwrap_or_else(|| Ok(Some(RESTRICTED_RUNTIME_PROOF.to_owned())));
+            }
             self.tenants
                 .pop_front()
                 .unwrap_or(Err("unexpected tenant read"))
@@ -7901,6 +7936,7 @@ mod tests {
         (
             FakeTransaction {
                 calls: Rc::clone(&calls),
+                roles: VecDeque::new(),
                 tenants: tenants
                     .into_iter()
                     .map(|tenant| tenant.map(|value| value.map(str::to_owned)))
@@ -8079,6 +8115,7 @@ mod tests {
             fn begin_provisioning(&self) -> Result<Self::Transaction, Self::Error> {
                 Ok(FakeTransaction {
                     calls: Rc::clone(&self.calls),
+                    roles: VecDeque::new(),
                     tenants: VecDeque::new(),
                     rows: Vec::new(),
                 })
@@ -8128,6 +8165,7 @@ mod tests {
             fn begin_provisioning(&self) -> Result<Self::Transaction, Self::Error> {
                 Ok(FakeTransaction {
                     calls: Rc::clone(&self.calls),
+                    roles: VecDeque::new(),
                     tenants: self
                         .tenant_batches
                         .borrow_mut()
@@ -8218,6 +8256,7 @@ mod tests {
             fn begin_provisioning(&self) -> Result<Self::Transaction, Self::Error> {
                 Ok(FakeTransaction {
                     calls: Rc::clone(&self.calls),
+                    roles: VecDeque::new(),
                     tenants: VecDeque::from([Ok(Some("principal_01".to_owned()))]),
                     rows: Vec::new(),
                 })
@@ -8282,11 +8321,13 @@ mod tests {
         assert_eq!(
             *calls.borrow(),
             [
+                Call::QueryText(VERIFY_RUNTIME_ROLE_SQL.to_owned()),
                 Call::Execute(
                     SET_TENANT_SQL.to_owned(),
                     vec!["text:workspace_01".to_owned()]
                 ),
                 Call::QueryText(READ_TENANT_SQL.to_owned()),
+                Call::QueryText(VERIFY_RUNTIME_ROLE_SQL.to_owned()),
                 Call::QueryText(READ_TENANT_SQL.to_owned()),
                 Call::Query(
                     "SELECT id FROM memories WHERE workspace_id = $1".to_owned(),
@@ -8295,6 +8336,75 @@ mod tests {
                 Call::Commit,
             ]
         );
+    }
+
+    #[test]
+    fn runtime_authority_must_be_proven_before_setting_tenant_or_querying() {
+        for (proof, expected) in [
+            (Ok(None), TenantTransactionError::UnsafeRuntimeRole),
+            (
+                Ok(Some("private_superuser")),
+                TenantTransactionError::UnsafeRuntimeRole,
+            ),
+            (
+                Err("private database role lookup failure"),
+                TenantTransactionError::Driver("private database role lookup failure"),
+            ),
+        ] {
+            let (mut transaction, calls) = fake([Ok(Some("workspace_01"))]);
+            transaction.roles = VecDeque::from([proof.map(|proof| proof.map(str::to_owned))]);
+            let result = TenantTransaction::verify(transaction, WorkspaceId::new("workspace_01"));
+            assert!(matches!(result, Err(error) if error == expected));
+            assert_eq!(
+                *calls.borrow(),
+                [
+                    Call::QueryText(VERIFY_RUNTIME_ROLE_SQL.to_owned()),
+                    Call::Rollback
+                ]
+            );
+        }
+        assert_eq!(
+            map_application_error::<ClassifiedError>(PostgresStoreError::Tenant(
+                TenantTransactionError::UnsafeRuntimeRole
+            )),
+            ApplicationError::AccessDenied
+        );
+        let error = TenantTransactionError::<&str>::UnsafeRuntimeRole;
+        assert_eq!(format!("{error:?}"), "UnsafeRuntimeRole");
+        assert_eq!(error.to_string(), "PostgreSQL runtime role is unsafe");
+    }
+
+    #[test]
+    fn runtime_role_drift_poisoning_denies_reads_and_writes_before_sql() {
+        for write in [false, true] {
+            let (mut transaction, calls) = fake([Ok(Some("workspace_01"))]);
+            transaction.roles =
+                VecDeque::from([Ok(Some(RESTRICTED_RUNTIME_PROOF.to_owned())), Ok(None)]);
+            let mut verified =
+                TenantTransaction::verify(transaction, WorkspaceId::new("workspace_01"))
+                    .expect("initial restricted role");
+            let denied = if write {
+                verified.execute("DELETE FROM memories", &[]).map(|_| ())
+            } else {
+                verified.query("SELECT id FROM memories", &[]).map(|_| ())
+            };
+            assert_eq!(denied, Err(TenantTransactionError::UnsafeRuntimeRole));
+            assert_eq!(calls.borrow().last(), Some(&Call::Rollback));
+            assert!(!calls.borrow().iter().any(|call| matches!(
+                call,
+                Call::Execute(statement, _) if statement == "DELETE FROM memories"
+            )));
+            assert!(
+                !calls
+                    .borrow()
+                    .iter()
+                    .any(|call| matches!(call, Call::Query(_, _)))
+            );
+            assert_eq!(
+                verified.execute("DELETE FROM memories", &[]),
+                Err(TenantTransactionError::Closed)
+            );
+        }
     }
 
     #[test]
