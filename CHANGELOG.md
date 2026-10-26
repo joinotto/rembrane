@@ -81,6 +81,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Remote-MCP protocol headers, event-stream authorization, initialized SDK
   output, and tenant-service cache keys now redact host, origin, session,
   tenant identity, and arbitrary downstream response content.
+- Shared context and graph retrieval contracts now expose only safe structural
+  diagnostics, redacting queries, purposes, tenant/subject identities, scopes,
+  memory contents, graph identities, and disclosure receipts.
 - Canonical SQLite initialization and backup now require the path opened by
   SQLite to retain the exact protected file's device/inode identity, and
   failure cleanup refuses to remove a path replaced after preparation.

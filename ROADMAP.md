@@ -354,6 +354,8 @@ This roadmap describes sequencing, not release dates.
 - [x] Retrieve minimal context through local stdio MCP.
   - [x] Prevent inbound MCP tool arguments from deriving plaintext-bearing
     debug output and enforce that invariant in the static security gate.
+  - [x] Redact plaintext and identity data from shared context, graph, and
+    disclosure contract diagnostics across every protocol surface.
 - [x] Fail closed when REST or local MCP generated-identifier sequences are
   exhausted instead of reusing saturated memory, event, or disclosure IDs.
 - [x] Require a representable strict successor for every optimistic record

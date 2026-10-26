@@ -15,7 +15,7 @@ pub const MAX_REMOTE_AUDIENCES: usize = 16;
 pub const MAX_REMOTE_AUDIENCE_BYTES: usize = 2_048;
 pub const MAX_REMOTE_IDENTITY_BYTES: usize = 255;
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct ResolveContextRequest {
     pub workspace_id: WorkspaceId,
     pub principal_id: PrincipalId,
@@ -28,15 +28,43 @@ pub struct ResolveContextRequest {
     pub maximum_bytes: usize,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+impl fmt::Debug for ResolveContextRequest {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ResolveContextRequest")
+            .field("workspace_id", &"[REDACTED]")
+            .field("principal_id", &"[REDACTED]")
+            .field("domain_present", &self.domain.is_some())
+            .field("entity_id_present", &self.entity_id.is_some())
+            .field("activity_id_present", &self.activity_id.is_some())
+            .field("purpose", &"[REDACTED]")
+            .field("query", &"[REDACTED]")
+            .field("maximum_items", &self.maximum_items)
+            .field("maximum_bytes", &self.maximum_bytes)
+            .finish()
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
 pub struct ResolveContextResponse {
     pub items: Vec<MemoryRecord>,
     pub context_pack_id: ContextPackId,
     pub disclosure_id: DisclosureId,
 }
 
+impl fmt::Debug for ResolveContextResponse {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ResolveContextResponse")
+            .field("item_count", &self.items.len())
+            .field("context_pack_id", &"[REDACTED]")
+            .field("disclosure_id", &"[REDACTED]")
+            .finish()
+    }
+}
+
 /// Transport-neutral request for one authorized temporal graph neighbourhood.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct ResolveGraphContextRequest {
     pub workspace_id: WorkspaceId,
     pub principal_id: PrincipalId,
@@ -48,16 +76,51 @@ pub struct ResolveGraphContextRequest {
     pub purpose: String,
 }
 
+impl fmt::Debug for ResolveGraphContextRequest {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ResolveGraphContextRequest")
+            .field("workspace_id", &"[REDACTED]")
+            .field("principal_id", &"[REDACTED]")
+            .field("node_id", &"[REDACTED]")
+            .field("scope", &"[REDACTED]")
+            .field("direction", &self.direction)
+            .field("valid_at_epoch_seconds", &self.valid_at_epoch_seconds)
+            .field("maximum_candidates", &self.maximum_candidates)
+            .field("purpose", &"[REDACTED]")
+            .finish()
+    }
+}
+
 /// Canonical graph revisions returned after disclosure evidence is committed.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct ResolveGraphContextResponse {
     pub edges: Vec<KnowledgeEdge>,
     pub disclosure_id: DisclosureId,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+impl fmt::Debug for ResolveGraphContextResponse {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ResolveGraphContextResponse")
+            .field("edge_count", &self.edges.len())
+            .field("disclosure_id", &"[REDACTED]")
+            .finish()
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
 pub struct RecordDisclosureRequest {
     pub receipt: DisclosureReceipt,
+}
+
+impl fmt::Debug for RecordDisclosureRequest {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("RecordDisclosureRequest")
+            .field("receipt", &"[REDACTED]")
+            .finish()
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -558,10 +621,16 @@ impl Error for RemoteAccessError {}
 #[cfg(test)]
 mod tests {
     use super::{
-        ClientId, MAX_REMOTE_AUDIENCE_BYTES, MAX_REMOTE_AUDIENCES, MAX_REMOTE_IDENTITY_BYTES,
-        MAX_REMOTE_ISSUER_BYTES, PrincipalId, RemoteAccessError, RemoteAccessScope,
-        RemoteMcpOperation, RemoteMcpRequestAuthorization, RemoteSessionId, RemoteTokenClaims,
+        ActivityId, ClientId, ContextPackId, DisclosureId, DisclosureReceipt, EntityId,
+        GraphDisclosureDirection, KnowledgeNodeId, MAX_REMOTE_AUDIENCE_BYTES, MAX_REMOTE_AUDIENCES,
+        MAX_REMOTE_IDENTITY_BYTES, MAX_REMOTE_ISSUER_BYTES, MemoryRecord, MemoryScope, PrincipalId,
+        RecordDisclosureRequest, RemoteAccessError, RemoteAccessScope, RemoteMcpOperation,
+        RemoteMcpRequestAuthorization, RemoteSessionId, RemoteTokenClaims, ResolveContextRequest,
+        ResolveContextResponse, ResolveGraphContextRequest, ResolveGraphContextResponse,
         WorkspaceId,
+    };
+    use rembrane_domain::{
+        EvidenceId, EvidenceReference, EvidenceSource, MemoryId, MemoryKind, MemoryStatus,
     };
 
     fn claims(scopes: &[RemoteAccessScope]) -> RemoteTokenClaims {
@@ -627,6 +696,100 @@ mod tests {
         assert!(access_debug.contains("scope_count: 1"));
         assert!(binding_debug.contains("scope_count: 1"));
         assert!(session_debug.contains("[REDACTED]"));
+    }
+
+    #[test]
+    fn context_contract_diagnostics_never_render_private_content() {
+        let request = ResolveContextRequest {
+            workspace_id: WorkspaceId::new("private-workspace"),
+            principal_id: PrincipalId::new("private-principal"),
+            domain: Some("private-domain".to_owned()),
+            entity_id: Some(EntityId::new("private-entity")),
+            activity_id: Some(ActivityId::new("private-activity")),
+            purpose: "private purpose".to_owned(),
+            query: "private memory query".to_owned(),
+            maximum_items: 5,
+            maximum_bytes: 4_096,
+        };
+        let memory = MemoryRecord::restore(
+            MemoryId::new("private-memory"),
+            WorkspaceId::new("private-workspace"),
+            PrincipalId::new("private-principal"),
+            MemoryScope::Global,
+            MemoryKind::Semantic,
+            MemoryStatus::Confirmed,
+            "private remembered content",
+            1,
+            vec![EvidenceReference::new(
+                EvidenceId::new("private-evidence"),
+                EvidenceSource::UserStatement,
+            )],
+        )
+        .expect("memory fixture");
+        let response = ResolveContextResponse {
+            items: vec![memory],
+            context_pack_id: ContextPackId::new("private-context-pack"),
+            disclosure_id: DisclosureId::new("private-disclosure"),
+        };
+        let graph_request = ResolveGraphContextRequest {
+            workspace_id: WorkspaceId::new("private-workspace"),
+            principal_id: PrincipalId::new("private-principal"),
+            node_id: KnowledgeNodeId::new("private-node"),
+            scope: MemoryScope::Entity {
+                id: EntityId::new("private-entity"),
+            },
+            direction: GraphDisclosureDirection::Both,
+            valid_at_epoch_seconds: 1_000,
+            maximum_candidates: 10,
+            purpose: "private graph purpose".to_owned(),
+        };
+        let graph_response = ResolveGraphContextResponse {
+            edges: Vec::new(),
+            disclosure_id: DisclosureId::new("private-graph-disclosure"),
+        };
+        let disclosure = RecordDisclosureRequest {
+            receipt: DisclosureReceipt {
+                id: DisclosureId::new("private-disclosure"),
+                context_pack_id: ContextPackId::new("private-context-pack"),
+                workspace_id: WorkspaceId::new("private-workspace"),
+                subject_id: PrincipalId::new("private-principal"),
+                client_id: ClientId::new("private-client"),
+                purpose: "private disclosure purpose".to_owned(),
+                memories: Vec::new(),
+            },
+        };
+
+        for debug in [
+            format!("{request:?}"),
+            format!("{response:?}"),
+            format!("{graph_request:?}"),
+            format!("{graph_response:?}"),
+            format!("{disclosure:?}"),
+        ] {
+            for private in [
+                "private-workspace",
+                "private-principal",
+                "private-domain",
+                "private-entity",
+                "private-activity",
+                "private purpose",
+                "private memory query",
+                "private-memory",
+                "private remembered content",
+                "private-evidence",
+                "private-context-pack",
+                "private-disclosure",
+                "private-node",
+                "private graph purpose",
+                "private-graph-disclosure",
+                "private-client",
+                "private disclosure purpose",
+            ] {
+                assert!(!debug.contains(private));
+            }
+        }
+        assert!(format!("{response:?}").contains("item_count: 1"));
+        assert!(format!("{graph_response:?}").contains("edge_count: 0"));
     }
 
     #[test]
