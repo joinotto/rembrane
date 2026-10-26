@@ -38,6 +38,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   blob paths.
 - Customer-KMS recovery-floor diagnostics now redact workspace identity while
   retaining the trusted minimum generation.
+- Key-provider rotation-request diagnostics now redact request, workspace, and
+  recipient identities while retaining generation and recipient count.
 - Canonical SQLite initialization and backup now require the path opened by
   SQLite to retain the exact protected file's device/inode identity, and
   failure cleanup refuses to remove a path replaced after preparation.

@@ -127,12 +127,24 @@ fn valid_algorithm_identifier(algorithm: &str) -> bool {
         })
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct RotateKeyRequest {
     request_id: String,
     workspace_id: WorkspaceId,
     generation: u64,
     recipient_ids: Vec<PrincipalId>,
+}
+
+impl fmt::Debug for RotateKeyRequest {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("RotateKeyRequest")
+            .field("request_id", &"[REDACTED]")
+            .field("workspace_id", &"[REDACTED]")
+            .field("generation", &self.generation)
+            .field("recipient_count", &self.recipient_ids.len())
+            .finish()
+    }
 }
 
 impl RotateKeyRequest {
@@ -668,6 +680,23 @@ mod tests {
             receipt.recipient_ids(),
             &[PrincipalId::new("member"), PrincipalId::new("owner")]
         );
+
+        let request = RotateKeyRequest::new(
+            "rotation-private",
+            WorkspaceId::new("workspace-private"),
+            3,
+            vec![
+                PrincipalId::new("member-private"),
+                PrincipalId::new("owner-private"),
+            ],
+        )
+        .expect("rotation request");
+        let debug = format!("{request:?}");
+        assert!(!debug.contains("rotation-private"));
+        assert!(!debug.contains("workspace-private"));
+        assert!(!debug.contains("member-private"));
+        assert!(!debug.contains("owner-private"));
+        assert!(debug.contains("recipient_count"));
     }
 
     #[test]
