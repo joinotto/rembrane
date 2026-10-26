@@ -13,9 +13,14 @@ evidence and the strict readiness command.
 - Static architecture, security-policy, protocol, signature/evidence,
   SQLite, and PostgreSQL RLS inventory checks pass.
 - Rust workspace tests, formatting, and warnings-as-errors Clippy pass.
-  The latest CLI input-hardening change also passes all 63 CLI unit tests.
+  The latest CLI input-hardening changes pass all 68 CLI unit tests.
 - Encrypted CLI lifecycle, MCP stdio, and fresh-process cross-tool continuity
   pass, including explicitly approved observations and disclosure receipts.
+- CLI portability now has executable round-trip coverage: private plaintext
+  JSONL/Markdown/graph exports, encrypted proposal-only JSONL imports with
+  preserved project scopes and fresh destination identities, and rejection
+  of unsupported scope selectors before I/O. Imports are not trusted memory
+  until explicit approval; exports are not project-filtered sharing APIs.
 - The PostgreSQL boundary includes a fail-closed runtime-authority guard with
   74 passing adapter unit tests. Its new shared SQL fixtures still require
   live PostgreSQL execution; the concrete database driver remains missing.
@@ -23,12 +28,39 @@ evidence and the strict readiness command.
   process is denied permission to bind `127.0.0.1:18787`.
 - Direct Git commits are available again. Verified slices are recorded
   locally; release evidence still requires an exact clean release candidate.
-- `index.crates.io` still fails DNS resolution in this environment. The
-  missing Streamable HTTP support dependencies and a concrete PostgreSQL
-  driver were not found in the local source cache.
+- The cached, locked Cargo dependency graph builds offline. An approved HTTP
+  registry probe succeeded, but Cargo's attempted fetch of the missing
+  Streamable HTTP dependencies still failed DNS resolution. This is not proof
+  of a global crates.io outage or of complete dependency access. The transport
+  feature was reverted after the failed fetch, leaving the existing build
+  intact; a concrete PostgreSQL driver is also absent from the local cache.
+- The PostgreSQL client is unavailable here, and access to the Docker daemon
+  socket is denied. Live database fixtures and container verification are not
+  covered by the passing local tests.
 
 Passing local tests is not independent security approval, live cloud-provider
 conformance, a deployed PostgreSQL proof, or production release approval.
+
+## Immediate execution queue
+
+1. Resolve and lock the official MCP transport dependencies, then implement
+   the actual remote service behind the existing verified authorization
+   boundary. Do not enable an unbuildable feature or count scaffolding as a
+   supported integration.
+2. Implement the concrete PostgreSQL driver and pool, then run the shared
+   runtime-authority fixtures and pooled two-tenant lifecycle tests against a
+   dedicated disposable database.
+3. Run the complete HTTP and container test suites in a capable staging
+   environment, followed by concurrency, performance, and recovery drills.
+4. Gather independent provider/KMS evidence and schedule independent security
+   review; freeze a clean candidate before collecting revision-bound approval.
+5. Clear the strict release gate, test published installation artifacts,
+   and complete a controlled pilot before production promotion.
+
+Security fixes that can be built and verified locally continue while runtime
+dependencies are unavailable. They do not replace the runtime exit criteria.
+Roadmap checkboxes are updated only for implemented and verified slices, with
+live or independently reviewed evidence tracked separately.
 
 ## Scope and sequencing
 
@@ -133,3 +165,9 @@ executable results and the external review is scheduled. Report milestone
 exits and remaining gates, not a percentage inferred from roadmap checkbox
 counts. Production completion means verified release criteria, not simply
 running out of development tasks.
+
+There is no defensible fixed release date yet. Development can proceed
+autonomously within the repository, but an unavailable staging capability or
+an independent reviewer cannot be substituted with local mocks or a maintainer
+self-approval. A review finding or failed recovery drill can add another
+implementation-and-verification cycle.
