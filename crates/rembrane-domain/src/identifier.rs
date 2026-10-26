@@ -2,7 +2,7 @@ use std::fmt::{self, Display};
 
 macro_rules! identifier {
     ($name:ident) => {
-        #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        #[derive(Clone, Eq, Hash, Ord, PartialEq, PartialOrd)]
         pub struct $name(String);
 
         impl $name {
@@ -20,6 +20,15 @@ macro_rules! identifier {
         impl Display for $name {
             fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
                 self.0.fmt(formatter)
+            }
+        }
+
+        impl fmt::Debug for $name {
+            fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter
+                    .debug_tuple(stringify!($name))
+                    .field(&"<redacted>")
+                    .finish()
             }
         }
 
@@ -64,7 +73,7 @@ identifier!(WorkspaceId);
 
 #[cfg(test)]
 mod tests {
-    use super::WorkspaceId;
+    use super::{ProviderId, WorkspaceId};
 
     #[test]
     fn identifier_preserves_opaque_value() {
@@ -72,5 +81,20 @@ mod tests {
 
         assert_eq!(identifier.as_str(), "workspace_01");
         assert_eq!(identifier.to_string(), "workspace_01");
+    }
+
+    #[test]
+    fn identifier_debug_output_is_redacted_without_changing_display() {
+        let workspace = WorkspaceId::new("private_workspace");
+        let provider = ProviderId::new("private.provider");
+
+        let diagnostic = format!("{workspace:?} {provider:?}");
+
+        assert!(!diagnostic.contains("private_workspace"));
+        assert!(!diagnostic.contains("private.provider"));
+        assert!(diagnostic.contains("WorkspaceId(\"<redacted>\")"));
+        assert!(diagnostic.contains("ProviderId(\"<redacted>\")"));
+        assert_eq!(workspace.to_string(), "private_workspace");
+        assert_eq!(provider.to_string(), "private.provider");
     }
 }

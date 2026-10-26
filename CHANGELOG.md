@@ -128,6 +128,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Retention-policy and legal-hold diagnostics now expose only finite/forever
   period classes, lifecycle status, version, and release presence while
   redacting exact schedules, workspace identities, actors, and timestamps.
+- Every canonical identifier newtype now has redacted debug output while
+  preserving explicit display and string access for validated protocol and
+  persistence boundaries.
 - Canonical SQLite initialization and backup now require the path opened by
   SQLite to retain the exact protected file's device/inode identity, and
   failure cleanup refuses to remove a path replaced after preparation.
