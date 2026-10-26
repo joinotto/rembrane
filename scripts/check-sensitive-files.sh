@@ -120,6 +120,15 @@ for application_source in crates/rembrane-application/src/*.rs; do
     fi
 done
 
+for contract_source in crates/rembrane-contracts/src/*.rs; do
+    if sed '/^#\[cfg(test)\]/,$d' "$contract_source" |
+        rg -n -U '#\[derive\([^]]*Debug[^]]*\)\]\n(?:pub )?struct '
+    then
+        echo "shared contract structs must use explicitly reviewed redacted Debug implementations: $contract_source" >&2
+        exit 1
+    fi
+done
+
 for adapter_source in adapters/*/src/*.rs; do
     if sed '/^#\[cfg(test)\]/,$d' "$adapter_source" |
         rg -n -U '#\[derive\([^]]*Debug[^]]*\)\]\n(?:pub )?struct '

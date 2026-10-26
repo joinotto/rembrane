@@ -104,6 +104,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Provider-registry verification and selection diagnostics now redact signed
   registry bytes, hashes, trust anchors, provider and adapter identities,
   evidence revisions, and timestamps while retaining safe policy flags.
+- Authenticated channel-message diagnostics now redact exact receipt times,
+  and every shared transport-contract struct requires explicitly reviewed
+  debug output.
 - Provider-independent key seal requests now retain copied plaintext in
   redacted zeroize-on-drop ownership instead of an ordinary byte vector.
 - Key-provider plaintext responses are now explicitly wiped before oversized

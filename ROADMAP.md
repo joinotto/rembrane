@@ -1747,6 +1747,8 @@ This roadmap describes sequencing, not release dates.
 - [x] Mobile share flows and iMessage extension.
   - [x] Redact authenticated message text, platform event/lookup identifiers,
     and canonical identities from shared channel-contract diagnostics.
+    - [x] Redact exact authenticated message receipt timelines and enforce
+      reviewed debug output for every shared transport-contract struct.
   - [x] Reuse the authenticated-channel contract for explicit iMessage
     extension and mobile-share ingestion without claiming conversation
     interception.

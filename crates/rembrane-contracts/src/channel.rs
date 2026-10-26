@@ -48,7 +48,7 @@ impl fmt::Debug for VerifiedChannelMessage {
             .field("principal_id", &"[REDACTED]")
             .field("client_id", &"[REDACTED]")
             .field("text_bytes", &self.text.len())
-            .field("received_at_epoch_seconds", &self.received_at_epoch_seconds)
+            .field("received_at_epoch_seconds", &"[REDACTED]")
             .finish()
     }
 }
@@ -85,11 +85,22 @@ impl fmt::Debug for ChannelSenderBinding {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Default, Eq, PartialEq)]
 pub struct ChannelInboxSummary {
     pending: u64,
     processing: u64,
     quarantined: u64,
+}
+
+impl fmt::Debug for ChannelInboxSummary {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ChannelInboxSummary")
+            .field("pending", &self.pending)
+            .field("processing", &self.processing)
+            .field("quarantined", &self.quarantined)
+            .finish()
+    }
 }
 
 impl ChannelInboxSummary {
