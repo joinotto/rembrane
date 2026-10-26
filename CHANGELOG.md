@@ -9,6 +9,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Fixed
 
+- The official Rust MCP SDK dependency is now pinned to the reviewed 3.7.0
+  release, preventing an unreviewed compatible-version update from silently
+  changing the stdio or future Streamable HTTP transport boundary.
 - Semantic-provider diagnostics now redact memory content, retrieval queries,
   tenant, scope, and memory identities while retaining safe sizes, versions,
   limits, kinds, and approximate scores.
