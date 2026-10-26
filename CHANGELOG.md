@@ -18,6 +18,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Structured CLI recall now has a versioned JSON Schema, canonical example,
   protocol drift checks, and generic bot/launcher documentation tied to the
   enforced item and plaintext budgets.
+- Failed `rembrane recall --json` runs now return a closed generic error code
+  without exposing query text, tenant identities, database paths, key
+  metadata, or arbitrary provider diagnostics.
 - `rembrane doctor --json` now emits structured installation health, closed
   membership role, authenticated-record counts, and secret-source categories
   without principal or workspace identifiers; mixed JSON/privacy output is

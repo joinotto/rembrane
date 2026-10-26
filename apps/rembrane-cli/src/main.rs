@@ -67,6 +67,8 @@ fn main() {
     if let Err(error) = run(&arguments) {
         if doctor_json_requested(&arguments) {
             println!("{}", doctor_failure_json());
+        } else if recall_json_requested(&arguments) {
+            println!("{}", recall_failure_json());
         } else {
             eprintln!("error: {error}");
         }
@@ -76,6 +78,11 @@ fn main() {
 
 fn doctor_json_requested(arguments: &[String]) -> bool {
     arguments.first().map(String::as_str) == Some("doctor")
+        && arguments.iter().any(|argument| argument == "--json")
+}
+
+fn recall_json_requested(arguments: &[String]) -> bool {
+    arguments.first().map(String::as_str) == Some("recall")
         && arguments.iter().any(|argument| argument == "--json")
 }
 
@@ -2540,6 +2547,15 @@ fn recall_json(response: &ResolveContextResponse) -> serde_json::Value {
     })
 }
 
+fn recall_failure_json() -> serde_json::Value {
+    serde_json::json!({
+        "schemaVersion": 1,
+        "error": {
+            "code": "recall_failed"
+        }
+    })
+}
+
 fn trace(arguments: &[String]) -> Result<(), String> {
     let activity_id = ActivityId::new(option(arguments, "--activity")?);
     let summary = option(arguments, "--summary")?;
@@ -3375,7 +3391,8 @@ mod tests {
         invitation_status, key_provider_secret_sources, mcp_client_catalog,
         mcp_environment_variables, memory_privacy_mode_name, memory_provider_check_policy,
         opencode_mcp_config, option, positive_u64, providers, read_bounded_registry_file,
-        read_export, recall_scope_context, redact_endpoint, render_mcp_config,
+        read_export, recall_failure_json, recall_json_requested, recall_scope_context,
+        redact_endpoint, render_mcp_config,
         requested_memory_privacy, requested_memory_scope, run, selected_secret_reference,
         test_provider, validate_external_conformance_namespace, validate_mcp_server_binary,
         vscode_mcp_config, write_export, write_knowledge_graph_export, write_memory_jsonl_export,
@@ -3466,6 +3483,26 @@ mod tests {
                 "--max-bytes must be between 1 and {MAX_CLI_RECALL_BYTES}"
             ))
         );
+    }
+
+    #[test]
+    fn recall_json_failure_is_generic_and_secret_safe() {
+        let arguments = vec![
+            "recall".to_owned(),
+            "--database".to_owned(),
+            "/private/tenant.sqlite".to_owned(),
+            "--query".to_owned(),
+            "private query".to_owned(),
+            "--json".to_owned(),
+        ];
+        assert!(recall_json_requested(&arguments));
+
+        let result = recall_failure_json();
+        assert_eq!(result["schemaVersion"], 1);
+        assert_eq!(result["error"]["code"], "recall_failed");
+        assert_eq!(result.as_object().map(serde_json::Map::len), Some(2));
+        assert!(!result.to_string().contains("tenant.sqlite"));
+        assert!(!result.to_string().contains("private query"));
     }
 
     fn request_run(arguments: &[&str]) -> Result<(), String> {
