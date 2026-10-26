@@ -3,7 +3,7 @@ use std::fmt::{self, Display};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use rembrane_domain::{KeyRotationReceipt, MAX_KEY_ROTATION_RECIPIENTS, PrincipalId, WorkspaceId};
-use zeroize::Zeroizing;
+use zeroize::{Zeroize, Zeroizing};
 
 use crate::{CryptoError, EncryptedPayload, EncryptionContext, RecordCipher};
 
@@ -436,10 +436,13 @@ impl<Transport: KeyProviderTransport> RecordCipher for KeyProviderCipher<Transpo
         }
         let request = OpenRequest::new(self.request_id("open")?, context.clone(), payload.clone())
             .map_err(protocol_error)?;
-        let plaintext = self.transport.open(&request)?;
-        request
-            .validate_plaintext_response(&plaintext, self.manifest.maximum_plaintext_bytes)
-            .map_err(protocol_error)?;
+        let mut plaintext = self.transport.open(&request)?;
+        if let Err(error) =
+            request.validate_plaintext_response(&plaintext, self.manifest.maximum_plaintext_bytes)
+        {
+            plaintext.zeroize();
+            return Err(protocol_error(error));
+        }
         Ok(plaintext)
     }
 }

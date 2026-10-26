@@ -208,6 +208,8 @@ This roadmap describes sequencing, not release dates.
       provider conformance runner without exposing key material.
       - [x] Keep provider-bound seal-request plaintext in redacted,
         zeroize-on-drop ownership throughout protocol dispatch.
+      - [x] Explicitly wipe provider-returned plaintext before rejecting a
+        response that exceeds the negotiated size boundary.
       - [x] Zeroize bounded raw key-provider responses after strict typed
         decoding.
       - [x] Emit a strict portable conformance result with provider identity
