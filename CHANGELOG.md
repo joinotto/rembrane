@@ -70,6 +70,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   and correction/deletion reasons from being rendered into diagnostics.
 - The sensitive-file gate now rejects reintroduction of derived debug output
   on MCP tool parameter types.
+- Remote-MCP HTTP request diagnostics now expose only header-presence flags,
+  redacting bearer authorization, session IDs, hostnames, and browser origins.
 - Canonical SQLite initialization and backup now require the path opened by
   SQLite to retain the exact protected file's device/inode identity, and
   failure cleanup refuses to remove a path replaced after preparation.

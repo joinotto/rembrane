@@ -419,6 +419,8 @@ This roadmap describes sequencing, not release dates.
   - [x] Add transport-neutral HTTP authorization middleware with strict bearer
     parsing, trusted-origin checks, fail-closed tool lookup, and per-request
     reauthentication.
+    - [x] Redact authorization, session, host, and origin values from
+      remote-MCP HTTP request diagnostics.
     - [x] Reject oversized bearer credentials before signature verification or
       authenticated introspection work.
     - [x] Authenticate initialize, discovery, event-stream, and session-delete

@@ -6,6 +6,7 @@
 //! already passed bearer, origin, method/tool, session, and tenant checks.
 
 use std::collections::BTreeMap;
+use std::fmt;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
@@ -1349,12 +1350,24 @@ pub fn classify_remote_mcp_request(
     })
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Default, Eq, PartialEq)]
 pub struct RemoteMcpHttpRequest<'request> {
     pub authorization: Option<&'request str>,
     pub host: Option<&'request str>,
     pub origin: Option<&'request str>,
     pub session_id: Option<&'request str>,
+}
+
+impl fmt::Debug for RemoteMcpHttpRequest<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("RemoteMcpHttpRequest")
+            .field("authorization_present", &self.authorization.is_some())
+            .field("host_present", &self.host.is_some())
+            .field("origin_present", &self.origin.is_some())
+            .field("session_id_present", &self.session_id.is_some())
+            .finish()
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -4104,6 +4117,28 @@ mod tests {
             1_000,
         )
         .expect("fixture access should validate")
+    }
+
+    #[test]
+    fn request_debug_redacts_all_security_header_values() {
+        let request = RemoteMcpHttpRequest {
+            authorization: Some("Bearer private-token"),
+            host: Some("private-memory.example.test"),
+            origin: Some("https://private-agent.example.test"),
+            session_id: Some("private-session-id"),
+        };
+
+        let debug = format!("{request:?}");
+        for private in [
+            "private-token",
+            "private-memory.example.test",
+            "private-agent.example.test",
+            "private-session-id",
+        ] {
+            assert!(!debug.contains(private));
+        }
+        assert!(debug.contains("authorization_present: true"));
+        assert!(debug.contains("session_id_present: true"));
     }
 
     #[test]
