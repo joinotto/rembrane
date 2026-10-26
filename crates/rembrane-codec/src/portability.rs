@@ -3,12 +3,15 @@ use rembrane_domain::{
     MemoryRecord, MemoryScope, MemoryStatus, PrincipalId, WorkspaceId,
 };
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 
 use crate::CodecError;
 
 pub const MEMORY_JSONL_FORMAT: &str = "rembrane-memory-jsonl";
 pub const MEMORY_JSONL_VERSION: u32 = 1;
 pub const MAX_MEMORY_JSONL_LINE_BYTES: usize = 1_048_576;
+pub const MAX_MEMORY_JSONL_ARCHIVE_BYTES: usize = 67_108_864;
+pub const MAX_MEMORY_JSONL_ARCHIVE_RECORDS: usize = 10_000;
 
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
@@ -97,6 +100,53 @@ pub fn decode_memory_jsonl_record(payload: &[u8]) -> Result<MemoryRecord, CodecE
         return Err(CodecError::UnsupportedVersion);
     }
     MemoryRecord::try_from(record)
+}
+
+pub fn decode_memory_jsonl_archive(payload: &[u8]) -> Result<Vec<MemoryRecord>, CodecError> {
+    decode_memory_jsonl_archive_with_limits(
+        payload,
+        MAX_MEMORY_JSONL_ARCHIVE_RECORDS,
+        MAX_MEMORY_JSONL_ARCHIVE_BYTES,
+    )
+}
+
+fn decode_memory_jsonl_archive_with_limits(
+    payload: &[u8],
+    maximum_records: usize,
+    maximum_bytes: usize,
+) -> Result<Vec<MemoryRecord>, CodecError> {
+    if payload.len() > maximum_bytes {
+        return Err(CodecError::MalformedPayload);
+    }
+    let mut records = Vec::new();
+    let mut identities = HashSet::new();
+    let mut source_tenant: Option<(WorkspaceId, PrincipalId)> = None;
+    for line in payload.split_inclusive(|byte| *byte == b'\n') {
+        if line == b"\n" || line == b"\r\n" {
+            return Err(CodecError::MalformedPayload);
+        }
+        if records.len() == maximum_records {
+            return Err(CodecError::MalformedPayload);
+        }
+        let record = decode_memory_jsonl_record(line)?;
+        let tenant = (record.workspace_id().clone(), record.subject_id().clone());
+        if source_tenant
+            .as_ref()
+            .is_some_and(|source| source != &tenant)
+        {
+            return Err(CodecError::InvalidDomainRecord);
+        }
+        source_tenant.get_or_insert(tenant);
+        if !identities.insert((
+            record.workspace_id().clone(),
+            record.id().clone(),
+            record.version(),
+        )) {
+            return Err(CodecError::InvalidDomainRecord);
+        }
+        records.push(record);
+    }
+    Ok(records)
 }
 
 impl From<&MemoryRecord> for PortableMemoryRecord {
@@ -268,7 +318,10 @@ mod tests {
     };
 
     use super::{
-        MAX_MEMORY_JSONL_LINE_BYTES, decode_memory_jsonl_record, encode_memory_jsonl_record,
+        MAX_MEMORY_JSONL_ARCHIVE_BYTES, MAX_MEMORY_JSONL_ARCHIVE_RECORDS,
+        MAX_MEMORY_JSONL_LINE_BYTES, decode_memory_jsonl_archive,
+        decode_memory_jsonl_archive_with_limits, decode_memory_jsonl_record,
+        encode_memory_jsonl_record,
     };
     use crate::CodecError;
 
@@ -327,5 +380,68 @@ mod tests {
             decode_memory_jsonl_record(&vec![b'x'; MAX_MEMORY_JSONL_LINE_BYTES + 1]),
             Err(CodecError::MalformedPayload)
         );
+    }
+
+    #[test]
+    fn archive_decode_rejects_duplicates_mixed_tenants_and_blank_lines() {
+        let memory = fixture();
+        let line = encode_memory_jsonl_record(&memory).expect("encode");
+        let mut duplicate = line.clone();
+        duplicate.extend_from_slice(&line);
+        assert_eq!(
+            decode_memory_jsonl_archive(&duplicate),
+            Err(CodecError::InvalidDomainRecord)
+        );
+
+        let foreign = MemoryRecord::confirmed_preference(
+            MemoryId::new("memory_02"),
+            WorkspaceId::new("workspace_02"),
+            PrincipalId::new("principal_01"),
+            MemoryScope::Global,
+            "Foreign tenant",
+            EvidenceReference::new(
+                EvidenceId::new("evidence_02"),
+                EvidenceSource::ImportedRecord,
+            ),
+        )
+        .expect("valid foreign fixture");
+        let mut mixed = line;
+        mixed.extend_from_slice(&encode_memory_jsonl_record(&foreign).expect("encode"));
+        assert_eq!(
+            decode_memory_jsonl_archive(&mixed),
+            Err(CodecError::InvalidDomainRecord)
+        );
+        assert_eq!(
+            decode_memory_jsonl_archive(b"\n"),
+            Err(CodecError::MalformedPayload)
+        );
+    }
+
+    #[test]
+    fn archive_decode_enforces_global_record_and_byte_bounds() {
+        let first = encode_memory_jsonl_record(&fixture()).expect("encode");
+        let second = MemoryRecord::confirmed_preference(
+            MemoryId::new("memory_02"),
+            WorkspaceId::new("workspace_01"),
+            PrincipalId::new("principal_01"),
+            MemoryScope::Global,
+            "Second",
+            EvidenceReference::new(
+                EvidenceId::new("evidence_02"),
+                EvidenceSource::UserStatement,
+            ),
+        )
+        .expect("valid fixture");
+        let mut two_records = first;
+        two_records.extend_from_slice(&encode_memory_jsonl_record(&second).expect("encode"));
+        assert_eq!(
+            decode_memory_jsonl_archive_with_limits(&two_records, 1, two_records.len()),
+            Err(CodecError::MalformedPayload)
+        );
+        assert_eq!(
+            decode_memory_jsonl_archive_with_limits(b"{}", MAX_MEMORY_JSONL_ARCHIVE_RECORDS, 1),
+            Err(CodecError::MalformedPayload)
+        );
+        assert!(MAX_MEMORY_JSONL_ARCHIVE_BYTES > two_records.len());
     }
 }

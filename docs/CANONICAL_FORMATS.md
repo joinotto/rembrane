@@ -12,6 +12,12 @@ implementation exposes `encode_memory_jsonl_record` and
 `decode_memory_jsonl_record`; CLI and API portability surfaces must use these
 functions rather than defining independent wire structures.
 
+Whole-archive decoding additionally requires at most 10,000 records and 64 MiB,
+one source workspace/subject pair, unique memory ID/version tuples, and no
+blank records. A caller receives records only after the complete archive passes
+these checks, allowing import orchestration to remain mutation-free during
+untrusted input validation.
+
 ## Compatibility rules
 
 - Every payload carries a stable format name and integer format version.

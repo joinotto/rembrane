@@ -106,7 +106,10 @@ This roadmap describes sequencing, not release dates.
   - [x] Move the JSONL record contract into the provider-independent codec and
     add strict decoding with closed fields, exact format/version checks, domain
     invariant restoration, and a per-record byte ceiling.
-  - [ ] Validate complete bounded JSONL imports before canonical mutation.
+  - [x] Provide whole-archive validation with fixed record/byte ceilings,
+    homogeneous source tenancy, duplicate revision rejection, and no blank
+    records so import surfaces can validate before canonical mutation.
+  - [ ] Apply validated imports as one authorized atomic canonical mutation.
 - [x] Package the local REST service for loopback-only Docker Compose
   self-hosting with persistent encrypted storage.
   - [x] Resolve the REST bearer credential from validated environment or
