@@ -86,6 +86,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Application validation-error diagnostics now redact arbitrary details, and
   MCP clients receive a stable generic validation failure instead of internal
   or user-controlled validation text.
+- Retention-policy, legal-hold, purge-plan, and purge-command diagnostics now
+  expose only safe versions, counts, bounds, and cutoff-presence flags instead
+  of tenant, administrator, request, hold, or retention timeline identities.
 - Provider-independent key seal requests now retain copied plaintext in
   redacted zeroize-on-drop ownership instead of an ordinary byte vector.
 - Key-provider plaintext responses are now explicitly wiped before oversized

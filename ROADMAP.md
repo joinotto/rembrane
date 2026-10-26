@@ -757,6 +757,9 @@ This roadmap describes sequencing, not release dates.
         restoration, tenant correlation, and duplicate rejection.
         - [x] Add atomic audited legal-hold placement and optimistic release,
           completing the PostgreSQL `RetentionRepository` port.
+        - [x] Redact workspace, administrator, hold, request, and retention
+          timeline identities from application policy, legal-hold, and purge
+          diagnostics.
       - [x] Implement tenant-pinned member-scope grant insertion, bounded
         listing with closed scope decoding, and audited exact deletion.
       - [x] Add tenant-verified latest key-rotation and provider-receipt reads

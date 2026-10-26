@@ -1,3 +1,4 @@
+use std::fmt;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use rembrane_domain::{
@@ -12,7 +13,7 @@ use crate::{
 
 pub const MAX_RETENTION_PURGE_ITEMS: usize = 1_000;
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct RetentionPurgePlan {
     pub workspace_id: WorkspaceId,
     pub memory_cutoff_epoch_seconds: Option<u64>,
@@ -23,13 +24,55 @@ pub struct RetentionPurgePlan {
     pub maximum_items: usize,
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+impl fmt::Debug for RetentionPurgePlan {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("RetentionPurgePlan")
+            .field(
+                "memory_cutoff_present",
+                &self.memory_cutoff_epoch_seconds.is_some(),
+            )
+            .field(
+                "checkpoint_cutoff_present",
+                &self.checkpoint_cutoff_epoch_seconds.is_some(),
+            )
+            .field(
+                "travel_cutoff_present",
+                &self.travel_cutoff_epoch_seconds.is_some(),
+            )
+            .field(
+                "disclosure_cutoff_present",
+                &self.disclosure_cutoff_epoch_seconds.is_some(),
+            )
+            .field(
+                "event_cutoff_present",
+                &self.event_cutoff_epoch_seconds.is_some(),
+            )
+            .field("maximum_items", &self.maximum_items)
+            .finish_non_exhaustive()
+    }
+}
+
+#[derive(Clone, Copy, Default, Eq, PartialEq)]
 pub struct RetentionPurgeResult {
     pub memories: usize,
     pub checkpoints: usize,
     pub travel_research: usize,
     pub disclosures: usize,
     pub canonical_events: usize,
+}
+
+impl fmt::Debug for RetentionPurgeResult {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("RetentionPurgeResult")
+            .field("memories", &self.memories)
+            .field("checkpoints", &self.checkpoints)
+            .field("travel_research", &self.travel_research)
+            .field("disclosures", &self.disclosures)
+            .field("canonical_events", &self.canonical_events)
+            .finish()
+    }
 }
 
 impl RetentionPurgeResult {
@@ -43,7 +86,7 @@ impl RetentionPurgeResult {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct SetRetentionPolicyCommand {
     pub policy: WorkspaceRetentionPolicy,
     pub expected_version: Option<u64>,
@@ -51,7 +94,17 @@ pub struct SetRetentionPolicyCommand {
     pub request_id: String,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+impl fmt::Debug for SetRetentionPolicyCommand {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("SetRetentionPolicyCommand")
+            .field("policy_version", &self.policy.version())
+            .field("expected_version", &self.expected_version)
+            .finish_non_exhaustive()
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
 pub struct PlaceLegalHoldCommand {
     pub workspace_id: WorkspaceId,
     pub hold_id: LegalHoldId,
@@ -59,7 +112,15 @@ pub struct PlaceLegalHoldCommand {
     pub request_id: String,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+impl fmt::Debug for PlaceLegalHoldCommand {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("PlaceLegalHoldCommand")
+            .finish_non_exhaustive()
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
 pub struct ReleaseLegalHoldCommand {
     pub workspace_id: WorkspaceId,
     pub hold_id: LegalHoldId,
@@ -67,12 +128,29 @@ pub struct ReleaseLegalHoldCommand {
     pub request_id: String,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+impl fmt::Debug for ReleaseLegalHoldCommand {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ReleaseLegalHoldCommand")
+            .finish_non_exhaustive()
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
 pub struct ExecuteRetentionPurgeCommand {
     pub workspace_id: WorkspaceId,
     pub executed_by: PrincipalId,
     pub now_epoch_seconds: u64,
     pub maximum_items: usize,
+}
+
+impl fmt::Debug for ExecuteRetentionPurgeCommand {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ExecuteRetentionPurgeCommand")
+            .field("maximum_items", &self.maximum_items)
+            .finish_non_exhaustive()
+    }
 }
 
 pub struct RetentionService<'repository, Repository> {
@@ -281,4 +359,37 @@ fn now_epoch_seconds() -> Result<u64, ApplicationError> {
         .duration_since(UNIX_EPOCH)
         .map_err(|_| ApplicationError::StorageUnavailable)
         .map(|duration| duration.as_secs())
+}
+
+#[cfg(test)]
+mod diagnostic_tests {
+    use rembrane_domain::WorkspaceId;
+
+    use super::RetentionPurgePlan;
+
+    #[test]
+    fn retention_purge_diagnostics_redact_tenant_and_timelines() {
+        let plan = RetentionPurgePlan {
+            workspace_id: WorkspaceId::new("private-workspace"),
+            memory_cutoff_epoch_seconds: Some(111_111),
+            checkpoint_cutoff_epoch_seconds: Some(222_222),
+            travel_cutoff_epoch_seconds: Some(333_333),
+            disclosure_cutoff_epoch_seconds: Some(444_444),
+            event_cutoff_epoch_seconds: Some(555_555),
+            maximum_items: 100,
+        };
+
+        let diagnostic = format!("{plan:?}");
+        for secret in [
+            "private-workspace",
+            "111111",
+            "222222",
+            "333333",
+            "444444",
+            "555555",
+        ] {
+            assert!(!diagnostic.contains(secret), "diagnostic exposed {secret}");
+        }
+        assert!(diagnostic.contains("maximum_items"));
+    }
 }

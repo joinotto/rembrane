@@ -176,6 +176,13 @@ then
     exit 1
 fi
 
+if sed '/^#\[cfg(test)\]/,$d' crates/rembrane-application/src/retention.rs |
+    rg -n -U '#\[derive\([^]]*Debug[^]]*\)\]\n(?:pub )?struct '
+then
+    echo "retention and legal-hold structs must use explicitly reviewed redacted Debug implementations" >&2
+    exit 1
+fi
+
 if sed '/^#\[cfg(test)\]/,$d' adapters/rembrane-remote-mcp-http/src/lib.rs |
     rg -n -U '#\[derive\([^]]*Debug[^]]*\)\]\n(?:pub )?struct '
 then
