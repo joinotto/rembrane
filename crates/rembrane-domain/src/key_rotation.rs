@@ -15,6 +15,7 @@ pub enum KeyRotationStatus {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum KeyRotationError {
     InvalidGeneration,
+    InvalidIdentity,
     InvalidKeyId,
     AlreadyCompleted,
     InvalidProviderReceipt,
@@ -24,6 +25,9 @@ impl Display for KeyRotationError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(match self {
             Self::InvalidGeneration => "workspace key generation must be greater than zero",
+            Self::InvalidIdentity => {
+                "workspace key rotation requires safe bounded lifecycle identities"
+            }
             Self::InvalidKeyId => "completed rotation requires a safe non-empty key identifier",
             Self::AlreadyCompleted => "workspace key rotation is already completed",
             Self::InvalidProviderReceipt => {
@@ -210,6 +214,16 @@ impl WorkspaceKeyRotation {
         if generation == 0 {
             return Err(KeyRotationError::InvalidGeneration);
         }
+        if !safe_identity(id.as_str())
+            || !safe_identity(workspace_id.as_str())
+            || !safe_identity(removed_principal_id.as_str())
+            || !safe_identity(requested_by.as_str())
+            || completed_by
+                .as_ref()
+                .is_some_and(|principal| !safe_identity(principal.as_str()))
+        {
+            return Err(KeyRotationError::InvalidIdentity);
+        }
         match status {
             KeyRotationStatus::Required if completed_key_id.is_some() || completed_by.is_some() => {
                 return Err(KeyRotationError::InvalidKeyId);
@@ -287,6 +301,9 @@ impl WorkspaceKeyRotation {
         }
         let key_id = key_id.into();
         validate_key_id(&key_id)?;
+        if !safe_identity(completed_by.as_str()) {
+            return Err(KeyRotationError::InvalidIdentity);
+        }
         self.status = KeyRotationStatus::Completed;
         self.completed_key_id = Some(key_id);
         self.completed_by = Some(completed_by);
@@ -317,7 +334,10 @@ fn validate_key_id(key_id: &str) -> Result<(), KeyRotationError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{KeyRotationError, KeyRotationReceipt, KeyRotationStatus, WorkspaceKeyRotation};
+    use super::{
+        KeyRotationError, KeyRotationReceipt, KeyRotationStatus, MAX_KEY_ROTATION_IDENTITY_BYTES,
+        WorkspaceKeyRotation,
+    };
     use crate::{KeyRotationId, PrincipalId, ProviderId, WorkspaceId};
 
     fn required() -> WorkspaceKeyRotation {
@@ -383,6 +403,82 @@ mod tests {
         assert_eq!(
             required().complete("secret key value", PrincipalId::new("owner_01")),
             Err(KeyRotationError::InvalidKeyId)
+        );
+    }
+
+    #[test]
+    fn rejects_unsafe_or_unbounded_lifecycle_identities() {
+        let restore = |id: &str,
+                       workspace_id: &str,
+                       removed_principal_id: &str,
+                       requested_by: &str,
+                       completed_by: Option<&str>| {
+            WorkspaceKeyRotation::restore(
+                KeyRotationId::new(id),
+                WorkspaceId::new(workspace_id),
+                2,
+                PrincipalId::new(removed_principal_id),
+                PrincipalId::new(requested_by),
+                KeyRotationStatus::Completed,
+                Some("workspace-key:v2".to_owned()),
+                completed_by.map(PrincipalId::new),
+            )
+        };
+
+        for result in [
+            restore(
+                "rotation\n01",
+                "workspace_01",
+                "removed_01",
+                "owner_01",
+                Some("owner_01"),
+            ),
+            restore(
+                "rotation_01",
+                "workspace 01",
+                "removed_01",
+                "owner_01",
+                Some("owner_01"),
+            ),
+            restore(
+                "rotation_01",
+                "workspace_01",
+                "removed/01",
+                "owner_01",
+                Some("owner_01"),
+            ),
+            restore(
+                "rotation_01",
+                "workspace_01",
+                "removed_01",
+                "",
+                Some("owner_01"),
+            ),
+            restore(
+                "rotation_01",
+                "workspace_01",
+                "removed_01",
+                "owner_01",
+                Some("owner\t01"),
+            ),
+        ] {
+            assert_eq!(result, Err(KeyRotationError::InvalidIdentity));
+        }
+
+        let oversized = "a".repeat(MAX_KEY_ROTATION_IDENTITY_BYTES + 1);
+        assert_eq!(
+            restore(
+                &oversized,
+                "workspace_01",
+                "removed_01",
+                "owner_01",
+                Some("owner_01"),
+            ),
+            Err(KeyRotationError::InvalidIdentity)
+        );
+        assert_eq!(
+            required().complete("workspace-key:v2", PrincipalId::new("owner\n01")),
+            Err(KeyRotationError::InvalidIdentity)
         );
     }
 

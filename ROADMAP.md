@@ -222,6 +222,8 @@ This roadmap describes sequencing, not release dates.
         workspace rotation lifecycle state.
       - [x] Reject unbounded or unsafe provider, workspace, and recipient
         identities before accepting a rotation receipt.
+      - [x] Reject unsafe or unbounded lifecycle identities when creating,
+        restoring, or completing a workspace key rotation.
     - [x] Bound untrusted manifest algorithm collections and require closed
       portable algorithm identifiers before capability negotiation.
     - [x] Bind rotation to the authenticated HTTP protocol and black-box
