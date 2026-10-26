@@ -15,6 +15,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - Production readiness now supports a versioned, schema-validated `--json`
   output mode with a stable readiness boolean, strict-mode flag, and complete
   missing-gate collection for CI, installers, bots, and hosted control planes.
+- Static verification now rejects duplicate, empty, oversized, non-printable,
+  or over-capacity readiness labels and detects readiness schema-version drift.
 - Production readiness now distinguishes the live PostgreSQL schema/RLS proof
   from a usable hosted-storage implementation and fails closed until a
   concrete Rust driver plus public runtime pool or repository are present.

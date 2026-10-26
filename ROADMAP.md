@@ -1309,6 +1309,9 @@ This roadmap describes sequencing, not release dates.
         machine-readable JSON so installers, CI, bots, and hosted control
         planes can report every unavailable release gate without parsing
         human diagnostics.
+        - [x] Fail static verification when emitted gate labels exceed schema
+          bounds, collide, contain non-printable bytes, or drift from the
+          declared readiness schema version.
       - [x] Package exact two-provider release evidence through a
         non-overwriting, symlink-rejecting, self-verifying local tool.
       - [x] Replace self-asserted external provenance with a detached provider

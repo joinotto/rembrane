@@ -43,6 +43,7 @@ node ./scripts/test-memory-provider-discovery.mjs
 ./scripts/test-memory-provider-compatibility-lock.sh
 ./scripts/test-key-provider-compatibility-lock.sh
 ./scripts/check-postgres-rls.sh
+./scripts/check-production-readiness-contract.sh
 ./scripts/verify-provider-registry.sh
 ./scripts/test-provider-registry-validation.sh
 ./scripts/test-provider-registry-signing.sh
@@ -123,6 +124,7 @@ for deployment_file in \
     scripts/check-ci-security.sh \
     scripts/test-postgres-rls.sh \
     scripts/check-production-readiness.sh \
+    scripts/check-production-readiness-contract.sh \
     scripts/verify-provider-registry.sh \
     scripts/verify-provider-registry.mjs \
     scripts/test-provider-registry-validation.sh \
@@ -164,6 +166,7 @@ sh -n scripts/check-official-streamable-http.sh
 sh -n scripts/check-ci-security.sh
 sh -n scripts/test-postgres-rls.sh
 sh -n scripts/check-production-readiness.sh
+sh -n scripts/check-production-readiness-contract.sh
 sh -n scripts/verify-provider-registry.sh
 sh -n scripts/test-provider-registry-validation.sh
 sh -n scripts/sign-provider-registry.sh
