@@ -2,7 +2,7 @@
 
 use std::fs::OpenOptions;
 #[cfg(unix)]
-use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::Path;
 use std::sync::Mutex;
 
@@ -94,10 +94,10 @@ impl SqliteCustomerKmsKeyReferenceStore {
     where
         Initialize: FnOnce(Connection) -> Result<Self, ProviderError>,
     {
-        let created = prepare_private_database_file(path, false)?;
-        let result = open_private_database(path, true).and_then(initialize);
-        if result.is_err() && created {
-            remove_sqlite_files(path);
+        let prepared = prepare_private_database_file(path, false)?;
+        let result = open_prepared_private_database(path, true, &prepared).and_then(initialize);
+        if result.is_err() && prepared.created {
+            remove_prepared_sqlite_files(path, &prepared);
         }
         result
     }
@@ -223,19 +223,20 @@ impl SqliteCustomerKmsKeyReferenceStore {
     /// integrity and required schema before returning.
     pub fn backup_to(&self, destination: impl AsRef<Path>) -> Result<(), ProviderError> {
         let destination = destination.as_ref();
-        prepare_private_database_file(destination, true)?;
+        let prepared = prepare_private_database_file(destination, true)?;
         let result = (|| {
             let source = self
                 .connection
                 .lock()
                 .map_err(|_| ProviderError::Unavailable)?;
-            let mut destination_connection = open_private_database(destination, true)?;
+            let mut destination_connection =
+                open_prepared_private_database(destination, true, &prepared)?;
             copy_database(&source, &mut destination_connection)?;
             drop(destination_connection);
-            verify_backup(destination)
+            verify_prepared_backup(destination, &prepared)
         })();
         if result.is_err() {
-            remove_sqlite_files(destination);
+            remove_prepared_sqlite_files(destination, &prepared);
         }
         result
     }
@@ -248,22 +249,21 @@ impl SqliteCustomerKmsKeyReferenceStore {
     ) -> Result<Self, ProviderError> {
         let source = source.as_ref();
         let destination = destination.as_ref();
-        validate_private_database_file(source)?;
         verify_backup(source)?;
         validate_recovery_floors(recovery_floors)?;
-        prepare_private_database_file(destination, true)?;
+        let prepared = prepare_private_database_file(destination, true)?;
         let result = (|| {
             let source_connection = open_private_database(source, false)?;
-            let mut connection = open_private_database(destination, true)?;
+            let mut connection = open_prepared_private_database(destination, true, &prepared)?;
             copy_database(&source_connection, &mut connection)?;
             drop(connection);
             drop(source_connection);
-            verify_backup(destination)?;
+            verify_prepared_backup(destination, &prepared)?;
             verify_recovery_floors(destination, recovery_floors)?;
             Self::open(destination)
         })();
         if result.is_err() {
-            remove_sqlite_files(destination);
+            remove_prepared_sqlite_files(destination, &prepared);
         }
         result
     }
@@ -280,13 +280,24 @@ fn copy_database(source: &Connection, destination: &mut Connection) -> Result<()
     }
 }
 
-fn remove_sqlite_files(path: &Path) {
+fn remove_prepared_sqlite_files(path: &Path, prepared: &PreparedDatabaseFile) {
+    if validate_prepared_database_file(path, prepared).is_err() {
+        return;
+    }
     let _ = std::fs::remove_file(path);
     for suffix in ["-wal", "-shm", "-journal"] {
         let mut sidecar = path.as_os_str().to_os_string();
         sidecar.push(suffix);
         let _ = std::fs::remove_file(sidecar);
     }
+}
+
+struct PreparedDatabaseFile {
+    created: bool,
+    #[cfg(unix)]
+    device: u64,
+    #[cfg(unix)]
+    inode: u64,
 }
 
 fn validate_recovery_floors(
@@ -365,7 +376,15 @@ fn verify_recovery_floors(
 }
 
 fn verify_backup(path: &Path) -> Result<(), ProviderError> {
-    let connection = open_private_database(path, false)?;
+    let prepared = capture_private_database_file(path)?;
+    verify_prepared_backup(path, &prepared)
+}
+
+fn verify_prepared_backup(
+    path: &Path,
+    prepared: &PreparedDatabaseFile,
+) -> Result<(), ProviderError> {
+    let connection = open_prepared_private_database(path, false, prepared)?;
     let integrity = connection
         .query_row("PRAGMA quick_check", [], |row| row.get::<_, String>(0))
         .map_err(|_| ProviderError::Unavailable)?;
@@ -393,7 +412,16 @@ fn verify_backup(path: &Path) -> Result<(), ProviderError> {
 }
 
 fn open_private_database(path: &Path, writable: bool) -> Result<Connection, ProviderError> {
-    validate_private_database_file(path)?;
+    let prepared = capture_private_database_file(path)?;
+    open_prepared_private_database(path, writable, &prepared)
+}
+
+fn open_prepared_private_database(
+    path: &Path,
+    writable: bool,
+    prepared: &PreparedDatabaseFile,
+) -> Result<Connection, ProviderError> {
+    validate_prepared_database_file(path, prepared)?;
     let canonical_path = canonical_database_path(path)?;
     let access = if writable {
         OpenFlags::SQLITE_OPEN_READ_WRITE
@@ -405,7 +433,7 @@ fn open_private_database(path: &Path, writable: bool) -> Result<Connection, Prov
         access | OpenFlags::SQLITE_OPEN_NO_MUTEX | OpenFlags::SQLITE_OPEN_NOFOLLOW,
     )
     .map_err(|_| ProviderError::Unavailable)?;
-    validate_private_database_file(path)?;
+    validate_prepared_database_file(path, prepared)?;
     Ok(connection)
 }
 
@@ -426,7 +454,10 @@ fn canonical_database_path(path: &Path) -> Result<std::path::PathBuf, ProviderEr
 }
 
 #[cfg(unix)]
-fn prepare_private_database_file(path: &Path, create_new: bool) -> Result<bool, ProviderError> {
+fn prepare_private_database_file(
+    path: &Path,
+    create_new: bool,
+) -> Result<PreparedDatabaseFile, ProviderError> {
     if path.as_os_str().is_empty() {
         return Err(ProviderError::InvalidConfiguration(
             "customer KMS database path is empty".to_owned(),
@@ -464,11 +495,38 @@ fn prepare_private_database_file(path: &Path, create_new: bool) -> Result<bool, 
     };
     let metadata = file.metadata().map_err(|_| ProviderError::Unavailable)?;
     validate_private_metadata(&metadata)?;
-    Ok(created)
+    Ok(PreparedDatabaseFile {
+        created,
+        device: metadata.dev(),
+        inode: metadata.ino(),
+    })
 }
 
 #[cfg(unix)]
-fn validate_private_database_file(path: &Path) -> Result<(), ProviderError> {
+fn capture_private_database_file(path: &Path) -> Result<PreparedDatabaseFile, ProviderError> {
+    if path.as_os_str().is_empty() {
+        return Err(ProviderError::InvalidConfiguration(
+            "customer KMS database path is empty".to_owned(),
+        ));
+    }
+    let file = OpenOptions::new()
+        .read(true)
+        .open(path)
+        .map_err(|_| ProviderError::Unavailable)?;
+    let metadata = file.metadata().map_err(|_| ProviderError::Unavailable)?;
+    validate_private_metadata(&metadata)?;
+    Ok(PreparedDatabaseFile {
+        created: false,
+        device: metadata.dev(),
+        inode: metadata.ino(),
+    })
+}
+
+#[cfg(unix)]
+fn validate_prepared_database_file(
+    path: &Path,
+    prepared: &PreparedDatabaseFile,
+) -> Result<(), ProviderError> {
     let metadata = path
         .symlink_metadata()
         .map_err(|_| ProviderError::Unavailable)?;
@@ -477,7 +535,11 @@ fn validate_private_database_file(path: &Path) -> Result<(), ProviderError> {
             "customer KMS database path must not be a symbolic link".to_owned(),
         ));
     }
-    validate_private_metadata(&metadata)
+    validate_private_metadata(&metadata)?;
+    if metadata.dev() != prepared.device || metadata.ino() != prepared.inode {
+        return Err(ProviderError::Unavailable);
+    }
+    Ok(())
 }
 
 #[cfg(unix)]
@@ -491,7 +553,10 @@ fn validate_private_metadata(metadata: &std::fs::Metadata) -> Result<(), Provide
 }
 
 #[cfg(not(unix))]
-fn prepare_private_database_file(path: &Path, create_new: bool) -> Result<bool, ProviderError> {
+fn prepare_private_database_file(
+    path: &Path,
+    create_new: bool,
+) -> Result<PreparedDatabaseFile, ProviderError> {
     if path.as_os_str().is_empty() {
         return Err(ProviderError::InvalidConfiguration(
             "customer KMS database path is empty".to_owned(),
@@ -505,8 +570,10 @@ fn prepare_private_database_file(path: &Path, create_new: bool) -> Result<bool, 
             .open(path)
     };
     match open_new() {
-        Ok(_) => Ok(true),
-        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists && !create_new => Ok(false),
+        Ok(_) => Ok(PreparedDatabaseFile { created: true }),
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists && !create_new => {
+            Ok(PreparedDatabaseFile { created: false })
+        }
         Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => Err(
             ProviderError::Rejected("customer KMS destination already exists".to_owned()),
         ),
@@ -515,7 +582,20 @@ fn prepare_private_database_file(path: &Path, create_new: bool) -> Result<bool, 
 }
 
 #[cfg(not(unix))]
-fn validate_private_database_file(path: &Path) -> Result<(), ProviderError> {
+fn capture_private_database_file(path: &Path) -> Result<PreparedDatabaseFile, ProviderError> {
+    if !path.is_file() {
+        return Err(ProviderError::InvalidConfiguration(
+            "customer KMS database must be a regular file".to_owned(),
+        ));
+    }
+    Ok(PreparedDatabaseFile { created: false })
+}
+
+#[cfg(not(unix))]
+fn validate_prepared_database_file(
+    path: &Path,
+    _prepared: &PreparedDatabaseFile,
+) -> Result<(), ProviderError> {
     if !path.is_file() {
         return Err(ProviderError::InvalidConfiguration(
             "customer KMS database must be a regular file".to_owned(),
@@ -860,6 +940,27 @@ mod tests {
 
         assert!(result.is_err());
         assert!(path.exists());
+        fs::remove_file(path).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cleanup_refuses_to_remove_a_replaced_keyring_path() {
+        let path = temporary_database_path("replaced-cleanup");
+        let replacement = temporary_database_path("cleanup-replacement");
+        for candidate in [&path, &replacement] {
+            let _ = fs::remove_file(candidate);
+        }
+        let prepared = super::prepare_private_database_file(&path, true).unwrap();
+        super::prepare_private_database_file(&replacement, true).unwrap();
+
+        fs::remove_file(&path).unwrap();
+        fs::rename(&replacement, &path).unwrap();
+
+        assert!(super::validate_prepared_database_file(&path, &prepared).is_err());
+        super::remove_prepared_sqlite_files(&path, &prepared);
+        assert!(path.exists());
+
         fs::remove_file(path).unwrap();
     }
 
