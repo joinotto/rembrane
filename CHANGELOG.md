@@ -36,6 +36,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - macOS Keychain, Linux Secret Service, and Windows DPAPI reference diagnostics
   now redact key identifiers, service/account lookup metadata, and protected
   blob paths.
+- Customer-KMS recovery-floor diagnostics now redact workspace identity while
+  retaining the trusted minimum generation.
 - Canonical SQLite initialization and backup now require the path opened by
   SQLite to retain the exact protected file's device/inode identity, and
   failure cleanup refuses to remove a path replaced after preparation.

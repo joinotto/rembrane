@@ -56,10 +56,20 @@ pub struct SqliteCustomerKmsKeyReferenceStore {
     connection: Mutex<Connection>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct CustomerKmsRecoveryFloor {
     workspace_id: WorkspaceId,
     minimum_generation: u64,
+}
+
+impl std::fmt::Debug for CustomerKmsRecoveryFloor {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("CustomerKmsRecoveryFloor")
+            .field("workspace_id", &"[REDACTED]")
+            .field("minimum_generation", &self.minimum_generation)
+            .finish()
+    }
 }
 
 impl CustomerKmsRecoveryFloor {
@@ -1186,6 +1196,15 @@ mod tests {
         drop(store);
         fs::remove_file(source).unwrap();
         fs::remove_file(backup).unwrap();
+    }
+
+    #[test]
+    fn recovery_floor_diagnostics_redact_workspace_identity() {
+        let floor = CustomerKmsRecoveryFloor::new(WorkspaceId::new("workspace-private"), 7)
+            .expect("recovery floor");
+        let debug = format!("{floor:?}");
+        assert!(!debug.contains("workspace-private"));
+        assert!(debug.contains("minimum_generation"));
     }
 
     #[test]

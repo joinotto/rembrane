@@ -270,6 +270,7 @@ This roadmap describes sequencing, not release dates.
         attempts can activate only one successor generation.
       - [x] Bound historical keyrings and durable loads to 1,024 generations
         with explicit overflow rejection.
+      - [x] Redact workspace identity from trusted recovery-floor diagnostics.
       - [x] Prove generate, persist-before-activate, reload, current decrypt,
         and historical decrypt as one executable sidecar rotation flow.
   - [ ] Record reviewable disposable-sidecar conformance evidence for AWS KMS,
