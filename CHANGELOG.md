@@ -990,6 +990,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   across path encoding, database write, and post-write validation failures.
 - Failed initialization of a newly created SQLite database now removes its
   database and journal sidecars, while existing databases remain untouched.
+- Customer-KMS keyring opens, backup verification, recovery-floor validation,
+  and restores now share SQLite native no-follow protection with canonical
+  parent resolution for macOS-compatible symbolic path components.
 - CLI initialization, backup, and restore now create new local storage
   directory components with owner-only Unix permissions.
 - Available-mode production readiness now reports exact missing prerequisites

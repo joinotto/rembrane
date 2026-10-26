@@ -14,7 +14,7 @@ use rembrane_provider_sdk::{
     MAX_CUSTOMER_KMS_GENERATIONS, MAX_KMS_KEY_ID_BYTES, MAX_KMS_WORKSPACE_ID_BYTES,
     MAX_WRAPPED_KEY_BYTES, ProviderError,
 };
-use rusqlite::{Connection, MAIN_DB, OptionalExtension, params};
+use rusqlite::{Connection, MAIN_DB, OpenFlags, OptionalExtension, params};
 
 pub const MAX_KMS_RECOVERY_WORKSPACES: usize = 10_000;
 
@@ -87,7 +87,7 @@ impl SqliteCustomerKmsKeyReferenceStore {
     pub fn open(path: impl AsRef<Path>) -> Result<Self, ProviderError> {
         let path = path.as_ref();
         prepare_private_database_file(path)?;
-        let connection = Connection::open(path).map_err(|_| ProviderError::Unavailable)?;
+        let connection = open_private_database(path, true)?;
         Self::initialize(connection)
     }
 
@@ -249,8 +249,7 @@ impl SqliteCustomerKmsKeyReferenceStore {
         }
         prepare_private_database_file(destination)?;
         let result = (|| {
-            let mut connection =
-                Connection::open(destination).map_err(|_| ProviderError::Unavailable)?;
+            let mut connection = open_private_database(destination, true)?;
             connection
                 .restore(MAIN_DB, source, None::<fn(rusqlite::backup::Progress)>)
                 .map_err(|_| ProviderError::Unavailable)?;
@@ -291,7 +290,7 @@ fn verify_recovery_floors(
     path: &Path,
     recovery_floors: &[CustomerKmsRecoveryFloor],
 ) -> Result<(), ProviderError> {
-    let connection = Connection::open(path).map_err(|_| ProviderError::Unavailable)?;
+    let connection = open_private_database(path, false)?;
     let mut statement = connection
         .prepare(
             "SELECT CASE WHEN length(workspace_id) BETWEEN 1 AND ?1
@@ -342,7 +341,7 @@ fn verify_recovery_floors(
 }
 
 fn verify_backup(path: &Path) -> Result<(), ProviderError> {
-    let connection = Connection::open(path).map_err(|_| ProviderError::Unavailable)?;
+    let connection = open_private_database(path, false)?;
     let integrity = connection
         .query_row("PRAGMA quick_check", [], |row| row.get::<_, String>(0))
         .map_err(|_| ProviderError::Unavailable)?;
@@ -367,6 +366,39 @@ fn verify_backup(path: &Path) -> Result<(), ProviderError> {
         ));
     }
     Ok(())
+}
+
+fn open_private_database(path: &Path, writable: bool) -> Result<Connection, ProviderError> {
+    validate_private_database_file(path)?;
+    let canonical_path = canonical_database_path(path)?;
+    let access = if writable {
+        OpenFlags::SQLITE_OPEN_READ_WRITE
+    } else {
+        OpenFlags::SQLITE_OPEN_READ_ONLY
+    };
+    let connection = Connection::open_with_flags(
+        canonical_path,
+        access | OpenFlags::SQLITE_OPEN_NO_MUTEX | OpenFlags::SQLITE_OPEN_NOFOLLOW,
+    )
+    .map_err(|_| ProviderError::Unavailable)?;
+    validate_private_database_file(path)?;
+    Ok(connection)
+}
+
+fn canonical_database_path(path: &Path) -> Result<std::path::PathBuf, ProviderError> {
+    let file_name = path.file_name().ok_or_else(|| {
+        ProviderError::InvalidConfiguration("customer KMS database path is invalid".to_owned())
+    })?;
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let parent = if parent.as_os_str().is_empty() {
+        Path::new(".")
+    } else {
+        parent
+    };
+    let canonical_parent = parent
+        .canonicalize()
+        .map_err(|_| ProviderError::Unavailable)?;
+    Ok(canonical_parent.join(file_name))
 }
 
 #[cfg(unix)]

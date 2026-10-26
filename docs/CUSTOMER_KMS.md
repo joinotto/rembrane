@@ -63,6 +63,9 @@ persist-before-activate, seal with the new generation, reload the durable
 keyring, and decrypt records from both current and historical generations.
 On Unix, file-backed keyring databases are created owner-only and existing
 group/world-accessible, non-regular, or symbolic-link targets are rejected.
+Every operational, backup-verification, and restore connection canonicalizes
+only the parent directory and enables SQLite's native no-follow flag for the
+final database path.
 Workspace identity, provider key identifiers, and wrapped ciphertext are
 bounded in both the provider contract and SQLite schema. Existing databases
 receive enforcement triggers, and bounded projections reject corrupt rows

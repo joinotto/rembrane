@@ -198,6 +198,8 @@ This roadmap describes sequencing, not release dates.
             without reopening evidence across subprocess boundaries.
       - [x] Create file-backed Unix keyring databases owner-only and reject
         permissive, non-regular, or symbolic-link targets.
+        - [x] Open keyrings, backup verification, and restore connections
+          through SQLite no-follow mode after canonicalizing only the parent.
       - [x] Enforce workspace, provider-key, and wrapped-ciphertext bounds in
         both new and existing SQLite databases before row materialization.
       - [x] Create non-overwriting owner-only keyring backups and verify
