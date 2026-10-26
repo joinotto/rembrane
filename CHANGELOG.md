@@ -12,6 +12,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - `rembrane recall --json` now emits versioned structured memory items plus
   context-pack and disclosure-receipt IDs for generic bots, launchers, and
   agent runtimes without requiring human-output parsing.
+- CLI recall now rejects item budgets above 100 and plaintext context budgets
+  above 1 MiB before opening storage, preventing unbounded caller-controlled
+  retrieval work.
 - `rembrane doctor --json` now emits structured installation health, closed
   membership role, authenticated-record counts, and secret-source categories
   without principal or workspace identifiers; mixed JSON/privacy output is

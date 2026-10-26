@@ -59,6 +59,8 @@ const MAX_MEMORY_JSONL_RECORDS: usize = 10_000;
 const MAX_MEMORY_JSONL_BYTES: usize = 67_108_864;
 const MAX_PROVIDER_REGISTRY_BYTES: u64 = 1_048_576;
 const MAX_PROVIDER_REGISTRY_PUBLIC_KEY_BYTES: u64 = 4_096;
+const MAX_CLI_RECALL_ITEMS: usize = 100;
+const MAX_CLI_RECALL_BYTES: usize = 1_048_576;
 
 fn main() {
     let arguments = std::env::args().skip(1).collect::<Vec<_>>();
@@ -2466,8 +2468,15 @@ fn recall(arguments: &[String]) -> Result<(), String> {
         .transpose()
         .map_err(|_| "--max-bytes must be a positive integer".to_owned())?
         .unwrap_or(65_536);
-    if maximum_bytes == 0 {
-        return Err("--max-bytes must be a positive integer".to_owned());
+    if maximum_items == 0 || maximum_items > MAX_CLI_RECALL_ITEMS {
+        return Err(format!(
+            "--limit must be between 1 and {MAX_CLI_RECALL_ITEMS}"
+        ));
+    }
+    if maximum_bytes == 0 || maximum_bytes > MAX_CLI_RECALL_BYTES {
+        return Err(format!(
+            "--max-bytes must be between 1 and {MAX_CLI_RECALL_BYTES}"
+        ));
     }
     let (domain, entity_id, activity_id, read_scopes) = recall_scope_context(arguments);
     let (mut store, principal_id, workspace_id) = encrypted_store(arguments)?;
@@ -3358,10 +3367,11 @@ mod tests {
     use rembrane_store_sqlite::SqliteStore;
 
     use super::{
-        EXPORT_MAGIC, SEMANTIC_PROVIDER_CONFORMANCE_PROFILE_SHA256, build_remote_mcp_profile,
+        EXPORT_MAGIC, MAX_CLI_RECALL_BYTES, MAX_CLI_RECALL_ITEMS,
+        SEMANTIC_PROVIDER_CONFORMANCE_PROFILE_SHA256, build_remote_mcp_profile,
         check_provider_registry, claude_mcp_config, codex_mcp_config, create_parent_directory,
-        cursor_mcp_config, format_read_scopes, gemini_mcp_config, generic_mcp_config,
-        doctor_failure_json, doctor_json, doctor_json_requested, invitation_list_json,
+        cursor_mcp_config, doctor_failure_json, doctor_json, doctor_json_requested,
+        format_read_scopes, gemini_mcp_config, generic_mcp_config, invitation_list_json,
         invitation_status, key_provider_secret_sources, mcp_client_catalog,
         mcp_environment_variables, memory_privacy_mode_name, memory_provider_check_policy,
         opencode_mcp_config, option, positive_u64, providers, read_bounded_registry_file,
@@ -3420,6 +3430,42 @@ mod tests {
         assert_eq!(result["error"]["code"], "doctor_failed");
         assert_eq!(result.as_object().map(serde_json::Map::len), Some(3));
         assert!(!result.to_string().contains("tenant.sqlite"));
+    }
+
+    #[test]
+    fn recall_rejects_unbounded_item_and_byte_budgets_before_storage() {
+        let common = [
+            "recall",
+            "--client",
+            "assistant",
+            "--purpose",
+            "continue",
+            "--query",
+            "project",
+        ];
+        let mut excessive_items = common.map(str::to_owned).to_vec();
+        excessive_items.extend([
+            "--limit".to_owned(),
+            (MAX_CLI_RECALL_ITEMS + 1).to_string(),
+        ]);
+        assert_eq!(
+            run(&excessive_items),
+            Err(format!(
+                "--limit must be between 1 and {MAX_CLI_RECALL_ITEMS}"
+            ))
+        );
+
+        let mut excessive_bytes = common.map(str::to_owned).to_vec();
+        excessive_bytes.extend([
+            "--max-bytes".to_owned(),
+            (MAX_CLI_RECALL_BYTES + 1).to_string(),
+        ]);
+        assert_eq!(
+            run(&excessive_bytes),
+            Err(format!(
+                "--max-bytes must be between 1 and {MAX_CLI_RECALL_BYTES}"
+            ))
+        );
     }
 
     fn request_run(arguments: &[&str]) -> Result<(), String> {
