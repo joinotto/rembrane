@@ -595,6 +595,118 @@ await assert.rejects(
     error.code === "access_denied",
 );
 
+const importCalls = [];
+const importClient = new RembraneClient({
+  baseUrl: "https://memory.example.test/v1",
+  token: "import-token",
+  fetch: async (url, init) => {
+    importCalls.push({ url, init });
+    return {
+      ok: true,
+      status: 201,
+      headers: {
+        get: (name) =>
+          name.toLowerCase() === "content-type"
+            ? "application/json; charset=utf-8"
+            : null,
+      },
+      text: async () => '{"imported":1,"status":"proposed"}',
+    };
+  },
+});
+const portableJsonl = '{"format":"rembrane-memory-jsonl"}\n';
+assert.deepEqual(
+  await importClient.importPortableMemories({
+    workspaceId: "team:name",
+    subjectId: "principal-1",
+    expectedPreviousSequence: 42,
+    jsonl: portableJsonl,
+  }),
+  { imported: 1, status: "proposed" },
+);
+assert.equal(
+  importCalls[0].url,
+  "https://memory.example.test/v1/imports?workspaceId=team%3Aname&subjectId=principal-1&expectedPreviousSequence=42",
+);
+assert.equal(importCalls[0].init.method, "POST");
+assert.equal(importCalls[0].init.headers.Accept, "application/json");
+assert.equal(importCalls[0].init.headers.Authorization, "Bearer import-token");
+assert.equal(
+  importCalls[0].init.headers["Content-Type"],
+  "application/x-ndjson",
+);
+assert.equal(importCalls[0].init.body, portableJsonl);
+
+const invalidImportsBeforeNetwork = importCalls.length;
+for (const invalid of [
+  {
+    workspaceId: "unsafe/workspace",
+    subjectId: "principal-1",
+    expectedPreviousSequence: 42,
+    jsonl: portableJsonl,
+  },
+  {
+    workspaceId: "team",
+    subjectId: "principal-1",
+    expectedPreviousSequence: -1,
+    jsonl: portableJsonl,
+  },
+  {
+    workspaceId: "team",
+    subjectId: "principal-1",
+    expectedPreviousSequence: 42,
+    jsonl: "",
+  },
+]) {
+  await assert.rejects(importClient.importPortableMemories(invalid), TypeError);
+}
+assert.equal(importCalls.length, invalidImportsBeforeNetwork);
+
+const invalidImportResponse = new RembraneClient({
+  baseUrl: "https://memory.example.test/v1",
+  token: "token",
+  fetch: async () => ({
+    ok: true,
+    status: 201,
+    headers: { get: () => "application/json" },
+    text: async () => '{"imported":0,"status":"confirmed"}',
+  }),
+});
+await assert.rejects(
+  invalidImportResponse.importPortableMemories({
+    workspaceId: "team",
+    subjectId: "principal-1",
+    expectedPreviousSequence: 0,
+    jsonl: portableJsonl,
+  }),
+  (error) =>
+    error instanceof RembraneError && error.code === "invalid_response",
+);
+
+const conflictingImport = new RembraneClient({
+  baseUrl: "https://memory.example.test/v1",
+  token: "token",
+  fetch: async () => ({
+    ok: false,
+    status: 409,
+    headers: { get: () => "application/json" },
+    text: async () =>
+      '{"code":"sequence_conflict","message":"Sequence changed"}',
+  }),
+});
+await assert.rejects(
+  conflictingImport.importPortableMemories({
+    workspaceId: "team",
+    subjectId: "principal-1",
+    expectedPreviousSequence: 0,
+    jsonl: portableJsonl,
+  }),
+  (error) =>
+    error instanceof RembraneError &&
+    error.status === 409 &&
+    error.code === "sequence_conflict",
+);
+
 const channelFixture = JSON.parse(
   await readFile(
     new URL("../../spec/examples/channel-processor-message.json", import.meta.url),

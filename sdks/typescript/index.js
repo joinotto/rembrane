@@ -1,4 +1,5 @@
 const DEFAULT_MAXIMUM_RESPONSE_BYTES = 1024 * 1024;
+const MAXIMUM_PORTABLE_IMPORT_BYTES = 64 * 1024 * 1024;
 const CHANNEL_PROCESSOR_PROTOCOL_VERSION = "0.1";
 const CHANNEL_PROCESSOR_CHANNELS = new Set([
   "whatsapp-business",
@@ -309,6 +310,86 @@ export class RembraneClient {
       filename: expected.filename,
       text,
     });
+  }
+
+  async importPortableMemories(request) {
+    if (
+      !request ||
+      !isOpaqueId(request.workspaceId) ||
+      !isOpaqueId(request.subjectId) ||
+      !Number.isSafeInteger(request.expectedPreviousSequence) ||
+      request.expectedPreviousSequence < 0 ||
+      typeof request.jsonl !== "string"
+    ) {
+      throw new TypeError("Portable import request is invalid");
+    }
+    const byteLength = new TextEncoder().encode(request.jsonl).length;
+    if (byteLength < 1 || byteLength > MAXIMUM_PORTABLE_IMPORT_BYTES) {
+      throw new TypeError("Portable import archive size is invalid");
+    }
+    const parameters = new URLSearchParams({
+      workspaceId: request.workspaceId,
+      subjectId: request.subjectId,
+      expectedPreviousSequence: String(request.expectedPreviousSequence),
+    });
+    const response = await this.#fetch(
+      `${this.#baseUrl}/imports?${parameters}`,
+      {
+        method: "POST",
+        redirect: "error",
+        headers: {
+          Accept: "application/json",
+          Authorization: `Bearer ${this.#token}`,
+          "Content-Type": "application/x-ndjson",
+        },
+        body: request.jsonl,
+      },
+    );
+    const text = await response.text();
+    if (new TextEncoder().encode(text).length > this.#maximumResponseBytes) {
+      throw new RembraneError(
+        response.status,
+        "response_too_large",
+        "Response exceeded limit",
+      );
+    }
+    if (!response.ok) {
+      throwProblemResponse(response, text);
+    }
+    const contentType = response.headers.get("content-type") ?? "";
+    if (!contentType.toLowerCase().startsWith("application/json")) {
+      throw new RembraneError(
+        response.status,
+        "invalid_response",
+        "Expected JSON response",
+      );
+    }
+    let value;
+    try {
+      value = JSON.parse(text);
+    } catch {
+      throw new RembraneError(
+        response.status,
+        "invalid_response",
+        "Response was not valid JSON",
+      );
+    }
+    if (
+      !value ||
+      Object.getPrototypeOf(value) !== Object.prototype ||
+      Object.keys(value).length !== 2 ||
+      !Number.isSafeInteger(value.imported) ||
+      value.imported < 1 ||
+      value.imported > 10_000 ||
+      value.status !== "proposed"
+    ) {
+      throw new RembraneError(
+        response.status,
+        "invalid_response",
+        "Portable import response was invalid",
+      );
+    }
+    return Object.freeze({ imported: value.imported, status: value.status });
   }
 
   async #request(method, path, body) {

@@ -421,6 +421,29 @@ export interface RetentionPurgeRequest extends WorkspaceRequest {
   maximumItems: number;
 }
 
+export type PortableExportFormat = "jsonl" | "markdown" | "graph-json";
+
+export interface PortableExportQuery extends WorkspaceRequest {
+  format: PortableExportFormat;
+}
+
+export interface PortableExport {
+  readonly format: PortableExportFormat;
+  readonly contentType: string;
+  readonly filename: string;
+  readonly text: string;
+}
+
+export interface PortableImportRequest extends WorkspaceRequest {
+  expectedPreviousSequence: number;
+  jsonl: string;
+}
+
+export interface PortableImportResult {
+  readonly imported: number;
+  readonly status: "proposed";
+}
+
 export class RembraneError extends Error {
   readonly status: number;
   readonly code: string;
@@ -486,4 +509,8 @@ export class RembraneClient {
   placeLegalHold<T = unknown>(request: LegalHoldRequest): Promise<T>;
   releaseLegalHold<T = unknown>(request: LegalHoldRequest): Promise<T>;
   executeRetentionPurge<T = unknown>(request: RetentionPurgeRequest): Promise<T>;
+  exportPortableData(query: PortableExportQuery): Promise<PortableExport>;
+  importPortableMemories(
+    request: PortableImportRequest,
+  ): Promise<PortableImportResult>;
 }

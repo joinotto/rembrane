@@ -581,6 +581,82 @@ class RembraneClientTests(unittest.TestCase):
         self.assertEqual(captured.exception.status, 403)
         self.assertEqual(captured.exception.code, "access_denied")
 
+    def test_portable_import_is_bounded_authenticated_and_sequence_bound(self) -> None:
+        calls = []
+
+        def transport(method, url, headers, body, maximum):
+            calls.append((method, url, headers, body, maximum))
+            return (
+                201,
+                {"Content-Type": "application/json; charset=utf-8"},
+                b'{"imported":1,"status":"proposed"}',
+            )
+
+        client = RembraneClient(
+            "https://memory.example.test/v1",
+            "import-token",
+            transport=transport,
+        )
+        payload = b'{"format":"rembrane-memory-jsonl"}\n'
+        result = client.import_portable_memories(
+            "team:name", "principal-1", 42, payload
+        )
+        self.assertEqual(result, {"imported": 1, "status": "proposed"})
+        self.assertEqual(calls[0][0], "POST")
+        self.assertEqual(
+            calls[0][1],
+            "https://memory.example.test/v1/imports"
+            "?workspaceId=team%3Aname&subjectId=principal-1"
+            "&expectedPreviousSequence=42",
+        )
+        self.assertEqual(calls[0][2]["Accept"], "application/json")
+        self.assertEqual(calls[0][2]["Authorization"], "Bearer import-token")
+        self.assertEqual(
+            calls[0][2]["Content-Type"], "application/x-ndjson"
+        )
+        self.assertEqual(calls[0][3], payload)
+
+        calls_before_invalid = len(calls)
+        for request in (
+            ("unsafe/workspace", "principal-1", 42, payload),
+            ("team", "principal-1", -1, payload),
+            ("team", "principal-1", 42, b""),
+        ):
+            with self.subTest(request=request):
+                with self.assertRaises(ValueError):
+                    client.import_portable_memories(*request)
+        self.assertEqual(len(calls), calls_before_invalid)
+
+    def test_portable_import_rejects_invalid_and_conflicting_responses(self) -> None:
+        invalid = RembraneClient(
+            "https://memory.example.test/v1",
+            "token",
+            transport=lambda *_: (
+                201,
+                {"Content-Type": "application/json"},
+                b'{"imported":0,"status":"confirmed"}',
+            ),
+        )
+        with self.assertRaises(RembraneError) as captured:
+            invalid.import_portable_memories("team", "principal-1", 0, "{}\n")
+        self.assertEqual(captured.exception.code, "invalid_response")
+
+        conflicting = RembraneClient(
+            "https://memory.example.test/v1",
+            "token",
+            transport=lambda *_: (
+                409,
+                {"Content-Type": "application/json"},
+                b'{"code":"sequence_conflict","message":"Sequence changed"}',
+            ),
+        )
+        with self.assertRaises(RembraneError) as captured:
+            conflicting.import_portable_memories(
+                "team", "principal-1", 0, "{}\n"
+            )
+        self.assertEqual(captured.exception.status, 409)
+        self.assertEqual(captured.exception.code, "sequence_conflict")
+
     def test_response_limit_is_enforced(self) -> None:
         client = RembraneClient(
             "https://memory.example.test/v1",

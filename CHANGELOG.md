@@ -77,6 +77,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - The TypeScript and Python SDKs now expose bounded authenticated portable
   exports, fail closed on response-metadata drift, and preserve typed JSON
   problem responses for denied requests.
+- The TypeScript and Python SDKs now submit bounded JSONL archives to the
+  atomic proposal-only REST import route with explicit destination sequence
+  binding and strict closed response validation.
 - The application layer now defines a bounded, authorized memory-import batch
   that re-admits external content as destination-scoped proposals with fresh
   identities and contiguous canonical events through an atomic repository

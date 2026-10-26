@@ -108,6 +108,8 @@ This roadmap describes sequencing, not release dates.
     nosniff response policy, OpenAPI, and black-box protocol coverage.
   - [x] Expose typed and bounded portable REST exports through the TypeScript
     and Python SDKs with exact content metadata and JSON problem handling.
+  - [x] Expose bounded atomic JSONL imports through the TypeScript and Python
+    SDKs with optimistic sequence binding and closed response validation.
   - [x] Define a deterministic, bounded, provider-independent Markdown export
     with tenant/revision validation, stable ordering, provenance metadata, and
     content fences that remain safe when memories contain Markdown backticks.

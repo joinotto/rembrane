@@ -10,6 +10,7 @@ from urllib.parse import quote, urlencode, urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 DEFAULT_MAXIMUM_RESPONSE_BYTES = 1024 * 1024
+MAXIMUM_PORTABLE_IMPORT_BYTES = 64 * 1024 * 1024
 CHANNEL_PROCESSOR_PROTOCOL_VERSION = "0.1"
 CHANNEL_PROCESSOR_CHANNELS = {
     "whatsapp-business",
@@ -294,6 +295,11 @@ class PortableExport:
         return self.payload.decode("utf-8")
 
 
+class PortableImportResult(TypedDict):
+    imported: int
+    status: Literal["proposed"]
+
+
 class _RejectRedirects(HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):  # type: ignore[no-untyped-def]
         raise RembraneError(code, "redirect_rejected", "Redirects are not allowed")
@@ -491,8 +497,8 @@ class RembraneClient:
         format: Literal["jsonl", "markdown", "graph-json"],
     ) -> PortableExport:
         if (
-            not _is_bounded_token(workspace_id, 255)
-            or not _is_bounded_token(subject_id, 255)
+            not _is_opaque_id(workspace_id)
+            or not _is_opaque_id(subject_id)
             or format not in PORTABLE_EXPORTS
         ):
             raise ValueError("Portable export identity or format is invalid")
@@ -532,6 +538,70 @@ class RembraneClient:
                 "Portable export metadata was invalid",
             )
         return PortableExport(format, content_type, filename, payload)
+
+    def import_portable_memories(
+        self,
+        workspace_id: str,
+        subject_id: str,
+        expected_previous_sequence: int,
+        jsonl: str | bytes,
+    ) -> PortableImportResult:
+        if (
+            not _is_opaque_id(workspace_id)
+            or not _is_opaque_id(subject_id)
+            or type(expected_previous_sequence) is not int
+            or expected_previous_sequence < 0
+            or type(jsonl) not in {str, bytes}
+        ):
+            raise ValueError("Portable import request is invalid")
+        payload = jsonl.encode("utf-8") if isinstance(jsonl, str) else jsonl
+        if not payload or len(payload) > MAXIMUM_PORTABLE_IMPORT_BYTES:
+            raise ValueError("Portable import archive size is invalid")
+        query = urlencode(
+            {
+                "workspaceId": workspace_id,
+                "subjectId": subject_id,
+                "expectedPreviousSequence": expected_previous_sequence,
+            }
+        )
+        status, response_headers, response_payload = self._transport(
+            "POST",
+            f"{self._base_url}/imports?{query}",
+            {
+                "Accept": "application/json",
+                "Authorization": f"Bearer {self._token}",
+                "Content-Type": "application/x-ndjson",
+            },
+            payload,
+            self._maximum_response_bytes,
+        )
+        if len(response_payload) > self._maximum_response_bytes:
+            raise RembraneError(status, "response_too_large", "Response exceeded limit")
+        if not 200 <= status < 300:
+            _raise_problem_response(status, response_headers, response_payload)
+        if not _header(response_headers, "content-type").lower().startswith(
+            "application/json"
+        ):
+            raise RembraneError(status, "invalid_response", "Expected JSON response")
+        try:
+            value = json.loads(response_payload)
+        except (UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise RembraneError(
+                status, "invalid_response", "Response was not valid JSON"
+            ) from error
+        if (
+            type(value) is not dict
+            or set(value) != {"imported", "status"}
+            or type(value["imported"]) is not int
+            or not 1 <= value["imported"] <= 10_000
+            or value["status"] != "proposed"
+        ):
+            raise RembraneError(
+                status,
+                "invalid_response",
+                "Portable import response was invalid",
+            )
+        return {"imported": value["imported"], "status": "proposed"}
 
     def _request(self, method: str, path: str, body: Mapping[str, Any] | None) -> Any:
         return self._request_url(
@@ -679,19 +749,23 @@ def _activity_path_id(value: Any) -> str:
 
 
 def _opaque_path_id(value: Any, label: str) -> str:
-    if (
-        type(value) is not str
-        or len(value.encode("utf-8")) > 255
-        or not value
-        or not value[0].isalnum()
-        or not all(
+    if not _is_opaque_id(value):
+        raise ValueError(f"{label} must be a bounded opaque identifier")
+    return quote(value, safe="")
+
+
+def _is_opaque_id(value: Any) -> bool:
+    return (
+        type(value) is str
+        and bool(value)
+        and len(value.encode("utf-8")) <= 255
+        and value[0].isalnum()
+        and all(
             character.isascii()
             and (character.isalnum() or character in {".", "_", ":", "-"})
             for character in value
         )
-    ):
-        raise ValueError(f"{label} must be a bounded opaque identifier")
-    return quote(value, safe="")
+    )
 
 
 def _validate_travel_request_identity(
