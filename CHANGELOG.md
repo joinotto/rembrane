@@ -9,6 +9,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Fixed
 
+- Canonical SQLite initialization and backup now require the path opened by
+  SQLite to retain the exact protected file's device/inode identity, and
+  failure cleanup refuses to remove a path replaced after preparation.
 - Remote MCP JSON-RPC request-ID classification now satisfies the
   warnings-as-errors production Clippy gate.
 - Protocol script syntax checks now select ES-module parsing explicitly,

@@ -59,6 +59,8 @@ This roadmap describes sequencing, not release dates.
       preparation, encoding, write, or post-write validation path.
     - [x] Copy snapshots into an already opened no-follow SQLite connection
       and clean up destinations rejected by the platform path encoding.
+    - [x] Bind protected-file preparation and SQLite opens to one device/inode
+      identity, and preserve attacker-installed replacements during cleanup.
     - [x] Remove partial files after failed initialization of a new database
       while preserving every pre-existing database on startup failure.
 - [x] Add development-key encrypted CLI remember and recall commands.

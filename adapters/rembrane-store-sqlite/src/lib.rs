@@ -15,7 +15,7 @@ use std::path::Path;
 #[cfg(unix)]
 use std::{
     fs::OpenOptions,
-    os::unix::fs::{OpenOptionsExt as _, PermissionsExt as _},
+    os::unix::fs::{MetadataExt as _, OpenOptionsExt as _, PermissionsExt as _},
 };
 
 use rembrane_application::{
@@ -671,7 +671,7 @@ impl SqliteStore<MissingCipher> {
     where
         Initialize: FnOnce(Connection) -> Result<Self, ApplicationError>,
     {
-        let created = prepare_private_database_file(path, false)?;
+        let prepared = prepare_private_database_file(path, false)?;
         let result = (|| {
             let opened_path = canonical_database_path(path)?;
             let connection = Connection::open_with_flags(
@@ -682,11 +682,11 @@ impl SqliteStore<MissingCipher> {
                     | OpenFlags::SQLITE_OPEN_NOFOLLOW,
             )
             .map_err(|_| ApplicationError::StorageUnavailable)?;
-            validate_private_database_file(path)?;
+            validate_prepared_database_file(path, &prepared)?;
             initialize(connection)
         })();
-        if result.is_err() && created {
-            remove_sqlite_files(path);
+        if result.is_err() && prepared.created {
+            remove_prepared_sqlite_files(path, &prepared);
         }
         result
     }
@@ -968,7 +968,7 @@ impl<C> SqliteStore<C> {
 
     pub fn backup_to(&self, destination: impl AsRef<Path>) -> Result<(), ApplicationError> {
         let destination = destination.as_ref();
-        prepare_private_database_file(destination, true)?;
+        let prepared = prepare_private_database_file(destination, true)?;
         let result = (|| {
             let canonical_destination = canonical_database_path(destination)?;
             let mut destination_connection = Connection::open_with_flags(
@@ -978,12 +978,13 @@ impl<C> SqliteStore<C> {
                     | OpenFlags::SQLITE_OPEN_NOFOLLOW,
             )
             .map_err(|_| ApplicationError::StorageUnavailable)?;
+            validate_prepared_database_file(&canonical_destination, &prepared)?;
             copy_database(&self.connection, &mut destination_connection)?;
             drop(destination_connection);
-            validate_private_database_file(&canonical_destination)
+            validate_prepared_database_file(&canonical_destination, &prepared)
         })();
         if let Err(error) = result {
-            remove_sqlite_files(destination);
+            remove_prepared_sqlite_files(destination, &prepared);
             return Err(error);
         }
         Ok(())
@@ -1008,13 +1009,24 @@ fn copy_database(
     }
 }
 
-fn remove_sqlite_files(path: &Path) {
+fn remove_prepared_sqlite_files(path: &Path, prepared: &PreparedDatabaseFile) {
+    if validate_prepared_database_file(path, prepared).is_err() {
+        return;
+    }
     let _ = std::fs::remove_file(path);
     for suffix in ["-wal", "-shm", "-journal"] {
         let mut sidecar = path.as_os_str().to_os_string();
         sidecar.push(suffix);
         let _ = std::fs::remove_file(sidecar);
     }
+}
+
+struct PreparedDatabaseFile {
+    created: bool,
+    #[cfg(unix)]
+    device: u64,
+    #[cfg(unix)]
+    inode: u64,
 }
 
 fn canonical_database_path(path: &Path) -> Result<std::path::PathBuf, ApplicationError> {
@@ -1034,7 +1046,10 @@ fn canonical_database_path(path: &Path) -> Result<std::path::PathBuf, Applicatio
 }
 
 #[cfg(unix)]
-fn prepare_private_database_file(path: &Path, create_new: bool) -> Result<bool, ApplicationError> {
+fn prepare_private_database_file(
+    path: &Path,
+    create_new: bool,
+) -> Result<PreparedDatabaseFile, ApplicationError> {
     if path.as_os_str().is_empty()
         || path
             .symlink_metadata()
@@ -1062,23 +1077,33 @@ fn prepare_private_database_file(path: &Path, create_new: bool) -> Result<bool, 
         }
         Err(_) => return Err(ApplicationError::StorageUnavailable),
     };
-    validate_private_metadata(
-        &file
-            .metadata()
-            .map_err(|_| ApplicationError::StorageUnavailable)?,
-    )?;
-    Ok(created)
+    let metadata = file
+        .metadata()
+        .map_err(|_| ApplicationError::StorageUnavailable)?;
+    validate_private_metadata(&metadata)?;
+    Ok(PreparedDatabaseFile {
+        created,
+        device: metadata.dev(),
+        inode: metadata.ino(),
+    })
 }
 
 #[cfg(unix)]
-fn validate_private_database_file(path: &Path) -> Result<(), ApplicationError> {
+fn validate_prepared_database_file(
+    path: &Path,
+    prepared: &PreparedDatabaseFile,
+) -> Result<(), ApplicationError> {
     let metadata = path
         .symlink_metadata()
         .map_err(|_| ApplicationError::StorageUnavailable)?;
     if metadata.file_type().is_symlink() {
         return Err(ApplicationError::StorageUnavailable);
     }
-    validate_private_metadata(&metadata)
+    validate_private_metadata(&metadata)?;
+    if metadata.dev() != prepared.device || metadata.ino() != prepared.inode {
+        return Err(ApplicationError::StorageUnavailable);
+    }
+    Ok(())
 }
 
 #[cfg(unix)]
@@ -1090,7 +1115,10 @@ fn validate_private_metadata(metadata: &std::fs::Metadata) -> Result<(), Applica
 }
 
 #[cfg(not(unix))]
-fn prepare_private_database_file(path: &Path, create_new: bool) -> Result<bool, ApplicationError> {
+fn prepare_private_database_file(
+    path: &Path,
+    create_new: bool,
+) -> Result<PreparedDatabaseFile, ApplicationError> {
     if path.as_os_str().is_empty() || (create_new && path.exists()) {
         return Err(if create_new && path.exists() {
             ApplicationError::AlreadyExists
@@ -1098,11 +1126,16 @@ fn prepare_private_database_file(path: &Path, create_new: bool) -> Result<bool, 
             ApplicationError::StorageUnavailable
         });
     }
-    Ok(!path.exists())
+    Ok(PreparedDatabaseFile {
+        created: !path.exists(),
+    })
 }
 
 #[cfg(not(unix))]
-fn validate_private_database_file(path: &Path) -> Result<(), ApplicationError> {
+fn validate_prepared_database_file(
+    path: &Path,
+    _prepared: &PreparedDatabaseFile,
+) -> Result<(), ApplicationError> {
     if path.is_file() {
         Ok(())
     } else {
@@ -1237,6 +1270,28 @@ mod migration_tests {
         assert!(!destination.exists());
 
         fs::remove_file(source).expect("database cleanup");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cleanup_refuses_to_remove_a_replaced_database_path() {
+        let database = database_path("replaced-cleanup");
+        let replacement = database_path("replacement");
+        let prepared =
+            super::prepare_private_database_file(&database, true).expect("prepare database");
+        super::prepare_private_database_file(&replacement, true).expect("prepare replacement");
+
+        fs::remove_file(&database).expect("unlink prepared database");
+        fs::rename(&replacement, &database).expect("install replacement database");
+
+        assert_eq!(
+            super::validate_prepared_database_file(&database, &prepared),
+            Err(rembrane_application::ApplicationError::StorageUnavailable)
+        );
+        super::remove_prepared_sqlite_files(&database, &prepared);
+        assert!(database.exists());
+
+        fs::remove_file(database).expect("replacement cleanup");
     }
 
     #[test]
