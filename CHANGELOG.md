@@ -41,6 +41,13 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- Remote MCP now provides a bounded, non-evicting tenant Tower-service cache
+  keyed by exact issuer, resource, principal, client, workspace, and OAuth
+  scope set, preserving protocol sessions across token refresh while failing
+  closed at capacity.
+- Verified remote access exposes its validated OAuth scopes as a read-only
+  iterator so transport adapters can derive exact tenant service identity
+  without copying or weakening authorization state.
 - MCP connection identity is now encapsulated independently from storage and
   provider state, preparing the official Streamable HTTP handler to source
   tenant identity only from verified request extensions.

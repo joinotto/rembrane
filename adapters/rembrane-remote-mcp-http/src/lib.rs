@@ -5,8 +5,10 @@
 //! protocol execution, while this gate ensures every accepted request has
 //! already passed bearer, origin, method/tool, session, and tenant checks.
 
+use std::collections::BTreeMap;
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::{Arc, Mutex};
 
 use axum::{
     body::Body,
@@ -31,6 +33,7 @@ use zeroize::Zeroizing;
 pub const MCP_SESSION_HEADER: &str = "Mcp-Session-Id";
 pub const MAX_REMOTE_MCP_REQUEST_BYTES: usize = 1_048_576;
 pub const MAX_REMOTE_MCP_HEADER_BYTES: usize = 8_192;
+pub const MAX_REMOTE_MCP_TENANT_SERVICES: usize = 10_000;
 const MCP_SESSION_HEADER_NAME: HeaderName = HeaderName::from_static("mcp-session-id");
 const MCP_PROTOCOL_VERSION_HEADER_NAME: HeaderName =
     HeaderName::from_static("mcp-protocol-version");
@@ -268,6 +271,118 @@ pub trait AuthorizedTowerMcpServiceFactory: Clone + Send + Sync + 'static {
     type Error;
 
     fn create(&self, access: &VerifiedRemoteAccess) -> Result<Self::Service, Self::Error>;
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct RemoteTenantServiceKey {
+    issuer: String,
+    resource: String,
+    subject_id: String,
+    client_id: String,
+    workspace_id: String,
+    scopes: Vec<&'static str>,
+}
+
+impl From<&VerifiedRemoteAccess> for RemoteTenantServiceKey {
+    fn from(access: &VerifiedRemoteAccess) -> Self {
+        Self {
+            issuer: access.issuer().to_owned(),
+            resource: access.resource().to_owned(),
+            subject_id: access.subject_id().to_string(),
+            client_id: access.client_id().to_string(),
+            workspace_id: access.workspace_id().to_string(),
+            scopes: access
+                .scopes()
+                .map(rembrane_contracts::RemoteAccessScope::as_str)
+                .collect(),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TenantServiceCacheConfigurationError {
+    InvalidCapacity,
+}
+
+#[derive(Debug)]
+pub enum TenantServiceCacheError<FactoryError> {
+    CapacityExceeded,
+    LockUnavailable,
+    Factory(FactoryError),
+}
+
+/// Retains one tenant-pinned Tower service for the lifetime of its MCP
+/// transport sessions.
+///
+/// The cache never evicts a service because an eviction could silently discard
+/// official SDK session state. Deployments should choose a capacity aligned
+/// with their authenticated remote-session ceiling.
+#[derive(Clone)]
+pub struct BoundedTenantTowerMcpServiceCache<Factory, Service> {
+    factory: Factory,
+    maximum_services: usize,
+    services: Arc<Mutex<BTreeMap<RemoteTenantServiceKey, Service>>>,
+}
+
+impl<Factory, Service> BoundedTenantTowerMcpServiceCache<Factory, Service> {
+    /// Creates a fail-closed tenant service cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when capacity is zero or exceeds the canonical tenant
+    /// service ceiling.
+    pub fn new(
+        maximum_services: usize,
+        factory: Factory,
+    ) -> Result<Self, TenantServiceCacheConfigurationError> {
+        if !(1..=MAX_REMOTE_MCP_TENANT_SERVICES).contains(&maximum_services) {
+            return Err(TenantServiceCacheConfigurationError::InvalidCapacity);
+        }
+        Ok(Self {
+            factory,
+            maximum_services,
+            services: Arc::new(Mutex::new(BTreeMap::new())),
+        })
+    }
+
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.services.lock().map_or(0, |services| services.len())
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}
+
+impl<Factory, Service, FactoryError> AuthorizedTowerMcpServiceFactory
+    for BoundedTenantTowerMcpServiceCache<Factory, Service>
+where
+    Factory:
+        Fn(&VerifiedRemoteAccess) -> Result<Service, FactoryError> + Clone + Send + Sync + 'static,
+    Service: Clone + Send + 'static,
+    FactoryError: Send + 'static,
+{
+    type Service = Service;
+    type Error = TenantServiceCacheError<FactoryError>;
+
+    fn create(&self, access: &VerifiedRemoteAccess) -> Result<Self::Service, Self::Error> {
+        let key = RemoteTenantServiceKey::from(access);
+        let mut services = self
+            .services
+            .lock()
+            .map_err(|_| TenantServiceCacheError::LockUnavailable)?;
+        if let Some(service) = services.get(&key) {
+            return Ok(service.clone());
+        }
+        if services.len() >= self.maximum_services {
+            return Err(TenantServiceCacheError::CapacityExceeded);
+        }
+        let service = (self.factory)(access).map_err(TenantServiceCacheError::Factory)?;
+        services.insert(key, service.clone());
+        Ok(service)
+    }
 }
 
 impl<Factory, Service, FactoryError> AuthorizedTowerMcpServiceFactory for Factory
@@ -2332,10 +2447,11 @@ mod tests {
     use super::{
         AuthorizedRemoteMcpDispatcher, AuthorizedRemoteMcpEventStreamDispatcher,
         AuthorizedRemoteMcpSessionDeletionDispatcher, AuthorizedTowerMcpDispatcher,
+        AuthorizedTowerMcpServiceFactory, BoundedTenantTowerMcpServiceCache,
         MAX_REMOTE_MCP_HEADER_BYTES, MCP_PROTOCOL_VERSION_HEADER_NAME, MCP_SESSION_HEADER_NAME,
         RemoteMcpAxumAuthorization, RemoteMcpDispatchError, RemoteMcpHttpGate,
         RemoteMcpHttpRejection, RemoteMcpHttpRequest, RemoteMcpInvocation,
-        TenantAwareTowerMcpDispatchError, TenantAwareTowerMcpDispatcher,
+        TenantAwareTowerMcpDispatchError, TenantAwareTowerMcpDispatcher, TenantServiceCacheError,
         authorize_axum_session_body, authorize_axum_session_deletion,
         authorize_axum_stateless_body, authorize_axum_stateless_owned_body,
         classify_remote_mcp_request, establish_and_dispatch_axum_session,
@@ -2520,6 +2636,29 @@ mod tests {
             origin: Some("https://agent.example.test"),
             session_id: Some(session),
         }
+    }
+
+    fn verified_access(
+        workspace: &str,
+        expiry: u64,
+        scopes: BTreeSet<RemoteAccessScope>,
+    ) -> rembrane_contracts::VerifiedRemoteAccess {
+        RemoteTokenClaims {
+            issuer: "https://identity.example.test".to_owned(),
+            audience: vec!["https://memory.example.test/mcp".to_owned()],
+            subject_id: PrincipalId::new("principal_01"),
+            client_id: ClientId::new("client_01"),
+            workspace_id: WorkspaceId::new(workspace),
+            scopes,
+            expires_at_epoch_seconds: expiry,
+            not_before_epoch_seconds: None,
+        }
+        .validate_connection(
+            "https://identity.example.test",
+            "https://memory.example.test/mcp",
+            1_000,
+        )
+        .expect("fixture access should validate")
     }
 
     #[test]
@@ -3329,6 +3468,78 @@ mod tests {
         assert_eq!(
             *selected.lock().expect("selection log"),
             ["workspace_01", "workspace_02"]
+        );
+    }
+
+    #[test]
+    fn tenant_service_cache_reuses_exact_identity_across_token_refresh() {
+        let builds = Arc::new(Mutex::new(0_u64));
+        let builds_from_factory = Arc::clone(&builds);
+        let cache = BoundedTenantTowerMcpServiceCache::new(
+            2,
+            move |access: &rembrane_contracts::VerifiedRemoteAccess| {
+                let mut builds = builds_from_factory.lock().expect("build count");
+                *builds += 1;
+                Ok::<_, std::convert::Infallible>(format!("{}-{builds}", access.workspace_id()))
+            },
+        )
+        .expect("cache capacity");
+        let scopes = BTreeSet::from([
+            RemoteAccessScope::ContextRead,
+            RemoteAccessScope::MemoryWrite,
+        ]);
+        let first = verified_access("workspace_01", 2_000, scopes.clone());
+        let refreshed = verified_access("workspace_01", 3_000, scopes);
+
+        let first_service = cache.create(&first).expect("first service");
+        let refreshed_service = cache.create(&refreshed).expect("cached service");
+
+        assert_eq!(first_service, refreshed_service);
+        assert_eq!(*builds.lock().expect("build count"), 1);
+        assert_eq!(cache.len(), 1);
+    }
+
+    #[test]
+    fn tenant_service_cache_separates_scope_and_workspace_and_fails_at_capacity() {
+        let cache = BoundedTenantTowerMcpServiceCache::new(
+            2,
+            |access: &rembrane_contracts::VerifiedRemoteAccess| {
+                Ok::<_, std::convert::Infallible>(access.workspace_id().to_string())
+            },
+        )
+        .expect("cache capacity");
+        let context = BTreeSet::from([RemoteAccessScope::ContextRead]);
+        let context_and_write = BTreeSet::from([
+            RemoteAccessScope::ContextRead,
+            RemoteAccessScope::MemoryWrite,
+        ]);
+        let workspace_one = verified_access("workspace_01", 2_000, context.clone());
+        let workspace_one_writable = verified_access("workspace_01", 2_000, context_and_write);
+        let workspace_two = verified_access("workspace_02", 2_000, context);
+
+        cache.create(&workspace_one).expect("workspace one");
+        cache
+            .create(&workspace_one_writable)
+            .expect("scope-separated service");
+        assert!(matches!(
+            cache.create(&workspace_two),
+            Err(TenantServiceCacheError::CapacityExceeded)
+        ));
+        assert_eq!(cache.len(), 2);
+    }
+
+    #[test]
+    fn tenant_service_cache_rejects_unbounded_configuration() {
+        let factory = |_access: &rembrane_contracts::VerifiedRemoteAccess| {
+            Ok::<_, std::convert::Infallible>(())
+        };
+        assert!(BoundedTenantTowerMcpServiceCache::<_, ()>::new(0, factory).is_err());
+        assert!(
+            BoundedTenantTowerMcpServiceCache::<_, ()>::new(
+                super::MAX_REMOTE_MCP_TENANT_SERVICES + 1,
+                factory
+            )
+            .is_err()
         );
     }
 

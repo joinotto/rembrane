@@ -399,6 +399,10 @@ impl VerifiedRemoteAccess {
         self.scopes.contains(&scope)
     }
 
+    pub fn scopes(&self) -> impl Iterator<Item = RemoteAccessScope> + '_ {
+        self.scopes.iter().copied()
+    }
+
     #[must_use]
     pub const fn expires_at_epoch_seconds(&self) -> u64 {
         self.expires_at_epoch_seconds

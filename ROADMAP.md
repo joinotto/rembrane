@@ -444,6 +444,11 @@ This roadmap describes sequencing, not release dates.
         stateless event-stream GET, and confirmed session DELETE dispatch.
       - [x] Fail closed before protocol dispatch when tenant-specific service
         construction is unavailable.
+      - [x] Cache tenant-pinned Tower services by exact issuer, resource,
+        principal, client, workspace, and OAuth scope set so refreshed tokens
+        preserve SDK sessions without cross-tenant reuse.
+        - [x] Bound cached tenant services without eviction, failing closed
+          rather than silently discarding live protocol session state.
     - [x] Add a consuming Tower dispatcher that reconstructs only validated
       MCP protocol headers, strips the bearer credential at the OAuth boundary,
       and injects verified tenant access into request extensions for the
