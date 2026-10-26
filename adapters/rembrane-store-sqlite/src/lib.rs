@@ -12,6 +12,11 @@ mod share;
 mod trip;
 
 use std::path::Path;
+#[cfg(unix)]
+use std::{
+    fs::OpenOptions,
+    os::unix::fs::{OpenOptionsExt as _, PermissionsExt as _},
+};
 
 use rembrane_application::{
     AdministrativeAuditRepository, ApplicationError, InvitationRepository, KeyRotationRepository,
@@ -31,7 +36,7 @@ use rembrane_domain::{
     ShareProposalId, ShareProposalStatus, Workspace, WorkspaceId, WorkspaceKeyRotation,
     WorkspaceKind, WorkspaceLegalHold, WorkspaceRetentionPolicy, WorkspaceRole,
 };
-use rusqlite::{Connection, ErrorCode, OptionalExtension, params};
+use rusqlite::{Connection, ErrorCode, OpenFlags, OptionalExtension, params};
 
 const CANONICAL_SCHEMA: &str = include_str!("../../../migrations/sqlite/0001_canonical_schema.sql");
 const CHECKPOINT_DISCLOSURE_MIGRATION: &str =
@@ -655,8 +660,18 @@ fn parse_administrative_target_kind(
 
 impl SqliteStore<MissingCipher> {
     pub fn open(path: impl AsRef<Path>) -> Result<Self, ApplicationError> {
-        let connection =
-            Connection::open(path).map_err(|_| ApplicationError::StorageUnavailable)?;
+        let path = path.as_ref();
+        prepare_private_database_file(path, false)?;
+        let opened_path = canonical_database_path(path)?;
+        let connection = Connection::open_with_flags(
+            opened_path,
+            OpenFlags::SQLITE_OPEN_READ_WRITE
+                | OpenFlags::SQLITE_OPEN_CREATE
+                | OpenFlags::SQLITE_OPEN_NO_MUTEX
+                | OpenFlags::SQLITE_OPEN_NOFOLLOW,
+        )
+        .map_err(|_| ApplicationError::StorageUnavailable)?;
+        validate_private_database_file(path)?;
         Self::initialize(connection)
     }
 
@@ -937,16 +952,105 @@ impl<C> SqliteStore<C> {
 
     pub fn backup_to(&self, destination: impl AsRef<Path>) -> Result<(), ApplicationError> {
         let destination = destination.as_ref();
-        if destination.exists() {
-            return Err(ApplicationError::AlreadyExists);
-        }
-        let destination = destination
+        prepare_private_database_file(destination, true)?;
+        let canonical_destination = canonical_database_path(destination)?;
+        let destination = canonical_destination
             .to_str()
             .ok_or(ApplicationError::StorageUnavailable)?;
-        self.connection
+        if let Err(error) = self
+            .connection
             .execute("VACUUM INTO ?1", [destination])
-            .map_err(map_write_error)?;
+            .map_err(map_write_error)
+        {
+            let _ = std::fs::remove_file(destination);
+            return Err(error);
+        }
+        validate_private_database_file(Path::new(destination))?;
         Ok(())
+    }
+}
+
+fn canonical_database_path(path: &Path) -> Result<std::path::PathBuf, ApplicationError> {
+    let file_name = path
+        .file_name()
+        .ok_or(ApplicationError::StorageUnavailable)?;
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let parent = if parent.as_os_str().is_empty() {
+        Path::new(".")
+    } else {
+        parent
+    };
+    let canonical_parent = parent
+        .canonicalize()
+        .map_err(|_| ApplicationError::StorageUnavailable)?;
+    Ok(canonical_parent.join(file_name))
+}
+
+#[cfg(unix)]
+fn prepare_private_database_file(path: &Path, create_new: bool) -> Result<(), ApplicationError> {
+    if path.as_os_str().is_empty()
+        || path
+            .symlink_metadata()
+            .is_ok_and(|metadata| metadata.file_type().is_symlink())
+    {
+        return Err(ApplicationError::StorageUnavailable);
+    }
+    let mut options = OpenOptions::new();
+    options
+        .read(true)
+        .write(true)
+        .create(!create_new)
+        .create_new(create_new)
+        .truncate(false)
+        .mode(0o600);
+    let file = options.open(path).map_err(|error| match error.kind() {
+        std::io::ErrorKind::AlreadyExists => ApplicationError::AlreadyExists,
+        _ => ApplicationError::StorageUnavailable,
+    })?;
+    validate_private_metadata(
+        &file
+            .metadata()
+            .map_err(|_| ApplicationError::StorageUnavailable)?,
+    )
+}
+
+#[cfg(unix)]
+fn validate_private_database_file(path: &Path) -> Result<(), ApplicationError> {
+    let metadata = path
+        .symlink_metadata()
+        .map_err(|_| ApplicationError::StorageUnavailable)?;
+    if metadata.file_type().is_symlink() {
+        return Err(ApplicationError::StorageUnavailable);
+    }
+    validate_private_metadata(&metadata)
+}
+
+#[cfg(unix)]
+fn validate_private_metadata(metadata: &std::fs::Metadata) -> Result<(), ApplicationError> {
+    if !metadata.is_file() || metadata.permissions().mode() & 0o077 != 0 {
+        return Err(ApplicationError::StorageUnavailable);
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn prepare_private_database_file(path: &Path, create_new: bool) -> Result<(), ApplicationError> {
+    if path.as_os_str().is_empty() || (create_new && path.exists()) {
+        return Err(if create_new && path.exists() {
+            ApplicationError::AlreadyExists
+        } else {
+            ApplicationError::StorageUnavailable
+        });
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn validate_private_database_file(path: &Path) -> Result<(), ApplicationError> {
+    if path.is_file() {
+        Ok(())
+    } else {
+        Err(ApplicationError::StorageUnavailable)
     }
 }
 
@@ -972,6 +1076,17 @@ mod migration_tests {
         ))
     }
 
+    #[cfg(unix)]
+    fn protect_database_fixture(path: &std::path::Path) {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        fs::set_permissions(path, fs::Permissions::from_mode(0o600))
+            .expect("fixture database should be owner-only");
+    }
+
+    #[cfg(not(unix))]
+    fn protect_database_fixture(_path: &std::path::Path) {}
+
     #[test]
     fn initializes_and_reopens_the_current_schema() {
         let database = database_path("schema-reopen");
@@ -986,6 +1101,60 @@ mod migration_tests {
 
         SqliteStore::open(&database).expect("current database should reopen idempotently");
         fs::remove_file(database).expect("temporary database should be removed");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn database_files_are_owner_only_and_symbolic_links_fail_closed() {
+        use std::os::unix::fs::{PermissionsExt as _, symlink};
+
+        let database = database_path("private-database");
+        SqliteStore::open(&database).expect("database should initialize");
+        assert_eq!(
+            fs::metadata(&database)
+                .expect("database metadata")
+                .permissions()
+                .mode()
+                & 0o077,
+            0
+        );
+
+        fs::set_permissions(&database, fs::Permissions::from_mode(0o644)).expect("permissive mode");
+        assert!(SqliteStore::open(&database).is_err());
+        fs::set_permissions(&database, fs::Permissions::from_mode(0o600)).expect("private mode");
+
+        let link = database_path("database-link");
+        symlink(&database, &link).expect("database symlink");
+        assert!(SqliteStore::open(&link).is_err());
+
+        fs::remove_file(link).expect("link cleanup");
+        fs::remove_file(database).expect("database cleanup");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn database_backups_are_owner_only_and_never_overwrite() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let source = database_path("private-backup-source");
+        let backup = database_path("private-backup");
+        let store = SqliteStore::open(&source).expect("database should initialize");
+        store.backup_to(&backup).expect("backup should succeed");
+        assert_eq!(
+            fs::metadata(&backup)
+                .expect("backup metadata")
+                .permissions()
+                .mode()
+                & 0o077,
+            0
+        );
+        assert_eq!(
+            store.backup_to(&backup),
+            Err(rembrane_application::ApplicationError::AlreadyExists)
+        );
+
+        fs::remove_file(backup).expect("backup cleanup");
+        fs::remove_file(source).expect("database cleanup");
     }
 
     #[test]
@@ -1033,6 +1202,7 @@ mod migration_tests {
             .execute_batch(super::CANONICAL_SCHEMA)
             .expect("legacy schema should initialize");
         drop(connection);
+        protect_database_fixture(&database);
 
         SqliteStore::open(&database).expect("complete legacy schema should be adopted");
         let connection = Connection::open(&database).expect("database should reopen");
@@ -1055,6 +1225,7 @@ mod migration_tests {
             .pragma_update(None, "user_version", 1)
             .expect("version one should be recorded");
         drop(connection);
+        protect_database_fixture(&database);
 
         SqliteStore::open(&database).expect("version one should upgrade");
         let connection = Connection::open(&database).expect("database should reopen");

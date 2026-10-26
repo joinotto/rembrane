@@ -53,6 +53,8 @@ This roadmap describes sequencing, not release dates.
   - [x] Make validated provider profiles opaque so callers cannot bypass
     endpoint, placement, or credential-reference invariants.
 - [x] Implement the encrypted local SQLite adapter.
+  - [x] Create owner-only database and snapshot files, reject permissive or
+    symbolic-link database paths, and open through SQLite no-follow mode.
 - [x] Add development-key encrypted CLI remember and recall commands.
 - [x] Add encrypted CLI correction and deletion commands.
 - [x] Create encrypted backup exports and restored databases atomically with
