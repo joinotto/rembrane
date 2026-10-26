@@ -61,9 +61,18 @@ const MAX_PROVIDER_REGISTRY_PUBLIC_KEY_BYTES: u64 = 4_096;
 fn main() {
     let arguments = std::env::args().skip(1).collect::<Vec<_>>();
     if let Err(error) = run(&arguments) {
-        eprintln!("error: {error}");
+        if doctor_json_requested(&arguments) {
+            println!("{}", doctor_failure_json());
+        } else {
+            eprintln!("error: {error}");
+        }
         std::process::exit(1);
     }
+}
+
+fn doctor_json_requested(arguments: &[String]) -> bool {
+    arguments.first().map(String::as_str) == Some("doctor")
+        && arguments.iter().any(|argument| argument == "--json")
 }
 
 fn run(arguments: &[String]) -> Result<(), String> {
@@ -1981,6 +1990,16 @@ fn doctor_json(
     })
 }
 
+fn doctor_failure_json() -> serde_json::Value {
+    serde_json::json!({
+        "schemaVersion": 1,
+        "ready": false,
+        "error": {
+            "code": "doctor_failed"
+        }
+    })
+}
+
 fn print_privacy_diagnostics() -> Result<(), String> {
     let configured_scopes =
         std::env::var("REMBRANE_READ_SCOPES").unwrap_or_else(|_| "global".to_owned());
@@ -3316,11 +3335,11 @@ mod tests {
         EXPORT_MAGIC, SEMANTIC_PROVIDER_CONFORMANCE_PROFILE_SHA256, build_remote_mcp_profile,
         check_provider_registry, claude_mcp_config, codex_mcp_config, create_parent_directory,
         cursor_mcp_config, format_read_scopes, gemini_mcp_config, generic_mcp_config,
-        doctor_json, invitation_list_json, invitation_status, key_provider_secret_sources,
-        mcp_client_catalog, mcp_environment_variables, memory_privacy_mode_name,
-        memory_provider_check_policy, opencode_mcp_config, option, positive_u64, providers,
-        read_bounded_registry_file, read_export, recall_scope_context, redact_endpoint,
-        render_mcp_config,
+        doctor_failure_json, doctor_json, doctor_json_requested, invitation_list_json,
+        invitation_status, key_provider_secret_sources, mcp_client_catalog,
+        mcp_environment_variables, memory_privacy_mode_name, memory_provider_check_policy,
+        opencode_mcp_config, option, positive_u64, providers, read_bounded_registry_file,
+        read_export, recall_scope_context, redact_endpoint, render_mcp_config,
         requested_memory_privacy, requested_memory_scope, run, selected_secret_reference,
         test_provider, validate_external_conformance_namespace, validate_mcp_server_binary,
         vscode_mcp_config, write_export, write_knowledge_graph_export, write_memory_jsonl_export,
@@ -3357,6 +3376,24 @@ mod tests {
         assert!(result.get("workspaceId").is_none());
         assert!(result.get("principalId").is_none());
         assert!(result.to_string().contains("protected file reference"));
+    }
+
+    #[test]
+    fn doctor_json_failure_is_generic_and_secret_safe() {
+        let arguments = vec![
+            "doctor".to_owned(),
+            "--database".to_owned(),
+            "/private/tenant.sqlite".to_owned(),
+            "--json".to_owned(),
+        ];
+        assert!(doctor_json_requested(&arguments));
+
+        let result = doctor_failure_json();
+        assert_eq!(result["schemaVersion"], 1);
+        assert_eq!(result["ready"], false);
+        assert_eq!(result["error"]["code"], "doctor_failed");
+        assert_eq!(result.as_object().map(serde_json::Map::len), Some(3));
+        assert!(!result.to_string().contains("tenant.sqlite"));
     }
 
     fn request_run(arguments: &[&str]) -> Result<(), String> {

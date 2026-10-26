@@ -17,6 +17,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   canonical example, and protocol drift checks.
 - The encrypted CLI lifecycle suite now verifies real `doctor --json` output
   omits tenant identities and rejects mixed JSON/privacy diagnostics.
+- Failed `doctor --json` runs now emit a generic machine-readable error code
+  without serializing arbitrary internal errors, paths, tenant identities, key
+  metadata, or provider diagnostics.
 - Remote MCP initialization tests now use the standard no-op waker and current
   idiomatic control flow, restoring strict Clippy compatibility on the latest
   supported Rust toolchain without changing authorization semantics.

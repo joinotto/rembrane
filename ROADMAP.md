@@ -153,6 +153,8 @@ This roadmap describes sequencing, not release dates.
     installers, agents, and bots without exposing principal or workspace IDs.
     - [x] Enforce the structured output and mixed-mode rejection in the
       canonical encrypted CLI lifecycle suite.
+    - [x] Return a generic machine-readable failure envelope without exposing
+      arbitrary storage, tenant, key, or provider diagnostics.
 - [x] Report production-readiness prerequisites individually, including
   dependency resolution, loopback binding, PostgreSQL, and Docker capabilities.
 - [x] Report local processing, connection scopes, endpoints, and secret sources
