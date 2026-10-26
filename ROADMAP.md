@@ -114,6 +114,9 @@ This roadmap describes sequencing, not release dates.
     supersession while rejecting mixed workspaces and dangling endpoints.
   - [x] Add a bounded canonical graph-snapshot repository port with
     tenant-filtered in-memory and authenticated encrypted-SQLite adapters.
+    - [x] Implement the same snapshot port in the RLS-bound PostgreSQL adapter
+      with one tenant transaction, bounded node/edge reads, and authenticated
+      record decryption.
   - [x] Expose owner/admin-only whole-workspace graph JSON export through the
     CLI with explicit plaintext consent and private durable output.
   - [x] Move the JSONL record contract into the provider-independent codec and

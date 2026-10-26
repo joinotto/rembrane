@@ -14,12 +14,13 @@ use rembrane_application::{
     CheckpointDisclosureRepository, CheckpointMutationRepository, CheckpointRepository,
     DisclosureRepository, EventRepository, GraphDisclosureRepository,
     GraphProjectionOutboxRepository, InvitationRepository, KeyRotationRepository,
-    KnowledgeDirection, KnowledgeGraphMutationRepository, KnowledgeGraphRepository,
-    MAX_ADMINISTRATIVE_AUDIT_PAGE, MAX_KNOWLEDGE_NEIGHBOURS, MAXIMUM_INVITATION_LIST_ITEMS,
-    MemberLifecycleRepository, MemberScopeGrantRepository, MembershipRepository,
-    MemoryImportRepository, MemoryRepository, ProjectionOutboxRepository, RetentionRepository,
-    TravelDisclosureRepository, TripMutationRepository, TripRepository, WorkspaceReadRepository,
-    WorkspaceRepository, is_strict_successor,
+    KnowledgeDirection, KnowledgeGraphExportRepository, KnowledgeGraphMutationRepository,
+    KnowledgeGraphRepository, MAX_ADMINISTRATIVE_AUDIT_PAGE, MAX_KNOWLEDGE_GRAPH_EXPORT_RECORDS,
+    MAX_KNOWLEDGE_NEIGHBOURS, MAXIMUM_INVITATION_LIST_ITEMS, MemberLifecycleRepository,
+    MemberScopeGrantRepository, MembershipRepository, MemoryImportRepository, MemoryRepository,
+    ProjectionOutboxRepository, RetentionRepository, TravelDisclosureRepository,
+    TripMutationRepository, TripRepository, WorkspaceReadRepository, WorkspaceRepository,
+    is_strict_successor,
 };
 use rembrane_codec::{
     decode_booking_research, decode_checkpoint, decode_event, decode_knowledge_edge,
@@ -315,6 +316,13 @@ pub const FIND_KNOWLEDGE_EDGE_SQL: &str = "SELECT workspace_id, id, source_id, t
     supersedes_id, version, edge_ciphertext, encryption_key_id, encryption_algorithm, \
     encryption_nonce FROM knowledge_edges WHERE workspace_id = $1 AND id = $2 \
     ORDER BY workspace_id, id LIMIT 2";
+pub const LIST_KNOWLEDGE_NODES_FOR_EXPORT_SQL: &str = "SELECT workspace_id, id, version, \
+    node_ciphertext, encryption_key_id, encryption_algorithm, encryption_nonce \
+    FROM knowledge_nodes WHERE workspace_id = $1 ORDER BY id, version LIMIT $2";
+pub const LIST_KNOWLEDGE_EDGES_FOR_EXPORT_SQL: &str = "SELECT workspace_id, id, source_id, \
+    target_id, supersedes_id, version, edge_ciphertext, encryption_key_id, \
+    encryption_algorithm, encryption_nonce FROM knowledge_edges WHERE workspace_id = $1 \
+    ORDER BY id, version LIMIT $2";
 pub const LIST_INCOMING_KNOWLEDGE_EDGES_SQL: &str = "SELECT workspace_id, id, source_id, \
     target_id, supersedes_id, version, edge_ciphertext, encryption_key_id, encryption_algorithm, \
     encryption_nonce FROM knowledge_edges WHERE workspace_id = $1 AND target_id = $2 \
@@ -3092,6 +3100,83 @@ where
             .map_err(PostgresStoreError::Tenant)
             .map_err(map_application_error)?;
         Ok(edges)
+    }
+}
+
+impl<Pool, Cipher> KnowledgeGraphExportRepository
+    for PostgresTenantMemoryStore<'_, '_, Pool, Cipher>
+where
+    Pool: PostgresPool,
+    Pool::Error: ClassifiedPostgresError,
+    <Pool::Transaction as PostgresTransaction>::Row: PostgresRow<Error = Pool::Error>,
+    Cipher: RecordCipher,
+{
+    fn list_knowledge_graph_snapshot(
+        &self,
+        workspace_id: &WorkspaceId,
+    ) -> Result<(Vec<KnowledgeNode>, Vec<KnowledgeEdge>), ApplicationError> {
+        if workspace_id != &self.workspace_id {
+            return Err(ApplicationError::AccessDenied);
+        }
+        let maximum = i64::try_from(MAX_KNOWLEDGE_GRAPH_EXPORT_RECORDS)
+            .map_err(|_| ApplicationError::StorageUnavailable)?;
+        let mut transaction = self
+            .store
+            .begin_tenant(workspace_id.clone())
+            .map_err(map_application_error)?;
+        let node_rows = transaction
+            .query(
+                LIST_KNOWLEDGE_NODES_FOR_EXPORT_SQL,
+                &[
+                    PostgresParameter::Text(workspace_id.as_str()),
+                    PostgresParameter::I64(maximum.saturating_add(1)),
+                ],
+            )
+            .map_err(PostgresStoreError::Tenant)
+            .map_err(map_application_error)?;
+        if node_rows.len() > MAX_KNOWLEDGE_GRAPH_EXPORT_RECORDS {
+            return Err(ApplicationError::Validation(
+                "knowledge graph export exceeds canonical record bounds".to_owned(),
+            ));
+        }
+        let nodes = node_rows
+            .iter()
+            .map(|row| {
+                let node_id =
+                    KnowledgeNodeId::new(row.text("id").map_err(PostgresStoreError::Row)?);
+                decrypt_knowledge_node_row(self.cipher, row, workspace_id, &node_id)
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(map_application_error)?;
+
+        let remaining = MAX_KNOWLEDGE_GRAPH_EXPORT_RECORDS.saturating_sub(nodes.len());
+        let edge_limit =
+            i64::try_from(remaining).map_err(|_| ApplicationError::StorageUnavailable)?;
+        let edge_rows = transaction
+            .query(
+                LIST_KNOWLEDGE_EDGES_FOR_EXPORT_SQL,
+                &[
+                    PostgresParameter::Text(workspace_id.as_str()),
+                    PostgresParameter::I64(edge_limit.saturating_add(1)),
+                ],
+            )
+            .map_err(PostgresStoreError::Tenant)
+            .map_err(map_application_error)?;
+        if edge_rows.len() > remaining {
+            return Err(ApplicationError::Validation(
+                "knowledge graph export exceeds canonical record bounds".to_owned(),
+            ));
+        }
+        let edges = edge_rows
+            .iter()
+            .map(|row| decrypt_knowledge_edge_row(self.cipher, row, workspace_id, None))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(map_application_error)?;
+        transaction
+            .commit()
+            .map_err(PostgresStoreError::Tenant)
+            .map_err(map_application_error)?;
+        Ok((nodes, edges))
     }
 }
 
@@ -7094,12 +7179,13 @@ mod tests {
         CheckpointService, CreateInvitationCommand, DisclosureRepository, EventRepository,
         GraphDisclosureRepository, GraphProjectionOutboxRepository, GraphProjectionWorker,
         InvitationRepository, InvitationService, KeyRotationRepository, KnowledgeDirection,
-        KnowledgeGraphMutationRepository, KnowledgeGraphRepository, MemberLifecycleRepository,
-        MemberScopeGrantRepository, MembershipRepository, MemoryImportRepository, MemoryRepository,
-        ProjectionOutboxRepository, ProjectionOutcome, ProjectionWorker, ResolveContextCommand,
-        ResolveContextService, ResolveTravelContextCommand, ResumeActivityCommand,
-        RetentionRepository, TravelContextService, TravelDisclosureRepository,
-        TripMutationRepository, TripRepository, WorkspaceReadRepository, WorkspaceRepository,
+        KnowledgeGraphExportRepository, KnowledgeGraphMutationRepository, KnowledgeGraphRepository,
+        MemberLifecycleRepository, MemberScopeGrantRepository, MembershipRepository,
+        MemoryImportRepository, MemoryRepository, ProjectionOutboxRepository, ProjectionOutcome,
+        ProjectionWorker, ResolveContextCommand, ResolveContextService,
+        ResolveTravelContextCommand, ResumeActivityCommand, RetentionRepository,
+        TravelContextService, TravelDisclosureRepository, TripMutationRepository, TripRepository,
+        WorkspaceReadRepository, WorkspaceRepository,
     };
     use rembrane_codec::{
         encode_booking_research, encode_checkpoint, encode_knowledge_edge, encode_knowledge_node,
@@ -9134,6 +9220,10 @@ mod tests {
                 &other,
                 &KnowledgeEdgeId::new("edge_01"),
             ),
+            Err(ApplicationError::AccessDenied)
+        );
+        assert_eq!(
+            KnowledgeGraphExportRepository::list_knowledge_graph_snapshot(&repository, &other),
             Err(ApplicationError::AccessDenied)
         );
         assert_eq!(

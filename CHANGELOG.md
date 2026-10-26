@@ -63,6 +63,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 - The application boundary now exposes bounded canonical graph snapshots;
   in-memory and encrypted SQLite adapters implement tenant-filtered reads
   without leaking storage-specific queries into export clients.
+- The tenant-bound PostgreSQL adapter now reads bounded graph snapshots inside
+  one RLS-scoped transaction and authenticates every encrypted node and edge
+  before returning portable records.
 - CLI export now supports owner/admin-only `--format graph-json`, reading
   authenticated canonical graph snapshots and writing versioned private
   plaintext archives with explicit consent.
