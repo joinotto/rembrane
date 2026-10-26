@@ -13,6 +13,8 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   redacted zeroize-on-drop ownership instead of an ordinary byte vector.
 - Key-provider plaintext responses are now explicitly wiped before oversized
   responses are rejected at the negotiated protocol boundary.
+- Key-provider manifests now enforce a finite algorithm collection and closed
+  portable algorithm identifiers before capability negotiation.
 - Canonical SQLite initialization and backup now require the path opened by
   SQLite to retain the exact protected file's device/inode identity, and
   failure cleanup refuses to remove a path replaced after preparation.

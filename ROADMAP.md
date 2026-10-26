@@ -204,6 +204,8 @@ This roadmap describes sequencing, not release dates.
     - [x] Negotiate optional workspace-rotation capability and validate
       transport receipts against exact request, provider, workspace,
       generation, and recipient correlation.
+    - [x] Bound untrusted manifest algorithm collections and require closed
+      portable algorithm identifiers before capability negotiation.
     - [x] Bind rotation to the authenticated HTTP protocol and black-box
       provider conformance runner without exposing key material.
       - [x] Keep provider-bound seal-request plaintext in redacted,

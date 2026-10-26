@@ -9,6 +9,7 @@ use crate::{CryptoError, EncryptedPayload, EncryptionContext, RecordCipher};
 
 pub const CURRENT_KEY_PROVIDER_PROTOCOL: KeyProviderProtocolVersion =
     KeyProviderProtocolVersion::new(0, 1);
+pub const MAX_KEY_PROVIDER_ALGORITHMS: usize = 32;
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct KeyProviderProtocolVersion {
@@ -59,11 +60,11 @@ impl KeyProviderManifest {
             return Err(KeyProviderProtocolError::InvalidManifest);
         }
         if self.algorithms.is_empty()
-            || self.algorithms.iter().any(|algorithm| {
-                algorithm.trim().is_empty()
-                    || algorithm.trim() != algorithm
-                    || algorithm.len() > 100
-            })
+            || self.algorithms.len() > MAX_KEY_PROVIDER_ALGORITHMS
+            || self
+                .algorithms
+                .iter()
+                .any(|algorithm| !valid_algorithm_identifier(algorithm))
             || self
                 .algorithms
                 .iter()
@@ -89,7 +90,9 @@ pub struct KeyProviderPolicy {
 impl KeyProviderPolicy {
     pub fn validate(&self, manifest: &KeyProviderManifest) -> Result<(), KeyProviderProtocolError> {
         manifest.validate()?;
-        if self.required_algorithm.trim().is_empty() || self.minimum_plaintext_bytes == 0 {
+        if !valid_algorithm_identifier(&self.required_algorithm)
+            || self.minimum_plaintext_bytes == 0
+        {
             return Err(KeyProviderProtocolError::InvalidPolicy);
         }
         if !manifest
@@ -112,6 +115,16 @@ impl KeyProviderPolicy {
         }
         Ok(())
     }
+}
+
+fn valid_algorithm_identifier(algorithm: &str) -> bool {
+    !algorithm.is_empty()
+        && algorithm.len() <= 100
+        && algorithm.bytes().enumerate().all(|(index, byte)| {
+            byte.is_ascii_lowercase()
+                || byte.is_ascii_digit()
+                || (index > 0 && matches!(byte, b'.' | b'_' | b'-'))
+        })
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -526,6 +539,29 @@ mod tests {
             SealRequest::new("request_01", context(), vec![0; 5], 4),
             Err(KeyProviderProtocolError::PlaintextTooLarge)
         );
+
+        let mut excessive = manifest();
+        excessive.algorithms = (0..=super::MAX_KEY_PROVIDER_ALGORITHMS)
+            .map(|index| format!("algorithm-{index}"))
+            .collect();
+        assert_eq!(
+            excessive.validate(),
+            Err(KeyProviderProtocolError::InvalidManifest)
+        );
+
+        for invalid in [
+            "XChaCha20",
+            "-algorithm",
+            "algorithm name",
+            "algorithm\nname",
+        ] {
+            let mut manifest = manifest();
+            manifest.algorithms = vec![invalid.to_owned()];
+            assert_eq!(
+                manifest.validate(),
+                Err(KeyProviderProtocolError::InvalidManifest)
+            );
+        }
     }
 
     #[test]
