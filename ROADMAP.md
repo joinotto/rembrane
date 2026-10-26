@@ -1343,6 +1343,8 @@ This roadmap describes sequencing, not release dates.
       imports with strict metadata, opaque-ID, and response validation.
     - [x] Add named Kotlin preference, work-trace, correction, deletion,
       checkpoint, and resume operations with path-safe opaque identifiers.
+    - [x] Add the complete Kotlin travel continuity route set for trips,
+      participants, constraints, decisions, research, and context resolution.
     - [x] Document protected plaintext handling and sequence-safe imports for
       Swift adopters, and link all application SDK guides from the project root.
     - [x] Add named Swift preference, work-trace, correction, deletion,

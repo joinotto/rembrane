@@ -28,3 +28,5 @@ workspace event sequence; imported records remain reviewable proposals.
 Named methods cover preference capture, work traces, memory correction and
 deletion, and activity checkpoint/resume handoff. Path identifiers are
 validated before transport so malformed IDs cannot alter REST routing.
+Travel methods cover trip creation, participants, constraints, decisions,
+time-sensitive booking research, and audited travel-context resolution.

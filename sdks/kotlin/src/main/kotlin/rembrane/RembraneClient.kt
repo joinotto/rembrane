@@ -165,6 +165,24 @@ class RembraneClient(
         return request("GET", "/activities/$activityId/resume?$query", null)
     }
 
+    fun createTrip(jsonBody: String): String =
+        request("POST", "/travel/trips", jsonBody)
+
+    fun addTripParticipant(jsonBody: String): String =
+        request("POST", "/travel/trip-participants", jsonBody)
+
+    fun addTripConstraint(jsonBody: String): String =
+        request("POST", "/travel/trip-constraints", jsonBody)
+
+    fun recordTripDecision(jsonBody: String): String =
+        request("POST", "/travel/trip-decisions", jsonBody)
+
+    fun captureBookingResearch(jsonBody: String): String =
+        request("POST", "/travel/booking-research", jsonBody)
+
+    fun resolveTravelContext(jsonBody: String): String =
+        request("POST", "/travel/context/resolve", jsonBody)
+
     fun rotateWorkspaceKey(jsonBody: String): String =
         request("POST", "/workspaces/key-rotation", jsonBody)
 

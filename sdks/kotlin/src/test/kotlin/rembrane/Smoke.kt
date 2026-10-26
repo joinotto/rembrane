@@ -247,6 +247,33 @@ fun main() {
     )
     check(captured.size == callsBeforeInvalidMemory)
 
+    val travelBody =
+        """{"workspaceId":"team","subjectId":"principal-1","tripId":"trip-1"}"""
+    val travelStart = captured.size
+    client.createTrip(travelBody)
+    client.addTripParticipant(travelBody)
+    client.addTripConstraint(travelBody)
+    client.recordTripDecision(travelBody)
+    client.captureBookingResearch(travelBody)
+    client.resolveTravelContext(travelBody)
+    check(
+        captured.drop(travelStart).map { it.uri.path } == listOf(
+            "/v1/travel/trips",
+            "/v1/travel/trip-participants",
+            "/v1/travel/trip-constraints",
+            "/v1/travel/trip-decisions",
+            "/v1/travel/booking-research",
+            "/v1/travel/context/resolve",
+        ),
+    )
+    check(captured.drop(travelStart).all { it.method == "POST" })
+    check(
+        captured.drop(travelStart).all {
+            it.headers["Authorization"] == "Bearer test-token" &&
+                it.body?.toString(StandardCharsets.UTF_8) == travelBody
+        },
+    )
+
     check(
         runCatching {
             RembraneClient(
