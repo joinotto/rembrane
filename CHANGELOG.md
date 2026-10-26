@@ -9,6 +9,9 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Fixed
 
+- Structured correction and deletion results now have a shared versioned JSON
+  Schema, canonical success/failure fixtures, protocol drift checks, and
+  cross-agent integration documentation.
 - `rembrane correct --json` and `rembrane forget --json` now return canonical
   memory IDs and versions with closed, secret-safe failure codes; both paths
   validate identifiers, scope, and corrected content before storage access.

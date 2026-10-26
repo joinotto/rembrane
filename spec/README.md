@@ -94,6 +94,14 @@ memory ID and version; failure returns only `remember_failed`. Neither shape
 exposes preference content, scope selectors, tenant routing, client identity,
 storage, or key metadata.
 
+## CLI memory lifecycle result
+
+`cli-memory-lifecycle.schema.json` defines correction and deletion results
+emitted by `rembrane correct --json` and `rembrane forget --json`. Successful
+operations expose only the canonical memory identity, new optimistic version,
+kind, and lifecycle status. Failures use the closed `correct_failed` or
+`forget_failed` code without content, tenant routing, or storage diagnostics.
+
 ## CLI checkpoint and resume result
 
 `cli-checkpoint.schema.json` defines the versioned working-memory state emitted

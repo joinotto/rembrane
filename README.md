@@ -396,6 +396,9 @@ Assistants can persist an explicitly confirmed preference through
 `rembrane remember --json`; the result follows `spec/cli-remember.schema.json`
 and returns its canonical memory ID and version without echoing preference
 content or routing metadata. Failed operations return only `remember_failed`.
+The related `correct --json` and `forget --json` commands follow
+`spec/cli-memory-lifecycle.schema.json`, allowing another assistant to observe
+the new version or deletion without receiving the corrected content.
 
 The local REST server additionally requires `REMBRANE_DATABASE`,
 `REMBRANE_PRINCIPAL_ID`, `REMBRANE_WORKSPACE_ID`, `REMBRANE_CLIENT_ID`, and

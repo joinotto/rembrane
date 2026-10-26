@@ -78,6 +78,7 @@ jq empty \
     spec/production-readiness.schema.json \
     spec/local-doctor.schema.json \
     spec/cli-remember.schema.json \
+    spec/cli-memory-lifecycle.schema.json \
     spec/cli-recall.schema.json \
     spec/cli-checkpoint.schema.json \
     spec/cli-trace.schema.json \
@@ -110,6 +111,10 @@ jq empty \
     spec/examples/local-doctor-failure.json \
     spec/examples/cli-remember.json \
     spec/examples/cli-remember-failure.json \
+    spec/examples/cli-correct.json \
+    spec/examples/cli-correct-failure.json \
+    spec/examples/cli-forget.json \
+    spec/examples/cli-forget-failure.json \
     spec/examples/cli-recall.json \
     spec/examples/cli-recall-failure.json \
     spec/examples/cli-checkpoint.json \
@@ -231,6 +236,28 @@ jq -e \
         "error": {"code": "remember_failed"}
     }
 ' spec/cli-remember.schema.json >/dev/null
+
+jq -e \
+    --slurpfile correct spec/examples/cli-correct.json \
+    --slurpfile correctFailure spec/examples/cli-correct-failure.json \
+    --slurpfile forget spec/examples/cli-forget.json \
+    --slurpfile forgetFailure spec/examples/cli-forget-failure.json '
+    .additionalProperties == false
+    and .properties.schemaVersion.const == 1
+    and .properties.memoryId.maxLength == 255
+    and .properties.version.minimum == 1
+    and .properties.kind.const == "preference"
+    and .properties.status.enum == ["confirmed", "deleted"]
+    and .properties.error.properties.code.enum
+        == ["correct_failed", "forget_failed"]
+    and (.oneOf | length) == 2
+    and $correct[0].status == "confirmed"
+    and $correct[0].version == 2
+    and $correctFailure[0].error.code == "correct_failed"
+    and $forget[0].status == "deleted"
+    and $forget[0].version == 3
+    and $forgetFailure[0].error.code == "forget_failed"
+' spec/cli-memory-lifecycle.schema.json >/dev/null
 
 jq -e \
     --slurpfile example spec/examples/cli-checkpoint.json \

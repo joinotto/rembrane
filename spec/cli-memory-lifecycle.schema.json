@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rembrane.dev/spec/cli-memory-lifecycle.schema.json",
+  "title": "Rembrane CLI memory lifecycle result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion"],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "memoryId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255,
+      "pattern": "^[\\u0021-\\u007E]+$"
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "kind": {
+      "const": "preference"
+    },
+    "status": {
+      "enum": ["confirmed", "deleted"]
+    },
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code"],
+      "properties": {
+        "code": {
+          "enum": ["correct_failed", "forget_failed"]
+        }
+      }
+    }
+  },
+  "oneOf": [
+    {
+      "required": ["memoryId", "version", "kind", "status"],
+      "not": {
+        "required": ["error"]
+      }
+    },
+    {
+      "required": ["error"],
+      "not": {
+        "anyOf": [
+          { "required": ["memoryId"] },
+          { "required": ["version"] },
+          { "required": ["kind"] },
+          { "required": ["status"] }
+        ]
+      }
+    }
+  ]
+}
