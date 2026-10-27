@@ -9,6 +9,16 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Fixed
 
+- Established-session MCP POSTs now carry a private registry-authorized
+  session identifier through borrowing, owned/shared, and direct/tenant Tower
+  dispatch. Header parsing alone cannot attach it; stateless requests reject
+  session headers, and SDK initialization remains sessionless.
+- Shared session dispatch also preserves the validated Host/Origin metadata.
+  Three new regressions cover downstream metadata, canonical workspace proof,
+  unknown/foreign/scope-substituted sessions, and sessionless initialization;
+  session IDs remain redacted from diagnostics. Actual SDK listener and
+  session-bound GET verification remain pending.
+
 - Remote session bindings now retain their original process-local deadline as
   well as the epoch expiry ceiling. Clock rollback or refreshed credentials
   cannot revive an elapsed session; expired sessions release registry capacity

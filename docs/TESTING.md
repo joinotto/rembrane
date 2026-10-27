@@ -355,6 +355,22 @@ propagation through each authorization path, and non-renewal under refresh.
 These remain in-process session tests. Session-bound GET and replay are not
 implemented, and actual SDK/session-manager behavior is still unverified.
 
+Established-session POST proofs retain a private `RemoteSessionId` in their
+protocol metadata only after successful registry authorization. HTTP header
+parsing alone leaves it absent. Borrowing Axum wrappers preserve this field
+when replacing transport-neutral metadata; owned/shared workers attach it
+after revalidation. Direct and tenant-selected Tower dispatchers reconstruct
+`Mcp-Session-Id` from this typed field, never by forwarding arbitrary input
+headers. Both retain the canonical workspace extension and omit bearer
+credentials. The shared path also retains its validated Host/Origin.
+
+Three regressions check these routes, unknown and foreign sessions, exact
+scope-ceiling substitution, stateless rejection, and sessionless
+initialization. Debug output reveals only session presence, not its value.
+Legacy caller-declared initialization remains a compatibility fixture, not
+the official SDK-generated initialization path; the new forwarding field is
+for established-session POSTs only. Actual SDK lifecycle tests remain required.
+
 Custom dispatcher implementations must enforce proof lifetime after their own
 waits and before execution; the ports document that obligation. The trusted
 epoch-second sample must be supplied correctly by the HTTP host. These checks

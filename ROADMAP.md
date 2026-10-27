@@ -569,6 +569,10 @@ are in [First Production Release Plan](docs/PRODUCTION_PLAN.md).
       - [x] Preserve the original monotonic lifetime in session bindings,
         reject refresh after expiry despite stale epoch time, prune elapsed
         bindings, and cap returned POST/DELETE proofs without changing claims.
+      - [x] Carry only registry-authorized session IDs through borrowing,
+        owned/shared POST and direct/tenant Tower dispatch; preserve validated
+        HTTP metadata, reject foreign/unknown/stateless session injection, and
+        keep initialization sessionless. Verify with in-process fixtures.
       - [ ] Add separately authorized session-bound GET dispatch and preserve
         validated session metadata through actual SDK requests; stateless GET
         support does not prove session-bound streaming or replay.

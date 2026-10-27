@@ -130,6 +130,7 @@ pub struct RemoteMcpProtocolHeaders {
     protocol_version: Option<String>,
     validated_host: Option<String>,
     validated_origin: Option<String>,
+    authorized_session_id: Option<RemoteSessionId>,
 }
 
 impl fmt::Debug for RemoteMcpProtocolHeaders {
@@ -146,6 +147,10 @@ impl fmt::Debug for RemoteMcpProtocolHeaders {
             .field(
                 "validated_origin",
                 &self.validated_origin.as_ref().map(|_| "[REDACTED]"),
+            )
+            .field(
+                "authorized_session_present",
+                &self.authorized_session_id.is_some(),
             )
             .finish()
     }
@@ -180,6 +185,13 @@ impl RemoteMcpProtocolHeaders {
         self.validated_origin.as_deref()
     }
 
+    /// Returns a session identifier only after registry authorization of an
+    /// established-session request. Parsing a header alone never sets this.
+    #[must_use]
+    pub fn authorized_session_id(&self) -> Option<&RemoteSessionId> {
+        self.authorized_session_id.as_ref()
+    }
+
     fn transport_neutral() -> Self {
         Self {
             content_type: "application/json".to_owned(),
@@ -187,6 +199,7 @@ impl RemoteMcpProtocolHeaders {
             protocol_version: None,
             validated_host: None,
             validated_origin: None,
+            authorized_session_id: None,
         }
     }
 }
@@ -1119,6 +1132,13 @@ where
                 ORIGIN,
                 protocol_headers.validated_origin(),
             )?;
+            insert_optional_validated_header(
+                request.headers_mut(),
+                MCP_SESSION_HEADER_NAME,
+                protocol_headers
+                    .authorized_session_id()
+                    .map(RemoteSessionId::as_str),
+            )?;
             request.extensions_mut().insert(access);
             request.extensions_mut().insert(invocation);
             call_current_service(service, request).await
@@ -1397,6 +1417,13 @@ where
                 request.headers_mut(),
                 ORIGIN,
                 protocol_headers.validated_origin(),
+            )?;
+            insert_optional_tenant_validated_header(
+                request.headers_mut(),
+                MCP_SESSION_HEADER_NAME,
+                protocol_headers
+                    .authorized_session_id()
+                    .map(RemoteSessionId::as_str),
             )?;
             request.extensions_mut().insert(access);
             request.extensions_mut().insert(invocation);
@@ -2046,6 +2073,7 @@ fn protocol_headers_from_axum(
         protocol_version: protocol_version.map(str::to_owned),
         validated_host: None,
         validated_origin: None,
+        authorized_session_id: None,
     })
 }
 
@@ -2228,6 +2256,8 @@ where
     protocol_headers.validated_origin = request.origin.map(str::to_owned);
     let mut authorized =
         gate.authorize_session_owned_body(authorization, request, body, now_epoch_seconds)?;
+    protocol_headers.authorized_session_id =
+        authorized.protocol_headers.authorized_session_id.take();
     authorized.protocol_headers = protocol_headers;
     Ok(authorized)
 }
@@ -2932,7 +2962,7 @@ where
     where
         Dispatcher: AuthorizedRemoteMcpDispatcher,
     {
-        let protocol_headers =
+        let mut protocol_headers =
             protocol_headers_from_axum(headers).map_err(RemoteMcpDispatchError::Authorization)?;
         let request =
             request_from_axum_headers(headers).map_err(RemoteMcpDispatchError::Authorization)?;
@@ -2970,6 +3000,9 @@ where
                     )
                 })?;
         }
+        protocol_headers.authorized_session_id = Some(session_id);
+        protocol_headers.validated_host = request.host.map(str::to_owned);
+        protocol_headers.validated_origin = request.origin.map(str::to_owned);
         AuthorizedRemoteMcpRequest {
             access,
             invocation,
@@ -3874,10 +3907,12 @@ impl RemoteMcpHttpGate {
             invocation.tool_name(),
             now_epoch_seconds,
         )?;
+        let mut protocol_headers = RemoteMcpProtocolHeaders::transport_neutral();
+        protocol_headers.authorized_session_id = Some(Self::session_id(request.session_id)?);
         Ok(AuthorizedRemoteMcpRequest {
             access,
             invocation,
-            protocol_headers: RemoteMcpProtocolHeaders::transport_neutral(),
+            protocol_headers,
             body,
         })
     }
@@ -4197,7 +4232,9 @@ mod tests {
         RemoteTokenVerifier,
     };
     use rembrane_config::{RemoteMcpConfig, SecretReference};
-    use rembrane_contracts::{RemoteAccessScope, RemoteSessionId, RemoteTokenClaims};
+    use rembrane_contracts::{
+        RemoteAccessScope, RemoteSessionId, RemoteTokenClaims, VerifiedRemoteAccess,
+    };
     use rembrane_domain::{ClientId, PrincipalId, WorkspaceId};
     use rembrane_oauth_introspection::{
         IntrospectionResponse, IntrospectionTokenVerifier, IntrospectionTransport,
@@ -5345,6 +5382,7 @@ mod tests {
             protocol_version: None,
             validated_host: Some("memory.example.test".to_owned()),
             validated_origin: None,
+            authorized_session_id: None,
         };
         let invocation = RemoteMcpInvocation {
             method: "initialize".to_owned(),
@@ -6339,6 +6377,7 @@ mod tests {
             protocol_version: Some("2025-03-26".to_owned()),
             validated_host: Some("private-memory.example.test".to_owned()),
             validated_origin: Some("https://private-agent.example.test".to_owned()),
+            authorized_session_id: Some(RemoteSessionId::new("private-session-id").unwrap()),
         };
         let event_stream = AuthorizedRemoteMcpEventStream {
             access: access.clone(),
@@ -9530,6 +9569,212 @@ mod tests {
             HeaderValue::from_str(id.as_str()).unwrap(),
         );
         headers
+    }
+
+    fn session_metadata_fixture() -> (
+        RemoteMcpAxumAuthorization<Verifier>,
+        RemoteSessionId,
+        HeaderMap,
+    ) {
+        let authorization = fixture_owned_authorization(4, &runtime_config(), Verifier).unwrap();
+        let id = RemoteSessionId::new("session_metadata_0123456789").unwrap();
+        let access = Verifier
+            .verify("workspace-one")
+            .unwrap()
+            .validate_connection(
+                "https://identity.example.test",
+                "https://memory.example.test/mcp",
+                1_000,
+            )
+            .unwrap();
+        authorization
+            .shared
+            .gate
+            .lock()
+            .unwrap()
+            .sessions
+            .establish(id.clone(), &access, 1_000)
+            .unwrap();
+        let headers = established_session_headers(&id);
+        (authorization, id, headers)
+    }
+
+    #[tokio::test]
+    async fn owned_and_shared_posts_forward_only_the_authorized_session_metadata() {
+        let (mut authorization, id, headers) = session_metadata_fixture();
+        let direct =
+            AuthorizedTowerMcpDispatcher::new(tower::service_fn(|request: Request<Body>| async {
+                Ok::<_, std::convert::Infallible>(request)
+            }));
+        let tenant = fixture_tenant_dispatcher(|_: &VerifiedRemoteAccess| {
+            Ok::<_, std::convert::Infallible>(tower::service_fn(|request: Request<Body>| async {
+                Ok::<_, std::convert::Infallible>(request)
+            }))
+        });
+        let owned = authorization
+            .authorize_and_dispatch_owned_session(&headers, tools_list_body(1), 1_000, &direct)
+            .await
+            .unwrap();
+        let shared = authorization
+            .shared
+            .authorize_and_dispatch_owned_session(&headers, tools_list_body(2), 1_000, &tenant)
+            .await
+            .unwrap();
+        for request in [owned, shared] {
+            assert_eq!(request.method(), Method::POST);
+            assert_eq!(request.headers()[MCP_SESSION_HEADER_NAME], id.as_str());
+            assert_eq!(request.headers()[HOST], "memory.example.test");
+            assert!(!request.headers().contains_key(AUTHORIZATION));
+            assert_eq!(
+                request
+                    .extensions()
+                    .get::<VerifiedRemoteAccess>()
+                    .unwrap()
+                    .workspace_id(),
+                &WorkspaceId::new("workspace_01"),
+            );
+        }
+        assert!(
+            super::protocol_headers_from_axum(&headers)
+                .unwrap()
+                .authorized_session_id()
+                .is_none(),
+            "parsing a header is not session authorization"
+        );
+    }
+
+    #[tokio::test]
+    async fn borrowing_session_paths_preserve_metadata_but_initialization_stays_sessionless() {
+        let (authorization, id, headers) = session_metadata_fixture();
+        let verifier = Verifier;
+        let authenticator = RemoteAccessAuthenticator::new(
+            &verifier,
+            "https://identity.example.test",
+            "https://memory.example.test/mcp",
+        );
+        let policy = RemoteHttpAuthorization::new(&authenticator, &[]);
+        let (neutral, borrowed, initialization) = {
+            let mut gate = authorization.shared.gate.lock().unwrap();
+            let neutral = gate
+                .authorize_session_owned_body(
+                    &policy,
+                    request_from_axum_headers(&headers).unwrap(),
+                    tools_list_body(1),
+                    1_000,
+                )
+                .unwrap();
+            let borrowed = authorize_axum_session_body(
+                &mut gate,
+                &policy,
+                &headers,
+                tools_list_body(2).as_slice(),
+                1_000,
+            )
+            .unwrap();
+            let initialization = gate
+                .authorize_sessionless_initialize_owned_body(
+                    &policy,
+                    RemoteMcpHttpRequest {
+                        session_id: None,
+                        ..request_from_axum_headers(&headers).unwrap()
+                    },
+                    initialize_body(),
+                    1_000,
+                )
+                .unwrap();
+            (neutral, borrowed, initialization)
+        };
+        assert_eq!(
+            neutral.protocol_headers().authorized_session_id(),
+            Some(&id)
+        );
+        assert_eq!(
+            borrowed.protocol_headers().authorized_session_id(),
+            Some(&id)
+        );
+        assert!(
+            initialization
+                .protocol_headers()
+                .authorized_session_id()
+                .is_none()
+        );
+        let dispatcher =
+            AuthorizedTowerMcpDispatcher::new(tower::service_fn(|request: Request<Body>| async {
+                Ok::<_, std::convert::Infallible>(request)
+            }));
+        for proof in [neutral, borrowed] {
+            let request = proof.dispatch_with(&dispatcher).await.unwrap();
+            assert_eq!(request.headers()[MCP_SESSION_HEADER_NAME], id.as_str());
+        }
+        assert!(
+            !initialization
+                .dispatch_with(&dispatcher)
+                .await
+                .unwrap()
+                .headers()
+                .contains_key(MCP_SESSION_HEADER_NAME)
+        );
+    }
+
+    #[tokio::test]
+    async fn substituted_or_unknown_session_headers_never_reach_downstream() {
+        let (authorization, _, mut headers) = session_metadata_fixture();
+        let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let observed = Arc::clone(&calls);
+        let dispatcher =
+            AuthorizedTowerMcpDispatcher::new(tower::service_fn(move |_: Request<Body>| {
+                observed.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                async { Ok::<_, std::convert::Infallible>(()) }
+            }));
+        for token in ["workspace-two", "workspace-one-no-graph"] {
+            headers.insert(
+                AUTHORIZATION,
+                HeaderValue::from_str(&format!("Bearer {token}")).unwrap(),
+            );
+            assert!(matches!(
+                authorization
+                    .shared
+                    .authorize_and_dispatch_owned_session(
+                        &headers,
+                        tools_list_body(1),
+                        1_000,
+                        &dispatcher,
+                    )
+                    .await,
+                Err(RemoteMcpDispatchError::Authorization(
+                    RemoteMcpHttpRejection { status: 403, .. }
+                ))
+            ));
+        }
+        headers.insert(
+            AUTHORIZATION,
+            HeaderValue::from_static("Bearer workspace-one"),
+        );
+        headers.insert(
+            MCP_SESSION_HEADER_NAME,
+            HeaderValue::from_static("session_unknown_0123456789"),
+        );
+        assert!(
+            authorization
+                .shared
+                .authorize_and_dispatch_owned_session(
+                    &headers,
+                    tools_list_body(1),
+                    1_000,
+                    &dispatcher,
+                )
+                .await
+                .is_err()
+        );
+        assert!(
+            authorization
+                .shared
+                .authorize_and_dispatch_owned(&headers, tools_list_body(1), 1_000, &dispatcher,)
+                .await
+                .is_err(),
+            "stateless requests cannot smuggle session identifiers"
+        );
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 0);
     }
 
     #[tokio::test]
