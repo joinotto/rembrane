@@ -236,6 +236,15 @@ another tenant, cancellation-safe worker/cache ownership, unrelated tenant
 progress during blocked construction, ready-plus-pending capacity, and
 single-flight construction with refreshed-token retention.
 
+Expiry pruning removes ready entries while locked, then destroys those
+services outside the global mutex. Tests prove warm/cold tenant progress
+and capacity reuse during blocked cleanup, an unpoisoned cache after cleanup
+panics, and preservation of pending constructor reservations during pruning.
+Cleanup panics still propagate to the caller; they are not converted into
+successful pruning. Active clones may retain a service after cache removal.
+Pruning is synchronous and may block in cleanup, so async callers must arrange
+blocking execution. These are library tests, not live provider shutdown proof.
+
 Direct synchronous factory/cache methods are lower-level APIs, not automatic
 offload boundaries. Embed them through the tenant-aware async dispatcher or
 provide caller-managed blocking execution. Real SDK listener integration,

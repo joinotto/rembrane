@@ -39,6 +39,10 @@ evidence and the strict readiness command.
   releases its global lock during construction, preserving single-flight
   initialization without serializing unrelated tenant lookups. Library tests
   cover panic/cancellation cleanup and overload, not a deployed SDK listener.
+- Expired tenant-service cleanup runs outside the global cache lock. The
+  remote adapter's 69 passing unit tests include blocked/panicking cleanup,
+  concurrent tenant progress, reclaimed capacity, and pending reservation
+  preservation. Live provider shutdown and load behavior remain unverified.
 - REST and MCP startup now check canonical metadata authority before
   initializing workspace keys or graph clients. Tests reject unknown,
   foreign, and inactive identities without provider calls. MCP also denies

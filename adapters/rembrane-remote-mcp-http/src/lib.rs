@@ -635,6 +635,10 @@ impl<Factory, Service> BoundedTenantTowerMcpServiceCache<Factory, Service> {
     /// The caller should use the same trusted clock supplied to remote token
     /// validation. A cached service's retention deadline only extends when an
     /// otherwise exact tenant and scope identity presents a later expiry.
+    /// Removal releases the cache lock before destroying retired services, so
+    /// their cleanup cannot block unrelated tenant lookups or poison that lock.
+    /// Pending constructions are not retired. This synchronous operation may
+    /// still block in service cleanup; async callers must use blocking workers.
     ///
     /// # Errors
     ///
@@ -648,11 +652,20 @@ impl<Factory, Service> BoundedTenantTowerMcpServiceCache<Factory, Service> {
             .state
             .lock()
             .map_err(|_| TenantServiceCacheError::LockUnavailable)?;
-        let previous = state.services.len();
-        state
+        let expired = state
             .services
-            .retain(|_, cached| cached.retain_until_epoch_seconds > now_epoch_seconds);
-        Ok(previous.saturating_sub(state.services.len()))
+            .iter()
+            .filter(|(_, cached)| cached.retain_until_epoch_seconds <= now_epoch_seconds)
+            .map(|(key, _)| key.clone())
+            .collect::<Vec<_>>();
+        let retired = expired
+            .into_iter()
+            .filter_map(|key| state.services.remove(&key))
+            .collect::<Vec<_>>();
+        let removed = retired.len();
+        drop(state);
+        drop(retired);
+        Ok(removed)
     }
 }
 
@@ -4285,6 +4298,22 @@ mod tests {
                 TenantServiceCacheError::CapacityExceeded
             )),
         ));
+        assert_eq!(
+            cache.prune_expired(2_000).expect("retire ready services"),
+            2
+        );
+        {
+            let state = cache.services.state.lock().expect("pending reservation");
+            assert_eq!(state.pending.len(), 1);
+            assert!(state.services.is_empty());
+        }
+        assert_eq!(
+            dispatcher
+                .create_service::<std::convert::Infallible>(&factory_access("workspace_04"))
+                .await
+                .expect("reclaimed ready capacity"),
+            "workspace_04"
+        );
         release.send(()).expect("release constructor");
         let result = timeout(Duration::from_secs(5), pending)
             .await
@@ -4292,7 +4321,7 @@ mod tests {
             .expect("worker task")
             .expect("tenant service");
         assert_eq!(result, "workspace_01");
-        assert_eq!(cache.len(), 3);
+        assert_eq!(cache.len(), 2);
     }
 
     #[tokio::test(flavor = "current_thread")]
@@ -6713,6 +6742,141 @@ mod tests {
         assert_eq!(cache.prune_expired(2_500).expect("prune cache"), 0);
         assert_eq!(cache.prune_expired(3_000).expect("prune cache"), 1);
         assert!(cache.is_empty());
+    }
+
+    #[test]
+    fn expired_service_cleanup_does_not_hold_the_cache_lock_or_capacity() {
+        use std::time::Duration;
+
+        struct BlockingCleanup {
+            started: std::sync::mpsc::Sender<()>,
+            release: Mutex<std::sync::mpsc::Receiver<()>>,
+        }
+        impl Drop for BlockingCleanup {
+            fn drop(&mut self) {
+                self.started.send(()).expect("cleanup started");
+                self.release
+                    .lock()
+                    .expect("release receiver")
+                    .recv_timeout(Duration::from_secs(5))
+                    .expect("bounded cleanup release");
+            }
+        }
+
+        let (started, cleanup_started) = std::sync::mpsc::channel();
+        let (release, receiver) = std::sync::mpsc::channel();
+        let receiver = Arc::new(Mutex::new(Some(receiver)));
+        let cache = BoundedTenantTowerMcpServiceCache::new(
+            2,
+            move |access: &rembrane_contracts::VerifiedRemoteAccess| {
+                let cleanup = if access.workspace_id().to_string() == "workspace_01" {
+                    Some(Arc::new(BlockingCleanup {
+                        started: started.clone(),
+                        release: Mutex::new(
+                            receiver
+                                .lock()
+                                .expect("receiver")
+                                .take()
+                                .expect("one build"),
+                        ),
+                    }))
+                } else {
+                    None
+                };
+                Ok::<_, std::convert::Infallible>((access.workspace_id().to_string(), cleanup))
+            },
+        )
+        .expect("cache");
+        let scopes = BTreeSet::from([RemoteAccessScope::ContextRead]);
+        drop(
+            cache
+                .create(&verified_access("workspace_01", 2_000, scopes.clone()))
+                .expect("expired"),
+        );
+        drop(
+            cache
+                .create(&verified_access("workspace_02", 3_000, scopes.clone()))
+                .expect("survivor"),
+        );
+        let pruning_cache = cache.clone();
+        let pruning = std::thread::spawn(move || pruning_cache.prune_expired(2_500));
+        cleanup_started
+            .recv_timeout(Duration::from_secs(5))
+            .expect("cleanup entered");
+        {
+            let state = cache
+                .services
+                .state
+                .try_lock()
+                .expect("cleanup releases global lock");
+            assert_eq!(state.services.len(), 1);
+            assert!(state.pending.is_empty());
+        }
+        assert_eq!(
+            cache
+                .create(&verified_access("workspace_02", 3_000, scopes.clone()))
+                .expect("warm lookup")
+                .0,
+            "workspace_02"
+        );
+        assert_eq!(
+            cache
+                .create(&verified_access("workspace_03", 3_000, scopes))
+                .expect("reclaimed slot")
+                .0,
+            "workspace_03"
+        );
+        release.send(()).expect("release cleanup");
+        assert_eq!(pruning.join().expect("pruning worker").expect("pruned"), 1);
+        assert_eq!(cache.len(), 2);
+    }
+
+    #[test]
+    fn panicking_expired_service_cleanup_does_not_poison_the_cache() {
+        struct PanickingCleanup;
+        impl Drop for PanickingCleanup {
+            fn drop(&mut self) {
+                panic!("fixture cleanup failure");
+            }
+        }
+        let cache = BoundedTenantTowerMcpServiceCache::new(
+            1,
+            |access: &rembrane_contracts::VerifiedRemoteAccess| {
+                Ok::<_, std::convert::Infallible>(
+                    (access.workspace_id().to_string() == "workspace_01")
+                        .then(|| Arc::new(PanickingCleanup)),
+                )
+            },
+        )
+        .expect("cache");
+        let scopes = BTreeSet::from([RemoteAccessScope::ContextRead]);
+        drop(
+            cache
+                .create(&verified_access("workspace_01", 2_000, scopes.clone()))
+                .expect("expired"),
+        );
+        let pruning_cache = cache.clone();
+        assert!(
+            std::thread::spawn(move || pruning_cache.prune_expired(2_000))
+                .join()
+                .is_err()
+        );
+        assert!(
+            cache
+                .services
+                .state
+                .lock()
+                .expect("unpoisoned cache")
+                .services
+                .is_empty()
+        );
+        assert!(
+            cache
+                .create(&verified_access("workspace_02", 3_000, scopes))
+                .expect("reclaimed capacity")
+                .is_none()
+        );
+        assert_eq!(cache.len(), 1);
     }
 
     #[test]

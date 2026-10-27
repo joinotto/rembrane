@@ -800,6 +800,9 @@ are in [First Production Release Plan](docs/PRODUCTION_PLAN.md).
             refresh reuses one service while retaining the latest expiry.
         - [x] Track the latest validated token expiry per exact tenant service
           and reclaim only entries whose authorization lifetime has ended.
+          - [x] Destroy retired services outside the global cache lock; prove
+            unrelated tenant progress and reclaimed capacity during blocked
+            cleanup, panic recovery, and preservation of pending reservations.
     - [x] Add a consuming Tower dispatcher that reconstructs only validated
       MCP protocol headers, strips the bearer credential at the OAuth boundary,
       and injects verified tenant access into request extensions for the

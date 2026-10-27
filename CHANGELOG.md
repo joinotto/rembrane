@@ -9,6 +9,11 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Fixed
 
+- Expired tenant services are now removed under the cache lock but destroyed
+  after releasing it. Slow or panicking cleanup cannot block unrelated tenant
+  lookups or poison the shared cache mutex; pending construction reservations
+  remain intact. Tests cover cleanup, reclaimed capacity, and panic recovery.
+
 - REST and MCP startup now authorize canonical connection metadata before
   initializing workspace keys, rotation providers, or graph clients. Unknown,
   foreign, and inactive identities cannot reach provider initialization.
