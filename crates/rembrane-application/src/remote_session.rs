@@ -1,6 +1,10 @@
 use std::collections::BTreeMap;
 use std::fmt;
-use std::sync::Arc;
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicBool, Ordering},
+};
+use std::time::Instant;
 
 use rembrane_contracts::{
     RemoteMcpRequestAuthorization, RemoteSessionBinding, RemoteSessionId, VerifiedRemoteAccess,
@@ -27,7 +31,94 @@ pub struct RemoteSessionRegistry {
 
 struct SessionRecord {
     binding: RemoteSessionBinding,
-    incarnation: Arc<()>,
+    incarnation: Arc<SessionIncarnation>,
+}
+
+struct SessionIncarnation {
+    registered: AtomicBool,
+    deadline: Mutex<Instant>,
+}
+
+impl SessionIncarnation {
+    fn constrain_deadline(&self, access: &VerifiedRemoteAccess) -> Result<(), ApplicationError> {
+        let mut deadline = self
+            .deadline
+            .lock()
+            .map_err(|_| ApplicationError::AccessDenied)?;
+        *deadline = (*deadline).min(access.validity_deadline());
+        Ok(())
+    }
+}
+
+impl Drop for SessionRecord {
+    fn drop(&mut self) {
+        self.incarnation.registered.store(false, Ordering::Release);
+    }
+}
+
+/// Request-bound, process-local evidence that the exact authorized session
+/// incarnation is still registered. This is not token introspection or a
+/// stream wakeup/revocation monitor.
+#[derive(Clone)]
+pub struct RemoteSessionDispatchGuard {
+    session_id: RemoteSessionId,
+    access: VerifiedRemoteAccess,
+    incarnation: Arc<SessionIncarnation>,
+}
+
+impl PartialEq for RemoteSessionDispatchGuard {
+    fn eq(&self, other: &Self) -> bool {
+        self.session_id == other.session_id
+            && self.access == other.access
+            && Arc::ptr_eq(&self.incarnation, &other.incarnation)
+    }
+}
+
+impl Eq for RemoteSessionDispatchGuard {}
+
+impl fmt::Debug for RemoteSessionDispatchGuard {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("RemoteSessionDispatchGuard(<redacted>)")
+    }
+}
+
+impl RemoteSessionDispatchGuard {
+    /// Rechecks the captured request/session, its original proof lifetime,
+    /// and the latest narrowed session deadline without locking the registry
+    /// or extending authority. Only the small per-incarnation deadline lock
+    /// is acquired; it never spans provider work or an await.
+    ///
+    /// Removal, expiry pruning, rollback, or registry destruction permanently
+    /// invalidates every clone. A same-ID/same-claims replacement cannot revive
+    /// this guard. Check immediately after waits and before initiating work.
+    ///
+    /// # Errors
+    ///
+    /// Returns opaque `AccessDenied` for removed, expired, or substituted
+    /// request/session authority.
+    pub fn ensure_current(
+        &self,
+        session_id: &RemoteSessionId,
+        access: &VerifiedRemoteAccess,
+    ) -> Result<(), ApplicationError> {
+        if self.session_id != *session_id
+            || self.access != *access
+            || self.access.ensure_current().is_err()
+            || access.ensure_current().is_err()
+            || !self.incarnation.registered.load(Ordering::Acquire)
+        {
+            return Err(ApplicationError::AccessDenied);
+        }
+        let deadline = self
+            .incarnation
+            .deadline
+            .lock()
+            .map_err(|_| ApplicationError::AccessDenied)?;
+        if Instant::now() >= *deadline || !self.incarnation.registered.load(Ordering::Acquire) {
+            return Err(ApplicationError::AccessDenied);
+        }
+        Ok(())
+    }
 }
 
 /// Opaque, process-local identity of one established binding. Holding the
@@ -36,7 +127,7 @@ struct SessionRecord {
 #[derive(Clone)]
 pub struct RemoteSessionMutationGuard {
     session_id: RemoteSessionId,
-    incarnation: Arc<()>,
+    incarnation: Arc<SessionIncarnation>,
 }
 
 impl fmt::Debug for RemoteSessionMutationGuard {
@@ -219,7 +310,10 @@ impl RemoteSessionRegistry {
         {
             return Err(ApplicationError::StorageUnavailable);
         }
-        let incarnation = Arc::new(());
+        let incarnation = Arc::new(SessionIncarnation {
+            registered: AtomicBool::new(true),
+            deadline: Mutex::new(access.validity_deadline()),
+        });
         let guard = RemoteSessionMutationGuard {
             session_id: session_id.clone(),
             incarnation: Arc::clone(&incarnation),
@@ -284,6 +378,31 @@ impl RemoteSessionRegistry {
             .ok_or(ApplicationError::AccessDenied)?;
         Ok(RemoteSessionMutationGuard {
             session_id: session_id.clone(),
+            incarnation: Arc::clone(&record.incarnation),
+        })
+    }
+
+    /// Revalidates, narrows, and captures one request before an asynchronous
+    /// dispatch wait. This must happen under the authorization/registry lock,
+    /// never by recapturing a same-ID replacement after the wait.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AccessDenied` for unknown, expired, or foreign authority.
+    pub fn capture_dispatch_guard(
+        &mut self,
+        session_id: &RemoteSessionId,
+        access: &mut VerifiedRemoteAccess,
+        now_epoch_seconds: u64,
+    ) -> Result<RemoteSessionDispatchGuard, ApplicationError> {
+        self.revalidate_access(session_id, access, now_epoch_seconds)?;
+        let record = self
+            .sessions
+            .get(session_id)
+            .ok_or(ApplicationError::AccessDenied)?;
+        Ok(RemoteSessionDispatchGuard {
+            session_id: session_id.clone(),
+            access: access.clone(),
             incarnation: Arc::clone(&record.incarnation),
         })
     }
@@ -586,12 +705,15 @@ impl RemoteSessionRegistry {
         access: &VerifiedRemoteAccess,
         now_epoch_seconds: u64,
     ) -> Result<(), ApplicationError> {
-        self.sessions
+        let record = self
+            .sessions
             .get_mut(session_id)
-            .ok_or(ApplicationError::AccessDenied)?
+            .ok_or(ApplicationError::AccessDenied)?;
+        record
             .binding
             .revalidate(access, now_epoch_seconds)
-            .map_err(|_| ApplicationError::AccessDenied)
+            .map_err(|_| ApplicationError::AccessDenied)?;
+        record.incarnation.constrain_deadline(access)
     }
 
     /// Revalidates and carries the original session lifetime into the proof
@@ -607,12 +729,15 @@ impl RemoteSessionRegistry {
         access: &mut VerifiedRemoteAccess,
         now_epoch_seconds: u64,
     ) -> Result<(), ApplicationError> {
-        self.sessions
+        let record = self
+            .sessions
             .get_mut(session_id)
-            .ok_or(ApplicationError::AccessDenied)?
+            .ok_or(ApplicationError::AccessDenied)?;
+        record
             .binding
             .revalidate_access(access, now_epoch_seconds)
-            .map_err(|_| ApplicationError::AccessDenied)
+            .map_err(|_| ApplicationError::AccessDenied)?;
+        record.incarnation.constrain_deadline(access)
     }
 
     /// Deletes a session only after its current authorization has been
@@ -924,6 +1049,143 @@ mod tests {
         assert_ne!(left, right);
         first.cancel_reservation(left).unwrap();
         second.cancel_reservation(right).unwrap();
+    }
+
+    #[test]
+    fn dispatch_guards_remain_revoked_after_same_id_and_same_claims_replacement() {
+        let mut registry = RemoteSessionRegistry::new(2).unwrap();
+        let id = RemoteSessionId::new("dispatch-guard-session").unwrap();
+        let mut proof = access("workspace_01", &[RemoteAccessScope::ContextRead]);
+        let mutation = registry
+            .establish_guarded(id.clone(), &proof, 1_000)
+            .unwrap();
+        let guard = registry
+            .capture_dispatch_guard(&id, &mut proof, 1_000)
+            .unwrap();
+        let clone = guard.clone();
+        assert_eq!(guard, clone);
+        guard.ensure_current(&id, &proof).unwrap();
+        assert!(
+            guard
+                .ensure_current(
+                    &RemoteSessionId::new("other-dispatch-session").unwrap(),
+                    &proof,
+                )
+                .is_err()
+        );
+        assert!(
+            guard
+                .ensure_current(
+                    &id,
+                    &access("workspace_02", &[RemoteAccessScope::ContextRead]),
+                )
+                .is_err()
+        );
+        registry.terminate(&id, &proof, 1_000).unwrap();
+        registry.establish(id.clone(), &proof, 1_000).unwrap();
+        let replacement = registry
+            .capture_dispatch_guard(&id, &mut proof, 1_000)
+            .unwrap();
+        assert_ne!(guard, replacement);
+        for revoked in [guard, clone] {
+            assert!(revoked.ensure_current(&id, &proof).is_err());
+            assert_eq!(
+                format!("{revoked:?}"),
+                "RemoteSessionDispatchGuard(<redacted>)"
+            );
+        }
+        replacement.ensure_current(&id, &proof).unwrap();
+        // Retaining mutation identity cannot keep a removed session alive.
+        assert!(
+            registry
+                .commit_termination(&mutation, &proof, 1_000)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn dispatch_guards_fail_after_pruning_rollback_and_registry_destruction() {
+        for removal in ["prune", "rollback", "drop"] {
+            let mut registry = RemoteSessionRegistry::new(1).unwrap();
+            let id = RemoteSessionId::new("dispatch-removal-session").unwrap();
+            let mut proof = access("workspace_01", &[RemoteAccessScope::ContextRead]);
+            let mutation = registry
+                .establish_guarded(id.clone(), &proof, 1_000)
+                .unwrap();
+            let guard = registry
+                .capture_dispatch_guard(&id, &mut proof, 1_000)
+                .unwrap();
+            match removal {
+                "prune" => registry.prune_expired(proof.expires_at_epoch_seconds()),
+                "rollback" => registry.rollback_establishment(&mutation, &proof).unwrap(),
+                "drop" => {}
+                _ => unreachable!(),
+            }
+            if removal != "drop" {
+                assert!(guard.ensure_current(&id, &proof).is_err(), "{removal}");
+            }
+            drop(registry);
+            assert!(guard.ensure_current(&id, &proof).is_err(), "{removal}");
+        }
+    }
+
+    #[test]
+    fn dispatch_guards_cannot_renew_the_captured_request_deadline() {
+        let mut registry = RemoteSessionRegistry::new(1).unwrap();
+        let id = RemoteSessionId::new("dispatch-expiry-session").unwrap();
+        let renewed = access("workspace_01", &[RemoteAccessScope::ContextRead]);
+        let mut short = renewed.clone();
+        short
+            .constrain_validity(
+                std::time::Instant::now()
+                    .checked_sub(std::time::Duration::from_millis(800))
+                    .unwrap(),
+                short.expires_at_epoch_seconds() - 1,
+            )
+            .unwrap();
+        registry.establish(id.clone(), &short, 1_000).unwrap();
+        let guard = registry
+            .capture_dispatch_guard(&id, &mut short, 1_000)
+            .unwrap();
+        guard.ensure_current(&id, &renewed).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(250));
+        assert!(renewed.ensure_current().is_ok());
+        assert!(guard.ensure_current(&id, &renewed).is_err());
+    }
+
+    #[test]
+    fn later_session_revalidation_narrows_every_outstanding_dispatch_guard() {
+        for carry_access in [false, true] {
+            let mut registry = RemoteSessionRegistry::new(1).unwrap();
+            let id = RemoteSessionId::new("dispatch-shared-ceiling").unwrap();
+            let mut original = access("workspace_01", &[RemoteAccessScope::ContextRead]);
+            registry.establish(id.clone(), &original, 1_000).unwrap();
+            let guard = registry
+                .capture_dispatch_guard(&id, &mut original, 1_000)
+                .unwrap();
+            let mut shorter = original.clone();
+            shorter
+                .constrain_validity(
+                    std::time::Instant::now()
+                        .checked_sub(std::time::Duration::from_millis(800))
+                        .unwrap(),
+                    shorter.expires_at_epoch_seconds() - 1,
+                )
+                .unwrap();
+            if carry_access {
+                registry
+                    .revalidate_access(&id, &mut shorter, 1_000)
+                    .unwrap();
+            } else {
+                registry.revalidate(&id, &shorter, 1_000).unwrap();
+            }
+            guard.ensure_current(&id, &original).unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(250));
+            assert!(original.ensure_current().is_ok());
+            // No prune and no new capture is needed to observe the reduced ceiling.
+            assert_eq!(registry.len(), 1);
+            assert!(guard.ensure_current(&id, &original).is_err());
+        }
     }
 
     #[test]

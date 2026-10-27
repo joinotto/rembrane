@@ -87,8 +87,8 @@ pub use remote_access::{
     RemoteTokenVerificationError, RemoteTokenVerifier,
 };
 pub use remote_session::{
-    RemoteSessionHttpError, RemoteSessionMutationGuard, RemoteSessionRegistry,
-    RemoteSessionReservation,
+    RemoteSessionDispatchGuard, RemoteSessionHttpError, RemoteSessionMutationGuard,
+    RemoteSessionRegistry, RemoteSessionReservation,
 };
 pub use resolve_context::{ResolveContextCommand, ResolveContextService};
 pub use retention::{
