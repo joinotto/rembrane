@@ -9,6 +9,14 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Fixed
 
+- PostgreSQL scoped fixture output now checks both the workspace-binding
+  witness returned by `set_config` and the exact tenant count row, instead
+  of expecting only the counts. Seven isolated result cases reject a missing
+  or foreign binding, altered counts, and extra rows; these are runner checks,
+  not SQL/RLS proof. The hosted database job explicitly installs its client,
+  covered by the CI prerequisite contract. Corrected live execution remains
+  pending.
+
 - Both Graphiti test runners now prefer the active Python environment over
   an unrelated versioned interpreter on PATH, avoiding the published CI
   failure after dependencies were installed into Python 3.11. An explicit

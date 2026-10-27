@@ -2202,6 +2202,10 @@ No stable release until:
     explicit validated interpreter; cover selection and refusal with seven
     isolated cases rather than assuming installed packages are shared.
   - [ ] Rerun the corrected Graphiti HTTP job on hosted CI.
+  - [x] Retain the PostgreSQL scoped query's workspace-binding witness in
+    its exact output assertion; add seven isolated output/refusal cases and
+    explicitly install the database fixture client in CI.
+  - [ ] Verify the corrected scoped-query assertion against live PostgreSQL.
 - [x] Tenant-isolation tests cover every implemented adapter and transport
   read path.
 - [x] Threat model and recovery model are published.

@@ -47,6 +47,7 @@ node ./scripts/test-memory-provider-discovery.mjs
 ./scripts/test-key-provider-compatibility-lock.sh
 ./scripts/check-postgres-rls.sh
 node ./scripts/test-postgres-fixture-guard.mjs
+node ./scripts/test-postgres-fixture-results.mjs
 node ./scripts/test-postgres-runtime-gate.mjs
 node ./scripts/test-streamable-http-runtime-gate.mjs
 ./scripts/check-production-readiness-contract.sh

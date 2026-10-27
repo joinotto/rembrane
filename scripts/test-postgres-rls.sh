@@ -429,7 +429,11 @@ SELECT
 ROLLBACK;
 SQL
 )
-test "$result" = "1|1|1|1|1|1|1|1|1|1|1|1|1|2|1|1|1|1|1"
+test "$result" = "workspace_01
+1|1|1|1|1|1|1|1|1|1|1|1|1|2|1|1|1|1|1" || {
+    echo "PostgreSQL scoped fixture result did not match its binding and count proof" >&2
+    exit 1
+}
 
 if fixture_psql >/dev/null 2>&1 <<'SQL'
 BEGIN;

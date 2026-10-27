@@ -15,12 +15,13 @@ const requirements = {
   rust: ["ripgrep", "jq", "sqlite3", "ruby", "openssl", "curl", "python3"],
   "memory-provider-http": ["ripgrep", "jq", "openssl", "curl"],
   "kotlin-sdk": ["ripgrep"],
+  "postgres-rls": ["postgresql-client"],
 };
 
 function validate(name, steps) {
   const testIndex = steps.findIndex((step) =>
     typeof step.run === "string" &&
-    /(?:check-local-alpha\.sh|test-memory-provider-http-runner\.mjs|test-kotlin-sdk\.sh)/.test(step.run),
+    /(?:check-local-alpha\.sh|test-memory-provider-http-runner\.mjs|test-kotlin-sdk\.sh|test-postgres-rls\.sh)/.test(step.run),
   );
   assert.ok(testIndex >= 0, `${name}: executable tests required`);
   const beforeTests = steps.slice(0, testIndex);
@@ -43,7 +44,7 @@ for (const name of Object.keys(requirements)) {
   const withoutInstall = jobs[name].steps.filter((step) =>
     !step.run?.includes("sudo apt-get install"),
   );
-  assert.throws(() => validate(name, withoutInstall), /install ripgrep/);
+  assert.throws(() => validate(name, withoutInstall), /install /);
   if (name !== "kotlin-sdk") {
     const withoutNode = jobs[name].steps.filter((step) =>
       step.uses !== "actions/setup-node@v4",
@@ -51,4 +52,4 @@ for (const name of Object.keys(requirements)) {
     assert.throws(() => validate(name, withoutNode), /select Node 22/);
   }
 }
-console.log("CI prerequisite declarations and seven refusal cases passed");
+console.log("CI prerequisite declarations and nine refusal cases passed");

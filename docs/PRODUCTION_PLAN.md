@@ -23,6 +23,12 @@ evidence and the strict readiness command.
   successful installation into Python 3.11. Both runners now prefer the
   active Python environment, with an explicit validated override and seven
   isolated selection tests. Corrected hosted HTTP execution remains pending.
+- The PostgreSQL runner's scoped assertion now retains the workspace-binding
+  row returned by its SQL query as well as the count matrix; seven isolated
+  exact-output cases cover acceptance/refusal without executing SQL. CI also
+  explicitly installs its PostgreSQL client. The published database job
+  failed after migrations, but its older revision is not a corrected live
+  proof or proof that this assertion was its only failure.
 - A read-only hosted CI audit found the latest published Windows DPAPI job
   failing on null trailing-script arguments. The current bridge/fixture now
   separates fixed PowerShell command text from per-child metadata and stdin
