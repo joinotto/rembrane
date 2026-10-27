@@ -65,6 +65,23 @@ foreign tenant routing, stale versions, and repeated confirmation must fail
 without modifying canonical memory, evidence, or audit events. The CLI
 lifecycle suite additionally rejects confirmation of a deleted observation.
 
+## PostgreSQL fixture safety
+
+```sh
+node scripts/test-postgres-fixture-guard.mjs
+```
+
+This uses a fake `psql` client to verify fail-closed admission and credential
+redaction, and deliberately stops at the first migration. It never proves live
+SQL execution, tenant isolation, or PostgreSQL repository behavior.
+
+For the real RLS suite, follow the private libpq service setup in
+[Production testing](PRODUCTION_TESTING.md#safe-postgresql-fixture-setup).
+It requires a fresh isolated disposable instance, an explicitly named
+`rembrane_test_` database, and explicit fixture authorization. Application
+database URLs are not test authorization. The runner no longer drops/reset
+existing state and leaves test resources for inspection.
+
 ## Startup authorization before keys and providers
 
 ```sh

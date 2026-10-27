@@ -9,6 +9,15 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Fixed
 
+- PostgreSQL RLS fixtures no longer drop tables, schemas, or roles from a
+  supplied application URL. They require an explicitly authorized fresh
+  disposable database, a private caller-owned libpq service file, and a
+  read-only exact-target/empty-state probe before migrations.
+- Fixture commands disable user startup files and password prompts, avoid
+  credential-bearing process arguments, and redact failed command output.
+  CI selects a dedicated disposable database. Twenty-eight fake-client cases
+  verify refusal and admission; live SQL/RLS verification remains required.
+
 - Stateful Tower initialization now retains a private handle to the exact
   selected service for compensation. Cache expiry or replacement cannot
   redirect late-failure cleanup to a newly constructed tenant service.

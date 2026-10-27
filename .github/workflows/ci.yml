@@ -131,6 +131,7 @@ jobs:
         image: postgres:17-alpine
         env:
           POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: rembrane_test_rls
         ports:
           - 5432:5432
         options: >-
@@ -140,9 +141,23 @@ jobs:
           --health-retries 10
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Create private disposable fixture service
+        run: |
+          umask 077
+          printf '%s\n' '[rembrane_fixture]' 'host=127.0.0.1' 'port=5432' \
+            'user=postgres' 'password=postgres' 'dbname=rembrane_test_rls' \
+            'connect_timeout=10' > "$RUNNER_TEMP/rembrane-fixture.conf"
       - run: ./scripts/test-postgres-rls.sh
         env:
-          REMBRANE_POSTGRES_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+          REMBRANE_POSTGRES_TEST_SERVICE_FILE: ${{ runner.temp }}/rembrane-fixture.conf
+          REMBRANE_POSTGRES_TEST_DATABASE: rembrane_test_rls
+          REMBRANE_POSTGRES_TEST_CONFIRM: disposable-empty-database
+      - name: Remove private fixture profile
+        if: always()
+        run: rm -f "$RUNNER_TEMP/rembrane-fixture.conf"
 
   container:
     runs-on: ubuntu-latest

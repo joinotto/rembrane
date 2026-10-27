@@ -874,6 +874,11 @@ are in [First Production Release Plan](docs/PRODUCTION_PLAN.md).
   - [x] Cover every currently implemented PostgreSQL tenant-facade point and
     collection read with a mismatched workspace before pool access.
 - [ ] Provide the hosted PostgreSQL adapter with row-level security.
+  - [x] Remove destructive fixture resets; require explicit disposable-database
+    authorization, private libpq service configuration, and a read-only empty
+    target/role check before migrations, with executable fail-closed guard tests.
+  - [ ] Execute the hardened fixture runner against live PostgreSQL in CI/staging;
+    fake-client guard tests do not prove SQL execution or RLS behavior.
   - [x] Add deny-by-default forced RLS policy generation for every canonical
     `workspace_id` table plus explicit workspace and share-proposal policies.
   - [x] Add the canonical encrypted PostgreSQL base schema and isolate

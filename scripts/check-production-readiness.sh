@@ -99,8 +99,16 @@ if ! command -v psql >/dev/null 2>&1; then
     record_missing "PostgreSQL client"
     postgres_ready=0
 fi
-if [ -z "${REMBRANE_POSTGRES_URL:-}" ]; then
-    record_missing "REMBRANE_POSTGRES_URL"
+if [ -z "${REMBRANE_POSTGRES_TEST_SERVICE_FILE:-}" ]; then
+    record_missing "REMBRANE_POSTGRES_TEST_SERVICE_FILE"
+    postgres_ready=0
+fi
+if [ -z "${REMBRANE_POSTGRES_TEST_DATABASE:-}" ]; then
+    record_missing "REMBRANE_POSTGRES_TEST_DATABASE"
+    postgres_ready=0
+fi
+if [ "${REMBRANE_POSTGRES_TEST_CONFIRM:-}" != "disposable-empty-database" ]; then
+    record_missing "PostgreSQL disposable fixture authorization"
     postgres_ready=0
 fi
 if [ "$postgres_ready" = "1" ]; then

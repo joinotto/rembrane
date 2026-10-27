@@ -3,7 +3,9 @@
 Run the complete release-candidate gate with:
 
 ```sh
-REMBRANE_POSTGRES_URL=postgresql://... \
+REMBRANE_POSTGRES_TEST_SERVICE_FILE=/secure/rembrane-fixture.conf \
+REMBRANE_POSTGRES_TEST_DATABASE=rembrane_test_release \
+REMBRANE_POSTGRES_TEST_CONFIRM=disposable-empty-database \
 REMBRANE_SECURITY_REVIEW_BUNDLE=/secure/review-bundle \
 REMBRANE_SECURITY_REVIEW_PUBLIC_KEY=/secure/reviewer-public.pem \
 REMBRANE_CUSTOMER_KMS_EVIDENCE_DIRECTORY=/secure/kms-provider-evidence \
@@ -25,7 +27,7 @@ against `spec/production-readiness.schema.json`; `schemaVersion` is currently
 still exits non-zero when any required gate is unavailable.
 
 Strict mode requires dependency resolution, Rust and Postman tests, a live
-PostgreSQL database dedicated to the destructive RLS fixture, and a working
+fresh disposable PostgreSQL database dedicated to the RLS fixture, and a working
 Docker daemon. The HTTP suites require permission to bind an ephemeral
 loopback socket. It also verifies the independently signed security-review
 bundle and exact AWS/Azure/GCP customer-KMS evidence set. It fails rather than
@@ -42,10 +44,51 @@ signature valid under the separately supplied maintainer trust anchor; an
 
 `available` (or `--available`) mode runs every usable gate and reports each
 missing prerequisite separately. It distinguishes Cargo dependency resolution,
-Postman, loopback binding, the PostgreSQL client and URL, and the Docker CLI
+Postman, loopback binding, the PostgreSQL client, private fixture service
+profile and explicit disposable-database authorization, and the Docker CLI
 and daemon. Restricted sandboxes therefore identify the exact unavailable
 capability instead of hiding it behind one grouped suite label. Available mode
 is suitable during offline development but is not production approval.
+
+## Safe PostgreSQL fixture setup
+
+Never point this test at an application database or a shared production cluster.
+Use an isolated disposable PostgreSQL instance under exclusive operator control,
+with a newly created database named `rembrane_test_<lowercase_suffix>`. The suite
+creates cluster-wide test roles and intentionally leaves its fixture state in
+place for inspection. Use a fresh instance for the next run; cleanup is the
+operator's responsibility, not an automatic drop/reset of existing resources.
+
+Supply a caller-owned regular libpq service file using an absolute path and
+permissions `0600` (or `0400`). Symlinks and non-private files are rejected.
+Keep the profile under exclusive control throughout the run. Example structure
+(replace placeholders privately; never commit real credentials):
+
+```ini
+[rembrane_fixture]
+host=127.0.0.1
+port=5432
+user=<disposable-instance-administrator>
+password=<disposable-instance-password>
+dbname=rembrane_test_release
+connect_timeout=10
+```
+
+The runner uses libpq's service configuration, not the application's
+`REMBRANE_POSTGRES_URL`. Credentials are not passed in process arguments; this
+is local plaintext configuration, not encrypted secret storage. Host/account
+security and production TLS policy remain operator responsibilities. Node 22
+and `psql` are required. User `psql` startup files and password prompts are
+disabled; failed command output is redacted.
+
+Before any migration, a read-only probe must match the exact expected database,
+find no user relations/functions/types, no additional user schemas, event
+triggers, large objects, foreign servers, publications, additional extensions
+(other than stock `plpgsql`), or pre-existing fixture role. Any mismatch fails
+without mutation. This prevents
+accidental reuse; it cannot defeat concurrent administrators changing the
+target after the probe. The guard's fake-client tests are not a live SQL/RLS
+proof; the updated PostgreSQL CI job and staging suite must still execute.
 
 Platform credentials and real WhatsApp/Apple integration accounts remain
 human or external-system release gates and cannot be self-certified by this

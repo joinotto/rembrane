@@ -1,59 +1,115 @@
 #!/bin/sh
 set -eu
 
-: "${REMBRANE_POSTGRES_URL:?REMBRANE_POSTGRES_URL is required}"
+if [ "${REMBRANE_POSTGRES_TEST_CONFIRM:-}" != "disposable-empty-database" ]; then
+    echo "PostgreSQL fixtures require explicit disposable-empty-database authorization" >&2
+    exit 2
+fi
+test_postgres_database=${REMBRANE_POSTGRES_TEST_DATABASE:-}
+case "$test_postgres_database" in
+    rembrane_test_*) ;;
+    *)
+        echo "PostgreSQL fixtures require a dedicated rembrane_test_ database name" >&2
+        exit 2
+        ;;
+esac
+test_postgres_suffix=${test_postgres_database#rembrane_test_}
+case "$test_postgres_suffix" in
+    ""|*[!a-z0-9_]*)
+        echo "PostgreSQL fixture database name must have a portable lowercase suffix" >&2
+        exit 2
+        ;;
+esac
+if [ "${#test_postgres_database}" -gt 63 ]; then
+    echo "PostgreSQL fixture database name is too long" >&2
+    exit 2
+fi
+test_postgres_service_file=${REMBRANE_POSTGRES_TEST_SERVICE_FILE:-}
+if [ -z "$test_postgres_service_file" ]; then
+    echo "PostgreSQL fixtures require a private libpq service file" >&2
+    exit 2
+fi
+node scripts/check-postgres-fixture-service.mjs "$test_postgres_service_file" || exit 2
 
-psql "$REMBRANE_POSTGRES_URL" -v ON_ERROR_STOP=1 <<'SQL'
-DROP SCHEMA IF EXISTS rembrane CASCADE;
-DROP TABLE IF EXISTS
-    channel_inbox,
-    channel_sender_bindings,
-    channel_event_receipts,
-    graph_projection_outbox,
-    knowledge_edges,
-    knowledge_nodes,
-    disclosed_booking_research,
-    travel_disclosure_receipts,
-    booking_research,
-    trips,
-    checkpoint_disclosures,
-    workspace_legal_holds,
-    workspace_retention_policies,
-    administrative_audit_events,
-    workspace_key_rotation_recipients,
-    workspace_key_rotation_receipts,
-    workspace_key_rotations,
-    member_scope_grants,
-    workspace_invitations,
-    memory_share_proposals,
-    projection_outbox,
-    disclosed_memories,
-    disclosure_receipts,
-    activity_checkpoints,
-    memory_evidence,
-    memories,
-    workspace_events,
-    memberships,
-    workspaces,
-    principals
-CASCADE;
-DROP ROLE IF EXISTS rembrane_runtime_test;
-SQL
+fixture_psql() {
+    # Credentials belong in the caller-owned libpq service file, not argv.
+    # Never load ~/.psqlrc or prompt for a password. Redact driver errors.
+    if fixture_psql_output=$(
+        PGSERVICEFILE="$test_postgres_service_file" PGSERVICE=rembrane_fixture \
+            psql -X -w -v ON_ERROR_STOP=1 "$@" 2>/dev/null
+    )
+    then
+        printf '%s\n' "$fixture_psql_output"
+        unset fixture_psql_output
+        return 0
+    else
+        unset fixture_psql_output
+        echo "PostgreSQL fixture command failed" >&2
+        return 1
+    fi
+}
 
-psql "$REMBRANE_POSTGRES_URL" -v ON_ERROR_STOP=1 \
+test_postgres_proof=$(
+    fixture_psql -qAt -c "
+BEGIN TRANSACTION READ ONLY;
+SET LOCAL search_path = pg_catalog;
+SELECT pg_catalog.current_database(),
+    CASE WHEN NOT EXISTS (
+        SELECT 1 FROM pg_catalog.pg_class AS c
+        JOIN pg_catalog.pg_namespace AS n ON n.oid = c.relnamespace
+        WHERE pg_catalog.left(n.nspname, 3) <> 'pg_'
+          AND n.nspname <> 'information_schema'
+    ) AND NOT EXISTS (
+        SELECT 1 FROM pg_catalog.pg_namespace
+        WHERE pg_catalog.left(nspname, 3) <> 'pg_'
+          AND nspname NOT IN ('public', 'information_schema')
+    ) AND NOT EXISTS (
+        SELECT 1 FROM pg_catalog.pg_type AS t
+        JOIN pg_catalog.pg_namespace AS n ON n.oid = t.typnamespace
+        WHERE pg_catalog.left(n.nspname, 3) <> 'pg_'
+          AND n.nspname <> 'information_schema'
+    ) AND NOT EXISTS (
+        SELECT 1 FROM pg_catalog.pg_proc AS p
+        JOIN pg_catalog.pg_namespace AS n ON n.oid = p.pronamespace
+        WHERE pg_catalog.left(n.nspname, 3) <> 'pg_'
+          AND n.nspname <> 'information_schema'
+    ) AND NOT EXISTS (
+        SELECT 1 FROM pg_catalog.pg_event_trigger
+    ) AND NOT EXISTS (
+        SELECT 1 FROM pg_catalog.pg_largeobject_metadata
+    ) AND NOT EXISTS (
+        SELECT 1 FROM pg_catalog.pg_foreign_server
+    ) AND NOT EXISTS (
+        SELECT 1 FROM pg_catalog.pg_publication
+    ) AND NOT EXISTS (
+        SELECT 1 FROM pg_catalog.pg_extension WHERE extname <> 'plpgsql'
+    ) THEN 'empty' ELSE 'occupied' END,
+    CASE WHEN NOT EXISTS (
+        SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = 'rembrane_runtime_test'
+    ) THEN 'role-clear' ELSE 'role-present' END;
+ROLLBACK;
+"
+) || exit 1
+if [ "$test_postgres_proof" != "$test_postgres_database|empty|role-clear" ]; then
+    echo "PostgreSQL fixture target is not the named fresh database or fixture role already exists" >&2
+    exit 1
+fi
+unset test_postgres_proof test_postgres_suffix
+
+fixture_psql \
     -f migrations/postgres/0001_canonical_schema.sql
-psql "$REMBRANE_POSTGRES_URL" -v ON_ERROR_STOP=1 \
+fixture_psql \
     -f migrations/postgres/0002_workspace_administration.sql
-psql "$REMBRANE_POSTGRES_URL" -v ON_ERROR_STOP=1 \
+fixture_psql \
     -f migrations/postgres/0003_travel_continuity.sql
-psql "$REMBRANE_POSTGRES_URL" -v ON_ERROR_STOP=1 \
+fixture_psql \
     -f migrations/postgres/0004_knowledge_graph.sql
-psql "$REMBRANE_POSTGRES_URL" -v ON_ERROR_STOP=1 \
+fixture_psql \
     -f migrations/postgres/0005_channel_continuity.sql
-psql "$REMBRANE_POSTGRES_URL" -v ON_ERROR_STOP=1 \
+fixture_psql \
     -f migrations/postgres/0006_graph_disclosures.sql
 
-psql "$REMBRANE_POSTGRES_URL" -v ON_ERROR_STOP=1 <<'SQL'
+fixture_psql <<'SQL'
 CREATE ROLE rembrane_runtime_test NOLOGIN NOSUPERUSER NOBYPASSRLS;
 GRANT USAGE ON SCHEMA public TO rembrane_runtime_test;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public
@@ -268,19 +324,19 @@ INSERT INTO channel_inbox (
     );
 SQL
 
-psql "$REMBRANE_POSTGRES_URL" -v ON_ERROR_STOP=1 \
+fixture_psql \
     -f migrations/postgres/9999_tenant_rls.sql
 
 runtime_guard=adapters/rembrane-store-postgres/src/runtime-role.sql
 runtime_proof=$(
-    psql "$REMBRANE_POSTGRES_URL" -v ON_ERROR_STOP=1 -qAt \
+    fixture_psql -qAt \
         -c 'SET SESSION AUTHORIZATION rembrane_runtime_test;' \
         -f "$runtime_guard"
 )
 test "$runtime_proof" = "restricted-runtime"
 
 owner_proof=$(
-    psql "$REMBRANE_POSTGRES_URL" -v ON_ERROR_STOP=1 -qAt \
+    fixture_psql -qAt \
         -c 'BEGIN; GRANT CREATE ON SCHEMA public TO rembrane_runtime_test;
             ALTER TABLE public.memories OWNER TO rembrane_runtime_test;
             SET SESSION AUTHORIZATION rembrane_runtime_test;' \
@@ -290,7 +346,7 @@ owner_proof=$(
 test -z "$owner_proof"
 
 bypass_proof=$(
-    psql "$REMBRANE_POSTGRES_URL" -v ON_ERROR_STOP=1 -qAt \
+    fixture_psql -qAt \
         -c 'BEGIN; ALTER ROLE rembrane_runtime_test BYPASSRLS;
             SET SESSION AUTHORIZATION rembrane_runtime_test;' \
         -f "$runtime_guard" \
@@ -299,7 +355,7 @@ bypass_proof=$(
 test -z "$bypass_proof"
 
 unforced_proof=$(
-    psql "$REMBRANE_POSTGRES_URL" -v ON_ERROR_STOP=1 -qAt \
+    fixture_psql -qAt \
         -c 'BEGIN; ALTER TABLE public.memories NO FORCE ROW LEVEL SECURITY;
             SET SESSION AUTHORIZATION rembrane_runtime_test;' \
         -f "$runtime_guard" \
@@ -308,7 +364,7 @@ unforced_proof=$(
 test -z "$unforced_proof"
 
 shadowed_proof=$(
-    psql "$REMBRANE_POSTGRES_URL" -v ON_ERROR_STOP=1 -qAt \
+    fixture_psql -qAt \
         -c 'BEGIN; SET SESSION AUTHORIZATION rembrane_runtime_test;
             CREATE TEMP TABLE memories (workspace_id text);' \
         -f "$runtime_guard" \
@@ -317,7 +373,7 @@ shadowed_proof=$(
 test -z "$shadowed_proof"
 
 view_proof=$(
-    psql "$REMBRANE_POSTGRES_URL" -v ON_ERROR_STOP=1 -qAt \
+    fixture_psql -qAt \
         -c 'BEGIN; CREATE VIEW public.runtime_guard_unsupported_view
                 AS SELECT workspace_id FROM public.memories;
             SET SESSION AUTHORIZATION rembrane_runtime_test;' \
@@ -327,7 +383,7 @@ view_proof=$(
 test -z "$view_proof"
 
 unprotected_tables=$(
-    psql "$REMBRANE_POSTGRES_URL" -v ON_ERROR_STOP=1 -qAt <<'SQL'
+    fixture_psql -qAt <<'SQL'
 SELECT count(*)
 FROM information_schema.columns AS columns
 JOIN pg_catalog.pg_class AS relation
@@ -346,7 +402,7 @@ SQL
 test "$unprotected_tables" = "0"
 
 result=$(
-    psql "$REMBRANE_POSTGRES_URL" -v ON_ERROR_STOP=1 -qAt <<'SQL'
+    fixture_psql -qAt <<'SQL'
 BEGIN;
 SET LOCAL ROLE rembrane_runtime_test;
 SELECT set_config('rembrane.workspace_id', 'workspace_01', true);
@@ -375,7 +431,7 @@ SQL
 )
 test "$result" = "1|1|1|1|1|1|1|1|1|1|1|1|1|2|1|1|1|1|1"
 
-if psql "$REMBRANE_POSTGRES_URL" -v ON_ERROR_STOP=1 >/dev/null 2>&1 <<'SQL'
+if fixture_psql >/dev/null 2>&1 <<'SQL'
 BEGIN;
 SET LOCAL ROLE rembrane_runtime_test;
 SELECT set_config('rembrane.workspace_id', 'workspace_01', true);
@@ -396,7 +452,7 @@ then
 fi
 
 unscoped=$(
-    psql "$REMBRANE_POSTGRES_URL" -v ON_ERROR_STOP=1 -qAt <<'SQL'
+    fixture_psql -qAt <<'SQL'
 BEGIN;
 SET LOCAL ROLE rembrane_runtime_test;
 SELECT
@@ -425,7 +481,7 @@ SQL
 test "$unscoped" = "0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0"
 
 pooled_connection_result=$(
-    psql "$REMBRANE_POSTGRES_URL" -v ON_ERROR_STOP=1 -qAt <<'SQL'
+    fixture_psql -qAt <<'SQL'
 SET ROLE rembrane_runtime_test;
 BEGIN;
 SELECT set_config('rembrane.workspace_id', 'workspace_01', true);

@@ -71,6 +71,11 @@ evidence and the strict readiness command.
 - The PostgreSQL boundary includes a fail-closed runtime-authority guard with
   74 passing adapter unit tests. Its new shared SQL fixtures still require
   live PostgreSQL execution; the concrete database driver remains missing.
+- PostgreSQL fixture safety now has 28 passing fake-client guard cases. The
+  runner no longer resets existing resources: it requires a private libpq
+  service profile, explicit disposable-database authorization, and a read-only
+  exact-target/empty-state check. Updated live CI/staging execution is still
+  required; guard tests are not database or RLS proof.
 - The full test run cannot complete in the current environment: the REST
   process is denied permission to bind `127.0.0.1:18787`.
 - Direct Git commits are available again. Verified slices are recorded
