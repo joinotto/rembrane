@@ -9,6 +9,15 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Fixed
 
+- Anonymous MCP initialization reservations now bind to their exact slot
+  identity, not just a counter that restarts in every registry. Foreign commit
+  or cancellation cannot consume another registry's capacity; reservation
+  equality also distinguishes identical counters from different instances.
+- Three new application regressions cover foreign commit/cancel and token
+  equality. Existing bounded admission, cancellation, and initialization
+  lifecycle tests remain passing. Reservations are still move-only and
+  process-local, with redacted diagnostics.
+
 - Delayed MCP DELETE completion and failed compatibility-initialization
   rollback now require the exact pre-dispatch binding incarnation. Replacing a
   session with the same ID, claims, expiry, and even the same proof cannot let

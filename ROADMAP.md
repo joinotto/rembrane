@@ -759,6 +759,9 @@ are in [First Production Release Plan](docs/PRODUCTION_PLAN.md).
   - [x] Add a bounded session registry with URL-safe identifiers,
     duplicate/capacity controls, per-request revalidation, and authenticated
     deletion, reclaiming expired capacity before accepting new sessions.
+    - [x] Bind anonymous initialization reservations to their exact pending
+      slot identity; reject foreign commit/cancel despite matching counters
+      without changing another registry's ledger.
     - [x] Separate termination authorization from deletion commit so an HTTP
       transport can retain the local binding until downstream confirmation.
   - [ ] Serve Streamable HTTP through the official Rust MCP SDK.

@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::fmt;
 use std::sync::Arc;
 
@@ -20,7 +20,7 @@ pub enum RemoteSessionHttpError {
 
 pub struct RemoteSessionRegistry {
     sessions: BTreeMap<RemoteSessionId, SessionRecord>,
-    pending_initializations: BTreeSet<u64>,
+    pending_initializations: BTreeMap<u64, Arc<()>>,
     next_reservation_id: u64,
     maximum_sessions: usize,
 }
@@ -45,10 +45,18 @@ impl fmt::Debug for RemoteSessionMutationGuard {
     }
 }
 
-#[derive(Eq, PartialEq)]
 pub struct RemoteSessionReservation {
     id: u64,
+    incarnation: Arc<()>,
 }
+
+impl PartialEq for RemoteSessionReservation {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id && Arc::ptr_eq(&self.incarnation, &other.incarnation)
+    }
+}
+
+impl Eq for RemoteSessionReservation {}
 
 impl fmt::Debug for RemoteSessionReservation {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -70,7 +78,7 @@ impl RemoteSessionRegistry {
         }
         Ok(Self {
             sessions: BTreeMap::new(),
-            pending_initializations: BTreeSet::new(),
+            pending_initializations: BTreeMap::new(),
             next_reservation_id: 1,
             maximum_sessions,
         })
@@ -80,7 +88,9 @@ impl RemoteSessionRegistry {
     /// session identifier exists.
     ///
     /// The move-only reservation must be consumed by
-    /// [`Self::commit_reservation`] or [`Self::cancel_reservation`].
+    /// [`Self::commit_reservation`] or [`Self::cancel_reservation`]. It owns an
+    /// opaque identity for this exact slot; a numeric counter is not portable
+    /// authority across registries.
     ///
     /// # Errors
     ///
@@ -105,10 +115,13 @@ impl RemoteSessionRegistry {
             .next_reservation_id
             .checked_add(1)
             .ok_or(ApplicationError::StorageUnavailable)?;
-        if !self.pending_initializations.insert(id) {
+        if self.pending_initializations.contains_key(&id) {
             return Err(ApplicationError::StorageUnavailable);
         }
-        Ok(RemoteSessionReservation { id })
+        let incarnation = Arc::new(());
+        self.pending_initializations
+            .insert(id, Arc::clone(&incarnation));
+        Ok(RemoteSessionReservation { id, incarnation })
     }
 
     /// Commits an SDK-generated session into its previously reserved slot.
@@ -129,10 +142,10 @@ impl RemoteSessionRegistry {
         access: &VerifiedRemoteAccess,
         now_epoch_seconds: u64,
     ) -> Result<(), ApplicationError> {
-        let RemoteSessionReservation { id } = reservation;
-        if !self.pending_initializations.remove(&id) {
+        if !self.matches_reservation(&reservation) {
             return Err(ApplicationError::AccessDenied);
         }
+        self.pending_initializations.remove(&reservation.id);
         self.establish(session_id, access, now_epoch_seconds)
     }
 
@@ -147,12 +160,18 @@ impl RemoteSessionRegistry {
         &mut self,
         reservation: RemoteSessionReservation,
     ) -> Result<(), ApplicationError> {
-        let RemoteSessionReservation { id } = reservation;
-        if self.pending_initializations.remove(&id) {
+        if self.matches_reservation(&reservation) {
+            self.pending_initializations.remove(&reservation.id);
             Ok(())
         } else {
             Err(ApplicationError::AccessDenied)
         }
+    }
+
+    fn matches_reservation(&self, reservation: &RemoteSessionReservation) -> bool {
+        self.pending_initializations
+            .get(&reservation.id)
+            .is_some_and(|incarnation| Arc::ptr_eq(incarnation, &reservation.incarnation))
     }
 
     /// Establishes a session bound to one verified authorization context.
@@ -850,6 +869,61 @@ mod tests {
                 .expect_err("scope substitution must fail"),
             ApplicationError::AccessDenied
         );
+    }
+
+    #[test]
+    fn foreign_reservation_cannot_cancel_another_registry_slot() {
+        let mut first = RemoteSessionRegistry::new(1).unwrap();
+        let mut second = RemoteSessionRegistry::new(1).unwrap();
+        let foreign = first.reserve_initialization(1_000).unwrap();
+        let local = second.reserve_initialization(1_000).unwrap();
+        assert_eq!(
+            foreign.id, local.id,
+            "numeric counters deliberately collide"
+        );
+        assert_eq!(
+            second.cancel_reservation(foreign),
+            Err(ApplicationError::AccessDenied),
+        );
+        assert_eq!(first.pending_initializations(), 1);
+        assert_eq!(second.pending_initializations(), 1);
+        second.cancel_reservation(local).unwrap();
+        assert_eq!(second.pending_initializations(), 0);
+    }
+
+    #[test]
+    fn foreign_reservation_cannot_commit_using_another_registry_slot() {
+        let mut first = RemoteSessionRegistry::new(1).unwrap();
+        let mut second = RemoteSessionRegistry::new(1).unwrap();
+        let foreign = first.reserve_initialization(1_000).unwrap();
+        let local = second.reserve_initialization(1_000).unwrap();
+        assert_eq!(foreign.id, local.id);
+        let session = RemoteSessionId::new("session_0123456789abcdef").unwrap();
+        let access = access("workspace_01", &[RemoteAccessScope::ContextRead]);
+        assert_eq!(
+            second.commit_reservation(foreign, session.clone(), &access, 1_000),
+            Err(ApplicationError::AccessDenied),
+        );
+        assert!(second.is_empty());
+        assert_eq!(first.pending_initializations(), 1);
+        assert_eq!(second.pending_initializations(), 1);
+        second
+            .commit_reservation(local, session, &access, 1_000)
+            .unwrap();
+        assert_eq!(second.pending_initializations(), 0);
+        assert_eq!(second.len(), 1);
+    }
+
+    #[test]
+    fn distinct_registry_reservations_with_equal_counters_are_not_equal() {
+        let mut first = RemoteSessionRegistry::new(1).unwrap();
+        let mut second = RemoteSessionRegistry::new(1).unwrap();
+        let left = first.reserve_initialization(1_000).unwrap();
+        let right = second.reserve_initialization(1_000).unwrap();
+        assert_eq!(left.id, right.id);
+        assert_ne!(left, right);
+        first.cancel_reservation(left).unwrap();
+        second.cancel_reservation(right).unwrap();
     }
 
     #[test]

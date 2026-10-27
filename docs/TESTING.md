@@ -361,6 +361,22 @@ external-store consistency. They are not serialized or reusable across process
 restarts. A real listener/session store needs its own verified incarnation,
 cancellation, and revocation behavior.
 
+Anonymous initialization reservations similarly retain a unique slot identity,
+not only a per-registry counter. Commit and cancellation check both before
+changing the pending-capacity ledger. Equality compares slot identity as well
+as the counter; diagnostics still redact both. Tokens remain move-only and
+process-local.
+
+Three application regressions cover foreign commit/cancel with deliberately
+matching counters and cross-instance token equality. The foreign operations
+previously returned success; they now deny and preserve both registries'
+capacity. As before, an owned commit consumes its reservation even when
+session establishment subsequently fails. Passing a token to the wrong registry
+consumes the input token but changes neither ledger; callers must retain correct
+ownership, and this rejection is not cross-registry cleanup or recovery.
+Existing shared initialization cancellation/admission fixtures still pass;
+live SDK cancellation and provider cleanup remain unverified.
+
 Session bindings also retain the original process-local deadline, independently
 of their epoch expiry ceiling. Refresh can shorten but never renew that deadline.
 `is_expired` and registry pruning enforce both clocks, so a stale or rolled-back

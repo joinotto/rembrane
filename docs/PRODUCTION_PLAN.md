@@ -86,6 +86,12 @@ evidence and the strict readiness command.
   completion denies it. Three registry regressions cover exact-proof reuse,
   foreign instances, pruning, and repeated completion. This is local registry
   protection, not live SDK cancellation or external-store consistency evidence.
+- Anonymous initialization reservations now carry an exact slot identity.
+  Two reproductions showed foreign commit/cancel incorrectly consuming a
+  different registry's matching counter; both now deny without changing either
+  ledger. A third regression distinguishes token equality across instances.
+  All 65 application tests and existing remote admission/cancellation fixtures
+  pass. This is local capacity isolation, not live SDK resource-cleanup evidence.
 - A new response-body guard stops delivery at the earlier original proof/
   controller deadline or explicit sticky revocation. Fourteen new Axum body
   tests cover idle wakeups, per-claim binding, tenant separation, frame/trailer
