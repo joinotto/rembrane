@@ -2194,6 +2194,10 @@ No stable release until:
 - [x] Fail static checks on risky CI triggers, write-all permissions,
   self-hosted runners, mutable action branches, download-and-execute pipes,
   unexpected write-capable workflows, or common committed token formats.
+  - [x] Declare shell-test prerequisites and Node 22 in affected hosted jobs;
+    require malformed-discovery negative tests to reach the provider and
+    report the intended rejection instead of accepting missing-tool failures.
+  - [ ] Verify these fixes on the corrected hosted CI revision.
 - [x] Tenant-isolation tests cover every implemented adapter and transport
   read path.
 - [x] Threat model and recovery model are published.

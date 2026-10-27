@@ -50,6 +50,7 @@ const workspaces = new Map();
 const idempotency = new Map();
 let nextMemory = 1;
 let discoveryRequests = 0;
+let malformedDiscovery = true;
 
 function workspaceState(workspace) {
   let state = workspaces.get(workspace);
@@ -220,7 +221,7 @@ const server = http.createServer(async (request, response) => {
             maximumSyncBatchItems: 100,
           },
           operations,
-          ...(discoveryRequests <= 2 ? { unexpected: true } : {}),
+          ...(malformedDiscovery ? { unexpected: true } : {}),
         },
         request,
       );
@@ -443,6 +444,7 @@ const invalidDiscoveryStatus = await new Promise((resolve) =>
 assert.notEqual(invalidDiscoveryStatus, 0);
 assert.match(invalidDiscoveryStderr, /provider discovery is not conformance-compatible/);
 assert.doesNotMatch(invalidDiscoveryStderr, /does-not-exist|secret reference/);
+assert.equal(discoveryRequests, 1, "Node negative test must reach discovery");
 
 const shellScript = fileURLToPath(
   new URL("./test-memory-provider-http.sh", import.meta.url),
@@ -469,11 +471,21 @@ const invalidShellDiscoveryStatus = await new Promise((resolve) =>
   invalidShellDiscoveryChild.on("close", resolve),
 );
 assert.notEqual(invalidShellDiscoveryStatus, 0);
+assert.equal(
+  discoveryRequests,
+  2,
+  `shell negative test must reach discovery: ${invalidShellDiscoveryStderr}`,
+);
+assert.match(
+  invalidShellDiscoveryStderr,
+  /provider discovery is not conformance-compatible/,
+);
 assert.doesNotMatch(
   invalidShellDiscoveryStderr,
   /bearer tokens must be non-empty|tokens must represent distinct connections/,
 );
 
+malformedDiscovery = false;
 const child = spawn(process.execPath, [script, "mock-runner"], {
   env: {
     ...process.env,

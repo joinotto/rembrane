@@ -277,10 +277,13 @@ trap cleanup EXIT HUP INT TERM
 
 status=$(call "" GET /.well-known/ai-memory discovery)
 test "$status" = 200
-jq -e \
+if ! jq -e \
     --argjson requiredScopes "$required_actor_scopes" \
     -f "$repository_root/scripts/memory-provider-discovery.jq" \
-    "$response" >/dev/null
+    "$response" >/dev/null; then
+    echo "provider discovery is not conformance-compatible" >&2
+    exit 1
+fi
 for token in "$primary_token" "$other_token" "$readonly_token"; do
     if [ -z "$token" ] ||
         ! printf '%s' "$token" | rg '^[A-Za-z0-9._~+/=-]+$' >/dev/null

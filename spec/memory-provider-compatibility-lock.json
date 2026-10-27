@@ -96,7 +96,7 @@
     },
     {
       "path": "scripts/test-memory-provider-http.sh",
-      "sha256": "2c09c46839eafebf908077f39041ad8b0b8b87784e672822610444f7dd787303"
+      "sha256": "cb9948ecc7f6f5814b787c6e7ff74a4f33a5096b5c0a5c53c76eed5c32e56fbf"
     },
     {
       "path": "scripts/verify-memory-provider-sync-result.sh",

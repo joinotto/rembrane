@@ -25,12 +25,26 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install static test prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes ripgrep jq sqlite3 ruby openssl curl python3
       - run: ./scripts/check-local-alpha.sh --static
 
   rust:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install workspace test prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes ripgrep jq sqlite3 ruby openssl curl python3
       - uses: dtolnay/rust-toolchain@1.88.0
         with:
           components: clippy,rustfmt
@@ -99,6 +113,13 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install provider runner prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes ripgrep jq openssl curl
       - uses: dtolnay/rust-toolchain@1.88.0
         with:
           components: clippy
@@ -117,6 +138,10 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+      - name: Install SDK contract prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes ripgrep
       - name: Require the runner Kotlin toolchain
         run: |
           command -v kotlinc

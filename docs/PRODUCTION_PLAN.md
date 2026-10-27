@@ -14,6 +14,11 @@ evidence and the strict readiness command.
   SQLite, and PostgreSQL RLS inventory checks pass.
 - Rust workspace tests, formatting, and warnings-as-errors Clippy pass.
   The latest CLI input-hardening changes pass all 68 CLI unit tests.
+- Published CI also exposed undeclared shell-tool prerequisites. Affected
+  jobs now install their tools explicitly and use Node 22; malformed-provider
+  negative tests require discovery contact and the intended refusal rather
+  than accepting an unrelated setup failure. Corrected hosted execution is
+  still required.
 - A read-only hosted CI audit found the latest published Windows DPAPI job
   failing on null trailing-script arguments. The current bridge/fixture now
   separates fixed PowerShell command text from per-child metadata and stdin
@@ -349,8 +354,9 @@ explicitly excluded, not marketed as automatic universal compatibility.
 
 ## Timing
 
-The current engineering work is bounded response ownership, followed by actual
-SDK/SQL runtime integration as soon as dependency resolution is available.
+The current engineering work is repairing published CI failures and verifying
+bounded response ownership, followed by actual SDK/SQL runtime integration as
+soon as dependency resolution is available.
 The latest isolated Cargo probe on 2026-10-27 still fails to resolve
 `index.crates.io`; this prevents adding the missing official transport
 dependencies here. PostgreSQL tooling and live staging evidence also remain

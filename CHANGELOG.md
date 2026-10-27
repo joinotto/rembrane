@@ -9,6 +9,17 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Fixed
 
+- Hosted CI shell-test jobs now install their required tools explicitly,
+  including ripgrep, and JavaScript runners select Node 22. The provider
+  runner's malformed-discovery tests now require an actual discovery request
+  and the exact rejection diagnostic; missing tools can no longer masquerade
+  as successful negative coverage. Fixture failure selection is explicit,
+  rather than depending on a request count. Corrected hosted execution
+  remains pending. The shell runner compatibility lock is updated for the
+  diagnostic-only change; accepted protocol data and validation rules are
+  unchanged. A static contract test covers prerequisite ordering and seven
+  missing-setup refusal cases.
+
 - Windows DPAPI now passes reference metadata through per-child environment
   overrides instead of appending it after PowerShell's string `-Command`.
   The published Windows CI failure showed null `$args`; a new cross-platform
