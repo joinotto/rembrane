@@ -76,6 +76,11 @@ evidence and the strict readiness command.
   service profile, explicit disposable-database authorization, and a read-only
   exact-target/empty-state check. Updated live CI/staging execution is still
   required; guard tests are not database or RLS proof.
+- The concrete PostgreSQL runtime gate no longer accepts manifest/source
+  regex scaffolding. It requires resolved normal dependencies, compilation
+  of the enabled integration target, and separate live execution of the five
+  documented pool/repository tests. Its 37 fake-Cargo cases verify refusal
+  and admission only. The real checker still fails because the driver is absent.
 - The full test run cannot complete in the current environment: the REST
   process is denied permission to bind `127.0.0.1:18787`.
 - Direct Git commits are available again. Verified slices are recorded

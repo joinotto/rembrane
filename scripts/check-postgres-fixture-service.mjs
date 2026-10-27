@@ -22,7 +22,11 @@ try {
     throw Error();
   }
 } catch {
-  console.error("PostgreSQL fixture service must be a private caller-owned regular file");
+  console.error(
+    process.argv[3] === "runtime-url"
+      ? "PostgreSQL runtime URL must be a private caller-owned regular file"
+      : "PostgreSQL fixture service must be a private caller-owned regular file",
+  );
   process.exitCode = 2;
 } finally {
   if (descriptor !== undefined) closeSync(descriptor);

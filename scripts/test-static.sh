@@ -45,6 +45,7 @@ node ./scripts/test-memory-provider-discovery.mjs
 ./scripts/test-key-provider-compatibility-lock.sh
 ./scripts/check-postgres-rls.sh
 node ./scripts/test-postgres-fixture-guard.mjs
+node ./scripts/test-postgres-runtime-gate.mjs
 ./scripts/check-production-readiness-contract.sh
 ./scripts/verify-provider-registry.sh
 ./scripts/test-provider-registry-validation.sh
@@ -127,7 +128,9 @@ for deployment_file in \
     scripts/test-postgres-rls.sh \
     scripts/check-postgres-fixture-service.mjs \
     scripts/test-postgres-fixture-guard.mjs \
+    scripts/test-postgres-runtime-gate.mjs \
     scripts/fixtures/postgres-fixture-psql.mjs \
+    scripts/fixtures/postgres-runtime-cargo.mjs \
     scripts/check-production-readiness.sh \
     scripts/check-production-readiness-contract.sh \
     scripts/verify-provider-registry.sh \

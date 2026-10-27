@@ -82,6 +82,18 @@ It requires a fresh isolated disposable instance, an explicitly named
 database URLs are not test authorization. The runner no longer drops/reset
 existing state and leaves test resources for inspection.
 
+The runtime gate has separate `--build` and `--live` modes; strict release
+readiness requires the live concrete-driver matrix as well as SQL fixtures.
+Run its fake-Cargo regression tests with:
+
+```sh
+node scripts/test-postgres-runtime-gate.mjs
+```
+
+These tests verify gate decisions and diagnostic redaction. They do not compile
+the missing driver or constitute live database proof. See the
+[runtime gate requirements](PRODUCTION_TESTING.md#concrete-postgresql-runtime-gate).
+
 ## Startup authorization before keys and providers
 
 ```sh

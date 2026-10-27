@@ -9,6 +9,17 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Fixed
 
+- PostgreSQL runtime readiness now checks resolved normal Cargo dependencies
+  and compiles the exact enabled integration target instead of accepting
+  dependency/struct regex matches. Strict readiness separately requires a
+  live five-test pool/repository matrix with explicit disposable authorization,
+  private runtime URL configuration, and credential-redacted diagnostics.
+- The live runtime gate rejects zero-test, ignored, multi-pass, and failed
+  execution, even when the command exits successfully. Thirty-seven fake-Cargo
+  cases cover metadata/build/test failure and valid admission. The actual
+  database driver and live matrix remain unimplemented; the real gate still
+  fails closed.
+
 - PostgreSQL RLS fixtures no longer drop tables, schemas, or roles from a
   supplied application URL. They require an explicitly authorized fresh
   disposable database, a private caller-owned libpq service file, and a

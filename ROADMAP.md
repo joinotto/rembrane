@@ -879,6 +879,12 @@ are in [First Production Release Plan](docs/PRODUCTION_PLAN.md).
     target/role check before migrations, with executable fail-closed guard tests.
   - [ ] Execute the hardened fixture runner against live PostgreSQL in CI/staging;
     fake-client guard tests do not prove SQL execution or RLS behavior.
+  - [x] Replace source-regex runtime readiness with resolved Cargo dependency
+    checks, compilation of an enabled integration target, and a separate live
+    five-test matrix that rejects filtered/ignored/failed execution and redacts
+    diagnostics. Verify gate refusal/admission with fake-Cargo regression tests.
+  - [ ] Implement and execute that concrete-driver live integration matrix;
+    checker fixtures do not establish pool/repository behavior.
   - [x] Add deny-by-default forced RLS policy generation for every canonical
     `workspace_id` table plus explicit workspace and share-proposal policies.
   - [x] Add the canonical encrypted PostgreSQL base schema and isolate

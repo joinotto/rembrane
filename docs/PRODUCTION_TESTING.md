@@ -4,6 +4,7 @@ Run the complete release-candidate gate with:
 
 ```sh
 REMBRANE_POSTGRES_TEST_SERVICE_FILE=/secure/rembrane-fixture.conf \
+REMBRANE_POSTGRES_RUNTIME_URL_FILE=/secure/rembrane-runtime-url \
 REMBRANE_POSTGRES_TEST_DATABASE=rembrane_test_release \
 REMBRANE_POSTGRES_TEST_CONFIRM=disposable-empty-database \
 REMBRANE_SECURITY_REVIEW_BUNDLE=/secure/review-bundle \
@@ -89,6 +90,56 @@ without mutation. This prevents
 accidental reuse; it cannot defeat concurrent administrators changing the
 target after the probe. The guard's fake-client tests are not a live SQL/RLS
 proof; the updated PostgreSQL CI job and staging suite must still execute.
+
+## Concrete PostgreSQL runtime gate
+
+The live `psql` RLS suite is separate from the Rust runtime driver proof.
+Neither a dependency name nor a public pool struct establishes a working
+repository. The checker has two explicit modes:
+
+```sh
+./scripts/check-postgres-runtime-adapter.sh --build
+./scripts/check-postgres-runtime-adapter.sh --live
+```
+
+Build mode inspects locked offline Cargo metadata for a resolved normal driver
+dependency and an enabled `postgres_runtime` integration target, then compiles
+that exact target. It does not claim database connectivity. Live mode additionally
+requires disposable-database authorization and private administrator/runtime
+configuration. Strict readiness requires both stages, not build mode alone.
+
+`REMBRANE_POSTGRES_RUNTIME_URL_FILE` must be a separate private caller-owned
+regular file containing the restricted runtime connection URL. It is not a
+libpq service file. The integration suite must resolve it through the existing
+`SecretReference::file` / `resolve_postgres_connection` boundary, respecting
+the declared transport policy. The administrator's libpq service profile stays
+in `REMBRANE_POSTGRES_TEST_SERVICE_FILE`. Runtime requests must never borrow
+administrator credentials. Both configurations are plaintext local secrets,
+not commit-worthy examples.
+
+The required root-level integration tests in `postgres_runtime` are:
+
+| Exact test name | Required live behavior |
+| --- | --- |
+| `runtime_pool_two_tenant_lifecycle` | Real pool/repository encrypted lifecycle for two tenants; deny cross-tenant access. |
+| `runtime_pool_connection_reset_after_rollback_and_error` | Reuse real pooled connections without leaking tenant settings after success, rollback, or error. |
+| `runtime_pool_rejects_unsafe_authority` | Reject unsafe actual server roles/authority before tenant data access. |
+| `runtime_pool_atomicity_and_cancellation` | Prove atomic commit/rollback and safe reuse after cancellation/abandoned operations. |
+| `runtime_pool_redacts_driver_errors` | Exercise real driver failures without leaking credentials, SQL parameters, or tenant data through application errors. |
+
+Run against the explicitly named isolated fixture database. Each test must
+verify the actual database before mutation, check live server authority, and
+fail when prerequisites are missing. An early successful return, a mock
+connection, or ignored-only execution is not acceptable live evidence.
+The checker executes each exact test with ignored tests enabled, demands exactly
+one pass and zero ignored/failed tests, and redacts captured diagnostics.
+Maintainer review and independent security review must verify that the test
+bodies genuinely cover the matrix; execution counts alone cannot detect a
+no-op or fabricated test implementation.
+
+The current repository has no concrete driver or this live integration target.
+The gate remains failing intentionally. Its 37 fake-Cargo regression cases
+verify gate behavior, not Rust compilation or PostgreSQL behavior.
 
 Platform credentials and real WhatsApp/Apple integration accounts remain
 human or external-system release gates and cannot be self-certified by this

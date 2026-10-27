@@ -116,6 +116,8 @@ if [ "$postgres_ready" = "1" ]; then
 fi
 if ! ./scripts/check-postgres-runtime-adapter.sh >/dev/null 2>&1; then
     record_missing "concrete Rust PostgreSQL runtime adapter"
+elif ! ./scripts/check-postgres-runtime-adapter.sh --live >/dev/null 2>&1; then
+    record_missing "live Rust PostgreSQL runtime integration"
 fi
 
 docker_ready=1
