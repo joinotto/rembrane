@@ -573,9 +573,13 @@ are in [First Production Release Plan](docs/PRODUCTION_PLAN.md).
         owned/shared POST and direct/tenant Tower dispatch; preserve validated
         HTTP metadata, reject foreign/unknown/stateless session injection, and
         keep initialization sessionless. Verify with in-process fixtures.
-      - [ ] Add separately authorized session-bound GET dispatch and preserve
-        validated session metadata through actual SDK requests; stateless GET
-        support does not prove session-bound streaming or replay.
+      - [x] Add separately authorized session-bound GET for owned/shared and
+        borrowing APIs; preserve session, canonical tenant, validated HTTP
+        metadata, and original deadline through direct/tenant Tower dispatch.
+        Deny replay explicitly and verify factory/readiness expiry with fixtures.
+      - [ ] Verify session-bound GET metadata, expiry, and revocation through
+        the actual SDK listener/session manager. Stateless GET and in-process
+        Tower fixtures do not prove live session streaming or replay isolation.
       - [x] Add an Axum/Tokio response-body guard with non-renewable proof
         deadlines, claim-bound sticky revocation, idle-stream wakeups, frame/
         trailer post-poll checks, opaque errors, and provider/monitor cleanup;

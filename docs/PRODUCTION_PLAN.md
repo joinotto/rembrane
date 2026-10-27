@@ -45,7 +45,7 @@ evidence and the strict readiness command.
   initialization without serializing unrelated tenant lookups. Library tests
   cover panic/cancellation cleanup and overload, not a deployed SDK listener.
 - Expired tenant-service cleanup runs outside the global cache lock. The
-  remote adapter's 96 passing unit tests include blocked/panicking cleanup,
+  remote adapter's 104 passing unit tests include blocked/panicking cleanup,
   concurrent tenant progress, reclaimed capacity, and pending reservation
   preservation. Live provider shutdown and load behavior remain unverified.
 - REST and MCP startup now check canonical metadata authority before
@@ -61,13 +61,20 @@ evidence and the strict readiness command.
 - Session bindings now preserve their own non-renewable monotonic deadline.
   Registry tests exercise real expiry and capacity recovery under stale epoch
   time; contract and worker tests prove returned POST/DELETE proofs retain the
-  session ceiling without changing signed claims. Session-bound GET is still
-  unsupported, and actual SDK metadata/streaming behavior still needs proof.
+  session ceiling without changing signed claims. Actual SDK metadata/streaming
+  behavior still needs proof.
 - Established-session POST dispatch now retains the registry-authorized
   session identifier and validated HTTP metadata in direct and tenant-selected
   Tower requests. Borrowing and owned/shared fixtures verify it, deny session
   substitution, and keep initialization sessionless. This does not establish
   actual SDK session-manager or listener behavior.
+- Session-bound GET now has a separate consuming authorization port and
+  owned/shared bounded-worker entrypoints. Direct/tenant Tower fixtures retain
+  its exact session, original deadline, and HTTP metadata; tests deny unknown
+  sessions and identity/scope substitution, verify unlocked dispatch, and
+  reject execution after readiness/factory waits exceed that deadline.
+  Both GET modes reject replay explicitly. Actual SDK response delivery and
+  live revocation remain unwired and unverified.
 - A new response-body guard stops delivery at the earlier original proof/
   controller deadline or explicit sticky revocation. Fourteen new Axum body
   tests cover idle wakeups, per-claim binding, tenant separation, frame/trailer
@@ -116,10 +123,9 @@ conformance, a deployed PostgreSQL proof, or production release approval.
 
 ## Immediate execution queue
 
-1. Finish the remote MCP session boundary: add separately authorized
-   session-bound GET after the verified POST metadata fix. Reject unsupported
-   replay rather than implying that replay isolation is already verified.
-   Resolve and lock the official MCP
+1. Wire the verified remote MCP session/transport boundary into the actual
+   official SDK listener. Retain explicit replay rejection until isolation
+   is verified. Resolve and lock the official MCP
    transport dependencies, then wire the actual remote service and stream
    revocation authorities behind that boundary. Do not enable an unbuildable
    feature or count scaffolding as a supported integration.

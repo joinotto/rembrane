@@ -12,10 +12,15 @@
 //! Prefer the owned/shared service entrypoints for HTTP routing.
 
 mod response_guard;
+mod session_stream;
 
 pub use response_guard::{
     RemoteMcpGuardedBody, RemoteMcpStreamError, RemoteMcpStreamRevocation,
     RemoteMcpStreamRevocationSignal, guard_remote_mcp_response,
+};
+pub use session_stream::{
+    AuthorizedRemoteMcpSessionEventStream, AuthorizedRemoteMcpSessionEventStreamDispatcher,
+    authorize_axum_session_event_stream,
 };
 
 use std::any::Any;
@@ -2019,6 +2024,16 @@ fn require_event_stream_accept(headers: &HeaderMap) -> Result<(), RemoteMcpHttpR
 fn event_stream_headers_from_axum(
     headers: &HeaderMap,
 ) -> Result<(String, Option<String>), RemoteMcpHttpRejection> {
+    // Neither GET boundary has verified replay isolation. Reject even empty,
+    // duplicate, oversized, or non-text cursors rather than silently dropping
+    // a requested resume and opening a different stream.
+    if headers.contains_key("last-event-id") {
+        return Err(RemoteMcpHttpRejection {
+            status: 400,
+            www_authenticate: None,
+            retry_after_seconds: None,
+        });
+    }
     require_event_stream_accept(headers)?;
     let accept = unique_header(headers, &ACCEPT)?.unwrap_or_default();
     let protocol_version = unique_header(headers, &MCP_PROTOCOL_VERSION_HEADER_NAME)?;

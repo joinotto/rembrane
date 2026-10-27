@@ -352,8 +352,8 @@ Internal rollback may still use an elapsed or locally narrowed original proof
 for exact signed-context cleanup; equality must never authorize a request.
 Tests separately verify real elapsed-session denial/pruning, proof-ceiling
 propagation through each authorization path, and non-renewal under refresh.
-These remain in-process session tests. Session-bound GET and replay are not
-implemented, and actual SDK/session-manager behavior is still unverified.
+These remain in-process session tests. Replay is unsupported, and actual
+SDK/session-manager behavior is still unverified.
 
 Established-session POST proofs retain a private `RemoteSessionId` in their
 protocol metadata only after successful registry authorization. HTTP header
@@ -370,6 +370,32 @@ initialization. Debug output reveals only session presence, not its value.
 Legacy caller-declared initialization remains a compatibility fixture, not
 the official SDK-generated initialization path; the new forwarding field is
 for established-session POSTs only. Actual SDK lifecycle tests remain required.
+
+Session-bound GET uses the separate
+`AuthorizedRemoteMcpSessionEventStreamDispatcher` consuming port. The private
+`AuthorizedRemoteMcpSessionEventStream` couples the session with its
+reauthenticated canonical tenant proof, original monotonic ceiling, and
+validated HTTP metadata. Owned/shared
+`authorize_and_dispatch_session_event_stream` APIs verify on bounded workers
+and revalidate locally without holding the registry lock over verification
+or dispatch. `authorize_axum_session_event_stream` is a synchronous borrowing
+compatibility API with the same session and header checks, not an automatically
+offloaded network-verification path.
+
+Direct and tenant-selected Tower dispatch build GET from this proof, retain
+`Mcp-Session-Id`, and omit bearer credentials, arbitrary input headers, and
+request bodies. Readiness and service-factory waits cannot extend the original
+session ceiling. Eight new regressions cover these paths, each bound identity/
+scope substitution, unknown sessions, unlocked dispatch, actual elapsed
+factory/readiness denial, and continued stateless/session API separation.
+They are not real SDK stream-delivery or revocation tests.
+
+Both GET header boundaries reject any `Last-Event-ID` with HTTP 400 before
+verification, including empty, duplicated, and non-text values. Replay is not
+silently ignored; event-store isolation and cursor authorization must be
+verified before adding resume support. Stateless GET still rejects session
+headers, and the session-bound API requires one. Neither API automatically
+guards response delivery or attaches a live revocation controller.
 
 Custom dispatcher implementations must enforce proof lifetime after their own
 waits and before execution; the ports document that obligation. The trusted

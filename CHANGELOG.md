@@ -9,6 +9,11 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Fixed
 
+- Both stateless and session-bound GET reject `Last-Event-ID` with HTTP 400
+  before verification, including empty/non-text/duplicated cursors. Replay is
+  unsupported until event-store isolation is verified; it is not silently
+  discarded or represented as a successful resume.
+
 - Established-session MCP POSTs now carry a private registry-authorized
   session identifier through borrowing, owned/shared, and direct/tenant Tower
   dispatch. Header parsing alone cannot attach it; stateless requests reject
@@ -584,6 +589,16 @@ and intends to use semantic versioning after the initial protocol stabilizes.
   `.mjs` files.
 
 ### Added
+
+- A separately authorized session-bound MCP GET port with coupled tenant,
+  session, original-deadline, and validated HTTP metadata. Owned/shared APIs
+  use bounded verification workers; borrowing compatibility remains synchronous.
+  Direct and tenant-selected Tower dispatch preserve the exact authorized
+  session without forwarding bearer credentials or arbitrary input headers.
+- Eight in-process regressions cover metadata, all bound identity/scope
+  substitutions, unknown sessions, stateless separation, registry-lock release,
+  and expiry during readiness or tenant-factory waits. Actual SDK listener,
+  response guarding, and live revocation wiring remain required.
 
 - An opt-in fail-closed remote MCP response-body guard built on Axum/Tokio.
   It wakes idle streams at their non-renewable proof deadline or sticky
