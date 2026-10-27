@@ -9,6 +9,14 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Fixed
 
+- PostgreSQL fixture reads now cover all 32 migrated tables, rather than 19.
+  Both tenant scopes and unscoped denial reuse one exact count/identity query;
+  wrong-tenant rows are rejected even when aggregate counts match. Added
+  encrypted work-trace/checkpoint, disclosure, rotation, legal-hold, and graph
+  receipt fixtures for both tenants. Static inventory checks require matching
+  schema, seed, identity, and count coverage, with three inventory refusal
+  cases and 28 isolated output cases. Live SQL/RLS execution remains pending.
+
 - The PostgreSQL cross-tenant write fixture now requires successful same-tenant
   insert/update/delete controls, an expected permission-denied insert, zero-row
   foreign update/delete, and an exact bound proof marker. Unrelated SQL or

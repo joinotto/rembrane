@@ -147,6 +147,12 @@ insert/update/delete controls, catch only the expected permission-denied
 foreign insert, return zero rows affected by foreign update/delete, and return
 its exact bound proof marker. An arbitrary SQL or connection failure is a
 failed suite, not a successful isolation test. These mutations are rolled back.
+All 32 migrated tables have seed data for both tested tenants. The shared
+`scripts/postgres-fixture-counts.sql` query checks row identities and exact
+counts for each tenant and for missing scope. Principal identity checks require
+a membership in the bound workspace; removed-member history stays inside that
+workspace. Wrong-tenant rows must fail even if total cardinality is unchanged.
+Static inventory/output checks are not live database evidence.
 
 ## Concrete PostgreSQL runtime gate
 

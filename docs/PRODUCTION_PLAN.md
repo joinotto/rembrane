@@ -182,9 +182,13 @@ evidence and the strict readiness command.
   membership grants; their live catalog behavior remains unverified here.
   Cross-tenant write fixtures now require successful same-tenant controls,
   the expected foreign-insert denial, zero-row foreign update/delete, and
-  an exact bound proof marker. Fourteen local output cases test the shell
+  an exact bound proof marker. Twenty-eight local output cases test the shell
   expectations only. The live two-tenant checkbox is reopened pending
   corrected CI/staging execution; unrelated SQL failures are not isolation proof.
+  Fixture seeds and shared read/identity queries now cover all 32 migrated
+  tables for both tenants and unscoped denial, including work traces, key
+  rotation/recipients, legal holds, and graph receipts. Static inventory parity
+  and three tamper/refusal cases do not establish actual SQL/RLS execution.
 - PostgreSQL fixture safety now has 28 passing fake-client guard cases. The
   runner no longer resets existing resources: it requires a private libpq
   service profile, explicit disposable-database authorization, and a read-only

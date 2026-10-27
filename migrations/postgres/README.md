@@ -68,6 +68,12 @@ unforced policies, temporary-table shadowing, and direct, column, `PUBLIC`,
 and non-inherited member table-wide privileges using rollback-only fixtures.
 The expanded privilege fixtures have not yet been executed here against a
 live database.
+The read fixture matrix now seeds all 32 migrated tables in both tested
+workspaces and uses one shared query for both scopes and unscoped denial.
+It verifies exact counts and visible row identities, including principal
+membership, to reject cross-tenant substitution with unchanged cardinality.
+Work traces, disclosure receipts, rotation history/recipients, and legal holds
+are included. Local inventory and output tests do not execute this query.
 The guard's local Rust tests do not prove that its SQL ran against PostgreSQL.
 The catalog checks follow PostgreSQL's documented row-security and role
 inquiry interfaces:

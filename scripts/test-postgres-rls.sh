@@ -118,7 +118,9 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public
 INSERT INTO principals (id) VALUES
     ('principal_01'),
     ('principal_02'),
-    ('principal_shared');
+    ('principal_shared'),
+    ('principal_removed_01'),
+    ('principal_removed_02');
 INSERT INTO workspaces (id, kind) VALUES
     ('workspace_01', 'personal'),
     ('workspace_02', 'personal'),
@@ -128,7 +130,23 @@ INSERT INTO memberships (
 ) VALUES
     ('workspace_01', 'principal_01', 'owner', 'active'),
     ('workspace_02', 'principal_02', 'owner', 'active'),
-    ('workspace_shared', 'principal_shared', 'owner', 'active');
+    ('workspace_shared', 'principal_shared', 'owner', 'active'),
+    ('workspace_01', 'principal_removed_01', 'viewer', 'removed'),
+    ('workspace_02', 'principal_removed_02', 'viewer', 'removed');
+INSERT INTO workspace_events (
+    workspace_id, sequence, id, actor_id, subject_id, event_type,
+    payload_ciphertext, encryption_key_id, encryption_algorithm, encryption_nonce
+) VALUES
+    (
+        'workspace_01', 1, 'event_trace_01', 'principal_01', 'principal_01',
+        'memory-confirmed', '\x01', 'key_01', 'xchacha20poly1305-ietf',
+        decode(repeat('01', 24), 'hex')
+    ),
+    (
+        'workspace_02', 1, 'event_trace_02', 'principal_02', 'principal_02',
+        'memory-confirmed', '\x02', 'key_02', 'xchacha20poly1305-ietf',
+        decode(repeat('02', 24), 'hex')
+    );
 INSERT INTO memories (
     workspace_id, id, subject_id, scope_type, kind, status,
     content_ciphertext, encryption_key_id, encryption_algorithm,
@@ -157,6 +175,64 @@ INSERT INTO memory_share_proposals (
         'workspace_02', 'proposal_02', 'memory_02', 1, 'principal_02',
         'workspace_shared', 'global', 'principal_02', 'pending'
     );
+INSERT INTO memory_evidence (
+    workspace_id, memory_id, ordinal, evidence_id, source_type
+) VALUES
+    ('workspace_01', 'memory_01', 0, 'evidence_01', 'user-statement'),
+    ('workspace_02', 'memory_02', 0, 'evidence_02', 'user-statement');
+INSERT INTO activity_checkpoints (
+    workspace_id, id, subject_id, activity_id, entity_id, checkpoint_ciphertext,
+    encryption_key_id, encryption_algorithm, encryption_nonce, version
+) VALUES
+    (
+        'workspace_01', 'checkpoint_01', 'principal_01', 'activity_01',
+        'project_01', '\x61', 'key_01', 'xchacha20poly1305-ietf',
+        decode(repeat('61', 24), 'hex'), 1
+    ),
+    (
+        'workspace_02', 'checkpoint_02', 'principal_02', 'activity_02',
+        'project_02', '\x62', 'key_02', 'xchacha20poly1305-ietf',
+        decode(repeat('62', 24), 'hex'), 1
+    );
+INSERT INTO disclosure_receipts (
+    workspace_id, id, context_pack_id, subject_id, client_id, purpose_code
+) VALUES
+    (
+        'workspace_01', 'disclosure_01', 'context_01', 'principal_01',
+        'client_01', 'fixture-continuity'
+    ),
+    (
+        'workspace_02', 'disclosure_02', 'context_02', 'principal_02',
+        'client_02', 'fixture-continuity'
+    );
+INSERT INTO disclosed_memories (
+    workspace_id, disclosure_id, memory_id, memory_version, ordinal
+) VALUES
+    ('workspace_01', 'disclosure_01', 'memory_01', 1, 0),
+    ('workspace_02', 'disclosure_02', 'memory_02', 1, 0);
+INSERT INTO projection_outbox (
+    id, workspace_id, memory_id, memory_version, provider_id, operation, status
+) VALUES
+    (
+        'projection_01', 'workspace_01', 'memory_01', 1, 'provider_native',
+        'upsert', 'pending'
+    ),
+    (
+        'projection_02', 'workspace_02', 'memory_02', 1, 'provider_native',
+        'upsert', 'pending'
+    );
+INSERT INTO checkpoint_disclosures (
+    workspace_id, id, checkpoint_id, checkpoint_version, activity_id,
+    subject_id, client_id, purpose_code
+) VALUES
+    (
+        'workspace_01', 'checkpoint_disclosure_01', 'checkpoint_01', 1,
+        'activity_01', 'principal_01', 'client_01', 'project-continuity'
+    ),
+    (
+        'workspace_02', 'checkpoint_disclosure_02', 'checkpoint_02', 1,
+        'activity_02', 'principal_02', 'client_02', 'project-continuity'
+    );
 INSERT INTO workspace_invitations (
     workspace_id, id, invited_principal_id, invited_by, role, status,
     created_at_epoch_seconds, expires_at_epoch_seconds
@@ -179,6 +255,33 @@ INSERT INTO workspace_retention_policies (
 ) VALUES
     ('workspace_01', 1, 365, 730),
     ('workspace_02', 1, 180, 365);
+INSERT INTO workspace_key_rotations (
+    workspace_id, id, generation, removed_principal_id, requested_by, status,
+    completed_key_id, completed_by, completed_at
+) VALUES
+    (
+        'workspace_01', 'rotation_01', 1, 'principal_removed_01', 'principal_01',
+        'completed', 'key_01', 'principal_01', CURRENT_TIMESTAMP
+    ),
+    (
+        'workspace_02', 'rotation_02', 1, 'principal_removed_02', 'principal_02',
+        'completed', 'key_02', 'principal_02', CURRENT_TIMESTAMP
+    );
+INSERT INTO workspace_key_rotation_receipts (
+    workspace_id, rotation_id, provider_id, request_id, generation, key_id
+) VALUES
+    ('workspace_01', 'rotation_01', 'provider_fixture', 'rotation_request_01', 1, 'key_01'),
+    ('workspace_02', 'rotation_02', 'provider_fixture', 'rotation_request_02', 1, 'key_02');
+INSERT INTO workspace_key_rotation_recipients (
+    workspace_id, rotation_id, principal_id
+) VALUES
+    ('workspace_01', 'rotation_01', 'principal_01'),
+    ('workspace_02', 'rotation_02', 'principal_02');
+INSERT INTO workspace_legal_holds (
+    workspace_id, id, placed_by, placed_at_epoch_seconds, status, version
+) VALUES
+    ('workspace_01', 'hold_01', 'principal_01', 1000, 'active', 1),
+    ('workspace_02', 'hold_02', 'principal_02', 1000, 'active', 1);
 INSERT INTO administrative_audit_events (
     workspace_id, id, actor_id, action, target_kind, target_id,
     request_id, occurred_at_epoch_seconds
@@ -289,6 +392,23 @@ INSERT INTO graph_projection_outbox (
         'graph_job_02', 'workspace_02', 'node', 'node_02a', 1,
         'provider_graph', 'upsert', 'pending'
     );
+INSERT INTO graph_disclosure_receipts (
+    workspace_id, id, subject_id, client_id, purpose_code, node_id,
+    direction, valid_at_epoch_seconds
+) VALUES
+    (
+        'workspace_01', 'graph_disclosure_01', 'principal_01', 'client_01',
+        'graph-continuity', 'node_01a', 'both', 1
+    ),
+    (
+        'workspace_02', 'graph_disclosure_02', 'principal_02', 'client_02',
+        'graph-continuity', 'node_02a', 'both', 1
+    );
+INSERT INTO disclosed_knowledge_edges (
+    workspace_id, disclosure_id, edge_id, edge_version, ordinal
+) VALUES
+    ('workspace_01', 'graph_disclosure_01', 'edge_01', 1, 0),
+    ('workspace_02', 'graph_disclosure_02', 'edge_02', 1, 0);
 INSERT INTO channel_event_receipts (
     channel, event_id, workspace_id, accepted_at_epoch_seconds,
     expires_at_epoch_seconds
@@ -452,36 +572,28 @@ SQL
 test "$unprotected_tables" = "0"
 
 result=$(
-    fixture_psql -qAt <<'SQL'
-BEGIN;
-SET LOCAL ROLE rembrane_runtime_test;
-SELECT set_config('rembrane.workspace_id', 'workspace_01', true);
-SELECT
-    (SELECT count(*) FROM principals),
-    (SELECT count(*) FROM workspaces),
-    (SELECT count(*) FROM memberships),
-    (SELECT count(*) FROM memories),
-    (SELECT count(*) FROM memory_share_proposals),
-    (SELECT count(*) FROM workspace_invitations),
-    (SELECT count(*) FROM member_scope_grants),
-    (SELECT count(*) FROM workspace_retention_policies),
-    (SELECT count(*) FROM administrative_audit_events),
-    (SELECT count(*) FROM trips),
-    (SELECT count(*) FROM booking_research),
-    (SELECT count(*) FROM travel_disclosure_receipts),
-    (SELECT count(*) FROM disclosed_booking_research),
-    (SELECT count(*) FROM knowledge_nodes),
-    (SELECT count(*) FROM knowledge_edges),
-    (SELECT count(*) FROM graph_projection_outbox),
-    (SELECT count(*) FROM channel_event_receipts),
-    (SELECT count(*) FROM channel_sender_bindings),
-    (SELECT count(*) FROM channel_inbox);
-ROLLBACK;
-SQL
+    fixture_psql -qAt \
+        -c "BEGIN; SET LOCAL ROLE rembrane_runtime_test;
+            SELECT set_config('rembrane.workspace_id', 'workspace_01', true);" \
+        -f scripts/postgres-fixture-counts.sql \
+        -c 'ROLLBACK;'
 )
 test "$result" = "workspace_01
-1|1|1|1|1|1|1|1|1|1|1|1|1|2|1|1|1|1|1" || {
+2|1|2|1|1|1|1|1|1|1|1|1|1|2|1|1|1|1|1|1|1|1|1|1|1|1|1|1|1|1|1|1" || {
     echo "PostgreSQL scoped fixture result did not match its binding and count proof" >&2
+    exit 1
+}
+
+other_result=$(
+    fixture_psql -qAt \
+        -c "BEGIN; SET LOCAL ROLE rembrane_runtime_test;
+            SELECT set_config('rembrane.workspace_id', 'workspace_02', true);" \
+        -f scripts/postgres-fixture-counts.sql \
+        -c 'ROLLBACK;'
+)
+test "$other_result" = "workspace_02
+2|1|2|1|1|1|1|1|1|1|1|1|1|2|1|1|1|1|1|1|1|1|1|1|1|1|1|1|1|1|1|1" || {
+    echo "PostgreSQL other-tenant fixture result did not match its binding and count proof" >&2
     exit 1
 }
 
@@ -561,33 +673,12 @@ cross-tenant-writes-denied" || {
 }
 
 unscoped=$(
-    fixture_psql -qAt <<'SQL'
-BEGIN;
-SET LOCAL ROLE rembrane_runtime_test;
-SELECT
-    (SELECT count(*) FROM principals),
-    (SELECT count(*) FROM workspaces),
-    (SELECT count(*) FROM memberships),
-    (SELECT count(*) FROM memories),
-    (SELECT count(*) FROM memory_share_proposals),
-    (SELECT count(*) FROM workspace_invitations),
-    (SELECT count(*) FROM member_scope_grants),
-    (SELECT count(*) FROM workspace_retention_policies),
-    (SELECT count(*) FROM administrative_audit_events),
-    (SELECT count(*) FROM trips),
-    (SELECT count(*) FROM booking_research),
-    (SELECT count(*) FROM travel_disclosure_receipts),
-    (SELECT count(*) FROM disclosed_booking_research),
-    (SELECT count(*) FROM knowledge_nodes),
-    (SELECT count(*) FROM knowledge_edges),
-    (SELECT count(*) FROM graph_projection_outbox),
-    (SELECT count(*) FROM channel_event_receipts),
-    (SELECT count(*) FROM channel_sender_bindings),
-    (SELECT count(*) FROM channel_inbox);
-ROLLBACK;
-SQL
+    fixture_psql -qAt \
+        -c 'BEGIN; SET LOCAL ROLE rembrane_runtime_test;' \
+        -f scripts/postgres-fixture-counts.sql \
+        -c 'ROLLBACK;'
 )
-test "$unscoped" = "0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0"
+test "$unscoped" = "0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0"
 
 pooled_connection_result=$(
     fixture_psql -qAt <<'SQL'

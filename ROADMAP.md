@@ -994,6 +994,10 @@ are in [First Production Release Plan](docs/PRODUCTION_PLAN.md).
       same-tenant write controls, expected permission denial, zero-row foreign
       update/delete, and an exact bound marker; add isolated output checks.
     - [ ] Verify the strengthened write fixture on live PostgreSQL.
+    - [x] Cover every migrated table in fixture seeds, shared read counts,
+      and workspace/principal identity checks for both tenants and unscoped
+      denial; enforce 32-table inventory parity in static tests.
+    - [ ] Execute the expanded 32-table read/identity matrix on PostgreSQL.
     - [ ] Execute the new runtime-authority SQL fixtures against PostgreSQL;
       local driver-boundary unit tests do not substitute for this proof.
     - [x] Require prepared `set_config(..., $1, true)` tenant bootstrap,
