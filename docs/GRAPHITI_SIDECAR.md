@@ -1,5 +1,11 @@
 # Graphiti sidecar
 
+Test runners prefer the active `python`/`python3` environment (Python 3.11
+or newer), matching `python -m pip` installation. Set
+`REMBRANE_GRAPHITI_PYTHON` to an explicit interpreter path if needed; an
+invalid explicit selection fails instead of silently using another runtime.
+Install the sidecar's development dependencies with that same interpreter.
+
 Rembrane treats Graphiti as a replaceable derived projection, never as the
 canonical memory store or authorization system. The Rust core authorizes an
 operation, derives the workspace namespace, and sends only the graph projection

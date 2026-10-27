@@ -2198,6 +2198,10 @@ No stable release until:
     require malformed-discovery negative tests to reach the provider and
     report the intended rejection instead of accepting missing-tool failures.
   - [ ] Verify these fixes on the corrected hosted CI revision.
+  - [x] Make Graphiti test runners use the active Python environment or
+    explicit validated interpreter; cover selection and refusal with seven
+    isolated cases rather than assuming installed packages are shared.
+  - [ ] Rerun the corrected Graphiti HTTP job on hosted CI.
 - [x] Tenant-isolation tests cover every implemented adapter and transport
   read path.
 - [x] Threat model and recovery model are published.

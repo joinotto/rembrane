@@ -19,6 +19,10 @@ evidence and the strict readiness command.
   negative tests require discovery contact and the intended refusal rather
   than accepting an unrelated setup failure. Corrected hosted execution is
   still required.
+- The published Graphiti HTTP job also failed its dependency import after
+  successful installation into Python 3.11. Both runners now prefer the
+  active Python environment, with an explicit validated override and seven
+  isolated selection tests. Corrected hosted HTTP execution remains pending.
 - A read-only hosted CI audit found the latest published Windows DPAPI job
   failing on null trailing-script arguments. The current bridge/fixture now
   separates fixed PowerShell command text from per-child metadata and stdin

@@ -9,6 +9,13 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Fixed
 
+- Both Graphiti test runners now prefer the active Python environment over
+  an unrelated versioned interpreter on PATH, avoiding the published CI
+  failure after dependencies were installed into Python 3.11. An explicit
+  `REMBRANE_GRAPHITI_PYTHON` override is supported and fails closed when
+  unavailable or too old. Seven isolated selection tests and all 15 sidecar
+  core tests pass; corrected hosted HTTP execution remains pending.
+
 - Hosted CI shell-test jobs now install their required tools explicitly,
   including ripgrep, and JavaScript runners select Node 22. The provider
   runner's malformed-discovery tests now require an actual discovery request
