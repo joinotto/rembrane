@@ -121,6 +121,12 @@ evidence and the strict readiness command.
   of the enabled integration target, and separate live execution of the five
   documented pool/repository tests. Its 37 fake-Cargo cases verify refusal
   and admission only. The real checker still fails because the driver is absent.
+- The official MCP HTTP gate now requires resolved pinned registry SDK and
+  normal adapter dependencies, enabled binary/integration targets, separate
+  compilation, and the eight documented exact runtime tests. Its 64 fake-Cargo
+  cases verify gate decisions and redaction only. The actual SDK transport and
+  integration target remain absent; this is release-check hardening, not
+  completion of that runtime.
 - The full test run cannot complete in the current environment: the REST
   process is denied permission to bind `127.0.0.1:18787`.
 - Direct Git commits are available again. Verified slices are recorded
@@ -176,7 +182,8 @@ live or independently reviewed evidence tracked separately.
 | First supported production release | Not yet | Clean-system installation/upgrade tests and controlled pilot pass; supported scope and rollback documented |
 
 Development continues with reviewable local commits and no automatic push.
-The next code checkpoint is a verified remote session-transport slice, not a
+The next core implementation checkpoint is actual SDK runtime integration and
+its executable eight-test matrix, not another protocol fixture or a
 production-release claim. Staging access, missing dependency resolution, real
 provider credentials, and an independent reviewer are external capabilities;
 repository changes alone cannot supply their evidence.

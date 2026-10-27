@@ -774,10 +774,16 @@ are in [First Production Release Plan](docs/PRODUCTION_PLAN.md).
     - [x] Make production readiness fail closed until the official SDK server
       feature, remote authorization adapter, and concrete Streamable HTTP
       service are all wired into the MCP application.
-      - [x] Derive pinned SDK features and adapter dependencies from offline
-        Cargo metadata and reject comment-only service-instantiation markers.
-      - [x] Require the detected official SDK service to compile from the
-        committed lockfile in offline mode before production readiness passes.
+      - [x] Require resolved locked offline Cargo metadata for the exact
+        registry SDK and normal unconditional application/adapter dependencies;
+        reject source markers, local SDK substitutions, and dev-only wiring.
+      - [x] Require enabled application binary and `streamable_http_runtime`
+        integration targets to compile separately from the committed lockfile.
+      - [x] Require eight exact executable SDK runtime tests before readiness
+        passes; reject absent/ignored/zero-test success and redact diagnostics.
+        Verify gate decisions with 64 fake-Cargo cases, not SDK runtime claims.
+      - [ ] Implement and pass that actual SDK runtime matrix through production
+        service construction, then retain separate real HTTPS staging evidence.
     - [x] Authorize protocol-correct sessionless initialize requests without
       reserving a client-supplied ID before the official SDK response.
       - [x] Bound concurrent downstream initialization with anonymous,

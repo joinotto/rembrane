@@ -51,6 +51,58 @@ and daemon. Restricted sandboxes therefore identify the exact unavailable
 capability instead of hiding it behind one grouped suite label. Available mode
 is suitable during offline development but is not production approval.
 
+## Official MCP HTTP runtime gate
+
+The existing remote authorization libraries and Tower fixtures are not proof
+that the application serves the official SDK transport. The checker separates
+compilation from executable runtime evidence:
+
+```sh
+./scripts/check-official-streamable-http.sh --build
+./scripts/check-official-streamable-http.sh --runtime
+```
+
+Runtime mode is the default and the explicit production-readiness requirement.
+Build mode requires locked, resolved offline Cargo metadata: the exact
+`rmcp` 3.7.0 crates.io release with both server and Streamable HTTP features,
+normal unconditional non-optional application dependencies on that SDK and
+the remote authorization adapter, and enabled `rembrane-mcp` binary and
+`streamable_http_runtime` test targets. Local/git/private-registry SDK
+substitutions, development-only dependencies, and source-code markers do not
+satisfy this gate. Both exact targets must compile separately from the lockfile.
+This release policy is intentionally stricter than optional integrations;
+passing build mode alone is not runtime or production approval.
+
+Runtime mode additionally executes each root-level integration test separately:
+
+| Exact test name | Required actual SDK behavior |
+| --- | --- |
+| `sdk_http_two_tenant_encrypted_context_lifecycle` | Production HTTP service and tool dispatcher execute an encrypted two-tenant lifecycle, preserving verified request context. |
+| `sdk_http_denies_cross_tenant_and_scope_substitution` | Actual transport denies session, tenant, client, and scope substitution before access. |
+| `sdk_http_session_initialization_and_confirmation` | SDK-generated sessions bind only after validated initialization; DELETE commits only after real SDK success. |
+| `sdk_http_session_replacement_and_late_cleanup` | Late initialization, rollback, cancellation, or deletion cannot terminate a replacement SDK session. |
+| `sdk_http_queued_tool_expiry_and_revocation` | Queued tool work cannot execute after its original deadline or revoked authority. |
+| `sdk_http_stream_expiry_and_revocation` | Actual SDK response delivery stops after expiry/revocation, including idle streams and delayed frames. |
+| `sdk_http_bounded_admission_and_cancellation` | Production worker/session/stream budgets remain bounded through overload, cancellation, and actual completion. |
+| `sdk_http_redacts_transport_and_provider_failures` | SDK/provider failures do not expose bearer credentials, plaintext memory, keys, or tenant information. |
+
+The tests must use the production service construction and authorization path,
+official SDK session manager, and real encrypted local repository/tool
+dispatch—not an echo service or only the independent body guard. Use disposable
+fixture state and development keys, never personal or production memory.
+Missing prerequisites must fail, not return early as success. The checker
+enables ignored tests and demands exactly one pass with no ignored/failed tests
+for each name; diagnostics are captured privately and withheld on failure.
+Maintainer and independent review must verify the actual test bodies; counts
+alone cannot detect no-op or fabricated implementations.
+
+This in-process SDK matrix does not replace real HTTP/HTTPS staging,
+introspection/provider conformance, load/recovery drills, or independent
+security approval. The application currently lacks the transport feature,
+remote adapter dependency, and integration target; the real gate still fails
+intentionally. Its 64 fake-Cargo cases verify gate behavior and diagnostic
+redaction only, not compilation or SDK runtime behavior.
+
 ## Safe PostgreSQL fixture setup
 
 Never point this test at an application database or a shared production cluster.

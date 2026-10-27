@@ -90,7 +90,7 @@ if [ "$all_suite_ready" = "1" ]; then
     ./scripts/test-all.sh
 fi
 
-if ! ./scripts/check-official-streamable-http.sh >/dev/null 2>&1; then
+if ! ./scripts/check-official-streamable-http.sh --runtime >/dev/null 2>&1; then
     record_missing "official MCP SDK Streamable HTTP transport"
 fi
 

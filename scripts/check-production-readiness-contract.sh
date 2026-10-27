@@ -9,6 +9,11 @@ schema=spec/production-readiness.schema.json
 labels_file=$(mktemp "${TMPDIR:-/tmp}/rembrane-readiness-labels.XXXXXX")
 trap 'rm -f "$labels_file"' EXIT HUP INT TERM
 
+rg -q '^if ! ./scripts/check-official-streamable-http.sh --runtime >/dev/null 2>&1; then$' "$script" || {
+    echo "production readiness must require official MCP HTTP runtime execution, not build-only evidence" >&2
+    exit 1
+}
+
 sed -n 's/^[[:space:]]*record_missing "\([^"]*\)"$/\1/p' "$script" >"$labels_file"
 
 label_count=$(wc -l <"$labels_file" | tr -d ' ')

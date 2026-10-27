@@ -94,6 +94,24 @@ These tests verify gate decisions and diagnostic redaction. They do not compile
 the missing driver or constitute live database proof. See the
 [runtime gate requirements](PRODUCTION_TESTING.md#concrete-postgresql-runtime-gate).
 
+## Official MCP HTTP release-gate tests
+
+```sh
+node scripts/test-streamable-http-runtime-gate.mjs
+```
+
+These 64 fake-Cargo cases exercise resolved SDK/adapter dependencies, target
+admission, separate binary/test compilation decisions, exact test execution
+counts, and diagnostic redaction. They do not compile Rust or exercise an SDK
+HTTP service. The static suite includes them.
+
+The real checker offers `--build` and `--runtime`; runtime is the default and
+mandatory for production readiness. It rejects source markers and disabled or
+absent integration targets, and requires all eight named actual-SDK tests.
+The runtime integration remains missing, so the real checker must still fail.
+See the [SDK runtime requirements](PRODUCTION_TESTING.md#official-mcp-http-runtime-gate).
+Passing that in-process matrix will not replace real HTTPS staging evidence.
+
 ## Startup authorization before keys and providers
 
 ```sh

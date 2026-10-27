@@ -46,6 +46,7 @@ node ./scripts/test-memory-provider-discovery.mjs
 ./scripts/check-postgres-rls.sh
 node ./scripts/test-postgres-fixture-guard.mjs
 node ./scripts/test-postgres-runtime-gate.mjs
+node ./scripts/test-streamable-http-runtime-gate.mjs
 ./scripts/check-production-readiness-contract.sh
 ./scripts/verify-provider-registry.sh
 ./scripts/test-provider-registry-validation.sh
@@ -129,8 +130,10 @@ for deployment_file in \
     scripts/check-postgres-fixture-service.mjs \
     scripts/test-postgres-fixture-guard.mjs \
     scripts/test-postgres-runtime-gate.mjs \
+    scripts/test-streamable-http-runtime-gate.mjs \
     scripts/fixtures/postgres-fixture-psql.mjs \
     scripts/fixtures/postgres-runtime-cargo.mjs \
+    scripts/fixtures/streamable-http-runtime-cargo.mjs \
     scripts/check-production-readiness.sh \
     scripts/check-production-readiness-contract.sh \
     scripts/verify-provider-registry.sh \
