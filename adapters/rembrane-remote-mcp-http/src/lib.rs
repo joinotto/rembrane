@@ -11,6 +11,7 @@
 //! synchronous and must not use blocking network clients on an async executor.
 //! Prefer the owned/shared service entrypoints for HTTP routing.
 
+use std::any::Any;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::future::Future;
@@ -50,6 +51,13 @@ const MAX_REMOTE_AUTHORIZATION_OPERATIONS: usize = 8;
 static AUTHORIZATION_OPERATIONS: OnceLock<Arc<Semaphore>> = OnceLock::new();
 const MAX_TENANT_FACTORY_OPERATIONS: usize = 8;
 static TENANT_FACTORY_OPERATIONS: OnceLock<Arc<Semaphore>> = OnceLock::new();
+
+fn tenant_factory_capacity() -> Arc<Semaphore> {
+    Arc::clone(
+        TENANT_FACTORY_OPERATIONS
+            .get_or_init(|| Arc::new(Semaphore::new(MAX_TENANT_FACTORY_OPERATIONS))),
+    )
+}
 
 struct TimelyTokenVerifier<'verifier, Verifier> {
     verifier: &'verifier Verifier,
@@ -343,11 +351,26 @@ pub trait AuthorizedRemoteMcpDispatcher {
 
 /// Successful official-SDK initialization output paired with the validated
 /// session identifier returned in the downstream HTTP response.
-#[derive(Clone, Eq, PartialEq)]
+#[derive(Clone)]
 pub struct InitializedRemoteMcpSession<Output> {
     output: Output,
     session_id: RemoteSessionId,
+    retained_service: Option<Arc<InitializedServiceHandle>>,
 }
+
+struct InitializedServiceHandle {
+    access: VerifiedRemoteAccess,
+    headers: RemoteMcpProtocolHeaders,
+    service: Mutex<Box<dyn Any + Send>>,
+}
+
+impl<Output: PartialEq> PartialEq for InitializedRemoteMcpSession<Output> {
+    fn eq(&self, other: &Self) -> bool {
+        self.output == other.output && self.session_id == other.session_id
+    }
+}
+
+impl<Output: Eq> Eq for InitializedRemoteMcpSession<Output> {}
 
 impl<Output> fmt::Debug for InitializedRemoteMcpSession<Output> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -355,6 +378,7 @@ impl<Output> fmt::Debug for InitializedRemoteMcpSession<Output> {
             .debug_struct("InitializedRemoteMcpSession")
             .field("output", &"[REDACTED]")
             .field("session_id", &self.session_id)
+            .field("retained_service", &self.retained_service.is_some())
             .finish()
     }
 }
@@ -362,7 +386,11 @@ impl<Output> fmt::Debug for InitializedRemoteMcpSession<Output> {
 impl<Output> InitializedRemoteMcpSession<Output> {
     #[must_use]
     pub const fn new(output: Output, session_id: RemoteSessionId) -> Self {
-        Self { output, session_id }
+        Self {
+            output,
+            session_id,
+            retained_service: None,
+        }
     }
 
     #[must_use]
@@ -376,8 +404,45 @@ impl<Output> InitializedRemoteMcpSession<Output> {
     }
 
     #[must_use]
+    /// Splits a successfully committed result. This discards the private
+    /// service handle; failed stateful initialization must instead pass the
+    /// owned result to `terminate_initialized` before splitting it.
     pub fn into_parts(self) -> (Output, RemoteSessionId) {
         (self.output, self.session_id)
+    }
+
+    fn retain_service<Service: Send + 'static>(
+        mut self,
+        service: Service,
+        access: VerifiedRemoteAccess,
+        headers: RemoteMcpProtocolHeaders,
+    ) -> Self {
+        self.retained_service = Some(Arc::new(InitializedServiceHandle {
+            access,
+            headers,
+            service: Mutex::new(Box::new(service)),
+        }));
+        self
+    }
+
+    fn matches_retained_authority(
+        &self,
+        access: &VerifiedRemoteAccess,
+        headers: &RemoteMcpProtocolHeaders,
+    ) -> bool {
+        self.retained_service
+            .as_ref()
+            .is_some_and(|retained| retained.access == *access && retained.headers == *headers)
+    }
+
+    fn retained_service<Service: Clone + Send + 'static>(&self) -> Option<Service> {
+        self.retained_service
+            .as_ref()?
+            .service
+            .lock()
+            .ok()?
+            .downcast_ref::<Service>()
+            .cloned()
     }
 }
 
@@ -386,6 +451,9 @@ impl<Output> InitializedRemoteMcpSession<Output> {
 /// Implementations must validate and extract the canonical session identifier
 /// from the successful SDK response. `terminate` compensates a downstream
 /// session when the bounded local tenant binding cannot be committed.
+/// Orchestrators must use `terminate_initialized` with the owned result for
+/// stateful compensation. The older `terminate` port can reselect a service
+/// and is retained only for caller-managed compatibility use.
 /// Initialization must check proof lifetime before execution. Compensating
 /// termination may use the expired original proof solely to clean up the exact
 /// session already initialized; never expose it as the client DELETE route.
@@ -411,6 +479,21 @@ pub trait AuthorizedRemoteMcpInitializationDispatcher {
         session_id: RemoteSessionId,
         protocol_headers: RemoteMcpProtocolHeaders,
     ) -> Self::TerminationFuture;
+
+    /// Compensates this exact initialization result. Stateful implementations
+    /// must retain the selected service through commit/cleanup rather than
+    /// reconstructing it from a cache that may have expired.
+    ///
+    /// The default preserves compatibility for stateless/custom dispatchers.
+    /// Tower implementations override it with a private retained-service handle.
+    fn terminate_initialized(
+        &self,
+        access: VerifiedRemoteAccess,
+        initialized: InitializedRemoteMcpSession<Self::Output>,
+        protocol_headers: RemoteMcpProtocolHeaders,
+    ) -> Self::TerminationFuture {
+        self.terminate(access, initialized.session_id().clone(), protocol_headers)
+    }
 }
 
 #[derive(Clone, Eq, PartialEq)]
@@ -759,10 +842,7 @@ impl<Factory> TenantAwareTowerMcpDispatcher<Factory> {
     pub fn new(factory: Factory) -> Self {
         Self {
             factory,
-            factory_operations: Arc::clone(
-                TENANT_FACTORY_OPERATIONS
-                    .get_or_init(|| Arc::new(Semaphore::new(MAX_TENANT_FACTORY_OPERATIONS))),
-            ),
+            factory_operations: tenant_factory_capacity(),
         }
     }
 }
@@ -821,6 +901,7 @@ where
 }
 
 pub enum TowerMcpDispatchError<ServiceError> {
+    CleanupUnavailable,
     ExpiredAuthorization,
     InvalidAuthorizedMetadata,
     InvalidSdkResponse,
@@ -830,6 +911,7 @@ pub enum TowerMcpDispatchError<ServiceError> {
 impl<ServiceError> fmt::Debug for TowerMcpDispatchError<ServiceError> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(match self {
+            Self::CleanupUnavailable => "CleanupUnavailable",
             Self::ExpiredAuthorization => "ExpiredAuthorization",
             Self::InvalidAuthorizedMetadata => "InvalidAuthorizedMetadata",
             Self::InvalidSdkResponse => "InvalidSdkResponse",
@@ -839,6 +921,7 @@ impl<ServiceError> fmt::Debug for TowerMcpDispatchError<ServiceError> {
 }
 
 pub enum TenantAwareTowerMcpDispatchError<FactoryError, ServiceError> {
+    CleanupUnavailable,
     ExpiredAuthorization,
     InvalidAuthorizedMetadata,
     InvalidSdkResponse,
@@ -852,6 +935,7 @@ impl<FactoryError, ServiceError> fmt::Debug
 {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(match self {
+            Self::CleanupUnavailable => "CleanupUnavailable",
             Self::ExpiredAuthorization => "ExpiredAuthorization",
             Self::InvalidAuthorizedMetadata => "InvalidAuthorizedMetadata",
             Self::InvalidSdkResponse => "InvalidSdkResponse",
@@ -895,6 +979,9 @@ fn tenant_dispatch_error<FactoryError, ServiceError>(
     error: TowerMcpDispatchError<ServiceError>,
 ) -> TenantAwareTowerMcpDispatchError<FactoryError, ServiceError> {
     match error {
+        TowerMcpDispatchError::CleanupUnavailable => {
+            TenantAwareTowerMcpDispatchError::CleanupUnavailable
+        }
         TowerMcpDispatchError::ExpiredAuthorization => {
             TenantAwareTowerMcpDispatchError::ExpiredAuthorization
         }
@@ -906,6 +993,75 @@ fn tenant_dispatch_error<FactoryError, ServiceError>(
         }
         TowerMcpDispatchError::Service(error) => TenantAwareTowerMcpDispatchError::Service(error),
     }
+}
+
+async fn retained_initialization_service<Service, ServiceError>(
+    initialized: InitializedRemoteMcpSession<Response>,
+    access: &VerifiedRemoteAccess,
+    headers: &RemoteMcpProtocolHeaders,
+    capacity: Arc<Semaphore>,
+) -> Result<(Service, RemoteSessionId), TowerMcpDispatchError<ServiceError>>
+where
+    Service: Clone + Send + 'static,
+    ServiceError: Send + 'static,
+{
+    // Bind cleanup to the original verified claims and HTTP metadata, before
+    // admission. Expiry is deliberately not rechecked for internal cleanup.
+    if !initialized.matches_retained_authority(access, headers) {
+        return Err(TowerMcpDispatchError::InvalidAuthorizedMetadata);
+    }
+    let permit = capacity
+        .try_acquire_owned()
+        .map_err(|_| TowerMcpDispatchError::CleanupUnavailable)?;
+    tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        let service = initialized
+            .retained_service::<Service>()
+            .ok_or(TowerMcpDispatchError::InvalidAuthorizedMetadata)?;
+        // Response and retained-handle destruction also stay on this worker.
+        Ok((service, initialized.session_id().clone()))
+    })
+    .await
+    .map_err(|_| TowerMcpDispatchError::CleanupUnavailable)?
+}
+
+async fn terminate_selected_service<Service>(
+    service: Service,
+    access: VerifiedRemoteAccess,
+    session_id: RemoteSessionId,
+    headers: RemoteMcpProtocolHeaders,
+) -> Result<(), TowerMcpDispatchError<Service::Error>>
+where
+    Service: tower::Service<Request<Body>, Response = Response>,
+{
+    let validated_host = headers
+        .validated_host()
+        .ok_or(TowerMcpDispatchError::InvalidAuthorizedMetadata)?;
+    let mut request = Request::builder()
+        .method(Method::DELETE)
+        .body(Body::empty())
+        .map_err(|_| TowerMcpDispatchError::InvalidAuthorizedMetadata)?;
+    insert_validated_header(
+        request.headers_mut(),
+        MCP_SESSION_HEADER_NAME,
+        session_id.as_str(),
+    )?;
+    insert_optional_validated_header(
+        request.headers_mut(),
+        MCP_PROTOCOL_VERSION_HEADER_NAME,
+        headers.protocol_version(),
+    )?;
+    insert_validated_header(request.headers_mut(), HOST, validated_host)?;
+    insert_optional_validated_header(request.headers_mut(), ORIGIN, headers.validated_origin())?;
+    request.extensions_mut().insert(access);
+    let response = service
+        .oneshot(request)
+        .await
+        .map_err(TowerMcpDispatchError::Service)?;
+    if !response.status().is_success() {
+        return Err(TowerMcpDispatchError::InvalidSdkResponse);
+    }
+    Ok(())
 }
 
 impl<Service> AuthorizedRemoteMcpDispatcher for AuthorizedTowerMcpDispatcher<Service>
@@ -1018,8 +1174,9 @@ where
                 ORIGIN,
                 protocol_headers.validated_origin(),
             )?;
-            request.extensions_mut().insert(access);
+            request.extensions_mut().insert(access.clone());
             request.extensions_mut().insert(invocation);
+            let retained_service = service.clone();
             let response = call_current_service(service, request).await?;
             if !response.status().is_success() {
                 return Err(TowerMcpDispatchError::InvalidSdkResponse);
@@ -1036,7 +1193,13 @@ where
                 .ok()
                 .and_then(|value| RemoteSessionId::new(value.to_owned()).ok())
                 .ok_or(TowerMcpDispatchError::InvalidSdkResponse)?;
-            Ok(InitializedRemoteMcpSession::new(response, session_id))
+            Ok(
+                InitializedRemoteMcpSession::new(response, session_id).retain_service(
+                    retained_service,
+                    access,
+                    protocol_headers,
+                ),
+            )
         })
     }
 
@@ -1047,39 +1210,29 @@ where
         protocol_headers: RemoteMcpProtocolHeaders,
     ) -> Self::TerminationFuture {
         let service = self.service.clone();
+        Box::pin(terminate_selected_service(
+            service,
+            access,
+            session_id,
+            protocol_headers,
+        ))
+    }
+
+    fn terminate_initialized(
+        &self,
+        access: VerifiedRemoteAccess,
+        initialized: InitializedRemoteMcpSession<Self::Output>,
+        protocol_headers: RemoteMcpProtocolHeaders,
+    ) -> Self::TerminationFuture {
         Box::pin(async move {
-            let validated_host = protocol_headers
-                .validated_host()
-                .ok_or(TowerMcpDispatchError::InvalidAuthorizedMetadata)?;
-            let mut request = Request::builder()
-                .method(Method::DELETE)
-                .body(Body::empty())
-                .map_err(|_| TowerMcpDispatchError::InvalidAuthorizedMetadata)?;
-            insert_validated_header(
-                request.headers_mut(),
-                MCP_SESSION_HEADER_NAME,
-                session_id.as_str(),
-            )?;
-            insert_optional_validated_header(
-                request.headers_mut(),
-                MCP_PROTOCOL_VERSION_HEADER_NAME,
-                protocol_headers.protocol_version(),
-            )?;
-            insert_validated_header(request.headers_mut(), HOST, validated_host)?;
-            insert_optional_validated_header(
-                request.headers_mut(),
-                ORIGIN,
-                protocol_headers.validated_origin(),
-            )?;
-            request.extensions_mut().insert(access);
-            let response = service
-                .oneshot(request)
-                .await
-                .map_err(TowerMcpDispatchError::Service)?;
-            if !response.status().is_success() {
-                return Err(TowerMcpDispatchError::InvalidSdkResponse);
-            }
-            Ok(())
+            let (service, session_id) = retained_initialization_service::<Service, Service::Error>(
+                initialized,
+                &access,
+                &protocol_headers,
+                tenant_factory_capacity(),
+            )
+            .await?;
+            terminate_selected_service(service, access, session_id, protocol_headers).await
         })
     }
 }
@@ -1312,8 +1465,9 @@ where
                 ORIGIN,
                 protocol_headers.validated_origin(),
             )?;
-            request.extensions_mut().insert(access);
+            request.extensions_mut().insert(access.clone());
             request.extensions_mut().insert(invocation);
+            let retained_service = service.clone();
             let response = call_current_service(service, request)
                 .await
                 .map_err(tenant_dispatch_error)?;
@@ -1332,7 +1486,13 @@ where
                 .ok()
                 .and_then(|value| RemoteSessionId::new(value.to_owned()).ok())
                 .ok_or(TenantAwareTowerMcpDispatchError::InvalidSdkResponse)?;
-            Ok(InitializedRemoteMcpSession::new(response, session_id))
+            Ok(
+                InitializedRemoteMcpSession::new(response, session_id).retain_service(
+                    retained_service,
+                    access,
+                    protocol_headers,
+                ),
+            )
         })
     }
 
@@ -1344,7 +1504,7 @@ where
     ) -> Self::TerminationFuture {
         let dispatcher = self.clone();
         Box::pin(async move {
-            let validated_host = protocol_headers
+            protocol_headers
                 .validated_host()
                 .ok_or(TenantAwareTowerMcpDispatchError::InvalidAuthorizedMetadata)?;
             // Compensating cleanup of an already initialized session must
@@ -1353,35 +1513,30 @@ where
             let service = dispatcher
                 .create_service_with_validity(&access, false)
                 .await?;
-            let mut request = Request::builder()
-                .method(Method::DELETE)
-                .body(Body::empty())
-                .map_err(|_| TenantAwareTowerMcpDispatchError::InvalidAuthorizedMetadata)?;
-            insert_tenant_validated_header(
-                request.headers_mut(),
-                MCP_SESSION_HEADER_NAME,
-                session_id.as_str(),
-            )?;
-            insert_optional_tenant_validated_header(
-                request.headers_mut(),
-                MCP_PROTOCOL_VERSION_HEADER_NAME,
-                protocol_headers.protocol_version(),
-            )?;
-            insert_tenant_validated_header(request.headers_mut(), HOST, validated_host)?;
-            insert_optional_tenant_validated_header(
-                request.headers_mut(),
-                ORIGIN,
-                protocol_headers.validated_origin(),
-            )?;
-            request.extensions_mut().insert(access);
-            let response = service
-                .oneshot(request)
+            terminate_selected_service(service, access, session_id, protocol_headers)
                 .await
-                .map_err(TenantAwareTowerMcpDispatchError::Service)?;
-            if !response.status().is_success() {
-                return Err(TenantAwareTowerMcpDispatchError::InvalidSdkResponse);
-            }
-            Ok(())
+                .map_err(tenant_dispatch_error)
+        })
+    }
+
+    fn terminate_initialized(
+        &self,
+        access: VerifiedRemoteAccess,
+        initialized: InitializedRemoteMcpSession<Self::Output>,
+        protocol_headers: RemoteMcpProtocolHeaders,
+    ) -> Self::TerminationFuture {
+        let capacity = Arc::clone(&self.factory_operations);
+        Box::pin(async move {
+            let (service, session_id) =
+                retained_initialization_service::<
+                    Factory::Service,
+                    <Factory::Service as tower::Service<Request<Body>>>::Error,
+                >(initialized, &access, &protocol_headers, capacity)
+                .await
+                .map_err(tenant_dispatch_error)?;
+            terminate_selected_service(service, access, session_id, protocol_headers)
+                .await
+                .map_err(tenant_dispatch_error)
         })
     }
 }
@@ -2536,7 +2691,7 @@ where
                 None
             } else {
                 dispatcher
-                    .terminate(access, session_id, termination_headers)
+                    .terminate_initialized(access, initialized, termination_headers)
                     .await
                     .err()
             };
@@ -3482,7 +3637,7 @@ impl RemoteMcpHttpGate {
                 None
             } else {
                 dispatcher
-                    .terminate(access, session_id, termination_headers)
+                    .terminate_initialized(access, initialized, termination_headers)
                     .await
                     .err()
             };
@@ -4392,6 +4547,317 @@ mod tests {
         gate.sessions
             .cancel_reservation(reservation)
             .expect("cleanup");
+    }
+
+    #[tokio::test]
+    #[allow(clippy::too_many_lines)] // Keep pruning, replacement, and exact cleanup in one race fixture.
+    async fn pruned_and_replaced_cache_cannot_redirect_late_initialization_cleanup() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::time::Duration;
+        let builds = Arc::new(AtomicUsize::new(0));
+        let selected = Arc::clone(&builds);
+        let entered = Arc::new(tokio::sync::Notify::new());
+        let started = Arc::clone(&entered);
+        let release = Arc::new(tokio::sync::Notify::new());
+        let completion = Arc::clone(&release);
+        let deleted = Arc::new(Mutex::new(Vec::new()));
+        let recorded = Arc::clone(&deleted);
+        let cache = BoundedTenantTowerMcpServiceCache::new(
+            1,
+            move |_access: &rembrane_contracts::VerifiedRemoteAccess| {
+                let generation = selected.fetch_add(1, Ordering::SeqCst) + 1;
+                let started = Arc::clone(&started);
+                let completion = Arc::clone(&completion);
+                let recorded = Arc::clone(&recorded);
+                Ok::<_, std::convert::Infallible>(tower::service_fn(
+                    move |request: Request<Body>| {
+                        let started = Arc::clone(&started);
+                        let completion = Arc::clone(&completion);
+                        let recorded = Arc::clone(&recorded);
+                        async move {
+                            let mut response = Response::new(Body::empty());
+                            if request.method() == Method::POST {
+                                started.notify_one();
+                                completion.notified().await;
+                                response.headers_mut().insert(
+                                    super::MCP_SESSION_HEADER_NAME,
+                                    HeaderValue::from_static("session_retained_0123456789abcdef"),
+                                );
+                            } else {
+                                assert_eq!(request.method(), Method::DELETE);
+                                recorded.lock().expect("cleanup log").push(generation);
+                            }
+                            Ok::<_, std::convert::Infallible>(response)
+                        }
+                    },
+                ))
+            },
+        )
+        .expect("cache");
+        let dispatcher = fixture_tenant_dispatcher(cache.clone());
+        let authorization = Arc::new(
+            fixture_shared_authorization(1, &runtime_config(), Verifier).expect("authorization"),
+        );
+        let worker = Arc::clone(&authorization);
+        let initialization = tokio::spawn(async move {
+            worker
+                .initialize_and_commit_owned_session(
+                    &runtime_headers(),
+                    initialize_body(),
+                    1_999,
+                    &dispatcher,
+                )
+                .await
+        });
+        tokio::time::timeout(Duration::from_secs(5), entered.notified())
+            .await
+            .expect("initialization reached original service");
+        assert_eq!(cache.prune_expired(2_000).expect("prune original"), 1);
+        let replacement = verified_access(
+            "workspace_01",
+            3_000,
+            BTreeSet::from([
+                RemoteAccessScope::ContextRead,
+                RemoteAccessScope::MemoryWrite,
+            ]),
+        );
+        drop(
+            cache
+                .create(&replacement)
+                .expect("same identity replacement"),
+        );
+        assert_eq!(builds.load(Ordering::SeqCst), 2);
+        tokio::time::sleep(Duration::from_millis(1_100)).await;
+        release.notify_one();
+        let result = tokio::time::timeout(Duration::from_secs(5), initialization)
+            .await
+            .expect("bounded completion")
+            .expect("initialization task");
+        assert!(matches!(
+            result,
+            Err(RemoteMcpInitializationError::Commit {
+                termination_error: None,
+                ..
+            })
+        ));
+        assert_eq!(
+            *deleted.lock().expect("cleanup log"),
+            [1],
+            "cleanup must use the original service, never generation two"
+        );
+        assert_eq!(
+            builds.load(Ordering::SeqCst),
+            2,
+            "cleanup must not call the factory"
+        );
+        assert_eq!(cache.len(), 1, "replacement stays cached");
+        assert!(
+            authorization
+                .gate
+                .lock()
+                .expect("registry")
+                .sessions
+                .is_empty()
+        );
+    }
+
+    #[tokio::test]
+    async fn retained_cleanup_rejects_unbound_or_substituted_metadata_before_admission() {
+        let access = factory_access("workspace_01");
+        let mut headers = super::RemoteMcpProtocolHeaders::transport_neutral();
+        headers.validated_host = Some("memory.example.test".to_owned());
+        let session = RemoteSessionId::new("session_retained_0123456789abcdef").expect("session");
+        let capacity = Arc::new(Semaphore::new(1));
+        let permit = capacity.try_acquire().expect("saturated");
+        let make = || {
+            InitializedRemoteMcpSession::new(Response::new(Body::empty()), session.clone())
+                .retain_service(42_usize, access.clone(), headers.clone())
+        };
+        let mut changed_headers = headers.clone();
+        changed_headers.validated_origin = Some("https://other.example.test".to_owned());
+        for (initialized, claims, metadata) in [
+            (
+                InitializedRemoteMcpSession::new(Response::new(Body::empty()), session.clone()),
+                access.clone(),
+                headers.clone(),
+            ),
+            (make(), factory_access("workspace_02"), headers.clone()),
+            (make(), access.clone(), changed_headers),
+        ] {
+            assert!(matches!(
+                super::retained_initialization_service::<usize, std::convert::Infallible>(
+                    initialized,
+                    &claims,
+                    &metadata,
+                    Arc::clone(&capacity),
+                )
+                .await,
+                Err(super::TowerMcpDispatchError::InvalidAuthorizedMetadata),
+            ));
+        }
+        assert!(matches!(
+            super::retained_initialization_service::<usize, std::convert::Infallible>(
+                make(),
+                &access,
+                &headers,
+                Arc::clone(&capacity),
+            )
+            .await,
+            Err(super::TowerMcpDispatchError::CleanupUnavailable),
+        ));
+        drop(permit);
+        assert!(matches!(
+            super::retained_initialization_service::<String, std::convert::Infallible>(
+                make(),
+                &access,
+                &headers,
+                Arc::clone(&capacity),
+            )
+            .await,
+            Err(super::TowerMcpDispatchError::InvalidAuthorizedMetadata),
+        ));
+        assert_eq!(capacity.available_permits(), 1);
+        let (service, actual_session) = super::retained_initialization_service::<
+            usize,
+            std::convert::Infallible,
+        >(make(), &access, &headers, Arc::clone(&capacity))
+        .await
+        .expect("exact retained handle");
+        assert_eq!(service, 42);
+        assert_eq!(actual_session, session);
+        capacity.close();
+        assert!(matches!(
+            super::retained_initialization_service::<usize, std::convert::Infallible>(
+                make(),
+                &access,
+                &headers,
+                capacity,
+            )
+            .await,
+            Err(super::TowerMcpDispatchError::CleanupUnavailable),
+        ));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn abandoned_retained_selection_keeps_capacity_until_blocking_clone_finishes() {
+        use std::time::Duration;
+        struct BlockingClone {
+            started: Arc<Mutex<Option<tokio::sync::oneshot::Sender<std::thread::ThreadId>>>>,
+            release: Arc<Mutex<std::sync::mpsc::Receiver<()>>>,
+        }
+        impl Clone for BlockingClone {
+            fn clone(&self) -> Self {
+                self.started
+                    .lock()
+                    .expect("signal")
+                    .take()
+                    .expect("one clone")
+                    .send(std::thread::current().id())
+                    .expect("started");
+                self.release
+                    .lock()
+                    .expect("receiver")
+                    .recv_timeout(Duration::from_secs(5))
+                    .expect("bounded release");
+                Self {
+                    started: Arc::clone(&self.started),
+                    release: Arc::clone(&self.release),
+                }
+            }
+        }
+        let (started, worker_started) = tokio::sync::oneshot::channel();
+        let (release, receiver) = std::sync::mpsc::channel();
+        let access = factory_access("workspace_01");
+        let mut headers = super::RemoteMcpProtocolHeaders::transport_neutral();
+        headers.validated_host = Some("memory.example.test".to_owned());
+        let session = RemoteSessionId::new("session_retained_0123456789abcdef").expect("session");
+        let initialized =
+            InitializedRemoteMcpSession::new(Response::new(Body::empty()), session.clone())
+                .retain_service(
+                    BlockingClone {
+                        started: Arc::new(Mutex::new(Some(started))),
+                        release: Arc::new(Mutex::new(receiver)),
+                    },
+                    access.clone(),
+                    headers.clone(),
+                );
+        let capacity = Arc::new(Semaphore::new(1));
+        let worker_capacity = Arc::clone(&capacity);
+        let worker_access = access.clone();
+        let worker_headers = headers.clone();
+        let waiter = tokio::spawn(async move {
+            super::retained_initialization_service::<BlockingClone, std::convert::Infallible>(
+                initialized,
+                &worker_access,
+                &worker_headers,
+                worker_capacity,
+            )
+            .await
+        });
+        let thread = tokio::time::timeout(Duration::from_secs(5), worker_started)
+            .await
+            .expect("bounded worker start")
+            .expect("worker started");
+        assert_ne!(thread, std::thread::current().id());
+        waiter.abort();
+        assert!(waiter.await.err().expect("abandoned").is_cancelled());
+        assert_eq!(capacity.available_permits(), 0);
+        assert!(matches!(
+            super::retained_initialization_service::<usize, std::convert::Infallible>(
+                InitializedRemoteMcpSession::new(Response::new(Body::empty()), session)
+                    .retain_service(42_usize, access.clone(), headers.clone()),
+                &access,
+                &headers,
+                Arc::clone(&capacity),
+            )
+            .await,
+            Err(super::TowerMcpDispatchError::CleanupUnavailable),
+        ));
+        release.send(()).expect("release clone");
+        let permit = tokio::time::timeout(Duration::from_secs(5), capacity.acquire())
+            .await
+            .expect("capacity released after real completion")
+            .expect("capacity");
+        drop(permit);
+        assert_eq!(capacity.available_permits(), 1);
+    }
+
+    #[tokio::test]
+    async fn retained_clone_panic_is_redacted_and_cannot_poison_other_handles() {
+        struct PanickingClone;
+        impl Clone for PanickingClone {
+            fn clone(&self) -> Self {
+                panic!("private retained service clone detail");
+            }
+        }
+        let access = factory_access("workspace_01");
+        let mut headers = super::RemoteMcpProtocolHeaders::transport_neutral();
+        headers.validated_host = Some("memory.example.test".to_owned());
+        let session = RemoteSessionId::new("session_retained_0123456789abcdef").expect("session");
+        let capacity = Arc::new(Semaphore::new(1));
+        let initialized =
+            InitializedRemoteMcpSession::new(Response::new(Body::empty()), session.clone())
+                .retain_service(PanickingClone, access.clone(), headers.clone());
+        let result = super::retained_initialization_service::<
+            PanickingClone,
+            std::convert::Infallible,
+        >(initialized, &access, &headers, Arc::clone(&capacity))
+        .await
+        .err()
+        .expect("panic denial");
+        assert_eq!(format!("{result:?}"), "CleanupUnavailable");
+        assert_eq!(capacity.available_permits(), 1);
+        let fresh = InitializedRemoteMcpSession::new(Response::new(Body::empty()), session)
+            .retain_service(42_usize, access.clone(), headers.clone());
+        assert_eq!(
+            super::retained_initialization_service::<usize, std::convert::Infallible>(
+                fresh, &access, &headers, capacity,
+            )
+            .await
+            .expect("independent handle remains usable")
+            .0,
+            42,
+        );
     }
 
     use super::{

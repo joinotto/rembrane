@@ -566,8 +566,14 @@ are in [First Production Release Plan](docs/PRODUCTION_PLAN.md).
         unchanged binding, without granting expired client DELETE authority.
     - [ ] Verify live stream expiry/revocation and queued SDK tool denial in
       the actual remote listener; admission checks do not close opened streams.
+      - [x] Retain the exact Tower service and original authority metadata
+        through initialization commit/compensation so expiry pruning or cache
+        replacement cannot redirect cleanup to a new factory-selected service.
+      - [x] Prove original-service cleanup after pruning/replacement with a
+        delayed Tower fixture; reject missing/type/identity/header substitution
+        and bound retained selection through panic/cancellation completion.
       - [ ] Exercise concurrent expiry pruning and late initialization cleanup
-        with actual SDK session state, not only retained-cache Tower fixtures.
+        with actual SDK session state, not only generic Tower fixtures.
     - [x] Verify blocking-client executor isolation, per-request verification,
       shared budgets, all-route overload, failure cleanup, and cancellation.
     - [ ] Exercise the boundary with the actual official SDK remote listener

@@ -45,7 +45,7 @@ evidence and the strict readiness command.
   initialization without serializing unrelated tenant lookups. Library tests
   cover panic/cancellation cleanup and overload, not a deployed SDK listener.
 - Expired tenant-service cleanup runs outside the global cache lock. The
-  remote adapter's 74 passing unit tests include blocked/panicking cleanup,
+  remote adapter's 78 passing unit tests include blocked/panicking cleanup,
   concurrent tenant progress, reclaimed capacity, and pending reservation
   preservation. Live provider shutdown and load behavior remain unverified.
 - REST and MCP startup now check canonical metadata authority before
@@ -62,6 +62,12 @@ evidence and the strict readiness command.
   failed compatibility initialization can roll back only an exact unchanged
   binding after expiry. Actual SDK cache-pruning/late-cleanup races still need
   verification.
+- Stateful Tower initialization retains the selected service for late-failure
+  compensation instead of asking the factory/cache for it again. A delayed
+  fixture prunes and replaces the entry while initialization is running, then
+  proves cleanup reaches only the original service. Retained selection checks
+  exact authority metadata and uses bounded workers; this is not an actual SDK
+  session-manager or live listener proof.
 - The PostgreSQL boundary includes a fail-closed runtime-authority guard with
   74 passing adapter unit tests. Its new shared SQL fixtures still require
   live PostgreSQL execution; the concrete database driver remains missing.

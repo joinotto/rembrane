@@ -312,8 +312,46 @@ already opened event stream. Fresh token verification, canonical membership
 reauthorization, provider timeouts, and live expiry/revocation tests for the
 actual remote listener remain necessary.
 Concurrent cache pruning during late initialization/compensation also needs
-actual SDK session-state verification; the passing late-response fixture
-retains its cached service throughout cleanup.
+actual SDK session-state verification. The library race fixture now removes
+and replaces the cache entry before late-failure compensation, proving cleanup
+uses the original service, not its replacement.
+
+## Initialization service ownership during compensation
+
+Tower initialization attaches a private, process-local service handle to
+`InitializedRemoteMcpSession`. The shared and borrowing orchestrators use
+`terminate_initialized` with the owned result on commit failure. That path
+checks the original verified claims and validated HTTP metadata, then selects
+the retained service on a bounded blocking worker. It never re-enters the
+factory or depends on an unpruned cache entry. `into_parts` discards the private
+handle and is appropriate after successful commit, not before compensation.
+Debug output and logical result equality do not expose or prove the handle.
+
+The four additional remote-adapter tests cover:
+
+- pruning and replacing the exact cache identity while initialization waits,
+  followed by cleanup on the original service and no additional factory call;
+- missing handles, wrong service type, claim/header substitution, saturated
+  and closed capacity, and successful exact-handle selection;
+- clone execution off the executor and capacity retained after waiter abort
+  until actual blocking completion;
+- redacted clone panic and independent-handle recovery without cache poisoning.
+
+Direct Tower cleanup shares the process factory-worker budget; tenant-aware
+cleanup uses its dispatcher budget. `CleanupUnavailable` is a closed error
+for overload/closed capacity or worker failure. The actual HTTP host still
+needs to map this failure appropriately; these tests do not establish a live
+HTTP overload response or guaranteed cleanup after caller cancellation.
+
+Tower service clones must share the same session state and be lightweight.
+The cached pinned `rmcp` 3.7.0 source keeps its session manager in an `Arc`
+across clones; source inspection is not executable transport verification.
+Arbitrary custom `Clone`/`Drop` implementations are not automatically safe.
+Stateful custom dispatchers must override `terminate_initialized` with their
+own retained ownership. Its default and the legacy `terminate` port preserve
+stateless/caller-managed compatibility but do not solve cache reselection for
+custom stateful implementations. Real SDK lifecycle, cancellation, stream
+expiry/revocation, and deployment/recovery tests remain pending.
 
 Provider authors should also run the shared Rust conformance harness against a
 disposable provider tenant:

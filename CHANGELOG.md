@@ -9,6 +9,18 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Fixed
 
+- Stateful Tower initialization now retains a private handle to the exact
+  selected service for compensation. Cache expiry or replacement cannot
+  redirect late-failure cleanup to a newly constructed tenant service.
+- Shared and borrowing initialization orchestrators consume that retained
+  result through `terminate_initialized`; legacy custom/stateless dispatchers
+  keep their compatibility default. Cleanup checks original claims and HTTP
+  metadata before bounded worker selection and never calls the factory.
+- Tests cover pruning/replacement during initialization, missing/wrong typed
+  handles, identity/header substitution, overload/closed capacity, clone panic,
+  and cancellation-safe worker ownership. Actual SDK listener verification
+  remains required.
+
 - Verified remote-access proofs now retain a process-local monotonic deadline;
   clones cannot renew it and claim equality is not current authorization.
   Verification/worker waits narrow validity without changing token claims.
