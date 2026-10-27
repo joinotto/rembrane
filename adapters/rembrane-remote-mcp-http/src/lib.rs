@@ -278,6 +278,8 @@ pub trait AuthorizedRemoteMcpEventStreamDispatcher {
 /// internal compensating-cleanup port below. `Ok` must mean confirmed protocol
 /// deletion, not merely successful transport I/O. HTTP dispatchers must reject
 /// non-success status codes so local bindings remain available for retry.
+/// Preserve the captured dispatch guard and recheck it with the exact session
+/// ID/proof after waits and immediately before initiating downstream deletion.
 pub trait AuthorizedRemoteMcpSessionDeletionDispatcher {
     type Output;
     type Error;
@@ -287,6 +289,7 @@ pub trait AuthorizedRemoteMcpSessionDeletionDispatcher {
         &self,
         access: VerifiedRemoteAccess,
         session_id: RemoteSessionId,
+        session_guard: RemoteSessionDispatchGuard,
         protocol_version: Option<String>,
         validated_host: String,
         validated_origin: Option<String>,
@@ -1068,7 +1071,7 @@ fn ensure_current_request<Error>(
         guard
             .ensure_current(&id, access)
             .map_err(|_| TowerMcpDispatchError::RevokedSession)?;
-    } else if session.is_some() && matches!(*request.method(), Method::GET | Method::POST) {
+    } else if session.is_some() {
         return Err(TowerMcpDispatchError::InvalidAuthorizedMetadata);
     }
     Ok(())
@@ -1436,6 +1439,7 @@ where
         &self,
         access: VerifiedRemoteAccess,
         session_id: RemoteSessionId,
+        session_guard: RemoteSessionDispatchGuard,
         protocol_version: Option<String>,
         validated_host: String,
         validated_origin: Option<String>,
@@ -1463,6 +1467,7 @@ where
                 validated_origin.as_deref(),
             )?;
             request.extensions_mut().insert(access);
+            request.extensions_mut().insert(session_guard);
             let response = call_current_service(service, request).await?;
             if !response.status().is_success() {
                 return Err(TowerMcpDispatchError::InvalidSdkResponse);
@@ -1776,13 +1781,16 @@ where
         &self,
         access: VerifiedRemoteAccess,
         session_id: RemoteSessionId,
+        session_guard: RemoteSessionDispatchGuard,
         protocol_version: Option<String>,
         validated_host: String,
         validated_origin: Option<String>,
     ) -> Self::DispatchFuture {
         let dispatcher = self.clone();
         Box::pin(async move {
-            let service = dispatcher.create_service(&access).await?;
+            let service = dispatcher
+                .create_session_service(&access, Some(&session_id), Some(&session_guard))
+                .await?;
             let mut request = Request::builder()
                 .method(Method::DELETE)
                 .body(Body::empty())
@@ -1804,6 +1812,7 @@ where
                 validated_origin.as_deref(),
             )?;
             request.extensions_mut().insert(access);
+            request.extensions_mut().insert(session_guard);
             let response = call_current_service(service, request)
                 .await
                 .map_err(tenant_dispatch_error)?;
@@ -3192,30 +3201,34 @@ where
             )
             .await
             .map_err(RemoteMcpDispatchError::Authorization)?;
-        let mutation_guard = {
+        let (mutation_guard, dispatch_guard) = {
             let mut gate = self
                 .gate
                 .lock()
                 .map_err(|_| RemoteMcpDispatchError::Authorization(lock_rejection()))?;
-            gate.sessions
-                .revalidate_access(&session_id, &mut access, now_epoch_seconds)
+            let dispatch_guard = gate
+                .sessions
+                .capture_dispatch_guard(&session_id, &mut access, now_epoch_seconds)
                 .map_err(|_| {
                     RemoteMcpDispatchError::Authorization(
                         gate.rejection(RemoteSessionHttpError::Forbidden),
                     )
                 })?;
-            gate.sessions
+            let mutation_guard = gate
+                .sessions
                 .capture_mutation_guard(&session_id, &access, now_epoch_seconds)
                 .map_err(|_| {
                     RemoteMcpDispatchError::Authorization(
                         gate.rejection(RemoteSessionHttpError::Forbidden),
                     )
-                })?
+                })?;
+            (mutation_guard, dispatch_guard)
         };
         let output = dispatcher
             .terminate(
                 access.clone(),
                 session_id.clone(),
+                dispatch_guard,
                 protocol_version.map(str::to_owned),
                 request.host.unwrap_or_default().to_owned(),
                 request.origin.map(str::to_owned),
@@ -4264,7 +4277,7 @@ impl RemoteMcpHttpGate {
             .map_err(RemoteMcpDispatchError::Authorization)?;
         let session_id =
             Self::session_id(request.session_id).map_err(RemoteMcpDispatchError::Authorization)?;
-        let access = self
+        let mut access = self
             .sessions
             .authorize_termination_for_http(
                 authorization,
@@ -4274,6 +4287,14 @@ impl RemoteMcpHttpGate {
                 now_epoch_seconds,
             )
             .map_err(|error| RemoteMcpDispatchError::Authorization(self.rejection(error)))?;
+        let dispatch_guard = self
+            .sessions
+            .capture_dispatch_guard(&session_id, &mut access, now_epoch_seconds)
+            .map_err(|_| {
+                RemoteMcpDispatchError::Authorization(
+                    self.rejection(RemoteSessionHttpError::Forbidden),
+                )
+            })?;
         let mutation_guard = self
             .sessions
             .capture_mutation_guard(&session_id, &access, now_epoch_seconds)
@@ -4286,6 +4307,7 @@ impl RemoteMcpHttpGate {
             .terminate(
                 access.clone(),
                 session_id.clone(),
+                dispatch_guard,
                 protocol_version.map(str::to_owned),
                 request.host.unwrap_or_default().to_owned(),
                 request.origin.map(str::to_owned),
@@ -4427,6 +4449,22 @@ mod tests {
         access
     }
 
+    fn fixture_session_dispatch_guard(
+        access: &rembrane_contracts::VerifiedRemoteAccess,
+        id: &RemoteSessionId,
+    ) -> (
+        rembrane_application::RemoteSessionRegistry,
+        rembrane_application::RemoteSessionDispatchGuard,
+    ) {
+        let mut registry = rembrane_application::RemoteSessionRegistry::new(1).unwrap();
+        let mut access = access.clone();
+        registry.establish(id.clone(), &access, 1_000).unwrap();
+        let guard = registry
+            .capture_dispatch_guard(id, &mut access, 1_000)
+            .unwrap();
+        (registry, guard)
+    }
+
     #[tokio::test]
     #[allow(clippy::too_many_lines)] // One fixture contrasts all client routes with internal cleanup.
     async fn expired_proofs_deny_every_client_tower_route_but_allow_compensating_cleanup() {
@@ -4461,6 +4499,8 @@ mod tests {
             zeroize::Zeroizing::new(br#"{"jsonrpc":"2.0","id":1,"method":"initialize"}"#.to_vec())
         };
         let session = RemoteSessionId::new("session_0123456789abcdef").expect("session");
+        let (_registry, guard) =
+            fixture_session_dispatch_guard(&factory_access("workspace_01"), &session);
         assert!(matches!(
             direct
                 .dispatch(expired.clone(), invocation.clone(), headers.clone(), body())
@@ -4490,6 +4530,7 @@ mod tests {
                 &direct,
                 expired.clone(),
                 session.clone(),
+                guard.clone(),
                 None,
                 "memory.example.test".to_owned(),
                 None,
@@ -4526,6 +4567,7 @@ mod tests {
                 &tenant,
                 expired.clone(),
                 session.clone(),
+                guard,
                 None,
                 "memory.example.test".to_owned(),
                 None,
@@ -5559,6 +5601,7 @@ mod tests {
             tool_name: None,
         };
         let session = RemoteSessionId::new("session_factory_0123456789").expect("fixture session");
+        let (_registry, guard) = fixture_session_dispatch_guard(&access, &session);
         assert_factory_unavailable(
             &dispatcher
                 .dispatch(
@@ -5604,6 +5647,7 @@ mod tests {
                 &dispatcher,
                 access,
                 session,
+                guard,
                 None,
                 "memory.example.test".to_owned(),
                 None,
@@ -6206,12 +6250,14 @@ mod tests {
 
         fn terminate(
             &self,
-            _access: rembrane_contracts::VerifiedRemoteAccess,
-            _session_id: RemoteSessionId,
+            access: rembrane_contracts::VerifiedRemoteAccess,
+            session_id: RemoteSessionId,
+            session_guard: rembrane_application::RemoteSessionDispatchGuard,
             _protocol_version: Option<String>,
             _validated_host: String,
             _validated_origin: Option<String>,
         ) -> Self::DispatchFuture {
+            session_guard.ensure_current(&session_id, &access).unwrap();
             self.observed_unlocked
                 .lock()
                 .expect("probe log")
@@ -8189,11 +8235,14 @@ mod tests {
         assert_eq!(event_stream.2, Method::GET);
         assert_eq!(event_stream.3, None);
 
+        let session_id = rembrane_contracts::RemoteSessionId::new("session_0123456789abcdef")
+            .expect("session id");
+        let (_registry, guard) = fixture_session_dispatch_guard(&workspace_two, &session_id);
         let deletion = dispatcher
             .terminate(
                 workspace_two,
-                rembrane_contracts::RemoteSessionId::new("session_0123456789abcdef")
-                    .expect("session id"),
+                session_id,
+                guard,
                 Some("2025-03-26".to_owned()),
                 "memory.example.test".to_owned(),
                 None,

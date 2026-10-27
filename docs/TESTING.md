@@ -434,6 +434,40 @@ return `Ok` only for confirmed protocol deletion, not successful transport I/O.
 The pre-alpha Tower deletion implementation now requires an HTTP response;
 custom non-HTTP protocols retain the explicit port and its confirmation duty.
 
+Client DELETE now also requires the `RemoteSessionDispatchGuard` captured under
+the same registry lock as its local mutation-completion guard. The pre-alpha
+`AuthorizedRemoteMcpSessionDeletionDispatcher::terminate` signature adds this
+mandatory guard immediately after `session_id`. Custom dispatchers must retain
+it and call `ensure_current(&session_id, &access)` after waits and immediately
+before starting downstream deletion; an old proof or a newly captured replacement
+is not equivalent authority.
+
+Direct and tenant-selected Tower DELETE retain the guard in HTTP extensions,
+rechecking before dispatch and after readiness. Tenant factory workers check
+before and after construction, and removed or substituted guards are denied
+before provider selection. All session-bearing client requests now require the
+guard; DELETE no longer has a missing-guard exception. Borrowing and owned/shared
+orchestration capture both guards before dispatch, and still commit local removal
+only after confirmed HTTP success.
+
+```sh
+cargo test -p rembrane-remote-mcp-http --locked --offline queued_session_delete
+cargo test -p rembrane-remote-mcp-http --locked --offline client_delete_rejects
+```
+
+The readiness regression first reproduced one downstream DELETE call after
+local removal. It now denies before that call, including a same-claims
+replacement. The tenant-wait matrix now covers DELETE alongside GET/POST; a
+second new test covers removed guards and session/proof substitution without
+provider construction. Existing HTTP-status/retry, unlocked dispatch,
+late-completion, and expired-client-versus-internal-cleanup tests still pass.
+
+Internal compensating termination remains a separate port and does not use
+client admission; it may clean up an already initialized exact retained SDK
+service with an elapsed original proof. These fixtures do not prove cancellation
+or replacement safety of an SDK operation already admitted, or live SDK cleanup.
+Keep those actual-listener/session-manager release requirements open.
+
 Established-session POST proofs retain a private `RemoteSessionId` in their
 protocol metadata only after successful registry authorization. HTTP header
 parsing alone leaves it absent. Borrowing Axum wrappers preserve this field
@@ -492,7 +526,8 @@ identity/claims, never current authority.
 These guards provide process-local admission checks, not token introspection,
 idle-stream wakeups, forced cancellation of already admitted operations, or
 distributed session consistency. Real SDK HTTP propagation and cleanup remain
-unverified; client DELETE dispatch/compensation needs its own exact-incarnation
+unverified; client DELETE now has guarded admission, but already admitted SDK
+deletion and compensating cleanup still need actual SDK incarnation/replacement
 proof. Continue to require response guarding and real revocation monitoring
 for opened streams.
 

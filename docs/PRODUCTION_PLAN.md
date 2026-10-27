@@ -45,7 +45,7 @@ evidence and the strict readiness command.
   initialization without serializing unrelated tenant lookups. Library tests
   cover panic/cancellation cleanup and overload, not a deployed SDK listener.
 - Expired tenant-service cleanup runs outside the global cache lock. The
-  remote adapter's 113 passing unit tests include blocked/panicking cleanup,
+  remote adapter's 115 passing unit tests include blocked/panicking cleanup,
   concurrent tenant progress, reclaimed capacity, and pending reservation
   preservation. Live provider shutdown and load behavior remain unverified.
 - REST and MCP startup now check canonical metadata authority before
@@ -101,6 +101,13 @@ evidence and the strict readiness command.
   without mutation. All 19 MCP tests pass. These are process-local admission
   checks, not actual HTTP propagation, stream monitoring, client DELETE
   cancellation, or distributed-session evidence.
+- Client DELETE now captures that dispatch guard alongside its completion guard,
+  rejects removed/replaced authority after readiness or tenant construction, and
+  denies guard/session/proof substitution before provider selection. One
+  regression first reproduced a downstream DELETE after local removal; both new
+  tests and the existing status/retry/cleanup matrices pass. Internal compensation
+  remains separate. This does not prove cancellation/replacement safety for an
+  already admitted actual SDK deletion or live session-manager cleanup.
 - A new response-body guard stops delivery at the earlier original proof/
   controller deadline or explicit sticky revocation. Fourteen new Axum body
   tests cover idle wakeups, per-claim binding, tenant separation, frame/trailer

@@ -9,6 +9,15 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Fixed
 
+- Client DELETE now requires its captured exact-incarnation dispatch guard
+  through tenant construction and Tower readiness. A regression first
+  reproduced one downstream DELETE after local removal; it now denies before
+  dispatch, including same-claims replacement. Removed or substituted guards
+  also deny before provider selection. The pre-alpha deletion port adds the
+  mandatory guard after `session_id`; internal compensating cleanup remains a
+  separate port. All 115 remote tests pass; actual SDK cancellation/cleanup
+  verification remains pending.
+
 - Queued session GET/POST cannot regain authority after their exact local
   session is deleted or replaced while waiting for tenant construction or
   Tower readiness. Request-bound dispatch guards preserve permanent removal

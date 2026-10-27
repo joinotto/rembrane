@@ -771,6 +771,11 @@ are in [First Production Release Plan](docs/PRODUCTION_PLAN.md).
         workers, Tower readiness, and MCP tool worker/store-lock admission.
       - [x] Reproduce and deny queued GET/POST after deletion or same-claims
         replacement; verify real encrypted tool denial after its store wait.
+      - [x] Capture the same dispatch guard for client DELETE alongside its
+        completion guard. Reproduce a queued downstream DELETE after removal,
+        then deny before readiness/factory dispatch and reject guard/session/
+        proof substitution before provider selection; retain separate
+        expired-proof internal compensation.
       - [ ] Prove propagation and cleanup through the actual SDK HTTP listener,
         including client DELETE/compensation and opened-stream revocation.
   - [ ] Serve Streamable HTTP through the official Rust MCP SDK.

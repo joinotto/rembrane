@@ -12,14 +12,19 @@ use std::{
     time::Duration,
 };
 
-use axum::{body::Body, http::Request, response::Response};
-use rembrane_application::RemoteTokenVerifier;
+use axum::{
+    body::Body,
+    http::{Method, Request},
+    response::Response,
+};
+use rembrane_application::{RemoteSessionDispatchGuard, RemoteTokenVerifier};
 use tokio::sync::{Notify, Semaphore};
 use zeroize::Zeroizing;
 
 use crate::{
-    AuthorizedTowerMcpDispatcher, RemoteMcpDispatchError, TenantAwareTowerMcpDispatchError,
-    TenantAwareTowerMcpDispatcher, TowerMcpDispatchError, tests::session_metadata_fixture,
+    AuthorizedRemoteMcpSessionDeletionDispatcher, AuthorizedTowerMcpDispatcher,
+    RemoteMcpDispatchError, TenantAwareTowerMcpDispatchError, TenantAwareTowerMcpDispatcher,
+    TowerMcpDispatchError, tests::session_metadata_fixture,
 };
 
 type Readiness = Pin<Box<dyn Future<Output = ()> + Send + Sync>>;
@@ -69,7 +74,7 @@ impl tower::Service<Request<Body>> for DelayedReadiness {
     }
 }
 
-async fn deletion_during_readiness(is_get: bool, replace: bool) {
+async fn deletion_during_readiness(method: Method, replace: bool) {
     let (authorization, id, headers) = session_metadata_fixture();
     let authorization = Arc::new(authorization);
     let started = Arc::new(Notify::new());
@@ -83,10 +88,15 @@ async fn deletion_during_readiness(is_get: bool, replace: bool) {
     });
     let task_authorization = Arc::clone(&authorization);
     let pending = tokio::spawn(async move {
-        if is_get {
+        if method == Method::GET {
             task_authorization
                 .shared
                 .authorize_and_dispatch_session_event_stream(&headers, 1_000, &dispatcher)
+                .await
+        } else if method == Method::DELETE {
+            task_authorization
+                .shared
+                .authorize_and_dispatch_termination(&headers, 1_000, &dispatcher)
                 .await
         } else {
             task_authorization
@@ -126,6 +136,11 @@ async fn deletion_during_readiness(is_get: bool, replace: bool) {
         .await
         .unwrap()
         .unwrap();
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        0,
+        "removed session must not reach downstream SDK dispatch"
+    );
     assert!(
         matches!(
             result,
@@ -135,7 +150,6 @@ async fn deletion_during_readiness(is_get: bool, replace: bool) {
         ),
         "removed session must not regain authority after readiness"
     );
-    assert_eq!(calls.load(Ordering::SeqCst), 0);
     assert_eq!(
         authorization.shared.gate.lock().unwrap().sessions.len(),
         usize::from(replace)
@@ -145,20 +159,27 @@ async fn deletion_during_readiness(is_get: bool, replace: bool) {
 #[tokio::test]
 async fn queued_session_post_cannot_dispatch_after_deletion_or_same_claims_replacement() {
     for replace in [false, true] {
-        deletion_during_readiness(false, replace).await;
+        deletion_during_readiness(Method::POST, replace).await;
     }
 }
 
 #[tokio::test]
 async fn queued_session_get_cannot_dispatch_after_deletion_or_same_claims_replacement() {
     for replace in [false, true] {
-        deletion_during_readiness(true, replace).await;
+        deletion_during_readiness(Method::GET, replace).await;
+    }
+}
+
+#[tokio::test]
+async fn queued_session_delete_cannot_reach_sdk_after_deletion_or_same_claims_replacement() {
+    for replace in [false, true] {
+        deletion_during_readiness(Method::DELETE, replace).await;
     }
 }
 
 #[tokio::test]
 async fn queued_session_dispatch_cannot_cross_a_tenant_factory_wait_after_replacement() {
-    for is_get in [false, true] {
+    for method in [Method::POST, Method::GET, Method::DELETE] {
         let (authorization, id, headers) = session_metadata_fixture();
         let authorization = Arc::new(authorization);
         let started = Arc::new(Notify::new());
@@ -185,10 +206,15 @@ async fn queued_session_dispatch_cannot_cross_a_tenant_factory_wait_after_replac
         dispatcher.factory_operations = Arc::new(Semaphore::new(1));
         let task_authorization = Arc::clone(&authorization);
         let pending = tokio::spawn(async move {
-            if is_get {
+            if method == Method::GET {
                 task_authorization
                     .shared
                     .authorize_and_dispatch_session_event_stream(&headers, 1_000, &dispatcher)
+                    .await
+            } else if method == Method::DELETE {
+                task_authorization
+                    .shared
+                    .authorize_and_dispatch_termination(&headers, 1_000, &dispatcher)
                     .await
             } else {
                 task_authorization
@@ -234,6 +260,101 @@ async fn queued_session_dispatch_cannot_cross_a_tenant_factory_wait_after_replac
                 TenantAwareTowerMcpDispatchError::RevokedSession,
             ))
         ));
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        assert_eq!(authorization.shared.gate.lock().unwrap().sessions.len(), 1);
+    }
+}
+
+#[tokio::test]
+async fn client_delete_rejects_removed_or_substituted_guards_before_provider_selection() {
+    for substitution in ["session", "proof", "removed"] {
+        let (authorization, id, _) = session_metadata_fixture();
+        let mut access = authorization
+            .shared
+            .verifier
+            .verify("workspace-one")
+            .unwrap()
+            .validate_connection(
+                &authorization.shared.issuer,
+                &authorization.shared.resource,
+                1_000,
+            )
+            .unwrap();
+        let guard: RemoteSessionDispatchGuard = {
+            let mut gate = authorization.shared.gate.lock().unwrap();
+            let guard = gate
+                .sessions
+                .capture_dispatch_guard(&id, &mut access, 1_000)
+                .unwrap();
+            if substitution == "removed" {
+                gate.sessions.terminate(&id, &access, 1_000).unwrap();
+                gate.sessions.establish(id.clone(), &access, 1_000).unwrap();
+            }
+            guard
+        };
+        let dispatch_id = if substitution == "session" {
+            rembrane_contracts::RemoteSessionId::new("different-live-session").unwrap()
+        } else {
+            id
+        };
+        let dispatch_access = if substitution == "proof" {
+            authorization
+                .shared
+                .verifier
+                .verify("workspace-two")
+                .unwrap()
+                .validate_connection(
+                    &authorization.shared.issuer,
+                    &authorization.shared.resource,
+                    1_000,
+                )
+                .unwrap()
+        } else {
+            access
+        };
+        let calls = Arc::new(AtomicUsize::new(0));
+        let service_calls = Arc::clone(&calls);
+        let service = tower::service_fn(move |request: Request<Body>| {
+            assert_eq!(request.method(), Method::DELETE);
+            service_calls.fetch_add(1, Ordering::SeqCst);
+            ready(Ok::<_, Infallible>(Response::new(Body::empty())))
+        });
+        let direct = AuthorizedTowerMcpDispatcher::new(service.clone());
+        let builds = Arc::new(AtomicUsize::new(0));
+        let factory_builds = Arc::clone(&builds);
+        let mut tenant = TenantAwareTowerMcpDispatcher::new(
+            move |_: &rembrane_contracts::VerifiedRemoteAccess| {
+                factory_builds.fetch_add(1, Ordering::SeqCst);
+                Ok::<_, Infallible>(service.clone())
+            },
+        );
+        tenant.factory_operations = Arc::new(Semaphore::new(1));
+        let result = direct
+            .terminate(
+                dispatch_access.clone(),
+                dispatch_id.clone(),
+                guard.clone(),
+                None,
+                "memory.example.test".to_owned(),
+                None,
+            )
+            .await;
+        assert!(matches!(result, Err(TowerMcpDispatchError::RevokedSession)));
+        let result = tenant
+            .terminate(
+                dispatch_access,
+                dispatch_id,
+                guard,
+                None,
+                "memory.example.test".to_owned(),
+                None,
+            )
+            .await;
+        assert!(matches!(
+            result,
+            Err(TenantAwareTowerMcpDispatchError::RevokedSession)
+        ));
+        assert_eq!(builds.load(Ordering::SeqCst), 0);
         assert_eq!(calls.load(Ordering::SeqCst), 0);
         assert_eq!(authorization.shared.gate.lock().unwrap().sessions.len(), 1);
     }
