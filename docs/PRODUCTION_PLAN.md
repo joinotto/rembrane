@@ -45,7 +45,7 @@ evidence and the strict readiness command.
   initialization without serializing unrelated tenant lookups. Library tests
   cover panic/cancellation cleanup and overload, not a deployed SDK listener.
 - Expired tenant-service cleanup runs outside the global cache lock. The
-  remote adapter's 69 passing unit tests include blocked/panicking cleanup,
+  remote adapter's 74 passing unit tests include blocked/panicking cleanup,
   concurrent tenant progress, reclaimed capacity, and pending reservation
   preservation. Live provider shutdown and load behavior remain unverified.
 - REST and MCP startup now check canonical metadata authority before
@@ -53,6 +53,15 @@ evidence and the strict readiness command.
   foreign, and inactive identities without provider calls. MCP also denies
   rotation-blocked startup; the REST invitation/recovery exceptions retain
   empty memory grants. This does not establish live KMS/provider behavior.
+- Remote proofs now retain a non-renewable monotonic validity deadline through
+  verification, service construction, readiness, and MCP tool admission.
+  Session commit rejects elapsed proof and compensates an already initialized
+  session. Unit/Tower fixtures do not establish real listener behavior or
+  ongoing event-stream expiry/revocation.
+  Shared initialization preserves validated Host/Origin for compensation;
+  failed compatibility initialization can roll back only an exact unchanged
+  binding after expiry. Actual SDK cache-pruning/late-cleanup races still need
+  verification.
 - The PostgreSQL boundary includes a fail-closed runtime-authority guard with
   74 passing adapter unit tests. Its new shared SQL fixtures still require
   live PostgreSQL execution; the concrete database driver remains missing.
@@ -120,6 +129,8 @@ No existing strict release gate is waived by this plan.
 - [ ] Exercise that boundary with the actual official SDK remote listener
   and real HTTPS introspection; do not route blocking verifier clients through
   the lower-level borrowing compatibility helpers on an executor.
+- [ ] Prove expiry/revocation behavior for queued SDK tools and already opened
+  streams in that listener; dispatch admission alone is insufficient.
 - [ ] Enable its actual transport feature and resolve/build the complete
   locked dependency graph; a protocol adapter alone is insufficient.
 - [ ] Implement a concrete PostgreSQL driver, pool, and runtime repository

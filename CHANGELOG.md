@@ -9,6 +9,21 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Fixed
 
+- Verified remote-access proofs now retain a process-local monotonic deadline;
+  clones cannot renew it and claim equality is not current authorization.
+  Verification/worker waits narrow validity without changing token claims.
+- Remote Tower dispatch checks proof lifetime before and after readiness.
+  Tenant construction checks before admission and around blocking work; MCP
+  rejects elapsed startup/request proofs before provider or tool admission.
+- Session establishment/commit now rejects expired proofs, releasing pending
+  capacity and compensating an already initialized downstream session. Internal
+  cleanup remains distinct from client DELETE authorization. Tests cover slow
+  verification/construction/readiness, all client routes, and late binding.
+- Shared remote initialization now forwards validated Host/Origin metadata
+  through initialization and compensation. Failed compatibility initialization
+  rolls back only its exact unchanged binding even after proof expiry; foreign,
+  changed, and missing bindings remain denied.
+
 - Local CLI, MCP, REST, and cross-tool lifecycle fixtures now clear inherited
   Rembrane configuration before selecting development keys and native graph
   processing. Only documented binary/listen overrides survive. Static tests

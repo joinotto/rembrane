@@ -267,6 +267,54 @@ offload boundaries. Embed them through the tenant-aware async dispatcher or
 provide caller-managed blocking execution. Real SDK listener integration,
 provider startup/shutdown, load/fairness, and recovery drills remain pending.
 
+## Remote proof lifetime and delayed execution
+
+`VerifiedRemoteAccess` carries a private monotonic deadline derived from the
+trusted epoch-second validation snapshot. Verification and authorization-worker
+time narrow that deadline; narrowing can never renew it or alter token claims.
+Clones preserve the deadline. Claim equality and cache/session identity exclude
+the process-local instant, so equal claims are not evidence of current authority.
+Proofs are not persisted or transmitted as replacement credentials.
+
+Run the relevant tests:
+
+```sh
+cargo test -p rembrane-contracts -p rembrane-application -p rembrane-mcp \
+    -p rembrane-remote-mcp-http --locked --offline
+```
+
+Tests cover clone/non-renewal behavior, invalidation by an expired epoch
+observation, slow protocol/tool verification, and expired proof rejection
+before MCP startup environment/provider access and tool worker admission.
+Tenant construction checks before admission and inside blocking work. The
+Tower adapters check before readiness and again immediately before calling
+the service, across client POST, initialization, stream GET, and DELETE.
+Blocked-construction/readiness tests prove expired proofs never start SDK work.
+
+Registry establishment and reserved-session commit reject expired proofs even
+when the request's original epoch snapshot has not advanced. A delayed-response
+Tower fixture proves that late initialization is not published, pending capacity
+is released, and compensation reuses the exact cached tenant service. That
+fixture is not a real SDK listener. Internal compensating termination can clean
+up an already created session after expiry; client DELETE cannot use that path.
+Shared initialization retains its validated Host/Origin for both operations.
+Compatibility initialization failures use a separate internal rollback:
+the session binding, including its expiry ceiling, must match exactly. Tests
+deny foreign/scope/expiry substitutions and repeated cleanup, while a delayed
+failure fixture proves that an elapsed original proof can release its unchanged
+binding. Changed bindings are not removed.
+
+Custom dispatcher implementations must enforce proof lifetime after their own
+waits and before execution; the ports document that obligation. The trusted
+epoch-second sample must be supplied correctly by the HTTP host. These checks
+do not re-introspect revocation, force-cancel an admitted mutation, or close an
+already opened event stream. Fresh token verification, canonical membership
+reauthorization, provider timeouts, and live expiry/revocation tests for the
+actual remote listener remain necessary.
+Concurrent cache pruning during late initialization/compensation also needs
+actual SDK session-state verification; the passing late-response fixture
+retains its cached service throughout cleanup.
+
 Provider authors should also run the shared Rust conformance harness against a
 disposable provider tenant:
 

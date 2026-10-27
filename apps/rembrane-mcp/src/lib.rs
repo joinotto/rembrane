@@ -420,11 +420,18 @@ impl RembraneMcp {
     /// Returns an error when storage, encryption, configured scope policy, or
     /// canonical workspace authorization cannot be initialized.
     pub fn from_verified_remote_access(access: &VerifiedRemoteAccess) -> Result<Self> {
-        Self::from_connection(
+        access
+            .ensure_current()
+            .context("remote MCP authorization is no longer current")?;
+        let service = Self::from_connection(
             required_environment("REMBRANE_DATABASE")?,
             ConnectionIdentity::from_verified_remote_access(access),
             true,
-        )
+        )?;
+        access
+            .ensure_current()
+            .context("remote MCP authorization is no longer current")?;
+        Ok(service)
     }
 
     /// Initializes the stdio service on a bounded blocking worker.
@@ -443,6 +450,9 @@ impl RembraneMcp {
     ///
     /// Returns an error if capacity is unavailable or initialization fails.
     pub async fn from_verified_remote_access_async(access: &VerifiedRemoteAccess) -> Result<Self> {
+        access
+            .ensure_current()
+            .context("remote MCP authorization is no longer current")?;
         let access = access.clone();
         initialize_on_worker(move || Self::from_verified_remote_access(&access)).await
     }
@@ -1789,8 +1799,10 @@ fn request_identity_matches(
     if !required {
         return true;
     }
-    access
-        .is_some_and(|access| ConnectionIdentity::from_verified_remote_access(access) == *expected)
+    access.is_some_and(|access| {
+        access.ensure_current().is_ok()
+            && ConnectionIdentity::from_verified_remote_access(access) == *expected
+    })
 }
 
 fn request_scopes(
@@ -2439,11 +2451,23 @@ mod tests {
             .await
             .expect("bounded store lock")
             .expect("locked store");
+        let mut elapsed = remote_access("principal_01", "workspace_01", "client_01");
+        assert!(
+            elapsed
+                .constrain_validity(
+                    std::time::Instant::now()
+                        .checked_sub(Duration::from_secs(2))
+                        .expect("fixture observation"),
+                    elapsed.expires_at_epoch_seconds() - 1,
+                )
+                .is_err()
+        );
         for access in [
             None,
             Some(remote_access("principal_01", "workspace_02", "client_01")),
             Some(remote_access("principal_02", "workspace_01", "client_01")),
             Some(remote_access("principal_01", "workspace_01", "client_02")),
+            Some(elapsed),
         ] {
             let error = server
                 .run_tool(
@@ -2477,6 +2501,36 @@ mod tests {
             .expect_err("cancelled request");
         assert_eq!(error.message, "operation cancelled before execution");
         service.cancel().await.expect("service shutdown");
+    }
+
+    #[tokio::test]
+    async fn expired_remote_startup_proof_is_denied_before_environment_or_worker_admission() {
+        let mut elapsed = remote_access("principal_01", "workspace_01", "client_01");
+        assert!(
+            elapsed
+                .constrain_validity(
+                    std::time::Instant::now()
+                        .checked_sub(Duration::from_secs(2))
+                        .expect("fixture observation"),
+                    elapsed.expires_at_epoch_seconds() - 1,
+                )
+                .is_err()
+        );
+        let sync = RembraneMcp::from_verified_remote_access(&elapsed)
+            .err()
+            .expect("expired sync startup");
+        assert_eq!(
+            sync.to_string(),
+            "remote MCP authorization is no longer current"
+        );
+        let asynchronous = RembraneMcp::from_verified_remote_access_async(&elapsed)
+            .await
+            .err()
+            .expect("expired async startup");
+        assert_eq!(
+            asynchronous.to_string(),
+            "remote MCP authorization is no longer current"
+        );
     }
 
     #[tokio::test(flavor = "current_thread")]

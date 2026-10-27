@@ -539,6 +539,8 @@ are in [First Production Release Plan](docs/PRODUCTION_PLAN.md).
     request context and canonical authorization.
   - [x] Check immutable verified request identity before admission and retain
     worker capacity through real completion after abandoned requests.
+    - [x] Reject elapsed remote startup and tool proofs before provider/worker
+      admission and recheck lifetime with canonical tool authorization.
   - [x] Construct stdio providers outside the executor and expose bounded
     async constructors for stdio and verified remote service initialization.
   - [x] Prove actual in-memory SDK handshake/tool execution, encrypted
@@ -552,6 +554,20 @@ are in [First Production Release Plan](docs/PRODUCTION_PLAN.md).
       with a closed 503/Retry-After response before verifier/SDK execution.
     - [x] Advance the trusted request-time snapshot by monotonic elapsed whole
       seconds so worker scheduling or introspection cannot extend token expiry.
+    - [x] Retain a non-renewable process-local validity deadline in verified
+      proofs, including verification/worker scheduling time; clones preserve
+      the deadline without changing claims or cache/session identity.
+    - [x] Recheck proof lifetime around tenant construction and before/after
+      Tower readiness; deny expired client POST/initialize/GET/DELETE routes.
+    - [x] Reject elapsed session binding/commit and preserve exact-session
+      compensating cleanup after initialization, releasing reserved capacity.
+      - [x] Preserve validated Host/Origin for shared initialization/cleanup,
+        and roll back failed compatibility initialization only with its exact
+        unchanged binding, without granting expired client DELETE authority.
+    - [ ] Verify live stream expiry/revocation and queued SDK tool denial in
+      the actual remote listener; admission checks do not close opened streams.
+      - [ ] Exercise concurrent expiry pruning and late initialization cleanup
+        with actual SDK session state, not only retained-cache Tower fixtures.
     - [x] Verify blocking-client executor isolation, per-request verification,
       shared budgets, all-route overload, failure cleanup, and cancellation.
     - [ ] Exercise the boundary with the actual official SDK remote listener
