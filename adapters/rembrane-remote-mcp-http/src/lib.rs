@@ -2822,13 +2822,13 @@ where
             )
             .await
             .map_err(RemoteMcpDispatchError::Authorization)?;
-        {
+        let mutation_guard = {
             let mut gate = self
                 .gate
                 .lock()
                 .map_err(|_| RemoteMcpDispatchError::Authorization(lock_rejection()))?;
             gate.sessions
-                .establish(session_id.clone(), &access, now_epoch_seconds)
+                .establish_guarded(session_id.clone(), &access, now_epoch_seconds)
                 .map_err(|error| {
                     let error = match error {
                         rembrane_application::ApplicationError::AlreadyExists => {
@@ -2840,8 +2840,8 @@ where
                         _ => RemoteSessionHttpError::Forbidden,
                     };
                     RemoteMcpDispatchError::Authorization(gate.rejection(error))
-                })?;
-        }
+                })?
+        };
         protocol_headers.validated_host = request.host.map(str::to_owned);
         protocol_headers.validated_origin = request.origin.map(str::to_owned);
         let authorized = AuthorizedRemoteMcpRequest {
@@ -2858,7 +2858,7 @@ where
                     .lock()
                     .map_err(|_| RemoteMcpDispatchError::Authorization(lock_rejection()))?;
                 gate.sessions
-                    .rollback_establishment(&session_id, &access)
+                    .rollback_establishment(&mutation_guard, &access)
                     .map_err(|_| {
                         RemoteMcpDispatchError::Authorization(RemoteMcpHttpGate::forbidden())
                     })?;
@@ -3085,7 +3085,7 @@ where
             )
             .await
             .map_err(RemoteMcpDispatchError::Authorization)?;
-        {
+        let mutation_guard = {
             let mut gate = self
                 .gate
                 .lock()
@@ -3097,7 +3097,14 @@ where
                         gate.rejection(RemoteSessionHttpError::Forbidden),
                     )
                 })?;
-        }
+            gate.sessions
+                .capture_mutation_guard(&session_id, &access, now_epoch_seconds)
+                .map_err(|_| {
+                    RemoteMcpDispatchError::Authorization(
+                        gate.rejection(RemoteSessionHttpError::Forbidden),
+                    )
+                })?
+        };
         let output = dispatcher
             .terminate(
                 access.clone(),
@@ -3113,7 +3120,7 @@ where
             .lock()
             .map_err(|_| RemoteMcpDispatchError::Authorization(lock_rejection()))?;
         gate.sessions
-            .terminate(&session_id, &access, now_epoch_seconds)
+            .commit_termination(&mutation_guard, &access, now_epoch_seconds)
             .map_err(|_| {
                 RemoteMcpDispatchError::Authorization(
                     gate.rejection(RemoteSessionHttpError::Forbidden),
@@ -3843,11 +3850,19 @@ impl RemoteMcpHttpGate {
             .map_err(RemoteMcpDispatchError::Authorization)?;
         authorized.protocol_headers = protocol_headers;
         let access = authorized.access().clone();
+        let mutation_guard = self
+            .sessions
+            .capture_mutation_guard(&session_id, &access, now_epoch_seconds)
+            .map_err(|_| {
+                RemoteMcpDispatchError::Authorization(
+                    self.rejection(RemoteSessionHttpError::Forbidden),
+                )
+            })?;
         match authorized.dispatch_with(dispatcher).await {
             Ok(output) => Ok(output),
             Err(error) => {
                 self.sessions
-                    .rollback_establishment(&session_id, &access)
+                    .rollback_establishment(&mutation_guard, &access)
                     .map_err(|_| {
                         RemoteMcpDispatchError::Authorization(
                             self.rejection(RemoteSessionHttpError::Forbidden),
@@ -4146,6 +4161,14 @@ impl RemoteMcpHttpGate {
                 now_epoch_seconds,
             )
             .map_err(|error| RemoteMcpDispatchError::Authorization(self.rejection(error)))?;
+        let mutation_guard = self
+            .sessions
+            .capture_mutation_guard(&session_id, &access, now_epoch_seconds)
+            .map_err(|_| {
+                RemoteMcpDispatchError::Authorization(
+                    self.rejection(RemoteSessionHttpError::Forbidden),
+                )
+            })?;
         let output = dispatcher
             .terminate(
                 access.clone(),
@@ -4157,7 +4180,7 @@ impl RemoteMcpHttpGate {
             .await
             .map_err(RemoteMcpDispatchError::Dispatch)?;
         self.sessions
-            .terminate(&session_id, &access, now_epoch_seconds)
+            .commit_termination(&mutation_guard, &access, now_epoch_seconds)
             .map_err(|_| {
                 RemoteMcpDispatchError::Authorization(
                     self.rejection(RemoteSessionHttpError::Forbidden),

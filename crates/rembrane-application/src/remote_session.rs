@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
+use std::sync::Arc;
 
 use rembrane_contracts::{
     RemoteMcpRequestAuthorization, RemoteSessionBinding, RemoteSessionId, VerifiedRemoteAccess,
@@ -18,10 +19,30 @@ pub enum RemoteSessionHttpError {
 }
 
 pub struct RemoteSessionRegistry {
-    sessions: BTreeMap<RemoteSessionId, RemoteSessionBinding>,
+    sessions: BTreeMap<RemoteSessionId, SessionRecord>,
     pending_initializations: BTreeSet<u64>,
     next_reservation_id: u64,
     maximum_sessions: usize,
+}
+
+struct SessionRecord {
+    binding: RemoteSessionBinding,
+    incarnation: Arc<()>,
+}
+
+/// Opaque, process-local identity of one established binding. Holding the
+/// identity prevents allocation reuse from making a replacement look equal.
+/// This is a mutation-completion guard, not ongoing stream authorization.
+#[derive(Clone)]
+pub struct RemoteSessionMutationGuard {
+    session_id: RemoteSessionId,
+    incarnation: Arc<()>,
+}
+
+impl fmt::Debug for RemoteSessionMutationGuard {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("RemoteSessionMutationGuard(<redacted>)")
+    }
 }
 
 #[derive(Eq, PartialEq)]
@@ -146,6 +167,22 @@ impl RemoteSessionRegistry {
         access: &VerifiedRemoteAccess,
         now_epoch_seconds: u64,
     ) -> Result<(), ApplicationError> {
+        self.establish_guarded(session_id, access, now_epoch_seconds)
+            .map(|_| ())
+    }
+
+    /// Establishes a session and atomically captures its unique incarnation
+    /// for asynchronous initialization rollback.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same authorization/collision/capacity errors as `establish`.
+    pub fn establish_guarded(
+        &mut self,
+        session_id: RemoteSessionId,
+        access: &VerifiedRemoteAccess,
+        now_epoch_seconds: u64,
+    ) -> Result<RemoteSessionMutationGuard, ApplicationError> {
         if access.expires_at_epoch_seconds() <= now_epoch_seconds
             || access.ensure_current().is_err()
         {
@@ -163,8 +200,19 @@ impl RemoteSessionRegistry {
         {
             return Err(ApplicationError::StorageUnavailable);
         }
-        self.sessions.insert(session_id, access.session_binding());
-        Ok(())
+        let incarnation = Arc::new(());
+        let guard = RemoteSessionMutationGuard {
+            session_id: session_id.clone(),
+            incarnation: Arc::clone(&incarnation),
+        };
+        self.sessions.insert(
+            session_id,
+            SessionRecord {
+                binding: access.session_binding(),
+                incarnation,
+            },
+        );
+        Ok(guard)
     }
 
     /// Rolls back an exact, unchanged binding after compatibility
@@ -172,21 +220,59 @@ impl RemoteSessionRegistry {
     ///
     /// The original proof may have elapsed while dispatching. Every claim
     /// and the original expiry ceiling must still match the binding; a changed
-    /// binding is never removed. Do not expose this port as an HTTP endpoint.
+    /// binding is never removed. The guard must have been captured before
+    /// dispatch: matching claims/expiry alone cannot distinguish a same-ID
+    /// replacement. Do not expose this port as an HTTP endpoint.
     ///
     /// # Errors
     ///
     /// Returns `AccessDenied` for a missing, foreign, or changed binding.
     pub fn rollback_establishment(
         &mut self,
-        session_id: &RemoteSessionId,
+        guard: &RemoteSessionMutationGuard,
         access: &VerifiedRemoteAccess,
     ) -> Result<(), ApplicationError> {
-        if self.sessions.get(session_id) != Some(&access.session_binding()) {
+        if !self.matches_guard(guard)
+            || self
+                .sessions
+                .get(&guard.session_id)
+                .map(|record| &record.binding)
+                != Some(&access.session_binding())
+        {
             return Err(ApplicationError::AccessDenied);
         }
-        self.sessions.remove(session_id);
+        self.sessions.remove(&guard.session_id);
         Ok(())
+    }
+
+    /// Revalidates and captures one existing binding before asynchronous
+    /// mutation dispatch. Capture is not permission to bypass proof lifetime.
+    ///
+    /// # Errors
+    ///
+    /// Returns non-enumerating `AccessDenied` for unknown, expired, or foreign
+    /// authority. Capture before, never after, a downstream wait.
+    pub fn capture_mutation_guard(
+        &mut self,
+        session_id: &RemoteSessionId,
+        access: &VerifiedRemoteAccess,
+        now_epoch_seconds: u64,
+    ) -> Result<RemoteSessionMutationGuard, ApplicationError> {
+        self.revalidate(session_id, access, now_epoch_seconds)?;
+        let record = self
+            .sessions
+            .get(session_id)
+            .ok_or(ApplicationError::AccessDenied)?;
+        Ok(RemoteSessionMutationGuard {
+            session_id: session_id.clone(),
+            incarnation: Arc::clone(&record.incarnation),
+        })
+    }
+
+    fn matches_guard(&self, guard: &RemoteSessionMutationGuard) -> bool {
+        self.sessions
+            .get(&guard.session_id)
+            .is_some_and(|record| Arc::ptr_eq(&record.incarnation, &guard.incarnation))
     }
 
     /// Authenticates an initialize request and establishes its session.
@@ -466,7 +552,7 @@ impl RemoteSessionRegistry {
     /// registry. It does not inspect or reveal their authorization fields.
     pub fn prune_expired(&mut self, now_epoch_seconds: u64) {
         self.sessions
-            .retain(|_, binding| !binding.is_expired(now_epoch_seconds));
+            .retain(|_, record| !record.binding.is_expired(now_epoch_seconds));
     }
 
     /// Reauthenticates an existing session against its exact binding.
@@ -484,6 +570,7 @@ impl RemoteSessionRegistry {
         self.sessions
             .get_mut(session_id)
             .ok_or(ApplicationError::AccessDenied)?
+            .binding
             .revalidate(access, now_epoch_seconds)
             .map_err(|_| ApplicationError::AccessDenied)
     }
@@ -504,12 +591,14 @@ impl RemoteSessionRegistry {
         self.sessions
             .get_mut(session_id)
             .ok_or(ApplicationError::AccessDenied)?
+            .binding
             .revalidate_access(access, now_epoch_seconds)
             .map_err(|_| ApplicationError::AccessDenied)
     }
 
     /// Deletes a session only after its current authorization has been
-    /// revalidated.
+    /// revalidated. This synchronous helper does not distinguish incarnations
+    /// across waits; async transports must use `commit_termination` instead.
     ///
     /// # Errors
     ///
@@ -523,6 +612,25 @@ impl RemoteSessionRegistry {
         self.revalidate(session_id, access, now_epoch_seconds)?;
         self.sessions.remove(session_id);
         Ok(())
+    }
+
+    /// Commits a confirmed asynchronous DELETE only to the binding captured
+    /// before dispatch. Even identical claims/ID cannot alias a replacement.
+    ///
+    /// # Errors
+    ///
+    /// Denies missing/replaced/foreign-registry guards and expired or substituted
+    /// authority without removing the current binding.
+    pub fn commit_termination(
+        &mut self,
+        guard: &RemoteSessionMutationGuard,
+        access: &VerifiedRemoteAccess,
+        now_epoch_seconds: u64,
+    ) -> Result<(), ApplicationError> {
+        if !self.matches_guard(guard) {
+            return Err(ApplicationError::AccessDenied);
+        }
+        self.terminate(&guard.session_id, access, now_epoch_seconds)
     }
 
     #[must_use]
@@ -914,19 +1022,19 @@ mod tests {
         let mut registry = RemoteSessionRegistry::new(1).expect("capacity");
         let session = RemoteSessionId::new("session_0123456789abcdef").expect("session");
         let mut original = access("workspace_01", &[RemoteAccessScope::ContextRead]);
-        registry
-            .establish(session.clone(), &original, 1_000)
+        let guard = registry
+            .establish_guarded(session.clone(), &original, 1_000)
             .expect("establish");
         assert_eq!(
             registry.rollback_establishment(
-                &session,
+                &guard,
                 &access("workspace_02", &[RemoteAccessScope::ContextRead]),
             ),
             Err(ApplicationError::AccessDenied),
         );
         assert_eq!(
             registry.rollback_establishment(
-                &session,
+                &guard,
                 &access("workspace_01", &[RemoteAccessScope::MemoryWrite]),
             ),
             Err(ApplicationError::AccessDenied),
@@ -941,7 +1049,7 @@ mod tests {
             )
             .expect("changed expiry");
         assert_eq!(
-            registry.rollback_establishment(&session, &changed),
+            registry.rollback_establishment(&guard, &changed),
             Err(ApplicationError::AccessDenied),
         );
         assert_eq!(registry.len(), 1);
@@ -956,13 +1064,95 @@ mod tests {
                 .is_err()
         );
         registry
-            .rollback_establishment(&session, &original)
+            .rollback_establishment(&guard, &original)
             .expect("exact cleanup");
         assert!(registry.is_empty());
         assert_eq!(
-            registry.rollback_establishment(&session, &original),
+            registry.rollback_establishment(&guard, &original),
             Err(ApplicationError::AccessDenied),
         );
+    }
+
+    #[test]
+    fn mutation_guards_cannot_alias_same_id_and_same_proof_replacements() {
+        let mut registry = RemoteSessionRegistry::new(1).unwrap();
+        let session = RemoteSessionId::new("session_0123456789abcdef").unwrap();
+        let original = access("workspace_01", &[RemoteAccessScope::ContextRead]);
+        let old = registry
+            .establish_guarded(session.clone(), &original, 1_000)
+            .unwrap();
+        registry.terminate(&session, &original, 1_000).unwrap();
+        registry
+            .establish(session.clone(), &original, 1_000)
+            .unwrap();
+        let replacement = registry
+            .capture_mutation_guard(&session, &original, 1_000)
+            .unwrap();
+        assert!(!format!("{old:?}").contains(session.as_str()));
+        assert_eq!(
+            registry.rollback_establishment(&old, &original),
+            Err(ApplicationError::AccessDenied),
+        );
+        assert_eq!(
+            registry.commit_termination(&old, &original, 1_000),
+            Err(ApplicationError::AccessDenied),
+        );
+        assert_eq!(registry.len(), 1);
+        registry
+            .commit_termination(&replacement, &original, 1_000)
+            .unwrap();
+        assert!(registry.is_empty());
+        assert_eq!(
+            registry.commit_termination(&replacement, &original, 1_000),
+            Err(ApplicationError::AccessDenied),
+        );
+    }
+
+    #[test]
+    fn mutation_guards_are_instance_bound_even_with_identical_ids_and_claims() {
+        let mut first = RemoteSessionRegistry::new(1).unwrap();
+        let mut second = RemoteSessionRegistry::new(1).unwrap();
+        let session = RemoteSessionId::new("session_0123456789abcdef").unwrap();
+        let original = access("workspace_01", &[RemoteAccessScope::ContextRead]);
+        let guard = first
+            .establish_guarded(session.clone(), &original, 1_000)
+            .unwrap();
+        second.establish(session, &original, 1_000).unwrap();
+        assert_eq!(
+            second.rollback_establishment(&guard, &original),
+            Err(ApplicationError::AccessDenied),
+        );
+        assert_eq!(
+            second.commit_termination(&guard, &original, 1_000),
+            Err(ApplicationError::AccessDenied),
+        );
+        assert_eq!(second.len(), 1);
+        first.rollback_establishment(&guard, &original).unwrap();
+        assert!(first.is_empty());
+    }
+
+    #[test]
+    fn pruning_cannot_restore_a_previous_mutation_guard() {
+        let mut registry = RemoteSessionRegistry::new(1).unwrap();
+        let session = RemoteSessionId::new("session_0123456789abcdef").unwrap();
+        let original = access("workspace_01", &[RemoteAccessScope::ContextRead]);
+        let guard = registry
+            .establish_guarded(session.clone(), &original, 1_000)
+            .unwrap();
+        registry.prune_expired(2_000);
+        assert!(registry.is_empty());
+        registry
+            .establish(session.clone(), &original, 1_000)
+            .unwrap();
+        assert_eq!(
+            registry.rollback_establishment(&guard, &original),
+            Err(ApplicationError::AccessDenied),
+        );
+        assert_eq!(
+            registry.commit_termination(&guard, &original, 1_000),
+            Err(ApplicationError::AccessDenied),
+        );
+        registry.revalidate(&session, &original, 1_000).unwrap();
     }
 
     #[test]

@@ -328,10 +328,38 @@ fixture is not a real SDK listener. Internal compensating termination can clean
 up an already created session after expiry; client DELETE cannot use that path.
 Shared initialization retains its validated Host/Origin for both operations.
 Compatibility initialization failures use a separate internal rollback:
-the session binding, including its expiry ceiling, must match exactly. Tests
+the pre-dispatch incarnation and session binding, including its expiry ceiling,
+must match exactly. Tests
 deny foreign/scope/expiry substitutions and repeated cleanup, while a delayed
 failure fixture proves that an elapsed original proof can release its unchanged
 binding. Changed bindings are not removed.
+
+Each established binding owns a unique process-local identity retained by an
+opaque `RemoteSessionMutationGuard`. `establish_guarded` captures it atomically
+for compatibility initialization; `capture_mutation_guard` revalidates and
+captures an existing binding before DELETE dispatch. Shared paths capture under
+their local lock, then release the lock over downstream work. Borrowing paths
+use the same completion checks.
+
+`commit_termination` requires the captured incarnation and current authority;
+`rollback_establishment` requires the incarnation and exact unchanged claims/
+expiry ceiling but still allows internal cleanup after original proof expiry.
+Same-ID/same-claims replacement, even with an identical proof/deadline, cannot
+alias the guard. Retaining the original identity also prevents allocator address
+reuse. Debug output exposes no ID or identity address.
+
+Three registry regressions cover replacement, foreign registries, pruning, and
+repeated completion. Two synchronized Tower fixtures pause after dispatch begins,
+replace the binding with identical claims, then release late DELETE success or
+initialization failure. Both failed before this fix and now preserve the successor.
+The pre-alpha rollback API no longer accepts a raw session ID; capture its guard
+before dispatch. Synchronous `terminate` is not an async completion API.
+
+These guards protect local registry mutation only: they do not undo already
+executed SDK operations, cancel queued tools, close opened streams, or establish
+external-store consistency. They are not serialized or reusable across process
+restarts. A real listener/session store needs its own verified incarnation,
+cancellation, and revocation behavior.
 
 Session bindings also retain the original process-local deadline, independently
 of their epoch expiry ceiling. Refresh can shorten but never renew that deadline.

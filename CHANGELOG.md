@@ -9,6 +9,17 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Fixed
 
+- Delayed MCP DELETE completion and failed compatibility-initialization
+  rollback now require the exact pre-dispatch binding incarnation. Replacing a
+  session with the same ID, claims, expiry, and even the same proof cannot let
+  an earlier operation remove its successor.
+- Opaque process-local mutation guards protect local completion without
+  granting new lifetime or exposing identity internals. Three registry
+  regressions and two synchronized Tower races cover replacement, foreign
+  registries, pruning, and repeated completion. Raw-ID rollback is replaced
+  by the guarded pre-alpha API; actual SDK/session-store behavior and live
+  cancellation remain unverified.
+
 - Direct and tenant-selected Tower client DELETE now require an HTTP response
   and confirm its success status before the local session is removed. A
   successful transport call carrying a redirect, authentication/protocol error,

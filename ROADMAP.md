@@ -866,6 +866,10 @@ are in [First Production Release Plan](docs/PRODUCTION_PLAN.md).
           deletion, not just successful transport I/O. Verify error-class
           response matrices and retryable binding retention across borrowing,
           owned/shared routes, including HTTP 200/202/204 success retries.
+        - [x] Capture an opaque binding-incarnation guard before dispatch and
+          require it for local DELETE completion and initialization rollback.
+          Deny same-ID/same-claims replacements, foreign-registry completion,
+          and reuse after pruning; verify synchronized late-completion races.
         - [x] Parse and reject ambiguous Axum DELETE security and protocol
           headers before entering the confirmed termination flow.
   - [x] Add OAuth and cross-tenant transport integration tests.

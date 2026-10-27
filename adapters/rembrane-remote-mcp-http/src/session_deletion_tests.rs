@@ -28,6 +28,123 @@ use crate::{
     tests::{Verifier, session_metadata_fixture},
 };
 
+fn replace_binding(authorization: &RemoteMcpAxumAuthorization<Verifier>, id: &RemoteSessionId) {
+    let access = authorization
+        .shared
+        .verifier
+        .verify("workspace-one")
+        .unwrap()
+        .validate_connection(
+            &authorization.shared.issuer,
+            &authorization.shared.resource,
+            1_000,
+        )
+        .unwrap();
+    let mut gate = authorization.shared.gate.lock().unwrap();
+    gate.sessions.terminate(id, &access, 1_000).unwrap();
+    gate.sessions.establish(id.clone(), &access, 1_000).unwrap();
+}
+
+#[tokio::test]
+async fn late_successful_delete_does_not_remove_a_same_claims_replacement() {
+    let (authorization, id, headers) = session_metadata_fixture();
+    let authorization = Arc::new(authorization);
+    let started = Arc::new(tokio::sync::Notify::new());
+    let release = Arc::new(tokio::sync::Notify::new());
+    let service_started = Arc::clone(&started);
+    let service_release = Arc::clone(&release);
+    let dispatcher =
+        AuthorizedTowerMcpDispatcher::new(tower::service_fn(move |_: Request<Body>| {
+            let started = Arc::clone(&service_started);
+            let release = Arc::clone(&service_release);
+            async move {
+                started.notify_one();
+                release.notified().await;
+                Ok::<_, Infallible>(Response::new(Body::empty()))
+            }
+        }));
+    let task_authorization = Arc::clone(&authorization);
+    let pending = tokio::spawn(async move {
+        task_authorization
+            .shared
+            .authorize_and_dispatch_termination(&headers, 1_000, &dispatcher)
+            .await
+    });
+    started.notified().await;
+    replace_binding(&authorization, &id);
+    release.notify_one();
+    let result = pending.await.unwrap();
+    assert!(matches!(
+        result,
+        Err(RemoteMcpDispatchError::Authorization(
+            crate::RemoteMcpHttpRejection { status: 403, .. }
+        ))
+    ));
+    assert_retained(&authorization, &id);
+}
+
+#[tokio::test]
+async fn late_initialization_rollback_does_not_remove_a_same_claims_replacement() {
+    let (authorization, id, headers) = session_metadata_fixture();
+    let authorization = Arc::new(authorization);
+    {
+        let access = authorization
+            .shared
+            .verifier
+            .verify("workspace-one")
+            .unwrap()
+            .validate_connection(
+                &authorization.shared.issuer,
+                &authorization.shared.resource,
+                1_000,
+            )
+            .unwrap();
+        authorization
+            .shared
+            .gate
+            .lock()
+            .unwrap()
+            .sessions
+            .terminate(&id, &access, 1_000)
+            .unwrap();
+    }
+    let started = Arc::new(tokio::sync::Notify::new());
+    let release = Arc::new(tokio::sync::Notify::new());
+    let service_started = Arc::clone(&started);
+    let service_release = Arc::clone(&release);
+    let dispatcher =
+        AuthorizedTowerMcpDispatcher::new(tower::service_fn(move |_: Request<Body>| {
+            let started = Arc::clone(&service_started);
+            let release = Arc::clone(&service_release);
+            async move {
+                started.notify_one();
+                release.notified().await;
+                Err::<Response, _>("late initialization failure".to_owned())
+            }
+        }));
+    let task_authorization = Arc::clone(&authorization);
+    let pending = tokio::spawn(async move {
+        task_authorization.shared.establish_and_dispatch_owned_session(
+            &headers,
+            zeroize::Zeroizing::new(
+                br#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"race-test","version":"1"}}}"#.to_vec(),
+            ),
+            1_000, &dispatcher,
+        ).await
+    });
+    started.notified().await;
+    replace_binding(&authorization, &id);
+    release.notify_one();
+    let result = pending.await.unwrap();
+    assert!(matches!(
+        result,
+        Err(RemoteMcpDispatchError::Authorization(
+            crate::RemoteMcpHttpRejection { status: 403, .. }
+        ))
+    ));
+    assert_retained(&authorization, &id);
+}
+
 const UNCONFIRMED: [StatusCode; 9] = [
     StatusCode::CONTINUE,
     StatusCode::MOVED_PERMANENTLY,

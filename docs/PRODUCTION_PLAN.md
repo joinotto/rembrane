@@ -45,7 +45,7 @@ evidence and the strict readiness command.
   initialization without serializing unrelated tenant lookups. Library tests
   cover panic/cancellation cleanup and overload, not a deployed SDK listener.
 - Expired tenant-service cleanup runs outside the global cache lock. The
-  remote adapter's 107 passing unit tests include blocked/panicking cleanup,
+  remote adapter's 109 passing unit tests include blocked/panicking cleanup,
   concurrent tenant progress, reclaimed capacity, and pending reservation
   preservation. Live provider shutdown and load behavior remain unverified.
 - REST and MCP startup now check canonical metadata authority before
@@ -80,6 +80,12 @@ evidence and the strict readiness command.
   and HTTP 200/202/204 retry success across borrowing and owned/shared routes.
   Transport success alone no longer passes as protocol confirmation. Actual SDK
   listener/session-manager confirmation remains required.
+- Local session mutation completion now requires an opaque incarnation guard
+  captured before dispatch. Two synchronized Tower regressions first reproduced
+  a late DELETE/rollback erasing a same-ID/same-claims replacement; guarded
+  completion denies it. Three registry regressions cover exact-proof reuse,
+  foreign instances, pruning, and repeated completion. This is local registry
+  protection, not live SDK cancellation or external-store consistency evidence.
 - A new response-body guard stops delivery at the earlier original proof/
   controller deadline or explicit sticky revocation. Fourteen new Axum body
   tests cover idle wakeups, per-claim binding, tenant separation, frame/trailer
