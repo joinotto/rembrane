@@ -452,8 +452,6 @@ impl RembraneMcp {
         identity: ConnectionIdentity,
         require_verified_request_identity: bool,
     ) -> Result<Self> {
-        let cipher = ConfiguredRecordCipher::from_environment()
-            .context("failed to load workspace cipher")?;
         let read_scopes = parse_read_scopes(
             &std::env::var("REMBRANE_READ_SCOPES").unwrap_or_else(|_| "global".to_owned()),
         )
@@ -461,11 +459,37 @@ impl RembraneMcp {
         let read_permissions =
             parse_read_permissions(&std::env::var("REMBRANE_READ_PERMISSIONS").unwrap_or_default())
                 .map_err(anyhow::Error::msg)?;
-        let store = SqliteStore::open(database)
-            .context("failed to open Rembrane database")?
-            .with_cipher(cipher);
-        let graph_provider = ConfiguredGraphProvider::from_environment()
-            .context("failed to configure graph provider")?;
+        let store = SqliteStore::open(database).context("failed to open Rembrane database")?;
+        Self::from_store(
+            store,
+            identity,
+            require_verified_request_identity,
+            read_scopes,
+            read_permissions,
+            || {
+                let cipher = ConfiguredRecordCipher::from_environment()
+                    .context("failed to load workspace cipher")?;
+                let graph_provider = ConfiguredGraphProvider::from_environment()
+                    .context("failed to configure graph provider")?;
+                Ok((cipher, graph_provider))
+            },
+        )
+    }
+
+    fn from_store<Initialize>(
+        store: SqliteStore,
+        identity: ConnectionIdentity,
+        require_verified_request_identity: bool,
+        read_scopes: Vec<ReadScope>,
+        read_permissions: Vec<ReadPermission>,
+        initialize: Initialize,
+    ) -> Result<Self>
+    where
+        Initialize: FnOnce() -> Result<(ConfiguredRecordCipher, ConfiguredGraphProvider)>,
+    {
+        // Membership, pending rotation, and canonical scope policy are
+        // metadata-only checks. Do not resolve keys or contact providers for
+        // a rejected tenant just to perform them.
         AuthorizeClientService::new(&store)
             .execute(AuthorizeClientCommand {
                 client_id: identity.client.clone(),
@@ -480,6 +504,8 @@ impl RembraneMcp {
             .duration_since(UNIX_EPOCH)
             .context("system clock is before the Unix epoch")?
             .as_nanos();
+        let (cipher, graph_provider) = initialize()?;
+        let store = store.with_cipher(cipher);
 
         let policy = Arc::new(ConnectionPolicy {
             identity,
@@ -1946,10 +1972,10 @@ pub async fn serve_stdio(server: RembraneMcp) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
     use std::time::Duration;
 
-    use rembrane_application::{EventRepository, WorkspaceRepository};
+    use rembrane_application::{EventRepository, MembershipRepository, WorkspaceRepository};
     use rembrane_contracts::{RemoteAccessScope, RemoteTokenClaims};
     use rembrane_crypto_configured::ConfiguredRecordCipher;
     use rembrane_crypto_rustcrypto::{RustCryptoKeyringCipher, RustCryptoRecordCipher};
@@ -1972,16 +1998,20 @@ mod tests {
     };
 
     use super::{
-        ConnectionIdentity, ConnectionPolicy, RembraneMcp, State, advance_identifier,
-        request_identity_matches, request_scopes, run_blocking_operation,
+        ConnectionIdentity, RembraneMcp, advance_identifier, request_identity_matches,
+        request_scopes, run_blocking_operation,
     };
 
-    fn fixture_server(require_verified_request_identity: bool) -> RembraneMcp {
-        let identity = ConnectionIdentity {
+    fn fixture_identity() -> ConnectionIdentity {
+        ConnectionIdentity {
             principal: PrincipalId::new("principal_01"),
             workspace: WorkspaceId::new("workspace_01"),
             client: ClientId::new("client_01"),
-        };
+        }
+    }
+
+    fn fixture_metadata_store() -> SqliteStore {
+        let identity = fixture_identity();
         let mut store = SqliteStore::open_in_memory().expect("fixture store");
         store
             .initialize_personal_workspace(
@@ -1994,29 +2024,221 @@ mod tests {
                 ),
             )
             .expect("fixture workspace");
-        let cipher = ConfiguredRecordCipher::Local(
+        store
+    }
+
+    fn fixture_cipher() -> ConfiguredRecordCipher {
+        ConfiguredRecordCipher::Local(
             RustCryptoKeyringCipher::new(
                 RustCryptoRecordCipher::new("mcp-test-key", [7; 32]).expect("fixture cipher"),
                 Vec::new(),
             )
             .expect("fixture keyring"),
-        );
-        let policy = Arc::new(ConnectionPolicy {
-            identity,
+        )
+    }
+
+    fn fixture_server(require_verified_request_identity: bool) -> RembraneMcp {
+        let mut server = RembraneMcp::from_store(
+            fixture_metadata_store(),
+            fixture_identity(),
             require_verified_request_identity,
-        });
-        RembraneMcp {
-            state: Arc::new(Mutex::new(State {
-                store: store.with_cipher(cipher),
-                graph_provider: ConfiguredGraphProvider::Native(NativeGraphProvider::new()),
-                policy: Arc::clone(&policy),
-                read_scopes: vec![ReadScope::Global],
-                read_permissions: Vec::new(),
-                next_id: 100,
-            })),
-            policy,
-            blocking_operations: Arc::new(Semaphore::new(8)),
+            vec![ReadScope::Global],
+            Vec::new(),
+            || {
+                Ok((
+                    fixture_cipher(),
+                    ConfiguredGraphProvider::Native(NativeGraphProvider::new()),
+                ))
+            },
+        )
+        .expect("authorized fixture startup");
+        server.blocking_operations = Arc::new(Semaphore::new(8));
+        server.state.lock().expect("fixture state").next_id = 100;
+        server
+    }
+
+    #[test]
+    fn startup_rejects_unknown_or_foreign_identity_before_initializing_providers() {
+        let mut unknown_principal = fixture_identity();
+        unknown_principal.principal = PrincipalId::new("principal_missing");
+        let mut unknown_workspace = fixture_identity();
+        unknown_workspace.workspace = WorkspaceId::new("workspace_missing");
+        let mut foreign_workspace = fixture_identity();
+        foreign_workspace.workspace = WorkspaceId::new("workspace_other");
+        for identity in [unknown_principal, unknown_workspace, foreign_workspace] {
+            let mut store = fixture_metadata_store();
+            store
+                .initialize_personal_workspace(
+                    Principal::new(PrincipalId::new("principal_other")),
+                    Workspace::personal(WorkspaceId::new("workspace_other")),
+                    Membership::new(
+                        WorkspaceId::new("workspace_other"),
+                        PrincipalId::new("principal_other"),
+                        WorkspaceRole::Owner,
+                    ),
+                )
+                .expect("foreign workspace");
+            let called = std::cell::Cell::new(false);
+            let error = RembraneMcp::from_store(
+                store,
+                identity,
+                true,
+                vec![ReadScope::Global],
+                Vec::new(),
+                || {
+                    called.set(true);
+                    panic!("rejected identity must not initialize keys or providers");
+                },
+            )
+            .err()
+            .expect("startup authorization denial");
+            assert_eq!(error.to_string(), "failed to authorize MCP connection");
+            assert!(!called.get());
         }
+    }
+
+    #[test]
+    fn startup_rejects_inactive_membership_before_initializing_providers() {
+        let identity = fixture_identity();
+        let membership = Membership::new(
+            identity.workspace.clone(),
+            identity.principal.clone(),
+            WorkspaceRole::Owner,
+        );
+        for inactive in [membership.clone().suspend(), membership.remove()] {
+            let mut store = fixture_metadata_store();
+            store
+                .replace_membership(inactive)
+                .expect("inactive fixture");
+            let called = std::cell::Cell::new(false);
+            let error = RembraneMcp::from_store(
+                store,
+                identity.clone(),
+                true,
+                vec![ReadScope::Global],
+                Vec::new(),
+                || {
+                    called.set(true);
+                    panic!("inactive membership must not initialize providers");
+                },
+            )
+            .err()
+            .expect("inactive membership denied");
+            assert_eq!(error.to_string(), "failed to authorize MCP connection");
+            assert!(!called.get());
+        }
+    }
+
+    #[test]
+    fn pending_key_rotation_denies_mcp_startup_without_initializing_providers() {
+        let mut store = fixture_metadata_store();
+        let other = PrincipalId::new("principal_other");
+        let shared = WorkspaceId::new("workspace_shared");
+        store
+            .initialize_personal_workspace(
+                Principal::new(other.clone()),
+                Workspace::personal(WorkspaceId::new("workspace_other")),
+                Membership::new(
+                    WorkspaceId::new("workspace_other"),
+                    other.clone(),
+                    WorkspaceRole::Owner,
+                ),
+            )
+            .expect("other principal");
+        let mut identity = fixture_identity();
+        store
+            .initialize_shared_workspace(
+                Workspace::shared(shared.clone()),
+                Membership::new(
+                    shared.clone(),
+                    identity.principal.clone(),
+                    WorkspaceRole::Owner,
+                ),
+            )
+            .expect("shared workspace");
+        store
+            .insert_membership(Membership::new(
+                shared.clone(),
+                other.clone(),
+                WorkspaceRole::Member,
+            ))
+            .expect("shared member");
+        rembrane_application::MemberLifecycleService::new(&mut store)
+            .remove(rembrane_application::RemoveMemberCommand {
+                workspace_id: shared.clone(),
+                principal_id: other,
+                removed_by: identity.principal.clone(),
+                rotation_id: rembrane_domain::KeyRotationId::new("rotation_startup"),
+            })
+            .expect("required key rotation");
+        identity.workspace = shared;
+        let called = std::cell::Cell::new(false);
+        let error = RembraneMcp::from_store(
+            store,
+            identity,
+            true,
+            vec![ReadScope::Global],
+            Vec::new(),
+            || {
+                called.set(true);
+                panic!("rotation-blocked MCP must not load keys or providers");
+            },
+        )
+        .err()
+        .expect("rotation-blocked startup");
+        assert_eq!(error.to_string(), "failed to authorize MCP connection");
+        assert!(!called.get());
+    }
+
+    #[test]
+    fn authorized_startup_initializes_providers_once_and_preserves_identity_policy() {
+        let calls = std::cell::Cell::new(0);
+        let server = RembraneMcp::from_store(
+            fixture_metadata_store(),
+            fixture_identity(),
+            true,
+            vec![ReadScope::Global],
+            Vec::new(),
+            || {
+                calls.set(calls.get() + 1);
+                Ok((
+                    fixture_cipher(),
+                    ConfiguredGraphProvider::Native(NativeGraphProvider::new()),
+                ))
+            },
+        )
+        .expect("authorized startup");
+        assert_eq!(calls.get(), 1);
+        assert!(server.policy.require_verified_request_identity);
+        assert!(server.policy.identity == fixture_identity());
+        let state = server.state.lock().expect("state");
+        assert!(
+            state
+                .store
+                .list_events_since(&state.policy.identity.workspace, 0)
+                .expect("canonical events")
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn authorized_startup_preserves_provider_failure_without_creating_a_service() {
+        let calls = std::cell::Cell::new(0);
+        let error = RembraneMcp::from_store(
+            fixture_metadata_store(),
+            fixture_identity(),
+            true,
+            vec![ReadScope::Global],
+            Vec::new(),
+            || {
+                calls.set(calls.get() + 1);
+                Err(anyhow::anyhow!("fixture provider unavailable"))
+            },
+        )
+        .err()
+        .expect("provider startup failure");
+        assert_eq!(calls.get(), 1);
+        assert_eq!(error.to_string(), "fixture provider unavailable");
     }
 
     async fn read_wire(client: &mut BufReader<DuplexStream>) -> serde_json::Value {

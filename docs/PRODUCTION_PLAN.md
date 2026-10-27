@@ -1,6 +1,6 @@
 # First production release plan
 
-Status assessment: 2026-10-26. Rembrane remains pre-alpha.
+Status assessment: 2026-10-27. Rembrane remains pre-alpha.
 
 This is the execution plan for the first supported infrastructure release,
 not a promise that every AI product can integrate or that all deployment
@@ -39,6 +39,11 @@ evidence and the strict readiness command.
   releases its global lock during construction, preserving single-flight
   initialization without serializing unrelated tenant lookups. Library tests
   cover panic/cancellation cleanup and overload, not a deployed SDK listener.
+- REST and MCP startup now check canonical metadata authority before
+  initializing workspace keys or graph clients. Tests reject unknown,
+  foreign, and inactive identities without provider calls. MCP also denies
+  rotation-blocked startup; the REST invitation/recovery exceptions retain
+  empty memory grants. This does not establish live KMS/provider behavior.
 - The PostgreSQL boundary includes a fail-closed runtime-authority guard with
   74 passing adapter unit tests. Its new shared SQL fixtures still require
   live PostgreSQL execution; the concrete database driver remains missing.

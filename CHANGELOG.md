@@ -9,6 +9,16 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Fixed
 
+- REST and MCP startup now authorize canonical connection metadata before
+  initializing workspace keys, rotation providers, or graph clients. Unknown,
+  foreign, and inactive identities cannot reach provider initialization.
+- MCP denies rotation-blocked startup before provider calls. REST preserves
+  its narrow invitation/recovery modes with empty memory grants; no ordinary
+  memory permissions are gained from those startup exceptions.
+- Startup tests use real SQLite metadata and observable provider counters;
+  authorized runtime fixtures now exercise the production startup builders.
+  Tests cover rejection, pending rotation, exact identity, single
+  initialization, provider failure, and preserved encrypted tool continuity.
 - Tenant-aware MCP Tower dispatch now selects/constructs services on
   process-shared bounded workers across POST, initialization/compensation,
   GET, and DELETE. Overload and worker panic return a redacted factory-unavailable

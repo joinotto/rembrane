@@ -48,6 +48,37 @@ foreign tenant routing, stale versions, and repeated confirmation must fail
 without modifying canonical memory, evidence, or audit events. The CLI
 lifecycle suite additionally rejects confirmation of a deleted observation.
 
+## Startup authorization before keys and providers
+
+```sh
+cargo test -p rembrane-api -p rembrane-mcp --locked --offline
+```
+
+Both services perform canonical membership/rotation checks against metadata
+storage before initializing workspace ciphers or graph clients. These checks
+do not require record decryption. A rejected principal, workspace mismatch,
+suspended member, or removed member never reaches the provider initializer.
+MCP denies pending key rotation before provider initialization as well.
+
+REST retains its existing explicit exceptions: an eligible known principal
+can start in invitation-only mode, and an active owner/admin can start in
+rotation-recovery mode. Those grants have no memory read scopes, read
+permissions, write scopes, or write permissions. They are not ordinary memory
+access and must not be broadened because startup succeeded.
+
+The application tests use real in-memory SQLite metadata and observable
+provider-initialization counters. Authorized fixtures now use the same startup
+builders as production, including encrypted remember/recall and exact remote
+identity checks. Provider failures still prevent a usable runtime/service.
+These tests do not contact a real KMS or graph endpoint.
+
+This is not a promise of zero startup I/O: opening SQLite may initialize or
+migrate database metadata, and REST still validates its configured bearer and
+discovery settings. Blocking provider construction still belongs outside the
+async executor or on the documented bounded initializer workers. Canonical
+membership/permissions must still be reauthorized on every operation; startup
+authorization is not a reusable grant of permanent authority.
+
 ## REST blocking-worker boundary
 
 Run the no-listener REST runtime tests with:

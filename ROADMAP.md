@@ -293,6 +293,12 @@ are in [First Production Release Plan](docs/PRODUCTION_PLAN.md).
     problems, and retain capacity until real completion after cancellation.
   - [x] Prove no-listener worker isolation, overload/failure cleanup, tenant
     denial, and encrypted remember/recall on a current-thread async runtime.
+  - [x] Authorize canonical connection metadata before workspace cipher,
+    rotation-provider, or graph-client initialization; preserve empty
+    invitation/recovery grants without widening memory authority.
+    - [x] Prove unknown/foreign/inactive identity rejection without provider
+      initialization, single authorized startup, provider failure propagation,
+      and the narrow invitation/pending-rotation startup modes.
   - [ ] Execute the refactored HTTP listener/Postman and load/recovery suites
     in a socket-enabled staging environment.
   - [x] Resolve the REST bearer credential from validated environment or
@@ -518,6 +524,11 @@ are in [First Production Release Plan](docs/PRODUCTION_PLAN.md).
 - [x] Prove both SDKs accept the canonical full discovery fixture without
   transmitting bearer credentials.
 - [ ] Add remote Streamable HTTP MCP with OAuth.
+  - [x] Authorize canonical MCP membership and rotation policy before workspace
+    key/provider initialization using metadata-only storage.
+    - [x] Prove unknown/foreign/inactive identity and pending-rotation rejection
+      without provider calls, while preserving verified-request identity and
+      encrypted tool continuity after authorized startup.
   - [x] Move all MCP tool storage/provider work and mutex acquisition onto
     process-shared bounded blocking workers, preserving the complete SDK
     request context and canonical authorization.

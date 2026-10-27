@@ -751,12 +751,6 @@ impl AppState {
         let bearer_token = resolve_api_token()?;
         let discovery = memory_discovery_from_environment()?;
         let oauth_resource_metadata = oauth_resource_metadata_from_environment()?;
-        let cipher = ConfiguredRecordCipher::from_environment()
-            .context("failed to load workspace cipher")?;
-        let rotation_provider = ConfiguredRecordCipher::from_environment()
-            .context("failed to load workspace rotation provider")?;
-        let graph_provider = ConfiguredGraphProvider::from_environment()
-            .context("failed to configure graph provider")?;
         let read_scopes = parse_read_scopes(
             &std::env::var("REMBRANE_READ_SCOPES").unwrap_or_else(|_| "global".to_owned()),
         )
@@ -764,14 +758,13 @@ impl AppState {
         let read_permissions =
             parse_read_permissions(&std::env::var("REMBRANE_READ_PERMISSIONS").unwrap_or_default())
                 .map_err(anyhow::Error::msg)?;
-        let store = SqliteStore::open(database)
-            .context("failed to open Rembrane database")?
-            .with_cipher(cipher);
-        let grants = AuthorizeClientService::new(&store)
-            .execute(AuthorizeClientCommand {
-                client_id: client_id.clone(),
-                workspace_id: workspace_id.clone(),
-                principal_id: principal_id.clone(),
+        let store = SqliteStore::open(database).context("failed to open Rembrane database")?;
+        let runtime = initialize_api_runtime(
+            store,
+            AuthorizeClientCommand {
+                client_id,
+                workspace_id,
+                principal_id,
                 requested_read_scopes: read_scopes,
                 requested_read_permissions: read_permissions,
                 requested_write_permissions: vec![
@@ -784,51 +777,87 @@ impl AppState {
                     WritePermission::ReviseTrip,
                     WritePermission::CaptureBookingResearch,
                 ],
-            })
-            .or_else(|error| {
-                if error == ApplicationError::AccessDenied {
-                    management_only_grants(
-                        &store,
-                        client_id.clone(),
-                        workspace_id.clone(),
-                        principal_id.clone(),
-                    )
-                } else {
-                    Err(error)
-                }
-            })
-            .or_else(|error| {
-                if error == ApplicationError::AccessDenied {
-                    invitation_only_grants(&store, client_id, workspace_id, principal_id)
-                } else {
-                    Err(error)
-                }
-            })
-            .context("failed to authorize API connection")?;
-        let next_id = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .context("system clock is before the Unix epoch")?
-            .as_nanos();
+            },
+            || {
+                let cipher = ConfiguredRecordCipher::from_environment()
+                    .context("failed to load workspace cipher")?;
+                let rotation_provider = ConfiguredRecordCipher::from_environment()
+                    .context("failed to load workspace rotation provider")?;
+                let graph_provider = ConfiguredGraphProvider::from_environment()
+                    .context("failed to configure graph provider")?;
+                Ok((cipher, rotation_provider, graph_provider))
+            },
+        )?;
 
         Ok(Self {
             inner: Arc::new(Inner {
                 blocking_operations: Arc::new(tokio::sync::Semaphore::new(
                     MAXIMUM_BLOCKING_OPERATIONS,
                 )),
-                runtime: Mutex::new(Runtime {
-                    store,
-                    graph_provider,
-                    rotation_provider,
-                    read_grant: grants.read,
-                    write_grant: grants.write,
-                    next_id,
-                }),
+                runtime: Mutex::new(runtime),
                 bearer_token,
                 discovery,
                 oauth_resource_metadata,
             }),
         })
     }
+}
+
+fn initialize_api_runtime<Initialize>(
+    store: SqliteStore,
+    command: AuthorizeClientCommand,
+    initialize: Initialize,
+) -> Result<Runtime>
+where
+    Initialize: FnOnce() -> Result<(
+        ConfiguredRecordCipher,
+        ConfiguredRecordCipher,
+        ConfiguredGraphProvider,
+    )>,
+{
+    let grants = AuthorizeClientService::new(&store)
+        .execute(command.clone())
+        .or_else(|error| {
+            if error == ApplicationError::AccessDenied {
+                management_only_grants(
+                    &store,
+                    command.client_id.clone(),
+                    command.workspace_id.clone(),
+                    command.principal_id.clone(),
+                )
+            } else {
+                Err(error)
+            }
+        })
+        .or_else(|error| {
+            if error == ApplicationError::AccessDenied {
+                invitation_only_grants(
+                    &store,
+                    command.client_id,
+                    command.workspace_id,
+                    command.principal_id,
+                )
+            } else {
+                Err(error)
+            }
+        })
+        .context("failed to authorize API connection")?;
+    let next_id = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .context("system clock is before the Unix epoch")?
+        .as_nanos();
+    // Metadata authority checks must not resolve keys or contact providers
+    // merely to reject a connection. Narrow recovery/invitation grants remain
+    // empty and cannot authorize memory access.
+    let (cipher, rotation_provider, graph_provider) = initialize()?;
+    Ok(Runtime {
+        store: store.with_cipher(cipher),
+        graph_provider,
+        rotation_provider,
+        read_grant: grants.read,
+        write_grant: grants.write,
+        next_id,
+    })
 }
 
 async fn run_blocking_operation<Output, Operation>(
@@ -979,8 +1008,8 @@ fn selected_api_token_reference(locator: &str) -> Result<SecretReference> {
     }
 }
 
-fn management_only_grants(
-    store: &SqliteStore<ConfiguredRecordCipher>,
+fn management_only_grants<C>(
+    store: &SqliteStore<C>,
     client_id: ClientId,
     workspace_id: WorkspaceId,
     principal_id: PrincipalId,
@@ -3211,7 +3240,7 @@ mod tests {
     use axum::extract::State;
     use axum::http::{HeaderMap, StatusCode, header::AUTHORIZATION};
     use axum::response::IntoResponse;
-    use rembrane_application::WorkspaceRepository;
+    use rembrane_application::{EventRepository, MembershipRepository, WorkspaceRepository};
     use rembrane_crypto_configured::ConfiguredRecordCipher;
     use rembrane_crypto_rustcrypto::{RustCryptoKeyringCipher, RustCryptoRecordCipher};
     use rembrane_domain::{
@@ -3242,7 +3271,7 @@ mod tests {
         )
     }
 
-    fn fixture_state() -> super::AppState {
+    fn fixture_metadata_store() -> SqliteStore {
         let principal = PrincipalId::new("principal_blocking");
         let workspace = WorkspaceId::new("workspace_blocking");
         let mut store = SqliteStore::open_in_memory().expect("fixture database");
@@ -3253,27 +3282,43 @@ mod tests {
                 Membership::new(workspace.clone(), principal.clone(), WorkspaceRole::Owner),
             )
             .expect("fixture workspace");
-        let store = store.with_cipher(fixture_cipher());
-        let grants = super::AuthorizeClientService::new(&store)
-            .execute(super::AuthorizeClientCommand {
-                client_id: ClientId::new("api_blocking"),
-                workspace_id: workspace,
-                principal_id: principal,
-                requested_read_scopes: vec![ReadScope::Global],
-                requested_read_permissions: Vec::new(),
-                requested_write_permissions: vec![super::WritePermission::CreateMemory],
-            })
-            .expect("fixture grants");
+        store
+    }
+
+    fn fixture_startup_command() -> super::AuthorizeClientCommand {
+        super::AuthorizeClientCommand {
+            client_id: ClientId::new("api_blocking"),
+            workspace_id: WorkspaceId::new("workspace_blocking"),
+            principal_id: PrincipalId::new("principal_blocking"),
+            requested_read_scopes: vec![ReadScope::Global],
+            requested_read_permissions: Vec::new(),
+            requested_write_permissions: vec![super::WritePermission::CreateMemory],
+        }
+    }
+
+    fn fixture_providers() -> (
+        ConfiguredRecordCipher,
+        ConfiguredRecordCipher,
+        ConfiguredGraphProvider,
+    ) {
+        (
+            fixture_cipher(),
+            fixture_cipher(),
+            ConfiguredGraphProvider::Native(NativeGraphProvider::new()),
+        )
+    }
+
+    fn fixture_state() -> super::AppState {
+        let mut runtime = super::initialize_api_runtime(
+            fixture_metadata_store(),
+            fixture_startup_command(),
+            || Ok(fixture_providers()),
+        )
+        .expect("authorized fixture startup");
+        runtime.next_id = 100;
         super::AppState {
             inner: Arc::new(super::Inner {
-                runtime: std::sync::Mutex::new(super::Runtime {
-                    store,
-                    graph_provider: ConfiguredGraphProvider::Native(NativeGraphProvider::new()),
-                    rotation_provider: fixture_cipher(),
-                    read_grant: grants.read,
-                    write_grant: grants.write,
-                    next_id: 100,
-                }),
+                runtime: std::sync::Mutex::new(runtime),
                 blocking_operations: Arc::new(Semaphore::new(super::MAXIMUM_BLOCKING_OPERATIONS)),
                 bearer_token: Zeroizing::new("api-test-token".to_owned()),
                 discovery: build_memory_discovery("http://127.0.0.1:8787/v1".to_owned())
@@ -3281,6 +3326,180 @@ mod tests {
                 oauth_resource_metadata: None,
             }),
         }
+    }
+
+    fn fixture_add_foreign_workspace(store: &mut SqliteStore) {
+        store
+            .initialize_personal_workspace(
+                Principal::new(PrincipalId::new("principal_other")),
+                Workspace::personal(WorkspaceId::new("workspace_other")),
+                Membership::new(
+                    WorkspaceId::new("workspace_other"),
+                    PrincipalId::new("principal_other"),
+                    WorkspaceRole::Owner,
+                ),
+            )
+            .expect("foreign workspace");
+    }
+
+    #[test]
+    fn startup_denies_unknown_and_foreign_identity_before_keys_or_providers_are_initialized() {
+        let mut unknown_principal = fixture_startup_command();
+        unknown_principal.principal_id = PrincipalId::new("principal_missing");
+        let mut unknown_workspace = fixture_startup_command();
+        unknown_workspace.workspace_id = WorkspaceId::new("workspace_missing");
+        let mut foreign_workspace = fixture_startup_command();
+        foreign_workspace.workspace_id = WorkspaceId::new("workspace_other");
+        for command in [unknown_principal, unknown_workspace, foreign_workspace] {
+            let mut store = fixture_metadata_store();
+            fixture_add_foreign_workspace(&mut store);
+            let called = std::cell::Cell::new(false);
+            let error = super::initialize_api_runtime(store, command, || {
+                called.set(true);
+                panic!("rejected identity must not initialize keys or providers");
+            })
+            .err()
+            .expect("startup denied");
+            assert_eq!(error.to_string(), "failed to authorize API connection");
+            assert!(!called.get());
+        }
+    }
+
+    #[test]
+    fn startup_denies_inactive_membership_before_provider_initialization() {
+        let command = fixture_startup_command();
+        let membership = Membership::new(
+            command.workspace_id.clone(),
+            command.principal_id.clone(),
+            WorkspaceRole::Owner,
+        );
+        for inactive in [membership.clone().suspend(), membership.remove()] {
+            let mut store = fixture_metadata_store();
+            store
+                .replace_membership(inactive)
+                .expect("inactive membership");
+            let called = std::cell::Cell::new(false);
+            let error = super::initialize_api_runtime(store, command.clone(), || {
+                called.set(true);
+                panic!("inactive membership must not initialize providers");
+            })
+            .err()
+            .expect("startup denied");
+            assert_eq!(error.to_string(), "failed to authorize API connection");
+            assert!(!called.get());
+        }
+    }
+
+    #[test]
+    fn authorized_startup_initializes_once_and_preserves_canonical_grants() {
+        let command = fixture_startup_command();
+        let called = std::cell::Cell::new(0);
+        let runtime =
+            super::initialize_api_runtime(fixture_metadata_store(), command.clone(), || {
+                called.set(called.get() + 1);
+                Ok(fixture_providers())
+            })
+            .expect("authorized startup");
+        assert_eq!(called.get(), 1);
+        assert_eq!(runtime.read_grant.workspace_id, command.workspace_id);
+        assert_eq!(runtime.read_grant.subject_id, command.principal_id);
+        assert_eq!(runtime.read_grant.scopes, vec![ReadScope::Global]);
+        assert_eq!(
+            runtime.write_grant.permissions,
+            vec![super::WritePermission::CreateMemory]
+        );
+        assert!(
+            runtime
+                .store
+                .list_events_since(&command.workspace_id, 0)
+                .expect("canonical events")
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn authorized_startup_provider_failure_does_not_return_a_runtime() {
+        let called = std::cell::Cell::new(0);
+        let error = super::initialize_api_runtime(
+            fixture_metadata_store(),
+            fixture_startup_command(),
+            || {
+                called.set(called.get() + 1);
+                Err(anyhow::anyhow!("fixture provider unavailable"))
+            },
+        )
+        .err()
+        .expect("provider initialization failed");
+        assert_eq!(called.get(), 1);
+        assert_eq!(error.to_string(), "fixture provider unavailable");
+    }
+
+    #[test]
+    fn invitation_startup_remains_authorized_only_for_empty_memory_grants() {
+        let mut store = fixture_metadata_store();
+        fixture_add_foreign_workspace(&mut store);
+        let shared_workspace = WorkspaceId::new("workspace_shared");
+        store
+            .initialize_shared_workspace(
+                Workspace::shared(shared_workspace.clone()),
+                Membership::new(
+                    shared_workspace.clone(),
+                    PrincipalId::new("principal_other"),
+                    WorkspaceRole::Owner,
+                ),
+            )
+            .expect("shared workspace");
+        let mut command = fixture_startup_command();
+        command.workspace_id = shared_workspace;
+        let called = std::cell::Cell::new(0);
+        let runtime = super::initialize_api_runtime(store, command, || {
+            called.set(called.get() + 1);
+            Ok(fixture_providers())
+        })
+        .expect("narrow invitation startup");
+        assert_eq!(called.get(), 1);
+        assert!(runtime.read_grant.scopes.is_empty());
+        assert!(runtime.read_grant.permissions.is_empty());
+        assert!(runtime.write_grant.scopes.is_empty());
+        assert!(runtime.write_grant.permissions.is_empty());
+    }
+
+    #[test]
+    fn pending_rotation_startup_preserves_empty_management_grants() {
+        let mut store = fixture_metadata_store();
+        fixture_add_foreign_workspace(&mut store);
+        let workspace = WorkspaceId::new("workspace_shared");
+        let owner = PrincipalId::new("principal_blocking");
+        let member = PrincipalId::new("principal_other");
+        store
+            .initialize_shared_workspace(
+                Workspace::shared(workspace.clone()),
+                Membership::new(workspace.clone(), owner.clone(), WorkspaceRole::Owner),
+            )
+            .expect("shared workspace");
+        store
+            .insert_membership(Membership::new(
+                workspace.clone(),
+                member.clone(),
+                WorkspaceRole::Member,
+            ))
+            .expect("member");
+        super::MemberLifecycleService::new(&mut store)
+            .remove(rembrane_application::RemoveMemberCommand {
+                workspace_id: workspace.clone(),
+                principal_id: member,
+                removed_by: owner,
+                rotation_id: rembrane_domain::KeyRotationId::new("rotation_startup"),
+            })
+            .expect("pending rotation");
+        let mut command = fixture_startup_command();
+        command.workspace_id = workspace;
+        let runtime = super::initialize_api_runtime(store, command, || Ok(fixture_providers()))
+            .expect("narrow key recovery startup");
+        assert!(runtime.read_grant.scopes.is_empty());
+        assert!(runtime.read_grant.permissions.is_empty());
+        assert!(runtime.write_grant.scopes.is_empty());
+        assert!(runtime.write_grant.permissions.is_empty());
     }
 
     fn fixture_headers() -> HeaderMap {
