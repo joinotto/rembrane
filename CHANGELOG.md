@@ -9,6 +9,13 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Fixed
 
+- The PostgreSQL cross-tenant write fixture now requires successful same-tenant
+  insert/update/delete controls, an expected permission-denied insert, zero-row
+  foreign update/delete, and an exact bound proof marker. Unrelated SQL or
+  connection failures no longer count as tenant-isolation evidence. All writes
+  remain rollback-only; fourteen isolated output checks pass, while actual
+  PostgreSQL execution remains pending.
+
 - The PostgreSQL runtime-authority SQL guard now rejects protected-table
   `TRUNCATE` and table/column `REFERENCES` privileges across effective/session
   membership, including non-inherited member roles and effective `PUBLIC`

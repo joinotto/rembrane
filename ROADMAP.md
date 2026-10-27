@@ -990,11 +990,15 @@ are in [First Production Release Plan](docs/PRODUCTION_PLAN.md).
       REFERENCES across effective/session member roles, plus five rollback-only
       direct, column, PUBLIC, and non-inherited membership fixtures.
     - [ ] Execute those expanded ACL fixtures against live PostgreSQL.
+    - [x] Replace any-error cross-tenant insert acceptance with positive
+      same-tenant write controls, expected permission denial, zero-row foreign
+      update/delete, and an exact bound marker; add isolated output checks.
+    - [ ] Verify the strengthened write fixture on live PostgreSQL.
     - [ ] Execute the new runtime-authority SQL fixtures against PostgreSQL;
       local driver-boundary unit tests do not substitute for this proof.
     - [x] Require prepared `set_config(..., $1, true)` tenant bootstrap,
       exact context read-back, and pooled-connection leakage coverage.
-  - [x] Run a live PostgreSQL two-tenant CI proof covering scoped reads,
+  - [ ] Re-establish a live PostgreSQL two-tenant CI proof covering scoped reads,
     denied cross-tenant writes, and fail-closed missing tenant context.
   - [ ] Implement the Rust PostgreSQL repository adapter and live two-tenant
     integration suite.

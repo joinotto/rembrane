@@ -180,6 +180,11 @@ evidence and the strict readiness command.
   relations through effective/session member-role privileges. Five additional
   rollback-only ACL fixtures cover direct, column, PUBLIC, and non-inherited
   membership grants; their live catalog behavior remains unverified here.
+  Cross-tenant write fixtures now require successful same-tenant controls,
+  the expected foreign-insert denial, zero-row foreign update/delete, and
+  an exact bound proof marker. Fourteen local output cases test the shell
+  expectations only. The live two-tenant checkbox is reopened pending
+  corrected CI/staging execution; unrelated SQL failures are not isolation proof.
 - PostgreSQL fixture safety now has 28 passing fake-client guard cases. The
   runner no longer resets existing resources: it requires a private libpq
   service profile, explicit disposable-database authorization, and a read-only

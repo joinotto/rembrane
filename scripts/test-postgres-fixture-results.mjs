@@ -9,9 +9,9 @@ const expected = source.match(/test "\$result" = "([^"]+)"/)?.[1];
 assert.equal(typeof expected, "string", "scoped result assertion must exist");
 const counts = "1|1|1|1|1|1|1|1|1|1|1|1|1|2|1|1|1|1|1";
 const output = `workspace_01\n${counts}`;
-const check = (actual) => {
+const check = (actual, expectation = expected) => {
   const result = spawnSync("/bin/sh", [
-    "-c", 'test "$1" = "$2"', "fixture-result", actual, expected,
+    "-c", 'test "$1" = "$2"', "fixture-result", actual, expectation,
   ], { encoding: "utf8", timeout: 5_000 });
   assert.equal(result.error, undefined);
   assert.equal(result.stdout, "");
@@ -32,4 +32,25 @@ for (const invalid of [
 assert.match(source, /SELECT set_config\('rembrane\.workspace_id', 'workspace_01', true\);/);
 assert.match(source, /test "\$unscoped" = "0(?:\|0){18}"/);
 assert.match(source, /test "\$pooled_connection_result" = "workspace_01\n1\n0"/);
-console.log("PostgreSQL fixture output: seven exact-result cases passed (no SQL/RLS proof)");
+const writeExpected = source.match(/test "\$cross_tenant_write_proof" = "([^"]+)"/)?.[1];
+assert.equal(typeof writeExpected, "string");
+const writeOutput = "workspace_01\ncross-tenant-writes-denied";
+assert.equal(check(writeOutput, writeExpected), 0);
+for (const invalid of [
+  "cross-tenant-writes-denied",
+  "workspace_02\ncross-tenant-writes-denied",
+  `${writeOutput}\nunexpected`,
+  `${writeOutput}\ncross-tenant-writes-denied`,
+  "workspace_01\nPostgreSQL fixture command failed",
+  "",
+]) {
+  assert.notEqual(check(invalid, writeExpected), 0);
+}
+assert.doesNotMatch(source, /if fixture_psql(?:\s|>)/);
+assert.match(source, /EXCEPTION WHEN insufficient_privilege THEN/);
+assert.doesNotMatch(source, /EXCEPTION WHEN OTHERS/);
+assert.match(source, /same-tenant update control failed/);
+assert.match(source, /same-tenant delete control failed/);
+assert.match(source, /RLS accepted a cross-tenant update/);
+assert.match(source, /RLS accepted a cross-tenant delete/);
+console.log("PostgreSQL fixture output: fourteen exact-result cases passed (no SQL/RLS proof)");

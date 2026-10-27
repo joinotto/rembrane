@@ -485,25 +485,80 @@ test "$result" = "workspace_01
     exit 1
 }
 
-if fixture_psql >/dev/null 2>&1 <<'SQL'
+cross_tenant_write_proof=$(
+    fixture_psql -qAt <<'SQL'
 BEGIN;
 SET LOCAL ROLE rembrane_runtime_test;
 SELECT set_config('rembrane.workspace_id', 'workspace_01', true);
-INSERT INTO memories (
-    workspace_id, id, subject_id, scope_type, kind, status,
-    content_ciphertext, encryption_key_id, encryption_algorithm,
-    encryption_nonce, version
-) VALUES (
-    'workspace_02', 'forbidden', 'principal_02', 'global',
-    'preference', 'confirmed', '\x03', 'key_02',
-    'xchacha20poly1305-ietf', decode(repeat('03', 24), 'hex'), 1
-);
+DO $$
+DECLARE
+    denied boolean := false;
+    affected bigint;
+BEGIN
+    -- Positive controls: missing grants or broken fixture setup must not
+    -- masquerade as cross-tenant denial.
+    INSERT INTO public.memories (
+        workspace_id, id, subject_id, scope_type, kind, status,
+        content_ciphertext, encryption_key_id, encryption_algorithm,
+        encryption_nonce, version
+    ) VALUES (
+        'workspace_01', 'allowed_write_control', 'principal_01', 'global',
+        'preference', 'confirmed', '\x03', 'key_01',
+        'xchacha20poly1305-ietf', decode(repeat('03', 24), 'hex'), 1
+    );
+    UPDATE public.memories SET version = 2
+        WHERE workspace_id = 'workspace_01' AND id = 'allowed_write_control';
+    GET DIAGNOSTICS affected = ROW_COUNT;
+    IF affected <> 1 THEN
+        RAISE EXCEPTION 'PostgreSQL same-tenant update control failed';
+    END IF;
+    DELETE FROM public.memories
+        WHERE workspace_id = 'workspace_01' AND id = 'allowed_write_control';
+    GET DIAGNOSTICS affected = ROW_COUNT;
+    IF affected <> 1 THEN
+        RAISE EXCEPTION 'PostgreSQL same-tenant delete control failed';
+    END IF;
+
+    BEGIN
+        INSERT INTO public.memories (
+            workspace_id, id, subject_id, scope_type, kind, status,
+            content_ciphertext, encryption_key_id, encryption_algorithm,
+            encryption_nonce, version
+        ) VALUES (
+            'workspace_02', 'forbidden', 'principal_02', 'global',
+            'preference', 'confirmed', '\x03', 'key_02',
+            'xchacha20poly1305-ietf', decode(repeat('03', 24), 'hex'), 1
+        );
+    EXCEPTION WHEN insufficient_privilege THEN
+        denied := true;
+    END;
+    IF NOT denied THEN
+        RAISE EXCEPTION 'PostgreSQL RLS accepted a cross-tenant insert';
+    END IF;
+
+    UPDATE public.memories SET version = version + 1
+        WHERE workspace_id = 'workspace_02' AND id = 'memory_02';
+    GET DIAGNOSTICS affected = ROW_COUNT;
+    IF affected <> 0 THEN
+        RAISE EXCEPTION 'PostgreSQL RLS accepted a cross-tenant update';
+    END IF;
+    DELETE FROM public.memories
+        WHERE workspace_id = 'workspace_02' AND id = 'memory_02';
+    GET DIAGNOSTICS affected = ROW_COUNT;
+    IF affected <> 0 THEN
+        RAISE EXCEPTION 'PostgreSQL RLS accepted a cross-tenant delete';
+    END IF;
+END
+$$;
+SELECT 'cross-tenant-writes-denied';
 ROLLBACK;
 SQL
-then
-    echo "PostgreSQL RLS accepted a cross-tenant insert" >&2
+)
+test "$cross_tenant_write_proof" = "workspace_01
+cross-tenant-writes-denied" || {
+    echo "PostgreSQL cross-tenant write fixture did not return its exact proof" >&2
     exit 1
-fi
+}
 
 unscoped=$(
     fixture_psql -qAt <<'SQL'

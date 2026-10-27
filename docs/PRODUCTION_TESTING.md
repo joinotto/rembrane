@@ -142,6 +142,11 @@ without mutation. This prevents
 accidental reuse; it cannot defeat concurrent administrators changing the
 target after the probe. The guard's fake-client tests are not a live SQL/RLS
 proof; the updated PostgreSQL CI job and staging suite must still execute.
+The cross-tenant write fixture must complete its positive same-tenant
+insert/update/delete controls, catch only the expected permission-denied
+foreign insert, return zero rows affected by foreign update/delete, and return
+its exact bound proof marker. An arbitrary SQL or connection failure is a
+failed suite, not a successful isolation test. These mutations are rolled back.
 
 ## Concrete PostgreSQL runtime gate
 
