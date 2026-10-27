@@ -45,7 +45,7 @@ evidence and the strict readiness command.
   initialization without serializing unrelated tenant lookups. Library tests
   cover panic/cancellation cleanup and overload, not a deployed SDK listener.
 - Expired tenant-service cleanup runs outside the global cache lock. The
-  remote adapter's 145 passing unit tests include blocked/panicking cleanup,
+  remote adapter's 148 passing unit tests include blocked/panicking cleanup,
   concurrent tenant progress, reclaimed capacity, and pending reservation
   preservation. Live provider shutdown and load behavior remain unverified.
 - REST and MCP startup now check canonical metadata authority before
@@ -146,6 +146,12 @@ evidence and the strict readiness command.
   new tests now cover enforcement, overflow, boundaries, misleading size hints,
   and authorization races. These bound forwarded frames, not provider
   allocation, compressed wire bytes, HTTP headers, or consumer queues.
+- Rejected provider frames and raw errors now close authorization before
+  their destructors and keep capacity until both those resources and the
+  underlying body are destroyed. One regression reproduced both live authority
+  during frame discard and early quota return during raw-error discard. Three
+  new tests include blocked cleanup and unwind. This is synchronous ownership
+  protection, not executor isolation or detached SDK-task cleanup evidence.
 - The PostgreSQL boundary includes a fail-closed runtime-authority guard with
   74 passing adapter unit tests. Its new shared SQL fixtures still require
   live PostgreSQL execution; the concrete database driver remains missing.

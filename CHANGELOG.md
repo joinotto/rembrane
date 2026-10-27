@@ -9,6 +9,14 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Fixed
 
+- Remote body rejection now closes authorization before discarding provider
+  frames/raw errors and retains response quota through both discarded-resource
+  and body destruction. A regression reproduced live authority during frame
+  discard and early capacity return during raw-error discard. An owned cleanup
+  guard also tears down the body if discard unwinds; authorization is rechecked
+  after delivery accounting. Three additional tests pass, with all 148 remote
+  tests passing. Actual SDK lifecycle and executor isolation remain unverified.
+
 - Reserved response admission now carries an optional immutable delivery
   policy. Guarded bodies enforce per-data-frame and cumulative data limits,
   cumulative trailer name/value bytes and fields, and all-frame counts.

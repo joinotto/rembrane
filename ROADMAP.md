@@ -598,6 +598,10 @@ are in [First Production Release Plan](docs/PRODUCTION_PLAN.md).
           individual/cumulative data, cumulative trailer bytes/fields, and
           empty-frame counts. Reproduce oversized forwarding before the fix;
           verify overflow, boundaries, size hints, and revocation priority.
+        - [x] Close authorization before discarding rejected provider frames
+          or raw errors, retaining quota through discarded-resource and body
+          destruction. Reproduce both ordering failures and verify blocked
+          cleanup/unwind. Recheck authorization after delivery accounting.
       - [ ] Wire the guard into the official SDK listener and connect its
         controllers to real token, membership, and session revocation under
         bounded admission; reserve before dispatch, retain ownership through

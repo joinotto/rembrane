@@ -197,6 +197,22 @@ pub struct RemoteMcpGuardedBody {
     delivery: Option<DeliveryBudget>,
 }
 
+// Own cleanup while discarding a rejected frame/error. If its destructor
+// unwinds, this owner's Drop still destroys the body with admission retained.
+struct ResponseCleanup {
+    body: Option<Body>,
+    permit: Option<RemoteMcpResponsePermit>,
+}
+
+impl Drop for ResponseCleanup {
+    fn drop(&mut self) {
+        let body = self.body.take();
+        let permit = self.permit.take();
+        drop(body);
+        drop(permit);
+    }
+}
+
 impl fmt::Debug for RemoteMcpGuardedBody {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
@@ -370,23 +386,36 @@ impl RemoteMcpGuardedBody {
     }
 
     fn finish(&mut self) {
-        // Mark both halves closed before a user-supplied body's destructor
-        // runs. Even if that destructor unwinds, no authority remains active.
-        let body = self.body.take();
-        let permit = self.permit.take();
+        self.finish_with_discard(());
+    }
+
+    fn finish_with_discard<Resource>(&mut self, resource: Resource) {
+        let cleanup = ResponseCleanup {
+            body: self.body.take(),
+            permit: self.permit.take(),
+        };
+        // Close all authority before any untrusted destructor runs. Cleanup
+        // ownership survives a discarded-resource panic without returning
+        // quota before body teardown or retaining a half-open wrapper.
         self.authorization = None;
         self.delivery = None;
-        drop(body);
-        // Keep admission while user teardown runs; unwinding drops this local
-        // permit too, without retaining authorization or leaking capacity.
-        drop(permit);
+        drop(resource);
+        drop(cleanup);
     }
 
     fn deny(
         &mut self,
         error: RemoteMcpStreamError,
     ) -> Poll<Option<Result<Frame<Bytes>, RemoteMcpStreamError>>> {
-        self.finish();
+        self.deny_after_discard(error, ())
+    }
+
+    fn deny_after_discard<Resource>(
+        &mut self,
+        error: RemoteMcpStreamError,
+        resource: Resource,
+    ) -> Poll<Option<Result<Frame<Bytes>, RemoteMcpStreamError>>> {
+        self.finish_with_discard(resource);
         Poll::Ready(Some(Err(error)))
     }
 }
@@ -422,22 +451,35 @@ impl HttpBody for RemoteMcpGuardedBody {
             .expect("authorization remains active while polling")
             .poll_denial(context)
         {
-            return this.deny(error);
+            return this.deny_after_discard(error, result);
         }
         match result {
-            Poll::Ready(Some(Err(_))) => this.deny(RemoteMcpStreamError::TransportFailure),
+            Poll::Ready(Some(Err(error))) => {
+                this.deny_after_discard(RemoteMcpStreamError::TransportFailure, error)
+            }
             Poll::Ready(None) => {
                 this.finish();
                 Poll::Ready(None)
             }
             Poll::Ready(Some(Ok(frame))) => {
-                if this
+                let exceeded = this
                     .delivery
                     .as_mut()
-                    .is_some_and(|delivery| delivery.admit(&frame).is_err())
+                    .is_some_and(|delivery| delivery.admit(&frame).is_err());
+                // Accounting is bounded by configured metadata/frame limits,
+                // but can still consume time. Recheck authority before
+                // exposing data, even when accounting itself rejected it.
+                if let Some(error) = this
+                    .authorization
+                    .as_mut()
+                    .expect("authorization remains active during accounting")
+                    .poll_denial(context)
                 {
-                    drop(frame);
-                    return this.deny(RemoteMcpStreamError::DeliveryLimitExceeded);
+                    return this.deny_after_discard(error, frame);
+                }
+                if exceeded {
+                    return this
+                        .deny_after_discard(RemoteMcpStreamError::DeliveryLimitExceeded, frame);
                 }
                 // HTTP consumers may stop polling after an end-marked final
                 // frame. Release monitor/provider ownership now, not only
@@ -620,6 +662,51 @@ mod tests {
         }
     }
 
+    struct FixtureOwnedBytes {
+        data: &'static [u8],
+        on_drop: Option<Box<dyn FnOnce() + Send>>,
+    }
+
+    impl AsRef<[u8]> for FixtureOwnedBytes {
+        fn as_ref(&self) -> &[u8] {
+            self.data
+        }
+    }
+
+    impl Drop for FixtureOwnedBytes {
+        fn drop(&mut self) {
+            if let Some(callback) = self.on_drop.take() {
+                callback();
+            }
+        }
+    }
+
+    struct FixtureDriverError {
+        on_drop: Option<Box<dyn FnOnce() + Send + Sync>>,
+    }
+
+    impl fmt::Debug for FixtureDriverError {
+        fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+            formatter.write_str("FixtureDriverError(<redacted>)")
+        }
+    }
+
+    impl fmt::Display for FixtureDriverError {
+        fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+            formatter.write_str("private provider diagnostic")
+        }
+    }
+
+    impl std::error::Error for FixtureDriverError {}
+
+    impl Drop for FixtureDriverError {
+        fn drop(&mut self) {
+            if let Some(callback) = self.on_drop.take() {
+                callback();
+            }
+        }
+    }
+
     async fn next(
         body: &mut RemoteMcpGuardedBody,
     ) -> Option<Result<Frame<Bytes>, RemoteMcpStreamError>> {
@@ -640,6 +727,194 @@ mod tests {
             .capture_dispatch_guard(&id, &mut proof, 1_000)
             .unwrap();
         (registry, id, proof, guard)
+    }
+
+    #[tokio::test]
+    async fn rejected_provider_objects_close_authority_before_teardown_and_retain_quota() {
+        use crate::{
+            RemoteMcpDeliveryLimits, RemoteMcpResponseBudget, RemoteMcpResponseBudgetError,
+        };
+
+        for case in ["transport-error", "revoked", "limit"] {
+            let proof = access("owner");
+            let limits = RemoteMcpDeliveryLimits::new(1, 1, 0, 0, 1).unwrap();
+            let budget = RemoteMcpResponseBudget::new_with_delivery_limits(1, 1, limits).unwrap();
+            let controller = RemoteMcpStreamRevocation::new(&proof).unwrap();
+            let observer = controller.clone();
+            let resource_budget = budget.clone();
+            let resource_proof = proof.clone();
+            let mut fixture = FixtureBody::new(vec![], false);
+            let body_drops = fixture.drops.clone();
+            let body_drops_at_discard = body_drops.clone();
+            let callback = move || {
+                assert_eq!(
+                    observer.sender.receiver_count(),
+                    0,
+                    "authority must close before discarded resources"
+                );
+                assert_eq!(
+                    resource_budget.reserve(&resource_proof).unwrap_err(),
+                    RemoteMcpResponseBudgetError::Exhausted,
+                    "quota must survive discarded resources"
+                );
+                assert_eq!(body_drops_at_discard.load(Ordering::SeqCst), 0);
+            };
+            if case == "transport-error" {
+                fixture.error = Some(io::Error::other(FixtureDriverError {
+                    on_drop: Some(Box::new(callback)),
+                }));
+            } else {
+                fixture
+                    .frames
+                    .push_back(Frame::data(Bytes::from_owner(FixtureOwnedBytes {
+                        data: b"private-frame",
+                        on_drop: Some(Box::new(callback)),
+                    })));
+            }
+            if case == "revoked" {
+                let revoke = controller.clone();
+                fixture.on_poll = Some(Box::new(move || revoke.revoke()));
+            }
+            let mut body = RemoteMcpGuardedBody::new_with_permit(
+                Body::new(fixture),
+                &proof,
+                controller.subscribe(),
+                budget.reserve(&proof).unwrap(),
+            )
+            .unwrap();
+            let error = next(&mut body).await.unwrap().unwrap_err();
+            assert_eq!(
+                error,
+                match case {
+                    "limit" => RemoteMcpStreamError::DeliveryLimitExceeded,
+                    "revoked" => RemoteMcpStreamError::RevokedAuthorization,
+                    _ => RemoteMcpStreamError::TransportFailure,
+                }
+            );
+            assert!(!error.to_string().contains("private"));
+            assert_eq!(body_drops.load(Ordering::SeqCst), 1);
+            assert!(next(&mut body).await.is_none());
+            assert!(budget.reserve(&proof).is_ok());
+        }
+    }
+
+    #[test]
+    fn blocked_discard_keeps_capacity_through_frame_or_error_and_body_destruction() {
+        use crate::{
+            RemoteMcpDeliveryLimits, RemoteMcpResponseBudget, RemoteMcpResponseBudgetError,
+        };
+
+        for case in ["frame", "error"] {
+            let proof = access("owner");
+            let limits = RemoteMcpDeliveryLimits::new(1, 1, 0, 0, 1).unwrap();
+            let budget = RemoteMcpResponseBudget::new_with_delivery_limits(2, 1, limits).unwrap();
+            let controller = RemoteMcpStreamRevocation::new(&proof).unwrap();
+            let (entered, observed) = std::sync::mpsc::channel();
+            let (release, resume) = std::sync::mpsc::channel();
+            let resume = std::sync::Mutex::new(resume);
+            let mut fixture = FixtureBody::new(vec![], false);
+            let drops = fixture.drops.clone();
+            let callback = move || {
+                entered.send(()).unwrap();
+                resume
+                    .lock()
+                    .unwrap()
+                    .recv_timeout(Duration::from_secs(5))
+                    .unwrap();
+            };
+            if case == "frame" {
+                fixture
+                    .frames
+                    .push_back(Frame::data(Bytes::from_owner(FixtureOwnedBytes {
+                        data: b"oversized",
+                        on_drop: Some(Box::new(callback)),
+                    })));
+            } else {
+                fixture.error = Some(io::Error::other(FixtureDriverError {
+                    on_drop: Some(Box::new(callback)),
+                }));
+            }
+            let mut body = RemoteMcpGuardedBody::new_with_permit(
+                Body::new(fixture),
+                &proof,
+                controller.subscribe(),
+                budget.reserve(&proof).unwrap(),
+            )
+            .unwrap();
+            let worker = std::thread::spawn(move || {
+                tokio::runtime::Builder::new_current_thread()
+                    .enable_time()
+                    .build()
+                    .unwrap()
+                    .block_on(async move { next(&mut body).await.unwrap().unwrap_err() })
+            });
+            observed.recv_timeout(Duration::from_secs(2)).unwrap();
+            assert_eq!(controller.sender.receiver_count(), 0);
+            assert_eq!(drops.load(Ordering::SeqCst), 0);
+            assert_eq!(
+                budget.reserve(&proof).unwrap_err(),
+                RemoteMcpResponseBudgetError::Exhausted
+            );
+            let unrelated = budget.reserve(&access("another-workspace")).unwrap();
+            release.send(()).unwrap();
+            assert_eq!(
+                worker.join().unwrap(),
+                if case == "frame" {
+                    RemoteMcpStreamError::DeliveryLimitExceeded
+                } else {
+                    RemoteMcpStreamError::TransportFailure
+                }
+            );
+            assert_eq!(drops.load(Ordering::SeqCst), 1);
+            assert!(budget.reserve(&proof).is_ok());
+            drop(unrelated);
+        }
+    }
+
+    #[tokio::test]
+    async fn discard_unwind_still_destroys_provider_body_and_returns_quota() {
+        use crate::{RemoteMcpDeliveryLimits, RemoteMcpResponseBudget};
+
+        for case in ["frame", "error"] {
+            let proof = access("owner");
+            let limits = RemoteMcpDeliveryLimits::new(1, 1, 0, 0, 1).unwrap();
+            let budget = RemoteMcpResponseBudget::new_with_delivery_limits(1, 1, limits).unwrap();
+            let controller = RemoteMcpStreamRevocation::new(&proof).unwrap();
+            let mut fixture = FixtureBody::new(vec![], false);
+            let drops = fixture.drops.clone();
+            let callback = || panic!("fixture discarded resource failure");
+            if case == "frame" {
+                fixture
+                    .frames
+                    .push_back(Frame::data(Bytes::from_owner(FixtureOwnedBytes {
+                        data: b"oversized",
+                        on_drop: Some(Box::new(callback)),
+                    })));
+            } else {
+                fixture.error = Some(io::Error::other(FixtureDriverError {
+                    on_drop: Some(Box::new(callback)),
+                }));
+            }
+            let mut body = RemoteMcpGuardedBody::new_with_permit(
+                Body::new(fixture),
+                &proof,
+                controller.subscribe(),
+                budget.reserve(&proof).unwrap(),
+            )
+            .unwrap();
+            assert!(
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    let mut context = Context::from_waker(std::task::Waker::noop());
+                    Pin::new(&mut body).poll_frame(&mut context)
+                }))
+                .is_err()
+            );
+            assert_eq!(controller.sender.receiver_count(), 0);
+            assert_eq!(drops.load(Ordering::SeqCst), 1);
+            assert!(body.is_end_stream());
+            assert!(next(&mut body).await.is_none());
+            assert!(budget.reserve(&proof).is_ok());
+        }
     }
 
     #[tokio::test]

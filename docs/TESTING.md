@@ -636,7 +636,7 @@ Integration obligations:
   not already released/buffered frames, transmitted bytes/headers, or already
   admitted mutations.
 
-Thirty body-level tests cover active delivery, trailers, idle expiry and
+Thirty-three body-level tests cover active delivery, trailers, idle expiry and
 revocation, controller loss/clones, all claim substitutions, independent
 tenants, mid-poll revocation, shortest-deadline non-renewal, opaque failure,
 status/header preservation, EOF, and consumer/monitor cleanup. Seven new cases
@@ -680,7 +680,7 @@ Seven budget tests cover limits, shared quotas, concurrent same-workspace
 admission, proof/expiry binding, stale bucket cleanup, poisoned metadata, and
 redaction. Five additional body tests cover eight completion/rejection paths,
 poll ownership, synchronized blocked cleanup with unrelated tenant progress,
-destructor unwind, and same-claims non-renewal. The 145 remote tests pass.
+destructor unwind, and same-claims non-renewal. The 148 remote tests pass.
 
 These APIs are opt-in: existing unbudgeted constructors/helpers remain
 available for compatibility and Tower dispatchers do not automatically reserve.
@@ -721,7 +721,8 @@ any exceeded limit produces one opaque `DeliveryLimitExceeded` error, discards
 the offending frame, closes delivery, and follows normal teardown ownership.
 The rejected frame is dropped before provider-body teardown. Revocation/expiry
 checks still run before and after provider polling and take precedence over a
-delivery limit failure.
+delivery limit failure. They also run after delivery accounting, before a
+candidate frame can be returned.
 
 Size hints are capped by remaining data allowance, but actual frame lengths
 are checked regardless of a provider's advertised hint. This is not streaming
@@ -742,6 +743,35 @@ backing buffer behind a small `Bytes` slice, compressed wire bytes, HTTP respons
 headers already returned, or consumer/network queues. Producer and transport
 limits, listener integration, live load tests, and measured deployment-specific
 values remain required. There is deliberately no claimed production default.
+
+### Discarded provider-resource cleanup
+
+```sh
+cargo test -p rembrane-remote-mcp-http --locked --offline rejected_provider_objects
+cargo test -p rembrane-remote-mcp-http --locked --offline discard
+```
+
+A rejected frame can own provider buffers via `Bytes::from_owner`; a raw body
+error can own driver resources. Cleanup closes all authorization first, drops
+the rejected object, destroys the provider body, and only then returns quota.
+An internal owned cleanup guard retains the body and quota during discard, so
+an unwinding discarded-resource destructor still destroys the body and returns
+quota with the public wrapper already closed.
+
+One regression was run before the fix with both ordering failures: frame
+discard observed one active authorization subscriber, and raw-error discard
+could reserve quota that should still have been held. Three new tests now cover
+limit/revocation/transport rejection, synchronized blocked frame/error discard
+with unrelated workspace progress, and frame/error destructor unwind while
+retaining the closed wrapper. Both rejected-resource and body teardown happen
+exactly once in these fixtures.
+
+Destruction is synchronous. These tests do not prove executor isolation:
+provider resource/body destructors must be bounded and nonblocking, or the
+integration must arrange bounded off-executor cleanup with capacity retained.
+They also do not bound detached provider/SDK tasks or references held elsewhere.
+A process abort or two simultaneous destructor panics is not recoverable
+cleanup evidence. Actual SDK cancellation and shutdown verification remain open.
 
 ## Initialization service ownership during compensation
 
