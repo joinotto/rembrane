@@ -9,6 +9,15 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Fixed
 
+- Reserved response admission now carries an optional immutable delivery
+  policy. Guarded bodies enforce per-data-frame and cumulative data limits,
+  cumulative trailer name/value bytes and fields, and all-frame counts.
+  A regression first reproduced forwarding an oversized frame despite that
+  policy. Rejected frames never reach the consumer; cleanup retains admission
+  through provider teardown, and authorization denial takes priority.
+  Eleven new tests pass, with all 145 remote tests passing. These are opt-in
+  delivery controls, not actual SDK wiring or provider-allocation limits.
+
 - Optional budgeted MCP response bodies now retain shared global and
   per-workspace Tokio permits through actual provider teardown, including
   constructor rejection, cancellation, and unwind. Non-waiting admission uses

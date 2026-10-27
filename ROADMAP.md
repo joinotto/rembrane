@@ -594,11 +594,16 @@ are in [First Production Release Plan](docs/PRODUCTION_PLAN.md).
           Tokio permits; retain original proof deadlines and quota through
           rejected construction, cancellation, and actual provider teardown.
           Verify concurrency/churn, blocked teardown, and unwind locally.
+        - [x] Carry immutable delivery limits in reserved admission and enforce
+          individual/cumulative data, cumulative trailer bytes/fields, and
+          empty-frame counts. Reproduce oversized forwarding before the fix;
+          verify overflow, boundaries, size hints, and revocation priority.
       - [ ] Wire the guard into the official SDK listener and connect its
         controllers to real token, membership, and session revocation under
         bounded admission; reserve before dispatch, retain ownership through
-        actual completion, and separately bound bytes/tasks/monitors. Retain
-        exact initialization compensation ownership.
+        actual completion, and configure delivery limits. Separately bound
+        producer allocation, buffers, tasks, and monitors. Retain exact
+        initialization compensation ownership.
       - [x] Retain the exact Tower service and original authority metadata
         through initialization commit/compensation so expiry pruning or cache
         replacement cannot redirect cleanup to a new factory-selected service.

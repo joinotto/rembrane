@@ -8,6 +8,8 @@ use std::{
 use rembrane_contracts::VerifiedRemoteAccess;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
+use crate::RemoteMcpDeliveryLimits;
+
 /// A configuration safety ceiling, not a measured production capacity.
 pub const MAX_REMOTE_MCP_ACTIVE_RESPONSES: usize = 10_000;
 
@@ -38,14 +40,16 @@ struct BudgetState {
     global: Arc<Semaphore>,
     workspaces: Mutex<BTreeMap<String, Weak<Semaphore>>>,
     workspace_limit: usize,
+    delivery_limits: Option<RemoteMcpDeliveryLimits>,
 }
 
 /// Shared, non-waiting admission for pending and active response ownership.
 ///
 /// One instance must be shared by every route/tenant factory in a server.
 /// Reserve before SDK/provider dispatch, retain through waits, and transfer the
-/// permit into a guarded body. This does not bound bytes or provider tasks that
-/// continue independently of the response; those need separate budgets.
+/// permit into a guarded body. Optional delivery limits bound forwarded frames,
+/// not provider allocation or tasks that continue independently of a response;
+/// those need separate budgets.
 #[derive(Clone)]
 pub struct RemoteMcpResponseBudget {
     state: Arc<BudgetState>,
@@ -65,6 +69,7 @@ pub struct RemoteMcpResponsePermit {
     access: VerifiedRemoteAccess,
     _workspace: OwnedSemaphorePermit,
     _global: OwnedSemaphorePermit,
+    delivery_limits: Option<RemoteMcpDeliveryLimits>,
 }
 
 impl fmt::Debug for RemoteMcpResponsePermit {
@@ -80,6 +85,24 @@ impl RemoteMcpResponseBudget {
         global_limit: usize,
         workspace_limit: usize,
     ) -> Result<Self, RemoteMcpResponseBudgetError> {
+        Self::construct(global_limit, workspace_limit, None)
+    }
+
+    /// Configures delivery limits for every permit issued by this budget.
+    /// Guards consuming these permits enforce the policy without a reset API.
+    pub fn new_with_delivery_limits(
+        global_limit: usize,
+        workspace_limit: usize,
+        delivery_limits: RemoteMcpDeliveryLimits,
+    ) -> Result<Self, RemoteMcpResponseBudgetError> {
+        Self::construct(global_limit, workspace_limit, Some(delivery_limits))
+    }
+
+    fn construct(
+        global_limit: usize,
+        workspace_limit: usize,
+        delivery_limits: Option<RemoteMcpDeliveryLimits>,
+    ) -> Result<Self, RemoteMcpResponseBudgetError> {
         if global_limit == 0
             || global_limit > MAX_REMOTE_MCP_ACTIVE_RESPONSES
             || workspace_limit == 0
@@ -92,6 +115,7 @@ impl RemoteMcpResponseBudget {
                 global: Arc::new(Semaphore::new(global_limit)),
                 workspaces: Mutex::new(BTreeMap::new()),
                 workspace_limit,
+                delivery_limits,
             }),
         })
     }
@@ -139,6 +163,7 @@ impl RemoteMcpResponseBudget {
             access: access.clone(),
             _workspace: workspace,
             _global: global,
+            delivery_limits: self.state.delivery_limits,
         })
     }
 }
@@ -159,6 +184,10 @@ impl RemoteMcpResponsePermit {
 
     pub(crate) fn deadline(&self) -> Instant {
         self.access.validity_deadline()
+    }
+
+    pub(crate) const fn delivery_limits(&self) -> Option<RemoteMcpDeliveryLimits> {
+        self.delivery_limits
     }
 }
 

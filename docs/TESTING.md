@@ -636,7 +636,7 @@ Integration obligations:
   not already released/buffered frames, transmitted bytes/headers, or already
   admitted mutations.
 
-Twenty-six body-level tests cover active delivery, trailers, idle expiry and
+Thirty body-level tests cover active delivery, trailers, idle expiry and
 revocation, controller loss/clones, all claim substitutions, independent
 tenants, mid-poll revocation, shortest-deadline non-renewal, opaque failure,
 status/header preservation, EOF, and consumer/monitor cleanup. Seven new cases
@@ -680,7 +680,7 @@ Seven budget tests cover limits, shared quotas, concurrent same-workspace
 admission, proof/expiry binding, stale bucket cleanup, poisoned metadata, and
 redaction. Five additional body tests cover eight completion/rejection paths,
 poll ownership, synchronized blocked cleanup with unrelated tenant progress,
-destructor unwind, and same-claims non-renewal. The 134 remote tests pass.
+destructor unwind, and same-claims non-renewal. The 145 remote tests pass.
 
 These APIs are opt-in: existing unbudgeted constructors/helpers remain
 available for compatibility and Tower dispatchers do not automatically reserve.
@@ -688,9 +688,60 @@ The actual SDK listener must wire mandatory admission across every response
 path and map exhaustion to an appropriate opaque overload response. Pending
 dispatch cancellation must retain quota until actual work completes; dropping
 a future must not release quota while a detached task continues. Independently
-running provider tasks, per-stream bytes/buffers, monitor tasks, and SDK session
-resources need their own limits. Unit tests do not establish live listener
+running provider tasks, producer allocations/buffers, monitor tasks, and SDK
+session resources need their own limits. Unit tests do not establish live listener
 cleanup, scheduling behavior, fairness, or a production operating envelope.
+
+### Reserved delivery policy
+
+```sh
+cargo test -p rembrane-remote-mcp-http --locked --offline delivery_limits
+cargo test -p rembrane-remote-mcp-http --locked --offline reserved_delivery_policy
+```
+
+Create validated `RemoteMcpDeliveryLimits` and use
+`RemoteMcpResponseBudget::new_with_delivery_limits`. Every permit retains the
+same immutable policy; both budgeted body constructors automatically enforce
+it. No consumer API changes or resets a body's counters. The capacity-only
+`new` budget and unbudgeted helpers do not acquire a delivery policy implicitly.
+
+The five configured limits are:
+
+- maximum bytes in one data frame;
+- cumulative data bytes across the response;
+- cumulative trailer bytes, counting each name and raw value, including
+  duplicate header values and repeated trailer frames;
+- cumulative trailer fields, counting duplicate values separately;
+- total frames, including empty data and empty trailer frames.
+
+Data and frame limits must be positive; a single-frame allowance cannot exceed
+total data allowance. Zero trailer allowances reject nonempty trailers. All
+counters use checked arithmetic; exact boundaries are allowed, but overflow or
+any exceeded limit produces one opaque `DeliveryLimitExceeded` error, discards
+the offending frame, closes delivery, and follows normal teardown ownership.
+The rejected frame is dropped before provider-body teardown. Revocation/expiry
+checks still run before and after provider polling and take precedence over a
+delivery limit failure.
+
+Size hints are capped by remaining data allowance, but actual frame lengths
+are checked regardless of a provider's advertised hint. This is not streaming
+pagination or a guaranteed complete JSON/SSE message: a limit failure can
+interrupt a response after earlier frames were delivered. The actual SDK/HTTP
+integration must handle that failure and document reconnection/retry behavior,
+not return a successful truncated result or silently retry a mutation.
+
+Seven accounting tests cover configuration, exact/cumulative limits,
+duplicate trailers, empty frames, overflow, and size hints. Four body tests
+exercise seven rejection paths, exact boundaries with separate response
+counters, revocation priority, and a misleading zero-byte provider hint. The
+oversized-frame case failed before enforcement and now passes.
+
+These controls bound bytes and metadata **forwarded by the guard**. They cannot
+prevent allocation before a provider returns a frame or constrain an oversized
+backing buffer behind a small `Bytes` slice, compressed wire bytes, HTTP response
+headers already returned, or consumer/network queues. Producer and transport
+limits, listener integration, live load tests, and measured deployment-specific
+values remain required. There is deliberately no claimed production default.
 
 ## Initialization service ownership during compensation
 

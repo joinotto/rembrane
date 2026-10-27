@@ -45,7 +45,7 @@ evidence and the strict readiness command.
   initialization without serializing unrelated tenant lookups. Library tests
   cover panic/cancellation cleanup and overload, not a deployed SDK listener.
 - Expired tenant-service cleanup runs outside the global cache lock. The
-  remote adapter's 134 passing unit tests include blocked/panicking cleanup,
+  remote adapter's 145 passing unit tests include blocked/panicking cleanup,
   concurrent tenant progress, reclaimed capacity, and pending reservation
   preservation. Live provider shutdown and load behavior remain unverified.
 - REST and MCP startup now check canonical metadata authority before
@@ -139,6 +139,13 @@ evidence and the strict readiness command.
   tenant churn, rejection, poll/teardown ownership, blocked cleanup, and unwind.
   These are library primitives, not listener wiring, distributed quotas,
   byte limits, independently running provider-task limits, or measured capacity.
+- Reserved response admission can now carry immutable delivery limits for
+  individual data frames, cumulative data, cumulative trailer name/value bytes
+  and fields, and all frame classes including empty frames. One regression first
+  reproduced forwarding an oversized frame despite configured limits; eleven
+  new tests now cover enforcement, overflow, boundaries, misleading size hints,
+  and authorization races. These bound forwarded frames, not provider
+  allocation, compressed wire bytes, HTTP headers, or consumer queues.
 - The PostgreSQL boundary includes a fail-closed runtime-authority guard with
   74 passing adapter unit tests. Its new shared SQL fixtures still require
   live PostgreSQL execution; the concrete database driver remains missing.
@@ -251,10 +258,13 @@ No existing strict release gate is waived by this plan.
     unavailable listener feature.
   - [x] Implement shared global/per-workspace response reservations with
     capacity retained through actual body teardown and original deadlines.
+  - [x] Carry immutable delivery limits through reserved admission and enforce
+    single/cumulative data, trailers, and empty-frame counts at body delivery.
   - [ ] Connect the guard to real revocation authorities and verify it on
     actual SDK responses. Reserve shared response capacity before dispatch,
     retain it through cancellation and actual provider completion, and
-    separately bound stream bytes, provider tasks, and authority monitors.
+    configure the delivery policy and separately bound producer allocation,
+    transport buffers, provider tasks, and authority monitors.
 - [ ] Enable its actual transport feature and resolve/build the complete
   locked dependency graph; a protocol adapter alone is insufficient.
 - [ ] Implement a concrete PostgreSQL driver, pool, and runtime repository
