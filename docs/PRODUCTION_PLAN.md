@@ -45,7 +45,7 @@ evidence and the strict readiness command.
   initialization without serializing unrelated tenant lookups. Library tests
   cover panic/cancellation cleanup and overload, not a deployed SDK listener.
 - Expired tenant-service cleanup runs outside the global cache lock. The
-  remote adapter's 122 passing unit tests include blocked/panicking cleanup,
+  remote adapter's 134 passing unit tests include blocked/panicking cleanup,
   concurrent tenant progress, reclaimed capacity, and pending reservation
   preservation. Live provider shutdown and load behavior remain unverified.
 - REST and MCP startup now check canonical metadata authority before
@@ -132,6 +132,13 @@ evidence and the strict readiness command.
   proves cleanup reaches only the original service. Retained selection checks
   exact authority metadata and uses bounded workers; this is not an actual SDK
   session-manager or live listener proof.
+- Response admission now has a shared global limit and a per-workspace limit
+  using Tokio owned semaphore permits. Reservation precedes dispatch, rejects
+  immediately on saturation, retains original proof lifetime, and transfers
+  into optional budgeted bodies. Twelve new unit tests cover concurrency,
+  tenant churn, rejection, poll/teardown ownership, blocked cleanup, and unwind.
+  These are library primitives, not listener wiring, distributed quotas,
+  byte limits, independently running provider-task limits, or measured capacity.
 - The PostgreSQL boundary includes a fail-closed runtime-authority guard with
   74 passing adapter unit tests. Its new shared SQL fixtures still require
   live PostgreSQL execution; the concrete database driver remains missing.
@@ -242,8 +249,12 @@ No existing strict release gate is waived by this plan.
   streams in that listener; dispatch admission alone is insufficient.
   - [x] Implement and test the response-delivery guard independently of the
     unavailable listener feature.
+  - [x] Implement shared global/per-workspace response reservations with
+    capacity retained through actual body teardown and original deadlines.
   - [ ] Connect the guard to real revocation authorities and verify it on
-    actual SDK responses, with bounded stream/monitor lifetimes.
+    actual SDK responses. Reserve shared response capacity before dispatch,
+    retain it through cancellation and actual provider completion, and
+    separately bound stream bytes, provider tasks, and authority monitors.
 - [ ] Enable its actual transport feature and resolve/build the complete
   locked dependency graph; a protocol adapter alone is insufficient.
 - [ ] Implement a concrete PostgreSQL driver, pool, and runtime repository
@@ -315,6 +326,14 @@ their own access and support proof. An unavailable integration must be
 explicitly excluded, not marketed as automatic universal compatibility.
 
 ## Timing
+
+The current engineering work is bounded response ownership, followed by actual
+SDK/SQL runtime integration as soon as dependency resolution is available.
+The latest isolated Cargo probe on 2026-10-27 still fails to resolve
+`index.crates.io`; this prevents adding the missing official transport
+dependencies here. PostgreSQL tooling and live staging evidence also remain
+unavailable. Local library progress does not advance a runtime milestone by
+itself.
 
 A preliminary planning range is **6–10+ calendar weeks for the first supported
 infrastructure release**, assuming runtime/dependency access, disposable

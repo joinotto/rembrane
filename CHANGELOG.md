@@ -9,6 +9,14 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Fixed
 
+- Optional budgeted MCP response bodies now retain shared global and
+  per-workspace Tokio permits through actual provider teardown, including
+  constructor rejection, cancellation, and unwind. Non-waiting admission uses
+  verified workspace identity, prunes stale buckets under tenant churn, and
+  retains the reservation's original deadline despite same-claims refreshed
+  proofs. Twelve new unit tests pass; all 134 remote adapter tests pass.
+  Actual SDK wiring, byte/task/monitor limits, and live load tests remain open.
+
 - Opt-in session-aware response helpers now compose captured exact-incarnation
   authority with the existing token/controller guard, rejecting removal,
   replacement, substitution, and later deadline shortening before/after frame

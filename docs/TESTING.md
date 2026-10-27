@@ -636,7 +636,7 @@ Integration obligations:
   not already released/buffered frames, transmitted bytes/headers, or already
   admitted mutations.
 
-Twenty-one body-level tests cover active delivery, trailers, idle expiry and
+Twenty-six body-level tests cover active delivery, trailers, idle expiry and
 revocation, controller loss/clones, all claim substitutions, independent
 tenants, mid-poll revocation, shortest-deadline non-renewal, opaque failure,
 status/header preservation, EOF, and consumer/monitor cleanup. Seven new cases
@@ -645,6 +645,52 @@ pruning/registry-drop wakeups, later deadline reduction, mid-poll data/trailer
 denial, session/proof substitution, preserved controller authority, and
 cancellation teardown ordering. These are not
 live HTTP, SDK session-manager, provider, or remote revocation evidence.
+
+### Shared response admission
+
+```sh
+cargo test -p rembrane-remote-mcp-http --locked --offline response_budget
+```
+
+`RemoteMcpResponseBudget::new(global_limit, workspace_limit)` uses existing
+Tokio semaphores with positive limits, a per-workspace ceiling no greater than
+the global limit, and a configuration safety ceiling of 10,000. This ceiling
+is not a measured capacity or recommended production setting. Share one
+budget across all routes, instances of a tenant factory, and clones of the
+local server. Independent processes need a separate deployment-wide strategy.
+
+Reserve using the verified access proof **before** SDK/provider dispatch,
+hold the move-only permit through dispatch/readiness waits, and consume it in
+`RemoteMcpGuardedBody::new_with_permit` or
+`RemoteMcpGuardedBody::new_with_session_and_permit`. Both quotas remain owned
+while the provider body is polled or destroyed; the subscription closes before
+the provider destructor, and capacity returns only afterward. Rejection, EOF,
+final-frame completion, revocation, cancellation, and destructor unwind follow
+the same ownership rule. Retaining a closed wrapper does not retain capacity.
+Equal refreshed claims cannot renew the original reservation deadline.
+
+Admission rejects immediately rather than creating an unbounded waiter
+queue. Quota keys come from verified workspace identity; all principals and
+clients in that workspace share its quota. Workspace IDs reused across trusted
+issuers/resources conservatively share capacity in this budget, not memory or
+authorization. Private weak buckets are pruned under churn and protected by a
+short lock with no provider I/O or await. Errors/debug output omit identities.
+
+Seven budget tests cover limits, shared quotas, concurrent same-workspace
+admission, proof/expiry binding, stale bucket cleanup, poisoned metadata, and
+redaction. Five additional body tests cover eight completion/rejection paths,
+poll ownership, synchronized blocked cleanup with unrelated tenant progress,
+destructor unwind, and same-claims non-renewal. The 134 remote tests pass.
+
+These APIs are opt-in: existing unbudgeted constructors/helpers remain
+available for compatibility and Tower dispatchers do not automatically reserve.
+The actual SDK listener must wire mandatory admission across every response
+path and map exhaustion to an appropriate opaque overload response. Pending
+dispatch cancellation must retain quota until actual work completes; dropping
+a future must not release quota while a detached task continues. Independently
+running provider tasks, per-stream bytes/buffers, monitor tasks, and SDK session
+resources need their own limits. Unit tests do not establish live listener
+cleanup, scheduling behavior, fairness, or a production operating envelope.
 
 ## Initialization service ownership during compensation
 

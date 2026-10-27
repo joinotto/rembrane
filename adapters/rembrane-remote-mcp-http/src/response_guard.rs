@@ -13,12 +13,15 @@ use rembrane_application::RemoteSessionDispatchGuard;
 use rembrane_contracts::{RemoteSessionId, VerifiedRemoteAccess};
 use tokio::sync::watch;
 
+use crate::{RemoteMcpResponseBudgetError, RemoteMcpResponsePermit};
+
 /// Opaque transport errors: underlying body/driver diagnostics are not retained.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RemoteMcpStreamError {
     ExpiredAuthorization,
     RevokedAuthorization,
     InvalidRevocationAuthority,
+    InvalidResponsePermit,
     TransportFailure,
 }
 
@@ -28,6 +31,7 @@ impl fmt::Display for RemoteMcpStreamError {
             Self::ExpiredAuthorization => "remote response authorization expired",
             Self::RevokedAuthorization => "remote response authorization revoked",
             Self::InvalidRevocationAuthority => "remote response authority mismatch",
+            Self::InvalidResponsePermit => "remote response admission authority mismatch",
             Self::TransportFailure => "remote response transport unavailable",
         })
     }
@@ -186,6 +190,7 @@ impl StreamAuthorization {
 pub struct RemoteMcpGuardedBody {
     body: Option<Body>,
     authorization: Option<StreamAuthorization>,
+    permit: Option<RemoteMcpResponsePermit>,
 }
 
 impl fmt::Debug for RemoteMcpGuardedBody {
@@ -209,6 +214,61 @@ impl RemoteMcpGuardedBody {
         access: &VerifiedRemoteAccess,
         signal: RemoteMcpStreamRevocationSignal,
     ) -> Result<Self, RemoteMcpStreamError> {
+        Self::construct(body, access, signal, None)
+    }
+
+    /// Transfers admission reserved before dispatch into response ownership.
+    /// Capacity remains held through actual provider-body teardown, including
+    /// rejected construction, consumer cancellation, and destructor unwinding.
+    ///
+    /// # Errors
+    ///
+    /// Rejects invalid delivery authority or a foreign/expired reservation.
+    pub fn new_with_permit(
+        body: Body,
+        access: &VerifiedRemoteAccess,
+        signal: RemoteMcpStreamRevocationSignal,
+        permit: RemoteMcpResponsePermit,
+    ) -> Result<Self, RemoteMcpStreamError> {
+        Self::construct(body, access, signal, Some(permit))
+    }
+
+    fn construct(
+        body: Body,
+        access: &VerifiedRemoteAccess,
+        signal: RemoteMcpStreamRevocationSignal,
+        permit: Option<RemoteMcpResponsePermit>,
+    ) -> Result<Self, RemoteMcpStreamError> {
+        // Establish teardown ownership before any validation that can reject.
+        let mut guarded = Self {
+            body: Some(body),
+            authorization: None,
+            permit,
+        };
+        guarded.authorization = Some(Self::authorize_body(
+            access,
+            signal,
+            guarded.permit.as_ref(),
+        )?);
+        Ok(guarded)
+    }
+
+    fn authorize_body(
+        access: &VerifiedRemoteAccess,
+        signal: RemoteMcpStreamRevocationSignal,
+        permit: Option<&RemoteMcpResponsePermit>,
+    ) -> Result<StreamAuthorization, RemoteMcpStreamError> {
+        // Consuming the signal in this call closes it before rejected
+        // construction runs the provider destructor.
+        if let Some(permit) = permit {
+            permit.ensure_current_for(access).map_err(|error| {
+                if error == RemoteMcpResponseBudgetError::ExpiredAuthorization {
+                    RemoteMcpStreamError::ExpiredAuthorization
+                } else {
+                    RemoteMcpStreamError::InvalidResponsePermit
+                }
+            })?;
+        }
         if signal.access != *access {
             return Err(RemoteMcpStreamError::InvalidRevocationAuthority);
         }
@@ -219,9 +279,12 @@ impl RemoteMcpGuardedBody {
         if signal.receiver.has_changed().is_err() || *signal.receiver.borrow() {
             return Err(RemoteMcpStreamError::RevokedAuthorization);
         }
-        let deadline = access
+        let mut deadline = access
             .validity_deadline()
             .min(signal.access.validity_deadline());
+        if let Some(permit) = permit {
+            deadline = deadline.min(permit.deadline());
+        }
         let mut receiver = signal.receiver;
         let revocation = Box::pin(async move {
             loop {
@@ -234,14 +297,11 @@ impl RemoteMcpGuardedBody {
         let expiry = Box::pin(async move {
             tokio::time::sleep_until(tokio::time::Instant::from_std(deadline)).await;
         });
-        Ok(Self {
-            body: Some(body),
-            authorization: Some(StreamAuthorization {
-                deadline,
-                expiry,
-                revocation,
-                session: None,
-            }),
+        Ok(StreamAuthorization {
+            deadline,
+            expiry,
+            revocation,
+            session: None,
         })
     }
 
@@ -263,22 +323,53 @@ impl RemoteMcpGuardedBody {
         session_id: RemoteSessionId,
         session_guard: RemoteSessionDispatchGuard,
     ) -> Result<Self, RemoteMcpStreamError> {
-        let mut guarded = Self::new(body, access, signal)?;
+        Self::new(body, access, signal)?.with_session(access, session_id, session_guard)
+    }
+
+    /// Composes reserved response capacity and exact local-session authority.
+    ///
+    /// # Errors
+    ///
+    /// Rejects invalid delivery/session authority or reservation binding.
+    pub fn new_with_session_and_permit(
+        body: Body,
+        access: &VerifiedRemoteAccess,
+        signal: RemoteMcpStreamRevocationSignal,
+        session_id: RemoteSessionId,
+        session_guard: RemoteSessionDispatchGuard,
+        permit: RemoteMcpResponsePermit,
+    ) -> Result<Self, RemoteMcpStreamError> {
+        Self::new_with_permit(body, access, signal, permit)?.with_session(
+            access,
+            session_id,
+            session_guard,
+        )
+    }
+
+    fn with_session(
+        mut self,
+        access: &VerifiedRemoteAccess,
+        session_id: RemoteSessionId,
+        session_guard: RemoteSessionDispatchGuard,
+    ) -> Result<Self, RemoteMcpStreamError> {
         let session = SessionAuthorization::new(session_id, access, session_guard)?;
-        guarded
-            .authorization
+        self.authorization
             .as_mut()
             .ok_or(RemoteMcpStreamError::TransportFailure)?
             .session = Some(session);
-        Ok(guarded)
+        Ok(self)
     }
 
     fn finish(&mut self) {
         // Mark both halves closed before a user-supplied body's destructor
         // runs. Even if that destructor unwinds, no authority remains active.
         let body = self.body.take();
+        let permit = self.permit.take();
         self.authorization = None;
         drop(body);
+        // Keep admission while user teardown runs; unwinding drops this local
+        // permit too, without retaining authorization or leaking capacity.
+        drop(permit);
     }
 
     fn deny(
@@ -443,6 +534,7 @@ mod tests {
         on_drop: Option<Box<dyn FnOnce() + Send>>,
         polls: Arc<AtomicUsize>,
         drops: Arc<AtomicUsize>,
+        end_when_empty: bool,
     }
 
     impl FixtureBody {
@@ -455,6 +547,7 @@ mod tests {
                 on_drop: None,
                 polls: Arc::new(AtomicUsize::new(0)),
                 drops: Arc::new(AtomicUsize::new(0)),
+                end_when_empty: false,
             }
         }
     }
@@ -493,6 +586,10 @@ mod tests {
                 Poll::Ready(None)
             }
         }
+
+        fn is_end_stream(&self) -> bool {
+            self.end_when_empty && self.frames.is_empty() && !self.pending && self.error.is_none()
+        }
     }
 
     async fn next(
@@ -515,6 +612,218 @@ mod tests {
             .capture_dispatch_guard(&id, &mut proof, 1_000)
             .unwrap();
         (registry, id, proof, guard)
+    }
+
+    #[tokio::test]
+    async fn response_capacity_survives_every_completion_and_rejection_destructor() {
+        use crate::{RemoteMcpResponseBudget, RemoteMcpResponseBudgetError};
+
+        for completion in [
+            "drop",
+            "eof",
+            "final-frame",
+            "error",
+            "revoked",
+            "session-reject",
+            "base-reject",
+            "permit-reject",
+        ] {
+            let (_registry, id, owner, session_guard) = session_fixture();
+            let proof = if completion == "permit-reject" {
+                access("foreign-workspace")
+            } else {
+                owner.clone()
+            };
+            let budget = RemoteMcpResponseBudget::new(1, 1).unwrap();
+            let permit = budget.reserve(&owner).unwrap();
+            let controller = RemoteMcpStreamRevocation::new(&proof).unwrap();
+            let observer = controller.clone();
+            let destructor_budget = budget.clone();
+            let destructor_owner = owner.clone();
+            let mut fixture = FixtureBody::new(
+                if completion == "final-frame" {
+                    vec![Frame::data(Bytes::from_static(b"final"))]
+                } else {
+                    vec![]
+                },
+                matches!(
+                    completion,
+                    "drop" | "revoked" | "session-reject" | "base-reject" | "permit-reject"
+                ),
+            );
+            fixture.end_when_empty = completion == "final-frame";
+            if completion == "error" {
+                fixture.error = Some(io::Error::other("private fixture error"));
+            }
+            let drops = fixture.drops.clone();
+            fixture.on_drop = Some(Box::new(move || {
+                assert_eq!(observer.sender.receiver_count(), 0);
+                assert_eq!(
+                    destructor_budget.reserve(&destructor_owner).unwrap_err(),
+                    RemoteMcpResponseBudgetError::Exhausted,
+                    "capacity must survive provider teardown"
+                );
+            }));
+            if completion == "base-reject" {
+                controller.revoke();
+            }
+            let result = RemoteMcpGuardedBody::new_with_session_and_permit(
+                Body::new(fixture),
+                &proof,
+                controller.subscribe(),
+                if completion == "session-reject" {
+                    RemoteSessionId::new("foreign-response-session").unwrap()
+                } else {
+                    id
+                },
+                session_guard,
+                permit,
+            );
+            if completion.ends_with("-reject") {
+                assert!(result.is_err());
+            } else {
+                let mut guarded = result.unwrap();
+                if completion == "revoked" {
+                    controller.revoke();
+                }
+                match completion {
+                    "drop" => {}
+                    "final-frame" => assert!(next(&mut guarded).await.unwrap().is_ok()),
+                    "eof" => assert!(next(&mut guarded).await.is_none()),
+                    _ => assert!(next(&mut guarded).await.unwrap().is_err()),
+                }
+                if completion != "drop" {
+                    // Capacity returns at completion, even if the consumer
+                    // retains the closed wrapper without an extra EOF poll.
+                    assert!(budget.reserve(&owner).is_ok());
+                }
+                drop(guarded);
+            }
+            assert_eq!(drops.load(Ordering::SeqCst), 1);
+            assert!(budget.reserve(&owner).is_ok());
+        }
+    }
+
+    #[tokio::test]
+    async fn response_capacity_remains_held_during_provider_poll() {
+        use crate::{RemoteMcpResponseBudget, RemoteMcpResponseBudgetError};
+
+        let proof = access("owner");
+        let budget = RemoteMcpResponseBudget::new(1, 1).unwrap();
+        let permit = budget.reserve(&proof).unwrap();
+        let controller = RemoteMcpStreamRevocation::new(&proof).unwrap();
+        let observer = budget.clone();
+        let poll_proof = proof.clone();
+        let mut fixture = FixtureBody::new(vec![], false);
+        fixture.on_poll = Some(Box::new(move || {
+            assert_eq!(
+                observer.reserve(&poll_proof).unwrap_err(),
+                RemoteMcpResponseBudgetError::Exhausted
+            );
+        }));
+        let mut body = RemoteMcpGuardedBody::new_with_permit(
+            Body::new(fixture),
+            &proof,
+            controller.subscribe(),
+            permit,
+        )
+        .unwrap();
+        assert!(next(&mut body).await.is_none());
+        assert!(budget.reserve(&proof).is_ok());
+    }
+
+    #[test]
+    fn blocked_provider_teardown_retains_quota_without_blocking_other_workspace() {
+        use crate::{RemoteMcpResponseBudget, RemoteMcpResponseBudgetError};
+
+        let proof = access("owner");
+        let budget = RemoteMcpResponseBudget::new(2, 1).unwrap();
+        let permit = budget.reserve(&proof).unwrap();
+        let controller = RemoteMcpStreamRevocation::new(&proof).unwrap();
+        let (entered, observed) = std::sync::mpsc::channel();
+        let (release, resume) = std::sync::mpsc::channel();
+        let mut fixture = FixtureBody::new(vec![], true);
+        fixture.on_drop = Some(Box::new(move || {
+            entered.send(()).unwrap();
+            resume.recv_timeout(Duration::from_secs(5)).unwrap();
+        }));
+        let guarded = RemoteMcpGuardedBody::new_with_permit(
+            Body::new(fixture),
+            &proof,
+            controller.subscribe(),
+            permit,
+        )
+        .unwrap();
+        let teardown = std::thread::spawn(move || drop(guarded));
+        observed.recv_timeout(Duration::from_secs(2)).unwrap();
+        assert_eq!(controller.sender.receiver_count(), 0);
+        assert_eq!(
+            budget.reserve(&proof).unwrap_err(),
+            RemoteMcpResponseBudgetError::Exhausted
+        );
+        let unrelated = budget.reserve(&access("another-workspace")).unwrap();
+        release.send(()).unwrap();
+        teardown.join().unwrap();
+        assert!(budget.reserve(&proof).is_ok());
+        drop(unrelated);
+    }
+
+    #[test]
+    fn provider_destructor_unwinding_returns_capacity_and_closes_authority() {
+        use crate::RemoteMcpResponseBudget;
+
+        let proof = access("owner");
+        let budget = RemoteMcpResponseBudget::new(1, 1).unwrap();
+        let permit = budget.reserve(&proof).unwrap();
+        let controller = RemoteMcpStreamRevocation::new(&proof).unwrap();
+        let mut fixture = FixtureBody::new(vec![], true);
+        fixture.on_drop = Some(Box::new(|| panic!("fixture provider teardown")));
+        let guarded = RemoteMcpGuardedBody::new_with_permit(
+            Body::new(fixture),
+            &proof,
+            controller.subscribe(),
+            permit,
+        )
+        .unwrap();
+        assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| drop(guarded))).is_err());
+        assert_eq!(controller.sender.receiver_count(), 0);
+        assert!(budget.reserve(&proof).is_ok());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn reservation_deadline_cannot_be_renewed_by_same_claims_response_proof() {
+        use crate::RemoteMcpResponseBudget;
+
+        let proof = access("owner");
+        let mut short = proof.clone();
+        short.constrain_validity(Instant::now(), 1_099).unwrap();
+        let budget = RemoteMcpResponseBudget::new(1, 1).unwrap();
+        let permit = budget.reserve(&short).unwrap();
+        let controller = RemoteMcpStreamRevocation::new(&proof).unwrap();
+        let fixture = FixtureBody::new(vec![], true);
+        let drops = fixture.drops.clone();
+        let mut body = RemoteMcpGuardedBody::new_with_permit(
+            Body::new(fixture),
+            &proof,
+            controller.subscribe(),
+            permit,
+        )
+        .unwrap();
+        let waiting = next(&mut body);
+        tokio::pin!(waiting);
+        assert!(
+            std::future::poll_fn(|cx| Poll::Ready(waiting.as_mut().poll(cx)))
+                .await
+                .is_pending()
+        );
+        tokio::time::advance(Duration::from_secs(2)).await;
+        assert_eq!(
+            waiting.await.unwrap().unwrap_err(),
+            RemoteMcpStreamError::ExpiredAuthorization
+        );
+        assert!(proof.ensure_current().is_ok());
+        assert_eq!(drops.load(Ordering::SeqCst), 1);
+        assert!(budget.reserve(&proof).is_ok());
     }
 
     #[test]

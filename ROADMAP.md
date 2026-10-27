@@ -590,9 +590,15 @@ are in [First Production Release Plan](docs/PRODUCTION_PLAN.md).
         - [x] Close authority before provider teardown on consumer cancellation;
           reproduce the reverse order and cover session delivery/idle/
           substitution/shortening with seven additional body tests.
+        - [x] Add shared global/per-workspace response admission using owned
+          Tokio permits; retain original proof deadlines and quota through
+          rejected construction, cancellation, and actual provider teardown.
+          Verify concurrency/churn, blocked teardown, and unwind locally.
       - [ ] Wire the guard into the official SDK listener and connect its
         controllers to real token, membership, and session revocation under
-        bounded admission; retain exact initialization compensation ownership.
+        bounded admission; reserve before dispatch, retain ownership through
+        actual completion, and separately bound bytes/tasks/monitors. Retain
+        exact initialization compensation ownership.
       - [x] Retain the exact Tower service and original authority metadata
         through initialization commit/compensation so expiry pruning or cache
         replacement cannot redirect cleanup to a new factory-selected service.

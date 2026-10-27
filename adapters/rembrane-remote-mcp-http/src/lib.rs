@@ -11,6 +11,7 @@
 //! synchronous and must not use blocking network clients on an async executor.
 //! Prefer the owned/shared service entrypoints for HTTP routing.
 
+mod response_budget;
 mod response_guard;
 #[cfg(test)]
 mod session_deletion_tests;
@@ -18,6 +19,10 @@ mod session_deletion_tests;
 mod session_dispatch_tests;
 mod session_stream;
 
+pub use response_budget::{
+    MAX_REMOTE_MCP_ACTIVE_RESPONSES, RemoteMcpResponseBudget, RemoteMcpResponseBudgetError,
+    RemoteMcpResponsePermit,
+};
 pub use response_guard::{
     RemoteMcpGuardedBody, RemoteMcpStreamError, RemoteMcpStreamRevocation,
     RemoteMcpStreamRevocationSignal, guard_remote_mcp_response, guard_remote_mcp_session_response,
