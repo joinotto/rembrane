@@ -382,6 +382,56 @@ view_proof=$(
 )
 test -z "$view_proof"
 
+truncate_proof=$(
+    fixture_psql -qAt \
+        -c 'BEGIN; GRANT TRUNCATE ON public.memories TO rembrane_runtime_test;
+            SET SESSION AUTHORIZATION rembrane_runtime_test;' \
+        -f "$runtime_guard" \
+        -c 'RESET SESSION AUTHORIZATION; ROLLBACK;'
+)
+test -z "$truncate_proof"
+
+references_proof=$(
+    fixture_psql -qAt \
+        -c 'BEGIN; GRANT REFERENCES ON public.memories TO rembrane_runtime_test;
+            SET SESSION AUTHORIZATION rembrane_runtime_test;' \
+        -f "$runtime_guard" \
+        -c 'RESET SESSION AUTHORIZATION; ROLLBACK;'
+)
+test -z "$references_proof"
+
+column_references_proof=$(
+    fixture_psql -qAt \
+        -c 'BEGIN; GRANT REFERENCES (id) ON public.memories TO rembrane_runtime_test;
+            SET SESSION AUTHORIZATION rembrane_runtime_test;' \
+        -f "$runtime_guard" \
+        -c 'RESET SESSION AUTHORIZATION; ROLLBACK;'
+)
+test -z "$column_references_proof"
+
+public_truncate_proof=$(
+    fixture_psql -qAt \
+        -c 'BEGIN; GRANT TRUNCATE ON public.memories TO PUBLIC;
+            SET SESSION AUTHORIZATION rembrane_runtime_test;' \
+        -f "$runtime_guard" \
+        -c 'RESET SESSION AUTHORIZATION; ROLLBACK;'
+)
+test -z "$public_truncate_proof"
+
+member_truncate_proof=$(
+    fixture_psql -qAt \
+        -c 'BEGIN;
+            CREATE ROLE rembrane_runtime_fixture_truncate
+                NOLOGIN NOSUPERUSER NOBYPASSRLS;
+            GRANT TRUNCATE ON public.memories TO rembrane_runtime_fixture_truncate;
+            GRANT rembrane_runtime_fixture_truncate TO rembrane_runtime_test
+                WITH INHERIT FALSE;
+            SET SESSION AUTHORIZATION rembrane_runtime_test;' \
+        -f "$runtime_guard" \
+        -c 'RESET SESSION AUTHORIZATION; ROLLBACK;'
+)
+test -z "$member_truncate_proof"
+
 unprotected_tables=$(
     fixture_psql -qAt <<'SQL'
 SELECT count(*)

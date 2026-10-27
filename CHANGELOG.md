@@ -9,6 +9,13 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Fixed
 
+- The PostgreSQL runtime-authority SQL guard now rejects protected-table
+  `TRUNCATE` and table/column `REFERENCES` privileges across effective/session
+  membership, including non-inherited member roles and effective `PUBLIC`
+  grants. Five rollback-only privilege fixtures and static guard-inventory
+  checks were added. Live PostgreSQL execution remains required; adapter unit
+  tests do not establish catalog or ACL behavior.
+
 - PostgreSQL scoped fixture output now checks both the workspace-binding
   witness returned by `set_config` and the exact tenant count row, instead
   of expecting only the counts. Seven isolated result cases reject a missing

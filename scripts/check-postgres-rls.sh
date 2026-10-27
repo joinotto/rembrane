@@ -219,10 +219,27 @@ for operational_invariant in \
     'must not own' \
     'tenant tables' \
     'BYPASSRLS' \
+    'TRUNCATE' \
+    'REFERENCES' \
     'security-definer'
 do
     rg -F "$operational_invariant" "$readme" >/dev/null || {
         echo "PostgreSQL RLS operator invariant is missing: $operational_invariant" >&2
+        exit 1
+    }
+done
+
+runtime_guard=adapters/rembrane-store-postgres/src/runtime-role.sql
+for authority_invariant in \
+    "pg_catalog.pg_has_role(current_user, authority.oid, 'MEMBER')" \
+    "pg_catalog.pg_has_role(session_user, authority.oid, 'MEMBER')" \
+    'pg_catalog.has_table_privilege(' \
+    "authority.oid, relation.oid, 'TRUNCATE'" \
+    'pg_catalog.has_any_column_privilege(' \
+    "authority.oid, relation.oid, 'REFERENCES'"
+do
+    rg -F "$authority_invariant" "$runtime_guard" >/dev/null || {
+        echo "PostgreSQL runtime authority invariant is missing: $authority_invariant" >&2
         exit 1
     }
 done

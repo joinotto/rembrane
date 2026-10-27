@@ -50,6 +50,24 @@ SELECT CASE WHEN
               OR NOT relation.relforcerowsecurity
               OR pg_catalog.pg_has_role(current_user, relation.relowner, 'MEMBER')
               OR pg_catalog.pg_has_role(session_user, relation.relowner, 'MEMBER')
+              -- Whole-table and reference privileges are not constrained by RLS.
+              -- Inspect every member role, including non-inherited memberships;
+              -- effective privilege inquiry also includes PUBLIC and column ACLs.
+              OR EXISTS (
+                  SELECT 1 FROM pg_catalog.pg_roles AS authority
+                  WHERE (
+                      pg_catalog.pg_has_role(current_user, authority.oid, 'MEMBER')
+                      OR pg_catalog.pg_has_role(session_user, authority.oid, 'MEMBER')
+                  )
+                  AND (
+                      pg_catalog.has_table_privilege(
+                          authority.oid, relation.oid, 'TRUNCATE'
+                      )
+                      OR pg_catalog.has_any_column_privilege(
+                          authority.oid, relation.oid, 'REFERENCES'
+                      )
+                  )
+              )
               OR pg_catalog.to_regclass(pg_catalog.quote_ident(relation.relname))
                     IS DISTINCT FROM relation.oid
           )

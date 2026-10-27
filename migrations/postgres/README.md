@@ -48,6 +48,13 @@ superuser/BYPASSRLS or canonical table-owner roles, requires enabled/forced
 RLS and `row_security=on`, and rejects search-path shadowing of protected
 relations. Membership rejection is deliberately conservative even where a
 role grant cannot currently be inherited or assumed.
+The guard also rejects `TRUNCATE` and table/column `REFERENCES` grants on
+protected relations because those privileges are not constrained by RLS.
+It checks every role reachable through effective or session membership,
+including non-inherited membership and effective `PUBLIC` grants. Do not
+grant these privileges to request-serving accounts; use a separate migration
+identity. Ordinary runtime grants should be limited to the necessary
+`SELECT`, `INSERT`, `UPDATE`, and `DELETE` privileges.
 
 The current schema is `public`; protected relations are its tables with
 `workspace_id` plus `principals`, `workspaces`, and `memory_share_proposals`.
@@ -57,7 +64,10 @@ This guard does not verify the
 contents of every policy or protect against a malicious database administrator.
 It complements migrations and live isolation testing; it is not a substitute
 for either. The live RLS suite exercises allowed roles, owner/BYPASSRLS denial,
-unforced policies, and temporary-table shadowing using rollback-only fixtures.
+unforced policies, temporary-table shadowing, and direct, column, `PUBLIC`,
+and non-inherited member table-wide privileges using rollback-only fixtures.
+The expanded privilege fixtures have not yet been executed here against a
+live database.
 The guard's local Rust tests do not prove that its SQL ran against PostgreSQL.
 The catalog checks follow PostgreSQL's documented row-security and role
 inquiry interfaces:

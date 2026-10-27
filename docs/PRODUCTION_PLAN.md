@@ -176,6 +176,10 @@ evidence and the strict readiness command.
 - The PostgreSQL boundary includes a fail-closed runtime-authority guard with
   74 passing adapter unit tests. Its new shared SQL fixtures still require
   live PostgreSQL execution; the concrete database driver remains missing.
+  The guard now also denies TRUNCATE and table/column REFERENCES on protected
+  relations through effective/session member-role privileges. Five additional
+  rollback-only ACL fixtures cover direct, column, PUBLIC, and non-inherited
+  membership grants; their live catalog behavior remains unverified here.
 - PostgreSQL fixture safety now has 28 passing fake-client guard cases. The
   runner no longer resets existing resources: it requires a private libpq
   service profile, explicit disposable-database authorization, and a read-only

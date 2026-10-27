@@ -986,6 +986,10 @@ are in [First Production Release Plan](docs/PRODUCTION_PLAN.md).
       or role drift.
     - [x] Share the exact runtime guard SQL with live PostgreSQL role,
       ownership, forced-RLS, view, and search-path-shadowing fixtures.
+    - [x] Add runtime SQL denial of protected-table TRUNCATE and table/column
+      REFERENCES across effective/session member roles, plus five rollback-only
+      direct, column, PUBLIC, and non-inherited membership fixtures.
+    - [ ] Execute those expanded ACL fixtures against live PostgreSQL.
     - [ ] Execute the new runtime-authority SQL fixtures against PostgreSQL;
       local driver-boundary unit tests do not substitute for this proof.
     - [x] Require prepared `set_config(..., $1, true)` tenant bootstrap,
