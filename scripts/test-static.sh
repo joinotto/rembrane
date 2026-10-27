@@ -23,6 +23,7 @@ require_command "$python_command"
 ./scripts/check-architecture.sh
 ./scripts/check-sensitive-files.sh
 ./scripts/check-ci-security.sh
+node ./scripts/test-local-test-environment.mjs
 sh ./scripts/check-security-review-manifest.sh
 sh ./scripts/test-security-review-signing.sh
 sh ./scripts/test-security-review-attestation.sh

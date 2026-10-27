@@ -9,6 +9,12 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Fixed
 
+- Local CLI, MCP, REST, and cross-tool lifecycle fixtures now clear inherited
+  Rembrane configuration before selecting development keys and native graph
+  processing. Only documented binary/listen overrides survive. Static tests
+  cover namespace-wide isolation without secret-value output or parent-shell
+  changes; this is not an OS/network sandbox or real-provider validation.
+
 - Expired tenant services are now removed under the cache lock but destroyed
   after releasing it. Slow or panicking cleanup cannot block unrelated tenant
   lookups or poison the shared cache mutex; pending construction reservations

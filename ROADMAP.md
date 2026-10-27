@@ -176,6 +176,11 @@ are in [First Production Release Plan](docs/PRODUCTION_PLAN.md).
   MCP-created project-checkpoint resumption by both a fresh agent process and
   the CLI.
 - [x] Add a single full preflight test command and operator testing guide.
+  - [x] Isolate disposable CLI/MCP/REST/cross-tool fixture configuration from
+    inherited Rembrane provider, key-reference, identity, and permission
+    settings while preserving documented binary/listen overrides.
+    - [x] Test namespace-wide reset, future provider settings, no secret-value
+      output, unchanged parent configuration, and lifecycle script wiring.
 - [x] Expose authorized CLI recall as structured JSON for generic bots,
   launchers, and agent runtimes while preserving context-pack and disclosure
   receipt identity.

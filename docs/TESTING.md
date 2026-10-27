@@ -6,7 +6,7 @@ Rembrane is pre-alpha. Test only with disposable data and development keys.
 
 - Rust 1.88 with `rustfmt` and `clippy`
 - SQLite 3
-- Node.js
+- Node.js 22
 - `jq`
 - Postman CLI
 
@@ -15,6 +15,23 @@ Run every check:
 ```text
 ./scripts/test-all.sh
 ```
+
+The local CLI, MCP, REST, and cross-tool lifecycle scripts clear inherited
+`REMBRANE_*` settings before creating fixture configuration. Only
+`REMBRANE_BIN`, `REMBRANE_API_BIN`, `REMBRANE_MCP_BIN`, and
+`REMBRANE_TEST_LISTEN` are retained as explicit test overrides. Fixtures select
+the environment key provider with public development keys and the native graph
+provider. Inherited key references, historical keyrings, remote-provider
+credentials, identity, and permission settings cannot redirect these tests.
+The reset does not print values or change the parent shell.
+
+This is configuration isolation, not an OS/network sandbox. Other environment
+variables remain inherited, binary overrides must be trusted, and the REST
+listen override must name a disposable local test address. Real-provider/KMS
+conformance runners deliberately use their explicit configuration and are not
+covered by this reset. Node is required even for the standalone CLI fixture.
+The static suite checks isolation and that all four lifecycle scripts source
+the reset before running binaries.
 
 When Rust or network access is unavailable, run the complete non-Rust
 preflight:

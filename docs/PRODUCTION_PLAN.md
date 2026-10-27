@@ -16,6 +16,11 @@ evidence and the strict readiness command.
   The latest CLI input-hardening changes pass all 68 CLI unit tests.
 - Encrypted CLI lifecycle, MCP stdio, and fresh-process cross-tool continuity
   pass, including explicitly approved observations and disclosure receipts.
+- Those local lifecycle tests now isolate inherited Rembrane configuration,
+  selecting development keys and native graph processing instead of ambient
+  key references or remote providers. CLI/MCP/continuity also pass with
+  deliberately conflicting fixture settings. The REST rerun still fails at
+  loopback binding; configuration isolation is not full HTTP runtime evidence.
 - CLI portability now has executable round-trip coverage: private plaintext
   JSONL/Markdown/graph exports, encrypted proposal-only JSONL imports with
   preserved project scopes and fresh destination identities, and rejection

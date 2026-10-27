@@ -2,6 +2,7 @@
 set -eu
 
 repository_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+. "$repository_root/scripts/local-test-environment.sh"
 rembrane_binary=${REMBRANE_BIN:-"$repository_root/target/debug/rembrane"}
 test -x "$rembrane_binary"
 
