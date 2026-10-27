@@ -3,6 +3,7 @@
 use std::collections::BTreeSet;
 use std::error::Error;
 use std::fmt::{self, Display, Formatter};
+use std::time::{Duration, Instant};
 
 use rembrane_domain::{
     ActivityId, ClientId, ContextPackId, DisclosureId, DisclosureReceipt, EntityId,
@@ -274,7 +275,7 @@ pub struct RemoteTokenClaims {
     pub not_before_epoch_seconds: Option<u64>,
 }
 
-#[derive(Clone, Eq, PartialEq)]
+#[derive(Clone)]
 pub struct VerifiedRemoteAccess {
     issuer: String,
     resource: String,
@@ -283,7 +284,24 @@ pub struct VerifiedRemoteAccess {
     workspace_id: WorkspaceId,
     scopes: BTreeSet<RemoteAccessScope>,
     expires_at_epoch_seconds: u64,
+    valid_until: Instant,
 }
+
+// Equality describes the verified claims, not the time a proof was acquired.
+// It must never be used as a substitute for ensure_current().
+impl PartialEq for VerifiedRemoteAccess {
+    fn eq(&self, other: &Self) -> bool {
+        self.issuer == other.issuer
+            && self.resource == other.resource
+            && self.subject_id == other.subject_id
+            && self.client_id == other.client_id
+            && self.workspace_id == other.workspace_id
+            && self.scopes == other.scopes
+            && self.expires_at_epoch_seconds == other.expires_at_epoch_seconds
+    }
+}
+
+impl Eq for VerifiedRemoteAccess {}
 
 #[derive(Clone, Eq, PartialEq)]
 pub struct RemoteSessionBinding {
@@ -326,6 +344,7 @@ impl fmt::Debug for VerifiedRemoteAccess {
             .field("workspace_id", &"[REDACTED]")
             .field("scope_count", &self.scopes.len())
             .field("expires_at_epoch_seconds", &self.expires_at_epoch_seconds)
+            .field("valid_until", &"[PROCESS-LOCAL]")
             .finish()
     }
 }
@@ -474,6 +493,11 @@ impl RemoteTokenClaims {
             workspace_id: self.workspace_id,
             scopes: self.scopes,
             expires_at_epoch_seconds: self.expires_at_epoch_seconds,
+            valid_until: Instant::now()
+                .checked_add(Duration::from_secs(
+                    self.expires_at_epoch_seconds - now_epoch_seconds,
+                ))
+                .ok_or(RemoteAccessError::Expired)?,
         })
     }
 }
@@ -487,6 +511,48 @@ fn valid_remote_claim(value: &str, maximum_bytes: usize) -> bool {
 }
 
 impl VerifiedRemoteAccess {
+    /// Checks the process-local lifetime of this verification proof.
+    ///
+    /// Cloning or storing a proof does not renew its deadline. This check does
+    /// not introspect token revocation or replace canonical membership checks.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Expired` when the validated lifetime has elapsed.
+    pub fn ensure_current(&self) -> Result<(), RemoteAccessError> {
+        if Instant::now() >= self.valid_until {
+            return Err(RemoteAccessError::Expired);
+        }
+        Ok(())
+    }
+
+    /// Narrows validity using the monotonic instant at which a trusted epoch
+    /// time was sampled, including time spent waiting or verifying a token.
+    ///
+    /// This can only shorten the current deadline. It never changes claims,
+    /// sessions, or token expiry and cannot renew an expired proof.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Expired` for an expired or unrepresentable validity interval.
+    pub fn constrain_validity(
+        &mut self,
+        observed_at: Instant,
+        now_epoch_seconds: u64,
+    ) -> Result<(), RemoteAccessError> {
+        let deadline = self
+            .expires_at_epoch_seconds
+            .checked_sub(now_epoch_seconds)
+            .filter(|seconds| *seconds > 0)
+            .and_then(|seconds| observed_at.checked_add(Duration::from_secs(seconds)));
+        let Some(deadline) = deadline else {
+            self.valid_until = Instant::now();
+            return Err(RemoteAccessError::Expired);
+        };
+        self.valid_until = self.valid_until.min(deadline);
+        self.ensure_current()
+    }
+
     #[must_use]
     pub fn issuer(&self) -> &str {
         &self.issuer
@@ -565,6 +631,7 @@ impl RemoteSessionBinding {
     ) -> Result<(), RemoteAccessError> {
         if self.is_expired(now_epoch_seconds)
             || access.expires_at_epoch_seconds <= now_epoch_seconds
+            || access.ensure_current().is_err()
         {
             return Err(RemoteAccessError::Expired);
         }
@@ -661,6 +728,84 @@ mod tests {
         assert_eq!(access.workspace_id().as_str(), "workspace_01");
         assert!(access.allows(RemoteAccessScope::ContextRead));
         assert!(!access.allows(RemoteAccessScope::MemoryWrite));
+    }
+
+    #[test]
+    fn elapsed_proof_cannot_be_renewed_by_cloning_or_a_later_observation() {
+        use std::time::{Duration, Instant};
+        let mut access = claims(&[RemoteAccessScope::ContextRead])
+            .validate_connection(
+                "https://identity.example.test",
+                "https://memory.example.test/mcp",
+                1_999,
+            )
+            .expect("one second lifetime");
+        let original = access.clone();
+        assert_eq!(
+            access.constrain_validity(
+                Instant::now()
+                    .checked_sub(Duration::from_secs(2))
+                    .expect("fixture observation"),
+                1_999,
+            ),
+            Err(RemoteAccessError::Expired),
+        );
+        assert_eq!(
+            access.clone().ensure_current(),
+            Err(RemoteAccessError::Expired)
+        );
+        assert_eq!(
+            access.constrain_validity(Instant::now() + Duration::from_secs(60), 1_000),
+            Err(RemoteAccessError::Expired),
+        );
+        assert_eq!(access, original, "claim equality is not lifetime authority");
+        assert_eq!(access.expires_at_epoch_seconds(), 2_000);
+        let mut binding = original.session_binding();
+        assert_eq!(
+            binding.revalidate(&access, 1_999),
+            Err(RemoteAccessError::Expired)
+        );
+    }
+
+    #[test]
+    fn validity_constraints_can_only_shorten_the_existing_deadline() {
+        use std::time::{Duration, Instant};
+        let mut access = claims(&[RemoteAccessScope::ContextRead])
+            .validate_connection(
+                "https://identity.example.test",
+                "https://memory.example.test/mcp",
+                1_000,
+            )
+            .expect("fresh proof");
+        let original = access.valid_until;
+        access
+            .constrain_validity(Instant::now() + Duration::from_secs(60), 900)
+            .expect("later deadline cannot extend proof");
+        assert_eq!(access.valid_until, original);
+        let observed = Instant::now();
+        access
+            .constrain_validity(observed, 1_999)
+            .expect("shorter limit");
+        assert_eq!(access.valid_until, observed + Duration::from_secs(1));
+        assert_eq!(access.clone().valid_until, access.valid_until);
+        assert_eq!(access.expires_at_epoch_seconds(), 2_000);
+        assert!(!format!("{access:?}").contains("Instant"));
+    }
+
+    #[test]
+    fn expired_epoch_observation_invalidates_the_proof() {
+        let mut access = claims(&[RemoteAccessScope::ContextRead])
+            .validate_connection(
+                "https://identity.example.test",
+                "https://memory.example.test/mcp",
+                1_000,
+            )
+            .expect("fresh proof");
+        assert_eq!(
+            access.constrain_validity(std::time::Instant::now(), 2_000),
+            Err(RemoteAccessError::Expired),
+        );
+        assert_eq!(access.ensure_current(), Err(RemoteAccessError::Expired));
     }
 
     #[test]

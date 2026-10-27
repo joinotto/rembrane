@@ -1,5 +1,6 @@
 use std::error::Error;
 use std::fmt::{self, Display, Formatter};
+use std::time::Instant;
 
 use rembrane_contracts::{
     RemoteAccessScope, RemoteMcpOperation, RemoteMcpRequestAuthorization, RemoteTokenClaims,
@@ -80,7 +81,9 @@ where
         if bearer_token.is_empty() {
             return Err(ApplicationError::AccessDenied);
         }
-        self.verifier
+        let observed_at = Instant::now();
+        let mut access = self
+            .verifier
             .verify(bearer_token)
             .map_err(|_| ApplicationError::AccessDenied)?
             .validate(
@@ -89,7 +92,11 @@ where
                 now_epoch_seconds,
                 required_scope,
             )
-            .map_err(|_| ApplicationError::AccessDenied)
+            .map_err(|_| ApplicationError::AccessDenied)?;
+        access
+            .constrain_validity(observed_at, now_epoch_seconds)
+            .map_err(|_| ApplicationError::AccessDenied)?;
+        Ok(access)
     }
 
     /// Authenticates a non-tool MCP protocol request.
@@ -106,7 +113,9 @@ where
         if bearer_token.is_empty() {
             return Err(ApplicationError::AccessDenied);
         }
-        self.verifier
+        let observed_at = Instant::now();
+        let mut access = self
+            .verifier
             .verify(bearer_token)
             .map_err(|_| ApplicationError::AccessDenied)?
             .validate_connection(
@@ -114,7 +123,11 @@ where
                 self.expected_resource,
                 now_epoch_seconds,
             )
-            .map_err(|_| ApplicationError::AccessDenied)
+            .map_err(|_| ApplicationError::AccessDenied)?;
+        access
+            .constrain_validity(observed_at, now_epoch_seconds)
+            .map_err(|_| ApplicationError::AccessDenied)?;
+        Ok(access)
     }
 }
 
@@ -352,6 +365,34 @@ mod tests {
             "https://identity.example.test",
             "https://memory.example.test/mcp",
         )
+    }
+
+    #[test]
+    fn slow_verification_cannot_extend_protocol_or_tool_authorization() {
+        struct SlowVerifier;
+        impl RemoteTokenVerifier for SlowVerifier {
+            fn verify(
+                &self,
+                token: &str,
+            ) -> Result<RemoteTokenClaims, RemoteTokenVerificationError> {
+                std::thread::sleep(std::time::Duration::from_millis(1_100));
+                TestVerifier.verify(token)
+            }
+        }
+        let verifier = SlowVerifier;
+        let authenticator = RemoteAccessAuthenticator::new(
+            &verifier,
+            "https://identity.example.test",
+            "https://memory.example.test/mcp",
+        );
+        assert!(matches!(
+            authenticator.authenticate_connection("signed-token", 1_999),
+            Err(ApplicationError::AccessDenied),
+        ));
+        assert!(matches!(
+            authenticator.authenticate("signed-token", 1_999, RemoteAccessScope::ContextRead),
+            Err(ApplicationError::AccessDenied),
+        ));
     }
 
     #[test]

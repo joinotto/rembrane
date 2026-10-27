@@ -146,6 +146,11 @@ impl RemoteSessionRegistry {
         access: &VerifiedRemoteAccess,
         now_epoch_seconds: u64,
     ) -> Result<(), ApplicationError> {
+        if access.expires_at_epoch_seconds() <= now_epoch_seconds
+            || access.ensure_current().is_err()
+        {
+            return Err(ApplicationError::AccessDenied);
+        }
         self.prune_expired(now_epoch_seconds);
         if self.sessions.contains_key(&session_id) {
             return Err(ApplicationError::AlreadyExists);
@@ -159,6 +164,28 @@ impl RemoteSessionRegistry {
             return Err(ApplicationError::StorageUnavailable);
         }
         self.sessions.insert(session_id, access.session_binding());
+        Ok(())
+    }
+
+    /// Rolls back an exact, unchanged binding after compatibility
+    /// initialization failed. This is internal cleanup, not client deletion.
+    ///
+    /// The original proof may have elapsed while dispatching. Every claim
+    /// and the original expiry ceiling must still match the binding; a changed
+    /// binding is never removed. Do not expose this port as an HTTP endpoint.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AccessDenied` for a missing, foreign, or changed binding.
+    pub fn rollback_establishment(
+        &mut self,
+        session_id: &RemoteSessionId,
+        access: &VerifiedRemoteAccess,
+    ) -> Result<(), ApplicationError> {
+        if self.sessions.get(session_id) != Some(&access.session_binding()) {
+            return Err(ApplicationError::AccessDenied);
+        }
+        self.sessions.remove(session_id);
         Ok(())
     }
 
@@ -709,14 +736,115 @@ mod tests {
         registry
             .establish(expired, &access, 1_000)
             .expect("first session should establish");
+        assert_eq!(
+            registry.establish(replacement.clone(), &access, 2_000),
+            Err(ApplicationError::AccessDenied),
+            "an expired token must not establish its replacement",
+        );
+        let mut renewed = claims("workspace_01", &[RemoteAccessScope::ContextRead]);
+        renewed.expires_at_epoch_seconds = 3_000;
+        let renewed = renewed
+            .validate_connection(
+                "https://identity.example.test",
+                "https://memory.example.test/mcp",
+                2_000,
+            )
+            .expect("fresh replacement proof");
         registry
-            .establish(replacement.clone(), &access, 2_000)
+            .establish(replacement.clone(), &renewed, 2_000)
             .expect("expired session should not consume capacity");
 
         assert_eq!(registry.len(), 1);
         registry
-            .revalidate(&replacement, &access, 1_999)
+            .revalidate(&replacement, &renewed, 2_001)
             .expect("replacement session should remain available");
+    }
+
+    #[test]
+    fn elapsed_proof_cannot_commit_a_reserved_session() {
+        let mut registry = RemoteSessionRegistry::new(1).expect("capacity");
+        let reservation = registry.reserve_initialization(1_000).expect("reservation");
+        let mut elapsed = access("workspace_01", &[RemoteAccessScope::ContextRead]);
+        assert!(
+            elapsed
+                .constrain_validity(
+                    std::time::Instant::now()
+                        .checked_sub(std::time::Duration::from_secs(2))
+                        .expect("fixture observation"),
+                    1_999,
+                )
+                .is_err()
+        );
+        assert_eq!(
+            registry.commit_reservation(
+                reservation,
+                RemoteSessionId::new("session_0123456789abcdef").expect("session"),
+                &elapsed,
+                1_000,
+            ),
+            Err(ApplicationError::AccessDenied),
+        );
+        assert!(registry.is_empty());
+        let replacement = registry
+            .reserve_initialization(1_000)
+            .expect("released capacity");
+        registry.cancel_reservation(replacement).expect("cleanup");
+    }
+
+    #[test]
+    fn failed_establishment_rollback_requires_exact_binding_but_not_current_lifetime() {
+        let mut registry = RemoteSessionRegistry::new(1).expect("capacity");
+        let session = RemoteSessionId::new("session_0123456789abcdef").expect("session");
+        let mut original = access("workspace_01", &[RemoteAccessScope::ContextRead]);
+        registry
+            .establish(session.clone(), &original, 1_000)
+            .expect("establish");
+        assert_eq!(
+            registry.rollback_establishment(
+                &session,
+                &access("workspace_02", &[RemoteAccessScope::ContextRead]),
+            ),
+            Err(ApplicationError::AccessDenied),
+        );
+        assert_eq!(
+            registry.rollback_establishment(
+                &session,
+                &access("workspace_01", &[RemoteAccessScope::MemoryWrite]),
+            ),
+            Err(ApplicationError::AccessDenied),
+        );
+        let mut changed = claims("workspace_01", &[RemoteAccessScope::ContextRead]);
+        changed.expires_at_epoch_seconds = 3_000;
+        let changed = changed
+            .validate_connection(
+                "https://identity.example.test",
+                "https://memory.example.test/mcp",
+                1_000,
+            )
+            .expect("changed expiry");
+        assert_eq!(
+            registry.rollback_establishment(&session, &changed),
+            Err(ApplicationError::AccessDenied),
+        );
+        assert_eq!(registry.len(), 1);
+        assert!(
+            original
+                .constrain_validity(
+                    std::time::Instant::now()
+                        .checked_sub(std::time::Duration::from_secs(2))
+                        .expect("fixture observation"),
+                    1_999,
+                )
+                .is_err()
+        );
+        registry
+            .rollback_establishment(&session, &original)
+            .expect("exact cleanup");
+        assert!(registry.is_empty());
+        assert_eq!(
+            registry.rollback_establishment(&session, &original),
+            Err(ApplicationError::AccessDenied),
+        );
     }
 
     #[test]
