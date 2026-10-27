@@ -9,6 +9,15 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Fixed
 
+- Opt-in session-aware response helpers now compose captured exact-incarnation
+  authority with the existing token/controller guard, rejecting removal,
+  replacement, substitution, and later deadline shortening before/after frame
+  polling. Idle local-session checks use a per-body 100 ms timer with no spawned
+  task. Cancellation closes subscriptions before provider teardown; one
+  regression first reproduced the reverse order. Seven new tests pass, with
+  122 remote tests passing overall. Actual SDK HTTP wiring, active-body budgets,
+  and live token/membership monitoring remain required.
+
 - Client DELETE now requires its captured exact-incarnation dispatch guard
   through tenant construction and Tower readiness. A regression first
   reproduced one downstream DELETE after local removal; it now denies before

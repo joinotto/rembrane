@@ -3,13 +3,14 @@ use std::{
     future::Future,
     pin::Pin,
     task::{Context, Poll},
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 use axum::{body::Body, http::Response};
 use bytes::Bytes;
 use http_body::{Body as HttpBody, Frame, SizeHint};
-use rembrane_contracts::VerifiedRemoteAccess;
+use rembrane_application::RemoteSessionDispatchGuard;
+use rembrane_contracts::{RemoteSessionId, VerifiedRemoteAccess};
 use tokio::sync::watch;
 
 /// Opaque transport errors: underlying body/driver diagnostics are not retained.
@@ -104,10 +105,58 @@ impl RemoteMcpStreamRevocation {
 
 type GuardFuture = Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
 
+// Per-body idle checking, not a spawned task or token introspection loop.
+const SESSION_RECHECK_INTERVAL: Duration = Duration::from_millis(100);
+
+struct SessionAuthorization {
+    id: RemoteSessionId,
+    access: VerifiedRemoteAccess,
+    guard: RemoteSessionDispatchGuard,
+    invalidation: GuardFuture,
+}
+
+impl SessionAuthorization {
+    fn new(
+        id: RemoteSessionId,
+        access: &VerifiedRemoteAccess,
+        guard: RemoteSessionDispatchGuard,
+    ) -> Result<Self, RemoteMcpStreamError> {
+        guard
+            .ensure_current(&id, access)
+            .map_err(|_| RemoteMcpStreamError::RevokedAuthorization)?;
+        let monitor_id = id.clone();
+        let monitor_access = access.clone();
+        let monitor_guard = guard.clone();
+        let invalidation = Box::pin(async move {
+            loop {
+                tokio::time::sleep(SESSION_RECHECK_INTERVAL).await;
+                if monitor_guard
+                    .ensure_current(&monitor_id, &monitor_access)
+                    .is_err()
+                {
+                    return;
+                }
+            }
+        });
+        Ok(Self {
+            id,
+            access: access.clone(),
+            guard,
+            invalidation,
+        })
+    }
+
+    fn is_denied(&mut self, context: &mut Context<'_>) -> bool {
+        self.guard.ensure_current(&self.id, &self.access).is_err()
+            || self.invalidation.as_mut().poll(context).is_ready()
+    }
+}
+
 struct StreamAuthorization {
     deadline: Instant,
     expiry: GuardFuture,
     revocation: GuardFuture,
+    session: Option<SessionAuthorization>,
 }
 
 impl StreamAuthorization {
@@ -116,6 +165,13 @@ impl StreamAuthorization {
             return Some(RemoteMcpStreamError::ExpiredAuthorization);
         }
         if self.revocation.as_mut().poll(context).is_ready() {
+            return Some(RemoteMcpStreamError::RevokedAuthorization);
+        }
+        if self
+            .session
+            .as_mut()
+            .is_some_and(|session| session.is_denied(context))
+        {
             return Some(RemoteMcpStreamError::RevokedAuthorization);
         }
         None
@@ -184,8 +240,37 @@ impl RemoteMcpGuardedBody {
                 deadline,
                 expiry,
                 revocation,
+                session: None,
             }),
         })
+    }
+
+    /// Adds exact local-session authority to the existing claim-bound guard.
+    ///
+    /// Every frame is checked before and after provider polling. Idle bodies
+    /// recheck the captured incarnation/latest shortened deadline every 100 ms
+    /// while polled, without spawning a task or touching the global registry.
+    /// Token/membership revocation still requires the supplied live controller.
+    ///
+    /// # Errors
+    ///
+    /// Rejects invalid base authority or removed/expired/substituted session
+    /// authority before returning a usable body.
+    pub fn new_with_session(
+        body: Body,
+        access: &VerifiedRemoteAccess,
+        signal: RemoteMcpStreamRevocationSignal,
+        session_id: RemoteSessionId,
+        session_guard: RemoteSessionDispatchGuard,
+    ) -> Result<Self, RemoteMcpStreamError> {
+        let mut guarded = Self::new(body, access, signal)?;
+        let session = SessionAuthorization::new(session_id, access, session_guard)?;
+        guarded
+            .authorization
+            .as_mut()
+            .ok_or(RemoteMcpStreamError::TransportFailure)?
+            .session = Some(session);
+        Ok(guarded)
     }
 
     fn finish(&mut self) {
@@ -202,6 +287,12 @@ impl RemoteMcpGuardedBody {
     ) -> Poll<Option<Result<Frame<Bytes>, RemoteMcpStreamError>>> {
         self.finish();
         Poll::Ready(Some(Err(error)))
+    }
+}
+
+impl Drop for RemoteMcpGuardedBody {
+    fn drop(&mut self) {
+        self.finish();
     }
 }
 
@@ -281,6 +372,29 @@ pub fn guard_remote_mcp_response(
     Ok(Response::from_parts(parts, Body::new(body)))
 }
 
+/// Composes token/controller and exact local-session response authority.
+///
+/// Use for established-session memory/event delivery, not a DELETE
+/// confirmation whose binding was intentionally removed. This does not
+/// terminate SDK sessions, connect external revocation, or prove HTTP wiring.
+///
+/// # Errors
+///
+/// Returns opaque body-construction rejection. Initialization callers must
+/// retain exact cleanup ownership if an already created SDK session is rejected.
+pub fn guard_remote_mcp_session_response(
+    response: Response<Body>,
+    access: &VerifiedRemoteAccess,
+    signal: RemoteMcpStreamRevocationSignal,
+    session_id: RemoteSessionId,
+    session_guard: RemoteSessionDispatchGuard,
+) -> Result<Response<Body>, RemoteMcpStreamError> {
+    let (parts, body) = response.into_parts();
+    let body =
+        RemoteMcpGuardedBody::new_with_session(body, access, signal, session_id, session_guard)?;
+    Ok(Response::from_parts(parts, Body::new(body)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -326,6 +440,7 @@ mod tests {
         pending: bool,
         error: Option<io::Error>,
         on_poll: Option<Box<dyn FnOnce() + Send>>,
+        on_drop: Option<Box<dyn FnOnce() + Send>>,
         polls: Arc<AtomicUsize>,
         drops: Arc<AtomicUsize>,
     }
@@ -337,6 +452,7 @@ mod tests {
                 pending,
                 error: None,
                 on_poll: None,
+                on_drop: None,
                 polls: Arc::new(AtomicUsize::new(0)),
                 drops: Arc::new(AtomicUsize::new(0)),
             }
@@ -346,6 +462,9 @@ mod tests {
     impl Drop for FixtureBody {
         fn drop(&mut self) {
             self.drops.fetch_add(1, Ordering::SeqCst);
+            if let Some(on_drop) = self.on_drop.take() {
+                on_drop();
+            }
         }
     }
 
@@ -380,6 +499,313 @@ mod tests {
         body: &mut RemoteMcpGuardedBody,
     ) -> Option<Result<Frame<Bytes>, RemoteMcpStreamError>> {
         poll_fn(|context| Pin::new(&mut *body).poll_frame(context)).await
+    }
+
+    fn session_fixture() -> (
+        rembrane_application::RemoteSessionRegistry,
+        RemoteSessionId,
+        VerifiedRemoteAccess,
+        RemoteSessionDispatchGuard,
+    ) {
+        let mut registry = rembrane_application::RemoteSessionRegistry::new(2).unwrap();
+        let id = RemoteSessionId::new("response-session-identity").unwrap();
+        let mut proof = access("workspace-owner");
+        registry.establish(id.clone(), &proof, 1_000).unwrap();
+        let guard = registry
+            .capture_dispatch_guard(&id, &mut proof, 1_000)
+            .unwrap();
+        (registry, id, proof, guard)
+    }
+
+    #[test]
+    fn consumer_drop_releases_authority_before_provider_destructor() {
+        for completion in ["drop", "base-reject", "session-reject"] {
+            let (_registry, _id, proof, guard) = session_fixture();
+            let controller = RemoteMcpStreamRevocation::new(&proof).unwrap();
+            let observer = controller.clone();
+            let mut fixture = FixtureBody::new(vec![], true);
+            fixture.on_drop = Some(Box::new(move || {
+                assert_eq!(
+                    observer.sender.receiver_count(),
+                    0,
+                    "authority must close before provider teardown"
+                );
+            }));
+            if completion == "session-reject" {
+                assert!(
+                    RemoteMcpGuardedBody::new_with_session(
+                        Body::new(fixture),
+                        &proof,
+                        controller.subscribe(),
+                        RemoteSessionId::new("foreign-response-session").unwrap(),
+                        guard,
+                    )
+                    .is_err()
+                );
+            } else if completion == "base-reject" {
+                assert!(
+                    RemoteMcpGuardedBody::new(
+                        Body::new(fixture),
+                        &access("workspace-other"),
+                        controller.subscribe(),
+                    )
+                    .is_err()
+                );
+            } else {
+                let body =
+                    RemoteMcpGuardedBody::new(Body::new(fixture), &proof, controller.subscribe())
+                        .unwrap();
+                drop(body);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn session_removal_blocks_remaining_frames_despite_same_claims_replacement() {
+        let (mut registry, id, proof, guard) = session_fixture();
+        let controller = RemoteMcpStreamRevocation::new(&proof).unwrap();
+        let fixture = FixtureBody::new(
+            vec![
+                Frame::data(Bytes::from_static(b"before")),
+                Frame::data(Bytes::from_static(b"private-after")),
+            ],
+            false,
+        );
+        let polls = Arc::clone(&fixture.polls);
+        let drops = Arc::clone(&fixture.drops);
+        let mut body = RemoteMcpGuardedBody::new_with_session(
+            Body::new(fixture),
+            &proof,
+            controller.subscribe(),
+            id.clone(),
+            guard,
+        )
+        .unwrap();
+        assert_eq!(
+            next(&mut body).await.unwrap().unwrap().into_data().unwrap(),
+            "before"
+        );
+        registry.terminate(&id, &proof, 1_000).unwrap();
+        registry.establish(id, &proof, 1_000).unwrap();
+        assert_eq!(
+            next(&mut body).await.unwrap().unwrap_err(),
+            RemoteMcpStreamError::RevokedAuthorization
+        );
+        assert!(next(&mut body).await.is_none());
+        assert_eq!(polls.load(Ordering::SeqCst), 1);
+        assert_eq!(drops.load(Ordering::SeqCst), 1);
+        controller.closed().await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn session_invalidation_wakes_idle_bodies_without_provider_events() {
+        for removal in ["delete", "rollback", "prune", "drop"] {
+            let (mut registry, id, proof, guard) = session_fixture();
+            let mutation = registry.capture_mutation_guard(&id, &proof, 1_000).unwrap();
+            let controller = RemoteMcpStreamRevocation::new(&proof).unwrap();
+            let fixture = FixtureBody::new(vec![], true);
+            let polls = Arc::clone(&fixture.polls);
+            let drops = Arc::clone(&fixture.drops);
+            let mut body = RemoteMcpGuardedBody::new_with_session(
+                Body::new(fixture),
+                &proof,
+                controller.subscribe(),
+                id.clone(),
+                guard,
+            )
+            .unwrap();
+            let task = tokio::spawn(async move { next(&mut body).await.unwrap().unwrap_err() });
+            tokio::task::yield_now().await;
+            assert_eq!(polls.load(Ordering::SeqCst), 1);
+            match removal {
+                "delete" => registry.terminate(&id, &proof, 1_000).unwrap(),
+                "rollback" => registry.rollback_establishment(&mutation, &proof).unwrap(),
+                "prune" => registry.prune_expired(proof.expires_at_epoch_seconds()),
+                "drop" => drop(registry),
+                _ => unreachable!(),
+            }
+            tokio::time::advance(SESSION_RECHECK_INTERVAL).await;
+            assert_eq!(
+                task.await.unwrap(),
+                RemoteMcpStreamError::RevokedAuthorization
+            );
+            assert_eq!(polls.load(Ordering::SeqCst), 1);
+            assert_eq!(drops.load(Ordering::SeqCst), 1);
+            controller.closed().await;
+        }
+    }
+
+    #[tokio::test]
+    async fn shortened_session_ceiling_wakes_idle_delivery_with_original_proof_still_current() {
+        let (mut registry, id, proof, guard) = session_fixture();
+        let controller = RemoteMcpStreamRevocation::new(&proof).unwrap();
+        let started = Arc::new(tokio::sync::Notify::new());
+        let observed = Arc::clone(&started);
+        let mut fixture = FixtureBody::new(vec![], true);
+        fixture.on_poll = Some(Box::new(move || observed.notify_one()));
+        let drops = Arc::clone(&fixture.drops);
+        let mut body = RemoteMcpGuardedBody::new_with_session(
+            Body::new(fixture),
+            &proof,
+            controller.subscribe(),
+            id.clone(),
+            guard,
+        )
+        .unwrap();
+        let task = tokio::spawn(async move { next(&mut body).await.unwrap().unwrap_err() });
+        tokio::time::timeout(Duration::from_secs(2), started.notified())
+            .await
+            .unwrap();
+        let mut shorter = proof.clone();
+        shorter
+            .constrain_validity(
+                Instant::now()
+                    .checked_sub(Duration::from_millis(800))
+                    .unwrap(),
+                shorter.expires_at_epoch_seconds() - 1,
+            )
+            .unwrap();
+        registry
+            .revalidate_access(&id, &mut shorter, 1_000)
+            .unwrap();
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(2), task)
+                .await
+                .unwrap()
+                .unwrap(),
+            RemoteMcpStreamError::RevokedAuthorization
+        );
+        assert!(proof.ensure_current().is_ok());
+        assert_eq!(registry.len(), 1); // No prune or fresh dispatch capture was required.
+        assert_eq!(drops.load(Ordering::SeqCst), 1);
+        controller.closed().await;
+    }
+
+    #[tokio::test]
+    async fn session_removal_during_provider_poll_discards_data_and_trailers() {
+        for trailers in [false, true] {
+            let (registry, id, proof, guard) = session_fixture();
+            let registry = Arc::new(std::sync::Mutex::new(registry));
+            let controller = RemoteMcpStreamRevocation::new(&proof).unwrap();
+            let frame = if trailers {
+                let mut headers = HeaderMap::new();
+                headers.insert("private-data", "must-not-forward".parse().unwrap());
+                Frame::trailers(headers)
+            } else {
+                Frame::data(Bytes::from_static(b"must-not-forward"))
+            };
+            let mut fixture = FixtureBody::new(vec![frame], false);
+            let changed_registry = Arc::clone(&registry);
+            let changed_id = id.clone();
+            let changed_proof = proof.clone();
+            fixture.on_poll = Some(Box::new(move || {
+                let mut registry = changed_registry.lock().unwrap();
+                registry
+                    .terminate(&changed_id, &changed_proof, 1_000)
+                    .unwrap();
+                registry
+                    .establish(changed_id, &changed_proof, 1_000)
+                    .unwrap();
+            }));
+            let drops = Arc::clone(&fixture.drops);
+            let mut body = RemoteMcpGuardedBody::new_with_session(
+                Body::new(fixture),
+                &proof,
+                controller.subscribe(),
+                id,
+                guard,
+            )
+            .unwrap();
+            assert_eq!(
+                next(&mut body).await.unwrap().unwrap_err(),
+                RemoteMcpStreamError::RevokedAuthorization
+            );
+            assert!(next(&mut body).await.is_none());
+            assert_eq!(drops.load(Ordering::SeqCst), 1);
+            assert_eq!(registry.lock().unwrap().len(), 1);
+            controller.closed().await;
+        }
+    }
+
+    #[test]
+    fn session_body_construction_rejects_removed_and_substituted_authority_without_polling() {
+        for substitution in ["session", "proof", "removed"] {
+            let (mut registry, id, proof, guard) = session_fixture();
+            if substitution == "removed" {
+                registry.terminate(&id, &proof, 1_000).unwrap();
+            }
+            let id = if substitution == "session" {
+                RemoteSessionId::new("foreign-response-session").unwrap()
+            } else {
+                id
+            };
+            let proof = if substitution == "proof" {
+                access("workspace-other")
+            } else {
+                proof
+            };
+            let controller = RemoteMcpStreamRevocation::new(&proof).unwrap();
+            let fixture =
+                FixtureBody::new(vec![Frame::data(Bytes::from_static(b"private"))], false);
+            let polls = Arc::clone(&fixture.polls);
+            let drops = Arc::clone(&fixture.drops);
+            assert_eq!(
+                RemoteMcpGuardedBody::new_with_session(
+                    Body::new(fixture),
+                    &proof,
+                    controller.subscribe(),
+                    id,
+                    guard,
+                )
+                .unwrap_err(),
+                RemoteMcpStreamError::RevokedAuthorization
+            );
+            assert_eq!(polls.load(Ordering::SeqCst), 0);
+            assert_eq!(drops.load(Ordering::SeqCst), 1);
+            assert_eq!(controller.sender.receiver_count(), 0);
+        }
+    }
+
+    #[tokio::test]
+    async fn session_response_preserves_http_metadata_and_still_requires_controller_authority() {
+        let (_registry, id, proof, guard) = session_fixture();
+        let controller = RemoteMcpStreamRevocation::new(&proof).unwrap();
+        let response = Response::builder()
+            .status(StatusCode::ACCEPTED)
+            .header("content-type", "text/event-stream")
+            .body(Body::from("current-session-data"))
+            .unwrap();
+        let response = guard_remote_mcp_session_response(
+            response,
+            &proof,
+            controller.subscribe(),
+            id.clone(),
+            guard.clone(),
+        )
+        .unwrap();
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+        assert_eq!(response.headers()["content-type"], "text/event-stream");
+        assert_eq!(
+            axum::body::to_bytes(response.into_body(), 100)
+                .await
+                .unwrap(),
+            "current-session-data"
+        );
+        let mut body = RemoteMcpGuardedBody::new_with_session(
+            Body::from("must-not-forward"),
+            &proof,
+            controller.subscribe(),
+            id,
+            guard,
+        )
+        .unwrap();
+        controller.revoke();
+        assert_eq!(
+            next(&mut body).await.unwrap().unwrap_err(),
+            RemoteMcpStreamError::RevokedAuthorization
+        );
+        assert!(next(&mut body).await.is_none());
+        controller.closed().await;
     }
 
     #[tokio::test]

@@ -594,6 +594,29 @@ exposing their diagnostics. Normal completion and consumer cancellation release
 the subscription; a monitor can use `controller.closed().await` to release its
 own resources when no subscriptions remain.
 
+`RemoteMcpGuardedBody::new_with_session` and
+`guard_remote_mcp_session_response` additionally retain the exact captured
+`RemoteSessionDispatchGuard`, session ID, and request proof. Before and after
+every provider poll they deny removed/replaced sessions and the latest shortened
+session deadline. An idle per-body timer rechecks that local authority every
+100 ms while the body is polled; it spawns no background task, performs no
+introspection/storage I/O, and does not lock the global registry. The small
+per-incarnation deadline lock never spans an await. Scheduler delays can delay
+idle cleanup; frames still require a fresh check at each delivery boundary.
+Admission must bound active bodies and the resulting timer/poll work.
+
+The existing controller remains mandatory for token/membership revocation;
+local session checks do not provide either. Do not apply session composition
+to a DELETE confirmation after intentionally removing its binding. SDK
+initialization wrapping still requires exact cleanup ownership on rejection.
+Both helpers are opt-in and remain unwired to the actual SDK HTTP listener.
+
+Consumer drop now clears all authorization futures/subscriptions before
+invoking the provider body's destructor. One regression first reproduced a
+provider destructor observing a still-live subscription during cancellation;
+it now observes zero. Denial, EOF, final-frame completion, constructor failure,
+and cancellation share the same idempotent teardown order.
+
 Integration obligations:
 
 - Keep a controller owner alive in a bounded authority monitor or registry.
@@ -613,10 +636,14 @@ Integration obligations:
   not already released/buffered frames, transmitted bytes/headers, or already
   admitted mutations.
 
-Fourteen body-level tests cover active delivery, trailers, idle expiry and
+Twenty-one body-level tests cover active delivery, trailers, idle expiry and
 revocation, controller loss/clones, all claim substitutions, independent
 tenants, mid-poll revocation, shortest-deadline non-renewal, opaque failure,
-status/header preservation, EOF, and consumer/monitor cleanup. These are not
+status/header preservation, EOF, and consumer/monitor cleanup. Seven new cases
+add exact-session frame denial, same-claims replacement, idle removal/rollback/
+pruning/registry-drop wakeups, later deadline reduction, mid-poll data/trailer
+denial, session/proof substitution, preserved controller authority, and
+cancellation teardown ordering. These are not
 live HTTP, SDK session-manager, provider, or remote revocation evidence.
 
 ## Initialization service ownership during compensation

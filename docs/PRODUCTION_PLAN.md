@@ -45,7 +45,7 @@ evidence and the strict readiness command.
   initialization without serializing unrelated tenant lookups. Library tests
   cover panic/cancellation cleanup and overload, not a deployed SDK listener.
 - Expired tenant-service cleanup runs outside the global cache lock. The
-  remote adapter's 115 passing unit tests include blocked/panicking cleanup,
+  remote adapter's 122 passing unit tests include blocked/panicking cleanup,
   concurrent tenant progress, reclaimed capacity, and pending reservation
   preservation. Live provider shutdown and load behavior remain unverified.
 - REST and MCP startup now check canonical metadata authority before
@@ -118,6 +118,14 @@ evidence and the strict readiness command.
   failed compatibility initialization can roll back only an exact unchanged
   binding after expiry. Actual SDK cache-pruning/late-cleanup races still need
   verification.
+- Session-aware response composition now checks captured local session identity
+  and the latest shortened deadline before/after each provider poll. A per-body
+  idle timer checks every 100 ms without a spawned task or registry/storage I/O;
+  token/membership monitoring and active-body budgets remain integration duties.
+  Seven new tests cover idle/removal/replacement/substitution/shortening and
+  teardown ordering, including a reproduced cancellation destructor observing
+  authority still live. All 122 remote tests pass. This opt-in composition is
+  not an actual SDK listener, token introspection, or live-provider proof.
 - Stateful Tower initialization retains the selected service for late-failure
   compensation instead of asking the factory/cache for it again. A delayed
   fixture prunes and replaces the entry while initialization is running, then

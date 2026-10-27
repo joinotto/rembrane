@@ -584,6 +584,12 @@ are in [First Production Release Plan](docs/PRODUCTION_PLAN.md).
         deadlines, claim-bound sticky revocation, idle-stream wakeups, frame/
         trailer post-poll checks, opaque errors, and provider/monitor cleanup;
         verify its body-level behavior with executable tests.
+        - [x] Compose captured local-session guards with response delivery;
+          deny removal/replacement and later shortened deadlines around frame
+          polling, and wake idle bodies with a per-body 100 ms timer.
+        - [x] Close authority before provider teardown on consumer cancellation;
+          reproduce the reverse order and cover session delivery/idle/
+          substitution/shortening with seven additional body tests.
       - [ ] Wire the guard into the official SDK listener and connect its
         controllers to real token, membership, and session revocation under
         bounded admission; retain exact initialization compensation ownership.

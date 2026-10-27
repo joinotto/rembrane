@@ -20,7 +20,7 @@ mod session_stream;
 
 pub use response_guard::{
     RemoteMcpGuardedBody, RemoteMcpStreamError, RemoteMcpStreamRevocation,
-    RemoteMcpStreamRevocationSignal, guard_remote_mcp_response,
+    RemoteMcpStreamRevocationSignal, guard_remote_mcp_response, guard_remote_mcp_session_response,
 };
 pub use session_stream::{
     AuthorizedRemoteMcpSessionEventStream, AuthorizedRemoteMcpSessionEventStreamDispatcher,
