@@ -45,7 +45,7 @@ evidence and the strict readiness command.
   initialization without serializing unrelated tenant lookups. Library tests
   cover panic/cancellation cleanup and overload, not a deployed SDK listener.
 - Expired tenant-service cleanup runs outside the global cache lock. The
-  remote adapter's 104 passing unit tests include blocked/panicking cleanup,
+  remote adapter's 107 passing unit tests include blocked/panicking cleanup,
   concurrent tenant progress, reclaimed capacity, and pending reservation
   preservation. Live provider shutdown and load behavior remain unverified.
 - REST and MCP startup now check canonical metadata authority before
@@ -75,6 +75,11 @@ evidence and the strict readiness command.
   reject execution after readiness/factory waits exceed that deadline.
   Both GET modes reject replay explicitly. Actual SDK response delivery and
   live revocation remain unwired and unverified.
+- Client DELETE now requires direct/tenant Tower HTTP success before removing
+  the local binding. Three response-status matrices cover non-success classes
+  and HTTP 200/202/204 retry success across borrowing and owned/shared routes.
+  Transport success alone no longer passes as protocol confirmation. Actual SDK
+  listener/session-manager confirmation remains required.
 - A new response-body guard stops delivery at the earlier original proof/
   controller deadline or explicit sticky revocation. Fourteen new Axum body
   tests cover idle wakeups, per-claim binding, tenant separation, frame/trailer
@@ -114,6 +119,10 @@ evidence and the strict readiness command.
   of a global crates.io outage or of complete dependency access. The transport
   feature was reverted after the failed fetch, leaving the existing build
   intact; a concrete PostgreSQL driver is also absent from the local cache.
+- A fresh isolated official-transport dependency probe fails offline because
+  `async-trait` cannot be resolved from the cache. A bounded online retry still
+  fails resolving `index.crates.io`. The repository dependency graph remains
+  unchanged; the failed probe is not SDK compilation or live listener evidence.
 - The PostgreSQL client is unavailable here, and access to the Docker daemon
   socket is denied. Live database fixtures and container verification are not
   covered by the passing local tests.

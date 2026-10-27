@@ -355,6 +355,23 @@ propagation through each authorization path, and non-renewal under refresh.
 These remain in-process session tests. Replay is unsupported, and actual
 SDK/session-manager behavior is still unverified.
 
+Client-requested Tower DELETE must return an HTTP `Response<Body>` (with a
+generic sendable body), not an arbitrary transport output. Direct and
+tenant-selected dispatchers reject every non-success status with opaque
+`InvalidSdkResponse`. The orchestration does not remove a binding on that
+error, allowing a currently authorized retry; 404 is not silently treated as
+proof that the correct session was deleted.
+
+Three regression matrices exercise nine non-success statuses across borrowing,
+owned/shared, and tenant-selected routes, then confirm HTTP 200/202/204 retry
+success and local removal. In the pinned SDK source, client DELETE closes the
+session before returning 202; accepting that successful status preserves its
+contract. These in-process HTTP-response fixtures are not live SDK proof.
+Custom `AuthorizedRemoteMcpSessionDeletionDispatcher` implementations must
+return `Ok` only for confirmed protocol deletion, not successful transport I/O.
+The pre-alpha Tower deletion implementation now requires an HTTP response;
+custom non-HTTP protocols retain the explicit port and its confirmation duty.
+
 Established-session POST proofs retain a private `RemoteSessionId` in their
 protocol metadata only after successful registry authorization. HTTP header
 parsing alone leaves it absent. Borrowing Axum wrappers preserve this field

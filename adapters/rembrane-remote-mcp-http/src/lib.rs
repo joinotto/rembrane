@@ -12,6 +12,8 @@
 //! Prefer the owned/shared service entrypoints for HTTP routing.
 
 mod response_guard;
+#[cfg(test)]
+mod session_deletion_tests;
 mod session_stream;
 
 pub use response_guard::{
@@ -258,7 +260,9 @@ pub trait AuthorizedRemoteMcpEventStreamDispatcher {
 }
 
 /// Client-requested deletion must reject an expired proof, unlike the separate
-/// internal compensating-cleanup port below.
+/// internal compensating-cleanup port below. `Ok` must mean confirmed protocol
+/// deletion, not merely successful transport I/O. HTTP dispatchers must reject
+/// non-success status codes so local bindings remain available for retry.
 pub trait AuthorizedRemoteMcpSessionDeletionDispatcher {
     type Output;
     type Error;
@@ -1319,11 +1323,15 @@ where
     }
 }
 
-impl<Service> AuthorizedRemoteMcpSessionDeletionDispatcher for AuthorizedTowerMcpDispatcher<Service>
+impl<Service, ResponseBody> AuthorizedRemoteMcpSessionDeletionDispatcher
+    for AuthorizedTowerMcpDispatcher<Service>
 where
-    Service: tower::Service<Request<Body>> + Clone + Send + 'static,
+    Service: tower::Service<Request<Body>, Response = axum::http::Response<ResponseBody>>
+        + Clone
+        + Send
+        + 'static,
     Service::Future: Send + 'static,
-    Service::Response: Send + 'static,
+    ResponseBody: Send + 'static,
     Service::Error: Send + 'static,
 {
     type Output = Service::Response;
@@ -1362,7 +1370,11 @@ where
                 validated_origin.as_deref(),
             )?;
             request.extensions_mut().insert(access);
-            call_current_service(service, request).await
+            let response = call_current_service(service, request).await?;
+            if !response.status().is_success() {
+                return Err(TowerMcpDispatchError::InvalidSdkResponse);
+            }
+            Ok(response)
         })
     }
 }
@@ -1638,13 +1650,15 @@ where
     }
 }
 
-impl<Factory> AuthorizedRemoteMcpSessionDeletionDispatcher
+impl<Factory, ResponseBody> AuthorizedRemoteMcpSessionDeletionDispatcher
     for TenantAwareTowerMcpDispatcher<Factory>
 where
     Factory: AuthorizedTowerMcpServiceFactory,
-    Factory::Service: tower::Service<Request<Body>> + Send + 'static,
+    Factory::Service: tower::Service<Request<Body>, Response = axum::http::Response<ResponseBody>>
+        + Send
+        + 'static,
     <Factory::Service as tower::Service<Request<Body>>>::Future: Send + 'static,
-    <Factory::Service as tower::Service<Request<Body>>>::Response: Send + 'static,
+    ResponseBody: Send + 'static,
     <Factory::Service as tower::Service<Request<Body>>>::Error: Send + 'static,
     Factory::Error: Send + 'static,
 {
@@ -1688,9 +1702,13 @@ where
                 validated_origin.as_deref(),
             )?;
             request.extensions_mut().insert(access);
-            call_current_service(service, request)
+            let response = call_current_service(service, request)
                 .await
-                .map_err(tenant_dispatch_error)
+                .map_err(tenant_dispatch_error)?;
+            if !response.status().is_success() {
+                return Err(TenantAwareTowerMcpDispatchError::InvalidSdkResponse);
+            }
+            Ok(response)
         })
     }
 }
@@ -4938,7 +4956,7 @@ mod tests {
         establish_axum_session_body, request_from_axum_headers,
     };
 
-    struct Verifier;
+    pub(super) struct Verifier;
     struct OAuthFixtureTransport;
 
     fn fixture_shared_authorization<Verifier>(
@@ -6811,7 +6829,7 @@ mod tests {
                     .extensions_mut()
                     .remove::<rembrane_contracts::VerifiedRemoteAccess>()
                     .expect("verified access extension");
-                Ok::<_, std::convert::Infallible>((
+                Ok::<_, std::convert::Infallible>(axum::http::Response::new((
                     request.method().clone(),
                     request
                         .headers()
@@ -6820,7 +6838,7 @@ mod tests {
                         .map(str::to_owned),
                     request.headers().contains_key(AUTHORIZATION),
                     access.workspace_id().to_string(),
-                ))
+                )))
             },
         );
         let mut delete_headers = HeaderMap::new();
@@ -6849,7 +6867,8 @@ mod tests {
             &AuthorizedTowerMcpDispatcher::new(service),
         )
         .await
-        .expect("confirmed deletion");
+        .expect("confirmed deletion")
+        .into_body();
         assert_eq!(dispatched.0, Method::DELETE);
         assert_eq!(dispatched.1.as_deref(), Some(session));
         assert!(!dispatched.2, "bearer must stop at authorization boundary");
@@ -7073,7 +7092,7 @@ mod tests {
         .expect("session should establish");
         let failing = tower::service_fn(
             |_request: axum::http::Request<axum::body::Body>| async move {
-                Err::<(), _>("downstream unavailable")
+                Err::<Response, _>("downstream unavailable")
             },
         );
         assert!(matches!(
@@ -7999,12 +8018,12 @@ mod tests {
                                 .get(MCP_SESSION_HEADER_NAME)
                                 .and_then(|value| value.to_str().ok())
                                 .map(str::to_owned);
-                            Ok::<_, std::convert::Infallible>((
+                            Ok::<_, std::convert::Infallible>(axum::http::Response::new((
                                 selected_workspace,
                                 dispatched_workspace,
                                 method,
                                 session,
-                            ))
+                            )))
                         }
                     },
                 ))
@@ -8025,7 +8044,8 @@ mod tests {
                 None,
             )
             .await
-            .expect("tenant event stream dispatch");
+            .expect("tenant event stream dispatch")
+            .into_body();
         assert_eq!(event_stream.0, "workspace_01");
         assert_eq!(event_stream.1, "workspace_01");
         assert_eq!(event_stream.2, Method::GET);
@@ -8041,7 +8061,8 @@ mod tests {
                 None,
             )
             .await
-            .expect("tenant deletion dispatch");
+            .expect("tenant deletion dispatch")
+            .into_body();
         assert_eq!(deletion.0, "workspace_02");
         assert_eq!(deletion.1, "workspace_02");
         assert_eq!(deletion.2, Method::DELETE);
@@ -9156,11 +9177,11 @@ mod tests {
                     .extensions_mut()
                     .remove::<rembrane_contracts::VerifiedRemoteAccess>()
                     .expect("verified access extension");
-                Ok::<_, std::convert::Infallible>((
+                Ok::<_, std::convert::Infallible>(axum::http::Response::new((
                     request.method().clone(),
                     access.workspace_id().to_string(),
                     request.headers().contains_key(AUTHORIZATION),
-                ))
+                )))
             },
         );
         let deleted = authorization
@@ -9170,7 +9191,8 @@ mod tests {
                 &AuthorizedTowerMcpDispatcher::new(deletion_service),
             )
             .await
-            .expect("owned service should confirm and commit deletion");
+            .expect("owned service should confirm and commit deletion")
+            .into_body();
         assert_eq!(deleted.0, Method::DELETE);
         assert_eq!(deleted.1, "workspace_01");
         assert!(!deleted.2, "bearer must stop at the authorization boundary");
@@ -9586,7 +9608,7 @@ mod tests {
         headers
     }
 
-    fn session_metadata_fixture() -> (
+    pub(super) fn session_metadata_fixture() -> (
         RemoteMcpAxumAuthorization<Verifier>,
         RemoteSessionId,
         HeaderMap,
@@ -9825,10 +9847,10 @@ mod tests {
                     .extensions()
                     .get::<rembrane_contracts::VerifiedRemoteAccess>()
                     .unwrap();
-                Ok::<_, std::convert::Infallible>((
+                Ok::<_, std::convert::Infallible>(axum::http::Response::new((
                     access.validity_deadline(),
                     request.method().clone(),
-                ))
+                )))
             },
         ));
         for shared in [false, true] {
@@ -9867,7 +9889,8 @@ mod tests {
                     )
                     .await
             }
-            .unwrap();
+            .unwrap()
+            .into_body();
             assert_eq!(post, (deadline, Method::POST));
             let delete = if shared {
                 authorization
@@ -9879,7 +9902,8 @@ mod tests {
                     .authorize_and_dispatch_session_deletion(&headers, 1_000, &dispatcher)
                     .await
             }
-            .unwrap();
+            .unwrap()
+            .into_body();
             assert_eq!(delete, (deadline, Method::DELETE));
         }
         assert!(

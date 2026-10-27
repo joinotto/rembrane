@@ -9,6 +9,17 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Fixed
 
+- Direct and tenant-selected Tower client DELETE now require an HTTP response
+  and confirm its success status before the local session is removed. A
+  successful transport call carrying a redirect, authentication/protocol error,
+  or provider failure returns opaque `InvalidSdkResponse` and retains the
+  retryable binding. Custom deletion ports document the same confirmation duty.
+- Three new response-status matrices cover borrowing, owned/shared, and tenant
+  routes, with HTTP 200/202/204 retries. Existing lifecycle fixtures now return
+  HTTP responses instead of treating arbitrary tuples as deletion confirmation.
+  This is a pre-alpha Rust API tightening; actual SDK listener behavior remains
+  unverified.
+
 - Both stateless and session-bound GET reject `Last-Event-ID` with HTTP 400
   before verification, including empty/non-text/duplicated cursors. Replay is
   unsupported until event-store isolation is verified; it is not silently

@@ -862,6 +862,10 @@ are in [First Production Release Plan](docs/PRODUCTION_PLAN.md).
       - [x] Dispatch authenticated session DELETE through Tower before
         committing the local tenant-bound session removal, retaining the
         binding when downstream termination fails.
+        - [x] Require HTTP success confirmation in direct/tenant Tower
+          deletion, not just successful transport I/O. Verify error-class
+          response matrices and retryable binding retention across borrowing,
+          owned/shared routes, including HTTP 200/202/204 success retries.
         - [x] Parse and reject ambiguous Axum DELETE security and protocol
           headers before entering the confirmed termination flow.
   - [x] Add OAuth and cross-tenant transport integration tests.
