@@ -2948,7 +2948,7 @@ where
             gate.require_allowed_host(request.host)
                 .map_err(RemoteMcpDispatchError::Authorization)?;
         }
-        let access = self
+        let mut access = self
             .authorize_on_worker(
                 request.authorization,
                 request.origin,
@@ -2963,7 +2963,7 @@ where
                 .lock()
                 .map_err(|_| RemoteMcpDispatchError::Authorization(lock_rejection()))?;
             gate.sessions
-                .revalidate(&session_id, &access, now_epoch_seconds)
+                .revalidate_access(&session_id, &mut access, now_epoch_seconds)
                 .map_err(|_| {
                     RemoteMcpDispatchError::Authorization(
                         gate.rejection(RemoteSessionHttpError::Forbidden),
@@ -3010,7 +3010,7 @@ where
             gate.require_allowed_host(request.host)
                 .map_err(RemoteMcpDispatchError::Authorization)?;
         }
-        let access = self
+        let mut access = self
             .authorize_on_worker(
                 request.authorization,
                 request.origin,
@@ -3025,7 +3025,7 @@ where
                 .lock()
                 .map_err(|_| RemoteMcpDispatchError::Authorization(lock_rejection()))?;
             gate.sessions
-                .revalidate(&session_id, &access, now_epoch_seconds)
+                .revalidate_access(&session_id, &mut access, now_epoch_seconds)
                 .map_err(|_| {
                     RemoteMcpDispatchError::Authorization(
                         gate.rejection(RemoteSessionHttpError::Forbidden),
@@ -9510,6 +9510,126 @@ mod tests {
                 .expect_err("arbitrary GET protocol versions must fail")
                 .status,
             400
+        );
+    }
+
+    fn established_session_headers(id: &RemoteSessionId) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert(HOST, HeaderValue::from_static("memory.example.test"));
+        headers.insert(
+            AUTHORIZATION,
+            HeaderValue::from_static("Bearer workspace-one"),
+        );
+        headers.insert(
+            ACCEPT,
+            HeaderValue::from_static("application/json, text/event-stream"),
+        );
+        headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+        headers.insert(
+            MCP_SESSION_HEADER_NAME,
+            HeaderValue::from_str(id.as_str()).unwrap(),
+        );
+        headers
+    }
+
+    #[tokio::test]
+    async fn session_worker_dispatch_preserves_the_original_monotonic_ceiling() {
+        let config = RemoteMcpConfig::new(
+            "https://memory.example.test/mcp".to_owned(),
+            "https://identity.example.test".to_owned(),
+            "https://identity.example.test/introspect".to_owned(),
+            "rembrane".to_owned(),
+            SecretReference::environment("OAUTH_SECRET").unwrap(),
+            vec![],
+        )
+        .unwrap();
+        let mut authorization = fixture_owned_authorization(4, &config, Verifier).unwrap();
+        let mut original = Verifier
+            .verify("workspace-one")
+            .unwrap()
+            .validate_connection(
+                "https://identity.example.test",
+                "https://memory.example.test/mcp",
+                1_000,
+            )
+            .unwrap();
+        // A trusted later observation narrowed this original proof. Subsequent
+        // requests must not restore its longer epoch-based lifetime.
+        original
+            .constrain_validity(std::time::Instant::now(), 1_900)
+            .unwrap();
+        let deadline = original.validity_deadline();
+        let dispatcher = AuthorizedTowerMcpDispatcher::new(tower::service_fn(
+            |request: Request<Body>| async move {
+                let access = request
+                    .extensions()
+                    .get::<rembrane_contracts::VerifiedRemoteAccess>()
+                    .unwrap();
+                Ok::<_, std::convert::Infallible>((
+                    access.validity_deadline(),
+                    request.method().clone(),
+                ))
+            },
+        ));
+        for shared in [false, true] {
+            let id = RemoteSessionId::new(if shared {
+                "session_shared_0123456789"
+            } else {
+                "session_owned_0123456789"
+            })
+            .unwrap();
+            authorization
+                .shared
+                .gate
+                .lock()
+                .unwrap()
+                .sessions
+                .establish(id.clone(), &original, 1_000)
+                .unwrap();
+            let headers = established_session_headers(&id);
+            let post = if shared {
+                authorization
+                    .shared
+                    .authorize_and_dispatch_owned_session(
+                        &headers,
+                        tools_list_body(1),
+                        1_000,
+                        &dispatcher,
+                    )
+                    .await
+            } else {
+                authorization
+                    .authorize_and_dispatch_owned_session(
+                        &headers,
+                        tools_list_body(1),
+                        1_000,
+                        &dispatcher,
+                    )
+                    .await
+            }
+            .unwrap();
+            assert_eq!(post, (deadline, Method::POST));
+            let delete = if shared {
+                authorization
+                    .shared
+                    .authorize_and_dispatch_termination(&headers, 1_000, &dispatcher)
+                    .await
+            } else {
+                authorization
+                    .authorize_and_dispatch_session_deletion(&headers, 1_000, &dispatcher)
+                    .await
+            }
+            .unwrap();
+            assert_eq!(delete, (deadline, Method::DELETE));
+        }
+        assert!(
+            authorization
+                .shared
+                .gate
+                .lock()
+                .unwrap()
+                .sessions
+                .is_empty()
         );
     }
 

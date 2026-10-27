@@ -566,6 +566,12 @@ are in [First Production Release Plan](docs/PRODUCTION_PLAN.md).
         unchanged binding, without granting expired client DELETE authority.
     - [ ] Verify live stream expiry/revocation and queued SDK tool denial in
       the actual remote listener; admission checks do not close opened streams.
+      - [x] Preserve the original monotonic lifetime in session bindings,
+        reject refresh after expiry despite stale epoch time, prune elapsed
+        bindings, and cap returned POST/DELETE proofs without changing claims.
+      - [ ] Add separately authorized session-bound GET dispatch and preserve
+        validated session metadata through actual SDK requests; stateless GET
+        support does not prove session-bound streaming or replay.
       - [x] Add an Axum/Tokio response-body guard with non-renewable proof
         deadlines, claim-bound sticky revocation, idle-stream wakeups, frame/
         trailer post-poll checks, opaque errors, and provider/monitor cleanup;

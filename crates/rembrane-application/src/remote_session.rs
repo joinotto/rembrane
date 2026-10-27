@@ -266,13 +266,13 @@ impl RemoteSessionRegistry {
     where
         Verifier: RemoteTokenVerifier,
     {
-        let access = authorization.authorize_tool(
+        let mut access = authorization.authorize_tool(
             authorization_header,
             origin_header,
             tool_name,
             now_epoch_seconds,
         )?;
-        self.revalidate(session_id, &access, now_epoch_seconds)?;
+        self.revalidate_access(session_id, &mut access, now_epoch_seconds)?;
         Ok(access)
     }
 
@@ -293,12 +293,12 @@ impl RemoteSessionRegistry {
     where
         Verifier: RemoteTokenVerifier,
     {
-        let access = authorization.authorize_connection(
+        let mut access = authorization.authorize_connection(
             authorization_header,
             origin_header,
             now_epoch_seconds,
         )?;
-        self.revalidate(session_id, &access, now_epoch_seconds)?;
+        self.revalidate_access(session_id, &mut access, now_epoch_seconds)?;
         Ok(access)
     }
 
@@ -363,7 +363,7 @@ impl RemoteSessionRegistry {
     where
         Verifier: RemoteTokenVerifier,
     {
-        let access = authorization
+        let mut access = authorization
             .authorize_request_for_http(
                 authorization_header,
                 origin_header,
@@ -372,7 +372,7 @@ impl RemoteSessionRegistry {
                 now_epoch_seconds,
             )
             .map_err(RemoteSessionHttpError::from)?;
-        self.revalidate(session_id, &access, now_epoch_seconds)
+        self.revalidate_access(session_id, &mut access, now_epoch_seconds)
             .map_err(|_| RemoteSessionHttpError::Forbidden)?;
         Ok(access)
     }
@@ -452,10 +452,10 @@ impl RemoteSessionRegistry {
     where
         Verifier: RemoteTokenVerifier,
     {
-        let access = authorization
+        let mut access = authorization
             .authorize_connection_for_http(authorization_header, origin_header, now_epoch_seconds)
             .map_err(RemoteSessionHttpError::from)?;
-        self.revalidate(session_id, &access, now_epoch_seconds)
+        self.revalidate_access(session_id, &mut access, now_epoch_seconds)
             .map_err(|_| RemoteSessionHttpError::Forbidden)?;
         Ok(access)
     }
@@ -485,6 +485,26 @@ impl RemoteSessionRegistry {
             .get_mut(session_id)
             .ok_or(ApplicationError::AccessDenied)?
             .revalidate(access, now_epoch_seconds)
+            .map_err(|_| ApplicationError::AccessDenied)
+    }
+
+    /// Revalidates and carries the original session lifetime into the proof
+    /// returned to queued dispatch and response-delivery code.
+    ///
+    /// # Errors
+    ///
+    /// Returns non-enumerating `AccessDenied` for unknown, expired, or foreign
+    /// sessions. Valid signed token claims are not rewritten.
+    pub fn revalidate_access(
+        &mut self,
+        session_id: &RemoteSessionId,
+        access: &mut VerifiedRemoteAccess,
+        now_epoch_seconds: u64,
+    ) -> Result<(), ApplicationError> {
+        self.sessions
+            .get_mut(session_id)
+            .ok_or(ApplicationError::AccessDenied)?
+            .revalidate_access(access, now_epoch_seconds)
             .map_err(|_| ApplicationError::AccessDenied)
     }
 
@@ -789,6 +809,104 @@ mod tests {
             .reserve_initialization(1_000)
             .expect("released capacity");
         registry.cancel_reservation(replacement).expect("cleanup");
+    }
+
+    #[test]
+    fn elapsed_session_cannot_be_refreshed_and_is_pruned_with_stale_epoch_time() {
+        use std::time::{Duration, Instant};
+        let mut registry = RemoteSessionRegistry::new(1).unwrap();
+        let session = RemoteSessionId::new("session_0123456789abcdef").unwrap();
+        let mut original = access("workspace_01", &[RemoteAccessScope::ContextRead]);
+        original.constrain_validity(Instant::now(), 1_999).unwrap();
+        registry
+            .establish(session.clone(), &original, 1_000)
+            .unwrap();
+        std::thread::sleep(Duration::from_millis(1_100));
+        let mut fresh = access("workspace_01", &[RemoteAccessScope::ContextRead]);
+        assert!(fresh.ensure_current().is_ok());
+        assert_eq!(
+            registry.revalidate_access(&session, &mut fresh, 1_000),
+            Err(ApplicationError::AccessDenied),
+        );
+        assert_eq!(
+            registry.terminate(&session, &fresh, 1_000),
+            Err(ApplicationError::AccessDenied),
+        );
+        registry.prune_expired(1_000);
+        assert!(registry.is_empty());
+        let slot = registry.reserve_initialization(1_000).unwrap();
+        registry.cancel_reservation(slot).unwrap();
+    }
+
+    #[test]
+    fn every_session_authorization_path_returns_the_original_dispatch_ceiling() {
+        let verifier = FixtureVerifier;
+        let authenticator = RemoteAccessAuthenticator::new(
+            &verifier,
+            "https://identity.example.test",
+            "https://memory.example.test/mcp",
+        );
+        let authorization = RemoteHttpAuthorization::new(&authenticator, &[]);
+        let mut registry = RemoteSessionRegistry::new(4).unwrap();
+        let original = access(
+            "workspace_01",
+            &[
+                RemoteAccessScope::ContextRead,
+                RemoteAccessScope::MemoryWrite,
+            ],
+        );
+        let session = RemoteSessionId::new("session_0123456789abcdef").unwrap();
+        registry
+            .establish(session.clone(), &original, 1_000)
+            .unwrap();
+        let connection = registry
+            .authorize_connection(
+                &authorization,
+                &session,
+                Some("Bearer workspace-one"),
+                None,
+                1_000,
+            )
+            .unwrap();
+        let tool = registry
+            .authorize_tool(
+                &authorization,
+                &session,
+                Some("Bearer workspace-one"),
+                None,
+                "rembrane_resolve_context",
+                1_000,
+            )
+            .unwrap();
+        let request = registry
+            .authorize_request_for_http(
+                &authorization,
+                &session,
+                Some("Bearer workspace-one"),
+                None,
+                "tools/list",
+                None,
+                1_000,
+            )
+            .unwrap();
+        let deletion = registry
+            .authorize_termination_for_http(
+                &authorization,
+                &session,
+                Some("Bearer workspace-one"),
+                None,
+                1_000,
+            )
+            .unwrap();
+        for proof in [connection, tool, request, deletion] {
+            assert_eq!(proof.validity_deadline(), original.validity_deadline());
+            assert_eq!(proof.expires_at_epoch_seconds(), 2_000);
+        }
+        assert_eq!(
+            registry.len(),
+            1,
+            "authorization does not delete the session"
+        );
     }
 
     #[test]

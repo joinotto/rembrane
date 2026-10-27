@@ -9,6 +9,16 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Fixed
 
+- Remote session bindings now retain their original process-local deadline as
+  well as the epoch expiry ceiling. Clock rollback or refreshed credentials
+  cannot revive an elapsed session; expired sessions release registry capacity
+  even with a stale epoch snapshot.
+- Session authorization now carries the earlier binding deadline into the
+  returned dispatch proof without rewriting signed claims. Owned/shared POST
+  and DELETE workers preserve that ceiling through Tower dispatch. New tests
+  cover real expiry/pruning, non-renewal, foreign authority, and every existing
+  authorization path. Session-bound GET and live SDK behavior remain pending.
+
 - PostgreSQL runtime readiness now checks resolved normal Cargo dependencies
   and compiles the exact enabled integration target instead of accepting
   dependency/struct regex matches. Strict readiness separately requires a

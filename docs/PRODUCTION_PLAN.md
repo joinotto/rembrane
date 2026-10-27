@@ -45,7 +45,7 @@ evidence and the strict readiness command.
   initialization without serializing unrelated tenant lookups. Library tests
   cover panic/cancellation cleanup and overload, not a deployed SDK listener.
 - Expired tenant-service cleanup runs outside the global cache lock. The
-  remote adapter's 92 passing unit tests include blocked/panicking cleanup,
+  remote adapter's 93 passing unit tests include blocked/panicking cleanup,
   concurrent tenant progress, reclaimed capacity, and pending reservation
   preservation. Live provider shutdown and load behavior remain unverified.
 - REST and MCP startup now check canonical metadata authority before
@@ -58,6 +58,11 @@ evidence and the strict readiness command.
   Session commit rejects elapsed proof and compensates an already initialized
   session. Unit/Tower fixtures do not establish real listener behavior or
   ongoing event-stream expiry/revocation.
+- Session bindings now preserve their own non-renewable monotonic deadline.
+  Registry tests exercise real expiry and capacity recovery under stale epoch
+  time; contract and worker tests prove returned POST/DELETE proofs retain the
+  session ceiling without changing signed claims. Session-bound GET is still
+  unsupported, and actual SDK metadata/streaming behavior still needs proof.
 - A new response-body guard stops delivery at the earlier original proof/
   controller deadline or explicit sticky revocation. Fourteen new Axum body
   tests cover idle wakeups, per-claim binding, tenant separation, frame/trailer
@@ -106,10 +111,13 @@ conformance, a deployed PostgreSQL proof, or production release approval.
 
 ## Immediate execution queue
 
-1. Resolve and lock the official MCP transport dependencies, then implement
-   the actual remote service behind the existing verified authorization
-   boundary. Do not enable an unbuildable feature or count scaffolding as a
-   supported integration.
+1. Finish the remote MCP session boundary: preserve an authorized session
+   identifier through downstream POST dispatch, then add separately authorized
+   session-bound GET. Reject unsupported replay rather than implying that
+   replay isolation is already verified. Resolve and lock the official MCP
+   transport dependencies, then wire the actual remote service and stream
+   revocation authorities behind that boundary. Do not enable an unbuildable
+   feature or count scaffolding as a supported integration.
 2. Implement the concrete PostgreSQL driver and pool, then run the shared
    runtime-authority fixtures and pooled two-tenant lifecycle tests against a
    dedicated disposable database.
@@ -124,6 +132,22 @@ Security fixes that can be built and verified locally continue while runtime
 dependencies are unavailable. They do not replace the runtime exit criteria.
 Roadmap checkboxes are updated only for implemented and verified slices, with
 live or independently reviewed evidence tracked separately.
+
+## Completion checkpoints
+
+| Checkpoint | Current position | Completion evidence |
+| --- | --- | --- |
+| Local development baseline | Core tests pass; runtime integrations remain incomplete | Both concrete runtime integrations build and their integration tests pass |
+| Ready for production end-to-end testing | Not yet | Installable candidate, working HTTP/SDK listener and PostgreSQL, disposable staging services, and executable test/runbook coverage |
+| End-to-end testing complete | Not yet | HTTP, isolation, load, outage, recovery, rotation, deletion, and deployment drills pass with retained results |
+| Release candidate approved | Not yet | Revision-bound provider evidence, independent security approval, and strict readiness passing |
+| First supported production release | Not yet | Clean-system installation/upgrade tests and controlled pilot pass; supported scope and rollback documented |
+
+Development continues with reviewable local commits and no automatic push.
+The next code checkpoint is a verified remote session-transport slice, not a
+production-release claim. Staging access, missing dependency resolution, real
+provider credentials, and an independent reviewer are external capabilities;
+repository changes alone cannot supply their evidence.
 
 ## Scope and sequencing
 

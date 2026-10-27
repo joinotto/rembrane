@@ -303,7 +303,7 @@ impl PartialEq for VerifiedRemoteAccess {
 
 impl Eq for VerifiedRemoteAccess {}
 
-#[derive(Clone, Eq, PartialEq)]
+#[derive(Clone)]
 pub struct RemoteSessionBinding {
     issuer: String,
     resource: String,
@@ -312,7 +312,25 @@ pub struct RemoteSessionBinding {
     workspace_id: WorkspaceId,
     scopes: BTreeSet<RemoteAccessScope>,
     maximum_token_expiry_epoch_seconds: u64,
+    valid_until: Instant,
 }
+
+// Binding equality describes exact claims and the epoch ceiling, not current
+// authority. Internal rollback can use an elapsed/narrowed original proof;
+// admission and dispatch must separately enforce the stored monotonic deadline.
+impl PartialEq for RemoteSessionBinding {
+    fn eq(&self, other: &Self) -> bool {
+        self.issuer == other.issuer
+            && self.resource == other.resource
+            && self.subject_id == other.subject_id
+            && self.client_id == other.client_id
+            && self.workspace_id == other.workspace_id
+            && self.scopes == other.scopes
+            && self.maximum_token_expiry_epoch_seconds == other.maximum_token_expiry_epoch_seconds
+    }
+}
+
+impl Eq for RemoteSessionBinding {}
 
 #[derive(Clone, Eq, Ord, PartialEq, PartialOrd)]
 pub struct RemoteSessionId(String);
@@ -363,6 +381,7 @@ impl fmt::Debug for RemoteSessionBinding {
                 "maximum_token_expiry_epoch_seconds",
                 &self.maximum_token_expiry_epoch_seconds,
             )
+            .field("valid_until", &"[PROCESS-LOCAL]")
             .finish()
     }
 }
@@ -612,14 +631,16 @@ impl VerifiedRemoteAccess {
             workspace_id: self.workspace_id.clone(),
             scopes: self.scopes.clone(),
             maximum_token_expiry_epoch_seconds: self.expires_at_epoch_seconds,
+            valid_until: self.valid_until,
         }
     }
 }
 
 impl RemoteSessionBinding {
     #[must_use]
-    pub const fn is_expired(&self, now_epoch_seconds: u64) -> bool {
+    pub fn is_expired(&self, now_epoch_seconds: u64) -> bool {
         self.maximum_token_expiry_epoch_seconds <= now_epoch_seconds
+            || Instant::now() >= self.valid_until
     }
 
     /// Validates that a reauthenticated request still belongs to this exact
@@ -657,7 +678,25 @@ impl RemoteSessionBinding {
         self.maximum_token_expiry_epoch_seconds = self
             .maximum_token_expiry_epoch_seconds
             .min(access.expires_at_epoch_seconds);
+        self.valid_until = self.valid_until.min(access.validity_deadline());
         Ok(())
+    }
+
+    /// Revalidates and narrows a dispatch proof to this session's original
+    /// monotonic ceiling. Signed token claims remain unchanged.
+    ///
+    /// # Errors
+    ///
+    /// Rejects expired or substituted authority. A refreshed token cannot
+    /// renew the session, including when the trusted epoch clock rolls back.
+    pub fn revalidate_access(
+        &mut self,
+        access: &mut VerifiedRemoteAccess,
+        now_epoch_seconds: u64,
+    ) -> Result<(), RemoteAccessError> {
+        self.revalidate(access, now_epoch_seconds)?;
+        access.valid_until = access.valid_until.min(self.valid_until);
+        access.ensure_current()
     }
 
     #[must_use]
@@ -775,6 +814,92 @@ mod tests {
             binding.revalidate(&access, 1_999),
             Err(RemoteAccessError::Expired)
         );
+    }
+
+    #[test]
+    fn session_dispatch_proof_keeps_original_deadline_without_rewriting_claims() {
+        let original = claims(&[RemoteAccessScope::ContextRead])
+            .validate_connection(
+                "https://identity.example.test",
+                "https://memory.example.test/mcp",
+                1_000,
+            )
+            .unwrap();
+        let mut binding = original.session_binding();
+        let mut refreshed_claims = claims(&[RemoteAccessScope::ContextRead]);
+        refreshed_claims.expires_at_epoch_seconds = 3_000;
+        let mut refreshed = refreshed_claims
+            .validate_connection(
+                "https://identity.example.test",
+                "https://memory.example.test/mcp",
+                1_000,
+            )
+            .unwrap();
+        let signed_claims = refreshed.clone();
+        binding.revalidate_access(&mut refreshed, 1_000).unwrap();
+        assert_eq!(refreshed, signed_claims);
+        assert_eq!(refreshed.expires_at_epoch_seconds(), 3_000);
+        assert_eq!(refreshed.validity_deadline(), original.validity_deadline());
+        assert_eq!(binding.maximum_token_expiry_epoch_seconds(), 2_000);
+    }
+
+    #[test]
+    fn session_mono_expiry_denies_refresh_despite_a_stale_epoch_snapshot() {
+        use std::time::{Duration, Instant};
+        let original = claims(&[RemoteAccessScope::ContextRead])
+            .validate_connection(
+                "https://identity.example.test",
+                "https://memory.example.test/mcp",
+                1_000,
+            )
+            .unwrap();
+        let mut binding = original.session_binding();
+        assert_eq!(binding.valid_until, original.validity_deadline());
+        // Model an elapsed session clock without waiting for this long fixture
+        // token's real lifetime. Registry tests separately exercise real expiry.
+        binding.valid_until = Instant::now().checked_sub(Duration::from_secs(1)).unwrap();
+        let mut refreshed = original.clone();
+        assert!(refreshed.ensure_current().is_ok());
+        assert!(binding.is_expired(900));
+        assert_eq!(
+            binding.revalidate_access(&mut refreshed, 1_000),
+            Err(RemoteAccessError::Expired),
+        );
+    }
+
+    #[test]
+    fn shortened_session_deadline_cannot_be_restored_by_later_proofs() {
+        use std::time::Instant;
+        let original = claims(&[RemoteAccessScope::ContextRead])
+            .validate_connection(
+                "https://identity.example.test",
+                "https://memory.example.test/mcp",
+                1_000,
+            )
+            .unwrap();
+        let mut binding = original.session_binding();
+        let mut narrow = original.clone();
+        narrow.constrain_validity(Instant::now(), 1_999).unwrap();
+        binding.revalidate(&narrow, 1_000).unwrap();
+        let mut later = original.clone();
+        binding.revalidate_access(&mut later, 1_000).unwrap();
+        assert_eq!(later.validity_deadline(), narrow.validity_deadline());
+        assert_eq!(later.expires_at_epoch_seconds(), 2_000);
+        let mut foreign = claims(&[RemoteAccessScope::ContextRead]);
+        foreign.workspace_id = WorkspaceId::new("workspace_other");
+        let mut foreign = foreign
+            .validate_connection(
+                "https://identity.example.test",
+                "https://memory.example.test/mcp",
+                1_000,
+            )
+            .unwrap();
+        let deadline = binding.valid_until;
+        assert_eq!(
+            binding.revalidate_access(&mut foreign, 1_000),
+            Err(RemoteAccessError::SessionBinding),
+        );
+        assert_eq!(binding.valid_until, deadline);
     }
 
     #[test]

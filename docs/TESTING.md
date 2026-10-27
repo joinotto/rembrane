@@ -333,6 +333,28 @@ deny foreign/scope/expiry substitutions and repeated cleanup, while a delayed
 failure fixture proves that an elapsed original proof can release its unchanged
 binding. Changed bindings are not removed.
 
+Session bindings also retain the original process-local deadline, independently
+of their epoch expiry ceiling. Refresh can shorten but never renew that deadline.
+`is_expired` and registry pruning enforce both clocks, so a stale or rolled-back
+epoch sample cannot keep an elapsed session alive or consuming capacity.
+
+`revalidate_access` propagates the binding deadline into the returned
+`VerifiedRemoteAccess` while preserving every signed claim. Connection, tool,
+HTTP request, and termination authorization use this path, including owned/
+shared POST and DELETE workers. Queued dispatch and guarded response delivery
+therefore receive the original session ceiling rather than a fresh token's
+longer lifetime. The older borrowed `revalidate` checks/narrows the binding but
+does not mutate the caller's proof; dispatch integrations must use the
+proof-carrying path.
+
+Binding equality compares claims and the epoch ceiling, not current lifetime.
+Internal rollback may still use an elapsed or locally narrowed original proof
+for exact signed-context cleanup; equality must never authorize a request.
+Tests separately verify real elapsed-session denial/pruning, proof-ceiling
+propagation through each authorization path, and non-renewal under refresh.
+These remain in-process session tests. Session-bound GET and replay are not
+implemented, and actual SDK/session-manager behavior is still unverified.
+
 Custom dispatcher implementations must enforce proof lifetime after their own
 waits and before execution; the ports document that obligation. The trusted
 epoch-second sample must be supplied correctly by the HTTP host. These checks
