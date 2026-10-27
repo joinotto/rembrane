@@ -9,6 +9,16 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Fixed
 
+- Windows DPAPI now passes reference metadata through per-child environment
+  overrides instead of appending it after PowerShell's string `-Command`.
+  The published Windows CI failure showed null `$args`; a new cross-platform
+  regression also reproduced reference values becoming command text.
+  Both scripts explicitly load the system security assembly, and the fixture
+  sends its synthetic key through stdin rather than argv. Two construction
+  tests pass locally. The live fixture now covers a spaced/apostrophe path and
+  wrong key-ID entropy; corrected Windows execution remains pending, and its
+  roadmap checkbox is no longer marked complete.
+
 - Remote body rejection now closes authorization before discarding provider
   frames/raw errors and retains response quota through both discarded-resource
   and body destruction. A regression reproduced live authority during frame

@@ -1026,8 +1026,34 @@ Remove-Item Env:REMBRANE_WORKSPACE_KEY_HEX -ErrorAction SilentlyContinue
 ```
 
 Run the Rust test suite from the same Windows user account. The Windows CI job
-also performs a live DPAPI protect/unprotect round trip and warnings-as-errors
+must pass a live DPAPI protect/unprotect round trip and warnings-as-errors
 lint. Delete the disposable blob after testing.
+
+The resolver keeps `-Command` as a fixed script, supplying reference metadata
+only through private per-child `REMBRANE_DPAPI_BRIDGE_BLOB_PATH` and
+`REMBRANE_DPAPI_BRIDGE_KEY_ID` overrides. These are internal transport values,
+not new setup variables or plaintext keys. The parent process environment is
+not mutated. Captured key output and errors retain the zeroizing/opaque-error
+boundary. Fixture protection receives only the synthetic key through stdin;
+neither bridge script uses trailing `$args`.
+
+On 2026-10-27, the latest published Windows CI job inspected from run
+`40189971578` at revision `bc064779727611f5871b7e361c174fa2d830d01d`
+had failed on null `$args` in the protection fixture. A cross-platform
+regression reproduced the same unsafe invocation structure for the resolver:
+private reference values appeared after `-Command` instead of being literal
+input data. The two command-construction tests now pass:
+
+```sh
+cargo test -p rembrane-crypto-rustcrypto --locked --offline windows_dpapi_bridge
+```
+
+These tests inspect the exact shared production command builder; they do not
+execute Windows PowerShell or DPAPI. The corrected Windows-only live fixture
+also checks a path with spaces/apostrophes and rejects a mismatched key-ID
+entropy. Its hosted rerun is still required before restoring the live-verification
+checkbox. The older failed run and locally passing structure tests must not
+be reported as current Windows success.
 
 To exercise a disposable customer-controlled key-provider sidecar instead:
 

@@ -347,7 +347,14 @@ are in [First Production Release Plan](docs/PRODUCTION_PLAN.md).
         local absolute paths, traversal rejection, and a Windows CI gate.
       - [x] Resolve active and historical CurrentUser keys through a fixed
         system PowerShell bridge with key-ID entropy and zeroized output.
-      - [x] Exercise a live DPAPI protect/unprotect round trip in Windows CI.
+        - [x] Keep key-reference metadata out of `-Command` text using
+          per-child environment overrides; send the fixture key through stdin.
+          Reproduce the old trailing-argument defect with a cross-platform
+          construction test and verify independent reference overrides.
+      - [ ] Pass the corrected live DPAPI protect/unprotect round trip in
+        Windows CI, including spaced/apostrophe paths and wrong-entropy denial.
+        The inspected published run failed; command-construction tests are
+        not Windows platform execution evidence.
   - [x] Define a vendor-neutral authenticated key-provider operation protocol
     that never exports raw workspace keys.
     - [x] Negotiate optional workspace-rotation capability and validate

@@ -14,6 +14,12 @@ evidence and the strict readiness command.
   SQLite, and PostgreSQL RLS inventory checks pass.
 - Rust workspace tests, formatting, and warnings-as-errors Clippy pass.
   The latest CLI input-hardening changes pass all 68 CLI unit tests.
+- A read-only hosted CI audit found the latest published Windows DPAPI job
+  failing on null trailing-script arguments. The current bridge/fixture now
+  separates fixed PowerShell command text from per-child metadata and stdin
+  input; two construction tests pass locally. The live Windows checkbox has
+  been reopened until the corrected revision passes on Windows. Published
+  CI results for an older revision are not proof of the current local tree.
 - Encrypted CLI lifecycle, MCP stdio, and fresh-process cross-tool continuity
   pass, including explicitly approved observations and disclosure receipts.
 - Those local lifecycle tests now isolate inherited Rembrane configuration,

@@ -14,13 +14,73 @@ use rembrane_provider_sdk::{
     CustomerKmsAdapter, CustomerKmsGeneratedKey, CustomerKmsKeyReference, CustomerKmsKeyring,
 };
 use std::fmt;
-#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows", test))]
 use std::process::Command;
 use zeroize::Zeroizing;
 
 const ALGORITHM: &str = "xchacha20poly1305-ietf";
 const NONCE_LENGTH: usize = 24;
 pub const MAX_LOCAL_KEYRING_GENERATIONS: usize = 1_024;
+
+#[cfg(any(target_os = "windows", test))]
+const WINDOWS_POWERSHELL: &str = r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe";
+#[cfg(any(target_os = "windows", test))]
+const WINDOWS_DPAPI_UNPROTECT: &str = r"
+$ErrorActionPreference='Stop'
+Add-Type -AssemblyName System.Security
+$blob=$null
+$entropy=$null
+$plain=$null
+try {
+    $blob=[IO.File]::ReadAllBytes($env:REMBRANE_DPAPI_BRIDGE_BLOB_PATH)
+    $entropy=[Text.Encoding]::UTF8.GetBytes($env:REMBRANE_DPAPI_BRIDGE_KEY_ID)
+    $plain=[Security.Cryptography.ProtectedData]::Unprotect($blob,$entropy,[Security.Cryptography.DataProtectionScope]::CurrentUser)
+    -join($plain|ForEach-Object{$_.ToString('x2')})
+} finally {
+    if($null-ne$plain){[Array]::Clear($plain,0,$plain.Length)}
+    if($null-ne$blob){[Array]::Clear($blob,0,$blob.Length)}
+    if($null-ne$entropy){[Array]::Clear($entropy,0,$entropy.Length)}
+}
+";
+
+#[cfg(test)]
+const WINDOWS_DPAPI_PROTECT_FIXTURE: &str = r"
+$ErrorActionPreference='Stop'
+Add-Type -AssemblyName System.Security
+$plain=$null
+$entropy=$null
+$blob=$null
+try {
+    $hex=[Console]::In.ReadToEnd()
+    if($hex-notmatch'^[0-9a-fA-F]{64}$'){throw 'invalid fixture input'}
+    [byte[]]$plain=for($i=0;$i-lt$hex.Length;$i+=2){[Convert]::ToByte($hex.Substring($i,2),16)}
+    $entropy=[Text.Encoding]::UTF8.GetBytes($env:REMBRANE_DPAPI_BRIDGE_KEY_ID)
+    $blob=[Security.Cryptography.ProtectedData]::Protect($plain,$entropy,[Security.Cryptography.DataProtectionScope]::CurrentUser)
+    [IO.File]::WriteAllBytes($env:REMBRANE_DPAPI_BRIDGE_BLOB_PATH,$blob)
+} finally {
+    if($null-ne$plain){[Array]::Clear($plain,0,$plain.Length)}
+    if($null-ne$blob){[Array]::Clear($blob,0,$blob.Length)}
+    if($null-ne$entropy){[Array]::Clear($entropy,0,$entropy.Length)}
+}
+";
+
+#[cfg(any(target_os = "windows", test))]
+fn windows_dpapi_command(reference: &WindowsDpapiKeyReference, script: &'static str) -> Command {
+    let mut command = Command::new(WINDOWS_POWERSHELL);
+    // PowerShell treats values after a string -Command as source, not $args.
+    // Keep all metadata in per-child environment overrides, never command text.
+    command
+        .args([
+            "-NoLogo",
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            script,
+        ])
+        .env("REMBRANE_DPAPI_BRIDGE_BLOB_PATH", reference.blob_path())
+        .env("REMBRANE_DPAPI_BRIDGE_KEY_ID", reference.key_id());
+    command
+}
 
 pub struct RustCryptoRecordCipher {
     key_id: String,
@@ -304,18 +364,7 @@ impl RustCryptoRecordCipher {
     /// each protected blob to its declared key generation.
     #[cfg(target_os = "windows")]
     pub fn from_windows_dpapi(reference: &WindowsDpapiKeyReference) -> Result<Self, CryptoError> {
-        const POWERSHELL: &str = r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe";
-        const UNPROTECT: &str = r#"$ErrorActionPreference='Stop';$blob=[IO.File]::ReadAllBytes($args[0]);$entropy=[Text.Encoding]::UTF8.GetBytes($args[1]);$plain=$null;try{$plain=[Security.Cryptography.ProtectedData]::Unprotect($blob,$entropy,[Security.Cryptography.DataProtectionScope]::CurrentUser);-join($plain|ForEach-Object{$_.ToString('x2')})}finally{if($null-ne$plain){[Array]::Clear($plain,0,$plain.Length)};[Array]::Clear($blob,0,$blob.Length);[Array]::Clear($entropy,0,$entropy.Length)}"#;
-        let output = Command::new(POWERSHELL)
-            .args([
-                "-NoLogo",
-                "-NoProfile",
-                "-NonInteractive",
-                "-Command",
-                UNPROTECT,
-                reference.blob_path(),
-                reference.key_id(),
-            ])
+        let output = windows_dpapi_command(reference, WINDOWS_DPAPI_UNPROTECT)
             .output()
             .map_err(|_| CryptoError::KeyUnavailable)?;
         let status = output.status;
@@ -922,15 +971,77 @@ mod tests {
         }
     }
 
+    #[test]
+    fn windows_dpapi_bridge_keeps_metadata_out_of_command_text() {
+        let reference = WindowsDpapiKeyReference::new(
+            "key_' ; $(throw 'not-code')",
+            r"C:\Rembrane data\O'Brien;$(throw 'not-code')\key.dpapi",
+        )
+        .unwrap();
+        let command = super::windows_dpapi_command(&reference, super::WINDOWS_DPAPI_UNPROTECT);
+        let arguments = command.get_args().collect::<Vec<_>>();
+        assert_eq!(command.get_program(), super::WINDOWS_POWERSHELL);
+        assert_eq!(
+            arguments,
+            [
+                "-NoLogo",
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                super::WINDOWS_DPAPI_UNPROTECT
+            ],
+            "no reference values may become PowerShell command text"
+        );
+        assert!(!super::WINDOWS_DPAPI_UNPROTECT.contains(reference.key_id()));
+        assert!(!super::WINDOWS_DPAPI_UNPROTECT.contains(reference.blob_path()));
+        assert!(!super::WINDOWS_DPAPI_UNPROTECT.contains("$args"));
+        assert!(!super::WINDOWS_DPAPI_UNPROTECT.contains("REMBRANE_WORKSPACE_KEY_HEX"));
+        let environment = command.get_envs().collect::<Vec<_>>();
+        assert_eq!(environment.len(), 2);
+        for (name, expected) in [
+            ("REMBRANE_DPAPI_BRIDGE_BLOB_PATH", reference.blob_path()),
+            ("REMBRANE_DPAPI_BRIDGE_KEY_ID", reference.key_id()),
+        ] {
+            let (_, value) = environment.iter().find(|(key, _)| *key == name).unwrap();
+            assert_eq!(*value, Some(std::ffi::OsStr::new(expected)));
+        }
+    }
+
+    #[test]
+    fn windows_dpapi_bridge_commands_do_not_share_or_inherit_reference_overrides() {
+        let first = WindowsDpapiKeyReference::new("first_key", r"C:\Private\first.dpapi").unwrap();
+        let second =
+            WindowsDpapiKeyReference::new("second_key", r"D:\Private\second.dpapi").unwrap();
+        let first_command = super::windows_dpapi_command(&first, super::WINDOWS_DPAPI_UNPROTECT);
+        let second_command = super::windows_dpapi_command(&second, super::WINDOWS_DPAPI_UNPROTECT);
+        for (command, reference) in [(&first_command, &first), (&second_command, &second)] {
+            let environment = command
+                .get_envs()
+                .collect::<std::collections::BTreeMap<_, _>>();
+            assert_eq!(
+                environment[std::ffi::OsStr::new("REMBRANE_DPAPI_BRIDGE_KEY_ID")],
+                Some(std::ffi::OsStr::new(reference.key_id()))
+            );
+            assert_eq!(
+                environment[std::ffi::OsStr::new("REMBRANE_DPAPI_BRIDGE_BLOB_PATH")],
+                Some(std::ffi::OsStr::new(reference.blob_path()))
+            );
+        }
+        let fixture = super::windows_dpapi_command(&first, super::WINDOWS_DPAPI_PROTECT_FIXTURE);
+        assert_eq!(fixture.get_args().count(), 5);
+        assert_eq!(fixture.get_envs().count(), 2);
+        assert!(!super::WINDOWS_DPAPI_PROTECT_FIXTURE.contains("$args"));
+        assert!(super::WINDOWS_DPAPI_PROTECT_FIXTURE.contains("[Console]::In.ReadToEnd()"));
+        assert!(!super::WINDOWS_DPAPI_PROTECT_FIXTURE.contains("REMBRANE_WORKSPACE_KEY_HEX"));
+    }
+
     #[cfg(target_os = "windows")]
     #[test]
     fn windows_dpapi_resolves_current_user_key_without_raw_key_environment() {
-        use std::process::Command;
+        use std::{io::Write, process::Stdio};
 
-        const POWERSHELL: &str = r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe";
-        const PROTECT: &str = r#"$ErrorActionPreference='Stop';$hex=$args[1];[byte[]]$plain=for($i=0;$i-lt$hex.Length;$i+=2){[Convert]::ToByte($hex.Substring($i,2),16)};$entropy=[Text.Encoding]::UTF8.GetBytes($args[2]);$blob=$null;try{$blob=[Security.Cryptography.ProtectedData]::Protect($plain,$entropy,[Security.Cryptography.DataProtectionScope]::CurrentUser);[IO.File]::WriteAllBytes($args[0],$blob)}finally{if($null-ne$blob){[Array]::Clear($blob,0,$blob.Length)};[Array]::Clear($plain,0,$plain.Length);[Array]::Clear($entropy,0,$entropy.Length)}"#;
         let blob_path = std::env::temp_dir().join(format!(
-            "rembrane-dpapi-{}-{}.bin",
+            "rembrane dpapi ' fixture-{}-{}.bin",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -943,27 +1054,28 @@ mod tests {
             .to_owned();
         let key_id = "key_windows_test";
         let fixture_key = "0707070707070707070707070707070707070707070707070707070707070707";
-        let output = Command::new(POWERSHELL)
-            .args([
-                "-NoLogo",
-                "-NoProfile",
-                "-NonInteractive",
-                "-Command",
-                PROTECT,
-                &blob_path,
-                fixture_key,
-                key_id,
-            ])
-            .output()
-            .expect("PowerShell should protect the fixture key");
+        let reference =
+            WindowsDpapiKeyReference::new(key_id, &blob_path).expect("reference should validate");
+        let mut child =
+            super::windows_dpapi_command(&reference, super::WINDOWS_DPAPI_PROTECT_FIXTURE)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .expect("PowerShell should start");
+        {
+            let mut input = child.stdin.take().expect("fixture input should be piped");
+            input
+                .write_all(fixture_key.as_bytes())
+                .expect("fixture key should be written");
+        }
+        let output = child.wait_with_output().expect("PowerShell should finish");
         assert!(
             output.status.success(),
             "PowerShell failed: {}",
             String::from_utf8_lossy(&output.stderr)
         );
 
-        let reference =
-            WindowsDpapiKeyReference::new(key_id, &blob_path).expect("reference should validate");
         let cipher = RustCryptoRecordCipher::from_windows_dpapi(&reference)
             .expect("DPAPI should resolve the current user's key");
         let encrypted = cipher
@@ -975,6 +1087,11 @@ mod tests {
                 .expect("resolved key should open"),
             b"protected by DPAPI"
         );
+        let wrong_entropy = WindowsDpapiKeyReference::new("different_key_id", &blob_path).unwrap();
+        assert!(matches!(
+            RustCryptoRecordCipher::from_windows_dpapi(&wrong_entropy),
+            Err(CryptoError::KeyUnavailable)
+        ));
 
         std::fs::remove_file(blob_path).expect("fixture blob should be removed");
     }

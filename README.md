@@ -233,6 +233,7 @@ with DPAPI. Run this in Windows PowerShell; the raw key is generated and
 cleared inside the process and is never supplied as a command argument:
 
 ```powershell
+Add-Type -AssemblyName System.Security
 $env:REMBRANE_KEY_PROVIDER = "windows-dpapi"
 $env:REMBRANE_WORKSPACE_KEY_ID = "local-key-v1"
 $env:REMBRANE_DPAPI_BLOB_PATH = "$env:LOCALAPPDATA\Rembrane\local-key-v1.dpapi"
@@ -257,10 +258,13 @@ try {
 }
 ```
 
-The resolver uses the fixed system Windows PowerShell executable, passes only
-the protected blob path and key ID, binds the key ID as DPAPI entropy, and
-zeroizes captured output. A blob is user- and machine-bound by DPAPI; preserve
-a separately protected recovery copy before relying on it. HSM and direct
+The resolver uses the fixed system Windows PowerShell executable and fixed
+command text. It passes the protected blob path and key ID as per-child
+environment metadata, binds the key ID as DPAPI entropy, and zeroizes captured
+output. Recovery depends on the Windows user profile; preserve a separately
+protected recovery copy before relying on it. The revised bridge has local
+command-construction coverage, but its corrected Windows live CI verification
+is still pending. HSM and direct
 cloud-specific customer-KMS sidecars remain roadmap work. The vendor-neutral
 operation boundary and deployment contract are documented in
 `docs/CUSTOMER_KMS.md`.
