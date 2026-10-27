@@ -345,6 +345,56 @@ actual SDK session-state verification. The library race fixture now removes
 and replaces the cache entry before late-failure compensation, proving cleanup
 uses the original service, not its replacement.
 
+## Remote response delivery after admission
+
+```sh
+cargo test -p rembrane-remote-mcp-http --locked --offline response_guard
+```
+
+`RemoteMcpGuardedBody` and `guard_remote_mcp_response` add a delivery boundary
+using the existing Axum HTTP body and Tokio timer/watch primitives. They are
+opt-in helpers; the current Tower dispatchers do not automatically wrap
+responses, and the official SDK listener remains unwired.
+
+The guard takes an original `VerifiedRemoteAccess` and a subscription from
+`RemoteMcpStreamRevocation`. Every verified claim must match. Its deadline is
+the earlier of the original proof and controller proof; equal claims or a
+new subscription cannot renew either deadline. An expired proof, revoked
+subscription, or loss of all controller owners denies construction/delivery.
+
+During polling, the guard checks before and after the provider body. It stops
+both data and trailer frames, emits one opaque body error, drops the underlying
+body, and then returns EOF. Timer/watch wakeups terminate idle streams even
+without provider activity. Underlying body errors are discarded instead of
+exposing their diagnostics. Normal completion and consumer cancellation release
+the subscription; a monitor can use `controller.closed().await` to release its
+own resources when no subscriptions remain.
+
+Integration obligations:
+
+- Keep a controller owner alive in a bounded authority monitor or registry.
+  A temporary handler-local controller dropped when returning the response
+  intentionally revokes that response; a subscriber does not own the monitor.
+- Poll bodies inside a Tokio runtime with its timer driver enabled.
+- Connect sticky `revoke()` to actual token, canonical membership, and
+  session invalidation. A channel alone is not introspection. Bound active
+  streams, controllers, and monitor work separately from tenant service caching.
+  Monitor failure must revoke retained controllers, even when another owner
+  still holds a clone.
+- Wrap SDK response bodies while retaining exact initialization session/service
+  ownership. If wrapping rejects a successfully initialized response, perform
+  the existing exact-service compensation; do not reconstruct cleanup from
+  a refreshed cache.
+- Keep fresh per-operation authorization. This guard stops future body frames,
+  not already released/buffered frames, transmitted bytes/headers, or already
+  admitted mutations.
+
+Fourteen body-level tests cover active delivery, trailers, idle expiry and
+revocation, controller loss/clones, all claim substitutions, independent
+tenants, mid-poll revocation, shortest-deadline non-renewal, opaque failure,
+status/header preservation, EOF, and consumer/monitor cleanup. These are not
+live HTTP, SDK session-manager, provider, or remote revocation evidence.
+
 ## Initialization service ownership during compensation
 
 Tower initialization attaches a private, process-local service handle to

@@ -565,6 +565,16 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Added
 
+- An opt-in fail-closed remote MCP response-body guard built on Axum/Tokio.
+  It wakes idle streams at their non-renewable proof deadline or sticky
+  revocation, checks authority before and after every frame poll, and releases
+  provider/monitor ownership on denial, final frame, EOF, or consumer drop.
+- Claim-bound revocation subscriptions retain the earlier proof/controller
+  deadline. Losing all controller owners denies delivery; body errors and
+  diagnostics are opaque. Fourteen new body-level tests cover expiry, pending
+  streams, tenant separation, frame/trailer races, cleanup, and non-renewal.
+  Actual SDK listener wiring and live token/membership revocation remain open.
+
 - A gate-driven first-production execution plan documents verified local
   progress, the remaining MCP/PostgreSQL runtime gaps, staging and recovery
   testing, independent evidence requirements, and conditional release timing.

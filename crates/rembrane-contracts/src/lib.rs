@@ -511,6 +511,16 @@ fn valid_remote_claim(value: &str, maximum_bytes: usize) -> bool {
 }
 
 impl VerifiedRemoteAccess {
+    /// Returns this proof's non-renewable process-local deadline.
+    ///
+    /// This instant is not a serializable expiry timestamp or a revocation
+    /// check. Response transports may use it to stop an already opened stream;
+    /// authorization still requires `ensure_current()` and canonical checks.
+    #[must_use]
+    pub const fn validity_deadline(&self) -> Instant {
+        self.valid_until
+    }
+
     /// Checks the process-local lifetime of this verification proof.
     ///
     /// Cloning or storing a proof does not renew its deadline. This check does

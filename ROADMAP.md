@@ -566,6 +566,13 @@ are in [First Production Release Plan](docs/PRODUCTION_PLAN.md).
         unchanged binding, without granting expired client DELETE authority.
     - [ ] Verify live stream expiry/revocation and queued SDK tool denial in
       the actual remote listener; admission checks do not close opened streams.
+      - [x] Add an Axum/Tokio response-body guard with non-renewable proof
+        deadlines, claim-bound sticky revocation, idle-stream wakeups, frame/
+        trailer post-poll checks, opaque errors, and provider/monitor cleanup;
+        verify its body-level behavior with executable tests.
+      - [ ] Wire the guard into the official SDK listener and connect its
+        controllers to real token, membership, and session revocation under
+        bounded admission; retain exact initialization compensation ownership.
       - [x] Retain the exact Tower service and original authority metadata
         through initialization commit/compensation so expiry pruning or cache
         replacement cannot redirect cleanup to a new factory-selected service.

@@ -45,7 +45,7 @@ evidence and the strict readiness command.
   initialization without serializing unrelated tenant lookups. Library tests
   cover panic/cancellation cleanup and overload, not a deployed SDK listener.
 - Expired tenant-service cleanup runs outside the global cache lock. The
-  remote adapter's 78 passing unit tests include blocked/panicking cleanup,
+  remote adapter's 92 passing unit tests include blocked/panicking cleanup,
   concurrent tenant progress, reclaimed capacity, and pending reservation
   preservation. Live provider shutdown and load behavior remain unverified.
 - REST and MCP startup now check canonical metadata authority before
@@ -58,6 +58,12 @@ evidence and the strict readiness command.
   Session commit rejects elapsed proof and compensates an already initialized
   session. Unit/Tower fixtures do not establish real listener behavior or
   ongoing event-stream expiry/revocation.
+- A new response-body guard stops delivery at the earlier original proof/
+  controller deadline or explicit sticky revocation. Fourteen new Axum body
+  tests cover idle wakeups, per-claim binding, tenant separation, frame/trailer
+  races, and cleanup. This is opt-in transport composition, not an already
+  wired SDK listener or a live revocation monitor. Both integrations remain
+  required before release.
   Shared initialization preserves validated Host/Origin for compensation;
   failed compatibility initialization can roll back only an exact unchanged
   binding after expiry. Actual SDK cache-pruning/late-cleanup races still need
@@ -147,6 +153,10 @@ No existing strict release gate is waived by this plan.
   the lower-level borrowing compatibility helpers on an executor.
 - [ ] Prove expiry/revocation behavior for queued SDK tools and already opened
   streams in that listener; dispatch admission alone is insufficient.
+  - [x] Implement and test the response-delivery guard independently of the
+    unavailable listener feature.
+  - [ ] Connect the guard to real revocation authorities and verify it on
+    actual SDK responses, with bounded stream/monitor lifetimes.
 - [ ] Enable its actual transport feature and resolve/build the complete
   locked dependency graph; a protocol adapter alone is insufficient.
 - [ ] Implement a concrete PostgreSQL driver, pool, and runtime repository

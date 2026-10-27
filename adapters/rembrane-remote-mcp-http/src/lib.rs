@@ -11,6 +11,13 @@
 //! synchronous and must not use blocking network clients on an async executor.
 //! Prefer the owned/shared service entrypoints for HTTP routing.
 
+mod response_guard;
+
+pub use response_guard::{
+    RemoteMcpGuardedBody, RemoteMcpStreamError, RemoteMcpStreamRevocation,
+    RemoteMcpStreamRevocationSignal, guard_remote_mcp_response,
+};
+
 use std::any::Any;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -215,6 +222,8 @@ impl fmt::Debug for AuthorizedRemoteMcpEventStream {
 /// Custom implementations must check `access.ensure_current()` after admission
 /// waits and before starting the stream. An already opened stream needs its
 /// own expiry/revocation policy; checking admission does not close that stream.
+/// HTTP response implementations can compose [`guard_remote_mcp_response`]
+/// with a live, claim-bound [`RemoteMcpStreamRevocation`] monitor.
 pub trait AuthorizedRemoteMcpEventStreamDispatcher {
     type Output;
     type Error;
