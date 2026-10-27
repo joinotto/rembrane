@@ -10,7 +10,10 @@ use axum::{
         header::{ACCEPT, HOST, ORIGIN},
     },
 };
-use rembrane_application::{RemoteHttpAuthorization, RemoteSessionHttpError, RemoteTokenVerifier};
+use rembrane_application::{
+    RemoteHttpAuthorization, RemoteSessionDispatchGuard, RemoteSessionHttpError,
+    RemoteTokenVerifier,
+};
 use rembrane_contracts::{RemoteSessionId, VerifiedRemoteAccess};
 
 use super::{
@@ -28,6 +31,7 @@ use super::{
 pub struct AuthorizedRemoteMcpSessionEventStream {
     stream: AuthorizedRemoteMcpEventStream,
     session_id: RemoteSessionId,
+    session_guard: RemoteSessionDispatchGuard,
 }
 
 impl fmt::Debug for AuthorizedRemoteMcpSessionEventStream {
@@ -36,6 +40,7 @@ impl fmt::Debug for AuthorizedRemoteMcpSessionEventStream {
             .debug_struct("AuthorizedRemoteMcpSessionEventStream")
             .field("stream", &self.stream)
             .field("session_id", &self.session_id)
+            .field("session_guard", &self.session_guard)
             .finish()
     }
 }
@@ -56,11 +61,23 @@ impl AuthorizedRemoteMcpSessionEventStream {
         &self.stream
     }
 
-    /// Consumes the coupled proof. Implementations must preserve this session
-    /// identifier and check the proof after waits and before opening a stream.
     #[must_use]
-    pub fn into_parts(self) -> (AuthorizedRemoteMcpEventStream, RemoteSessionId) {
-        (self.stream, self.session_id)
+    pub const fn session_guard(&self) -> &RemoteSessionDispatchGuard {
+        &self.session_guard
+    }
+
+    /// Consumes the coupled proof. Implementations must preserve this session
+    /// identifier and guard, rechecking both proof and guard after waits and
+    /// before opening a stream.
+    #[must_use]
+    pub fn into_parts(
+        self,
+    ) -> (
+        AuthorizedRemoteMcpEventStream,
+        RemoteSessionId,
+        RemoteSessionDispatchGuard,
+    ) {
+        (self.stream, self.session_id, self.session_guard)
     }
 
     /// Hands one session-bound authorization to the transport.
@@ -80,8 +97,9 @@ impl AuthorizedRemoteMcpSessionEventStream {
 }
 
 /// Transport port distinct from stateless GET. Admission must enforce proof
-/// lifetime after waits. Ongoing streams require response guarding and a live
-/// claim-bound revocation monitor; admission alone does not provide either.
+/// lifetime and the exact captured session guard after waits. Ongoing streams
+/// require response guarding and a live claim-bound revocation monitor;
+/// admission alone does not provide either.
 pub trait AuthorizedRemoteMcpSessionEventStreamDispatcher {
     type Output;
     type Error;
@@ -114,8 +132,9 @@ where
     let mut access = authorization
         .authorize_connection_for_http(request.authorization, request.origin, now_epoch_seconds)
         .map_err(|error| gate.rejection(error.into()))?;
-    gate.sessions
-        .revalidate_access(&session_id, &mut access, now_epoch_seconds)
+    let session_guard = gate
+        .sessions
+        .capture_dispatch_guard(&session_id, &mut access, now_epoch_seconds)
         .map_err(|_| gate.rejection(RemoteSessionHttpError::Forbidden))?;
     Ok(AuthorizedRemoteMcpSessionEventStream {
         stream: AuthorizedRemoteMcpEventStream {
@@ -126,6 +145,7 @@ where
             validated_origin: request.origin.map(str::to_owned),
         },
         session_id,
+        session_guard,
     })
 }
 
@@ -172,19 +192,19 @@ where
             )
             .await
             .map_err(RemoteMcpDispatchError::Authorization)?;
-        {
+        let session_guard = {
             let mut gate = self
                 .gate
                 .lock()
                 .map_err(|_| RemoteMcpDispatchError::Authorization(lock_rejection()))?;
             gate.sessions
-                .revalidate_access(&session_id, &mut access, now_epoch_seconds)
+                .capture_dispatch_guard(&session_id, &mut access, now_epoch_seconds)
                 .map_err(|_| {
                     RemoteMcpDispatchError::Authorization(
                         gate.rejection(RemoteSessionHttpError::Forbidden),
                     )
-                })?;
-        }
+                })?
+        };
         AuthorizedRemoteMcpSessionEventStream {
             stream: AuthorizedRemoteMcpEventStream {
                 access,
@@ -194,6 +214,7 @@ where
                 validated_origin: request.origin.map(str::to_owned),
             },
             session_id,
+            session_guard,
         }
         .dispatch_with(dispatcher)
         .await
@@ -228,7 +249,7 @@ where
 fn session_get_request<Error>(
     stream: AuthorizedRemoteMcpSessionEventStream,
 ) -> Result<Request<Body>, TowerMcpDispatchError<Error>> {
-    let (transport, session_id) = stream.into_parts();
+    let (transport, session_id, session_guard) = stream.into_parts();
     let (access, accept, version, host, origin) = transport.into_parts();
     let host = host.ok_or(TowerMcpDispatchError::InvalidAuthorizedMetadata)?;
     let mut request = Request::builder()
@@ -249,6 +270,7 @@ fn session_get_request<Error>(
     )?;
     insert_optional_validated_header(request.headers_mut(), ORIGIN, origin.as_deref())?;
     request.extensions_mut().insert(access);
+    request.extensions_mut().insert(session_guard);
     Ok(request)
 }
 
@@ -295,7 +317,13 @@ where
     fn open_session(&self, stream: AuthorizedRemoteMcpSessionEventStream) -> Self::DispatchFuture {
         let dispatcher = self.clone();
         Box::pin(async move {
-            let service = dispatcher.create_service(stream.access()).await?;
+            let service = dispatcher
+                .create_session_service(
+                    stream.access(),
+                    Some(stream.session_id()),
+                    Some(stream.session_guard()),
+                )
+                .await?;
             let request = session_get_request(stream).map_err(tenant_dispatch_error)?;
             call_current_service(service, request)
                 .await

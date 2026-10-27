@@ -551,6 +551,7 @@ impl RembraneMcp {
         let server = self.clone();
         run_blocking_operation(Arc::clone(&self.blocking_operations), move || {
             ensure_not_cancelled(&context)?;
+            authorize_request_identity(&server.policy, &context)?;
             operation(server, context)
         })
         .await
@@ -1774,21 +1775,44 @@ fn authorize_request_identity(
     policy: &ConnectionPolicy,
     context: &RequestContext<RoleServer>,
 ) -> Result<(), McpError> {
-    let verified_access = context
-        .extensions
-        .get::<http::request::Parts>()
-        .and_then(|parts| parts.extensions.get::<VerifiedRemoteAccess>());
+    let parts = context.extensions.get::<http::request::Parts>();
+    let verified_access = parts.and_then(|parts| parts.extensions.get::<VerifiedRemoteAccess>());
     if !request_identity_matches(
         &policy.identity,
         policy.require_verified_request_identity,
         verified_access,
-    ) {
+    ) || (policy.require_verified_request_identity
+        && !request_session_matches(parts, verified_access))
+    {
         return Err(McpError::invalid_params(
             "operation is not authorized or available",
             None,
         ));
     }
     Ok(())
+}
+
+fn request_session_matches(
+    parts: Option<&http::request::Parts>,
+    access: Option<&VerifiedRemoteAccess>,
+) -> bool {
+    let Some(parts) = parts else { return false };
+    let guard = parts
+        .extensions
+        .get::<rembrane_application::RemoteSessionDispatchGuard>();
+    let mut session_headers = parts.headers.get_all("mcp-session-id").iter();
+    match (session_headers.next(), guard) {
+        (None, None) => true, // Explicitly supported stateless requests.
+        (Some(header), Some(guard)) if session_headers.next().is_none() => {
+            let id = header
+                .to_str()
+                .ok()
+                .and_then(|value| rembrane_contracts::RemoteSessionId::new(value).ok());
+            id.zip(access)
+                .is_some_and(|(id, access)| guard.ensure_current(&id, access).is_ok())
+        }
+        _ => false,
+    }
 }
 
 fn request_identity_matches(
@@ -2321,6 +2345,172 @@ mod tests {
             context.extensions.insert(parts);
         }
         context
+    }
+
+    fn session_request_context(
+        service: &RunningService<RoleServer, RembraneMcp>,
+        access: rembrane_contracts::VerifiedRemoteAccess,
+        id: &rembrane_contracts::RemoteSessionId,
+        guard: rembrane_application::RemoteSessionDispatchGuard,
+    ) -> RequestContext<RoleServer> {
+        let mut context = request_context(service, Some(access));
+        let parts = context
+            .extensions
+            .get_mut::<http::request::Parts>()
+            .unwrap();
+        parts.headers.insert(
+            "mcp-session-id",
+            http::HeaderValue::from_str(id.as_str()).unwrap(),
+        );
+        parts.extensions.insert(guard);
+        context
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn removed_session_is_denied_after_real_tool_waits_for_canonical_store() {
+        let server = fixture_server(true);
+        let (service, _client) = fixture_connection(server.clone()).await;
+        let mut registry = rembrane_application::RemoteSessionRegistry::new(1).unwrap();
+        let id = rembrane_contracts::RemoteSessionId::new("queued-tool-session").unwrap();
+        let mut access = remote_access("principal_01", "workspace_01", "client_01");
+        registry.establish(id.clone(), &access, 100).unwrap();
+        let guard = registry
+            .capture_dispatch_guard(&id, &mut access, 100)
+            .unwrap();
+        let context = session_request_context(&service, access.clone(), &id, guard);
+        let (locked, wait_for_lock) = oneshot::channel();
+        let (release, wait_for_release) = std::sync::mpsc::channel();
+        let state = Arc::clone(&server.state);
+        let holder = tokio::task::spawn_blocking(move || {
+            let store = state.lock().unwrap();
+            locked.send(()).unwrap();
+            wait_for_release
+                .recv_timeout(Duration::from_secs(5))
+                .unwrap();
+            assert_eq!(store.next_id, 100);
+        });
+        timeout(Duration::from_secs(5), wait_for_lock)
+            .await
+            .unwrap()
+            .unwrap();
+        let (started, worker_started) = oneshot::channel();
+        let tool_server = server.clone();
+        let pending = tokio::spawn(async move {
+            tool_server
+                .run_tool(context, move |server, context| {
+                    started.send(()).unwrap();
+                    server.remember_preference_sync(
+                        context,
+                        super::RememberPreferenceParameters {
+                            content: "must not be written after session deletion".to_owned(),
+                            domain: None,
+                            entity_id: None,
+                            activity_id: None,
+                        },
+                    )
+                })
+                .await
+        });
+        timeout(Duration::from_secs(5), worker_started)
+            .await
+            .unwrap()
+            .unwrap();
+        registry.terminate(&id, &access, 100).unwrap();
+        registry.establish(id, &access, 100).unwrap();
+        release.send(()).unwrap();
+        let error = timeout(Duration::from_secs(5), pending)
+            .await
+            .unwrap()
+            .unwrap()
+            .expect_err("removed session must not write");
+        assert_eq!(error.message, "operation is not authorized or available");
+        holder.await.unwrap();
+        assert_eq!(server.state.lock().unwrap().next_id, 100);
+        service.cancel().await.unwrap();
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn real_tool_requires_exact_session_guard_but_allows_stateless_authority() {
+        let server = fixture_server(true);
+        let (service, _client) = fixture_connection(server.clone()).await;
+        let mut registry = rembrane_application::RemoteSessionRegistry::new(1).unwrap();
+        let id = rembrane_contracts::RemoteSessionId::new("guarded-tool-session").unwrap();
+        let mut access = remote_access("principal_01", "workspace_01", "client_01");
+        registry.establish(id.clone(), &access, 100).unwrap();
+        let guard = registry
+            .capture_dispatch_guard(&id, &mut access, 100)
+            .unwrap();
+        let context = session_request_context(&service, access.clone(), &id, guard.clone());
+        server
+            .remember_preference(
+                context,
+                super::Parameters(super::RememberPreferenceParameters {
+                    content: "valid session write".to_owned(),
+                    domain: None,
+                    entity_id: None,
+                    activity_id: None,
+                }),
+            )
+            .await
+            .unwrap();
+        for substitution in [
+            "missing-guard",
+            "missing-header",
+            "foreign-id",
+            "duplicate-header",
+            "foreign-proof",
+        ] {
+            let mut context = session_request_context(&service, access.clone(), &id, guard.clone());
+            let parts = context
+                .extensions
+                .get_mut::<http::request::Parts>()
+                .unwrap();
+            match substitution {
+                "missing-guard" => {
+                    parts
+                        .extensions
+                        .remove::<rembrane_application::RemoteSessionDispatchGuard>();
+                }
+                "missing-header" => {
+                    parts.headers.remove("mcp-session-id");
+                }
+                "foreign-id" => {
+                    parts.headers.insert(
+                        "mcp-session-id",
+                        http::HeaderValue::from_static("foreign-tool-session"),
+                    );
+                }
+                "duplicate-header" => {
+                    parts.headers.append(
+                        "mcp-session-id",
+                        http::HeaderValue::from_static("guarded-tool-session"),
+                    );
+                }
+                "foreign-proof" => {
+                    parts.extensions.insert(remote_access(
+                        "principal_01",
+                        "workspace_02",
+                        "client_01",
+                    ));
+                }
+                _ => unreachable!(),
+            }
+            let error = server
+                .run_tool(context, |_, _| -> Result<(), rmcp::ErrorData> {
+                    panic!("substituted guard must not start work");
+                })
+                .await
+                .unwrap_err();
+            assert_eq!(error.message, "operation is not authorized or available");
+        }
+        assert!(
+            server
+                .run_tool(request_context(&service, Some(access)), |_, _| Ok(()))
+                .await
+                .is_ok()
+        );
+        assert_eq!(server.state.lock().unwrap().next_id, 101);
+        service.cancel().await.unwrap();
     }
 
     #[tokio::test(flavor = "current_thread")]

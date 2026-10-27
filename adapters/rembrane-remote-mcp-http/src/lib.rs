@@ -14,6 +14,8 @@
 mod response_guard;
 #[cfg(test)]
 mod session_deletion_tests;
+#[cfg(test)]
+mod session_dispatch_tests;
 mod session_stream;
 
 pub use response_guard::{
@@ -45,8 +47,8 @@ use axum::{
 };
 use rembrane_application::{
     RemoteAccessAuthenticator, RemoteHttpAuthorization, RemoteHttpAuthorizationError,
-    RemoteSessionHttpError, RemoteSessionRegistry, RemoteSessionReservation,
-    RemoteTokenVerificationError, RemoteTokenVerifier,
+    RemoteSessionDispatchGuard, RemoteSessionHttpError, RemoteSessionRegistry,
+    RemoteSessionReservation, RemoteTokenVerificationError, RemoteTokenVerifier,
 };
 use rembrane_config::RemoteMcpConfig;
 use rembrane_contracts::{
@@ -138,6 +140,7 @@ pub struct RemoteMcpProtocolHeaders {
     validated_host: Option<String>,
     validated_origin: Option<String>,
     authorized_session_id: Option<RemoteSessionId>,
+    authorized_session_guard: Option<RemoteSessionDispatchGuard>,
 }
 
 impl fmt::Debug for RemoteMcpProtocolHeaders {
@@ -158,6 +161,10 @@ impl fmt::Debug for RemoteMcpProtocolHeaders {
             .field(
                 "authorized_session_present",
                 &self.authorized_session_id.is_some(),
+            )
+            .field(
+                "authorized_session_guard_present",
+                &self.authorized_session_guard.is_some(),
             )
             .finish()
     }
@@ -199,6 +206,13 @@ impl RemoteMcpProtocolHeaders {
         self.authorized_session_id.as_ref()
     }
 
+    /// Present only after capturing this exact established-session request.
+    /// Custom dispatchers must recheck it after waits, not only proof expiry.
+    #[must_use]
+    pub fn authorized_session_guard(&self) -> Option<&RemoteSessionDispatchGuard> {
+        self.authorized_session_guard.as_ref()
+    }
+
     fn transport_neutral() -> Self {
         Self {
             content_type: "application/json".to_owned(),
@@ -207,6 +221,7 @@ impl RemoteMcpProtocolHeaders {
             validated_host: None,
             validated_origin: None,
             authorized_session_id: None,
+            authorized_session_guard: None,
         }
     }
 }
@@ -366,6 +381,8 @@ pub struct AuthorizedRemoteMcpRequest {
 /// this boundary to authorize one body and dispatch another.
 /// Custom implementations must check `access.ensure_current()` after any
 /// admission/readiness waits and immediately before initiating execution.
+/// Established-session requests must also retain/recheck the dispatch guard
+/// in `protocol_headers`; signed claims alone cannot detect local replacement.
 pub trait AuthorizedRemoteMcpDispatcher {
     type Output;
     type Error;
@@ -902,9 +919,41 @@ where
     where
         ServiceError: Send + 'static,
     {
+        self.create_service_with_authority(access, require_current, None)
+            .await
+    }
+
+    async fn create_session_service<ServiceError>(
+        &self,
+        access: &VerifiedRemoteAccess,
+        session_id: Option<&RemoteSessionId>,
+        guard: Option<&RemoteSessionDispatchGuard>,
+    ) -> Result<Factory::Service, TenantAwareTowerMcpDispatchError<Factory::Error, ServiceError>>
+    where
+        ServiceError: Send + 'static,
+    {
+        let authority = match (session_id, guard) {
+            (None, None) => None,
+            (Some(id), Some(guard)) => Some((id.clone(), guard.clone())),
+            _ => return Err(TenantAwareTowerMcpDispatchError::InvalidAuthorizedMetadata),
+        };
+        self.create_service_with_authority(access, true, authority)
+            .await
+    }
+
+    async fn create_service_with_authority<ServiceError>(
+        &self,
+        access: &VerifiedRemoteAccess,
+        require_current: bool,
+        authority: Option<(RemoteSessionId, RemoteSessionDispatchGuard)>,
+    ) -> Result<Factory::Service, TenantAwareTowerMcpDispatchError<Factory::Error, ServiceError>>
+    where
+        ServiceError: Send + 'static,
+    {
         if require_current && access.ensure_current().is_err() {
             return Err(TenantAwareTowerMcpDispatchError::ExpiredAuthorization);
         }
+        ensure_factory_session_authority(authority.as_ref(), access)?;
         let permit = Arc::clone(&self.factory_operations)
             .try_acquire_owned()
             .map_err(|_| TenantAwareTowerMcpDispatchError::FactoryUnavailable)?;
@@ -917,6 +966,7 @@ where
             if require_current && access.ensure_current().is_err() {
                 return Err(TenantAwareTowerMcpDispatchError::ExpiredAuthorization);
             }
+            ensure_factory_session_authority(authority.as_ref(), &access)?;
             let service = factory
                 .create(&access)
                 .map_err(TenantAwareTowerMcpDispatchError::Factory)?;
@@ -924,6 +974,7 @@ where
                 // Dispose rejected results on this blocking worker as well.
                 return Err(TenantAwareTowerMcpDispatchError::ExpiredAuthorization);
             }
+            ensure_factory_session_authority(authority.as_ref(), &access)?;
             Ok(service)
         })
         .await
@@ -931,9 +982,22 @@ where
     }
 }
 
+fn ensure_factory_session_authority<FactoryError, ServiceError>(
+    authority: Option<&(RemoteSessionId, RemoteSessionDispatchGuard)>,
+    access: &VerifiedRemoteAccess,
+) -> Result<(), TenantAwareTowerMcpDispatchError<FactoryError, ServiceError>> {
+    if let Some((id, guard)) = authority {
+        guard
+            .ensure_current(id, access)
+            .map_err(|_| TenantAwareTowerMcpDispatchError::RevokedSession)?;
+    }
+    Ok(())
+}
+
 pub enum TowerMcpDispatchError<ServiceError> {
     CleanupUnavailable,
     ExpiredAuthorization,
+    RevokedSession,
     InvalidAuthorizedMetadata,
     InvalidSdkResponse,
     Service(ServiceError),
@@ -944,6 +1008,7 @@ impl<ServiceError> fmt::Debug for TowerMcpDispatchError<ServiceError> {
         formatter.write_str(match self {
             Self::CleanupUnavailable => "CleanupUnavailable",
             Self::ExpiredAuthorization => "ExpiredAuthorization",
+            Self::RevokedSession => "RevokedSession",
             Self::InvalidAuthorizedMetadata => "InvalidAuthorizedMetadata",
             Self::InvalidSdkResponse => "InvalidSdkResponse",
             Self::Service(_) => "Service([REDACTED])",
@@ -954,6 +1019,7 @@ impl<ServiceError> fmt::Debug for TowerMcpDispatchError<ServiceError> {
 pub enum TenantAwareTowerMcpDispatchError<FactoryError, ServiceError> {
     CleanupUnavailable,
     ExpiredAuthorization,
+    RevokedSession,
     InvalidAuthorizedMetadata,
     InvalidSdkResponse,
     FactoryUnavailable,
@@ -968,6 +1034,7 @@ impl<FactoryError, ServiceError> fmt::Debug
         formatter.write_str(match self {
             Self::CleanupUnavailable => "CleanupUnavailable",
             Self::ExpiredAuthorization => "ExpiredAuthorization",
+            Self::RevokedSession => "RevokedSession",
             Self::InvalidAuthorizedMetadata => "InvalidAuthorizedMetadata",
             Self::InvalidSdkResponse => "InvalidSdkResponse",
             Self::FactoryUnavailable => "FactoryUnavailable",
@@ -977,13 +1044,9 @@ impl<FactoryError, ServiceError> fmt::Debug
     }
 }
 
-async fn call_current_service<Service>(
-    service: Service,
-    request: Request<Body>,
-) -> Result<Service::Response, TowerMcpDispatchError<Service::Error>>
-where
-    Service: tower::Service<Request<Body>>,
-{
+fn ensure_current_request<Error>(
+    request: &Request<Body>,
+) -> Result<(), TowerMcpDispatchError<Error>> {
     let access = request
         .extensions()
         .get::<VerifiedRemoteAccess>()
@@ -991,15 +1054,41 @@ where
     access
         .ensure_current()
         .map_err(|_| TowerMcpDispatchError::ExpiredAuthorization)?;
+    let guard = request.extensions().get::<RemoteSessionDispatchGuard>();
+    let mut sessions = request.headers().get_all(MCP_SESSION_HEADER_NAME).iter();
+    let session = sessions.next();
+    if sessions.next().is_some() {
+        return Err(TowerMcpDispatchError::InvalidAuthorizedMetadata);
+    }
+    if let Some(guard) = guard {
+        let id = session
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| RemoteSessionId::new(value).ok())
+            .ok_or(TowerMcpDispatchError::InvalidAuthorizedMetadata)?;
+        guard
+            .ensure_current(&id, access)
+            .map_err(|_| TowerMcpDispatchError::RevokedSession)?;
+    } else if session.is_some() && matches!(*request.method(), Method::GET | Method::POST) {
+        return Err(TowerMcpDispatchError::InvalidAuthorizedMetadata);
+    }
+    Ok(())
+}
+
+async fn call_current_service<Service>(
+    service: Service,
+    request: Request<Body>,
+) -> Result<Service::Response, TowerMcpDispatchError<Service::Error>>
+where
+    Service: tower::Service<Request<Body>>,
+{
+    ensure_current_request(&request)?;
     let mut ready = service
         .ready_oneshot()
         .await
         .map_err(TowerMcpDispatchError::Service)?;
     // Readiness waits cannot renew the authorization proof. There is no await
     // between this check and initiating the downstream operation.
-    access
-        .ensure_current()
-        .map_err(|_| TowerMcpDispatchError::ExpiredAuthorization)?;
+    ensure_current_request(&request)?;
     ready
         .call(request)
         .await
@@ -1016,6 +1105,7 @@ fn tenant_dispatch_error<FactoryError, ServiceError>(
         TowerMcpDispatchError::ExpiredAuthorization => {
             TenantAwareTowerMcpDispatchError::ExpiredAuthorization
         }
+        TowerMcpDispatchError::RevokedSession => TenantAwareTowerMcpDispatchError::RevokedSession,
         TowerMcpDispatchError::InvalidAuthorizedMetadata => {
             TenantAwareTowerMcpDispatchError::InvalidAuthorizedMetadata
         }
@@ -1150,6 +1240,9 @@ where
             )?;
             request.extensions_mut().insert(access);
             request.extensions_mut().insert(invocation);
+            if let Some(guard) = protocol_headers.authorized_session_guard {
+                request.extensions_mut().insert(guard);
+            }
             call_current_service(service, request).await
         })
     }
@@ -1405,7 +1498,13 @@ where
     ) -> Self::DispatchFuture {
         let dispatcher = self.clone();
         Box::pin(async move {
-            let service = dispatcher.create_service(&access).await?;
+            let service = dispatcher
+                .create_session_service(
+                    &access,
+                    protocol_headers.authorized_session_id(),
+                    protocol_headers.authorized_session_guard(),
+                )
+                .await?;
             let mut request = Request::builder()
                 .method(Method::POST)
                 .body(Body::from(bytes::Bytes::from_owner(body)))
@@ -1444,6 +1543,9 @@ where
             )?;
             request.extensions_mut().insert(access);
             request.extensions_mut().insert(invocation);
+            if let Some(guard) = protocol_headers.authorized_session_guard {
+                request.extensions_mut().insert(guard);
+            }
             call_current_service(service, request)
                 .await
                 .map_err(tenant_dispatch_error)
@@ -2107,6 +2209,7 @@ fn protocol_headers_from_axum(
         validated_host: None,
         validated_origin: None,
         authorized_session_id: None,
+        authorized_session_guard: None,
     })
 }
 
@@ -2291,6 +2394,8 @@ where
         gate.authorize_session_owned_body(authorization, request, body, now_epoch_seconds)?;
     protocol_headers.authorized_session_id =
         authorized.protocol_headers.authorized_session_id.take();
+    protocol_headers.authorized_session_guard =
+        authorized.protocol_headers.authorized_session_guard.take();
     authorized.protocol_headers = protocol_headers;
     Ok(authorized)
 }
@@ -3025,13 +3130,15 @@ where
                 .gate
                 .lock()
                 .map_err(|_| RemoteMcpDispatchError::Authorization(lock_rejection()))?;
-            gate.sessions
-                .revalidate_access(&session_id, &mut access, now_epoch_seconds)
-                .map_err(|_| {
-                    RemoteMcpDispatchError::Authorization(
-                        gate.rejection(RemoteSessionHttpError::Forbidden),
-                    )
-                })?;
+            protocol_headers.authorized_session_guard = Some(
+                gate.sessions
+                    .capture_dispatch_guard(&session_id, &mut access, now_epoch_seconds)
+                    .map_err(|_| {
+                        RemoteMcpDispatchError::Authorization(
+                            gate.rejection(RemoteSessionHttpError::Forbidden),
+                        )
+                    })?,
+            );
         }
         protocol_headers.authorized_session_id = Some(session_id);
         protocol_headers.validated_host = request.host.map(str::to_owned);
@@ -3948,7 +4055,7 @@ impl RemoteMcpHttpGate {
         Verifier: RemoteTokenVerifier,
     {
         let invocation = classify_remote_mcp_request(body.as_slice())?;
-        let access = self.authorize(
+        let mut access = self.authorize(
             authorization,
             request,
             invocation.method(),
@@ -3956,7 +4063,13 @@ impl RemoteMcpHttpGate {
             now_epoch_seconds,
         )?;
         let mut protocol_headers = RemoteMcpProtocolHeaders::transport_neutral();
-        protocol_headers.authorized_session_id = Some(Self::session_id(request.session_id)?);
+        let session_id = Self::session_id(request.session_id)?;
+        protocol_headers.authorized_session_guard = Some(
+            self.sessions
+                .capture_dispatch_guard(&session_id, &mut access, now_epoch_seconds)
+                .map_err(|_| self.rejection(RemoteSessionHttpError::Forbidden))?,
+        );
+        protocol_headers.authorized_session_id = Some(session_id);
         Ok(AuthorizedRemoteMcpRequest {
             access,
             invocation,
@@ -5439,6 +5552,7 @@ mod tests {
             validated_host: Some("memory.example.test".to_owned()),
             validated_origin: None,
             authorized_session_id: None,
+            authorized_session_guard: None,
         };
         let invocation = RemoteMcpInvocation {
             method: "initialize".to_owned(),
@@ -6434,6 +6548,7 @@ mod tests {
             validated_host: Some("private-memory.example.test".to_owned()),
             validated_origin: Some("https://private-agent.example.test".to_owned()),
             authorized_session_id: Some(RemoteSessionId::new("private-session-id").unwrap()),
+            authorized_session_guard: None,
         };
         let event_stream = AuthorizedRemoteMcpEventStream {
             access: access.clone(),

@@ -9,6 +9,14 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Fixed
 
+- Queued session GET/POST cannot regain authority after their exact local
+  session is deleted or replaced while waiting for tenant construction or
+  Tower readiness. Request-bound dispatch guards preserve permanent removal
+  and later shared deadline reductions; MCP tool admission rechecks the
+  coupled guard after worker/store waits. Two failing race reproductions now
+  pass, with ten new registry, transport, and SDK-context tests. Actual SDK HTTP
+  propagation, client DELETE cleanup, and live stream revocation remain pending.
+
 - Official MCP HTTP readiness no longer accepts manifest/source markers as
   runtime wiring. It requires locked resolved pinned registry SDK and normal
   adapter dependencies, enabled binary/integration targets, separate target

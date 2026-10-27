@@ -764,6 +764,15 @@ are in [First Production Release Plan](docs/PRODUCTION_PLAN.md).
       without changing another registry's ledger.
     - [x] Separate termination authorization from deletion commit so an HTTP
       transport can retain the local binding until downstream confirmation.
+    - [x] Capture request-bound exact-incarnation dispatch guards before
+      GET/POST waits; propagate permanent removal and later narrowed deadlines
+      to outstanding guards, without renewing proof authority.
+      - [x] Retain guards through borrowing/shared authorization, tenant factory
+        workers, Tower readiness, and MCP tool worker/store-lock admission.
+      - [x] Reproduce and deny queued GET/POST after deletion or same-claims
+        replacement; verify real encrypted tool denial after its store wait.
+      - [ ] Prove propagation and cleanup through the actual SDK HTTP listener,
+        including client DELETE/compensation and opened-stream revocation.
   - [ ] Serve Streamable HTTP through the official Rust MCP SDK.
     - [ ] Wire the implemented provider-construction, tool, and OAuth worker
       boundaries into the actual SDK listener and verify end-to-end overload,

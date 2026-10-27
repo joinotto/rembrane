@@ -45,7 +45,7 @@ evidence and the strict readiness command.
   initialization without serializing unrelated tenant lookups. Library tests
   cover panic/cancellation cleanup and overload, not a deployed SDK listener.
 - Expired tenant-service cleanup runs outside the global cache lock. The
-  remote adapter's 109 passing unit tests include blocked/panicking cleanup,
+  remote adapter's 113 passing unit tests include blocked/panicking cleanup,
   concurrent tenant progress, reclaimed capacity, and pending reservation
   preservation. Live provider shutdown and load behavior remain unverified.
 - REST and MCP startup now check canonical metadata authority before
@@ -90,8 +90,17 @@ evidence and the strict readiness command.
   Two reproductions showed foreign commit/cancel incorrectly consuming a
   different registry's matching counter; both now deny without changing either
   ledger. A third regression distinguishes token equality across instances.
-  All 65 application tests and existing remote admission/cancellation fixtures
+  All 69 application tests and existing remote admission/cancellation fixtures
   pass. This is local capacity isolation, not live SDK resource-cleanup evidence.
+- Queued session GET/POST now retain an exact-incarnation dispatch guard through
+  borrowing/shared authorization, tenant construction, and Tower readiness.
+  Two synchronized tests first reproduced dispatch after deletion; four
+  transport tests now deny deletion/replacement without SDK calls. Four
+  registry tests cover permanent removal and shared deadline narrowing, and
+  two SDK-context handler tests deny a real tool after its canonical store wait
+  without mutation. All 19 MCP tests pass. These are process-local admission
+  checks, not actual HTTP propagation, stream monitoring, client DELETE
+  cancellation, or distributed-session evidence.
 - A new response-body guard stops delivery at the earlier original proof/
   controller deadline or explicit sticky revocation. Fourteen new Axum body
   tests cover idle wakeups, per-claim binding, tenant separation, frame/trailer

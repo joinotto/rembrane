@@ -450,6 +450,52 @@ Legacy caller-declared initialization remains a compatibility fixture, not
 the official SDK-generated initialization path; the new forwarding field is
 for established-session POSTs only. Actual SDK lifecycle tests remain required.
 
+Session GET/POST now also capture `RemoteSessionDispatchGuard` under the
+registry authorization lock, before any asynchronous factory/readiness wait.
+The guard couples the exact session incarnation, request claims, and original
+proof lifetime. Deletion, pruning, rollback, or registry destruction permanently
+invalidates every clone; a same-ID/same-claims replacement cannot revive it.
+Both registry revalidation APIs also shorten a shared dispatch deadline, so
+already captured requests observe a later narrowed session ceiling without
+requiring another capture or prune.
+
+Borrowing Axum wrappers retain this guard when replacing protocol metadata.
+Direct/tenant Tower GET/POST preserve it in HTTP extensions and check it before
+dispatch and after readiness; tenant factory workers check before and after
+construction as well. The MCP handler checks the coupled session header and
+guard before admission, at worker entry, and during canonical authorization
+after waiting for its state lock. Stateless requests remain separate and do not
+require a session guard. Missing, duplicate, or substituted session metadata
+must not become stateless authority.
+
+```sh
+cargo test -p rembrane-application --locked --offline dispatch_guard
+cargo test -p rembrane-remote-mcp-http --locked --offline session_dispatch_tests
+cargo test -p rembrane-mcp --locked --offline removed_session_is_denied
+cargo test -p rembrane-mcp --locked --offline real_tool_requires_exact_session_guard
+```
+
+Two synchronized readiness regressions first reproduced GET/POST dispatch
+after deletion; the fix also denies same-claims replacements. Four transport
+tests cover readiness, tenant construction, and borrowing handoffs. Four
+registry tests cover permanent removal, request substitution, original expiry,
+and later shared-ceiling reduction. Two MCP SDK-context tests exercise real
+encrypted tool admission, including a removed/replaced session while waiting
+for the canonical store, with no mutation.
+
+The pre-alpha session-stream `into_parts` API now returns the dispatch guard
+as its third element; custom transports must retain and recheck it after waits.
+POST custom transports can obtain it from `authorized_session_guard()` and
+must preserve the coupled session ID/proof. Guard equality describes immutable
+identity/claims, never current authority.
+
+These guards provide process-local admission checks, not token introspection,
+idle-stream wakeups, forced cancellation of already admitted operations, or
+distributed session consistency. Real SDK HTTP propagation and cleanup remain
+unverified; client DELETE dispatch/compensation needs its own exact-incarnation
+proof. Continue to require response guarding and real revocation monitoring
+for opened streams.
+
 Session-bound GET uses the separate
 `AuthorizedRemoteMcpSessionEventStreamDispatcher` consuming port. The private
 `AuthorizedRemoteMcpSessionEventStream` couples the session with its
@@ -476,8 +522,8 @@ verified before adding resume support. Stateless GET still rejects session
 headers, and the session-bound API requires one. Neither API automatically
 guards response delivery or attaches a live revocation controller.
 
-Custom dispatcher implementations must enforce proof lifetime after their own
-waits and before execution; the ports document that obligation. The trusted
+Custom dispatcher implementations must enforce proof lifetime and the captured
+session guard after their own waits and before execution; the trusted
 epoch-second sample must be supplied correctly by the HTTP host. These checks
 do not re-introspect revocation, force-cancel an admitted mutation, or close an
 already opened event stream. Fresh token verification, canonical membership
