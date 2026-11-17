@@ -8,7 +8,7 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-base64 = "0.22"
+base64 = "0.23"
 chrono = { version = "0.4", default-features = false, features = ["std"] }
 rembrane-provider-sdk = { path = "../rembrane-provider-sdk" }
 ring = "0.17"
