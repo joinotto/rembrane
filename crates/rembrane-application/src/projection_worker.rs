@@ -85,6 +85,9 @@ where
         else {
             return Ok(ProjectionOutcome::NoWork);
         };
+        if pending.provider_id() != &self.provider_id {
+            return Err(ApplicationError::AccessDenied);
+        }
 
         let processing = pending
             .clone()
@@ -148,7 +151,10 @@ where
         let Some(memory) = self.repository.find(job.workspace_id(), job.memory_id())? else {
             return Ok(ProjectionOutcome::Superseded);
         };
-        if memory.version() != job.memory_version() || memory.status() == MemoryStatus::Deleted {
+        if memory.workspace_id() != job.workspace_id() || memory.id() != job.memory_id() {
+            return Err(ApplicationError::AccessDenied);
+        }
+        if memory.version() != job.memory_version() || memory.status() != MemoryStatus::Confirmed {
             return Ok(ProjectionOutcome::Superseded);
         }
 

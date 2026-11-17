@@ -79,6 +79,10 @@ are in [First Production Release Plan](docs/PRODUCTION_PLAN.md).
 - [x] Persist and optimistically update the SQLite provider projection outbox.
   - [x] Redact semantic and graph projection job, tenant, resource, and
     provider identities from diagnostics.
+  - [x] Reject semantic jobs for another provider before claim, recheck
+    canonical workspace/resource identity, and index only confirmed memory;
+    cover misrouted records, non-confirmed lifecycle states, queue preservation,
+    and foreign-provider delete denial through the native provider.
 - [x] Persist encrypted activity checkpoints with their audit events.
 - [x] Redact checkpoint payloads, tenant and activity identities, client
   grants, disclosure purposes, and event identities from application command

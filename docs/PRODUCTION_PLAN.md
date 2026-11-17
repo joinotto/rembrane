@@ -47,6 +47,12 @@ evidence and the strict readiness command.
   preserved project scopes and fresh destination identities, and rejection
   of unsupported scope selectors before I/O. Imports are not trusted memory
   until explicit approval; exports are not project-filtered sharing APIs.
+- Semantic projection now rechecks queued provider identity before claim and
+  canonical workspace/resource identity plus confirmed status before indexing.
+  Three regressions reproduced misrouted/proposed records becoming searchable
+  and another provider's job completing. Native integration tests also preserve
+  existing indexed data against foreign-provider deletes. This is local
+  application-boundary evidence, not external-provider or crash-recovery proof.
 - REST synchronous operations now use bounded blocking workers with
   authentication-before-admission, explicit overload responses, and
   cancellation-safe capacity ownership. No-listener tests cover encrypted

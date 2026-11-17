@@ -9,6 +9,16 @@ and intends to use semantic versioning after the initial protocol stabilizes.
 
 ### Fixed
 
+- Semantic projection workers now reject jobs for a different configured
+  provider before claiming them, recheck canonical workspace/resource
+  identity before indexing, and project only confirmed memory. Three
+  regressions first reproduced misrouted/proposed plaintext becoming
+  searchable and a foreign-provider job completing. Coverage includes
+  wrong resource identity, proposed/superseded/deleted state, queue-state
+  preservation, and protection of an existing native record from a
+  foreign-provider delete. These are local boundary/provider tests, not
+  external-service or production recovery evidence.
+
 - PostgreSQL fixture reads now cover all 32 migrated tables, rather than 19.
   Both tenant scopes and unscoped denial reuse one exact count/identity query;
   wrong-tenant rows are rejected even when aggregate counts match. Added
